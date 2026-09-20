@@ -9,7 +9,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
-import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
+import { OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 
 const OUTLINE = `* L1 a
   * L2 a
@@ -215,6 +215,29 @@ describe('Mod-ArrowUp / Mod-ArrowDown (fold / unfold the caret item, GRO-2092)',
     caretIn(crepe, 'Intro')
     expect(press(crepe, 'Mod-ArrowUp')).toBe(false)
     expect(press(crepe, 'Mod-ArrowDown')).toBe(false)
+  })
+
+  it('folds an image bullet to its chip from the caret and unfolds it (YAZ-1709); a text-only leaf stays a no-op', async () => {
+    const { crepe, root } = await mount(`* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', notePath: '/v/n.md' } })
+    const imagePos = crepe.editor.action((ctx) => {
+      let found = -1
+      ctx.get(editorViewCtx).state.doc.descendants((node, pos) => {
+        if (found === -1 && node.type.name === 'image') found = pos
+        return found === -1
+      })
+      return found
+    })
+    const chips = () => root.querySelectorAll(`[${OUTLINE_FOLDED_IMAGE_ATTR}="true"]`).length
+    select(crepe, imagePos) // the caret just before the image, inside the bullet's only paragraph
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true)
+    expect(chips()).toBe(1)
+    expect(folded(root)).toBe(0)
+    expect(press(crepe, 'Mod-ArrowDown')).toBe(true)
+    expect(chips()).toBe(0)
+    caretIn(crepe, 'L1 b')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true) // consumed, nothing to fold
+    expect(chips()).toBe(0)
+    expect(folded(root)).toBe(0)
   })
 
   it('Mod-z right after Mod-ArrowUp reverts that fold (GRO-2075 path)', async () => {

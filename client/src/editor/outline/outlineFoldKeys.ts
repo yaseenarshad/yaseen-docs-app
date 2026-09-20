@@ -1,6 +1,6 @@
 /**
  * Stable, position-independent key for a foldable list item (GRO-2011): FNV-1a hash of
- * the item's first-block text plus its occurrence index among same-labelled items, so
+ * the item's first-block text (an image counts as its alt text — `itemLabelText`, YAZ-1709) plus its occurrence index among same-labelled items, so
  * fold state survives edits elsewhere in the document and is safe to persist.
  * Ported from yaseen-excalidraw `docs/outlineFoldKeys.ts`.
  * Zoom history (zoom.ts, GRO-2091) reuses the scheme with the occurrence counted over ALL list

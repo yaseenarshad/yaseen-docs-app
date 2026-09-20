@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { createCrepe, getMarkdownForSave, setMarkdown, type CreateCrepeOptions } from '../createCrepe'
 import { getOutlineFoldKey } from './outlineFoldKeys'
-import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
+import { OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 import { getHeadingFoldKey, HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS } from './headingFolding'
 
 const OUTLINE = `* Parent
@@ -91,6 +91,25 @@ describe('folds survive setMarkdown (the external/AI-edit reload path)', () => {
     expect(toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Parent').getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)).toHaveLength(1)
     // The disk-erase guard: no report on the way may be empty, and the key must still be live.
+    expect(reports.slice(sinceCollapse).every((r) => r.length > 0)).toBe(true)
+    expect(reports.at(-1)).toEqual([key])
+  })
+
+  it('a collapsed image bullet (YAZ-1709) stays collapsed through the reload: its key is its alt text', async () => {
+    const { reports, options } = liveWiring()
+    const IMAGES = `* ![Shot|400](a.png)\n* Leaf\n`
+    const { crepe, root } = await mount({ defaultValue: IMAGES, folding: options, image: { root: '/v', notePath: '/v/n.md' } })
+
+    toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Shot').click()
+    const key = getOutlineFoldKey('Shot', 0)
+    expect(reports.at(-1)).toEqual([key])
+    const sinceCollapse = reports.length
+
+    setMarkdown(crepe, `${IMAGES}* Agent added this\n`)
+
+    expect(getMarkdownForSave(crepe)).toContain('Agent added this')
+    expect(toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Shot').getAttribute('aria-expanded')).toBe('false')
+    expect(root.querySelectorAll(`[${OUTLINE_FOLDED_IMAGE_ATTR}="true"]`)).toHaveLength(1)
     expect(reports.slice(sinceCollapse).every((r) => r.length > 0)).toBe(true)
     expect(reports.at(-1)).toEqual([key])
   })

@@ -14,12 +14,17 @@
  * YAZ-1140) — clears the pending fold undo (GRO-2091 B, see viewActions.ts). The one deliberate
  * exception is `document-fold`: foldAllHotkeys.ts updates bullets + headings atomically, so both
  * halves remain eligible and one ⌘Z restores both exact prior sets.
+ * Image bullets (YAZ-1709): a list_item holding an `image` in its own blocks is foldable too, even
+ * as a leaf. Its fold hides nested lists exactly as a parent's does and, on top, stamps every own
+ * image with `data-outline-folded-image` so imageView.css shrinks it to a one-line chip; a click on
+ * that chip is the chevron's toggle. Same plugin state, same meta-only transactions, same keys —
+ * the image node view knows nothing about folding (decorations first, rule 5 / rule 30).
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { findNestedLists, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -29,6 +34,8 @@ interface OutlineEntry {
   label: string
   /** Document ranges of every nested list (mixed markers parse as sibling lists; folding hides them all). */
   nestedListRanges: readonly { from: number; to: number }[]
+  /** Document ranges of every image in the item's own blocks; folding shrinks them to a chip (YAZ-1709). */
+  imageRanges: readonly { from: number; to: number }[]
 }
 
 /** The most recent fold action while it is still the latest action (GRO-2075 panic-undo). */
@@ -38,7 +45,7 @@ type LastToggle =
   | { kind: 'set'; previousCollapsed: ReadonlySet<number> }
 
 interface OutlineFoldingState {
-  /** Every list_item that owns a nested list, in document order (recomputed per transaction). */
+  /** Every list_item that owns a nested list or holds an image, in document order (recomputed per transaction). */
   entries: readonly OutlineEntry[]
   collapsedItemPositions: ReadonlySet<number>
   /** Cleared by any document change: ⌘Z only reverts a fold that is the latest action. */
@@ -58,6 +65,12 @@ export interface OutlineFoldingOptions {
 
 export const OUTLINE_TOGGLE_CLASS = 'outline-toggle'
 export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
+/** On each image of a folded item; imageView.css turns the image into a one-line chip (YAZ-1709). */
+export const OUTLINE_FOLDED_IMAGE_ATTR = 'data-outline-folded-image'
+/** On every image of a FOLDABLE item, folded or not; imageView.css shows the image's own fold button only then (YAZ-1709). */
+export const OUTLINE_FOLDABLE_IMAGE_ATTR = 'data-outline-foldable-image'
+/** The node view's corner button on an expanded image; the fold plugin owns what it does. */
+export const IMAGE_FOLD_BUTTON_CLASS = 'image-view__fold'
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
@@ -230,7 +243,8 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
   doc.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
     const nestedLists = findNestedLists(node)
-    if (nestedLists.length === 0) return true
+    const images = findOwnImages(node)
+    if (nestedLists.length === 0 && images.length === 0) return true
 
     const label = itemLabelText(node)
     const keyLabel = outlineFoldLabel(label)
@@ -243,6 +257,10 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
       nestedListRanges: nestedLists.map(({ list, offset }) => {
         const from = itemPos + 1 + offset
         return { from, to: from + list.nodeSize }
+      }),
+      imageRanges: images.map(({ offset, size }) => {
+        const from = itemPos + 1 + offset
+        return { from, to: from + size }
       }),
     })
     return true
@@ -344,6 +362,32 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           },
         },
         props: {
+          // A click on a folded image chip unfolds its bullet — the chevron's toggle, from the chip (YAZ-1709).
+          // Folded chip: a click on the THUMBNAIL unfolds (the grey label beside it does not, so a
+          // click meant for the text around the chip never pops the image open) (YAZ-1709).
+          handleClickOn: (view, _pos, node, nodePos, event) => {
+            if (node.type.name !== 'image' || !(event.target instanceof HTMLImageElement)) return false
+            const foldingState = pluginKey.getState(view.state)
+            const entry = foldingState?.entries.find((e) => e.imageRanges.some((r) => r.from === nodePos))
+            if (!entry || !foldingState || !foldingState.collapsedItemPositions.has(entry.itemPos)) return false
+            event.preventDefault()
+            view.dispatch(foldTransaction(view.state, entry.itemPos))
+            return true
+          },
+          handleDOMEvents: {
+            // Expanded image: its corner button folds the bullet — the chip's click in reverse. Taken
+            // on mousedown so ProseMirror never turns the press into a node selection or caret move.
+            mousedown: (view, event) => {
+              const target = event.target
+              if (!(target instanceof Element) || !target.closest(`.${IMAGE_FOLD_BUTTON_CLASS}`)) return false
+              const pos = view.posAtDOM(target, 0)
+              const entry = pluginKey.getState(view.state)?.entries.find((e) => e.imageRanges.some((r) => pos >= r.from && pos <= r.to))
+              if (!entry) return false
+              event.preventDefault()
+              view.dispatch(foldTransaction(view.state, entry.itemPos))
+              return true
+            },
+          },
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
             if (!foldingState) return DecorationSet.empty
@@ -387,6 +431,12 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                   { key: `outline-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
                 ),
               )
+              entry.imageRanges.forEach(({ from, to }) => {
+                const attrs = collapsed
+                  ? { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true', [OUTLINE_FOLDED_IMAGE_ATTR]: 'true' }
+                  : { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true' }
+                decorations.push(Decoration.node(from, to, attrs))
+              })
               if (collapsed) {
                 entry.nestedListRanges.forEach(({ from, to }) => {
                   decorations.push(Decoration.node(from, to, { [OUTLINE_FOLDED_ATTR]: 'true' }))
