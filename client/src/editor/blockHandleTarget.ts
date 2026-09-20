@@ -29,6 +29,7 @@ export interface HandleTarget {
 export function handleTargetPos(view: EditorView, e: MouseEvent): HandleTarget | null {
   const handle = (e.target as Element).closest('.milkdown-block-handle')!
   const rect = handle.getBoundingClientRect()
-  const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX * cssZoom(handle), top: e.clientY })
+  // The handle floats beside the zoomed content at 100% (D14), so the probe scales with the content.
+  const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX * cssZoom(view.dom), top: e.clientY })
   return probe === null ? null : { pos: probe.pos, inside: probe.inside }
 }

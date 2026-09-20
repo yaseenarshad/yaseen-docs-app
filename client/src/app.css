@@ -131,10 +131,36 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Optional sideways slack under zoom (YAZ-1710 D15): the page still reflows on screen, but a
+     zero-height runner wider than the scroller adds blank room on the right so the view can be
+     dragged left when deep bullets drift right. `--zoom-slack` is MEASURED by Editor.tsx — how far
+     the deepest bullet moved because of the zoom — so a full drag parks it where it sits at 100%
+     and never further; 0 at 100% and for a note with no bullets. */
+  overflow-x: auto;
   /* The page's ONE tail (YAZ-1680): the blocks below the note stack flush, and whichever is last
      still ends 64px above the bottom — each block used to carry this itself, so every pair of
      blocks sat 64px apart. */
   padding-bottom: 64px;
+}
+
+.editor-host::after {
+  content: '';
+  display: block;
+  height: 0;
+  width: calc(100% + var(--zoom-slack, 0px));
+}
+
+/* Document zoom lives on the CONTENT, never on a shell (YAZ-1710 D14). The scroller carries the
+   number as `--document-zoom`; every block's column shell (max-width / margin auto / 48px gutter)
+   stays in unzoomed px so the five blocks keep one aligned column, and only what is inside a shell
+   scales. The body is the special case: Crepe appends its floating chrome (toolbar, slash menu,
+   link tooltip, block handle) beside `.ProseMirror` inside `.milkdown`, so the zoom sits on the
+   ProseMirror node itself and that chrome stays at 100% — floating-ui then positions it in
+   unzoomed space, which is the only space it gets right. */
+.editor-host > :not(.editor-mount) > *,
+.page-header > .frontmatter-panel > *,
+.editor-instance .milkdown > .ProseMirror {
+  zoom: var(--document-zoom, 1);
 }
 
 /* The header ROW (YAZ-918): ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel share one line —
@@ -1769,7 +1795,7 @@ button {
   top: calc(100% + 6px);
   z-index: 10;
   width: 136px;
-  max-height: min(300px, calc(100vh - 64px));
+  max-height: min(360px, calc(100vh - 64px));
   overflow-y: auto;
   padding: 6px;
   background: var(--bg);

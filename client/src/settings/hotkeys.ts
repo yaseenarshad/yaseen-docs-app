@@ -22,7 +22,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧Z', label: 'Redo' },
   { keys: '⌘.', label: 'Zoom into the bullet at the caret' },
   { keys: '⌘⇧.', label: 'Zoom out one level' },
-  { keys: '⌘+ / ⌘− / ⌘0', label: 'Zoom this note in / out / back to 100% — outside a note, the whole app' },
+  { keys: '⌘+ / ⌘− / ⌘0', label: 'Zoom this note in / out (25 at a time above 200%) / back to 100% — outside a note, the whole app' },
   { keys: '⌘⏎', label: 'Cycle bullet → task → done' },
   { keys: '⌘U', label: 'Underline' },
   { keys: '⌘⇧H', label: 'Highlight' },

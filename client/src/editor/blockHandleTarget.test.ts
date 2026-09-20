@@ -37,19 +37,20 @@ describe('handleTargetPos', () => {
     const { handle, item } = makeHandle()
     handle.getBoundingClientRect = () => ({ right: 100 }) as DOMRect
     const posAtCoords = vi.fn(() => ({ pos: 7, inside: 3 }))
-    const view = { posAtCoords } as unknown as EditorView
+    const view = { posAtCoords, dom: document.createElement('div') } as unknown as EditorView
     const e = { target: item, clientY: 42 } as unknown as MouseEvent
     expect(handleTargetPos(view, e)).toEqual({ pos: 7, inside: 3 })
     expect(posAtCoords).toHaveBeenCalledWith({ left: 100 + PROBE_OFFSET_PX, top: 42 })
     handle.remove()
   })
 
-  it.each([0.5, 1, 1.25, 2])('keeps its logical probe offset at %× document zoom', (zoom) => {
+  it.each([0.5, 1, 1.25, 2, 4])('keeps its logical probe offset at %× document zoom — read from the CONTENT, since the handle itself is unzoomed (YAZ-1710 D14)', (zoom) => {
     const { handle, item } = makeHandle()
     handle.getBoundingClientRect = () => ({ right: 100 }) as DOMRect
-    Object.defineProperty(handle, 'currentCSSZoom', { value: zoom, configurable: true })
+    const dom = document.createElement('div')
+    Object.defineProperty(dom, 'currentCSSZoom', { value: zoom, configurable: true })
     const posAtCoords = vi.fn(() => ({ pos: 7, inside: 3 }))
-    const view = { posAtCoords } as unknown as EditorView
+    const view = { posAtCoords, dom } as unknown as EditorView
 
     handleTargetPos(view, { target: item, clientY: 42 } as unknown as MouseEvent)
 
@@ -59,7 +60,7 @@ describe('handleTargetPos', () => {
 
   it('returns null when the probe misses', () => {
     const { handle, item } = makeHandle()
-    const view = { posAtCoords: () => null } as unknown as EditorView
+    const view = { posAtCoords: () => null, dom: document.createElement('div') } as unknown as EditorView
     expect(handleTargetPos(view, { target: item, clientY: 0 } as unknown as MouseEvent)).toBeNull()
     handle.remove()
   })
