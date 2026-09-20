@@ -515,7 +515,9 @@ export function TopicsTree({ root, expanded, onExpandedChange, focus, revealRequ
       return
     }
     if (path === activeFile) {
-      focusOpenDocument() // the VISIBLE document (YAZ-961): a folder page's outline, not its hidden body
+      // Enter only (D11, YAZ-1674 — `detail === 0` is a keyboard click): a mouse click on the open
+      // page just selects it, so click-then-⌘C never hands the key to the editor.
+      if (e.detail === 0) focusOpenDocument() // the VISIBLE document (YAZ-961): a folder page's outline, not its hidden body
       return
     }
     onOpenFile(path)

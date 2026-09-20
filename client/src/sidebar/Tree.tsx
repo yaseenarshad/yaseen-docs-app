@@ -189,9 +189,13 @@ export function Tree({
                 }
                 // First activation previews, second commits — the Topics rows' rule (YAZ-921):
                 // opening keeps focus on the row, re-activating the open page enters its text.
+                // The commit is KEYBOARD-only since D11 (YAZ-1674): Enter on the open row takes the
+                // caret in (a keyboard click has `detail === 0`); a MOUSE click on the open note
+                // just selects it, so click-then-⌘C works on every row instead of handing the key
+                // to the editor.
                 if (e.metaKey) onOpenFileBackground(node.path)
-                else if (node.path === activeFile) focusOpenDocument() // YAZ-961: the VISIBLE one
-                else onOpenFile(node.path)
+                else if (node.path !== activeFile) onOpenFile(node.path)
+                else if (e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
               }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
