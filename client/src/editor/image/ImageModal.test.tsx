@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ImageModal } from './ImageModal'
+import type { GalleryImage } from './imageOptions'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -49,10 +50,8 @@ afterEach(() => {
   editor = null
 })
 
-type Gallery = { src: string; alt: string }[]
-
 /** Mounts the lightbox; by default ONE image (the pre-gallery shape), or a gallery starting at `index`. */
-function open(alt = 'alt', images: Gallery = [{ src: SRC, alt }], index = 0): { overlay: HTMLElement; onClose: ReturnType<typeof vi.fn> } {
+function open(alt = 'alt', images: GalleryImage[] = [{ src: SRC, alt }], index = 0): { overlay: HTMLElement; onClose: ReturnType<typeof vi.fn> } {
   const onClose = vi.fn()
   act(() => root?.render(<ImageModal images={images} index={index} onClose={onClose} />))
   const overlay = container?.querySelector<HTMLElement>('.image-modal-overlay')

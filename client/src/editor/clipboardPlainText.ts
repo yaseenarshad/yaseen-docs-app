@@ -1,4 +1,12 @@
+/**
+ * Readable text/plain for a copy: the document as a reader would type it out, not its markdown.
+ * An image copies as its alt TEXT — the caption, never the `|width` display hint Obsidian's syntax
+ * rides in the same attribute (`parseAlt`, imageSrc.ts) — with the src as the fallback for an
+ * empty alt. That is the one stand-in for an image everywhere it needs a text identity: the fold
+ * key, the zoom breadcrumb (`itemLabelText`, listNodes.ts) and this copy agree (YAZ-1709).
+ */
 import type { Fragment, Node, Slice } from '@milkdown/kit/prose/model'
+import { parseAlt } from './image/imageSrc'
 
 const isList = (node: Node) => node.type.name === 'bullet_list' || node.type.name === 'ordered_list'
 
@@ -11,7 +19,7 @@ function children(content: Fragment, separator: string, depth: number): string {
 function readable(node: Node, depth: number): string {
   if (node.isText) return node.text ?? ''
   if (node.type.name === 'hardbreak') return '\n'
-  if (node.type.name === 'image') return node.attrs.alt || node.attrs.src || ''
+  if (node.type.name === 'image') return parseAlt(node.attrs.alt).text || node.attrs.src
   if (node.type.name === 'image-block') return node.attrs.caption || node.attrs.src || ''
   if (node.type.name === 'html') return node.attrs.value
   if (node.type.name === 'hr') return '───'

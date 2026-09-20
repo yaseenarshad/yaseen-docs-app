@@ -9,7 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { Autosave } from '../../lib/autosave'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { IMAGE_VIEW_CLASS } from '../image/imageView'
+import { IMAGE_BROKEN_CLASS, IMAGE_VIEW_CLASS } from '../image/imageView'
 import { foldAllOutline, OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS, undoLastFold } from './outlineFolding'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 
@@ -53,7 +53,7 @@ const folded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_A
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('outline folding', () => {
-  it('renders a toggle only on list items that own a nested list', async () => {
+  it('renders a toggle only on list items that own a nested list or hold an image', async () => {
     const { root } = await mount({ defaultValue: OUTLINE })
     const labels = toggles(root).map((b) => b.getAttribute('aria-label'))
     expect(labels).toEqual(['Collapse Parent', 'Collapse Child', 'Collapse Ordered parent', 'Collapse Task parent'])
@@ -300,8 +300,8 @@ describe('image bullets fold to a chip (YAZ-1709)', () => {
     const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
     // jsdom has no layout for `posAtCoords`, so the click reaches the plugin the way ProseMirror
     // delivers it: through the `handleClickOn` prop with the image node and its position.
-    // Only the thumbnail expands; the grey label beside it (`::after` on the wrapper) does not.
-    const clickFirstImage = (on: 'img' | 'label'): boolean => {
+    // Only the thumbnail expands; a click on the wrapper around it is not the thumbnail.
+    const clickFirstImage = (on: 'img' | 'wrapper'): boolean => {
       let pos = -1
       let node: ProseNode | null = null
       view.state.doc.descendants((n, p) => {
@@ -317,7 +317,7 @@ describe('image bullets fold to a chip (YAZ-1709)', () => {
     expect(clickFirstImage('img')).toBe(false)
     toggleFor(root, 'Shot').click()
     expect(chips(root)).toHaveLength(1)
-    expect(clickFirstImage('label')).toBe(false)
+    expect(clickFirstImage('wrapper')).toBe(false)
     expect(chips(root)).toHaveLength(1)
     expect(clickFirstImage('img')).toBe(true)
     expect(chips(root)).toHaveLength(0)
@@ -338,6 +338,45 @@ describe('image bullets fold to a chip (YAZ-1709)', () => {
     expect(chips(root)).toHaveLength(1)
     expect(wrapper.getAttribute('data-outline-foldable-image')).toBe('true')
     expect(toggleFor(root, 'Shot').getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('an image inside a NESTED list is the child item\'s own: folding the parent hides the list and never chips the inner image', async () => {
+    const { root } = await mount({ defaultValue: '* Parent\n  * ![Inner](i.png)\n', ...IMAGE_OPTS })
+    toggleFor(root, 'Parent').click()
+    expect(folded(root)).toHaveLength(1)
+    expect(folded(root)[0].querySelector(`.${IMAGE_VIEW_CLASS}`)).not.toBeNull()
+    expect(chips(root)).toHaveLength(0)
+  })
+
+  it('a BROKEN image folds and unfolds like any other: the chip attribute lands on the inert broken chip, no <img> comes back', async () => {
+    const { root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS })
+    const wrapper = root.querySelector<HTMLElement>(`.${IMAGE_VIEW_CLASS}`)!
+    wrapper.querySelector('img')!.dispatchEvent(new Event('error'))
+    expect(wrapper.classList.contains(`${IMAGE_VIEW_CLASS}--broken`)).toBe(true)
+
+    toggleFor(root, 'Shot').click()
+    expect(wrapper.getAttribute(OUTLINE_FOLDED_IMAGE_ATTR)).toBe('true')
+    expect(wrapper.querySelector('img')).toBeNull()
+    expect(wrapper.classList.contains(`${IMAGE_VIEW_CLASS}--broken`)).toBe(true)
+    expect(wrapper.querySelector(`.${IMAGE_BROKEN_CLASS}`)?.textContent).toBe('Broken image: a.png')
+
+    toggleFor(root, 'Shot').click()
+    expect(wrapper.getAttribute(OUTLINE_FOLDED_IMAGE_ATTR)).toBeNull()
+    expect(wrapper.classList.contains(`${IMAGE_VIEW_CLASS}--broken`)).toBe(true)
+  })
+
+  it('two images in one bullet are both chipped by the one fold', async () => {
+    const { root } = await mount({ defaultValue: '* ![A](a.png) ![B](b.png)\n', ...IMAGE_OPTS })
+    expect(toggles(root)).toHaveLength(1)
+    toggles(root)[0].click()
+    expect(chips(root)).toHaveLength(2)
+  })
+
+  it("an image in the item's SECOND paragraph is one of its own blocks: chipped on fold", async () => {
+    const { root } = await mount({ defaultValue: '* first\n\n  ![Two|300](b.png)\n', ...IMAGE_OPTS })
+    toggleFor(root, 'first').click()
+    expect(chips(root)).toHaveLength(1)
+    expect(folded(root)).toHaveLength(0)
   })
 
   it('the fold key is the alt text: persisted through onCollapsedKeysChange, a fresh mount seeded with it is still folded', async () => {

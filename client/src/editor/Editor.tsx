@@ -214,7 +214,10 @@ function CrepeHost({
   const findChannel = useMemo(() => createFindChannel(), [])
   /** The target whose modal is open; the preview's click sets it, close clears it. */
   const [openDrawing, setOpenDrawing] = useState<string | null>(null)
-  /** The lightbox's gallery (YAZ-1656): every image on the page and the one double-clicked; the node view sets it, close clears it. */
+  /**
+   * The lightbox's gallery (YAZ-1656): every image on the page and the one double-clicked; the
+   * node view sets it, close clears it.
+   */
   const [openImage, setOpenImage] = useState<{ images: GalleryImage[]; index: number } | null>(null)
 
   useEffect(() => {
@@ -429,10 +432,11 @@ function CrepeHost({
         <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} onClose={() => setOpenDrawing(null)} />
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
-          modal, opened by the node view's double-click with the src it already loaded. */}
+          modal, opened by the node view's double-click with the whole gallery (every image on
+          the page, resolved srcs) and the index of the one clicked. */}
       {openImage !== null && (
         // Keyed on the clicked image so a reopen remounts with a fresh cursor.
-        <ImageModal key={openImage.images[openImage.index]?.src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
+        <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
       )}
     </>
   )

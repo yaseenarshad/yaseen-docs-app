@@ -25,6 +25,7 @@ import { type Command, type EditorState, Plugin, PluginKey, type Transaction } f
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -32,9 +33,15 @@ interface OutlineEntry {
   foldKey: string
   itemPos: number
   label: string
-  /** Document ranges of every nested list (mixed markers parse as sibling lists; folding hides them all). */
+  /**
+   * Document ranges of every nested list (mixed markers parse as sibling lists; folding hides
+   * them all).
+   */
   nestedListRanges: readonly { from: number; to: number }[]
-  /** Document ranges of every image in the item's own blocks; folding shrinks them to a chip (YAZ-1709). */
+  /**
+   * Document ranges of every image in the item's own blocks; folding shrinks them to a chip
+   * (YAZ-1709).
+   */
   imageRanges: readonly { from: number; to: number }[]
 }
 
@@ -45,7 +52,10 @@ type LastToggle =
   | { kind: 'set'; previousCollapsed: ReadonlySet<number> }
 
 interface OutlineFoldingState {
-  /** Every list_item that owns a nested list or holds an image, in document order (recomputed per transaction). */
+  /**
+   * Every foldable list_item — one that owns a nested list or holds an image — in document order
+   * (recomputed per transaction).
+   */
   entries: readonly OutlineEntry[]
   collapsedItemPositions: ReadonlySet<number>
   /** Cleared by any document change: ⌘Z only reverts a fold that is the latest action. */
@@ -67,17 +77,21 @@ export const OUTLINE_TOGGLE_CLASS = 'outline-toggle'
 export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
 /** On each image of a folded item; imageView.css turns the image into a one-line chip (YAZ-1709). */
 export const OUTLINE_FOLDED_IMAGE_ATTR = 'data-outline-folded-image'
-/** On every image of a FOLDABLE item, folded or not; imageView.css shows the image's own fold button only then (YAZ-1709). */
+/**
+ * On every image of a FOLDABLE item, folded or not; imageView.css shows the image's own fold
+ * button only then (YAZ-1709).
+ */
 export const OUTLINE_FOLDABLE_IMAGE_ATTR = 'data-outline-foldable-image'
-/** The node view's corner button on an expanded image; the fold plugin owns what it does. */
-export const IMAGE_FOLD_BUTTON_CLASS = 'image-view__fold'
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 
-/** Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every parent, fold/unfold an explicit set (`FoldSetMeta`), or revert the latest fold. */
+/**
+ * Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every
+ * foldable item, fold/unfold an explicit set (`FoldSetMeta`), or revert the latest fold.
+ */
 type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold' | FoldSetMeta
-/** Guide-line click (GRO-2107): fold (`collapsed: true`) or unfold every parent item in `set` at once. */
+/** Guide-line click (GRO-2107): fold (`collapsed: true`) or unfold every foldable item in `set`. */
 interface FoldSetMeta {
   set: readonly number[]
   collapsed: boolean
@@ -128,12 +142,15 @@ const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dis
   return true
 }
 
-/** Toggle the fold of the parent list_item at `itemPos`; metadata-only (programmatic toggle — the chevron and the guide line have their own paths). */
+/**
+ * Toggle the fold of the foldable list_item at `itemPos`; metadata-only (programmatic toggle —
+ * the chevron and the guide line have their own paths).
+ */
 export const toggleOutlineFold = (itemPos: number): Command => (state, dispatch) => {
   const foldingState = pluginKey.getState(state)
   if (!foldingState) return false
-  const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
-  if (!isParent && !foldingState.collapsedItemPositions.has(itemPos)) return false
+  const isFoldable = foldingState.entries.some((entry) => entry.itemPos === itemPos)
+  if (!isFoldable && !foldingState.collapsedItemPositions.has(itemPos)) return false
   dispatch?.(foldTransaction(state, itemPos))
   return true
 }
@@ -148,32 +165,33 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
   const foldingState = pluginKey.getState(state)
   const itemPos = innermostItemPos(state.selection.$from)
   if (!foldingState || itemPos === null) return false
-  const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
-  if (isParent && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
+  const isFoldable = foldingState.entries.some((entry) => entry.itemPos === itemPos)
+  if (isFoldable && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
     dispatch?.(foldTransaction(state, itemPos))
   }
   return true
 }
 
 /**
- * Guide-line click (GRO-2107, YAZ-1317): the direct parent items inside the list decide the
- * direction. Any of them expanded → collapse those direct parents; all collapsed → unfold every
- * parent in the list's subtree. The list's owner and leaves are untouched; an all-leaf list declines.
+ * Guide-line click (GRO-2107, YAZ-1317): the direct foldable items inside the list — parents and
+ * image bullets — decide the direction. Any of them expanded → collapse those direct items; all
+ * collapsed → unfold every foldable item in the list's subtree. The list's owner and text leaves
+ * are untouched; a list with nothing foldable declines.
  */
 export const toggleOutlineFoldChildren = (listPos: number): Command => (state, dispatch) => {
   const foldingState = pluginKey.getState(state)
   const list = state.doc.nodeAt(listPos)
   if (!foldingState || !list || !LIST_NODE_NAMES.has(list.type.name)) return false
-  const parentPositions = new Set(foldingState.entries.map((entry) => entry.itemPos))
-  const directParents: number[] = []
+  const foldablePositions = new Set(foldingState.entries.map((entry) => entry.itemPos))
+  const directFoldables: number[] = []
   list.forEach((_child, offset) => {
     const pos = listPos + 1 + offset
-    if (parentPositions.has(pos)) directParents.push(pos)
+    if (foldablePositions.has(pos)) directFoldables.push(pos)
   })
-  if (directParents.length === 0) return false
-  const collapsed = directParents.some((pos) => !foldingState.collapsedItemPositions.has(pos))
+  if (directFoldables.length === 0) return false
+  const collapsed = directFoldables.some((pos) => !foldingState.collapsedItemPositions.has(pos))
   const set = collapsed
-    ? directParents
+    ? directFoldables
     : foldingState.entries
         .filter(({ itemPos }) => itemPos > listPos && itemPos < listPos + list.nodeSize)
         .map(({ itemPos }) => itemPos)
@@ -182,9 +200,9 @@ export const toggleOutlineFoldChildren = (listPos: number): Command => (state, d
 }
 
 /**
- * Fold (`collapsed: true`) or unfold an explicit set of parent items at once. `silent` marks a fold
- * the user did not ask for — CMD+F's fold-reveal (YAZ-968) — which must leave ⌘Z panic-undo (fold
- * and zoom alike) exactly as it found it. Declines an empty set.
+ * Fold (`collapsed: true`) or unfold an explicit set of foldable items at once. `silent` marks a
+ * fold the user did not ask for — CMD+F's fold-reveal (YAZ-968) — which must leave ⌘Z panic-undo
+ * (fold and zoom alike) exactly as it found it. Declines an empty set.
  */
 export const setOutlineFoldSet =
   (set: readonly number[], collapsed: boolean, options?: { silent?: boolean }): Command =>
@@ -195,9 +213,9 @@ export const setOutlineFoldSet =
     return true
   }
 
-/** Collapse every parent item (GRO-2027 `Mod-Shift-u`); metadata-only transaction, the doc is untouched. */
+/** Collapse every foldable item (GRO-2027 `Mod-Shift-u`); metadata-only, the doc is untouched. */
 export const foldAllOutline: Command = foldAllCommand('fold-all')
-/** Expand every parent item (GRO-2027 `Mod-Shift-i`). */
+/** Expand every foldable item (GRO-2027 `Mod-Shift-i`). */
 export const unfoldAllOutline: Command = foldAllCommand('unfold-all')
 
 /** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */
@@ -258,9 +276,9 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
         const from = itemPos + 1 + offset
         return { from, to: from + list.nodeSize }
       }),
-      imageRanges: images.map(({ offset, size }) => {
+      imageRanges: images.map(({ node, offset }) => {
         const from = itemPos + 1 + offset
-        return { from, to: from + size }
+        return { from, to: from + node.nodeSize }
       }),
     })
     return true
@@ -294,11 +312,11 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           },
           apply: (transaction, previousState, _oldState, newState) => {
             const entries = transaction.docChanged ? getOutlineEntries(newState.doc) : previousState.entries
-            const parentPositions = new Set(entries.map(({ itemPos }) => itemPos))
+            const foldablePositions = new Set(entries.map(({ itemPos }) => itemPos))
             const collapsedItemPositions = new Set<number>()
             previousState.collapsedItemPositions.forEach((position) => {
               const mappedPosition = transaction.mapping.map(position, 1)
-              if (parentPositions.has(mappedPosition)) collapsedItemPositions.add(mappedPosition)
+              if (foldablePositions.has(mappedPosition)) collapsedItemPositions.add(mappedPosition)
             })
 
             // A fold is only ⌘Z-revertible while it is the latest USER action. Plugin-appended
@@ -326,7 +344,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             if (meta === 'fold-all')
               return {
                 entries,
-                collapsedItemPositions: parentPositions,
+                collapsedItemPositions: foldablePositions,
                 lastToggle: { kind: 'set', previousCollapsed: collapsedItemPositions },
               }
             if (meta === 'unfold-all')
@@ -337,22 +355,22 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
             if (meta === 'undo-fold' && lastToggle !== null) {
               if (lastToggle.kind === 'set') {
-                const restored = new Set([...lastToggle.previousCollapsed].filter((p) => parentPositions.has(p)))
+                const restored = new Set([...lastToggle.previousCollapsed].filter((p) => foldablePositions.has(p)))
                 return { entries, collapsedItemPositions: restored, lastToggle: null }
               }
               if (collapsedItemPositions.has(lastToggle.itemPos)) collapsedItemPositions.delete(lastToggle.itemPos)
-              else if (parentPositions.has(lastToggle.itemPos)) collapsedItemPositions.add(lastToggle.itemPos)
+              else if (foldablePositions.has(lastToggle.itemPos)) collapsedItemPositions.add(lastToggle.itemPos)
               return { entries, collapsedItemPositions, lastToggle: null }
             }
             if (typeof meta === 'number') {
               if (collapsedItemPositions.has(meta)) collapsedItemPositions.delete(meta)
-              else if (parentPositions.has(meta)) collapsedItemPositions.add(meta)
+              else if (foldablePositions.has(meta)) collapsedItemPositions.add(meta)
               lastToggle = { kind: 'toggle', itemPos: meta }
             } else if (typeof meta === 'object') {
               // FoldSetMeta (never null: meta is either absent, a string, a number or the set object).
               const previousCollapsed = new Set(collapsedItemPositions)
               for (const pos of meta.set) {
-                if (meta.collapsed && parentPositions.has(pos)) collapsedItemPositions.add(pos)
+                if (meta.collapsed && foldablePositions.has(pos)) collapsedItemPositions.add(pos)
                 else if (!meta.collapsed) collapsedItemPositions.delete(pos)
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
@@ -362,14 +380,16 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           },
         },
         props: {
-          // A click on a folded image chip unfolds its bullet — the chevron's toggle, from the chip (YAZ-1709).
-          // Folded chip: a click on the THUMBNAIL unfolds (the grey label beside it does not, so a
-          // click meant for the text around the chip never pops the image open) (YAZ-1709).
+          // Folded chip (YAZ-1709): a click on the THUMBNAIL is the chevron's toggle. Only the <img>
+          // counts, so a click aimed at the text around the chip never pops the image open.
           handleClickOn: (view, _pos, node, nodePos, event) => {
             if (node.type.name !== 'image' || !(event.target instanceof HTMLImageElement)) return false
             const foldingState = pluginKey.getState(view.state)
-            const entry = foldingState?.entries.find((e) => e.imageRanges.some((r) => r.from === nodePos))
-            if (!entry || !foldingState || !foldingState.collapsedItemPositions.has(entry.itemPos)) return false
+            if (!foldingState) return false
+            const entry = foldingState.entries.find((e) =>
+              e.imageRanges.some((r) => r.from === nodePos),
+            )
+            if (!entry || !foldingState.collapsedItemPositions.has(entry.itemPos)) return false
             event.preventDefault()
             view.dispatch(foldTransaction(view.state, entry.itemPos))
             return true
@@ -378,10 +398,15 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             // Expanded image: its corner button folds the bullet — the chip's click in reverse. Taken
             // on mousedown so ProseMirror never turns the press into a node selection or caret move.
             mousedown: (view, event) => {
+              // Only the primary button folds: a right-click must keep reaching the native context
+              // menu (Copy Image / Reveal) instead of being swallowed as a fold.
+              if (event.button !== 0) return false
               const target = event.target
-              if (!(target instanceof Element) || !target.closest(`.${IMAGE_FOLD_BUTTON_CLASS}`)) return false
+              if (!(target instanceof Element) || !target.closest(`.${IMAGE_FOLD_CLASS}`)) return false
               const pos = view.posAtDOM(target, 0)
-              const entry = pluginKey.getState(view.state)?.entries.find((e) => e.imageRanges.some((r) => pos >= r.from && pos <= r.to))
+              const entry = pluginKey
+                .getState(view.state)
+                ?.entries.find((e) => e.imageRanges.some((r) => pos >= r.from && pos <= r.to))
               if (!entry) return false
               event.preventDefault()
               view.dispatch(foldTransaction(view.state, entry.itemPos))

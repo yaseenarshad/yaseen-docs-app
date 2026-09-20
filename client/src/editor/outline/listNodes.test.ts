@@ -59,15 +59,14 @@ describe('itemLabelText', () => {
 })
 
 describe('findOwnImages', () => {
-  it('offsets resolve to the image nodes through itemPos + 1 + offset, sizes match', async () => {
+  it('each entry is the image node plus an offset that resolves back to it through itemPos + 1 + offset', async () => {
     const doc = await docOf('* One ![A](a.png) two ![B](b.png)\n')
     const { item, itemPos } = items(doc)[0]
     const own = findOwnImages(item)
     expect(own).toHaveLength(2)
-    for (const { offset, size } of own) {
-      const node = doc.nodeAt(itemPos + 1 + offset)
-      expect(node?.type.name).toBe('image')
-      expect(node?.nodeSize).toBe(size)
+    for (const { node, offset } of own) {
+      expect(node.type.name).toBe('image')
+      expect(doc.nodeAt(itemPos + 1 + offset)).toBe(node)
     }
     expect(srcsOf(doc, itemPos, own)).toEqual(['a.png', 'b.png'])
   })

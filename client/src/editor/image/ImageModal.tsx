@@ -45,7 +45,7 @@ export function ImageModal({ images, index, onClose }: ImageModalProps) {
   const [current, setCurrent] = useState(index)
   const count = images.length
   const image = images[current]
-  const alt = image?.alt ?? ''
+  const alt = image.alt
   const atFirst = current <= 0
   const atLast = current >= count - 1
 
@@ -74,7 +74,7 @@ export function ImageModal({ images, index, onClose }: ImageModalProps) {
   return (
     <div ref={overlayRef} className="image-modal-overlay" tabIndex={-1} onMouseDown={onClose} onKeyDown={onKeyDown}>
       <figure className="image-modal" role="dialog" aria-modal="true" aria-label={alt || 'Image'} onMouseDown={stopMouseDown}>
-        <img className="image-modal__img" src={image?.src ?? ''} alt={alt} />
+        <img className="image-modal__img" src={image.src} alt={alt} />
         {alt !== '' && <figcaption className="image-modal__caption">{alt}</figcaption>}
       </figure>
       <button type="button" className="image-modal__close" aria-label="Close image" onClick={onClose} onMouseDown={stopMouseDown}>
@@ -82,13 +82,13 @@ export function ImageModal({ images, index, onClose }: ImageModalProps) {
       </button>
       {count > 1 && (
         <div className="image-modal__nav" onMouseDown={stopMouseDown}>
-          <button type="button" className="image-modal__arrow" aria-label="Previous image" disabled={atFirst} onClick={prev} onMouseDown={stopMouseDown}>
+          <button type="button" className="image-modal__arrow" aria-label="Previous image" disabled={atFirst} onClick={prev}>
             ‹
           </button>
           <span className="image-modal__count">
             {current + 1} / {count}
           </span>
-          <button type="button" className="image-modal__arrow" aria-label="Next image" disabled={atLast} onClick={next} onMouseDown={stopMouseDown}>
+          <button type="button" className="image-modal__arrow" aria-label="Next image" disabled={atLast} onClick={next}>
             ›
           </button>
         </div>
