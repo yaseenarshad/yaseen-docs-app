@@ -37,7 +37,7 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280) and ⌘⇧C (YAZ-1338), plus Open Recent's open-beside gesture. */
+/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280), ⌘⇧C (YAZ-1338) and the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674), plus Open Recent's open-beside gesture. */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
@@ -45,6 +45,10 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘,', label: 'Settings' },
   { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
   { keys: '⌘⇧C', label: 'Copy path — the sidebar selection when one is standing, else the open file' },
+  // The file clipboard (YAZ-1674, D6): the sidebar's own chords, beside ⌘⇧C and like it about the
+  // selection. One clipboard for every window, so a copy here pastes into another vault's window.
+  { keys: '⌘X / ⌘C', label: 'Cut / copy the selected files and folders — pastes in any window, on any vault' },
+  { keys: '⌘V', label: 'Paste beside the first selected row — into a folder, next to a file, or into the vault root with none' },
   { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
@@ -69,7 +73,7 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   // (YAZ-1337): the two plural menu items and ⌘⇧C above. Shift toggles one row at a time — it
   // never opens anything and never folds a folder.
   { keys: '⇧-click file or folder', label: 'Add or remove it from a multi-selection — right-click for Copy N paths / Open N in new tabs' },
-  { keys: 'Right-click file', label: 'Open in new window, Copy path / link, New note…' },
+  { keys: 'Right-click file', label: 'Cut / Copy / Paste, Copy path, New note…, Open in ▸ (new window, VS Code, default app, Finder)' },
 ]
 
 /** The four groups as Settings › Hotkeys shows them, heading first — one place to add a fifth. */

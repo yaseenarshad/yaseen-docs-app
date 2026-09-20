@@ -8,6 +8,7 @@ import { CH, type Envelope } from '../../channels'
 import { makeFixture } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
+import { fileClip } from '../fileClip'
 import { registerFsIpc } from './fs'
 
 vi.mock('electron', () => ({
@@ -59,7 +60,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadPdf, CH.fsReadImage, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenDefault, CH.shellOpenLink].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsClip, CH.fsPaste, CH.fsClipState, CH.fsIndex, CH.fsRead, CH.fsReadPdf, CH.fsReadImage, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenDefault, CH.shellOpenLink].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -302,6 +303,125 @@ describe('registerFsIpc', () => {
       const res = await registered(CH.fsDelete)({ sender: {} }, { path: dot })
       expect(res).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'hidden entries cannot be deleted', path: dot } })
       expect(w.webContents.send).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('fs:clip / fs:paste (YAZ-1674)', () => {
+    const win = (id: string, file: string | null) =>
+      store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+
+    it('fs:clip stores the ordered selection and pushes clip:changed (count + op) to EVERY window (D1)', async () => {
+      fileClip.clear()
+      const a = fakeWindow()
+      const b = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a as never, b as never])
+      const paths = [path.join(root, 'b.md'), path.join(root, 'Zeta')]
+      expect(await registered(CH.fsClip)({ sender: {} }, { op: 'copy', paths })).toEqual({ ok: true, value: undefined })
+      expect(fileClip.get()).toEqual({ op: 'copy', paths })
+      for (const w of [a, b]) expect(w.webContents.send).toHaveBeenCalledExactlyOnceWith(CH.clipChanged, { count: 2, op: 'copy' })
+    })
+
+    it('fs:clip with bad input answers a BridgeError envelope, keeps the clipboard and pushes nothing', async () => {
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const before = fileClip.get()
+      expect(await registered(CH.fsClip)({ sender: {} }, { op: 'cut', paths: ['relative.md'] })).toEqual({
+        ok: false,
+        error: { code: 'NOT_ABSOLUTE', message: "'paths' must be an absolute path", path: 'relative.md' },
+      })
+      expect(await registered(CH.fsClip)({ sender: {} }, { op: 'cut', paths: [] })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+      expect(fileClip.get()).toBe(before)
+      expect(w.webContents.send).not.toHaveBeenCalled()
+    })
+
+    it('fs:clip-state answers null when empty and { count, op } after a set — the catch-up read for a window that mounts after a clip', async () => {
+      fileClip.clear()
+      expect(await registered(CH.fsClipState)({ sender: {} })).toEqual({ ok: true, value: null })
+      fileClip.set({ op: 'cut', paths: [path.join(root, 'A.md'), path.join(root, 'b.md')] })
+      expect(await registered(CH.fsClipState)({ sender: {} })).toEqual({ ok: true, value: { count: 2, op: 'cut' } })
+      fileClip.clear()
+    })
+
+    it('fs:paste with an empty clipboard is BAD_REQUEST "nothing to paste"', async () => {
+      fileClip.clear()
+      expect(await registered(CH.fsPaste)({ sender: {} }, { targetDir: root })).toEqual({
+        ok: false,
+        error: { code: 'BAD_REQUEST', message: 'nothing to paste' },
+      })
+    })
+
+    it('paste of a COPY copies under a free name, repairs NOTHING, pushes NO file event, and KEEPS the clipboard (D2/D4)', async () => {
+      const src = path.join(root, 'copy-src.md')
+      await writeFile(src, 'copy me')
+      win('w-copy', src)
+      fileClip.set({ op: 'copy', paths: [src] })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const before = store.get()
+      // Into its own folder: Duplicate for free.
+      const res = await registered(CH.fsPaste)({ sender: {} }, { targetDir: root })
+      expect(res).toEqual({ ok: true, value: { pasted: [{ from: src, to: path.join(root, 'copy-src copy.md'), kind: 'file' }], failed: [] } })
+      expect(await readFile(path.join(root, 'copy-src copy.md'), 'utf8')).toBe('copy me')
+      expect(await readFile(src, 'utf8')).toBe('copy me')
+      expect(store.get()).toBe(before) // nothing moved: no repair
+      expect(w.webContents.send).not.toHaveBeenCalled() // no file:renamed, no clip:changed
+      expect(fileClip.get()).toEqual({ op: 'copy', paths: [src] }) // a copy pastes again and again
+      const again = await registered(CH.fsPaste)({ sender: {} }, { targetDir: root })
+      expect(again).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(root, 'copy-src copy 2.md') }] } })
+    })
+
+    it('paste of a CUT moves through the rename pipeline — store repaired, file:renamed per entry — then CLEARS the clipboard (D2)', async () => {
+      const dir = path.join(root, 'cut-target')
+      await mkdir(dir)
+      const a = path.join(root, 'cut-a.md')
+      const b = path.join(root, 'cut-b.md')
+      await writeFile(a, 'a')
+      await writeFile(b, 'b')
+      win('w-cut', a)
+      store.setFolder(root, { lastFile: b })
+      fileClip.set({ op: 'cut', paths: [a, b] })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const res = await registered(CH.fsPaste)({ sender: {} }, { targetDir: dir })
+      const toA = path.join(dir, 'cut-a.md')
+      const toB = path.join(dir, 'cut-b.md')
+      expect(res).toEqual({ ok: true, value: { pasted: [{ from: a, to: toA, kind: 'file' }, { from: b, to: toB, kind: 'file' }], failed: [] } })
+      expect(await readFile(toA, 'utf8')).toBe('a')
+      // The SAME downstream as fs:rename, once per entry: window file/tabs and lastFile follow…
+      expect(store.get().windows.find((x) => x.id === 'w-cut')).toMatchObject({ file: toA, tabs: [toA] })
+      expect(store.get().folders[root].lastFile).toBe(toB)
+      // …and every window got file:renamed per entry, then clip:changed null (the cut pasted once).
+      expect(w.webContents.send).toHaveBeenNthCalledWith(1, CH.fileRenamed, { oldPath: a, newPath: toA, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenNthCalledWith(2, CH.fileRenamed, { oldPath: b, newPath: toB, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenNthCalledWith(3, CH.clipChanged, null)
+      expect(fileClip.get()).toBeNull()
+    })
+
+    it('a CUT whose every entry failed keeps the clipboard (the user fixes the cause and pastes again); the failures ride in the envelope', async () => {
+      const dir = path.join(root, 'cut-clash')
+      await mkdir(dir)
+      await writeFile(path.join(dir, 'same.md'), 'keep')
+      const src = path.join(root, 'same.md')
+      await writeFile(src, 'incoming')
+      fileClip.set({ op: 'cut', paths: [src] })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const res = await registered(CH.fsPaste)({ sender: {} }, { targetDir: dir })
+      expect(res).toEqual({ ok: true, value: { pasted: [], failed: [{ from: src, code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] } })
+      expect(await readFile(path.join(dir, 'same.md'), 'utf8')).toBe('keep')
+      expect(fileClip.get()).toEqual({ op: 'cut', paths: [src] })
+      expect(w.webContents.send).not.toHaveBeenCalled()
+    })
+
+    it('a missing target folder is a whole-call BridgeError envelope: nothing pasted, clipboard kept', async () => {
+      fileClip.set({ op: 'copy', paths: [path.join(root, 'A.md')] })
+      const missing = path.join(root, 'no-such-dir')
+      expect(await registered(CH.fsPaste)({ sender: {} }, { targetDir: missing })).toEqual({
+        ok: false,
+        error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
+      })
+      expect(fileClip.get()).not.toBeNull()
+      fileClip.clear()
     })
   })
 })

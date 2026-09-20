@@ -1,4 +1,4 @@
-import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -44,6 +44,14 @@ export const api = {
   repairRename: (req: RenameFileRequest) => call<RenameFileResponse>(() => window.yaseenDocs.file.repairRename(req)),
   /** In-app delete to the SYSTEM Trash (GRO-2272); never `fs.rm`, and a trash failure deletes nothing. */
   delete: (req: DeleteRequest) => call<DeleteResponse>(() => window.yaseenDocs.file.delete(req)),
+  /** Cut / Copy (YAZ-1674, D1): replace main's ONE app-wide clipboard with the ordered selection; nothing on disk is touched. */
+  clip: (req: FileClipRequest) => call<void>(() => window.yaseenDocs.file.clip(req)),
+  /** Paste INTO `targetDir` (YAZ-1674, D2–D4): per-entry outcomes, a cut moves through the rename pipeline and pastes once, a copy takes Finder's free name and pastes again. Empty clipboard → BAD_REQUEST. */
+  paste: (req: PasteRequest) => call<PasteResponse>(() => window.yaseenDocs.file.paste(req)),
+  /** The current app-wide clipboard (YAZ-1674): read once on mount by a window that opened after a clip; `onClipChanged` carries later changes. */
+  clipState: () => call<FileClipState>(() => window.yaseenDocs.file.clipState()),
+  /** Every clipboard change, in every window (YAZ-1674): `{ count, op }` or null when empty — the menu's "Paste N items" / disabled "Paste". */
+  onClipChanged: (listener: (state: FileClipState) => void) => window.yaseenDocs.file.onClipChanged(listener),
   /** Reveal in the OS file manager, selected in its parent (GRO-2274); stale path → NOT_FOUND. */
   reveal: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.reveal(req)),
   /** Open in VS Code via the `vscode://file` deep link (YAZ-963) — never a spawn; stale path → NOT_FOUND. */

@@ -10,7 +10,7 @@ import { newFolderPageProperties } from '../views/folderPageSettings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type FileClipRequest, type FileClipState, type PasteResponse, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { EMPTY_SELECTION } from '../lib/selection'
 // Focus Mode's persistence is the REAL storage module (no mock in this file): a spy on its read is
@@ -22,7 +22,7 @@ import { storage } from '../lib/storage'
 vi.mock('../views/writeProperty', () => ({ transformFile: vi.fn(), writeProperty: vi.fn() }))
 import { transformFile, writeProperty } from '../views/writeProperty'
 import { turnIntoFolderPage } from '../views/folderPageSettings'
-import { countChildren, Sidebar } from './Sidebar'
+import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -53,6 +53,16 @@ function installBridge() {
       // Focus Mode is window identity (YAZ-1628): `storage.init()` boots from `identity`, writes go to `setIdentity`.
       identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [] })),
       setIdentity: vi.fn(async () => undefined),
+    },
+    // The file clipboard (YAZ-1674, 🔒 D1) lives in main behind `file.*`: two invokes and the
+    // `clip:changed` push every window gets. `onClipChanged` hands back an unsubscribe; a test that
+    // wants to PUSH a state captures the listener through `mockImplementation`.
+    file: {
+      clip: vi.fn(async (_req: FileClipRequest) => undefined),
+      paste: vi.fn(async (_req: { targetDir: string }): Promise<PasteResponse> => ({ pasted: [], failed: [] })),
+      // Read ONCE on mount, so a window opened after a clip labels Paste from the start.
+      clipState: vi.fn(async (): Promise<FileClipState> => null),
+      onClipChanged: vi.fn((_listener: (state: FileClipState) => void) => () => undefined),
     },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: {
@@ -115,6 +125,8 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // ⌘⇧C's box (🔒 D4, YAZ-1338): App's in production, the harness's here — every mount gets a
     // fresh one, and the "hands its selection up" case reads it back.
     selectionRef: { current: EMPTY_SELECTION },
+    // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App's listener asks it; the chord tests hold their own box.
+    clipboardRef: { current: null },
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
@@ -140,6 +152,27 @@ const type = async (input: HTMLInputElement, value: string) => {
 }
 const menuItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
 const itemByLabel = (el: HTMLElement, label: string) => menuItems(el).find((b) => b.textContent === label)
+/**
+ * The "Open in ▸" flyout (D7 amended, YAZ-1674): open it (a click on the parent — hover works too)
+ * and read its children. `subItemByLabel` is undefined when the parent is absent OR the child is
+ * not offered, which is exactly the two "no such item" answers the gating tests below ask for.
+ */
+const openFlyout = (el: HTMLElement) => {
+  const parent = itemByLabel(el, 'Open in')
+  if (parent !== undefined) act(() => parent.click())
+  return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')]
+}
+const subLabels = (el: HTMLElement) => openFlyout(el).map((b) => b.textContent)
+const subItemByLabel = (el: HTMLElement, label: string) => openFlyout(el).find((b) => b.textContent === label)
+/** Open the flyout OUTSIDE the click's own `act`: a nested `act` does not flush, so the child must exist before that act begins. */
+const clickSub = (el: HTMLElement, label: string) => {
+  const child = subItemByLabel(el, label)
+  act(() => child?.click())
+}
+const clickSubAsync = async (el: HTMLElement, label: string) => {
+  const child = subItemByLabel(el, label)
+  await act(async () => child?.click())
+}
 
 afterEach(() => {
   act(() => root?.unmount())
@@ -200,15 +233,15 @@ describe('rows with no viewer open in the OS default app (YAZ-1577 D2)', () => {
       bridge.shell.openDefault.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
     })
     await act(async () => epubRow(el)?.click())
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t open "book.epub" — it is no longer there')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t open "book.epub" — it is no longer there', 'error')
   })
 
-  it('every file row\'s context menu offers "Open in default app" beside "Open in VS Code"', async () => {
+  it('every file row\'s "Open in ▸" flyout offers "Default app" directly beside "VS Code" (D7 amended)', async () => {
     const { bridge, el } = await mount()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels.indexOf('Open in default app')).toBe(labels.indexOf('Open in VS Code') + 1)
-    await act(async () => itemByLabel(el, 'Open in default app')?.click())
+    const labels = subLabels(el)
+    expect(labels.indexOf('Default app')).toBe(labels.indexOf('VS Code') + 1)
+    await clickSubAsync(el, 'Default app')
     expect(bridge.shell.openDefault).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
   })
 })
@@ -230,13 +263,14 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(bridge.window.open).not.toHaveBeenCalled()
   })
 
-  it('the file row context menu offers "Open in new window" next to "Copy path"; it routes to the bridge and closes', async () => {
+  it('the file row context menu offers "Open in ▸ New window" above "Copy path"; it routes to the bridge and closes', async () => {
     const { bridge, props, el } = await mount()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels).toContain('Open in new window')
+    expect(labels).toContain('Open in')
     expect(labels).toContain('Copy path')
-    act(() => itemByLabel(el, 'Open in new window')?.click())
+    expect(subLabels(el)).toContain('New window')
+    clickSub(el, 'New window')
     expect(bridge.window.open).toHaveBeenCalledTimes(1)
     expect(bridge.window.open).toHaveBeenCalledWith({ root: '/v', file: '/v/a.md' })
     expect(props.onOpenFile).not.toHaveBeenCalled()
@@ -246,11 +280,11 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
   it('folder rows and blank space get no "Open in new window" item', async () => {
     const { el } = await mount()
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    expect(subItemByLabel(el, 'New window')).toBeUndefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
     act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    expect(subItemByLabel(el, 'New window')).toBeUndefined()
     expect(itemByLabel(el, 'New note')).toBeDefined()
   })
 })
@@ -285,22 +319,20 @@ describe('Sidebar view-only file routing (YAZ-1301)', () => {
 
     act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el).map((item) => item.textContent)).toEqual(expect.arrayContaining([
-      'Open in new window',
-      'Reveal in Finder',
-      'Open in VS Code',
-      'Open in default app',
+      'Open in',
       'Copy path',
       'Rename',
       'Delete',
     ]))
+    expect(subLabels(el)).toEqual(['New window', 'VS Code', 'Default app', 'Reveal in Finder'])
     expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
     expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
 
-    act(() => itemByLabel(el, 'Open in new window')?.click())
+    clickSub(el, 'New window')
     expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/v', file: path })
 
     act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path })
 
     act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
@@ -505,7 +537,7 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
 
   it('reports one passive notice when the loaded Files tree cannot show the path', async () => {
     const { props } = await mount({ revealRequest: { id: 1, path: '/v/Missing.md', lens: 'files' } }, withDeepTree)
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing.md" in Files — it is no longer there')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing.md" in Files — it is no longer there', 'error')
   })
 })
 
@@ -572,20 +604,20 @@ describe('context menu target matrix (GRO-2296)', () => {
     const el = await open('.tree__row--file')
     expect(itemByLabel(el, 'Rename')).toBeDefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Open in new window')).toBeDefined()
+    expect(subItemByLabel(el, 'New window')).toBeDefined()
   })
 
   it('a FOLDER row targets rename and copy path; the file-only items stay hidden', async () => {
     const el = await open('.tree__row--dir')
     expect(itemByLabel(el, 'Rename')).toBeDefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    expect(subItemByLabel(el, 'New window')).toBeUndefined()
   })
 
   it('BLANK SPACE shows no Rename — the vault root is never renameable (the GRO-2297 guard rail)', async () => {
     const el = await open('.sidebar__body')
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
-    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    expect(subItemByLabel(el, 'New window')).toBeUndefined()
     // The create actions are always available on blank space (they target the root) — and the
     // FILES lens keeps "New folder", which only the Topics lens drops (YAZ-948).
     expect(itemByLabel(el, 'New note')).toBeDefined()
@@ -799,34 +831,34 @@ describe('reveal in Finder (GRO-2274)', () => {
 
   it('a FILE row reveals its own path', async () => {
     const { el, bridge } = await openOn('.tree__row--file')
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
   })
 
   it('a FOLDER row reveals the folder itself — no branching on kind', async () => {
     const { el, bridge } = await openOn('.tree__row--dir')
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub' })
   })
 
   it('BLANK SPACE reveals the vault root — unlike Delete, which has no blank-space target', async () => {
     const { el, bridge } = await openOn('.sidebar__body')
     expect(itemByLabel(el, 'Delete')).toBeUndefined()
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v' })
   })
 
   it('a stale row surfaces a passive notice rather than looking like a dead menu item', async () => {
     const { el, bridge, props } = await openOn('.tree__row--file')
     bridge.shell.reveal.mockRejectedValue(Object.assign(new Error('path does not exist'), { code: 'NOT_FOUND' }))
-    await act(async () => itemByLabel(el, 'Reveal in Finder')?.click())
+    await clickSubAsync(el, 'Reveal in Finder')
     await act(async () => undefined)
-    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('no longer there'))
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('no longer there'), 'error')
   })
 
   it('closes the menu after revealing', async () => {
     const { el } = await openOn('.tree__row--file')
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 })
@@ -1182,7 +1214,7 @@ describe('folder rows in search (YAZ-1491)', () => {
 
   it('a reveal for a folder the tree no longer has still reports the passive notice', async () => {
     const { props } = await mount({ revealRequest: { id: 1, path: '/v/gone', lens: 'files' } })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "gone" in Files — it is no longer there')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "gone" in Files — it is no longer there', 'error')
   })
 })
 
@@ -1305,7 +1337,7 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     const { el } = await mount({ lens: 'topics' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).not.toBeNull()
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Open in default app', 'Copy path', 'New note', 'New folder page'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Copy path', 'New note', 'New folder page', 'Open in'])
   })
 
   it('a typed query still offers nothing on either lens — a result list has no root to target (YAZ-803)', async () => {
@@ -1541,7 +1573,9 @@ describe('focus mode (YAZ-1605)', () => {
 
   it('a selection of files only offers no Focus item', async () => {
     const { el, v } = await mountVault()
-    act(() => rowByPath(el, `${v}/Projects`)?.click()) // open it so a nested note is a row too
+    act(() => rowByPath(el, `${v}/Projects`)?.click()) // open it so a nested note is a row too…
+    // …and let go of it: since D9 (YAZ-1674) that click SELECTED the folder, and this case is about files only.
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     shiftClickRow(rowByPath(el, `${v}/top.md`))
     shiftClickRow(rowByPath(el, `${v}/Projects/p.md`))
     rightClick(rowByPath(el, `${v}/top.md`))
@@ -1560,9 +1594,8 @@ describe('focus mode (YAZ-1605)', () => {
 
   it('focusing a folder AND its own subfolder draws the subfolder once, under its parent', async () => {
     const { el, v } = await mountVault()
-    act(() => rowByPath(el, `${v}/Projects`)?.click()) // open it so Alpha is a row to select
-    shiftClickRow(rowByPath(el, `${v}/Projects`))
-    shiftClickRow(rowByPath(el, `${v}/Projects/Alpha`))
+    act(() => rowByPath(el, `${v}/Projects`)?.click()) // open it so Alpha is a row to select — and SELECT it (D9, YAZ-1674)
+    shiftClickRow(rowByPath(el, `${v}/Projects/Alpha`)) // shift ADDS the subfolder beside its parent
     rightClick(rowByPath(el, `${v}/Projects/Alpha`))
     await act(async () => itemByLabel(el, 'Focus on 2 folders')?.click())
     expect(topLabels(el)).toEqual(['Projects'])
@@ -1733,10 +1766,13 @@ describe('context menu order (GRO-2272 C1a)', () => {
     const { el } = await mount()
     act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual([
-      'Open in new window',
-      'Reveal in Finder',
-      'Open in VS Code',
-      'Open in default app',
+      // The Open group (🔒 D7 amended, YAZ-1674) is EMPTY on one file row — the OS verbs fold into
+      // the "Open in ▸" flyout, which stands in its own group before Delete — so the clipboard leads.
+      // The clipboard group: the file clipboard first (Paste is DISABLED, not hidden, while it is
+      // empty — 🔒 D5), then the text clipboard. Hints are `data-hint`, so the text stays bare.
+      'Cut',
+      'Copy',
+      'Paste',
       'Copy path',
       'Copy for Agent',
       'New note',
@@ -1751,6 +1787,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
       // act-on-this-row items — and above the destructive pair, which stays last.
       'Turn into folder page',
       'Rename',
+      'Open in',
       'Delete',
     ])
   })
@@ -1968,7 +2005,7 @@ describe('folder-page toggle (YAZ-840)', () => {
     transform.mockRejectedValue(new Error('read-only volume'))
     const { el, props } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
     await act(async () => itemByLabel(el, 'Turn into folder page')?.click())
-    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('read-only volume'))
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('read-only volume'), 'error')
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
@@ -1977,7 +2014,7 @@ describe('folder-page toggle (YAZ-840)', () => {
     const { el, props } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
     act(() => itemByLabel(el, 'Turn back into normal page')?.click())
     await act(async () => sheetBtn(el, 'Turn back')?.click())
-    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('back into a normal page'))
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('back into a normal page'), 'error')
   })
 })
 
@@ -2066,10 +2103,10 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     const { el } = await topics()
     await rightClick(rowFor(el, 'Home'))
     expect(menuItems(el).map((b) => b.textContent)).toEqual([
-      'Open in new window',
-      'Reveal in Finder',
-      'Open in VS Code',
-      'Open in default app',
+      // Cut / Copy on any row (🔒 D5, YAZ-1674) — but NO Paste: a PAGE row is a meaning row, and
+      // Paste goes exactly where "New folder" goes.
+      'Cut',
+      'Copy',
       'Copy path',
       'Copy for Agent',
       'New note',
@@ -2079,6 +2116,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       // Home IS a folder page, so the ONE state-aware item shows the REVERSE label (🔒 D2).
       'Turn back into normal page',
       'Rename',
+      'Open in',
       'Delete',
     ])
   })
@@ -2096,7 +2134,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     const { el, bridge } = await topics()
     await expandDocs(el)
     await rightClick(rowFor(el, 'Guide'))
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs/Guide.md' })
     await rightClick(rowFor(el, 'Guide'))
     act(() => itemByLabel(el, 'Copy path')?.click())
@@ -2299,7 +2337,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click()) // expand the section
     await rightClick(rowFor(el, 'Loose'))
     expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Loose.md' })
   })
 
@@ -2308,16 +2346,19 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
     await rightClick(rowFor(el, 'inbox'))
 
+    // 🔒 D7 (YAZ-1674) order — and a DISK-folder row is the honest exception in this lens: it gets
+    // the disk verb Paste (disabled while the clipboard is empty) exactly as it gets "New folder".
     expect(menuItems(el).map((button) => button.textContent)).toEqual([
-      'Reveal in Finder',
-      'Open in VS Code',
-      'Open in default app',
+      'Cut',
+      'Copy',
+      'Paste',
       'Copy path',
       'New note',
       'New folder page',
       'New folder',
       'New dated folder',
       'Rename',
+      'Open in',
       'Delete',
     ])
   })
@@ -2332,7 +2373,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/inbox')
 
     await rightClick(rowFor(el, 'inbox'))
-    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    clickSub(el, 'Reveal in Finder')
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/inbox' })
   })
 
@@ -2404,7 +2445,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   it('the Uncategorized HEADER has no page behind it, so it opens the ROOT menu, not a page menu', async () => {
     const { el } = await topics()
     await rightClick(el.querySelector('.tree__row--muted'))
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Open in default app', 'Copy path', 'New note', 'New folder page'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Copy path', 'New note', 'New folder page', 'Open in'])
     // No page target anywhere in it: the row-only items stay absent.
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
     expect(itemByLabel(el, 'Delete')).toBeUndefined()
@@ -2428,8 +2469,9 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 /**
  * Multi-select (YAZ-1334 → YAZ-1336). Shift+click TOGGLES a file row in/out of a path-keyed
  * selection (🔒 D2 amended: toggle-accumulate, range is out of v1) — it never opens, never
- * previews. Selection is Sidebar-owned view state (🔒 D1): plain click, Escape, and a lens
- * switch all clear it; ⌘-click's LOCKED background-open gesture (I3) ignores it entirely.
+ * previews. Selection is Sidebar-owned view state (🔒 D1): Escape and a lens switch clear it;
+ * since D9 (YAZ-1674) a plain click — and ⌘-click's LOCKED background-open gesture (I3) — makes
+ * it EXACTLY the clicked row, so every clipboard chord has a target the moment a row is clicked.
  */
 describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
   const MULTI_TREE: TreeNode[] = [
@@ -2459,21 +2501,41 @@ describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
   })
 
-  it('plain click clears the selection and opens the clicked file as before', async () => {
+  it('plain click makes the selection EXACTLY the clicked file and opens it as before (D9, YAZ-1674)', async () => {
     const { el, props } = await mount({}, withMultiTree)
     shiftClick(rowByPath(el, '/v/a.md'))
     shiftClick(rowByPath(el, '/v/b.md'))
     act(() => rowByPath(el, '/v/c.md')?.click())
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/c.md')
-    expect(selectedPaths(el)).toEqual([])
+    expect(selectedPaths(el)).toEqual(['/v/c.md'])
   })
 
-  it('⌘-click keeps the selection intact and still opens a background tab (LOCKED I3)', async () => {
+  it('a MOUSE click on the file ALREADY open only selects it — no re-open, no caret jump into the editor (D11, YAZ-1674)', async () => {
+    // Click-then-⌘C must work on the open note too: YAZ-961's "take me in" is Enter's (detail 0), never the mouse's.
+    const instance = document.createElement('div')
+    instance.className = 'editor-instance'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.tabIndex = -1
+    Object.defineProperty(pm, 'offsetParent', { get: () => document.body })
+    instance.appendChild(pm)
+    document.body.appendChild(instance)
+    const { el, props } = await mount({ activeFile: '/v/a.md' }, withMultiTree)
+    act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(selectedPaths(el)).toEqual(['/v/a.md'])
+    expect(document.activeElement).not.toBe(pm)
+    act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })))
+    expect(document.activeElement).toBe(pm) // Enter (detail 0) still takes the caret in (YAZ-961)
+    instance.remove()
+  })
+
+  it('⌘-click selects the clicked row too and still opens a background tab (LOCKED I3)', async () => {
     const { el, props } = await mount({}, withMultiTree)
     shiftClick(rowByPath(el, '/v/a.md'))
     act(() => void rowByPath(el, '/v/b.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
     expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/b.md')
-    expect(selectedPaths(el)).toEqual(['/v/a.md'])
+    expect(selectedPaths(el)).toEqual(['/v/b.md'])
   })
 
   it('shift+click on a dir row toggles it in and out beside files — folders select too (YAZ-1578, 🔒 D1)', async () => {
@@ -2605,15 +2667,19 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     return writeText
   }
 
-  it('right-click inside a 2-selection offers the plural items above "Open in new window"; copy is VISIBLE order, selection survives', async () => {
+  it('right-click inside a 2-selection: "Open 2 in new tabs" LEADS, "Copy 2 paths" leads the clipboard group; copy is VISIBLE order, selection survives', async () => {
     const writeText = installClipboard()
     const { el, props } = await mount({}, withMultiTree)
     shiftClickRow(rowByPath(el, '/v/c.md')) // click order c → a…
     shiftClickRow(rowByPath(el, '/v/a.md'))
     rightClick(rowByPath(el, '/v/a.md'))
     const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels.indexOf('Copy 2 paths')).toBeGreaterThanOrEqual(0)
-    expect(labels.indexOf('Copy 2 paths')).toBeLessThan(labels.indexOf('Open in new window'))
+    // 🔒 D7 (YAZ-1674) loosens YAZ-1337's "the plural pair leads": the plural OPEN still leads the
+    // whole menu, but the plural COPY now sits in the clipboard group, below the Open group —
+    // directly above the singular "Copy path", which it still leads.
+    expect(labels[0]).toBe('Open 2 in new tabs')
+    expect(labels.indexOf('Copy 2 paths')).toBeGreaterThan(labels.indexOf('Open 2 in new tabs'))
+    expect(labels.indexOf('Copy 2 paths')).toBe(labels.indexOf('Copy path') - 1)
     expect(labels).toContain('Open 2 in new tabs')
     expect(labels).toContain('Copy path') // singular items still target the clicked row
     act(() => itemByLabel(el, 'Copy 2 paths')?.click())
@@ -2656,14 +2722,15 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
   })
 
-  it('right-click on a row OUTSIDE the selection clears it and shows the ordinary menu', async () => {
+  it('right-click on a row OUTSIDE the selection SELECTS that row (D9, Finder) and shows the ordinary menu', async () => {
     const { el } = await mount({}, withMultiTree)
     shiftClickRow(rowByPath(el, '/v/a.md'))
     shiftClickRow(rowByPath(el, '/v/b.md'))
     rightClick(rowByPath(el, '/v/c.md'))
     expect(itemByLabel(el, 'Copy 2 paths')).toBeUndefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(selectedCount(el)).toBe(0)
+    expect(selectedCount(el)).toBe(1)
+    expect(rowByPath(el, '/v/c.md')?.classList.contains('tree__row--selected')).toBe(true)
   })
 
   it('right-click on blank space leaves the selection alone and stays plural-free', async () => {
@@ -2714,7 +2781,7 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
 
   // ---- Polish pins (YAZ-1340): shift means selection EVERYWHERE, and one Escape does one thing ----
 
-  it('shift+click on a dir row selects it and never folds it; a plain click folds it and keeps the selection (YAZ-1578 🔒 D4)', async () => {
+  it('shift+click on a dir row selects it and never folds it; a plain click folds it and selects it (YAZ-1578 🔒 D1; D9 YAZ-1674 supersedes its D4)', async () => {
     // Expansion PERSISTS per root across mounts in this file (storage-backed), so this test
     // assumes nothing about the starting state and puts it back the way it found it.
     const { el } = await mount({}, withMultiTree)
@@ -2726,7 +2793,7 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(selectedCount(el)).toBe(1) // …it selects the folder
     act(() => dirRow()?.click())
     expect(expandedNow()).not.toBe(before) // a plain click still folds…
-    expect(selectedCount(el)).toBe(1) // …and digging into a folder never throws a selection away
+    expect(selectedCount(el)).toBe(1) // …and the folder is the selection (D9: it was already, so nothing changes)
     act(() => dirRow()?.click())
     expect(expandedNow()).toBe(before)
   })
@@ -2835,7 +2902,7 @@ describe('Sidebar multi-select context menu: Topics dedup and the copy failure (
     expect(props.onNotice).toHaveBeenCalledWith("Can't copy paths: DENIED")
   })
 
-  it('a right-click on a DIR row ends the selection too — it is a row, and not one of the selected', async () => {
+  it('a right-click on a DIR row outside the selection makes the selection THAT folder (D9)', async () => {
     const TREE_WITH_DIR: TreeNode[] = [
       { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
       { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
@@ -2845,7 +2912,7 @@ describe('Sidebar multi-select context menu: Topics dedup and the copy failure (
     for (const row of el.querySelectorAll<HTMLElement>('.tree__row--file')) shiftClickRow(row)
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
     rightClick(el.querySelector('.tree__row--dir'))
-    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    expect([...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((r) => r.dataset.path)).toEqual(['/v/sub'])
     expect(itemByLabel(el, 'Copy 2 paths')).toBeUndefined()
     expect(itemByLabel(el, 'New folder')).toBeDefined() // …and the dir's own ordinary menu stands
   })
@@ -2866,7 +2933,12 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
   const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLElement>(`.tree__row[data-path="${path}"]`)
   const shiftClickRow = (row: HTMLElement | null) =>
     act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
-  const toggleSub = (el: HTMLElement) => act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
+  /**
+   * Expand / Collapse all (⚡ YAZ-862) is the fold gesture here: since D9 (YAZ-1674) a plain click
+   * on the folder row would make the selection THAT folder, and this test is about a pick that
+   * survives its row disappearing — the all-button folds without touching the selection.
+   */
+  const foldAll = (el: HTMLElement) => act(() => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')?.click())
   const rightClickRow = (row: HTMLElement | null) =>
     act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
 
@@ -2876,10 +2948,10 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
     const { el } = await mount({}, withNested)
     // Expansion persists per root across mounts in this file, so ENSURE the states rather than
     // toggling blind — this test must not care what its neighbours left behind.
-    if (rowByPath(el, '/v/sub/b.md') === null) toggleSub(el) // open `sub` so its note has a row to pick
+    if (rowByPath(el, '/v/sub/b.md') === null) foldAll(el) // "Expand all": open `sub` so its note has a row to pick
     shiftClickRow(rowByPath(el, '/v/sub/b.md'))
     shiftClickRow(rowByPath(el, '/v/a.md'))
-    toggleSub(el) // …and fold it again: the row goes, the pick does not
+    foldAll(el) // "Collapse all": the row goes, the pick does not
     expect(rowByPath(el, '/v/sub/b.md')).toBeNull()
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(1)
     rightClickRow(rowByPath(el, '/v/a.md'))
@@ -2894,6 +2966,9 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
     expect(selectionRef.current.size).toBe(0)
     shiftClickRow(rowByPath(el, '/v/a.md'))
     expect([...selectionRef.current]).toEqual(['/v/a.md'])
+    // D9: a PLAIN click is a one-row selection, so App's ⌘⇧C copies the clicked row's path.
+    act(() => rowByPath(el, '/v/sub/b.md')?.click() ?? el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
+    expect(selectionRef.current.size).toBe(1)
     // The sidebar collapsing IS this component unmounting (App renders it conditionally), and a
     // chord must never copy a selection nobody can see any more.
     act(() => root?.unmount())
@@ -2908,5 +2983,263 @@ describe('settings cog (YAZ-1679)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.settings-button')?.click())
     expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
     expect(props.onChangeSettings).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Cut / Copy / Paste (YAZ-1674): the menu items (🔒 D5) and the chords (D6) both hand the ORDERED
+ * selection to main's one app-wide clipboard (🔒 D1) over `file.clip`, and Paste goes to the menu's
+ * `targetDir` — or, from ⌘V, beside the first selected row — over `file.paste`. "Paste N items"
+ * reads the `clip:changed` push, so a copy in ANOTHER window labels this one's menu.
+ */
+describe('Cut / Copy / Paste (YAZ-1674)', () => {
+  type ClipState = { count: number; op: 'copy' | 'cut' } | null
+  const MULTI_TREE: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'c.md', path: '/v/c.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  /** The bridge's clipboard push, captured so a test can play "another window just copied". */
+  let pushClip: ((state: ClipState) => void) | null = null
+  const withClipboard = (bridge: ReturnType<typeof installBridge>) => {
+    bridge.tree.mockResolvedValue({ root: '/v', tree: MULTI_TREE, generatedAt: 1 })
+    bridge.file.onClipChanged.mockImplementation((listener) => {
+      pushClip = listener
+      return () => undefined
+    })
+  }
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const shiftClickRow = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const body = (el: HTMLElement) => el.querySelector('.sidebar__body')
+
+  beforeEach(() => {
+    pushClip = null
+  })
+
+  it('a row offers Cut and Copy with their hints, and a DISABLED Paste while the clipboard is empty (🔒 D5)', async () => {
+    const { el } = await mount({}, withClipboard)
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Cut')?.getAttribute('data-hint')).toBe('⌘X')
+    expect(itemByLabel(el, 'Copy')?.getAttribute('data-hint')).toBe('⌘C')
+    const paste = itemByLabel(el, 'Paste')
+    expect(paste?.disabled).toBe(true)
+    expect(paste?.getAttribute('data-hint')).toBe('⌘V')
+    // Five groups drawn on one Markdown file row: clipboard, create, this-row, "Open in" alone, Delete —
+    // the Open group is empty here (no plural open, nothing to focus) and the renderer skips it.
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(5)
+  })
+
+  it('blank space offers no Cut / Copy (nothing to clip) but keeps the disabled Paste — the root is a paste target', async () => {
+    const { el } = await mount({}, withClipboard)
+    rightClick(body(el))
+    expect(itemByLabel(el, 'Cut')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy')).toBeUndefined()
+    expect(itemByLabel(el, 'Paste')?.disabled).toBe(true)
+    // No row to rename or delete: clipboard, create, and the root's own "Open in" — three groups.
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(3)
+  })
+
+  it('Cut on a single row clips that one path and SAYS SO (YAZ-1341); the menu closes', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    rightClick(rowByPath(el, '/v/a.md'))
+    await act(async () => itemByLabel(el, 'Cut')?.click())
+    expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], op: 'cut' })
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Cut 1 item', 'cut')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('inside a 2-selection the items count it — "Copy 2 items" — and clip the ORDERED selection, which stands', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    shiftClickRow(rowByPath(el, '/v/c.md')) // click order c → a…
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Cut 2 items')).toBeDefined()
+    await act(async () => itemByLabel(el, 'Copy 2 items')?.click())
+    expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md', '/v/c.md'], op: 'copy' }) // …tree order out
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 items', 'copy')
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
+  })
+
+  it('a clipboard push labels Paste "Paste 2 items"; clicking it pastes into the row\'s targetDir, refreshes and reports', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    bridge.file.paste.mockResolvedValue({ pasted: [{ from: '/w/x.md', to: '/v/sub/x.md', kind: 'file' }, { from: '/w/y.md', to: '/v/sub/y.md', kind: 'file' }], failed: [] })
+    const treeReads = bridge.tree.mock.calls.length
+    act(() => pushClip?.({ count: 2, op: 'copy' }))
+    rightClick(rowByPath(el, '/v/sub'))
+    const paste = itemByLabel(el, 'Paste 2 items')
+    expect(paste?.disabled).toBe(false)
+    await act(async () => paste?.click())
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub' })
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items', 'paste')
+    expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
+  })
+
+  it('a FILE row pastes into its PARENT (the "New note" rule), and per-entry failures are counted and named', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    bridge.file.paste.mockResolvedValue({ pasted: [{ from: '/w/x.md', to: '/v/x.md', kind: 'file' }], failed: [{ from: '/w/Note.md', code: 'ALREADY_EXISTS', message: 'already exists' }] })
+    act(() => pushClip?.({ count: 2, op: 'cut' }))
+    rightClick(rowByPath(el, '/v/a.md'))
+    await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note.md — already exists', 'paste')
+  })
+
+  it('nothing pasted → "Couldn\'t paste: …"; a rejected paste → a notice, never a throw', async () => {
+    const { el, bridge, props } = await mount({}, withClipboard)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/w/Note.md', code: 'NOT_FOUND', message: 'gone' }] })
+    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    rightClick(body(el))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: Note.md — gone", 'error')
+    bridge.file.paste.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'target dir is gone' })
+    rightClick(body(el))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith("Can't paste: target dir is gone", 'error')
+  })
+
+  it('a window opened AFTER a clip reads the clipboard ONCE on mount: Paste is labelled and enabled from the start', async () => {
+    const { el, bridge } = await mount({}, (bridge) => {
+      withClipboard(bridge)
+      bridge.file.clipState.mockResolvedValue({ count: 2, op: 'copy' })
+    })
+    expect(bridge.file.clipState).toHaveBeenCalled()
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste 2 items')?.disabled).toBe(false)
+  })
+
+  it('a push that lands while the mount read is in flight WINS over the read', async () => {
+    let settle: ((state: { count: number; op: 'copy' | 'cut' } | null) => void) | null = null
+    const { el, bridge } = await mount({}, (bridge) => {
+      withClipboard(bridge)
+      bridge.file.clipState.mockImplementation(() => new Promise((resolve) => (settle = resolve)))
+    })
+    expect(bridge.file.clipState).toHaveBeenCalled()
+    act(() => pushClip?.({ count: 3, op: 'cut' }))
+    await act(async () => settle?.({ count: 1, op: 'copy' }))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Paste 3 items')).toBeDefined()
+  })
+
+  it('Topics: a PAGE row gets Cut / Copy but no Paste — a disk verb never lands on a meaning row (🔒 D5)', async () => {
+    const record = { path: '/v/Home.md', name: 'Home.md', basename: 'Home', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: { folder_page: true }, aliases: [], tags: [], links: [], embeds: [] }
+    // The feed's resolver is keyed like the real one (lowered, brackets and all) — the YAZ-865 harness's idiom.
+    const indexSource = { resolve: (target: string) => (target.trim().toLowerCase() === '[[home]]' ? '/v/Home.md' : null), records: [record], subscribe: () => () => undefined } as SidebarProps['indexSource']
+    const { el } = await mount({ lens: 'topics', indexSource }, withClipboard)
+    const home = [...el.querySelectorAll<HTMLButtonElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === 'Home') ?? null
+    expect(home).not.toBeNull()
+    rightClick(home)
+    expect(itemByLabel(el, 'Cut')).toBeDefined()
+    expect(itemByLabel(el, 'Copy')).toBeDefined()
+    expect(itemByLabel(el, 'Paste')).toBeUndefined()
+  })
+
+  // ---- The chords' handle (D6 amended): App's window listener asks these; the RULES are here ----
+
+  /** A box App would hold; the Sidebar fills it every render and empties it on unmount. */
+  const box = () => ({ current: null as SidebarClipboard | null })
+  const verb = (ref: { current: SidebarClipboard | null }, op: 'copy' | 'cut' | 'paste') =>
+    op === 'paste' ? (ref.current?.paste() ?? false) : (ref.current?.cutOrCopy(op) ?? false)
+
+  it('cutOrCopy with a selection clips the ORDERED paths and answers true; the cut is the same call with its op', async () => {
+    const clipboardRef = box()
+    const { el, bridge } = await mount({ clipboardRef }, withClipboard)
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    expect(verb(clipboardRef, 'copy')).toBe(true)
+    expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md', '/v/c.md'], op: 'copy' })
+    expect(verb(clipboardRef, 'cut')).toBe(true)
+    expect(bridge.file.clip).toHaveBeenLastCalledWith({ paths: ['/v/a.md', '/v/c.md'], op: 'cut' })
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2) // the selection stands
+  })
+
+  it('with NO selection cutOrCopy answers false and clips nothing — the key is not ours', async () => {
+    const clipboardRef = box()
+    const { bridge } = await mount({ clipboardRef }, withClipboard)
+    expect(verb(clipboardRef, 'copy')).toBe(false)
+    expect(bridge.file.clip).not.toHaveBeenCalled()
+  })
+
+  it('paste answers false with an empty clipboard; with one it pastes beside the FIRST selected row — a folder → into it, a file → its parent, none → the root', async () => {
+    const clipboardRef = box()
+    const { el, bridge } = await mount({ clipboardRef }, withClipboard)
+    expect(verb(clipboardRef, 'paste')).toBe(false)
+    expect(bridge.file.paste).not.toHaveBeenCalled()
+    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    await act(async () => void verb(clipboardRef, 'paste'))
+    expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v' })
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    await act(async () => void verb(clipboardRef, 'paste'))
+    expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v/sub' })
+    act(() => void body(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    await act(async () => void verb(clipboardRef, 'paste'))
+    expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v' })
+    expect(bridge.file.paste).toHaveBeenCalledTimes(3)
+  })
+
+  it('an open context menu owns the verbs: both answer false while it stands', async () => {
+    const clipboardRef = box()
+    const { el, bridge } = await mount({ clipboardRef }, withClipboard)
+    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(verb(clipboardRef, 'copy')).toBe(false)
+    expect(verb(clipboardRef, 'paste')).toBe(false)
+    expect(bridge.file.clip).not.toHaveBeenCalled()
+    expect(bridge.file.paste).not.toHaveBeenCalled()
+  })
+
+  it('the handle is emptied on unmount — a collapsed sidebar has no verbs to offer', async () => {
+    const clipboardRef = box()
+    await mount({ clipboardRef }, withClipboard)
+    expect(clipboardRef.current).not.toBeNull()
+    act(() => root?.unmount())
+    root = null
+    expect(clipboardRef.current).toBeNull()
+  })
+
+  it('D9: a plain click on a file, then copy, clips exactly that file; ⌘⇧C sees the same one-row selection', async () => {
+    const clipboardRef = box()
+    const selectionRef = { current: EMPTY_SELECTION }
+    const { el, bridge, props } = await mount({ selectionRef, clipboardRef }, withClipboard)
+    act(() => rowByPath(el, '/v/a.md')?.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect([...selectionRef.current]).toEqual(['/v/a.md'])
+    expect(verb(clipboardRef, 'copy')).toBe(true)
+    expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: ['/v/a.md'], op: 'copy' })
+  })
+
+  it('D9: a plain click on a FOLDER selects it, so paste goes INTO it', async () => {
+    const clipboardRef = box()
+    const { el, bridge } = await mount({ clipboardRef }, withClipboard)
+    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => rowByPath(el, '/v/sub')?.click())
+    await act(async () => void verb(clipboardRef, 'paste'))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub' })
+    act(() => rowByPath(el, '/v/sub')?.click()) // fold it back the way it was found
+  })
+
+  it('a plain LEFT click on BLANK SPACE clears the selection, so paste goes to the ROOT; a right-click there keeps it (YAZ-1337)', async () => {
+    const clipboardRef = box()
+    const { el, bridge } = await mount({ clipboardRef }, withClipboard)
+    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => rowByPath(el, '/v/sub')?.click())
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(1)
+    act(() => void body(el)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 })))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(1) // a right-click is not a pick
+    act(() => void body(el)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    await act(async () => void verb(clipboardRef, 'paste'))
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
+    act(() => rowByPath(el, '/v/sub')?.click()) // fold it back the way it was found
+  })
+
+  it('a LEFT mousedown ON a row is the row\'s own gesture — it never clears through the body', async () => {
+    const { el } = await mount({}, withClipboard)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
   })
 })

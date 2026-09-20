@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { FileApi, GithubApi, GithubSyncStatus, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { FileApi, FileClipState, GithubApi, GithubSyncStatus, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -18,7 +18,7 @@ const STATE = ['get', 'setSettings', 'setSidebarWidth', 'pushRecent', 'removeRec
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onCopyAs', 'onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onSettings', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
-const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as const satisfies readonly (keyof FileApi)[]
+const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted', 'clip', 'paste', 'clipState', 'onClipChanged'] as const satisfies readonly (keyof FileApi)[]
 const SHELL = ['reveal', 'openVsCode', 'openDefault', 'openLink', 'agentPrompt'] as const satisfies readonly (keyof ShellApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
 const PROPERTIES = ['get', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof PropertiesApi)[]
@@ -193,6 +193,38 @@ describe('preload bridge', () => {
     const { bridge } = await import('./index')
     await expect(bridge.file.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fileRepairRename, { oldPath: '/v/a.md', newPath: '/v/b.md' })
+  })
+
+  it('file.clip / file.paste invoke fs:clip and fs:paste with the request (YAZ-1674)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: undefined })
+    await expect(bridge.file.clip({ paths: ['/v/a.md'], op: 'cut' })).resolves.toBeUndefined()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsClip, { paths: ['/v/a.md'], op: 'cut' })
+    const res = { pasted: [{ from: '/v/a.md', to: '/v/sub/a.md', kind: 'file' }], failed: [] }
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: res })
+    await expect(bridge.file.paste({ targetDir: '/v/sub' })).resolves.toEqual(res)
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsPaste, { targetDir: '/v/sub' })
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: { count: 1, op: 'cut' } })
+    await expect(bridge.file.clipState()).resolves.toEqual({ count: 1, op: 'cut' })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsClipState)
+  })
+
+  it('forwards clip:changed states (a count+op, then null) to the listener and unsubscribes cleanly (YAZ-1674)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.file.onClipChanged(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.clipChanged)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown, state: FileClipState) => void
+    emit(undefined, { count: 3, op: 'copy' })
+    expect(listener).toHaveBeenCalledWith({ count: 3, op: 'copy' })
+    emit(undefined, null)
+    expect(listener).toHaveBeenLastCalledWith(null)
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.clipChanged && l === emit)).toBe(true)
   })
 
   it('writeAsset invokes fs:write-asset with the request (YAZ-876)', async () => {

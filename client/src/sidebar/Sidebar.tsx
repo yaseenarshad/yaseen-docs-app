@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { fileKind, isMarkdown } from '@shared/fileKind'
-import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
+import { SIDEBAR_LENSES, type FileClipState, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { copyForAgent } from '../lib/copyForAgent'
 import type { IndexRecord } from '@shared/types'
@@ -28,6 +28,8 @@ import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
 import { datedFolderSeed, entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
+import { buildMenuSections, countItems } from './menuSections'
+import type { NoticeKind } from '../lib/notice'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
@@ -91,7 +93,7 @@ interface SidebarProps {
    */
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
-  onNotice: (message: string) => void
+  onNotice: (message: string, kind?: NoticeKind) => void
   /**
    * The window's index snapshot, for the folder-page toggle's LABEL (🔒 D2, YAZ-817). This is
    * deliberately the SAME object `WikilinkIndexBridge` already feeds — App's one always-on
@@ -132,6 +134,20 @@ interface SidebarProps {
    * precisely so keeping App able to answer costs this tree no render at all.
    */
   selectionRef: { current: ReadonlySet<string> }
+  /**
+   * The file clipboard's two verbs for App's ⌘C / ⌘X / ⌘V listener (D6 amended, YAZ-1674) —
+   * `selectionRef`'s idiom, the other way round: App owns the LISTENER (the same reason as ⌘⇧C:
+   * focus after a click may sit in the editor or nowhere focusable, so a panel listener never
+   * heard the key) and this component owns the RULES, behind a handle rewritten whenever a rule
+   * input changes and emptied on unmount. Each verb answers whether it acted, so App knows what to swallow.
+   */
+  clipboardRef: { current: SidebarClipboard | null }
+}
+
+/** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
+export interface SidebarClipboard {
+  cutOrCopy: (op: 'copy' | 'cut') => boolean
+  paste: () => boolean
 }
 
 /**
@@ -145,7 +161,7 @@ interface SidebarProps {
  * Before the split, `renamePath` was literally `menu.copyPath` and the two would have moved
  * together silently.
  */
-interface MenuTargets {
+export interface MenuTargets {
   x: number
   y: number
   /** Where "New …" creates: a dir row → itself, a file row → its parent, blank space → the root. */
@@ -174,6 +190,14 @@ interface MenuTargets {
    * fields that happen to agree.
    */
   openTabPaths: string[] | null
+  /**
+   * "Cut" / "Copy" — the file-clipboard target (🔒 D5, YAZ-1674): the ORDERED 2+ selection when the
+   * right-clicked row is in one (`copyPaths`' plural rule — labels "Cut 3 items"), else the one
+   * row, file or dir; null on blank space, which has nothing to clip. Its OWN field, per this
+   * split's doctrine: `copyPaths` is null outside a plural gesture and `copyPath` falls back to
+   * the vault root, and neither is what a Cut may name.
+   */
+  clipPaths: string[] | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
   newWindowPath: string | null
   /** "Copy for Agent" — Markdown PAGE rows only (YAZ-1617): an EPUB is a file, not a page. */
@@ -344,6 +368,7 @@ export function Sidebar({
   unadopted,
   onCreateHome,
   selectionRef,
+  clipboardRef,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -571,7 +596,7 @@ export function Sidebar({
     if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
     if (!revealTargetPresent) {
-      onNotice(revealMissingMessage(pendingReveal.path, 'files'))
+      onNotice(revealMissingMessage(pendingReveal.path, 'files'), 'error')
       return
     }
     // A reveal is "show me THIS" (YAZ-1605): a target outside every focused folder ends the focus first.
@@ -659,12 +684,12 @@ export function Sidebar({
       // HERE, once, off the window's snapshot: the menu that opens is about the row that was
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
       const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
-      // A right-click on a row the selection does NOT hold is a fresh target, so the selection it
-      // is not part of ends — the Explorer/Finder rule, and the only one that keeps the plural
-      // items honest: whatever they name is what the user can still see highlighted. BLANK SPACE
-      // is not a row and never clears (YAZ-1337): its menu is about the vault root, and a
-      // right-click into the empty space below the tree must not throw a selection away.
-      if (node !== null && !selectedPaths.has(node.path)) dispatchSelection({ type: 'clear' })
+      // A right-click on a row the selection does NOT hold is a fresh target, so the selection
+      // becomes THAT row (D9, YAZ-1674 — the Finder rule; it used to merely clear), which keeps
+      // the plural items honest: whatever they name is what the user can still see highlighted.
+      // BLANK SPACE is not a row and never touches it (YAZ-1337): its menu is about the vault
+      // root, and a right-click into the empty space below the tree must not throw a selection away.
+      if (node !== null && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
@@ -695,6 +720,7 @@ export function Sidebar({
         // is exactly what the doctrine asks, since YAZ-1578 is where they stopped agreeing.
         copyPaths: plural,
         openTabPaths: openable.length > 0 ? openable : null,
+        clipPaths: plural ?? (node === null ? null : [node.path]),
         newWindowPath: filePath,
         agentPath: filePath !== null && isMarkdown(filePath) ? filePath : null,
         renamePath: node?.path ?? null,
@@ -719,6 +745,114 @@ export function Sidebar({
    * the anchor rides along so the create group knows where to draw its inline input.
    */
   const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
+
+  // ---- Cut / Copy / Paste (YAZ-1674) ----
+
+  /**
+   * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op }` or null, pushed to every window on
+   * every change, so a menu opened here can label "Paste N items" for a copy made in another
+   * window on another vault. Session-only, never persisted. A window opened AFTER a clip reads the
+   * current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
+   */
+  const [clip, setClip] = useState<FileClipState>(null)
+  useEffect(() => {
+    // Subscribe FIRST, then read: a push that lands while the read is in flight is newer than the
+    // read and must win — the read only fills a window nothing has pushed to yet.
+    let live = true
+    let pushed = false
+    const unsubscribe = api.onClipChanged((state) => {
+      pushed = true
+      setClip(state)
+    })
+    api.clipState().then(
+      (state) => {
+        if (live && !pushed) setClip(state)
+      },
+      () => undefined, // an empty clipboard is the honest fallback; the next push corrects it
+    )
+    return () => {
+      live = false
+      unsubscribe()
+    }
+  }, [])
+
+  /**
+   * Cut / Copy: hand the ordered paths to main (🔒 D1) and SAY SO — every clipboard write confirms
+   * (YAZ-1341), and a refusal is reported, never swallowed. The selection stands: acting on it is
+   * not the same as ending it (YAZ-1337).
+   */
+  const clipTo = useCallback(
+    (paths: string[], op: 'copy' | 'cut') => {
+      const what = countItems(paths.length)
+      api.clip({ paths, op }).then(
+        () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
+        (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+      )
+    },
+    [onNotice],
+  )
+
+  /**
+   * Paste into `dir` (🔒 D2–D4): PER-ENTRY results, so one bad entry never hides the rest — the
+   * notice counts both halves and names the first failure. The target opens (the synthetic-child
+   * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
+   * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
+   * (`refresh` is idempotent).
+   */
+  const pasteInto = useCallback(
+    async (dir: string) => {
+      try {
+        const res = await api.paste({ targetDir: dir })
+        if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
+        refresh()
+        const first = res.failed[0]
+        if (first === undefined) {
+          // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
+          if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
+          else onNotice(`Pasted ${countItems(res.pasted.length)}`, 'paste')
+        } else if (res.pasted.length === 0) onNotice(`Couldn't paste: ${basename(first.from)} — ${first.message}`, 'error')
+        else onNotice(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${basename(first.from)} — ${first.message}`, 'paste')
+      } catch (err: unknown) {
+        onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    },
+    [root, refresh, onNotice],
+  )
+
+  /**
+   * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
+   * its parent (the "New note" rule, `targetDirFor`) — or the vault root with no selection at all.
+   */
+  const pasteTargetDir = useCallback((): string => {
+    const first = orderedSelectedPaths()[0]
+    if (first === undefined) return root
+    return targetDirFor({ type: dirs.includes(first) ? 'dir' : 'file', path: first }, root)
+  }, [orderedSelectedPaths, dirs, root])
+
+  /**
+   * The chords' handle (D6 amended, YAZ-1674): App's window listener asks these two verbs; the
+   * rules stay HERE. Cut / Copy need a selection ≥1 (since D9 a plain click is one); Paste needs
+   * a non-empty clipboard; an open context menu owns the verbs outright (its items ARE them).
+   * Rewritten whenever a rule input changes, emptied on unmount (`selectionRef`'s idiom) — a
+   * collapsed sidebar has no tree to paste into or read an order from.
+   */
+  useEffect(() => {
+    clipboardRef.current = {
+      cutOrCopy: (op) => {
+        if (menu !== null || selectedPaths.size === 0) return false
+        clipTo(orderedSelectedPaths(), op)
+        return true
+      },
+      paste: () => {
+        if (menu !== null || clip === null) return false
+        void pasteInto(pasteTargetDir())
+        return true
+      },
+    }
+    return () => {
+      clipboardRef.current = null
+    }
+  }, [clipboardRef, menu, selectedPaths, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir])
 
   /**
    * Focus Mode (YAZ-1605): narrow the ACTIVE lens to these folders / topics — REPLACING any focus,
@@ -823,7 +957,7 @@ export function Sidebar({
   const reveal = useCallback(
     (path: string) => {
       api.reveal({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`)
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
     [onNotice],
@@ -837,7 +971,7 @@ export function Sidebar({
   const openVsCode = useCallback(
     (path: string) => {
       api.openVsCode({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`)
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
     [onNotice],
@@ -851,7 +985,7 @@ export function Sidebar({
   const openDefault = useCallback(
     (path: string) => {
       api.openDefault({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`)
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
     [onNotice],
@@ -923,7 +1057,7 @@ export function Sidebar({
       const write = transformFile(path, on ? turnIntoFolderPage : (content) => restoreFolderBody(content).content)
       write.catch((err: unknown) => {
         const what = on ? `turn "${basename(path)}" into a folder page` : `turn "${basename(path)}" back into a normal page`
-        onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)
+        onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
     [onNotice],
@@ -995,11 +1129,11 @@ export function Sidebar({
     drop: dropOnDir,
   }
 
-  /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures. */
+  /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures — toggle (shift) and set (any other click, D9). */
   const selection: TreeSelection = {
     paths: selectedPaths,
     toggle: (path) => dispatchSelection({ type: 'toggle', path }),
-    clear: () => dispatchSelection({ type: 'clear' }),
+    set: (path) => dispatchSelection({ type: 'set', path }),
   }
 
   const pending: PendingCreate | null =
@@ -1160,10 +1294,21 @@ export function Sidebar({
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright
         // (YAZ-1340): its window listener is closing it on this very press, and one Escape must
         // not also throw the selection the menu was about to act on.
+        // (⌘C/⌘X/⌘V are App's window listener, D6 — see `clipboardRef`.)
         onKeyDown={(e) => {
           if (e.key !== 'Escape' || selectedPaths.size === 0 || menu !== null) return
           e.preventDefault()
           e.stopPropagation()
+          dispatchSelection({ type: 'clear' })
+        }}
+        // A plain LEFT click on blank space ends the selection (D6 amended, YAZ-1674), so ⌘V then
+        // pastes into the vault root — the Finder rule. Rows, inputs and buttons own their own
+        // clicks (a row click SELECTS, D9), and a right-click keeps the selection standing
+        // (YAZ-1337: its menu is about the root, not a fresh pick; the menu's overlay lives
+        // outside this body, so its own mousedown never arrives here).
+        onMouseDown={(e) => {
+          if (e.button !== 0 || selectedPaths.size === 0) return
+          if (e.target instanceof Element && e.target.closest('button, input, textarea, a, [role="treeitem"]') !== null) return
           dispatchSelection({ type: 'clear' })
         }}
       >
@@ -1232,37 +1377,36 @@ export function Sidebar({
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          copyPath={menu.copyPath}
-          copyPaths={menu.copyPaths}
-          openTabPaths={menu.openTabPaths}
-          onOpenInNewTabs={openFilesInTabs}
-          onNotice={onNotice}
-          newWindowPath={menu.newWindowPath}
-          agentPath={menu.agentPath}
-          onCopyForAgent={(path) => void copyForAgent(path, onNotice)}
-          onOpenNewWindow={openFileNewWindow}
-          renamePath={menu.renamePath}
-          onRename={(path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })}
-          deletePath={menu.deletePath}
-          onDelete={askDelete}
-          revealPath={menu.revealPath}
-          onReveal={reveal}
-          openVsCodePath={menu.openVsCodePath}
-          onOpenVsCode={openVsCode}
-          openDefaultPath={menu.openDefaultPath}
-          onOpenDefault={openDefault}
-          onNewNote={() => startCreate('file')}
-          onNewFolderPage={() => startCreate('folderPage')}
-          // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
-          // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
-          onNewFolder={canNewFolder ? () => startCreate('dir') : null}
-          onNewDatedFolder={canNewFolder ? () => startCreate('dir', datedFolderSeed()) : null}
-          folderPagePath={menu.folderPagePath}
-          folderPageIsOn={menu.folderPageIsOn}
-          onToggleFolderPage={toggleFolderPage}
-          focusPaths={menu.focusPaths}
-          focusLabel={focusLabel(lens, menu.focusPaths?.length ?? 0)}
-          onFocus={focusOn}
+          // Items as data (🔒 D8, YAZ-1674): every gating rule lives in `menuSections`. `clip` is read
+          // at RENDER time, so "Paste N items" follows the app-wide clipboard while the menu stands.
+          sections={buildMenuSections(
+            { ...menu, clip },
+            {
+              onOpenInNewTabs: openFilesInTabs,
+              onOpenNewWindow: openFileNewWindow,
+              onOpenVsCode: openVsCode,
+              onOpenDefault: openDefault,
+              onReveal: reveal,
+              focusLabel: focusLabel(lens, menu.focusPaths?.length ?? 0),
+              onFocus: focusOn,
+              onCut: (paths) => clipTo(paths, 'cut'),
+              onCopy: (paths) => clipTo(paths, 'copy'),
+              // Paste goes exactly where "New folder" goes (🔒 D5, YAZ-1674): a Topics PAGE row and
+              // Topics blank space browse by meaning and get no disk verb — YAZ-948's rule, reused.
+              onPaste: canNewFolder ? () => void pasteInto(menu.targetDir) : null,
+              onNotice,
+              onCopyForAgent: (path) => void copyForAgent(path, onNotice),
+              onNewNote: () => startCreate('file'),
+              onNewFolderPage: () => startCreate('folderPage'),
+              // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
+              // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
+              onNewFolder: canNewFolder ? () => startCreate('dir') : null,
+              onNewDatedFolder: canNewFolder ? () => startCreate('dir', datedFolderSeed()) : null,
+              onToggleFolderPage: toggleFolderPage,
+              onRename: (path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' }),
+              onDelete: askDelete,
+            },
+          )}
           onClose={() => setMenu(null)}
         />
       )}

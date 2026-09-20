@@ -19,6 +19,9 @@ import { countLinkReferences, renameNotice, updateLinksAfterRename } from './lin
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
+import { fileClipboardVerb } from './lib/fileClipboardHotkey'
+import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
+import { NoticeIcon } from './components/NoticeIcon'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
@@ -31,7 +34,7 @@ import { windowTitle } from './lib/windowTitle'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
 import { SettingsDialog } from './settings/SettingsDialog'
-import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
+import { type SidebarClipboard, Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { RightPanel } from './right-panel/RightPanel'
@@ -44,8 +47,6 @@ function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
 
-/** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
-export const LINK_NOTICE_MS = 4000
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder page's Board runs layout animation after every render, so an unrelated right
@@ -92,6 +93,8 @@ export function App() {
   // moment the key is pressed, and re-rendering this whole window on every shift+click would be
   // a real cost for a fact nothing on screen up here shows.
   const sidebarSelection = useRef<ReadonlySet<string>>(EMPTY_SELECTION)
+  // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the mounted Sidebar's two verbs, null while collapsed.
+  const sidebarClipboard = useRef<SidebarClipboard | null>(null)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
   const [resizing, setResizing] = useState(false)
@@ -332,13 +335,16 @@ export function App() {
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  // The one door every surface uses (D10 amended, YAZ-1674): text plus an optional glyph kind,
+  // `'info'` unless the caller names one — so nothing that already said `onNotice(text)` changed.
+  const notify = useCallback((text: string, icon: NoticeKind = 'info') => setNotice({ text, icon }), [])
   useEffect(() => {
     if (notice === null) return
     const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
     return () => clearTimeout(timer)
   }, [notice])
-  useLinkEvents({ onOpenFile: openCurrent, onNotice: setNotice })
+  useLinkEvents({ onOpenFile: openCurrent, onNotice: notify })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
@@ -366,13 +372,37 @@ export function App() {
       // see a clipboard land, so a copy needs its yes as much as its no.
       const copied = text.split('\n').length
       void navigator.clipboard.writeText(text).then(
-        () => setNotice(copied === 1 ? 'Copied path' : `Copied ${copied} paths`),
-        (error: unknown) => setNotice(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
+        () => notify(copied === 1 ? 'Copied path' : `Copied ${copied} paths`),
+        (error: unknown) => notify(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
       )
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [file])
+
+  /**
+   * ⌘C / ⌘X / ⌘V for the sidebar's FILE clipboard (D6 amended, YAZ-1674) — ⌘⇧C's sibling in every
+   * way: a window listener (a panel listener needs focus inside the panel, and after a click on
+   * the open file focus sits in the editor — YAZ-961's handoff — while blank space is not
+   * focusable at all), the same ownership boundary (`ownsWindowChord`: a field, the ProseMirror
+   * editor or a modal keeps the key, so text copy/paste is untouched), and a handle the Sidebar
+   * fills and empties. The RULES are the Sidebar's — target, order, the clipboard gate — so
+   * this only asks, and swallows the key exactly when a verb says it acted.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const verb = fileClipboardVerb(event)
+      if (verb === null) return
+      const clipboard = sidebarClipboard.current
+      if (clipboard === null) return
+      const acted = verb === 'paste' ? clipboard.paste() : clipboard.cutOrCopy(verb)
+      if (!acted) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // HOME (6C-, YAZ-849): every ADOPTED vault gets one the first time its index lands — one
   // `Home.md` carrying `folder_page: true`, created automatically, never twice, never over
@@ -380,7 +410,7 @@ export function App() {
   // rides down to the Topics lens, which offers a card whose button runs the same create. It
   // belongs HERE, beside the window's one index feed, because Home is born on VAULT OPEN — the
   // sidebar is unmounted while collapsed, and the Topics tree only exists on its own lens.
-  const { unadopted, createHome } = useEnsureHome(root, wikilinks, openCurrent, setNotice)
+  const { unadopted, createHome } = useEnsureHome(root, wikilinks, openCurrent, notify)
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector fed by the cold-start reconcile diff and by
@@ -389,7 +419,7 @@ export function App() {
   // file:renamed push drives the SAME tab/editor downstream as an in-app rename) + rewrite
   // the referencing notes; Dismiss → drop for this session. In-app renames are suppressed
   // through the file:renamed effect below, so their watcher echo never banners.
-  const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, setNotice)
+  const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, notify)
   const relLabel = useCallback((p: string) => (root !== null && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p), [root])
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
@@ -446,7 +476,7 @@ export function App() {
         kind = (await api.rename({ oldPath, newPath })).kind
       } catch (err) {
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
-        setNotice(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
+        notify(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
@@ -460,7 +490,7 @@ export function App() {
         records,
         ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
       })
-      if (summary.updated > 0 || summary.skipped > 0) setNotice(renameNotice(summary))
+      if (summary.updated > 0 || summary.skipped > 0) notify(renameNotice(summary))
     },
     [root],
   )
@@ -494,18 +524,18 @@ export function App() {
       const response = await api.tree(requestedRoot)
       if (generation !== renameRootGeneration.current) return undefined
       if (response.root !== requestedRoot) {
-        setNotice("Can't rename: couldn't load the current file list")
+        notify("Can't rename: couldn't load the current file list")
         return undefined
       }
       const catalog = buildViewOnlyCatalog(requestedRoot, response.tree)
       if (kind === 'file' && !catalog.entries.some((entry) => entry.path === oldPath)) {
-        setNotice(`Can't rename: "${basename(oldPath)}" is no longer in the current file list`)
+        notify(`Can't rename: "${basename(oldPath)}" is no longer in the current file list`)
         return undefined
       }
       return catalog
     } catch {
       if (generation !== renameRootGeneration.current) return undefined
-      setNotice("Can't rename: couldn't load the current file list")
+      notify("Can't rename: couldn't load the current file list")
       return undefined
     }
   }, [root, viewOnlyLinks])
@@ -595,7 +625,7 @@ export function App() {
     } catch (err) {
       const name = basename(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
-      setNotice(
+      notify(
         err instanceof BridgeRequestError && err.code === 'IO_ERROR'
           ? `Can't move "${name}" to the Trash — nothing was deleted`
           : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`,
@@ -615,7 +645,7 @@ export function App() {
   const editorCommon = root === null ? null : {
     root,
     watch,
-    onNotice: setNotice,
+    onNotice: notify,
     newNoteFolderFor,
     wikilinks,
     wikilinkCandidates,
@@ -646,8 +676,10 @@ export function App() {
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth}>
       {notice !== null && (
-        <div className="link-notice" role="status">
-          {notice}
+        // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
+        <div className="link-notice" role="status" data-icon={notice.icon}>
+          <NoticeIcon icon={notice.icon} />
+          <span className="link-notice__text">{notice.text}</span>
         </div>
       )}
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
@@ -712,9 +744,11 @@ export function App() {
           onFileMissing={onFileMissing}
           onRenameFile={requestRename}
           onDeleteFile={deleteFile}
-          onNotice={setNotice}
+          onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
           selectionRef={sidebarSelection}
+          // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
+          clipboardRef={sidebarClipboard}
           // The folder-page toggle's flag state (YAZ-840) reads the SAME per-window index source
           // WikilinkIndexBridge already feeds below — read-only, and no second feed.
           indexSource={wikilinks}
@@ -753,7 +787,7 @@ export function App() {
             onBack={back}
             onForward={forward}
             onShowInSidebar={showInSidebar}
-            onNotice={setNotice}
+            onNotice={notify}
           />
           <div className="tabstack">
             {mounted.length === 0 && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}

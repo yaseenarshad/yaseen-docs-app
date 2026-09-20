@@ -1,19 +1,23 @@
 /**
- * Context-menu viewport clamping (GRO-2204): the menu renders at the cursor but never spills
- * off screen — right/bottom overflow clamps the position. Sizes come from mocked
- * `getBoundingClientRect` (jsdom has no layout); the jsdom viewport is 1024×768.
- * (The "New ▸" submenu that used to clamp alongside it died with the type system, YAZ-836.)
+ * Context-menu MECHANICS only (🔒 D8, YAZ-1674): the items arrive as data from `buildMenuSections`
+ * — its gating rules are `menuSections.test.ts`'s subject — and this file pins what the component
+ * itself does with them: viewport clamping (GRO-2204), one group per NON-EMPTY section (🔒 D7),
+ * disabled / danger / hint rendering, the select-then-close order, the ways out (Escape,
+ * click-away, a stray right-click), and the "Open in ▸" flyout (D7 amended): how it opens, stays,
+ * switches, positions and flips. Sizes come from mocked `getBoundingClientRect` (jsdom has no
+ * layout); the jsdom viewport is 1024×768.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ContextMenu } from './ContextMenu'
+import type { MenuAction, MenuParent, MenuSection } from './menuSections'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 type Box = { width?: number; height?: number; left?: number; top?: number }
 
-/** Per-class mocked boxes; anything unlisted measures 0×0 (the jsdom default). */
+/** Per-class mocked boxes, FIRST match wins (insertion order); anything unlisted measures 0×0 (the jsdom default). */
 let boxes: Record<string, Box> = {}
 
 const asRect = ({ width = 0, height = 0, left = 0, top = 0 }: Box): DOMRect =>
@@ -38,52 +42,35 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-type MenuProps = Parameters<typeof ContextMenu>[0]
+const item = (id: string, over: Partial<MenuAction> = {}): MenuAction => ({ id, label: id, onSelect: vi.fn(), ...over })
+const parent = (id: string, children: readonly MenuAction[][], over: Partial<MenuParent> = {}): MenuParent => ({ id, label: id, children, ...over })
 
-function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
+/** A plain two-item menu — enough for every case that is not about groups or flyouts. */
+const ONE_GROUP: MenuSection[] = [[item('Open'), item('Reveal')]]
+
+function mount(x: number, y: number, sections: readonly MenuSection[] = ONE_GROUP, onClose: () => void = vi.fn()) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  const props: MenuProps = {
-    x,
-    y,
-    copyPath: null,
-    // The multi-select pair (🔒 D5, YAZ-1337): null is the ordinary menu — no selection to act
-    // on — which is what every clamping case below is about.
-    copyPaths: null,
-    openTabPaths: null,
-    onOpenInNewTabs: vi.fn(),
-    newWindowPath: null,
-    agentPath: null,
-    onCopyForAgent: vi.fn(),
-    onOpenNewWindow: vi.fn(),
-    renamePath: null,
-    onRename: vi.fn(),
-    deletePath: null,
-    onDelete: vi.fn(),
-    revealPath: null,
-    onReveal: vi.fn(),
-    folderPagePath: null,
-    folderPageIsOn: false,
-    onToggleFolderPage: vi.fn(),
-    onNewNote: vi.fn(),
-    onNewFolderPage: vi.fn(),
-    onNewFolder: vi.fn(),
-    onNewDatedFolder: vi.fn(),
-    onClose: vi.fn(),
-    ...over,
-  }
-  act(() => root?.render(<ContextMenu {...props} />))
+  act(() => root?.render(<ContextMenu x={x} y={y} sections={sections} onClose={onClose} />))
   return container
 }
 
 const menu = (el: HTMLElement): HTMLElement => {
-  const m = el.querySelector<HTMLElement>('.ctx-menu')
+  const m = el.querySelector<HTMLElement>('.ctx-menu:not(.ctx-menu__sub)')
   if (m === null) throw new Error('missing menu')
   return m
 }
+const buttons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
+const labelsOf = (el: HTMLElement) => buttons(el).map((b) => b.textContent)
+const buttonOf = (el: HTMLElement, label: string) => buttons(el).find((b) => b.textContent === label)
+const flyout = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu__sub')
+const flyoutLabels = (el: HTMLElement) => [...(flyout(el)?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].map((b) => b.textContent)
+/** React's onMouseEnter is synthesised from `mouseover`; a bubbling one with no relatedTarget enters from outside. */
+const hover = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+const key = (target: Element | Window | null | undefined, k: string) => act(() => void target?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
 
-describe('menu clamping', () => {
+describe('menu clamping (GRO-2204)', () => {
   it('renders at the requested position when it fits', () => {
     boxes = { 'ctx-menu': { width: 160, height: 180 } }
     const el = mount(100, 120)
@@ -97,183 +84,222 @@ describe('menu clamping', () => {
     expect(menu(el).style.left).toBe('864px') // 1024 - 160
     expect(menu(el).style.top).toBe('588px') // 768 - 180
   })
+})
 
-  it('offers no submenu at all — the menu is one flat list of items (YAZ-836)', () => {
-    const el = mount(100, 120)
-    expect(el.querySelector('.ctx-submenu')).toBeNull()
-    expect(el.querySelector('.ctx-menu__item--sub')).toBeNull()
+/**
+ * Groups (🔒 D7): one `role="group"` per NON-EMPTY section, in the order given — the separator is
+ * CSS between adjacent groups, so skipping the empty ones is what keeps a short menu from ending
+ * in a stray rule. The items inside keep their section's order.
+ */
+describe('groups', () => {
+  it('renders one role="group" per non-empty section, in order, and drops the empty ones', () => {
+    const el = mount(0, 0, [[item('a')], [], [item('b'), item('c')], [], []])
+    const groups = [...el.querySelectorAll<HTMLElement>('.ctx-menu__group')]
+    expect(groups).toHaveLength(2)
+    expect(groups.every((g) => g.getAttribute('role') === 'group')).toBe(true)
+    expect(groups.map((g) => [...g.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent))).toEqual([['a'], ['b', 'c']])
+    expect(labelsOf(el)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('keeps role="menu" on the surface and role="menuitem" on every button', () => {
+    const el = mount(0, 0, [[item('a')], [item('b')]])
+    expect(menu(el).getAttribute('role')).toBe('menu')
+    expect(buttons(el).every((b) => b.getAttribute('role') === 'menuitem' && b.type === 'button')).toBe(true)
   })
 })
 
-const labelsOf = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
-const itemOf = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
-
-/**
- * The create group (🔒 D4, YAZ-817): "New folder page" is the SECOND item, directly after
- * "New note" — a folder page is a note born with one flag (🔒 D1), so it belongs beside the
- * note it is a kind of, not beside the act-on-this-row toggle further down. Pinned here
- * because the position IS the ruling, not an accident of JSX.
- */
-describe('create group (🔒 D4)', () => {
-  it('offers New folder page directly after New note, ahead of New folder', () => {
-    const el = mount(0, 0)
-    expect(labelsOf(el)).toEqual(['New note', 'New folder page', 'New folder', 'New dated folder'])
+describe('item rendering', () => {
+  it('the ONLY text child is the label — the hint rides on data-hint, so textContent stays bare', () => {
+    const el = mount(0, 0, [[item('Cut', { hint: '⌘X' }), item('Rename')]])
+    const cut = buttonOf(el, 'Cut')
+    expect(cut?.textContent).toBe('Cut')
+    expect(cut?.childNodes).toHaveLength(1)
+    expect(cut?.getAttribute('data-hint')).toBe('⌘X')
+    expect(buttonOf(el, 'Rename')?.hasAttribute('data-hint')).toBe(false)
   })
 
-  it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {
-    const el = mount(0, 0, { copyPath: '/v', revealPath: '/v', renamePath: '/v/a.md', deletePath: '/v/a.md', folderPagePath: '/v/a.md' })
-    expect(labelsOf(el)).toContain('New folder page')
+  it('a danger item carries the modifier class; the others do not', () => {
+    const el = mount(0, 0, [[item('Rename')], [item('Delete', { danger: true })]])
+    expect(buttonOf(el, 'Delete')?.classList.contains('ctx-menu__item--danger')).toBe(true)
+    expect(buttonOf(el, 'Rename')?.classList.contains('ctx-menu__item--danger')).toBe(false)
   })
 
-  it('hands the click to the caller and leaves the menu alone — the inline input closes it (the New note idiom)', () => {
-    const onNewFolderPage = vi.fn()
+  it('a disabled item renders inert: it reads its label, and a click fires neither onSelect nor onClose', () => {
+    const onSelect = vi.fn()
     const onClose = vi.fn()
-    const el = mount(0, 0, { onNewFolderPage, onClose })
-    act(() => itemOf(el, 'New folder page')?.click())
-    expect(onNewFolderPage).toHaveBeenCalledTimes(1)
+    const el = mount(0, 0, [[item('Paste', { disabled: true, onSelect })]], onClose)
+    const paste = buttonOf(el, 'Paste')
+    expect(paste?.disabled).toBe(true)
+    act(() => paste?.click())
+    expect(onSelect).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
   })
 })
 
-/**
- * ONE state-aware item, both directions (🔒 D2, YAZ-817). The label is the flag's; the click
- * hands the handler BOTH the target and the direction, so the caller never has to re-derive
- * which way the toggle was pointing after the menu closed (GRO-2296).
- */
-describe('folder-page toggle item (🔒 D2)', () => {
-  const labels = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
-  const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
-
-  it('reads "Turn into folder page" while the flag is off', () => {
-    const el = mount(0, 0, { folderPagePath: '/v/a.md', folderPageIsOn: false })
-    expect(labels(el)).toContain('Turn into folder page')
-    expect(labels(el)).not.toContain('Turn back into normal page')
+describe('selecting and closing', () => {
+  it('a click runs onSelect THEN onClose, once each (🔒 D8)', () => {
+    const calls: string[] = []
+    const onClose = vi.fn(() => calls.push('close'))
+    const el = mount(0, 0, [[item('Reveal', { onSelect: () => calls.push('select') })]], onClose)
+    act(() => buttonOf(el, 'Reveal')?.click())
+    expect(calls).toEqual(['select', 'close'])
   })
 
-  it('reads "Turn back into normal page" while the flag is on', () => {
-    const el = mount(0, 0, { folderPagePath: '/v/a.md', folderPageIsOn: true })
-    expect(labels(el)).toContain('Turn back into normal page')
-    expect(labels(el)).not.toContain('Turn into folder page')
-  })
-
-  it('is absent entirely when there is no target', () => {
-    const el = mount(0, 0, { folderPagePath: null, folderPageIsOn: false })
-    expect(labels(el).some((l) => l?.startsWith('Turn'))).toBe(false)
-  })
-
-  it('hands the click its own target AND the direction, then closes', () => {
-    const onToggleFolderPage = vi.fn()
+  it('Escape closes', () => {
     const onClose = vi.fn()
-    const el = mount(0, 0, { folderPagePath: '/v/a.md', folderPageIsOn: true, onToggleFolderPage, onClose })
-    act(() => item(el, 'Turn back into normal page')?.click())
-    expect(onToggleFolderPage).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
+    mount(0, 0, ONE_GROUP, onClose)
+    key(window, 'Escape')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('mousedown on the overlay closes; mousedown inside the menu does not', () => {
+    const onClose = vi.fn()
+    const el = mount(0, 0, ONE_GROUP, onClose)
+    act(() => void menu(el).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a stray right-click on the overlay is swallowed and closes', () => {
+    const onClose = vi.fn()
+    const el = mount(0, 0, ONE_GROUP, onClose)
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(ev))
+    expect(ev.defaultPrevented).toBe(true)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
 
 /**
- * Open in VS Code (YAZ-963): Reveal in Finder's sibling — same availability idiom (a path or
- * nothing), grouped in the same OS-actions cluster, the click handing the caller the path.
+ * The "Open in ▸" flyout (D7 amended, YAZ-1674). The parent is a `menuitem`
+ * with `aria-haspopup`, its chevron CSS so the text stays bare; it opens on hover AND click,
+ * stays while the pointer is inside the row or the flyout, closes when the pointer enters a
+ * DIFFERENT top-level item, and only one flyout stands at a time. The flyout is drawn by the
+ * root's own group renderer, to the RIGHT of the parent — or to the LEFT when the right edge
+ * would spill.
  */
-describe('Open in VS Code item (YAZ-963)', () => {
-  const labels = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
-  const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+describe('the "Open in ▸" flyout (D7 amended)', () => {
+  const OPEN_IN = () => parent('Open in', [[item('New window'), item('VS Code')], [item('Reveal in Finder')]])
+  const WITH_FLYOUT = (): MenuSection[] => [[item('Open 2 in new tabs'), OPEN_IN(), item('Focus on folder')], [item('Cut')]]
 
-  it('renders beside Reveal in Finder when a path is offered', () => {
-    const el = mount(0, 0, { revealPath: '/v/a.md', openVsCodePath: '/v/a.md' })
-    expect(labels(el)).toContain('Reveal in Finder')
-    expect(labels(el)).toContain('Open in VS Code')
+  it('the parent renders as a menuitem with aria-haspopup, collapsed, bare-labelled, chevron class on — no flyout yet', () => {
+    const el = mount(0, 0, WITH_FLYOUT())
+    const p = buttonOf(el, 'Open in')
+    expect(p?.getAttribute('role')).toBe('menuitem')
+    expect(p?.getAttribute('aria-haspopup')).toBe('menu')
+    expect(p?.getAttribute('aria-expanded')).toBe('false')
+    expect(p?.textContent).toBe('Open in')
+    expect(p?.classList.contains('ctx-menu__item--parent')).toBe(true)
+    expect(flyout(el)).toBeNull()
+    expect(labelsOf(el)).toEqual(['Open 2 in new tabs', 'Open in', 'Focus on folder', 'Cut'])
   })
 
-  it('absent without a path — the same nothing Reveal shows', () => {
-    const el = mount(0, 0, {})
-    expect(labels(el)).not.toContain('Open in VS Code')
+  it('hover opens: the flyout is a second role="menu" drawn with the same groups — a separator between its two sections', () => {
+    const el = mount(0, 0, WITH_FLYOUT())
+    hover(buttonOf(el, 'Open in'))
+    const sub = flyout(el)
+    expect(sub).not.toBeNull()
+    expect(sub?.getAttribute('role')).toBe('menu')
+    expect(buttonOf(el, 'Open in')?.getAttribute('aria-expanded')).toBe('true')
+    expect([...(sub?.querySelectorAll('.ctx-menu__group') ?? [])].map((g) => [...g.querySelectorAll('.ctx-menu__item')].map((b) => b.textContent))).toEqual([['New window', 'VS Code'], ['Reveal in Finder']])
   })
 
-  it('hands the click to the caller with the path', () => {
-    const onOpenVsCode = vi.fn()
-    const el = mount(0, 0, { openVsCodePath: '/v/Zeta', onOpenVsCode })
-    act(() => item(el, 'Open in VS Code')?.click())
-    expect(onOpenVsCode).toHaveBeenCalledExactlyOnceWith('/v/Zeta')
-  })
-})
-
-/** Open in default app (YAZ-1577): the third OS verb, directly below Open in VS Code, same idiom. */
-describe('Open in default app item (YAZ-1577)', () => {
-  const labels = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
-  const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
-
-  it('renders directly after Open in VS Code when a path is offered', () => {
-    const el = mount(0, 0, { openVsCodePath: '/v/a.md', openDefaultPath: '/v/a.md' })
-    expect(labels(el).indexOf('Open in default app')).toBe(labels(el).indexOf('Open in VS Code') + 1)
+  it('click opens too', () => {
+    const el = mount(0, 0, WITH_FLYOUT())
+    act(() => buttonOf(el, 'Open in')?.click())
+    expect(flyoutLabels(el)).toEqual(['New window', 'VS Code', 'Reveal in Finder'])
   })
 
-  it('absent without a path', () => {
-    expect(labels(mount(0, 0, {}))).not.toContain('Open in default app')
-  })
-
-  it('hands the click to the caller with the path', () => {
-    const onOpenDefault = vi.fn()
-    const el = mount(0, 0, { openDefaultPath: '/v/book.epub', onOpenDefault })
-    act(() => item(el, 'Open in default app')?.click())
-    expect(onOpenDefault).toHaveBeenCalledExactlyOnceWith('/v/book.epub')
-  })
-})
-
-/**
- * "Focus on …" (YAZ-1605): a VIEW verb, so it sits with the OS verbs — directly after "Open in
- * default app", above "Copy path". The trio is OPTIONAL: a mount that offers no focus omits it
- * entirely, and so does an EMPTY list (the caller's "nothing here can be focused" answer).
- */
-describe('Focus item (YAZ-1605)', () => {
-  it.each<[string, Partial<MenuProps>]>([
-    ['omitted', {}],
-    ['null', { focusPaths: null }],
-    ['empty', { focusPaths: [] }],
-  ])('is absent when focusPaths is %s', (_case, over) => {
-    expect(labelsOf(mount(0, 0, over)).some((l) => l?.startsWith('Focus'))).toBe(false)
-  })
-
-  it('renders the caller\'s own label — the caller knows the lens and the count', () => {
-    const el = mount(0, 0, { focusPaths: ['/v/a', '/v/b'], focusLabel: 'Focus on 2 folders' })
-    expect(labelsOf(el)).toContain('Focus on 2 folders')
-  })
-
-  it('hands the click the exact array, then closes', () => {
-    const onFocus = vi.fn()
+  it('clicking the parent never closes the menu — it has no select of its own', () => {
     const onClose = vi.fn()
-    const el = mount(0, 0, { focusPaths: ['/v/a', '/v/b'], focusLabel: 'Focus on 2 folders', onFocus, onClose })
-    act(() => itemOf(el, 'Focus on 2 folders')?.click())
-    expect(onFocus).toHaveBeenCalledExactlyOnceWith(['/v/a', '/v/b'])
+    const el = mount(0, 0, WITH_FLYOUT(), onClose)
+    act(() => buttonOf(el, 'Open in')?.click())
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('stays open while the pointer is inside the flyout; closes when the pointer enters a DIFFERENT top-level item', () => {
+    const el = mount(0, 0, WITH_FLYOUT())
+    hover(buttonOf(el, 'Open in'))
+    hover(buttonOf(el, 'VS Code'))
+    expect(flyout(el)).not.toBeNull()
+    hover(buttonOf(el, 'Focus on folder'))
+    expect(flyout(el)).toBeNull()
+    expect(buttonOf(el, 'Open in')?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('only one flyout stands at a time: hovering a second parent swaps them', () => {
+    const el = mount(0, 0, [[OPEN_IN(), parent('Sort by', [[item('Name')]])]])
+    hover(buttonOf(el, 'Open in'))
+    expect(flyoutLabels(el)).toEqual(['New window', 'VS Code', 'Reveal in Finder'])
+    hover(buttonOf(el, 'Sort by'))
+    expect(el.querySelectorAll('.ctx-menu__sub')).toHaveLength(1)
+    expect(flyoutLabels(el)).toEqual(['Name'])
+    expect(buttonOf(el, 'Open in')?.getAttribute('aria-expanded')).toBe('false')
+    expect(buttonOf(el, 'Sort by')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('selecting a child runs its onSelect, then closes EVERYTHING', () => {
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const el = mount(0, 0, [[parent('Open in', [[item('VS Code', { onSelect })]])]], onClose)
+    hover(buttonOf(el, 'Open in'))
+    act(() => buttonOf(el, 'VS Code')?.click())
+    expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('sits after "Open in default app" and before "Copy path"', () => {
-    const el = mount(0, 0, { openDefaultPath: '/v/a', copyPath: '/v/a', focusPaths: ['/v/a'], focusLabel: 'Focus on folder' })
-    const labels = labelsOf(el)
-    expect(labels.indexOf('Focus on folder')).toBe(labels.indexOf('Open in default app') + 1)
-    expect(labels.indexOf('Focus on folder')).toBe(labels.indexOf('Copy path') - 1)
-  })
-})
-
-/**
- * Copy for Agent (YAZ-1617 🔒 D2): a Markdown PAGE row offers the handshake right under Copy path;
- * folders, other files and blank space (null) never see it. The menu is presentational — it
- * hands the path up and closes; composing and writing the text is `copyForAgent`'s job.
- */
-describe('Copy for Agent', () => {
-  it('is absent when agentPath is null', () => {
-    expect(itemOf(mount(0, 0, { copyPath: '/v/folder' }), 'Copy for Agent')).toBeUndefined()
+  it('opens to the RIGHT of the parent row, top-aligned', () => {
+    boxes = { 'ctx-menu__sub': { width: 120, height: 90 }, 'ctx-menu__item--parent': { left: 100, top: 150, width: 160, height: 26 }, 'ctx-menu': { width: 160, height: 180 } }
+    const el = mount(0, 0, WITH_FLYOUT())
+    hover(buttonOf(el, 'Open in'))
+    expect(flyout(el)?.style.left).toBe('260px') // 100 + 160
+    expect(flyout(el)?.style.top).toBe('150px')
+    expect(flyout(el)?.style.visibility).toBe('')
   })
 
-  it('sits directly after Copy path, hands the click the exact path, then closes', () => {
-    const onCopyForAgent = vi.fn()
+  it('flips to the LEFT of the parent when the right edge would spill, and clamps the top like the root', () => {
+    boxes = { 'ctx-menu__sub': { width: 120, height: 90 }, 'ctx-menu__item--parent': { left: 900, top: 740, width: 120, height: 26 }, 'ctx-menu': { width: 120, height: 180 } }
+    const el = mount(0, 0, WITH_FLYOUT())
+    hover(buttonOf(el, 'Open in'))
+    expect(flyout(el)?.style.left).toBe('780px') // 900 - 120: 1020 + 120 would spill past 1024
+    expect(flyout(el)?.style.top).toBe('678px') // 768 - 90
+  })
+
+  it('near the BOTTOM of the screen it keeps the right side and pulls its top up to fit', () => {
+    boxes = { 'ctx-menu__sub': { width: 120, height: 90 }, 'ctx-menu__item--parent': { left: 100, top: 740, width: 160, height: 26 }, 'ctx-menu': { width: 160, height: 180 } }
+    const el = mount(0, 0, WITH_FLYOUT())
+    hover(buttonOf(el, 'Open in'))
+    expect(flyout(el)?.style.left).toBe('260px') // no flip: 260 + 120 fits
+    expect(flyout(el)?.style.top).toBe('678px') // 768 - 90
+  })
+
+  it('keyboard: ArrowRight / Enter on the parent open; ArrowLeft in the flyout closes it alone', () => {
     const onClose = vi.fn()
-    const el = mount(0, 0, { copyPath: '/v/Note.md', agentPath: '/v/Note.md', onCopyForAgent, onClose })
-    const labels = labelsOf(el)
-    expect(labels.indexOf('Copy for Agent')).toBe(labels.indexOf('Copy path') + 1)
-    act(() => itemOf(el, 'Copy for Agent')?.click())
-    expect(onCopyForAgent).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
+    const el = mount(0, 0, WITH_FLYOUT(), onClose)
+    key(buttonOf(el, 'Open in'), 'ArrowRight')
+    expect(flyout(el)).not.toBeNull()
+    key(buttonOf(el, 'VS Code'), 'ArrowLeft')
+    expect(flyout(el)).toBeNull()
+    key(buttonOf(el, 'Open in'), 'Enter')
+    expect(flyout(el)).not.toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Escape closes the flyout FIRST; a second Escape closes the menu', () => {
+    const onClose = vi.fn()
+    const el = mount(0, 0, WITH_FLYOUT(), onClose)
+    hover(buttonOf(el, 'Open in'))
+    key(window, 'Escape')
+    expect(flyout(el)).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    key(window, 'Escape')
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('an empty child section is skipped inside the flyout too — no stray separator', () => {
+    const el = mount(0, 0, [[parent('Open in', [[item('VS Code')], []])]])
+    hover(buttonOf(el, 'Open in'))
+    expect(flyout(el)?.querySelectorAll('.ctx-menu__group')).toHaveLength(1)
   })
 })
