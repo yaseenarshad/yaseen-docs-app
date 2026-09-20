@@ -129,6 +129,10 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* The page's ONE tail (YAZ-1680): the blocks below the note stack flush, and whichever is last
+     still ends 64px above the bottom — each block used to carry this itself, so every pair of
+     blocks sat 64px apart. */
+  padding-bottom: 64px;
 }
 
 /* The header ROW (YAZ-918): ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel share one line —
@@ -178,14 +182,11 @@ button {
   font-size: 12px;
 }
 
-/* Folder pages (YAZ-919): the outline IS the document — the body editor above it
-   and the divider between them are gone. Title, then contents, nothing else. */
+/* Folder pages (YAZ-919): the outline IS the document — the body editor above it is gone.
+   Title, then contents, nothing else. (The divider this rule used to cancel is gone at the
+   source since YAZ-1680: no block under a note draws a hairline.) */
 .editor-host:has(.folder-page-contents) .editor-mount {
   display: none;
-}
-
-.editor-host:has(.folder-page-contents) .folder-page-contents {
-  border-top: none;
 }
 
 .page-title__text {
