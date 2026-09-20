@@ -24,7 +24,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     expect(maxWidthFor(backlinksCss, '.backlinks')).toBe('var(--content-max-width)')
   })
 
-  it('the scroller owns the page\'s ONE tail; the blocks under the note carry none (YAZ-1680)', () => {
+  it('the scroller owns the page\'s ONE tail; the blocks under the note carry no tail and no hairline (YAZ-1680)', () => {
     expect(appCss).toMatch(/\.editor-host\s*\{[^}]*padding-bottom:\s*64px;/s)
     for (const [css, selector] of [
       [folderPageCss, '.folder-page-contents'],
@@ -34,6 +34,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const rule = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 's'))?.[1]
       expect(rule, selector).toMatch(/padding:\s*0 48px;/)
+      expect(rule, selector).not.toMatch(/border/)
     }
   })
 })
