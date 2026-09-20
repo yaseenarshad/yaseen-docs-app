@@ -28,18 +28,16 @@
   - [x] Decisions D1–D8 + DL1–DL8 posted on YAZ-1679; tree YAZ-1681…1693 created with descriptions + per-issue comments
   - [x] 1- YAZ-1681 · 2- YAZ-1682 + 2A–2D · 3- YAZ-1687 + 3A/3B/3C (Yasin: "it worked… i trust you") · 4A YAZ-1692 audit posted
   - [x] 4B YAZ-1693 applied (every `do` item; 4069/4069; typecheck + desktop tsc clean); demo folder deleted, generator kept
-- Now: [→] CLOSEOUT — commit via /commit, merge origin/main into the branch, push, open PR; master handoff on YAZ-1679 + pointer comments on every child; YAZ-1679 → In Review
-- Next: Yasin says "merge it" → merge PR → 4B/4-/YAZ-1679 Done → remove worktree + branch. NO release unless asked.
-- Remaining:
-  - [ ] merge to main (held for Yasin's explicit go — his closeout note said not to merge) · [ ] worktree/branch removal after merge
+- Now: [→] CLOSED OUT 2026-09-20 — merged as PR #63 (`3ebe1e9`); YAZ-1679 + all 13 children Done; master handoff is a comment on YAZ-1679; worktree, branch (local + origin) and demo folder removed; generator kept. No release cut (Yasin batches releases).
+- Next: nothing. Reopen only via a new issue; the handoff comment on YAZ-1679 has full context.
 
 ## Open Questions
 - Resolved: Appearance holds Spacing (Line spacing + Space between blocks); size locked at DL6.
-- UNCONFIRMED: 3C sign-off after the × fix and instant scroll (asked in the YAZ-1690 comment).
+- Resolved: 3C signed off ("ok that's good it worked… i trust you").
 
 ## Working Set
-- Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1679-settings-panel`
-- Demo: `/Users/yasin/Desktop/yaz-1679-demo/` (`run-demo.sh`, `seed-profile.mjs`, `app-profile/`, three `Settings Panel YAZ-1679*` vaults); dev log `/tmp/yaz1679-dev.log`
+- Worktree: removed after merge (was `../yaseen-docs-app-yaz-1679-settings-panel`)
+- Demo: removed; regenerate with `tools/prototypes/make_settings_demo_vault.py <dir>` + the LAUNCH.md dev-profile pattern if ever needed
 - Linear helpers: scratchpad `linear_ops.py` (`comment`, `comments`, `issue`), `state.py <id> <todo|progress|review|done>`, `tree_ids.json`; issue id `df04af3e-86c8-449f-b446-fa3b5c7a2cef`, project `Yaseen Docs App`, team `YAZ`
 - Verify: `/opt/homebrew/bin/npm run typecheck` · `npx vitest run`
 - Key files: `client/src/settings/{SettingsDialog,SettingsButton,SettingRow,controls,registry}.tsx`, `searchSettings.ts`, `settings.css`; `client/src/App.tsx`, `client/src/sidebar/Sidebar.tsx`; `desktop/src/{channels.ts,main/menu.ts,preload/index.ts}`; `shared/types.ts` (MenuApi); `client/src/hooks/useMenuEvents.ts`; `docs/CONTRACTS.md`
