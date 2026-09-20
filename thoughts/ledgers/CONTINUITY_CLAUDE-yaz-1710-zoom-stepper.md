@@ -34,8 +34,10 @@
   - [x] 6B YAZ-1739: presets/range, zoom-on-content CSS, block-handle probe, caret anchor, measured slack, `stepZoomByKey`; tests beside each
   - [x] 5A YAZ-1730: findings + prototype approved in demo vault `Zoom Shortcuts Note vs App YAZ-1710`; D7–D10 locked
   - [x] 5B YAZ-1731: menu, channels, bridge, `requestZoom`, note listener, hotkeys row; tests beside each; full vitest 4221 + typecheck green
-- Now: [→] 6C YAZ-1740: CONTRACTS.md (magnification: ladder, D11, D14, D15; menu row; geometry note), hotkeys label, this ledger; demo relaunched on the final build
-- Next: 6D1 YAZ-1742 audit → 6D2 YAZ-1743 apply, commit, PR, merge; remove both demo folders, the worktree and both branches; close 5D2/5D/5 and 6D2/6D/6 and YAZ-1710. No release.
+  - [x] 6C YAZ-1740: CONTRACTS.md, hotkeys label, ledger; final build walked by Yasin ("ok that's good it worked")
+  - [x] 6D1 YAZ-1742 audit · 6D2 YAZ-1743 applied; PR #68 merged to main (6d98369)
+  - [x] CLOSEOUT 2026-09-20: both demo folders, dev app, worktree and both branches removed; YAZ-1710 and every child Done; master handoff is a comment on YAZ-1710
+- Now: nothing — issue closed. No release cut (Yasin batches releases); the installed app shows the new zoom only after `npm run desktop:build`.
 
 ## Open Questions
 - none
@@ -43,7 +45,7 @@
 ## Working Set
 - Stream 1: worktree and demo removed at closeout (branch `yaz-1710-zoom-stepper`, base main 48e9402, merged as 0332dee)
 - Stream 2: branch `yaz-1710-zoom-keys` (merged bb8b217); demo `/Users/yasin/Desktop/yaz-1710-keys-demo/` — removed at stream 3's closeout
-- Stream 3: worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1710-zoom-keys` on branch `yaz-1710-zoom-400` (base main bb8b217, main a4341ee merged in); demo `/Users/yasin/Desktop/yaz-1710-400-demo/` (vault `Zoom To 400 And Pan Sideways YAZ-1710`, `app-profile/`, `run-demo.sh`); removed at closeout
+- Stream 3: branch `yaz-1710-zoom-400` (merged 6d98369); worktree and demo removed at closeout
 - Files (stream 1): `client/src/editor/DocumentZoom.tsx` (+ test), `client/src/app.css` ("document magnification" block), `docs/CONTRACTS.md`
 - Files (stream 3): `client/src/editor/DocumentZoom.tsx` (+ test), `client/src/editor/Editor.tsx` (+ test), `client/src/editor/blockHandleTarget.ts` (+ test), `client/src/app.css`, `client/src/contentWidthCss.test.ts`, `client/src/settings/hotkeys.ts`, `docs/CONTRACTS.md`
 - Files (stream 2): `desktop/src/main/menu.ts`, `desktop/src/main/ipc/window.ts`, `desktop/src/channels.ts`, `desktop/src/preload/index.ts`, `shared/types.ts`, `client/src/hooks/useMenuEvents.ts`, `client/src/editor/zoomRequest.ts`, `client/src/App.tsx`, `client/src/editor/Editor.tsx`, `client/src/settings/hotkeys.ts`, `docs/CONTRACTS.md` (+ tests beside each)
