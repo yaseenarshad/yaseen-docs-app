@@ -99,7 +99,7 @@ function typeAtEnd(view: EditorView, text: string): void {
 }
 
 /** `Mod-Shift-h` — the yellow shortcut. */
-const pressModShiftH = (crepe: Crepe) => pressKey(crepe, 'h', { shift: true })
+const pressModShiftH = (crepe: Crepe) => pressKey(crepe, 'h', { shift: true, mod: true })
 
 describe('highlight mark', () => {
   it('loads `==b==` as a highlight mark, renders <mark>, and saves identical bytes', async () => {
