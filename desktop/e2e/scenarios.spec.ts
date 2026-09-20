@@ -145,10 +145,11 @@ test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the con
   expect(await windowCount(app)).toBe(2)
   await shoot(winA, 'g3-03a-cmd-click-background-tab')
 
-  // "Open in new window" lives on the context menu alone (the LOCKED I3 ruling): the row's
-  // right-click item opens an independent window on {root, file} — the pre-I3 assertion set.
+  // "Open in ▸ New window" lives on the context menu alone (the LOCKED I3 ruling): the row's
+  // right-click flyout item opens an independent window on {root, file} — the pre-I3 assertion set.
   await winA.locator('.tree__row--file', { hasText: 'Ideas' }).click({ button: 'right' })
-  await winA.locator('.ctx-menu__item', { hasText: 'Open in new window' }).click()
+  await winA.locator('.ctx-menu__item', { hasText: 'Open in' }).hover()
+  await winA.locator('.ctx-menu__sub .ctx-menu__item', { hasText: 'New window' }).click()
   const winC = await extraWindow(app, ['w1', winBId])
   expect(await windowCount(app)).toBe(3)
   await expect(winC.locator('.ProseMirror')).toContainText(IDEAS_BODY)

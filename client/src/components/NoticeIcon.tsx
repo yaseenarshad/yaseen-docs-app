@@ -1,11 +1,11 @@
-import type { NoticeIcon as NoticeIconKind } from '../lib/notice'
+import type { NoticeKind } from '../lib/notice'
 
 /**
  * The notice toast's glyphs (D10 amended, YAZ-1674): one 16px stroke icon per kind, `currentColor`,
  * 1.75 stroke, round caps — the tab-bar/sidebar icons' language. `aria-hidden` and path-only, so
  * the toast's `textContent` and its `role="status"` announcement stay the bare text.
  */
-const PATHS: Record<NoticeIconKind, string> = {
+const PATHS: Record<NoticeKind, string> = {
   // two overlapping rounded rects
   copy: 'M9 9h9a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 18 21H9a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 9 9Zm-2.5 6H6a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 6 3h9a1.5 1.5 0 0 1 1.5 1.5V6',
   // scissors
@@ -18,7 +18,7 @@ const PATHS: Record<NoticeIconKind, string> = {
   info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-5v-5m0-3.5v-.01',
 }
 
-export function NoticeIcon({ icon }: { icon: NoticeIconKind }) {
+export function NoticeIcon({ icon }: { icon: NoticeKind }) {
   return (
     <svg className="link-notice__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={PATHS[icon]} />

@@ -10,7 +10,7 @@ import { newFolderPageProperties } from '../views/folderPageSettings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type FileClipRequest, type FileClipState, type PasteResponse, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { EMPTY_SELECTION } from '../lib/selection'
 // Focus Mode's persistence is the REAL storage module (no mock in this file): a spy on its read is
@@ -58,11 +58,11 @@ function installBridge() {
     // `clip:changed` push every window gets. `onClipChanged` hands back an unsubscribe; a test that
     // wants to PUSH a state captures the listener through `mockImplementation`.
     file: {
-      clip: vi.fn(async (_req: { paths: string[]; op: 'copy' | 'cut' }) => undefined),
-      paste: vi.fn(async (_req: { targetDir: string }) => ({ pasted: [] as { from: string; to: string; kind: 'file' | 'dir' }[], failed: [] as { from: string; code: string; message: string }[] })),
+      clip: vi.fn(async (_req: FileClipRequest) => undefined),
+      paste: vi.fn(async (_req: { targetDir: string }): Promise<PasteResponse> => ({ pasted: [], failed: [] })),
       // Read ONCE on mount, so a window opened after a clip labels Paste from the start.
-      clipState: vi.fn(async (): Promise<{ count: number; op: 'copy' | 'cut' } | null> => null),
-      onClipChanged: vi.fn((_listener: (state: { count: number; op: 'copy' | 'cut' } | null) => void) => () => undefined),
+      clipState: vi.fn(async (): Promise<FileClipState> => null),
+      onClipChanged: vi.fn((_listener: (state: FileClipState) => void) => () => undefined),
     },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: {
@@ -1767,7 +1767,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
     act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual([
       // The Open group (🔒 D7 amended, YAZ-1674) is EMPTY on one file row — the OS verbs fold into
-      // the "Open in ▸" flyout, which now closes the this-row group — so the clipboard leads.
+      // the "Open in ▸" flyout, which stands in its own group before Delete — so the clipboard leads.
       // The clipboard group: the file clipboard first (Paste is DISABLED, not hidden, while it is
       // empty — 🔒 D5), then the text clipboard. Hints are `data-hint`, so the text stays bare.
       'Cut',
@@ -2781,7 +2781,7 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
 
   // ---- Polish pins (YAZ-1340): shift means selection EVERYWHERE, and one Escape does one thing ----
 
-  it('shift+click on a dir row selects it and never folds it; a plain click folds it and selects it (YAZ-1578 🔒 D4; D9)', async () => {
+  it('shift+click on a dir row selects it and never folds it; a plain click folds it and selects it (YAZ-1578 🔒 D1; D9 YAZ-1674 supersedes its D4)', async () => {
     // Expansion PERSISTS per root across mounts in this file (storage-backed), so this test
     // assumes nothing about the starting state and puts it back the way it found it.
     const { el } = await mount({}, withMultiTree)
@@ -3071,7 +3071,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(paste?.disabled).toBe(false)
     await act(async () => paste?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2', 'paste')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 2 items', 'paste')
     expect(bridge.tree.mock.calls.length).toBe(treeReads + 1) // the explicit refresh: a copy broadcasts nothing
   })
 
@@ -3082,7 +3082,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1, skipped 1: Note.md — already exists', 'paste')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note.md — already exists', 'paste')
   })
 
   it('nothing pasted → "Couldn\'t paste: …"; a rejected paste → a notice, never a throw', async () => {

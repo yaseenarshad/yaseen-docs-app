@@ -6,8 +6,6 @@
  * click-away, a stray right-click), and the "Open in ▸" flyout (D7 amended): how it opens, stays,
  * switches, positions and flips. Sizes come from mocked `getBoundingClientRect` (jsdom has no
  * layout); the jsdom viewport is 1024×768.
- * (The "New ▸" submenu that used to clamp alongside it died with the type system, YAZ-836 — the
- * flyout here is a different animal: data-driven, one level, the root's own renderer.)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -85,13 +83,6 @@ describe('menu clamping (GRO-2204)', () => {
     const el = mount(1000, 700)
     expect(menu(el).style.left).toBe('864px') // 1024 - 160
     expect(menu(el).style.top).toBe('588px') // 768 - 180
-  })
-
-  it('offers no legacy submenu markup — the menu is flat groups of items, flyouts aside (YAZ-836)', () => {
-    const el = mount(100, 120)
-    expect(el.querySelector('.ctx-submenu')).toBeNull()
-    expect(el.querySelector('.ctx-menu__item--sub')).toBeNull()
-    expect(flyout(el)).toBeNull()
   })
 })
 
@@ -181,7 +172,7 @@ describe('selecting and closing', () => {
 })
 
 /**
- * The "Open in ▸" flyout (D7 amended, YAZ-1674 — Yasin's mockup C). The parent is a `menuitem`
+ * The "Open in ▸" flyout (D7 amended, YAZ-1674). The parent is a `menuitem`
  * with `aria-haspopup`, its chevron CSS so the text stays bare; it opens on hover AND click,
  * stays while the pointer is inside the row or the flyout, closes when the pointer enters a
  * DIFFERENT top-level item, and only one flyout stands at a time. The flyout is drawn by the

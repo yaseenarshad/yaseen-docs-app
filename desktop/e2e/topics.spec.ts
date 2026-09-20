@@ -361,9 +361,9 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
   // YAZ-1080: this is a real disk-directory target using the ONE shared sidebar menu. Keep the
   // exact applicable action set pinned here; file-only link/window/toggle actions must not leak.
   await rowFor(win, 'inbox').click({ button: 'right' })
-  // 🔒 D7 (YAZ-1674, amended) order: the Open group — its OS verbs folded into the "Open in ▸"
-  // parent — clipboard (Cut / Copy / a disabled Paste — a disk-folder row gets the disk verb),
-  // create, then Rename and Delete. Hints and the chevron are CSS, not text.
+  // 🔒 D7 (YAZ-1674, amended) order: the Open group (empty on one row), clipboard (Cut / Copy /
+  // a disabled Paste — a disk-folder row gets the disk verb), create, this row (Rename), then
+  // "Open in ▸" as its OWN group, then Delete. Hints and the chevron are CSS, not text.
   await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([
     'Cut',
     'Copy',
@@ -374,7 +374,7 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
     'New folder',
     'New dated folder',
     'Rename',
-    'Open in', // closes the this-row group (live-demo ruling on D7)
+    'Open in', // its own group after the this-row group (D7 amended)
     'Delete',
   ])
   await win.keyboard.press('Escape')

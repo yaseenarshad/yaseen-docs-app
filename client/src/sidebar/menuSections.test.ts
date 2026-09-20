@@ -1,6 +1,6 @@
 /**
  * The sidebar menu's GATING rules (🔒 D8, YAZ-1674), tested pure: `buildMenuSections` takes the
- * pinned targets and the handlers and answers with five groups of items. Every rule that used to
+ * pinned targets and the handlers and answers with six groups of items. Every rule that used to
  * be pinned against `ContextMenu`'s DOM lives here now — which item appears for which target,
  * what it is called, where it sits, what it hands its handler — while `ContextMenu.test.tsx`
  * keeps only the component's mechanics.
@@ -65,6 +65,11 @@ const select = (sections: MenuSection[], label: string) => {
   if (found === undefined || found.onSelect === undefined) throw new Error(`no leaf "${label}"`)
   found.onSelect()
 }
+/** A LEAF by label (`disabled` lives on leaves only); undefined when absent or a parent. */
+const leafOf = (sections: MenuSection[], label: string): MenuAction | undefined => {
+  const found = itemOf(sections, label)
+  return found !== undefined && found.onSelect !== undefined ? found : undefined
+}
 /** The "Open in ▸" parent's sections (D7 amended), or undefined when there is no parent. */
 const openInOf = (sections: MenuSection[]): readonly MenuAction[][] | undefined => (itemOf(sections, 'Open in') as MenuParent | undefined)?.children
 const openInLabels = (sections: MenuSection[]) => openInOf(sections)?.map((section) => section.map((i) => i.label))
@@ -109,7 +114,7 @@ describe('the six groups (🔒 D7, amended)', () => {
     expect(build(FILE_ROW)).toHaveLength(6)
   })
 
-  it('a Markdown FILE row fills all five, in the pinned order', () => {
+  it('a Markdown FILE row fills five of the six (the Open group is empty), in the pinned order', () => {
     // The Open group is EMPTY on one file row (no plural open, nothing to focus), so the clipboard
     // group leads; the OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
     expect(groupsOf(build(FILE_ROW))).toEqual([
@@ -121,7 +126,7 @@ describe('the six groups (🔒 D7, amended)', () => {
     ])
   })
 
-  it('BLANK SPACE has no row to act on: the last two groups are empty, so the menu ends on the create group', () => {
+  it('BLANK SPACE has no row to rename or delete: the this-row and Delete groups are empty, so the menu ends on "Open in"', () => {
     expect(groupsOf(build(BLANK))).toEqual([
       ['Paste', 'Copy path'],
       ['New note', 'New folder page', 'New folder', 'New dated folder'],
@@ -135,6 +140,13 @@ describe('the six groups (🔒 D7, amended)', () => {
     // 🔒 D7 loosens YAZ-1337's "the plural pair leads": the plural copy now sits in its group.
     expect(labels.indexOf('Copy 2 paths')).toBeGreaterThan(labels.indexOf('Open 2 in new tabs'))
     expect(labels.indexOf('Copy 2 paths')).toBe(labels.indexOf('Copy path') - 1)
+  })
+
+  it('"Open N in new tabs" LEADS the group and hands the exact FILE list (🔒 D5, YAZ-1337); a folders-only selection has none (YAZ-1578 🔒 D3)', () => {
+    const onOpenInNewTabs = vi.fn()
+    expect(labelsOf(build({ copyPaths: ['/v/one', '/v/two'], openTabPaths: null })).some((l) => /in new tabs$/.test(l))).toBe(false)
+    select(build({ openTabPaths: ['/v/a.md', '/v/b.md'] }, { onOpenInNewTabs }), 'Open 2 in new tabs')
+    expect(onOpenInNewTabs).toHaveBeenCalledExactlyOnceWith(['/v/a.md', '/v/b.md'])
   })
 
   it('Delete is LAST wherever it appears, alone in its group, and flagged danger (GRO-2272 C1a)', () => {
@@ -213,7 +225,7 @@ describe('folder-page toggle item (🔒 D2)', () => {
 })
 
 /**
- * "Open in ▸" (D7 amended, YAZ-1674 — Yasin's mockup C): the OS verbs (GRO-2168, GRO-2274,
+ * "Open in ▸" (D7 amended, YAZ-1674): the OS verbs (GRO-2168, GRO-2274,
  * YAZ-963, YAZ-1577) collapse into one parent. Every child keeps its own gate — a path or nothing,
  * the root on blank space, New window FILE rows only — and Reveal sits alone below a separator
  * (a second section). No child → no parent. The parent has no select of its own.
@@ -258,13 +270,6 @@ describe('"Open in ▸" (D7 amended)', () => {
     expect(onOpenVsCode).toHaveBeenCalledExactlyOnceWith('/v/Zeta')
     expect(onOpenDefault).toHaveBeenCalledExactlyOnceWith('/v/book.epub')
     expect(onReveal).toHaveBeenCalledExactlyOnceWith('/v/sub')
-  })
-
-  it('"Open N in new tabs" LEADS the group and hands the exact FILE list (🔒 D5, YAZ-1337); a folders-only selection has none (YAZ-1578 🔒 D3)', () => {
-    const onOpenInNewTabs = vi.fn()
-    expect(labelsOf(build({ copyPaths: ['/v/one', '/v/two'], openTabPaths: null })).some((l) => /in new tabs$/.test(l))).toBe(false)
-    select(build({ openTabPaths: ['/v/a.md', '/v/b.md'] }, { onOpenInNewTabs }), 'Open 2 in new tabs')
-    expect(onOpenInNewTabs).toHaveBeenCalledExactlyOnceWith(['/v/a.md', '/v/b.md'])
   })
 })
 
@@ -326,9 +331,9 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
 
   it('Paste is DISABLED with an empty clipboard — rendered for discoverability, inert on select', () => {
     const onPaste = vi.fn()
-    const paste = itemOf(build({ clip: null }, { onPaste }), 'Paste')
+    const paste = leafOf(build({ clip: null }, { onPaste }), 'Paste')
     expect(paste?.disabled).toBe(true)
-    paste?.onSelect?.()
+    paste?.onSelect()
     expect(onPaste).not.toHaveBeenCalled()
   })
 
@@ -340,9 +345,9 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const onPaste = vi.fn()
     const sections = build({ clip: { count, op: 'copy' } }, { onPaste })
     expect(itemOf(sections, 'Paste')).toBeUndefined()
-    const paste = itemOf(sections, label)
+    const paste = leafOf(sections, label)
     expect(paste?.disabled).toBeUndefined()
-    paste?.onSelect?.()
+    paste?.onSelect()
     expect(onPaste).toHaveBeenCalledTimes(1)
   })
 

@@ -8,13 +8,12 @@ export const LINK_NOTICE_MS = 4000
 
 /**
  * The toast's glyph (D10 amended, YAZ-1674): what KIND of thing just happened, drawn before the
- * text. `'info'` is the default every existing caller gets for free — the argument is optional so
- * no caller had to change; the file clipboard's confirmations name their verb, its failures say
- * `'error'`.
+ * text. `'info'` unless the caller names a kind; the file clipboard's confirmations name their
+ * verb, its failures say `'error'`.
  */
-export type NoticeIcon = 'copy' | 'cut' | 'paste' | 'error' | 'info'
+export type NoticeKind = 'copy' | 'cut' | 'paste' | 'error' | 'info'
 
 export interface Notice {
   text: string
-  icon: NoticeIcon
+  icon: NoticeKind
 }

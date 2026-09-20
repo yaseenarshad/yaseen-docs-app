@@ -20,8 +20,8 @@ import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCata
 import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
-import { LINK_NOTICE_MS, type Notice, type NoticeIcon } from './lib/notice'
-import { NoticeIcon as NoticeGlyph } from './components/NoticeIcon'
+import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
+import { NoticeIcon } from './components/NoticeIcon'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
@@ -47,7 +47,6 @@ function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
 
-export { LINK_NOTICE_MS } from './lib/notice'
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder page's Board runs layout animation after every render, so an unrelated right
@@ -339,7 +338,7 @@ export function App() {
   const [notice, setNotice] = useState<Notice | null>(null)
   // The one door every surface uses (D10 amended, YAZ-1674): text plus an optional glyph kind,
   // `'info'` unless the caller names one — so nothing that already said `onNotice(text)` changed.
-  const notify = useCallback((text: string, icon: NoticeIcon = 'info') => setNotice({ text, icon }), [])
+  const notify = useCallback((text: string, icon: NoticeKind = 'info') => setNotice({ text, icon }), [])
   useEffect(() => {
     if (notice === null) return
     const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
@@ -677,9 +676,10 @@ export function App() {
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth}>
       {notice !== null && (
+        // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
         <div className="link-notice" role="status" data-icon={notice.icon}>
-          <NoticeGlyph icon={notice.icon} />
-          {notice.text}
+          <NoticeIcon icon={notice.icon} />
+          <span className="link-notice__text">{notice.text}</span>
         </div>
       )}
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
