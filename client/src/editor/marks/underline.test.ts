@@ -46,10 +46,10 @@ describe('underline mark', () => {
   it('Mod-u adds the mark on a selection and removes it again', async () => {
     const { crepe } = await mount('hello world\n')
     selectText(crepe, 'world')
-    expect(pressKey(crepe, 'u')).toBe(true)
+    expect(pressKey(crepe, 'u', { mod: true })).toBe(true)
     expect(md(crepe)).toBe('hello <u>world</u>\n')
     expect(marksOn(crepe, 'world')).toEqual(['underline'])
-    expect(pressKey(crepe, 'u')).toBe(true)
+    expect(pressKey(crepe, 'u', { mod: true })).toBe(true)
     expect(md(crepe)).toBe('hello world\n')
   })
 })

@@ -341,10 +341,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
   crepe.editor.use(createWikilinkPickerKeymap(opts.wikilinkNav))
-  // YAZ-1734, also before outlinerKeymap on purpose: ⇧↓ / ⇧↑ select whole lines; ⌫ / Delete / Enter
-  // over a selection that spans FOLDED lines first remove only the visible pieces — Enter then
-  // DECLINES so the outliner's own Enter (next in line) splits at the caret and keeps a parent's
-  // kids under it. The outliner's Backspace/Enter require an empty selection, so nothing else moves.
+  // YAZ-1734, also before `outlinerKeymap`: ⇧↑/⇧↓ whole lines; ⌫/Delete/Enter over a fold-spanning
+  // range first delete the visible pieces (Enter re-presses itself, D7). The outliner's
+  // Backspace/Enter require an empty selection, so nothing else moves.
   crepe.editor.use(lineKeymap)
   crepe.editor.use(outlinerKeymap)
   // The document-wide coordinator runs first: it owns Mod-Shift-U/I and consumes Mod-z only when
@@ -359,7 +358,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(zoomKeymap)
   // YAZ-1734 D3: a list_item left without its own paragraph (its line deleted) yields its children one level up, whatever path produced it.
   crepe.editor.use(liftHeadlessItems)
-  // YAZ-1734 rule C: typing over a selection that spans folded lines replaces only the visible pieces.
+  // YAZ-1734 D6: typing over a selection that spans folded lines replaces only the visible pieces.
   crepe.editor.use(visibleTypeOver)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
