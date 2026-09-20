@@ -156,9 +156,10 @@ button {
    scales. The body is the special case: Crepe appends its floating chrome (toolbar, slash menu,
    link tooltip, block handle) beside `.ProseMirror` inside `.milkdown`, so the zoom sits on the
    ProseMirror node itself and that chrome stays at 100% — floating-ui then positions it in
-   unzoomed space, which is the only space it gets right. */
+   unzoomed space, which is the only space it gets right. The properties panel is `display: contents`
+   and is NOT listed a second time: zoom propagates through its computed style to its pieces, so a
+   second rule on those pieces zoomed the chip twice (6B1). */
 .editor-host > :not(.editor-mount) > *,
-.page-header > .frontmatter-panel > *,
 .editor-instance .milkdown > .ProseMirror {
   zoom: var(--document-zoom, 1);
 }
