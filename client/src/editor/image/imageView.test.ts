@@ -3,7 +3,8 @@
  * the commonmark `image` node renders through our view. Pinned here: the resolved vault URL and
  * `|width` on the `<img>`, the markdown round trip staying BYTE-IDENTICAL (no schema or serializer
  * change), the broken chip on load error, `NodeSelection` → `is-selected`, the double-click
- * callback (and its absence on a broken image), the mount WITHOUT `image` options still rendering
+ * callback handing over EVERY image on the page in document order plus the clicked one's index,
+ * resolved (and its absence on a broken image), the mount WITHOUT `image` options still rendering
  * a stock `<img>`; the resize gesture — eight width-only handles, the clamp, ONE commit per drag,
  * a plain click committing nothing, Escape cancelling, `blur` ending, read-only refusing; and
  * `update()` patching the live `<img>` for alt/title and rebuilding only for a new src.
@@ -17,7 +18,7 @@ import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import type { ImageOptions } from './imageOptions'
-import { HANDLE_DIRECTIONS, IMAGE_BROKEN_CLASS, IMAGE_HANDLE_CLASS, IMAGE_SELECTED_CLASS, IMAGE_VIEW_CLASS, MIN_WIDTH } from './imageView'
+import { HANDLE_DIRECTIONS, IMAGE_BROKEN_CLASS, IMAGE_FOLD_CLASS, IMAGE_HANDLE_CLASS, IMAGE_SELECTED_CLASS, IMAGE_VIEW_CLASS, MIN_WIDTH } from './imageView'
 
 const ROOT = '/v'
 const NOTE = '/v/notes/a.md'
@@ -57,7 +58,7 @@ afterEach(async () => {
 })
 
 describe('rendering', () => {
-  it('mounts an <img> with the vault URL, the alt text and the |width', async () => {
+  it('mounts an <img> with the vault URL, the alt text and the |width as the `--image-width` property (never `style.width`, so a stylesheet state — the folded chip, YAZ-1709 — can win)', async () => {
     const { root } = await mount('![alt|300](images/a.png)\n')
     const wrapper = viewEl(root)
     expect(wrapper).not.toBeNull()
@@ -66,15 +67,23 @@ describe('rendering', () => {
     const img = imgOf(root)
     expect(img?.getAttribute('src')).toBe(VAULT_URL('images/a.png'))
     expect(img?.alt).toBe('alt')
-    expect(img?.style.width).toBe('300px')
+    expect(img?.style.getPropertyValue('--image-width')).toBe('300px')
+    expect(img?.style.width).toBe('')
     expect(root.querySelector(`.${IMAGE_HANDLE_CLASS}`)).not.toBeNull()
   })
 
-  it('no width → no inline style; a schemed src passes through', async () => {
+  it('no width → no `--image-width` property at all (the stylesheet falls back to `auto`); a schemed src passes through', async () => {
     const { root } = await mount('![alt](https://x/y.png)\n')
     const img = imgOf(root)
     expect(img?.getAttribute('src')).toBe('https://x/y.png')
-    expect(img?.style.width).toBe('')
+    expect(img?.style.getPropertyValue('--image-width')).toBe('')
+  })
+
+  it('the corner fold button is rendered dumb: labelled, out of the tab order', async () => {
+    const { root } = await mount('![Shot|300](images/a.png)\n')
+    const button = viewEl(root)?.querySelector<HTMLButtonElement>(`.${IMAGE_FOLD_CLASS}`)
+    expect(button?.getAttribute('aria-label')).toBe('Collapse image')
+    expect(button?.tabIndex).toBe(-1)
   })
 
   it('round trip is byte-identical: no schema, no serializer change', async () => {
@@ -120,7 +129,23 @@ describe('selection and interaction', () => {
     const onOpenImage = vi.fn()
     const { root } = await mount('![alt|300](images/a.png)\n', { root: ROOT, notePath: NOTE, onOpenImage })
     imgOf(root)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-    expect(onOpenImage).toHaveBeenCalledWith(VAULT_URL('images/a.png'), 'alt')
+    expect(onOpenImage).toHaveBeenCalledWith({ images: [{ src: VAULT_URL('images/a.png'), alt: 'alt' }], index: 0 })
+  })
+
+  it('double-click hands over EVERY image on the page in document order, and the index of the one clicked', async () => {
+    const onOpenImage = vi.fn()
+    const { root } = await mount('![first|300](images/a.png)\n\nsome text\n\n![second](images/b.png)\n', { root: ROOT, notePath: NOTE, onOpenImage })
+    const imgs = root.querySelectorAll<HTMLImageElement>(`.${IMAGE_VIEW_CLASS} img`)
+    expect(imgs).toHaveLength(2)
+    imgs[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(onOpenImage).toHaveBeenCalledTimes(1)
+    expect(onOpenImage).toHaveBeenCalledWith({
+      images: [
+        { src: VAULT_URL('images/a.png'), alt: 'first' },
+        { src: VAULT_URL('images/b.png'), alt: 'second' },
+      ],
+      index: 1,
+    })
   })
 
   it('dragging the handle writes alt|width on mouseup — ONE document change, markdown updated', async () => {
@@ -133,12 +158,12 @@ describe('selection and interaction', () => {
     handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100 }))
     expect(view.state.selection).toBeInstanceOf(NodeSelection) // the gesture selects the node
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 150 }))
-    expect(img.style.width).toBe('250px') // live while dragging, nothing dispatched yet
+    expect(img.style.getPropertyValue('--image-width')).toBe('250px') // live while dragging, nothing dispatched yet
     expect(getMarkdownForSave(crepe)).toBe('![alt](images/a.png)\n')
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220 }))
     document.dispatchEvent(new MouseEvent('mouseup', {}))
     expect(getMarkdownForSave(crepe)).toBe('![alt|320](images/a.png)\n')
-    expect(imgOf(root)?.style.width).toBe('320px')
+    expect(imgOf(root)?.style.getPropertyValue('--image-width')).toBe('320px')
   })
 
   it('the width clamps to [MIN_WIDTH, editor column]; an empty alt writes `|<w>`', async () => {
@@ -149,9 +174,9 @@ describe('selection and interaction', () => {
     Object.defineProperty(view.dom, 'clientWidth', { value: 300, configurable: true })
     handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 0 }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: -1000 }))
-    expect(img.style.width).toBe(`${MIN_WIDTH}px`)
+    expect(img.style.getPropertyValue('--image-width')).toBe(`${MIN_WIDTH}px`)
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1000 }))
-    expect(img.style.width).toBe('300px')
+    expect(img.style.getPropertyValue('--image-width')).toBe('300px')
     document.dispatchEvent(new MouseEvent('mouseup', {}))
     expect(getMarkdownForSave(crepe)).toBe('![|300](images/a.png)\n')
   })
@@ -166,9 +191,9 @@ describe('selection and interaction', () => {
     const west = root.querySelector(`.${IMAGE_HANDLE_CLASS}[data-handle="w"]`) as HTMLElement
     west.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 100 })) // pulled LEFT 50 → wider
-    expect(img.style.width).toBe('250px')
+    expect(img.style.getPropertyValue('--image-width')).toBe('250px')
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 300 })) // vertical travel is nothing to an edge handle
-    expect(img.style.width).toBe('250px')
+    expect(img.style.getPropertyValue('--image-width')).toBe('250px')
     document.dispatchEvent(new MouseEvent('mouseup', {}))
     expect(getMarkdownForSave(crepe)).toBe('![alt|250](images/a.png)\n')
 
@@ -177,7 +202,7 @@ describe('selection and interaction', () => {
     const s = root.querySelector(`.${IMAGE_HANDLE_CLASS}[data-handle="s"]`) as HTMLElement
     s.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 100, clientY: 125 })) // down 25 × aspect 2 → +50
-    expect(south.style.width).toBe('300px')
+    expect(south.style.getPropertyValue('--image-width')).toBe('300px')
     document.dispatchEvent(new MouseEvent('mouseup', {}))
     expect(getMarkdownForSave(crepe)).toBe('![alt|300](images/a.png)\n')
 
@@ -186,7 +211,7 @@ describe('selection and interaction', () => {
     const corner = root.querySelector(`.${IMAGE_HANDLE_CLASS}[data-handle="nw"]`) as HTMLElement
     corner.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 90, clientY: 40 })) // up 60 × 2 = 120 beats left 10
-    expect(nw.style.width).toBe('420px')
+    expect(nw.style.getPropertyValue('--image-width')).toBe('420px')
     document.dispatchEvent(new MouseEvent('mouseup', {}))
     expect(getMarkdownForSave(crepe)).toBe('![alt|420](images/a.png)\n')
   })
@@ -210,16 +235,16 @@ describe('selection and interaction', () => {
     Object.defineProperty(view.dom, 'clientWidth', { value: 800, configurable: true })
     root.querySelector(`.${IMAGE_HANDLE_CLASS}[data-handle="se"]`)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100 }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 150 }))
-    expect(img.style.width).toBe('250px')
+    expect(img.style.getPropertyValue('--image-width')).toBe('250px')
     const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     view.dom.dispatchEvent(escape)
     expect(escape.defaultPrevented).toBe(true) // the drag took the key; the editor's own Escape never saw it
-    expect(img.style.width).toBe('200px')
+    expect(img.style.getPropertyValue('--image-width')).toBe('200px')
     expect(viewEl(root)?.classList.contains(`${IMAGE_VIEW_CLASS}--resizing`)).toBe(false)
     // The gesture is over: a later mouseup is nobody's.
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 300 }))
     document.dispatchEvent(new MouseEvent('mouseup', {}))
-    expect(img.style.width).toBe('200px')
+    expect(img.style.getPropertyValue('--image-width')).toBe('200px')
     expect(getMarkdownForSave(crepe)).toBe('![alt|200](images/a.png)\n')
   })
 
@@ -233,7 +258,7 @@ describe('selection and interaction', () => {
     window.dispatchEvent(new Event('blur'))
     expect(getMarkdownForSave(crepe)).toBe('![alt|260](images/a.png)\n')
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 400 }))
-    expect(imgOf(root)?.style.width).toBe('260px')
+    expect(imgOf(root)?.style.getPropertyValue('--image-width')).toBe('260px')
   })
 
   it('a read-only editor has no resize gesture', async () => {
@@ -244,7 +269,7 @@ describe('selection and interaction', () => {
     root.querySelector(`.${IMAGE_HANDLE_CLASS}[data-handle="se"]`)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100 }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 150 }))
     document.dispatchEvent(new MouseEvent('mouseup', {}))
-    expect(img.style.width).toBe('')
+    expect(img.style.getPropertyValue('--image-width')).toBe('')
     expect(getMarkdownForSave(crepe)).toBe('![alt](images/a.png)\n')
   })
 
@@ -259,7 +284,7 @@ describe('selection and interaction', () => {
 })
 
 describe('update', () => {
-  it('a width-only change (undo of a resize) patches style.width on the SAME <img> — no rebuild, no reload', async () => {
+  it('a width-only change (undo of a resize) patches --image-width on the SAME <img> — no rebuild, no reload', async () => {
     const { root, view } = await mount('![alt|300](images/a.png)\n')
     const img = imgOf(root)
     img?.dispatchEvent(new Event('load'))
@@ -267,13 +292,13 @@ describe('update', () => {
     const node = view.state.doc.nodeAt(pos)
     view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, alt: 'alt|120' }))
     expect(imgOf(root)).toBe(img)
-    expect(img?.style.width).toBe('120px')
+    expect(img?.style.getPropertyValue('--image-width')).toBe('120px')
     expect(img?.alt).toBe('alt')
     expect(viewEl(root)?.classList.contains(`${IMAGE_VIEW_CLASS}--ready`)).toBe(true)
-    // Dropping the width altogether clears the style rather than leaving a stale one.
+    // Dropping the width altogether removes the property rather than leaving a stale width.
     view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, alt: 'plain' }))
     expect(imgOf(root)).toBe(img)
-    expect(img?.style.width).toBe('')
+    expect(img?.style.getPropertyValue('--image-width')).toBe('')
     expect(img?.alt).toBe('plain')
   })
 
@@ -300,7 +325,7 @@ describe('update', () => {
     const next = imgOf(root)
     expect(next).not.toBe(img)
     expect(next?.getAttribute('src')).toBe(VAULT_URL('images/b.png'))
-    expect(next?.style.width).toBe('300px')
+    expect(next?.style.getPropertyValue('--image-width')).toBe('300px')
     expect(viewEl(root)?.classList.contains(`${IMAGE_VIEW_CLASS}--loading`)).toBe(true)
   })
 

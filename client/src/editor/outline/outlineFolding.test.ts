@@ -8,7 +8,9 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { Autosave } from '../../lib/autosave'
-import { foldAllOutline, OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS, undoLastFold } from './outlineFolding'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { IMAGE_BROKEN_CLASS, IMAGE_VIEW_CLASS } from '../image/imageView'
+import { foldAllOutline, OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS, undoLastFold } from './outlineFolding'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 
 const OUTLINE = `* Parent
@@ -51,7 +53,7 @@ const folded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_A
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('outline folding', () => {
-  it('renders a toggle only on list items that own a nested list', async () => {
+  it('renders a toggle only on list items that own a nested list or hold an image', async () => {
     const { root } = await mount({ defaultValue: OUTLINE })
     const labels = toggles(root).map((b) => b.getAttribute('aria-label'))
     expect(labels).toEqual(['Collapse Parent', 'Collapse Child', 'Collapse Ordered parent', 'Collapse Task parent'])
@@ -247,5 +249,148 @@ describe('chevron rendering (GRO-2093)', () => {
     expect(collapsed.getAttribute('aria-expanded')).toBe('false')
     expect(collapsed.querySelector('svg')).not.toBeNull()
     expect(collapsed.textContent).toBe('')
+  })
+})
+
+describe('image bullets fold to a chip (YAZ-1709)', () => {
+  const IMAGE_OPTS = { image: { root: '/v', notePath: '/v/n.md' } }
+  const IMAGES = `* ![Shot|400](a.png)
+* Text leaf
+* ![Pair](b.png)
+  * Child
+`
+  const chips = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(`.${IMAGE_VIEW_CLASS}[${OUTLINE_FOLDED_IMAGE_ATTR}="true"]`)]
+
+  it('an image-only leaf gets a chevron labelled by its alt text; a text-only leaf still gets none', async () => {
+    const { root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS })
+    expect(toggles(root).map((b) => b.getAttribute('aria-label'))).toEqual(['Collapse Shot', 'Collapse Pair'])
+    expect(toggleFor(root, 'Shot').dataset.outlineFoldKey).toBe(getOutlineFoldKey('Shot', 0))
+  })
+
+  it('folding an image-only bullet stamps its image (nothing else) as a meta-only transaction', async () => {
+    const onMarkdownUpdated = vi.fn()
+    const { crepe, root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS, onMarkdownUpdated })
+    await sleep(300) // Crepe's mount-time normalisation fires once; not ours
+    onMarkdownUpdated.mockClear()
+    const before = getMarkdownForSave(crepe)
+
+    toggleFor(root, 'Shot').click()
+
+    expect(chips(root)).toHaveLength(1)
+    expect(folded(root)).toHaveLength(0) // no nested list, so nothing gets data-outline-folded
+    expect(toggleFor(root, 'Shot').getAttribute('aria-expanded')).toBe('false')
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    await sleep(300)
+    expect(onMarkdownUpdated).not.toHaveBeenCalled()
+
+    toggleFor(root, 'Shot').click()
+    expect(chips(root)).toHaveLength(0)
+  })
+
+  it('a bullet with an image AND children folds both: the chip and the hidden list', async () => {
+    const { root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS })
+    toggleFor(root, 'Pair').click()
+    expect(chips(root)).toHaveLength(1)
+    expect(folded(root)).toHaveLength(1)
+    expect(folded(root)[0].textContent).toContain('Child')
+  })
+
+  it('a click on the folded chip unfolds its bullet; a click on an unfolded image is left to ProseMirror', async () => {
+    const { crepe, root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS })
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    // jsdom has no layout for `posAtCoords`, so the click reaches the plugin the way ProseMirror
+    // delivers it: through the `handleClickOn` prop with the image node and its position.
+    // Only the thumbnail expands; a click on the wrapper around it is not the thumbnail.
+    const clickFirstImage = (on: 'img' | 'wrapper'): boolean => {
+      let pos = -1
+      let node: ProseNode | null = null
+      view.state.doc.descendants((n, p) => {
+        if (pos === -1 && n.type.name === 'image') (pos = p), (node = n)
+        return pos === -1
+      })
+      const wrapper = root.querySelector<HTMLElement>('.image-view')!
+      const target = on === 'img' ? wrapper.querySelector('img')! : wrapper
+      const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'target', { value: target })
+      return view.someProp('handleClickOn', (f) => f(view, pos, node!, pos, event, true)) ?? false
+    }
+    expect(clickFirstImage('img')).toBe(false)
+    toggleFor(root, 'Shot').click()
+    expect(chips(root)).toHaveLength(1)
+    expect(clickFirstImage('wrapper')).toBe(false)
+    expect(chips(root)).toHaveLength(1)
+    expect(clickFirstImage('img')).toBe(true)
+    expect(chips(root)).toHaveLength(0)
+    expect(toggleFor(root, 'Shot').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('an expanded image in a list item carries the foldable mark and its corner button folds the bullet', async () => {
+    const { crepe, root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS })
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    const wrapper = root.querySelector<HTMLElement>('.image-view')!
+    expect(wrapper.getAttribute('data-outline-foldable-image')).toBe('true')
+    expect(wrapper.getAttribute('data-outline-folded-image')).toBeNull()
+    const button = wrapper.querySelector<HTMLButtonElement>('.image-view__fold')!
+    expect(button.getAttribute('aria-label')).toBe('Collapse image')
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'target', { value: button })
+    expect(view.someProp('handleDOMEvents', (h) => h.mousedown?.(view, event)) ?? false).toBe(true)
+    expect(chips(root)).toHaveLength(1)
+    expect(wrapper.getAttribute('data-outline-foldable-image')).toBe('true')
+    expect(toggleFor(root, 'Shot').getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('an image inside a NESTED list is the child item\'s own: folding the parent hides the list and never chips the inner image', async () => {
+    const { root } = await mount({ defaultValue: '* Parent\n  * ![Inner](i.png)\n', ...IMAGE_OPTS })
+    toggleFor(root, 'Parent').click()
+    expect(folded(root)).toHaveLength(1)
+    expect(folded(root)[0].querySelector(`.${IMAGE_VIEW_CLASS}`)).not.toBeNull()
+    expect(chips(root)).toHaveLength(0)
+  })
+
+  it('a BROKEN image folds and unfolds like any other: the chip attribute lands on the inert broken chip, no <img> comes back', async () => {
+    const { root } = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS })
+    const wrapper = root.querySelector<HTMLElement>(`.${IMAGE_VIEW_CLASS}`)!
+    wrapper.querySelector('img')!.dispatchEvent(new Event('error'))
+    expect(wrapper.classList.contains(`${IMAGE_VIEW_CLASS}--broken`)).toBe(true)
+
+    toggleFor(root, 'Shot').click()
+    expect(wrapper.getAttribute(OUTLINE_FOLDED_IMAGE_ATTR)).toBe('true')
+    expect(wrapper.querySelector('img')).toBeNull()
+    expect(wrapper.classList.contains(`${IMAGE_VIEW_CLASS}--broken`)).toBe(true)
+    expect(wrapper.querySelector(`.${IMAGE_BROKEN_CLASS}`)?.textContent).toBe('Broken image: a.png')
+
+    toggleFor(root, 'Shot').click()
+    expect(wrapper.getAttribute(OUTLINE_FOLDED_IMAGE_ATTR)).toBeNull()
+    expect(wrapper.classList.contains(`${IMAGE_VIEW_CLASS}--broken`)).toBe(true)
+  })
+
+  it('two images in one bullet are both chipped by the one fold', async () => {
+    const { root } = await mount({ defaultValue: '* ![A](a.png) ![B](b.png)\n', ...IMAGE_OPTS })
+    expect(toggles(root)).toHaveLength(1)
+    toggles(root)[0].click()
+    expect(chips(root)).toHaveLength(2)
+  })
+
+  it("an image in the item's SECOND paragraph is one of its own blocks: chipped on fold", async () => {
+    const { root } = await mount({ defaultValue: '* first\n\n  ![Two|300](b.png)\n', ...IMAGE_OPTS })
+    toggleFor(root, 'first').click()
+    expect(chips(root)).toHaveLength(1)
+    expect(folded(root)).toHaveLength(0)
+  })
+
+  it('the fold key is the alt text: persisted through onCollapsedKeysChange, a fresh mount seeded with it is still folded', async () => {
+    const onCollapsedKeysChange = vi.fn<(keys: readonly string[]) => void>()
+    const first = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS, folding: { onCollapsedKeysChange } })
+    toggleFor(first.root, 'Shot').click()
+    const key = getOutlineFoldKey('Shot', 0)
+    expect(onCollapsedKeysChange).toHaveBeenLastCalledWith([key])
+    await first.crepe.destroy()
+    first.root.remove()
+    mounted.pop()
+
+    const second = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS, folding: { seedCollapsedKeys: () => new Set([key]) } })
+    expect(toggleFor(second.root, 'Shot').getAttribute('aria-expanded')).toBe('false')
+    expect(chips(second.root)).toHaveLength(1)
   })
 })

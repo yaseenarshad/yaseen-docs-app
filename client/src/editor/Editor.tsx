@@ -7,6 +7,7 @@ import { createDrawing } from '../drawings/createDrawing'
 import { DrawingModal } from '../drawings/DrawingModal'
 import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
+import type { GalleryImage } from './image/imageOptions'
 import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
@@ -239,8 +240,11 @@ function CrepeHost({
   const findChannel = useMemo(() => createFindChannel(), [])
   /** The target whose modal is open; the preview's click sets it, close clears it. */
   const [openDrawing, setOpenDrawing] = useState<string | null>(null)
-  /** The image whose lightbox is open (YAZ-1656); the node view's double-click sets it, close clears it. */
-  const [openImage, setOpenImage] = useState<{ src: string; alt: string } | null>(null)
+  /**
+   * The lightbox's gallery (YAZ-1656): every image on the page and the one double-clicked; the
+   * node view sets it, close clears it.
+   */
+  const [openImage, setOpenImage] = useState<{ images: GalleryImage[]; index: number } | null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -306,7 +310,7 @@ function CrepeHost({
       // First-class images (YAZ-1656): the root and THIS note's absolute path are what a relative
       // src resolves against (main's `app://vault/` protocol); double-click opens the lightbox
       // below, and a paste that could not be written rides the same passive notice.
-      image: { root, notePath: file.path, onOpenImage: (src, alt) => setOpenImage({ src, alt }), onNotice },
+      image: { root, notePath: file.path, onOpenImage: setOpenImage, onNotice },
       find: findChannel,
     })
     crepeRef.current = crepe
@@ -454,8 +458,12 @@ function CrepeHost({
         <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} onClose={() => setOpenDrawing(null)} />
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
-          modal, opened by the node view's double-click with the src it already loaded. */}
-      {openImage !== null && <ImageModal key={openImage.src} src={openImage.src} alt={openImage.alt} onClose={() => setOpenImage(null)} />}
+          modal, opened by the node view's double-click with the whole gallery (every image on
+          the page, resolved srcs) and the index of the one clicked. */}
+      {openImage !== null && (
+        // Keyed on the clicked image so a reopen remounts with a fresh cursor.
+        <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
+      )}
     </>
   )
 }

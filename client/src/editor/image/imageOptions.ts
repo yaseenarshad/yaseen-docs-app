@@ -13,13 +13,22 @@
  */
 import { createSlice, type Ctx } from '@milkdown/kit/ctx'
 
+/** One image as the lightbox shows it: the RESOLVED src and the alt's text half. */
+export interface GalleryImage {
+  src: string
+  alt: string
+}
+
 export interface ImageOptions {
   /** Vault root (absolute); with the note's directory it is what a relative `src` resolves against. */
   root: string
   /** ABSOLUTE path of the note this editor shows; its directory is the `from` of every relative src. */
   notePath: string
-  /** Double-click on a rendered image (the lightbox, `ImageModal`). Absent → double-click is inert. */
-  onOpenImage?: (src: string, alt: string) => void
+  /**
+   * Double-click on a rendered image: every image on the page in document order plus the one
+   * clicked (the lightbox pages through them). Absent → double-click is inert.
+   */
+  onOpenImage?: (gallery: { images: GalleryImage[]; index: number }) => void
   /** A paste/drop that could not be written: the passive in-window notice, never a dialog. */
   onNotice?: (message: string) => void
 }
