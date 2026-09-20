@@ -5,7 +5,7 @@ describe('HOTKEYS source of truth', () => {
   it('covers every shipped keyboard binding', () => {
     const keys = HOTKEYS.map((h) => h.keys)
     // One entry per binding shipped by hotkeys.ts / zoom.ts / marks + history (GRO-2067 Q4).
-    for (const expected of ['⌘↑ / ⌘↓', '⌘⇧U', '⌘⇧I', '⌘Z', '⌘⇧Z', '⌘.', '⌘⇧.', '⌘⏎', '⌘U', '⌘⇧H', '⌘⇧X', 'Tab / ⇧Tab']) {
+    for (const expected of ['⌘↑ / ⌘↓', '⌘⇧U', '⌘⇧I', '⌘Z', '⌘⇧Z', '⌘.', '⌘⇧.', '⌘+ / ⌘− / ⌘0', '⌘⏎', '⌘U', '⌘⇧H', '⌘⇧X', 'Tab / ⇧Tab']) {
       expect(keys).toContain(expected)
     }
     expect(HOTKEYS.find((h) => h.keys === '⌘⇧U')?.label).toMatch(/bullets and headings/i)

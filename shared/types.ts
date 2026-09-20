@@ -959,6 +959,8 @@ export interface WindowApi {
    * so the close/flush handshake runs; never a bare destroy (GRO-2232, e.g. closing the last tab).
    */
   closeSelf(): Promise<void>
+  /** App-wide zoom for THIS window (YAZ-1710): what the stock `zoomIn` / `zoomOut` / `resetZoom` roles did — level ± 0.5, or back to 0. */
+  zoom(step: ZoomStep): Promise<void>
   /**
    * The close/quit flush handshake (GRO-2160): main is about to close this window and holds it
    * until every registered listener settled (hard 5s cap in main). Returns an unsubscribe.
@@ -976,6 +978,9 @@ export interface ClipboardPasteRequest {
  * Menu gestures from the main process (B3, GRO-2161): the renderer owns root switching at
  * runtime, so File › Open Folder… / Open Recent land on the focused window's renderer.
  */
+/** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
+export type ZoomStep = -1 | 0 | 1
+
 export interface MenuApi {
   /** First focused editor returning a string claims copy; empty means no selection. Returns an unsubscribe. */
   onCopyAs(listener: (mode: 'plain' | 'markdown') => string | undefined): () => void
@@ -991,6 +996,8 @@ export interface MenuApi {
   onSettings(listener: () => void): () => void
   /** View › Toggle Sidebar targeted this window (YAZ-1280). Returns an unsubscribe. */
   onToggleSidebar(listener: () => void): () => void
+  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0) targeted this window: the renderer routes it to the focused note or the app (YAZ-1710). Returns an unsubscribe. */
+  onZoom(listener: (step: ZoomStep) => void): () => void
   /** File › Close Tab (⌘W) targeted this window: close the active tab (GRO-2232). Returns an unsubscribe. */
   onCloseTab(listener: () => void): () => void
   /** Window › Next Tab (⌃Tab / ⌘⇧]) targeted this window: activate the tab to the right (GRO-2232). Returns an unsubscribe. */
