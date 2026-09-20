@@ -27,7 +27,7 @@ describe('HOTKEYS source of truth', () => {
     const keys = WINDOW_HOTKEYS.map((h) => h.keys)
     // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (Close Window) and the tab-switch pairs live in the
     // menu (menu.ts, GRO-2161/2232); ⌥-click Open Recent = open beside (GRO-2211).
-    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘K', '⌘,', '⌘B', '⌘⇧C', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[', '⌥ Open Recent']) {
+    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘K', '⌘,', '⌘B', '⌘⇧C', '⌘X / ⌘C', '⌘V', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[', '⌥ Open Recent']) {
       expect(keys).toContain(expected)
     }
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘B')?.label).toMatch(/outside editing surfaces/i)

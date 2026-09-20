@@ -24,7 +24,9 @@
   --mark-bg-green: rgba(80, 200, 120, 0.35);
   --mark-bg-blue: rgba(80, 160, 255, 0.35);
   --mark-bg-pink: rgba(255, 120, 180, 0.35);
-  /* Amber notice family: conflict bar + link-notice toast. */
+  /* Amber notice family: conflict bar + rename banner — the two that ask for a decision. (The
+     link-notice toast left it for the context menu's surface tokens, YAZ-1674: it confirms as
+     often as it warns.) */
   --notice-fg: #6b4e00;
   --notice-bg: #fff7df;
   --notice-border: #f1e2ad;
@@ -791,30 +793,56 @@ button {
   background: var(--notice-btn-bg-hover);
 }
 
-/* ---------- link notice (E1): a can't-open-link toast, self-dismissing ---------- */
+/* ---------- link notice (E1): the window's one passive toast, self-dismissing ----------
+   BOTTOM-LEFT since YAZ-1674's demo, in the context menu's own language — surface, border,
+   radius, shadow — instead of the amber warning family: it confirms as often as it warns
+   ("Copied path", "Pasted 2"), and a warning-coloured "yes" read wrong. The rename banner and the
+   conflict bar keep amber: they ask for a decision. The tokens swap with the theme. */
 
 .link-notice {
   position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 16px;
+  /* Above the sidebar footer (cog + hotkeys) at any window height — its own variable, see `.sidebar__footer`. */
+  bottom: calc(var(--sidebar-footer-h) + 12px);
+  transform: none;
   z-index: 50;
-  max-width: 70vw;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 6px 14px;
-  font-size: 13px;
-  color: var(--notice-fg);
-  background: var(--notice-bg);
-  border: 1px solid var(--notice-border);
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: link-notice-in 120ms ease-out both;
+}
+
+/* The glyph (D10 amended): 16px, `currentColor`, never shrinks against a long line. */
+.link-notice__icon {
+  flex: none;
+  opacity: 0.8;
+}
+
+@keyframes link-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---------- external-rename banner (Links E1c, GRO-2242): the passive confirm-first bar ----------
-   The link-notice idiom (amber tokens, top-center toast) with two actions; it lingers until
-   Update/Dismiss, so it sits UNDER the transient notice when both are up (sibling rule below). */
+   The amber top-center toast (the link-notice's OLD idiom — that one moved bottom-left, YAZ-1674)
+   with two actions; it lingers until Update/Dismiss. */
 
 .rename-banner {
   position: fixed;
@@ -856,11 +884,6 @@ button {
 
 .rename-banner button:hover {
   background: var(--notice-btn-bg-hover);
-}
-
-/* Both toasts up: the transient notice keeps the prime spot, the banner steps below it. */
-.link-notice ~ .rename-banner {
-  top: 48px;
 }
 
 /* ---------- sync attention banner (YAZ-1081 3B) ----------
@@ -905,14 +928,9 @@ button {
   background: var(--notice-btn-bg-hover);
 }
 
-/* Each banner above it pushes this one down; both above it push it down twice. */
-.rename-banner ~ .sync-banner,
-.link-notice ~ .sync-banner {
+/* The rename banner above pushes this one down (the notice lives bottom-left since YAZ-1674, so it never stacks here). */
+.rename-banner ~ .sync-banner {
   top: 48px;
-}
-
-.link-notice ~ .rename-banner ~ .sync-banner {
-  top: 84px;
 }
 
 /* ---------- sidebar ---------- */
@@ -1175,10 +1193,20 @@ button {
 
 /* ---------- settings (GRO-2024; the dialog itself is settings/settings.css since YAZ-1679) ---------- */
 
+/* The footer's ONE height (YAZ-1674): 6px + 6px padding around the 26px cog (5px + 16px svg + 5px)
+   plus the 1px top border. Pinned as a variable so the bottom-left notice can sit ABOVE the row
+   (`.link-notice`'s `bottom`) without the two ever drifting apart. */
+:root {
+  --sidebar-footer-h: 39px;
+}
+
 .sidebar__footer {
   flex: none;
   display: flex;
+  align-items: center;
   gap: 2px;
+  box-sizing: border-box;
+  height: var(--sidebar-footer-h);
   padding: 6px 8px;
   border-top: 1px solid var(--border);
 }
@@ -1244,13 +1272,58 @@ button {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
+/* A flex row (🔒 D7, YAZ-1674): the label left, the shortcut hint — when the item has one —
+   pushed to the right edge. Every other menu's item is a single text child, unchanged by this. */
 .ctx-menu__item {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   width: 100%;
   padding: 6px 10px;
   border-radius: 5px;
   font-size: 13px;
   text-align: left;
+}
+
+/* Groups (🔒 D7): a rule between ADJACENT groups only — the component skips empty ones, so a
+   blank-space menu never ends in a stray separator. */
+.ctx-menu__group + .ctx-menu__group {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+/* The shortcut hint is drawn from the attribute, never as text: `textContent` and the accessible
+   name stay the bare label (the tests and e2e pin labels). */
+.ctx-menu__item[data-hint]::after {
+  content: attr(data-hint);
+  opacity: 0.5;
+  font-size: 11px;
+}
+
+/* "Open in ▸" (D7 amended, YAZ-1674): the parent row wears its chevron as CSS, like the hints, so
+   the label text stays bare — a stroked chevron-right SVG, masked so it takes `currentColor`
+   (both themes, the danger colour included) and never enters `textContent`. The flyout is a
+   second `.ctx-menu` — fixed, clamped and flipped by the component (to the LEFT of the parent
+   when the right edge would spill) — one layer above the root. */
+.ctx-menu__parent {
+  position: relative;
+}
+
+.ctx-menu__item--parent::after {
+  content: '';
+  flex: none;
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  opacity: 0.6;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.ctx-menu__sub {
+  z-index: 41;
 }
 
 .ctx-menu__item:hover:not(:disabled) {
@@ -1468,6 +1541,15 @@ button {
 .tree__row--selected:hover {
   background: var(--bg-hover-row);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Selected AND active (D9, YAZ-1674 — a plain click now selects the row it opens, so the open
+   file is nearly always both): the active row keeps its fill and its accent text — it still reads
+   as "the open file" — and the selection adds only its leading edge. Any other selected row wears
+   the wash + edge above. Escape clears the edge and leaves the fill: the least surprising result. */
+.tree__row--active.tree__row--selected,
+.tree__row--active.tree__row--selected:hover {
+  background: var(--accent-soft);
 }
 
 /* The keyboard walk crosses selected rows: focus keeps its ring, the selection keeps its edge. */
