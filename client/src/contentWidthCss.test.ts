@@ -37,4 +37,13 @@ describe('content-width CSS contract (YAZ-1176)', () => {
       expect(rule, selector).not.toMatch(/border/)
     }
   })
+
+  it('document zoom sits on the CONTENT, never on a shell (YAZ-1710 D14): the scroller carries the variable, the content selectors read it, the runner adds the measured slack (D15)', () => {
+    const zoomRule = appCss.match(/\.editor-host > :not\(\.editor-mount\) > \*,\s*\.page-header > \.frontmatter-panel > \*,\s*\.editor-instance \.milkdown > \.ProseMirror\s*\{([^}]*)\}/s)?.[1]
+    expect(zoomRule).toMatch(/zoom:\s*var\(--document-zoom, 1\);/)
+    const scroller = appCss.match(/\.editor-host\s*\{([^}]*)\}/s)?.[1]
+    expect(scroller).not.toMatch(/\bzoom:/)
+    expect(scroller).toMatch(/overflow-x:\s*auto;/)
+    expect(appCss).toMatch(/\.editor-host::after\s*\{[^}]*width:\s*calc\(100% \+ var\(--zoom-slack, 0px\)\);/s)
+  })
 })
