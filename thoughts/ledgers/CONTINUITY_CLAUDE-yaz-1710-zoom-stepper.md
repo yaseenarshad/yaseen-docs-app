@@ -37,6 +37,7 @@
   - [x] 6C YAZ-1740: CONTRACTS.md, hotkeys label, ledger; final build walked by Yasin ("ok that's good it worked")
   - [x] 6D1 YAZ-1742 audit · 6D2 YAZ-1743 applied; PR #68 merged to main (6d98369)
   - [x] CLOSEOUT 2026-09-20: both demo folders, dev app, worktree and both branches removed; YAZ-1710 and every child Done; master handoff is a comment on YAZ-1710
+  - [x] 6B1 YAZ-1757 (post-closeout, PR #70 a613b92): the properties chip zoomed twice — the `display: contents` panel passes zoom to its pieces, so the second selector on them is gone; guard test forbids it
 - Now: nothing — issue closed. No release cut (Yasin batches releases); the installed app shows the new zoom only after `npm run desktop:build`.
 
 ## Open Questions
