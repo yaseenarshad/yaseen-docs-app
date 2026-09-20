@@ -39,8 +39,11 @@ describe('content-width CSS contract (YAZ-1176)', () => {
   })
 
   it('document zoom sits on the CONTENT, never on a shell (YAZ-1710 D14): the scroller carries the variable, the content selectors read it, the runner adds the measured slack (D15)', () => {
-    const zoomRule = appCss.match(/\.editor-host > :not\(\.editor-mount\) > \*,\s*\.page-header > \.frontmatter-panel > \*,\s*\.editor-instance \.milkdown > \.ProseMirror\s*\{([^}]*)\}/s)?.[1]
+    const zoomRule = appCss.match(/\.editor-host > :not\(\.editor-mount\) > \*,\s*\.editor-instance \.milkdown > \.ProseMirror\s*\{([^}]*)\}/s)?.[1]
     expect(zoomRule).toMatch(/zoom:\s*var\(--document-zoom, 1\);/)
+    // The `display: contents` properties panel already passes the zoom to its pieces; a second rule
+    // on them zoomed the chip twice (6B1).
+    expect(appCss).not.toMatch(/\.frontmatter-panel > \*/)
     const scroller = appCss.match(/\.editor-host\s*\{([^}]*)\}/s)?.[1]
     expect(scroller).not.toMatch(/\bzoom:/)
     expect(scroller).toMatch(/overflow-x:\s*auto;/)
