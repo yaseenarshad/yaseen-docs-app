@@ -719,14 +719,25 @@ describe('the row gesture: open + unfold (⚡ YAZ-870), then toggle or commit (Y
     expect(document.activeElement).not.toBe(pm)
   })
 
-  it('the SECOND activation of the plain page you are already reading COMMITS: the caret, not another open', async () => {
+  it('Enter (detail 0) on the plain page you are already reading COMMITS: the caret, not another open', async () => {
+    const pm = editorStub()
+    const { el, props } = await mount({ source: sourceOver(vault()), activeFile: REVENUE })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Revenue')!, { detail: 0 })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(pm)
+  })
+
+  it('a MOUSE click on the page you are already reading only SELECTS it (D11, YAZ-1674): no open, no caret jump', async () => {
+    // Click-then-⌘C must work on the open note too: a caret jump would hand the key to the editor.
     const pm = editorStub()
     const { el, props } = await mount({ source: sourceOver(vault()), activeFile: REVENUE })
     await click(chevrons(el, 'Expand Metrics')[0])
     await click(rowFor(el, 'Revenue')!)
     expect(props.onOpenFile).not.toHaveBeenCalled()
-    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(pm)
+    expect(props.selection.set).toHaveBeenCalledWith(REVENUE)
+    expect(document.activeElement).not.toBe(pm)
   })
 
   it('keyboard Enter (detail 0) on a topic OPENS it and moves the tree not at all (YAZ-947)', async () => {

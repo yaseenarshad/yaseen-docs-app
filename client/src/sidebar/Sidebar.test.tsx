@@ -2510,6 +2510,26 @@ describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
     expect(selectedPaths(el)).toEqual(['/v/c.md'])
   })
 
+  it('a MOUSE click on the file ALREADY open only selects it — no re-open, no caret jump into the editor (D11, YAZ-1674)', async () => {
+    // Click-then-⌘C must work on the open note too: YAZ-961's "take me in" is Enter's (detail 0), never the mouse's.
+    const instance = document.createElement('div')
+    instance.className = 'editor-instance'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.tabIndex = -1
+    Object.defineProperty(pm, 'offsetParent', { get: () => document.body })
+    instance.appendChild(pm)
+    document.body.appendChild(instance)
+    const { el, props } = await mount({ activeFile: '/v/a.md' }, withMultiTree)
+    act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(selectedPaths(el)).toEqual(['/v/a.md'])
+    expect(document.activeElement).not.toBe(pm)
+    act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })))
+    expect(document.activeElement).toBe(pm) // Enter (detail 0) still takes the caret in (YAZ-961)
+    instance.remove()
+  })
+
   it('⌘-click selects the clicked row too and still opens a background tab (LOCKED I3)', async () => {
     const { el, props } = await mount({}, withMultiTree)
     shiftClick(rowByPath(el, '/v/a.md'))
