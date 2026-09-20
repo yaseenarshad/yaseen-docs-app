@@ -19,6 +19,7 @@ const noopHandlers = (): MenuHandlers => ({
   search: vi.fn(),
   settings: vi.fn(),
   closeTab: vi.fn(),
+  zoom: vi.fn(),
   nextTab: vi.fn(),
   prevTab: vi.fn(),
   toggleSidebar: vi.fn(),
@@ -140,16 +141,30 @@ describe('buildMenuTemplate', () => {
     expect(vi.mocked(handlers.pasteAs).mock.calls).toEqual([['plain'], ['markdown']])
   })
 
-  it('View menu: Toggle Sidebar, Reload, zoom roles; Toggle DevTools only in dev', () => {
+  it('View menu: Toggle Sidebar, Reload, our own zoom items (not the roles); Toggle DevTools only in dev', () => {
     const handlers = noopHandlers()
     const view = menuOf(build(RECENTS, false, handlers), 'View')
-    expect(view.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'resetZoom', 'zoomIn', 'zoomOut'])
+    expect(view.map((i) => i.role).filter(Boolean)).toEqual(['reload'])
     const toggle = view.find((i) => i.label === 'Toggle Sidebar')
     click(toggle)
     expect(handlers.toggleSidebar).toHaveBeenCalledTimes(1)
 
     const dev = menuOf(build(RECENTS, true), 'View')
-    expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'toggleDevTools', 'resetZoom', 'zoomIn', 'zoomOut'])
+    expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'toggleDevTools'])
+  })
+
+  it('View › Actual Size / Zoom In / Zoom Out own ⌘0 / ⌘+ (and hidden ⌘=) / ⌘− and hand the step to handlers.zoom (YAZ-1710)', () => {
+    const handlers = noopHandlers()
+    const view = menuOf(build(RECENTS, false, handlers), 'View')
+    const zoom = view.filter((i) => i.id?.startsWith('menu.view.zoom'))
+    expect(zoom.map((i) => [i.id, i.label, i.accelerator, i.visible ?? true])).toEqual([
+      ['menu.view.zoom-reset', 'Actual Size', 'CmdOrCtrl+0', true],
+      ['menu.view.zoom-in', 'Zoom In', 'CmdOrCtrl+Plus', true],
+      ['menu.view.zoom-in-eq', 'Zoom In', 'CmdOrCtrl+=', false],
+      ['menu.view.zoom-out', 'Zoom Out', 'CmdOrCtrl+-', true],
+    ])
+    zoom.forEach((item) => click(item))
+    expect(vi.mocked(handlers.zoom).mock.calls).toEqual([[0], [1], [1], [-1]])
   })
 
   it('Window menu: role window (macOS window list) with minimize / zoom, the tab-switching items, front', () => {
@@ -500,6 +515,16 @@ describe('createMenuHandlers', () => {
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.toggleSidebar()).not.toThrow()
+  })
+
+  it('zoom forwards the step to the focused renderer only (YAZ-1710)', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.zoom(1)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuZoom, 1)
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => unfocused.zoom(-1)).not.toThrow()
   })
 
   it('openHelp opens the repo README', () => {

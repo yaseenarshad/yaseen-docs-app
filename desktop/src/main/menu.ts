@@ -6,7 +6,7 @@
  * lives in `main/index.ts`.
  */
 import type { MenuItemConstructorOptions } from 'electron'
-import type { ClipboardPasteRequest, RecentRoots } from '@shared/types'
+import type { ClipboardPasteRequest, RecentRoots, ZoomStep } from '@shared/types'
 import { CH } from '../channels'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
@@ -35,6 +35,8 @@ export interface MenuHandlers {
   prevTab(): void
   /** View › Toggle Sidebar: ask only the focused renderer to toggle its window identity. */
   toggleSidebar(): void
+  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note or the app (YAZ-1710). */
+  zoom(step: ZoomStep): void
   openHelp(): void
 }
 
@@ -109,9 +111,13 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
         { role: 'reload' },
         ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions] : []),
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        // Not the stock zoom roles (YAZ-1710): a registered accelerator never reaches the page on
+        // macOS, so main forwards the step and the renderer decides — the focused note or the app.
+        { id: 'menu.view.zoom-reset', label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => handlers.zoom(0) },
+        { id: 'menu.view.zoom-in', label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: () => handlers.zoom(1) },
+        // Electron's own zoomIn role also answers ⌘= (no shift); keep that hidden twin.
+        { id: 'menu.view.zoom-in-eq', label: 'Zoom In', accelerator: 'CmdOrCtrl+=', visible: false, click: () => handlers.zoom(1) },
+        { id: 'menu.view.zoom-out', label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => handlers.zoom(-1) },
       ],
     },
     // Top-level role `window` marks this submenu as macOS's Windows menu, so the OS appends the window list.
@@ -305,6 +311,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
     },
     toggleSidebar() {
       host.focusedWebContents()?.send(CH.menuToggleSidebar)
+    },
+    zoom(step) {
+      host.focusedWebContents()?.send(CH.menuZoom, step)
     },
     openHelp() {
       host.openExternal(HELP_URL)
