@@ -25,6 +25,9 @@
 - Linear ids: team `bd7cb72d-9e31-468e-912b-d4c58a2e20b1`, project `a2cc392a-27d1-4949-a27c-3429586db7df`, In Progress `e5076f98-5404-4320-8119-4fc28e0967ce`, Done `ab9ae558…` (query team states).
 
 ## State
+- SHIPPED and CLOSED OUT (2026-09-20): feature PR #69 → main `439ca6b` (commit `f82fabb`); polish PR #71 → main `c62deae` (commit `eef1aa5`). Full suite 253 files green at the polish merge; typecheck clean. Release 0.9.22 was cut on main between the two PRs by Yasin (not by this work). Linear: YAZ-1734 and every child Done (3B cancelled with reason); YAZ-1756 Future stays in Backlog. Demo vault, profile, worktree and branch removed. No Playwright was run.
+
+### History
 - Done:
   - [x] Scope pass in chat (2026-09-20): code read, D1–D4 recommended, tree proposed; Yasin approved, dropped D4.
   - [x] Linear comment on YAZ-1734 (id `3437f11e-…`) holds D1–D4 marked PENDING DEMO.
