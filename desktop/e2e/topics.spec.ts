@@ -361,16 +361,20 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
   // YAZ-1080: this is a real disk-directory target using the ONE shared sidebar menu. Keep the
   // exact applicable action set pinned here; file-only link/window/toggle actions must not leak.
   await rowFor(win, 'inbox').click({ button: 'right' })
+  // 🔒 D7 (YAZ-1674, amended) order: the Open group (empty on one row), clipboard (Cut / Copy /
+  // a disabled Paste — a disk-folder row gets the disk verb), create, this row (Rename), then
+  // "Open in ▸" as its OWN group, then Delete. Hints and the chevron are CSS, not text.
   await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([
-    'Reveal in Finder',
-    'Open in VS Code',
-    'Open in default app',
+    'Cut',
+    'Copy',
+    'Paste',
     'Copy path',
     'New note',
     'New folder page',
     'New folder',
     'New dated folder',
     'Rename',
+    'Open in', // its own group after the this-row group (D7 amended)
     'Delete',
   ])
   await win.keyboard.press('Escape')
@@ -393,6 +397,7 @@ test('step 5b — a member row carries the FILE tree’s own menu, and Delete tr
   const doomed = path.join(vault, 'funnel-stages', 'Lead Nurture.md')
   await rowFor(win, 'Lead Nurture').click({ button: 'right' })
   const item = (label: string) => win.locator('.ctx-menu [role="menuitem"]', { hasText: label })
+  await item('Open in').hover() // the OS verbs live in the "Open in ▸" flyout (D7 amended, YAZ-1674)
   await expect(item('Reveal in Finder')).toHaveCount(1)
   await expect(item('Copy path')).toHaveCount(1)
   await expect(item('Turn into folder page')).toHaveCount(1) // state-aware: a LEAF gets the forward label

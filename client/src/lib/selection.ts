@@ -12,6 +12,12 @@ export const EMPTY_SELECTION: ReadonlySet<string> = new Set<string>()
 export type SelectionAction =
   /** 🔒 D2 as Yasin amended it: shift+click ADDS or REMOVES the one row. There is no range. */
   | { type: 'toggle'; path: string }
+  /**
+   * D9 (YAZ-1674, reversing YAZ-1336's plain-click-clears): a PLAIN click — and ⌘-click, and a
+   * right-click on a row outside the selection (Finder) — makes the selection EXACTLY that row,
+   * so ⌘C / ⌘X / ⌘V and ⌘⇧C always have a target after a click. Shift keeps its toggle.
+   */
+  | { type: 'set'; path: string }
   | { type: 'clear' }
   /** Drop what the vault no longer has; `exists` is asked once per selected path. */
   | { type: 'prune'; exists: (path: string) => boolean }
@@ -29,6 +35,8 @@ export function selectionReducer(sel: ReadonlySet<string>, action: SelectionActi
       if (!next.delete(action.path)) next.add(action.path)
       return next
     }
+    case 'set':
+      return sel.size === 1 && sel.has(action.path) ? sel : new Set([action.path])
     case 'clear':
       return sel.size === 0 ? sel : EMPTY_SELECTION
     case 'prune': {

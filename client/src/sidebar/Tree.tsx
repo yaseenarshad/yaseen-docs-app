@@ -50,8 +50,8 @@ export interface TreeSelection {
   paths: ReadonlySet<string>
   /** 🔒 D2: shift+click on a file or folder row toggles it in or out — no range, never an open, never a fold. */
   toggle: (path: string) => void
-  /** A plain click starts over before it opens; ⌘-click leaves the selection alone. */
-  clear: () => void
+  /** D9 (YAZ-1674): a plain click or ⌘-click makes the selection EXACTLY this row — then opens or folds as before. */
+  set: (path: string) => void
 }
 
 interface TreeProps {
@@ -128,13 +128,14 @@ export function Tree({
                 data-path={node.path}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
-                // PLAIN click only folds and leaves the selection alone (🔒 D4): digging into a
-                // folder to reach a file must not throw the pick away.
+                // PLAIN click SELECTS the folder (D9, YAZ-1674 — the Finder rule) and then folds,
+                // so ⌘C / ⌘V have a target the moment a folder is clicked.
                 onClick={(e) => {
                   if (e.shiftKey) {
                     selection.toggle(node.path)
                     return
                   }
+                  selection.set(node.path)
                   onToggle(node.path)
                 }}
                 onContextMenu={(e) => onNodeContextMenu(node, e)}
@@ -177,6 +178,9 @@ export function Tree({
                   selection.toggle(node.path)
                   return
                 }
+                // Every other click makes the selection THIS row (D9, YAZ-1674) — plain and ⌘
+                // alike, the external row too — before the open rules decide where it opens.
+                selection.set(node.path)
                 // No in-app viewer (YAZ-1577 D2): the OS default app IS the viewer, so no tab —
                 // and nothing for ⌘ to background. Asked before the open rules, after shift.
                 if (node.kind === null) {
@@ -185,12 +189,13 @@ export function Tree({
                 }
                 // First activation previews, second commits — the Topics rows' rule (YAZ-921):
                 // opening keeps focus on the row, re-activating the open page enters its text.
+                // The commit is KEYBOARD-only since D11 (YAZ-1674): Enter on the open row takes the
+                // caret in (a keyboard click has `detail === 0`); a MOUSE click on the open note
+                // just selects it, so click-then-⌘C works on every row instead of handing the key
+                // to the editor.
                 if (e.metaKey) onOpenFileBackground(node.path)
-                else {
-                  selection.clear() // a plain click starts over; ⌘ above deliberately does not
-                  if (node.path === activeFile) focusOpenDocument() // YAZ-961: the VISIBLE one
-                  else onOpenFile(node.path)
-                }
+                else if (node.path !== activeFile) onOpenFile(node.path)
+                else if (e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
               }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}

@@ -5,6 +5,7 @@
  * storage / api / hook modules run against it.
  */
 import { HOME_CONTENT } from './sidebar/ensureHome'
+import { LINK_NOTICE_MS, type NoticeKind } from './lib/notice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -45,6 +46,9 @@ interface SidebarStubProps {
    * writes it here; App only ever reads.
    */
   selectionRef: { current: ReadonlySet<string> }
+  onNotice: (message: string, icon?: NoticeKind) => void
+  /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
+  clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean } | null }
 }
 
 const captured = vi.hoisted(() => ({
@@ -73,7 +77,7 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App, LINK_NOTICE_MS } from './App'
+import { App } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -340,6 +344,119 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
     act(() => void el.querySelector('.app')?.dispatchEvent(event))
     expect(writeText).not.toHaveBeenCalled()
     expect(event.defaultPrevented).toBe(false)
+  })
+})
+
+/**
+ * ⌘C / ⌘X / ⌘V for the sidebar's FILE clipboard (D6 amended, YAZ-1674): ⌘⇧C's sibling. The keys
+ * are App's window listener — a panel listener needs focus inside the panel, and after a click
+ * on the open file it sits in the editor (YAZ-961), on blank space nowhere focusable — with the
+ * SAME ownership boundary: a field, a contenteditable (the editor) or a modal keeps the key and
+ * text copy/paste is untouched. The Sidebar's handle holds the rules and answers whether it
+ * acted; App swallows the key exactly then.
+ */
+describe('App ⌘C / ⌘X / ⌘V file clipboard (YAZ-1674, D6 amended)', () => {
+  const chord = (key: string, over: KeyboardEventInit = {}) => new KeyboardEvent('keydown', { key, metaKey: true, bubbles: true, cancelable: true, ...over })
+  const handle = () => ({ cutOrCopy: vi.fn((_op: 'copy' | 'cut') => true), paste: vi.fn(() => true) })
+  const arm = (h: ReturnType<typeof handle>) => {
+    const ref = captured.sidebar?.clipboardRef
+    expect(ref).toBeDefined()
+    if (ref) ref.current = h
+  }
+  const open = () => mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+
+  it('acts from the body, from a tree row and from blank space alike: copy / cut / paste reach the handle and the key is swallowed', async () => {
+    const { el } = await open()
+    const h = handle()
+    arm(h)
+    const row = document.createElement('button')
+    row.className = 'tree__row'
+    el.querySelector('[data-sidebar]')?.appendChild(row)
+    const fromBody = chord('c')
+    act(() => void el.querySelector('.app')?.dispatchEvent(fromBody))
+    const fromRow = chord('x')
+    act(() => void row.dispatchEvent(fromRow))
+    const fromBlank = chord('v')
+    act(() => void document.body.dispatchEvent(fromBlank))
+    expect(h.cutOrCopy.mock.calls).toEqual([['copy'], ['cut']])
+    expect(h.paste).toHaveBeenCalledTimes(1)
+    expect([fromBody, fromRow, fromBlank].map((e) => e.defaultPrevented)).toEqual([true, true, true])
+  })
+
+  it('does NOTHING from a contenteditable (the editor) or an input — text copy/paste keeps working, the key is left alone', async () => {
+    const { el } = await open()
+    const h = handle()
+    arm(h)
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    const input = document.createElement('input')
+    el.querySelector('.app')?.append(editable, input)
+    const events = [chord('c'), chord('v'), chord('x'), chord('v')]
+    act(() => {
+      editable.dispatchEvent(events[0]!)
+      editable.dispatchEvent(events[1]!)
+      input.dispatchEvent(events[2]!)
+      input.dispatchEvent(events[3]!)
+    })
+    expect(h.cutOrCopy).not.toHaveBeenCalled()
+    expect(h.paste).not.toHaveBeenCalled()
+    expect(events.every((e) => !e.defaultPrevented)).toBe(true)
+  })
+
+  it('Shift or ⌥ held is not ours (⌘⇧C is Copy path), and a handle that declines leaves the key alone', async () => {
+    const { el } = await open()
+    const h = { cutOrCopy: vi.fn(() => false), paste: vi.fn(() => false) }
+    arm(h)
+    const shifted = chord('c', { shiftKey: true })
+    const alted = chord('v', { altKey: true })
+    const declined = chord('v')
+    act(() => {
+      el.querySelector('.app')?.dispatchEvent(shifted)
+      el.querySelector('.app')?.dispatchEvent(alted)
+      el.querySelector('.app')?.dispatchEvent(declined)
+    })
+    expect(h.cutOrCopy).not.toHaveBeenCalled()
+    expect(h.paste).toHaveBeenCalledTimes(1) // asked…
+    expect(declined.defaultPrevented).toBe(false) // …and not swallowed, because it said no
+    expect(alted.defaultPrevented).toBe(false)
+  })
+
+  it('with the sidebar collapsed (no handle) the keys are not ours at all', async () => {
+    const { el } = await open()
+    const ref = captured.sidebar?.clipboardRef
+    if (ref) ref.current = null
+    const ev = chord('v')
+    act(() => void el.querySelector('.app')?.dispatchEvent(ev))
+    expect(ev.defaultPrevented).toBe(false)
+  })
+})
+
+/**
+ * The notice's glyph (D10 amended, YAZ-1674): `onNotice(text, icon?)` — the kind rides on the
+ * toast as `data-icon` and draws an aria-hidden SVG before the text, so `textContent` and the
+ * `role="status"` announcement stay the bare text. No kind → `'info'`, which is what every caller
+ * that never changed gets.
+ */
+describe('App notice icon (D10 amended, YAZ-1674)', () => {
+  const open = () => mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+
+  it.each(['copy', 'cut', 'paste', 'error', 'info'] as const)('renders data-icon="%s" and an aria-hidden svg before the bare text', async (icon) => {
+    const { el } = await open()
+    act(() => captured.sidebar?.onNotice(`hello ${icon}`, icon))
+    const toast = el.querySelector<HTMLElement>('.link-notice')
+    expect(toast?.dataset.icon).toBe(icon)
+    expect(toast?.getAttribute('role')).toBe('status')
+    expect(toast?.textContent).toBe(`hello ${icon}`)
+    const svg = toast?.querySelector('svg.link-notice__icon')
+    expect(svg?.getAttribute('aria-hidden')).toBe('true')
+    expect(toast?.firstElementChild).toBe(svg)
+  })
+
+  it('defaults to info when the caller names no kind', async () => {
+    const { el } = await open()
+    act(() => captured.sidebar?.onNotice('plain'))
+    expect(el.querySelector<HTMLElement>('.link-notice')?.dataset.icon).toBe('info')
+    expect(el.querySelector('.link-notice')?.textContent).toBe('plain')
   })
 })
 

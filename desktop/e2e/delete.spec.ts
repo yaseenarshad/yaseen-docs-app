@@ -181,7 +181,7 @@ test('step 9 — blank space offers no Delete: a destructive item needs a target
   await win.locator('.sidebar__body').click({ button: 'right', position: { x: 20, y: 320 } })
   await expect(win.locator('.ctx-menu')).toBeVisible()
   await expect(win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Delete' })).toHaveCount(0)
-  // Reveal in Finder and Copy path DO appear there — they target the vault root (GRO-2273/2274).
+  // Copy path (and Open in ▸ Reveal in Finder) DO appear there — they target the vault root (GRO-2273/2274).
   await expect(win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Copy path' })).toHaveCount(1)
   await win.keyboard.press('Escape')
 })

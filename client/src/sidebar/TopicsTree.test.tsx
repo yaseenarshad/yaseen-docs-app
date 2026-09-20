@@ -179,7 +179,7 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
     // Multi-select (YAZ-1336): the SIDEBAR owns the set and this lens only draws it, so the
     // default is nothing selected and the two gestures are spies — the "shift+click" describe
     // hands over a populated set of its own.
-    selection: { paths: EMPTY_SELECTION, toggle: vi.fn(), clear: vi.fn() },
+    selection: { paths: EMPTY_SELECTION, toggle: vi.fn(), set: vi.fn() },
     // 6C's offer (YAZ-849): every case below runs on an ADOPTED vault, where the card never
     // shows; the "the offer card" describe is the one that flips this.
     unadopted: false,
@@ -719,14 +719,25 @@ describe('the row gesture: open + unfold (⚡ YAZ-870), then toggle or commit (Y
     expect(document.activeElement).not.toBe(pm)
   })
 
-  it('the SECOND activation of the plain page you are already reading COMMITS: the caret, not another open', async () => {
+  it('Enter (detail 0) on the plain page you are already reading COMMITS: the caret, not another open', async () => {
+    const pm = editorStub()
+    const { el, props } = await mount({ source: sourceOver(vault()), activeFile: REVENUE })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Revenue')!, { detail: 0 })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(pm)
+  })
+
+  it('a MOUSE click on the page you are already reading only SELECTS it (D11, YAZ-1674): no open, no caret jump', async () => {
+    // Click-then-⌘C must work on the open note too: a caret jump would hand the key to the editor.
     const pm = editorStub()
     const { el, props } = await mount({ source: sourceOver(vault()), activeFile: REVENUE })
     await click(chevrons(el, 'Expand Metrics')[0])
     await click(rowFor(el, 'Revenue')!)
     expect(props.onOpenFile).not.toHaveBeenCalled()
-    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(pm)
+    expect(props.selection.set).toHaveBeenCalledWith(REVENUE)
+    expect(document.activeElement).not.toBe(pm)
   })
 
   it('keyboard Enter (detail 0) on a topic OPENS it and moves the tree not at all (YAZ-947)', async () => {
@@ -1368,7 +1379,7 @@ describe('multi-select (YAZ-1336): shift+click, path-keyed across every occurren
     folder(PROJECTS),
     rec(SHARED, belongs('[[Metrics]]', '[[Projects]]')),
   ]
-  const selectionOver = (paths: readonly string[]) => ({ paths: new Set(paths), toggle: vi.fn(), clear: vi.fn() })
+  const selectionOver = (paths: readonly string[]) => ({ paths: new Set(paths), toggle: vi.fn(), set: vi.fn() })
   const selectedLabels = (el: HTMLElement) =>
     rows(el)
       .filter((r) => r.classList.contains('tree__row--selected'))
@@ -1401,7 +1412,7 @@ describe('multi-select (YAZ-1336): shift+click, path-keyed across every occurren
     expect(labels(el)).toEqual(['Home', 'Metrics', 'Shared', 'Projects'])
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
-    expect(selection.clear).not.toHaveBeenCalled()
+    expect(selection.set).not.toHaveBeenCalled() // shift never SETS either (D9 leaves it the toggle)
   })
 
   it('an Uncategorized DISK-FOLDER row shift-selects, wears the mark, and never folds (YAZ-1578)', async () => {
@@ -1418,7 +1429,7 @@ describe('multi-select (YAZ-1336): shift+click, path-keyed across every occurren
     expect(props.onOpenFile).not.toHaveBeenCalled()
     await click(rowFor(el, 'inbox')!)
     expect(labels(el)).toEqual(['Uncategorized', 'inbox']) // a plain click still folds…
-    expect(selection.clear).not.toHaveBeenCalled() // …without touching the selection (🔒 D4)
+    expect(selection.set).toHaveBeenCalledExactlyOnceWith(`${ROOT}/inbox`) // …and SELECTS the folder (D9, YAZ-1674)
   })
 
   it('an Uncategorized page row plays by the same two rules', async () => {
@@ -1431,15 +1442,16 @@ describe('multi-select (YAZ-1336): shift+click, path-keyed across every occurren
     expect(props.onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('a PLAIN click starts the selection over before it opens; ⌘-click leaves it alone', async () => {
+  it('a PLAIN click and a ⌘-click both make the selection THE CLICKED PAGE before they open (D9, YAZ-1674)', async () => {
     const selection = selectionOver([SHARED])
     const { el, props } = await mount({ source: sourceOver(diamond()), selection })
     await click(chevrons(el, 'Expand Metrics')[0])
     await click(rowFor(el, 'Shared') as Element, { metaKey: true })
     expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(SHARED)
-    expect(selection.clear).not.toHaveBeenCalled()
+    expect(selection.set).toHaveBeenCalledExactlyOnceWith(SHARED)
     await click(rowFor(el, 'Shared') as Element)
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(SHARED)
-    expect(selection.clear).toHaveBeenCalledOnce()
+    expect(selection.set).toHaveBeenCalledTimes(2)
+    expect(selection.toggle).not.toHaveBeenCalled()
   })
 })
