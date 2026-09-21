@@ -461,7 +461,7 @@ export const MAX_COLLAPSED_GROUP_KEYS = 200
 /** Expanded Topics-tree pages per vault (🔒 D4, YAZ-848) are capped at this many — `folds`' cap, for a bucket of the same kind: one entry per page the user opened. */
 export const MAX_TOPICS_EXPANDED_PAGES = 500
 
-/** Favorited files + folders per vault (YAZ-1766 D2) are capped at this many — `topicsExpanded`'s cap, for a bucket of the same kind. */
+/** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write — `topicsExpanded`'s cap, for a list of the same kind. */
 export const MAX_FAVORITES = 500
 
 /**
@@ -659,14 +659,6 @@ export interface FolderState {
    * into any note's frontmatter.
    */
   topicsExpanded: string[]
-  /**
-   * The Favorites tab's pinned files AND folders (YAZ-1766 D2): absolute paths in INSERTION order
-   * (newest last; drag-to-reorder rewrites the order), max MAX_FAVORITES. Per vault and shared by
-   * every window on it — and unlike its two session siblings above it PERSISTS: a favorite is
-   * vault content the user chose, not chrome. Path-keyed, so `store.renamePath` / `store.removePath`
-   * repair it as they repair `expanded`.
-   */
-  favorites: string[]
 }
 
 /**
@@ -691,7 +683,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: [] }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
@@ -867,6 +859,29 @@ export interface PropertiesApi {
   onChange(listener: (properties: PropertiesResponse) => void): () => void
 }
 
+// ---------- Favorites (`<root>/.yaseendocs/favorites.json` — YAZ-1766 6A, D11) ----------
+
+/** The file on disk: VAULT-RELATIVE POSIX paths in the user's order (`MAX_FAVORITES` at most). */
+export interface FavoritesConfig {
+  version: 1
+  favorites: string[]
+}
+
+/**
+ * The Favorites tab's list as `window.yaseenDocs.favorites` (YAZ-1766 6A): ABSOLUTE paths over
+ * `.yaseendocs/favorites.json`, so the list travels with the vault (D11). A malformed file reads
+ * as `[]` and rejects every `set` with `INVALID_CONFIG`, never overwritten (D12); `set` drops
+ * entries whose path is gone from disk (D14); in-app rename/delete repair the file in main (D13).
+ */
+export interface FavoritesApi {
+  /** Absolute paths in stored order; `[]` when the file is absent or malformed. Never creates anything. */
+  get(root: string): Promise<string[]>
+  /** Replace the list; every path must be inside `root` (→ `BAD_REQUEST`). Creates the dotfolder and file on first write. */
+  set(root: string, paths: readonly string[]): Promise<void>
+  /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. Returns an unsubscribe. */
+  onChanged(listener: (change: { root: string }) => void): () => void
+}
+
 // ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
 
 /**
@@ -947,8 +962,8 @@ export interface StateApi {
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
   removeRecent(path: string): Promise<void>
-  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` and `favorites` are capped main-side (YAZ-848, YAZ-1766). */
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'favorites'>>): Promise<void>
+  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped main-side (YAZ-848). */
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
   /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */
@@ -1203,6 +1218,8 @@ export interface YaseenDocsApi {
   vaultConfig: VaultConfigApi
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835). */
   properties: PropertiesApi
+  /** The Favorites list over `.yaseendocs/favorites.json` (YAZ-1766 6A) — absolute paths in, relative on disk. */
+  favorites: FavoritesApi
   /** Per-vault GitHub sync, off by default (YAZ-1081). */
   github: GithubApi
 }
