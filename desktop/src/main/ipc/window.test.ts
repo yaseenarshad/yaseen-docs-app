@@ -33,6 +33,7 @@ let manager: {
   idFor: typeof windows.idFor
   openWindow: ReturnType<typeof vi.fn>
   duplicateWindow: ReturnType<typeof vi.fn>
+  openRecentBeside: ReturnType<typeof vi.fn>
   closeWindow: ReturnType<typeof vi.fn>
   handleFlushed: ReturnType<typeof vi.fn>
 }
@@ -46,7 +47,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), closeWindow: vi.fn(), handleFlushed: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), closeWindow: vi.fn(), handleFlushed: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -68,7 +69,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf, CH.windowZoom, CH.menuPasteTextFallback].sort())
+    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowOpenRecent, CH.windowCloseSelf, CH.windowZoom, CH.menuPasteTextFallback].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -206,6 +207,16 @@ describe('registerWindowIpc', () => {
     expect(await registered(CH.windowOpen)({ sender }, { root: 5 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.windowOpen)({ sender }, { root: 'rel' })).toEqual(bad('NOT_ABSOLUTE'))
     expect(manager.openWindow).toHaveBeenCalledTimes(2)
+  })
+
+  it('window:open-recent validates the path and returns the door\'s verdict (YAZ-1767 D1)', async () => {
+    expect(await registered(CH.windowOpenRecent)({ sender }, '/v/other')).toEqual(ok(true))
+    expect(manager.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/v/other')
+    manager.openRecentBeside.mockReturnValueOnce(false)
+    expect(await registered(CH.windowOpenRecent)({ sender }, '/v/gone')).toEqual(ok(false))
+    expect(await registered(CH.windowOpenRecent)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.windowOpenRecent)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
+    expect(manager.openRecentBeside).toHaveBeenCalledTimes(2)
   })
 
   it('window:duplicate hands the caller entry to the manager; unknown callers are rejected', async () => {

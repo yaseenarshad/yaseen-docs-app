@@ -955,6 +955,15 @@ export interface WindowApi {
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>
   /**
+   * The vault switcher's one door (YAZ-1767 🔒 D1): bring a recent vault to the front and bump it
+   * to the top of the MRU. Already open in some window(s) → those are RAISED, most recently
+   * focused on top, and nothing new opens (🔒 D9); not open → a NEW window on that vault's
+   * `folders[root].lastFile` (D2). A folder that no longer exists on disk is pruned from the MRU
+   * instead and NOTHING opens — the result is `false`, so the row can say "Folder not found" the
+   * way Welcome does. The menu's ⌥-click on Open Recent goes through the same door in main.
+   */
+  openRecent(path: string): Promise<boolean>
+  /**
    * Close THIS window through the REAL close path — main calls the managed window's `close()`,
    * so the close/flush handshake runs; never a bare destroy (GRO-2232, e.g. closing the last tab).
    */
@@ -992,6 +1001,8 @@ export interface MenuApi {
   onOpenRoot(listener: (path: string) => void): () => void
   /** File › Search Vault (⌘K) targeted this window: focus the sidebar search bar (YAZ-804). Returns an unsubscribe. */
   onSearch(listener: () => void): () => void
+  /** File › Switch Vault… (⌘O) targeted this window: open the sidebar header's vault switcher, un-collapsing the sidebar first (YAZ-1767 D8). Returns an unsubscribe. */
+  onSwitchVault(listener: () => void): () => void
   /** Yaseen Docs › Settings… (⌘,) targeted this window: open the settings dialog (YAZ-1679). Returns an unsubscribe. */
   onSettings(listener: () => void): () => void
   /** View › Toggle Sidebar targeted this window (YAZ-1280). Returns an unsubscribe. */

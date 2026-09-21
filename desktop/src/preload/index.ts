@@ -108,6 +108,8 @@ const api: YaseenDocsApi = {
     setIdentity: (patch) => call(CH.windowSetIdentity, patch),
     open: (opts) => call(CH.windowOpen, opts),
     duplicate: () => call(CH.windowDuplicate),
+    // The vault switcher's door (YAZ-1767 D1): true = the vault is in front (raised or newly opened), false = dead folder, pruned.
+    openRecent: (path) => call(CH.windowOpenRecent, path),
     closeSelf: () => call(CH.windowCloseSelf),
     zoom: (step) => call(CH.windowZoom, step),
     onFlush: (listener) => {
@@ -130,6 +132,7 @@ const api: YaseenDocsApi = {
     onOpenFolder: on<void>(CH.menuOpenFolder),
     onOpenRoot: on<string>(CH.menuOpenRoot),
     onSearch: on<void>(CH.menuSearch),
+    onSwitchVault: on<void>(CH.menuSwitchVault),
     onSettings: on<void>(CH.menuSettings),
     onToggleSidebar: on<void>(CH.menuToggleSidebar),
     onZoom: on<ZoomStep>(CH.menuZoom),
