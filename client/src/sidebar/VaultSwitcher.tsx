@@ -93,8 +93,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest }:
     setPanel({ rows, now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
     setQuery('')
     setMissing(new Set())
-    setActive(defaultHighlight(rows, '', root))
-  }, [root])
+  }, [])
   const closePanel = useCallback(() => setPanel(null), [])
 
   // The filter takes focus whenever the panel mounts (D7).
@@ -121,10 +120,10 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest }:
   /** The Open folder… row's index in the highlight space. */
   const openFolderIndex = matches.length
 
-  const onQueryChange = (value: string): void => {
-    setQuery(value)
-    if (panel !== null) setActive(defaultHighlight(rankVaultRows(panel.rows, value), value, root))
-  }
+  // The highlight re-seeds exactly when `matches` does — on open and on every keystroke (D7).
+  useEffect(() => {
+    setActive(defaultHighlight(matches, query, root))
+  }, [matches, query, root])
 
   const choose = (path: string): void => {
     void window.yaseenDocs.window
@@ -207,7 +206,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest }:
               autoComplete="off"
               spellCheck={false}
               value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
+              onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
             />
             <div className="vault-switcher__rows">
