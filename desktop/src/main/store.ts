@@ -5,7 +5,6 @@ import {
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   MAX_COLLAPSED_GROUP_KEYS,
-  MAX_FAVORITES,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
   MAX_TOPICS_EXPANDED_PAGES,
@@ -52,7 +51,7 @@ export interface Store {
   setSidebarWidth(width: number): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'favorites'>>): void
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
@@ -61,7 +60,7 @@ export interface Store {
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its Focus Mode
    * lists `focusDirs`/`focusTopics`/`focusFavorites` (YAZ-1628, YAZ-1766), recents, each
-   * folder-state key and its `expanded`/`lastFile`/`topicsExpanded`/`favorites`/fold keys/
+   * folder-state key and its `expanded`/`lastFile`/`topicsExpanded`/fold keys/
    * baseGroups keys (`<basePath>::<view>`).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
@@ -75,7 +74,7 @@ export interface Store {
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
    * deleted tabs are dropped as are its `focusDirs` / `focusTopics` / `focusFavorites` entries
    * (YAZ-1628, YAZ-1766), `recents` loses the entry, and folder-state keys plus their
-   * `expanded` / `lastFile` / `topicsExpanded` / `favorites` / fold keys / `baseGroups` keys
+   * `expanded` / `lastFile` / `topicsExpanded` / fold keys / `baseGroups` keys
    * (`<basePath>::<view>`) go too.
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
@@ -219,8 +218,6 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     topicsExpanded: [],
-    // Favorites PERSIST (YAZ-1766 D2), unlike the two session lists: the `tabs` rule (absolute only), capped.
-    favorites: isStringArray(raw.favorites) ? raw.favorites.filter(isAbsolute).slice(0, MAX_FAVORITES) : [],
   }
 }
 
@@ -354,7 +351,6 @@ export function createStore(filePath: string): Store {
         // Capped here as well as in the renderer (`folds` / `baseGroups`' rule): the store is
         // what a hand-edited or third-party write lands in, and this bucket grows per page.
         ...(patch.topicsExpanded !== undefined ? { topicsExpanded: patch.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) } : {}),
-        ...(patch.favorites !== undefined ? { favorites: patch.favorites.slice(0, MAX_FAVORITES) } : {}),
       }
       commit({ ...state, folders: { ...state.folders, [root]: next } })
     },
@@ -442,8 +438,6 @@ export function createStore(filePath: string): Store {
             // expanded topic follows its own rename, and a renamed FOLDER carries every topic
             // inside it through the same prefix branch.
             topicsExpanded: folder.topicsExpanded.map(remap),
-            // Favorites (YAZ-1766 D2): a favorited file or folder follows its rename, one INSIDE a renamed folder too.
-            favorites: folder.favorites.map(remap),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
           },
@@ -525,8 +519,6 @@ export function createStore(filePath: string): Store {
               // The Topics tree's open pages (YAZ-848): a deleted page's entry would never match
               // a row again, so it goes with the rest rather than sitting in the file forever.
               topicsExpanded: drop(folder.topicsExpanded),
-              // A deleted favorite (YAZ-1766 D2) leaves the list rather than sitting in the file forever.
-              favorites: drop(folder.favorites),
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),

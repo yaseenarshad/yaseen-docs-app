@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { FileApi, FileClipState, GithubApi, GithubSyncStatus, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { FavoritesApi, FileApi, FileClipState, GithubApi, GithubSyncStatus, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'readPdf', 'readImage', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'readPdf', 'readImage', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'favorites', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarWidth', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'openRecent', 'closeSelf', 'zoom', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onCopyAs', 'onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onSwitchVault', 'onSettings', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab', 'onZoom'] as const satisfies readonly (keyof MenuApi)[]
@@ -22,6 +22,7 @@ const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted', 'cli
 const SHELL = ['reveal', 'openVsCode', 'openDefault', 'openLink', 'agentPrompt'] as const satisfies readonly (keyof ShellApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
 const PROPERTIES = ['get', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof PropertiesApi)[]
+const FAVORITES = ['get', 'set', 'onChanged'] as const satisfies readonly (keyof FavoritesApi)[]
 const GITHUB = ['status', 'syncNow', 'setEnabled', 'onStatus'] as const satisfies readonly (keyof GithubApi)[]
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
 const _top: Exhaustive<YaseenDocsApi, typeof TOP> = true
@@ -33,8 +34,9 @@ const _file: Exhaustive<FileApi, typeof FILE> = true
 const _shell: Exhaustive<ShellApi, typeof SHELL> = true
 const _vaultConfig: Exhaustive<VaultConfigApi, typeof VAULT_CONFIG> = true
 const _properties: Exhaustive<PropertiesApi, typeof PROPERTIES> = true
+const _favorites: Exhaustive<FavoritesApi, typeof FAVORITES> = true
 const _github: Exhaustive<GithubApi, typeof GITHUB> = true
-void [_top, _state, _window, _menu, _link, _file, _shell, _vaultConfig, _properties, _github]
+void [_top, _state, _window, _menu, _link, _file, _shell, _vaultConfig, _properties, _favorites, _github]
 
 describe('preload bridge', () => {
   it('installs window.yaseenDocs with every contract method', async () => {
@@ -50,6 +52,7 @@ describe('preload bridge', () => {
     for (const k of SHELL) expect(typeof api.shell[k], `shell.${k}`).toBe('function')
     for (const k of VAULT_CONFIG) expect(typeof api.vaultConfig[k], `vaultConfig.${k}`).toBe('function')
     for (const k of PROPERTIES) expect(typeof api.properties[k], `properties.${k}`).toBe('function')
+    for (const k of FAVORITES) expect(typeof api.favorites[k], `favorites.${k}`).toBe('function')
     for (const k of GITHUB) expect(typeof api.github[k], `github.${k}`).toBe('function')
   })
 

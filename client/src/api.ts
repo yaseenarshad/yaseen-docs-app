@@ -79,6 +79,12 @@ export const api = {
     removeProperty: (root: string, name: string) => call<void>(() => window.yaseenDocs.properties.removeProperty(root, name)),
     onChange: (listener: (properties: PropertiesResponse) => void) => window.yaseenDocs.properties.onChange(listener),
   },
+  /** The Favorites list over `.yaseendocs/favorites.json` (YAZ-1766 6A): absolute paths in the user's order; a malformed file rejects `set` with INVALID_CONFIG. */
+  favorites: {
+    get: (root: string) => call<string[]>(() => window.yaseenDocs.favorites.get(root)),
+    set: (root: string, paths: readonly string[]) => call<void>(() => window.yaseenDocs.favorites.set(root, paths)),
+    onChanged: (listener: (change: { root: string }) => void) => window.yaseenDocs.favorites.onChanged(listener),
+  },
   /** Per-vault GitHub sync (YAZ-1081): off by default, toggled through `.yaseendocs/github.json`; every call answers the same status the push carries. */
   github: {
     status: (root: string) => call<GithubSyncStatus>(() => window.yaseenDocs.github.status(root)),
