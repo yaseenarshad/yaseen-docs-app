@@ -23,13 +23,13 @@
   - [x] 1- Scope (YAZ-1761): findings comment posted, issue Done.
   - [x] Prototype in worktree (agent), 3453 client tests + typecheck green; demo vault "Header Chrome - Sidebar Reopen + Properties Chip" + profile in the session scratchpad; Yasin walked S1–S10, C1–C12: all passed.
   - [x] Linear tree created; LOCKED decisions + scenarios on YAZ-1760; per-child decision comments.
-- Now: [→] 2- + 3- (YAZ-1759, YAZ-1758): code reviewed by hand, one commit for both (app.css and CONTRACTS.md carry hunks of each).
-- Next: 4- verify (YAZ-1762) → 5A audit comment (YAZ-1764) → 5B apply (YAZ-1765) → push, PR, merge → closeout.
+  - [x] 2- + 3- (YAZ-1759, YAZ-1758): reviewed by hand, one commit `7868529` (app.css and CONTRACTS.md carry hunks of each). Both Done on Linear.
+  - [x] 4- Verify (YAZ-1762): 191 files / 3453 tests green, typecheck clean, Yasin's 22-scenario walkthrough on the same code. Done.
+  - [x] 5A audit (YAZ-1764): four items, posted by file. Done.
+- Now: [→] 5B apply (YAZ-1765): stale `onCollapse` comment fixed, app.css comment rewrapped, icons.tsx says why `SidebarPanelIcon` skips the shared spread (declined item), App.test pins "Show sidebar absent while open". Targeted suite + typecheck green.
+- Next: push, PR, merge to main (no release) → ledger closeout on main → Linear Done + HANDOFF → delete demo rig + worktree.
 - Remaining:
-  - [ ] 4- Verify: re-check S1/S3/S5 + C1/C3/C9 after polish if rendered output changed; record suite + typecheck.
-  - [ ] 5A audit comment (by file).
-  - [ ] 5B apply; closing per-item comment.
-  - [ ] PR → merge to main (no release). Linear statuses Done; HANDOFF comments.
+  - [ ] PR → merge. Linear 5B, 5-, parent Done; HANDOFF comment on parent.
   - [ ] Delete demo vault, profile, `run-demo.sh`/`make-demo.mjs`, worktree + branch.
 
 ## Open Questions

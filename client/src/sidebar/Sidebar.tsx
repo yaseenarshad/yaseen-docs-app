@@ -50,7 +50,7 @@ interface SidebarProps {
   onPickFolder: () => void
   /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
   pickDisabled: boolean
-  /** Hide the sidebar (GRO-2023); App renders the floating reopen button while hidden. */
+  /** Hide the sidebar (GRO-2023); TabBar leads its nav row with the Show-sidebar button while hidden (YAZ-1759). */
   onCollapse: () => void
   /**
    * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity

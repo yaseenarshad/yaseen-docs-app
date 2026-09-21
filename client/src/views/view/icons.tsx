@@ -17,6 +17,7 @@ const svg = {
 /**
  * Panel-left pictogram shared by the sidebar's collapse button and the tab strip's Show-sidebar
  * button (GRO-2023; moved here from `sidebar/Sidebar.tsx` by YAZ-1759 once TabBar wore it too).
+ * Deliberately NOT on the shared `svg` spread: its square line caps are the original pixels.
  */
 export function SidebarPanelIcon() {
   return (
