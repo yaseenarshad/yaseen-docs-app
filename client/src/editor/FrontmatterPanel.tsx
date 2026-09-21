@@ -23,6 +23,7 @@ import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { cellContent } from '../views/view/GroupHeader'
+import { PropertiesIcon } from '../views/view/icons'
 import { writeProperty } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import '../views/views.css'
@@ -189,6 +190,8 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
   const { properties: parsed, error: parseError } = parseFrontmatter(splitFrontmatter(snap.content).frontmatter)
   const count = parseError === undefined ? Object.keys(parsed).length : 0
   const empty = disk === '' && snap.draft === null
+  // The words live in the tooltip and the accessible name (YAZ-1758); the chip itself shows a glyph.
+  const label = empty ? 'Add properties' : count > 0 ? `Properties (${count})` : 'Properties'
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
   const rows = rawMode ? [] : rowsOf(parsed, decls, folderDefinition)
@@ -232,15 +235,12 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
 
   return (
     <section className="frontmatter-panel">
-      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} onClick={() => { setExpanded((open) => !open); setQuery('') }}>
+      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} aria-label={label} title={label} onClick={() => { setExpanded((open) => !open); setQuery('') }}>
         <svg className="frontmatter-panel__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>
-        {/* A page with nothing to show offers the act instead of the noun — one control, not two. */}
-        <span className="frontmatter-panel__title">
-          {empty ? 'Add properties' : 'Properties'}
-          {count > 0 && <span className="frontmatter-panel__count"> ({count})</span>}
-        </span>
+        <PropertiesIcon />
+        {count > 0 && <span className="frontmatter-panel__count">{count}</span>}
       </button>
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>

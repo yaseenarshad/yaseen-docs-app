@@ -119,7 +119,7 @@ test('step 1 — the raw block edits in place, and the save is byte-for-byte the
     .locator('.editor-host')
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
   expect(blocks.slice(0, 2)).toEqual(['page-header', 'editor-mount'])
-  await expect(panelHeader(win)).toHaveText('Properties (3)')
+  await expect(panelHeader(win)).toHaveAttribute('aria-label', 'Properties (3)')
   await expect(yaml(win)).toHaveCount(0)
   await shoot(win, 'props-01-collapsed')
 
@@ -156,7 +156,7 @@ test('step 2 — the panel shows the saved text after a reopen, and broken YAML 
   await fileRow(win, 'Deep Work').click()
   await expect(editorOf(win)).toContainText('props-note-body')
 
-  await expect(panelHeader(win)).toHaveText('Properties (3)')
+  await expect(panelHeader(win)).toHaveAttribute('aria-label', 'Properties (3)')
   await panelHeader(win).click()
   await modeToggle(win).click()
   await expect(yaml(win)).toHaveValue(INTERIOR.replace('status: draft', 'status: done'))

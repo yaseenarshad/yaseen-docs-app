@@ -5,6 +5,7 @@ import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { isMarkdown } from '@shared/fileKind'
 import { copyForAgent } from '../lib/copyForAgent'
 import { basename, stripExt } from '../lib/paths'
+import { SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './tabs.css'
 
@@ -26,6 +27,11 @@ export interface TabBarProps {
   canForward: boolean
   onBack: () => void
   onForward: () => void
+  /**
+   * Collapsed sidebar (YAZ-1759): the reopen control sits HERE, left of ◀, instead of floating
+   * over it. Absent while the sidebar is open.
+   */
+  onShowSidebar?: () => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
   /**
@@ -58,7 +64,7 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowInSidebar, onNotice }: TabBarProps) {
+export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -125,6 +131,11 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, 
   return (
     <div className="tabbar-row">
       <div className="tabbar-nav">
+        {onShowSidebar && (
+          <button type="button" className="tabbar-nav__btn" aria-label="Show sidebar" title="Show sidebar" onClick={onShowSidebar}>
+            <SidebarPanelIcon />
+          </button>
+        )}
         <button type="button" className="tabbar-nav__btn" aria-label="Back" title="Back" disabled={!canBack} onClick={onBack}>
           <Chevron d="m10 4-4 4 4 4" />
         </button>
