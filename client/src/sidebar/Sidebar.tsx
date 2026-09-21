@@ -18,7 +18,7 @@ import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
-import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
+import { allDirs, ancestorDirs, favoriteRoots, findDirNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
 import { HOME_LINK } from './ensureHome'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
@@ -397,10 +397,12 @@ export function Sidebar({
   const [focusDirs, setFocusDirs] = useState<readonly string[]>(storage.getFocusDirs)
   const [focusTopics, setFocusTopics] = useState<readonly string[]>(storage.getFocusTopics)
   const [focusFavorites, setFocusFavorites] = useState<readonly string[]>(storage.getFocusFavorites)
-  // Favorites (YAZ-1766 D2): the vault's pinned files and folders, in the user's order. Per VAULT
-  // and persisted, like `expanded`'s bucket — and shared by every window on it, so another window's
-  // add lands here through the state broadcast (below).
-  const [favorites, setFavorites] = useState<readonly string[]>(() => storage.getFavorites(root))
+  // Favorites (YAZ-1766 D2, in the vault since 6A/D11): the vault's pinned files and folders in the
+  // user's order, read from `.yaseendocs/favorites.json` through main (absolute paths). Another
+  // window's — or another machine's, via sync — write lands here through `favorites:changed` (below).
+  const [favorites, setFavorites] = useState<readonly string[]>([])
+  const favoritesRef = useRef(favorites)
+  favoritesRef.current = favorites
   // Favorites drag-to-reorder (D4): the dragged root row + the hovered row and edge.
   const [reorderDragging, setReorderDragging] = useState<string | null>(null)
   const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
@@ -551,20 +553,37 @@ export function Sidebar({
     storage.setFocusFavorites(focusFavorites)
   }, [focusFavorites])
 
-  // Favorites' write-back (YAZ-1766 D2), idempotent like the rest — into the vault bucket, where every
-  // window on the vault reads it. The subscription is the other direction: another window's add or
-  // remove lands in the cache and replaces this list; the echo of THIS window's own write is a no-op.
+  // Favorites (6A/6C): read once per root, then re-read on every `favorites:changed` for this root —
+  // an own write's echo, another window's, or a synced file. A stale root's answer is dropped.
   useEffect(() => {
-    if (sameList(storage.getFavorites(root), favorites)) return
-    storage.setFavorites(root, favorites)
-  }, [root, favorites])
-  useEffect(
-    () =>
-      storage.subscribe(() => {
-        const next = storage.getFavorites(root)
-        setFavorites((prev) => (sameList(prev, next) ? prev : next))
-      }),
-    [root],
+    let cancelled = false
+    const load = () =>
+      void api.favorites.get(root).then((next) => {
+        if (!cancelled) setFavorites((prev) => (sameList(prev, next) ? prev : next))
+      })
+    load()
+    const off = api.favorites.onChanged((c) => {
+      if (c.root === root) load()
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [root])
+  /**
+   * The ONE writer (6C): optimistic, then main writes the file; a refusal (a malformed favorites.json
+   * → INVALID_CONFIG, D12) reverts the list and toasts. Main drops dead entries on the way (D14).
+   */
+  const saveFavorites = useCallback(
+    (next: readonly string[]) => {
+      const prev = favoritesRef.current
+      setFavorites(next)
+      api.favorites.set(root, next).catch((err: unknown) => {
+        setFavorites(prev)
+        onNotice(`Can't save favorites: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      })
+    },
+    [root, onNotice],
   )
 
   // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
@@ -605,13 +624,8 @@ export function Sidebar({
     const kept = focusFavorites.filter((dir) => findDirNode(tree.tree, dir) !== null)
     if (kept.length !== focusFavorites.length) setFocusFavorites(kept)
   }, [tree, focusFavorites])
-  // Favorites (YAZ-1766): the store repairs rename and in-app delete; this covers what changed on
-  // disk behind the app's back — a favorite the tree no longer holds leaves the list.
-  useEffect(() => {
-    if (tree === null || favorites.length === 0) return
-    const kept = favorites.filter((p) => findNode(tree.tree, p) !== null)
-    if (kept.length !== favorites.length) setFavorites(kept)
-  }, [tree, favorites])
+  // Favorites are NOT pruned against the tree here (D14): a path missing on this machine may simply not
+  // have synced yet, so it draws no row (`favoriteRoots`) and main heals dead entries on the next write.
 
   // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
   // other lens is a different reading of the vault, and a typed query swaps the body for the flat
@@ -935,16 +949,16 @@ export function Sidebar({
   /**
    * The favorite toggle (YAZ-1766 D3/D6): remove every path, or append the ones not yet pinned —
    * insertion order, no duplicates. `isOn` arrives with the paths (the folder-page toggle's idiom).
-   * The toast confirms with its own glyph; the write-back effect persists.
+   * The toast confirms with its own glyph; `saveFavorites` persists.
    */
   const toggleFavorite = useCallback(
     (paths: string[], isOn: boolean) => {
       const n = paths.length > 1 ? `${paths.length} ` : ''
-      if (isOn) setFavorites((prev) => prev.filter((p) => !paths.includes(p)))
-      else setFavorites((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))])
+      const prev = favoritesRef.current
+      saveFavorites(isOn ? prev.filter((p) => !paths.includes(p)) : [...prev, ...paths.filter((p) => !prev.includes(p))])
       onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite')
     },
-    [onNotice],
+    [onNotice, saveFavorites],
   )
 
   /**
@@ -1214,14 +1228,13 @@ export function Sidebar({
     setReorderDragging(null)
     setReorderOver(null)
     if (from === null || over === null || over.path === from) return
-    setFavorites((prev) => {
-      const without = prev.filter((p) => p !== from)
-      const i = without.indexOf(over.path)
-      if (i < 0) return prev
-      const at = over.edge === 'before' ? i : i + 1
-      return [...without.slice(0, at), from, ...without.slice(at)]
-    })
-  }, [reorderDragging, reorderOver])
+    const prev = favoritesRef.current
+    const without = prev.filter((p) => p !== from)
+    const i = without.indexOf(over.path)
+    if (i < 0) return
+    const at = over.edge === 'before' ? i : i + 1
+    saveFavorites([...without.slice(0, at), from, ...without.slice(at)])
+  }, [reorderDragging, reorderOver, saveFavorites])
 
   /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
   const favoriteReorder: TreeReorder = {

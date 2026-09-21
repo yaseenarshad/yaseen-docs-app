@@ -5,10 +5,10 @@ import { isRecord, isSettings, isStringArray, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `topicsExpanded` / `favorites`, each type-checked. */
-function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'favorites'>> {
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `topicsExpanded`, each type-checked. */
+function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>> {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
-  const patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'favorites'>> = {}
+  const patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>> = {}
   if (raw.expanded !== undefined) {
     if (!isStringArray(raw.expanded)) throw new BridgeFailure('BAD_REQUEST', "'expanded' must be a string array")
     patch.expanded = raw.expanded
@@ -18,11 +18,6 @@ function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' 
   if (raw.topicsExpanded !== undefined) {
     if (!isStringArray(raw.topicsExpanded)) throw new BridgeFailure('BAD_REQUEST', "'topicsExpanded' must be a string array")
     patch.topicsExpanded = raw.topicsExpanded
-  }
-  // The Favorites tab's pinned paths (YAZ-1766 D2): the same per-root patch, capped by the store on the way in.
-  if (raw.favorites !== undefined) {
-    if (!isStringArray(raw.favorites)) throw new BridgeFailure('BAD_REQUEST', "'favorites' must be a string array")
-    patch.favorites = raw.favorites
   }
   if (raw.lastFile !== undefined) {
     if (raw.lastFile !== null && typeof raw.lastFile !== 'string') throw new BridgeFailure('BAD_REQUEST', "'lastFile' must be a string or null")

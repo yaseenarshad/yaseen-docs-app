@@ -180,6 +180,12 @@ const api: YaseenDocsApi = {
       return () => ipcRenderer.removeListener(CH.propertiesChanged, on)
     },
   },
+  // The Favorites list over `.yaseendocs/favorites.json` (YAZ-1766 6A).
+  favorites: {
+    get: (root) => call(CH.favoritesGet, root),
+    set: (root, paths) => call(CH.favoritesSet, root, paths),
+    onChanged: on<{ root: string }>(CH.favoritesChanged),
+  },
   // Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188).
   vaultConfig: {
     read: (root, name) => call(CH.vaultConfigRead, root, name),

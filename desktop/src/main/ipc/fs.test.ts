@@ -9,6 +9,7 @@ import { makeFixture } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
 import { fileClip } from '../fileClip'
+import * as favorites from '../favorites'
 import { registerFsIpc } from './fs'
 
 vi.mock('electron', () => ({
@@ -19,6 +20,9 @@ vi.mock('electron', () => ({
   // `remove.test.ts` owns the disk-level behaviour.
   shell: { trashItem: vi.fn(async () => undefined) },
 }))
+// The favorites.json repair (YAZ-1766 6A, D13) rides the rename/delete handlers; `favorites.test.ts`
+// owns its disk behaviour, so here it is a mock whose failure must never fail the file op.
+vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Envelope<unknown>>
 
@@ -303,6 +307,46 @@ describe('registerFsIpc', () => {
       const res = await registered(CH.fsDelete)({ sender: {} }, { path: dot })
       expect(res).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'hidden entries cannot be deleted', path: dot } })
       expect(w.webContents.send).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('favorites.json repair (YAZ-1766 6A, D13)', () => {
+    it('fs:rename and file:repair-rename hand the open roots + paths to favorites.renamePath; a repair failure is warned and the op still answers and broadcasts', async () => {
+      const oldPath = path.join(root, 'fav-a.md')
+      const newPath = path.join(root, 'fav-b.md')
+      await writeFile(oldPath, '# fav\n')
+      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      vi.mocked(favorites.renamePath).mockRejectedValueOnce(new Error('favorites.json is read-only'))
+      senderWinId = undefined
+      expect(await registered(CH.fsRename)({ sender: {} }, { oldPath, newPath })).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
+      expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), oldPath, newPath)
+      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath, kind: 'file' })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('favorites.json is read-only'))
+      // The already-moved repair path takes the same road.
+      await rename(newPath, oldPath)
+      vi.mocked(favorites.renamePath).mockClear()
+      expect(await registered(CH.fileRepairRename)({ sender: {} }, { oldPath: newPath, newPath: oldPath })).toEqual({ ok: true, value: { oldPath: newPath, newPath: oldPath, kind: 'file' } })
+      expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), newPath, oldPath)
+      store.removeWindow('w-fav')
+    })
+
+    it('fs:delete hands the open roots + path to favorites.removePath; a repair failure is warned and the delete still answers and broadcasts', async () => {
+      const target = path.join(root, 'fav-gone.md')
+      await writeFile(target, '# gone\n')
+      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      vi.mocked(favorites.removePath).mockRejectedValueOnce(new Error('boom'))
+      senderWinId = undefined
+      expect(await registered(CH.fsDelete)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(vi.mocked(favorites.removePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), target)
+      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileDeleted, { path: target, kind: 'file' })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'))
+      store.removeWindow('w-fav')
     })
   })
 

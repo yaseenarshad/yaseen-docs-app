@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES, MAX_FOLD_KEYS_PER_FILE, MAX_TOPICS_EXPANDED_PAGES, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_TOPICS_EXPANDED_PAGES, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
@@ -77,7 +77,7 @@ describe('storage.init', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'], favorites: [] } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -242,7 +242,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [], favorites: [] } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -311,24 +311,6 @@ describe('storage', () => {
     storage.setTopicsExpanded('/r2', many)
     expect(storage.getTopicsExpanded('/r2')).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r2', { topicsExpanded: many.slice(0, MAX_TOPICS_EXPANDED_PAGES) })
-  })
-
-  it('favorites are the per-vault bucket (YAZ-1766 D2): a setFolder patch, capped, and REPLACED by another window\'s broadcast', async () => {
-    b = installBridge({ ...defaultAppState(), folders: { '/r1': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: ['/r1/a.md'] } } }, { id: 'w1', root: '/r1', file: null, tabs: [] })
-    await storage.init()
-    expect(storage.getFavorites('/r1')).toEqual(['/r1/a.md'])
-    expect(storage.getFavorites('/r2')).toEqual([])
-    storage.setFavorites('/r1', ['/r1/a.md', '/r1/Sub'])
-    expect(storage.getFavorites('/r1')).toEqual(['/r1/a.md', '/r1/Sub'])
-    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { favorites: ['/r1/a.md', '/r1/Sub'] })
-    expect(b.bridge.window.setIdentity).not.toHaveBeenCalled() // vault content, never window identity
-    const many = Array.from({ length: MAX_FAVORITES + 50 }, (_, i) => `/r1/p${i}.md`)
-    storage.setFavorites('/r1', many)
-    expect(storage.getFavorites('/r1')).toHaveLength(MAX_FAVORITES)
-    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { favorites: many.slice(0, MAX_FAVORITES) })
-    // Every window on the vault shares the one list: another window's write lands here through the broadcast.
-    b.emit({ ...defaultAppState(), folders: { '/r1': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: ['/r1/other.md'] } } })
-    expect(storage.getFavorites('/r1')).toEqual(['/r1/other.md'])
   })
 
   it('focusFavorites is this window identity (YAZ-1766 D5), focusDirs\' rule: setIdentity, deaf to broadcasts, cleared by a root change', async () => {
@@ -422,7 +404,7 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, topicsExpanded: [], favorites: [] } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, topicsExpanded: [] } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)
