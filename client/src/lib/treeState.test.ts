@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, findDirNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -135,5 +135,63 @@ describe('focusRoots (YAZ-1605)', () => {
     expect(focusRoots(tree, ['/v/Gone']).map((n) => n.path)).toEqual([])
     expect(focusRoots(tree, ['/v/Gone', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes'])
     expect(focusRoots(tree, [])).toEqual([])
+  })
+})
+
+/**
+ * The Favorites tab's two lookups (YAZ-1766 D4). `findNode` is `findDirNode`'s kind-agnostic twin;
+ * `favoriteRoots` keeps the STORED order and every nesting — it is deliberately not `focusRoots`.
+ */
+describe('findNode (YAZ-1766)', () => {
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'Projects-Archive', path: '/v/Projects-Archive', children: [] },
+    {
+      type: 'dir',
+      name: 'Projects',
+      path: '/v/Projects',
+      children: [
+        { type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [] },
+        { type: 'file', name: 'p.md', path: '/v/Projects/p.md', size: 1, mtime: 1, kind: 'markdown' },
+      ],
+    },
+    { type: 'file', name: 'top.md', path: '/v/top.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('finds a file and a dir, at the root and nested', () => {
+    expect(findNode(tree, '/v/top.md')?.name).toBe('top.md')
+    expect(findNode(tree, '/v/Projects/p.md')?.name).toBe('p.md')
+    expect(findNode(tree, '/v/Projects/Alpha')?.type).toBe('dir')
+  })
+
+  it('is null for an unknown path, and a prefix-sharing sibling never answers for the shorter name', () => {
+    expect(findNode(tree, '/v/Nope.md')).toBeNull()
+    expect(findNode(tree, '/v/Projects-Archive/p.md')).toBeNull()
+    expect(findNode([], '/v/top.md')).toBeNull()
+  })
+})
+
+describe('favoriteRoots (YAZ-1766 D4)', () => {
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'Notes', path: '/v/Notes', children: [] },
+    {
+      type: 'dir',
+      name: 'Projects',
+      path: '/v/Projects',
+      children: [{ type: 'file', name: 'p.md', path: '/v/Projects/p.md', size: 1, mtime: 1, kind: 'markdown' }],
+    },
+    { type: 'file', name: 'top.md', path: '/v/top.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('returns the favorites in STORED order, files and dirs alike — never tree order', () => {
+    expect(favoriteRoots(tree, ['/v/top.md', '/v/Projects', '/v/Notes']).map((n) => n.path)).toEqual(['/v/top.md', '/v/Projects', '/v/Notes'])
+  })
+
+  it('keeps a favorite INSIDE a favorited folder as its own root row too (redundancy, not focusRoots)', () => {
+    expect(favoriteRoots(tree, ['/v/Projects/p.md', '/v/Projects']).map((n) => n.path)).toEqual(['/v/Projects/p.md', '/v/Projects'])
+  })
+
+  it('a path the tree no longer holds yields no row, and no favorites yields nothing', () => {
+    expect(favoriteRoots(tree, ['/v/Gone.md', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes'])
+    expect(favoriteRoots(tree, [])).toEqual([])
   })
 })

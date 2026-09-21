@@ -48,7 +48,7 @@ const bounds = { x: 0, y: 0, width: 800, height: 600 }
 const sender = { id: 1 }
 
 const stateWith = (windows: WindowEntry[]): AppState => ({ ...defaultAppState(), windows })
-const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds })
+const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds })
 
 let dir: string
 let vault: string

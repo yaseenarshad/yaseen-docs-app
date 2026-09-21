@@ -9,9 +9,9 @@ export const LINK_NOTICE_MS = 4000
 /**
  * The toast's glyph (D10 amended, YAZ-1674): what KIND of thing just happened, drawn before the
  * text. `'info'` unless the caller names a kind; the file clipboard's confirmations name their
- * verb, its failures say `'error'`.
+ * verb, its failures say `'error'`; a favorite added or removed says `'favorite'` (YAZ-1766 D6).
  */
-export type NoticeKind = 'copy' | 'cut' | 'paste' | 'error' | 'info'
+export type NoticeKind = 'copy' | 'cut' | 'paste' | 'favorite' | 'error' | 'info'
 
 export interface Notice {
   text: string
