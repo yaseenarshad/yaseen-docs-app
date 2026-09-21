@@ -30,11 +30,11 @@
   - [x] Linear tree: 1- YAZ-1777 (Done) · 2- YAZ-1778 → 2A YAZ-1779, 2B YAZ-1780 (Done) · 3- YAZ-1781 → 3A YAZ-1782, 3B YAZ-1783 (+ 3B1 YAZ-1793), 3C YAZ-1784, 3D YAZ-1785, 3E YAZ-1786 · 4- YAZ-1787 → 4A YAZ-1788, 4B YAZ-1789 · 5- YAZ-1790 → 5A YAZ-1791 (Done), 5B YAZ-1792.
   - [x] Code reviewed issue by issue (storage mirror-of-siblings; UI minimal); 5A audit posted (A1–A10).
   - [x] 5B code: A1 one `fileDrag` target in Tree.tsx; A2 `sameList` in all five write-backs; A3 = 3B1 create-hop + test; A5 stale comment. Docs A7/A8 (CONTRACTS.md Favorites paragraph + rows; README bullets). Ledger A9.
-- Now: [→] 4A/4B hand pass by Yasin on the polished branch (fresh isolated profile), then commit via /commit, push, PR, merge. NO release.
-- Remaining:
-  - [ ] 4A/4B evidence comments after Yasin's pass; fix anything found.
-  - [ ] Commit (/commit skill), push, PR, merge to main.
-  - [ ] A10: remove demo vault, profile, script; then worktree + branch. Close this ledger.
+  - [x] Rebased onto main `a842844` (YAZ-1767 vault switcher, PR #73): two text conflicts + seven `windows.test.ts` fixtures missing `focusFavorites`. Suites green after.
+  - [x] 4A/4B hand pass by Yasin on `98741a5` ("it all works"); evidence comments posted; 4 Done.
+- SHIPPED and CLOSED OUT (2026-09-21): PR #74 → main `54a4252`. Release 0.9.24 cut from that main (the first release since 0.9.23; it also carries YAZ-1767). Linear: YAZ-1766 and every child Done; HANDOFF comments on the parent and each child. Demo vault, profile, script, worktree and branch removed. Playwright never run.
+- Now: nothing; this ledger is closed.
+- Next: nothing.
 
 ## Open Questions
 - None. (Reorder inert while focused: confirmed in the demo. Inline create from a ♥ row: 3B1 hops to Files when the tab lacks the target dir.)
