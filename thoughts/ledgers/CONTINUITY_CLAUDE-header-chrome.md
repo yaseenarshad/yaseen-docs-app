@@ -26,14 +26,13 @@
   - [x] 2- + 3- (YAZ-1759, YAZ-1758): reviewed by hand, one commit `7868529` (app.css and CONTRACTS.md carry hunks of each). Both Done on Linear.
   - [x] 4- Verify (YAZ-1762): 191 files / 3453 tests green, typecheck clean, Yasin's 22-scenario walkthrough on the same code. Done.
   - [x] 5A audit (YAZ-1764): four items, posted by file. Done.
-- Now: [→] 5B apply (YAZ-1765): stale `onCollapse` comment fixed, app.css comment rewrapped, icons.tsx says why `SidebarPanelIcon` skips the shared spread (declined item), App.test pins "Show sidebar absent while open". Targeted suite + typecheck green.
-- Next: push, PR, merge to main (no release) → ledger closeout on main → Linear Done + HANDOFF → delete demo rig + worktree.
-- Remaining:
-  - [ ] PR → merge. Linear 5B, 5-, parent Done; HANDOFF comment on parent.
-  - [ ] Delete demo vault, profile, `run-demo.sh`/`make-demo.mjs`, worktree + branch.
+  - [x] 5B apply (YAZ-1765): commit `1651c7a`; four audit items done/declined, comment posted.
+- SHIPPED and CLOSED OUT (2026-09-20): PR #72 → main `391e0a3`. No release (0.9.22 stays). Linear: YAZ-1760 and every child Done; HANDOFF comment on the parent. Demo vault, profile, scripts, worktree and branch removed. Playwright never run.
+- Now: nothing; this ledger is closed.
+- Next: nothing.
 
 ## Open Questions
-- None blocking. UNCONFIRMED: whether the right panel's editors also render `.page-header` (the chip would appear there too); not required by any scenario.
+- None. (The right-panel question was never needed by a scenario; left unverified on purpose.)
 
 ## Working Set
 - Source: `client/src/tabs/TabBar.tsx`, `client/src/App.tsx`, `client/src/app.css`, `client/src/tabs/tabs.css`, `client/src/views/view/icons.tsx`, `client/src/sidebar/Sidebar.tsx`, `client/src/editor/FrontmatterPanel.tsx`.
