@@ -305,7 +305,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
-    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -328,7 +328,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       let entries = store.get().windows
       if (entries.length === 0) {
         // First launch: one window on the Welcome screen (root null; the screen itself is C2).
-        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { ...DEFAULT_BOUNDS } }
+        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { ...DEFAULT_BOUNDS } }
         store.upsertWindow(first)
         entries = [first]
       }
@@ -346,7 +346,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       duplicateWindow(from) {
         const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
         // Clone every ordered path list so the new window's durable identity cannot alias the source;
-        // sidebar visibility, the lens and both Focus Mode lists (YAZ-1628) are copied by value and then persist independently.
+        // sidebar visibility, the lens and the three Focus Mode lists (YAZ-1628, YAZ-1766) are copied by value and then persist independently.
         open({
           id: randomUUID(),
           root: from.root,
@@ -357,6 +357,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           sidebarLens: from.sidebarLens,
           focusDirs: [...from.focusDirs],
           focusTopics: [...from.focusTopics],
+          focusFavorites: [...from.focusFavorites],
           bounds: clampBounds(cascaded, host.workAreas()),
         })
     },

@@ -319,8 +319,11 @@ export function App() {
 
   const showInSidebar = useCallback((path: string) => {
     if (sidebarCollapsed) toggleSidebar()
-    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: sidebarLens })
-  }, [sidebarCollapsed, sidebarLens, toggleSidebar])
+    // Favorites is a SUBSET of the vault (YAZ-1766 D1): a reveal there hops to Files, where every row exists.
+    const lens = sidebarLens === 'favorites' ? 'files' : sidebarLens
+    if (lens !== sidebarLens) changeLens(lens)
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens })
+  }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
 
   // A folder search row (🔒 D3, YAZ-1491): always the FILES lens, whichever tab was showing. The
   // sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
