@@ -1027,8 +1027,107 @@ button {
   white-space: nowrap;
 }
 
+/* The switcher's chevron (YAZ-1767 D6): Octicons triangle-down — the one GitHub Desktop's repository
+   button wears — pointing up while the panel is open; one line, so the header keeps its height. */
 .sidebar__root-hint {
-  font-size: 11px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  color: var(--fg-muted);
+}
+
+/* ---------- the vault switcher panel (YAZ-1767) ---------- */
+
+/* The rows: the Welcome recent-row idiom (name left, relative time right, path below), at
+   GitHub Desktop's density. `aria-current` marks the vault this window is on (D3); `--active`
+   is the ONE keyboard/hover highlight (D7) — kept separate so both can show on the same row. */
+.vault-switcher__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 12px;
+  width: 100%;
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.vault-switcher__row[aria-current='true'] {
+  background: var(--accent-soft);
+}
+
+.vault-switcher__row--active:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.vault-switcher__row--active[aria-current='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.vault-switcher__row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.vault-switcher__name {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-switcher__when {
+  align-self: center;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* A dead folder (D5): the same danger colour Welcome's rows use. */
+.vault-switcher__when--missing {
+  color: var(--danger);
+}
+
+.vault-switcher__path {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-switcher__empty {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* "Open folder…" (D4): the LAST row, under a hairline, a single line. */
+.vault-switcher__open {
+  display: block;
+  border-top: 1px solid var(--border);
+}
+
+/* The filter (D7): first in the panel, a hairline below it, pinned while the rows scroll. */
+.vault-switcher__filter {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.vault-switcher__filter::placeholder {
   color: var(--fg-muted);
 }
 
@@ -1276,6 +1375,37 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* A panel, not a popup (YAZ-1767 D5): the vault switcher's surface hangs off the sidebar header's
+   full width — no padding, no top border (the header's own bottom border is the seam), squared
+   top corners so it sits flush, and it scrolls rather than outgrowing the window. */
+.ctx-menu--panel {
+  padding: 0;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  /* A short settle-in (GitHub Desktop's feel) rather than a pop: opacity + a 4px drop, GPU-composited
+     properties only, so the open costs no layout. Closing stays instant, as every menu's does. */
+  animation: vault-switcher-in 120ms ease-out;
+}
+
+@keyframes vault-switcher-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctx-menu--panel {
+    animation: none;
+  }
 }
 
 /* A flex row (🔒 D7, YAZ-1674): the label left, the shortcut hint — when the item has one —

@@ -306,6 +306,17 @@ export function App() {
     setPendingSearchFocus(true)
   }, [sidebarCollapsed, toggleSidebar])
 
+  // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
+  // request counter the sidebar header's panel consumes. The request is pinned to the root it was
+  // made on: the Sidebar remounts `key={root}`, and a stale counter must not reopen the panel on
+  // the vault an in-place "Open folder…" just switched to. Welcome (root null) has no switcher.
+  const [switcherRequest, setSwitcherRequest] = useState<{ seq: number; root: string | null }>({ seq: 0, root: null })
+  const openVaultSwitcher = useCallback(() => {
+    if (root === null) return
+    if (sidebarCollapsed) toggleSidebar()
+    setSwitcherRequest((prev) => ({ seq: prev.seq + 1, root }))
+  }, [root, sidebarCollapsed, toggleSidebar])
+
   const showInSidebar = useCallback((path: string) => {
     if (sidebarCollapsed) toggleSidebar()
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: sidebarLens })
@@ -331,7 +342,7 @@ export function App() {
 
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;
@@ -755,6 +766,8 @@ export function App() {
           indexSource={wikilinks}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
+          // ⌘O (YAZ-1767 D8): only a request made on THIS root counts; any other reads as none.
+          switcherOpenRequest={switcherRequest.root === root ? switcherRequest.seq : 0}
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}

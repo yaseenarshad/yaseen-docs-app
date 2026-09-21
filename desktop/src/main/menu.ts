@@ -19,6 +19,8 @@ export interface MenuHandlers {
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New Window (⌘⇧N, D6): duplicate the focused window — same folder, same file. */
   newWindow(): void
+  /** File › Switch Vault… (⌘O, YAZ-1767 D8): the focused window's renderer opens its sidebar vault switcher. */
+  switchVault(): void
   /** File › Open Folder… (⌘⇧O): the focused window's renderer runs its pick-folder flow. */
   openFolder(): void
   /** File › Open Recent › item: in place in the focused window; `beside` (⌥-click) in a new one. */
@@ -85,6 +87,9 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
       submenu: [
         { id: 'menu.file.new-window', label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => handlers.newWindow() },
         { type: 'separator' },
+        // ⌘O opens the sidebar header's vault switcher (YAZ-1767 D8): the renderer owns the panel,
+        // so the gesture goes to the focused window's renderer like Search Vault does.
+        { id: 'menu.file.switch-vault', label: 'Switch Vault…', accelerator: 'CmdOrCtrl+O', click: () => handlers.switchVault() },
         { id: 'menu.file.open-folder', label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => handlers.openFolder() },
         { id: 'menu.file.open-recent', label: 'Open Recent', submenu: recentItems },
         { type: 'separator' },
@@ -251,11 +256,9 @@ export interface MenuHost {
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
   readClipboardText(): string
   openExternal(url: string): void
-  /** Whether `path` exists as a directory — open-beside probes before touching the MRU (GRO-2211). */
-  dirExists(path: string): boolean
 }
 
-type MenuWindows = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow'>
+type MenuWindows = Pick<WindowManager, 'idFor' | 'duplicateWindow' | 'openRecentBeside'>
 
 export function createMenuHandlers(store: Store, windows: MenuWindows, host: MenuHost): MenuHandlers {
   /** The focused window's `AppState.windows` entry (lookup: `webContents.id` → entry id). */
@@ -276,20 +279,17 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
       const entry = focusedEntry()
       if (entry !== undefined) windows.duplicateWindow(entry)
     },
+    switchVault() {
+      host.focusedWebContents()?.send(CH.menuSwitchVault)
+    },
     openFolder() {
       host.focusedWebContents()?.send(CH.menuOpenFolder)
     },
     openRecent(path, beside) {
+      // Beside is the window manager's one open-recent door (YAZ-1767 D1): it probes the directory,
+      // prunes a dead one from the MRU, bumps a live one and opens it on its remembered last file.
       if (beside) {
-        // Beside never passes through the renderer's validating openRoot, so probe here too:
-        // a dead folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
-        if (!host.dirExists(path)) {
-          store.removeRecent(path)
-          return
-        }
-        // The renderer bumps the MRU when it opens in place; opening beside never lands there, so bump here.
-        store.pushRecent(path)
-        windows.openWindow({ root: path, file: null })
+        windows.openRecentBeside(path)
         return
       }
       host.focusedWebContents()?.send(CH.menuOpenRoot, path)

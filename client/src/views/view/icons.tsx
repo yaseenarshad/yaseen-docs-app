@@ -19,6 +19,15 @@ const svg = {
  * button (GRO-2023; moved here from `sidebar/Sidebar.tsx` by YAZ-1759 once TabBar wore it too).
  * Deliberately NOT on the shared `svg` spread: its square line caps are the original pixels.
  */
+/** Octicons' `triangle-down` (the chevron GitHub Desktop's repository switcher wears, YAZ-1767 D6); `up` flips it while the panel is open. */
+export function TriangleIcon({ up = false }: { up?: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style={up ? { transform: 'rotate(180deg)' } : undefined}>
+      <path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z" />
+    </svg>
+  )
+}
+
 export function SidebarPanelIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">

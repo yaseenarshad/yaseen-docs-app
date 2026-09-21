@@ -28,6 +28,8 @@ interface SidebarStubProps {
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
   pendingSearchFocus: boolean
+  /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
+  switcherOpenRequest: number
   /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
   lens: SidebarLens
   onLensChange: (lens: SidebarLens) => void
@@ -87,6 +89,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuSearch = new Set<() => void>()
+  const menuSwitchVault = new Set<() => void>()
   const menuSettings = new Set<() => void>()
   const menuToggleSidebar = new Set<() => void>()
   const menuCloseTab = new Set<() => void>()
@@ -163,6 +166,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => menuOpenRoot.delete(l)
       }),
       onSearch: menuSub(menuSearch),
+      onSwitchVault: menuSub(menuSwitchVault),
       onSettings: menuSub(menuSettings),
       onToggleSidebar: menuSub(menuToggleSidebar),
       onCloseTab: menuSub(menuCloseTab),
@@ -217,6 +221,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitSearch: () => menuSearch.forEach((l) => l()),
+    emitSwitchVault: () => menuSwitchVault.forEach((l) => l()),
     emitSettings: () => menuSettings.forEach((l) => l()),
     emitToggleSidebar: () => menuToggleSidebar.forEach((l) => l()),
     emitCloseTab: () => menuCloseTab.forEach((l) => l()),
@@ -800,6 +805,46 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(captured.sidebar?.pendingSearchFocus).toBe(false)
     act(() => emitSearch())
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
+  })
+})
+
+describe('App ⌘O vault switcher (YAZ-1767 D8)', () => {
+  it('from a collapsed sidebar it un-collapses first (the ⌘K handshake) and mounts the sidebar with a request pending', async () => {
+    const { bridge, el, emitSwitchVault } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => emitSwitchVault())
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
+    expect(captured.sidebar?.switcherOpenRequest).toBe(1)
+  })
+
+  it('with the sidebar open each ⌘O bumps the counter; the sidebar starts at 0', async () => {
+    const { bridge, emitSwitchVault } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(captured.sidebar?.switcherOpenRequest).toBe(0)
+    act(() => emitSwitchVault())
+    expect(captured.sidebar?.switcherOpenRequest).toBe(1)
+    act(() => emitSwitchVault())
+    expect(captured.sidebar?.switcherOpenRequest).toBe(2)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
+  })
+
+  it('a request is pinned to the root it was made on: after an in-place root switch the remounted sidebar reads 0', async () => {
+    const { emitSwitchVault, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitSwitchVault())
+    expect(captured.sidebar?.switcherOpenRequest).toBe(1)
+    await act(async () => emitOpenRoot('/w'))
+    expect(captured.sidebar?.root).toBe('/w')
+    expect(captured.sidebar?.switcherOpenRequest).toBe(0)
+    // A fresh request on the new root counts again.
+    act(() => emitSwitchVault())
+    expect(captured.sidebar?.switcherOpenRequest).toBe(2)
+  })
+
+  it('on Welcome (no root) it is a no-op — nothing to switch from', async () => {
+    const { bridge, el, emitSwitchVault } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    act(() => emitSwitchVault())
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
   })
 })

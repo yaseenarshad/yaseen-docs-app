@@ -61,7 +61,7 @@ export interface ManagedWindow {
   close(): void
   /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
   destroy(): void
-  on(event: 'move' | 'resize' | 'closed', listener: () => void): unknown
+  on(event: 'move' | 'resize' | 'closed' | 'focus', listener: () => void): unknown
   on(event: 'close', listener: (e: { preventDefault(): void }) => void): unknown
 }
 
@@ -73,6 +73,8 @@ export interface WindowHost {
   workAreas(): WindowBounds[]
   /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything. */
   exists(path: string): boolean
+  /** Whether `path` exists as a directory — `openRecentBeside` probes before touching the MRU (GRO-2211, moved here by YAZ-1767). */
+  dirExists(path: string): boolean
 }
 
 export interface WindowManager extends WindowLookup {
@@ -82,6 +84,15 @@ export interface WindowManager extends WindowLookup {
   openWindow(opts: OpenWindowOptions): void
   /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
+  /**
+   * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
+   * switcher (`window:open-recent`) and the menu's ⌥-click on Open Recent both land here. Probes
+   * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
+   * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
+   * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
+   * open, a new window opens on the vault's remembered `folders[root].lastFile` (D2). → `true`.
+   */
+  openRecentBeside(path: string): boolean
   /**
    * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
    * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
@@ -99,7 +110,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'closeWindow' | 'handleFlushed'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'closeWindow' | 'handleFlushed'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -195,6 +206,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
   /** Windows closing as part of the quit keep their state entry so relaunch restores them. */
   let quitting = false
+  /**
+   * Live window ids, most recently FOCUSED first (YAZ-1767 D9): `focus` moves an id to the front,
+   * `closed` drops it. A window that has never been focused is not in the list at all — it ranks
+   * last when the door raises a vault's windows.
+   */
+  const focusOrder: string[] = []
+  const noteFocused = (id: string): void => {
+    const at = focusOrder.indexOf(id)
+    if (at !== -1) focusOrder.splice(at, 1)
+    focusOrder.unshift(id)
+  }
 
   const entryOf = (id: string): WindowEntry | undefined => store.get().windows.find((w) => w.id === id)
 
@@ -251,6 +273,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     }
     win.on('move', scheduleBounds)
     win.on('resize', scheduleBounds)
+    win.on('focus', () => noteFocused(id))
 
     /** `close` is always intercepted: the window only goes away via `destroy()` after its flush. */
     let closing = false
@@ -269,6 +292,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       cancelBoundsTimer()
       unregister()
       live.delete(id)
+      const at = focusOrder.indexOf(id)
+      if (at !== -1) focusOrder.splice(at, 1)
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is a quit too.
       if (!quitting && live.size > 0) store.removeWindow(id)
     })
@@ -334,6 +359,36 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           focusTopics: [...from.focusTopics],
           bounds: clampBounds(cascaded, host.workAreas()),
         })
+    },
+
+    openRecentBeside(path) {
+      // Beside never passes through the renderer's validating openRoot, so probe here: a dead
+      // folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
+      if (!host.dirExists(path)) {
+        store.removeRecent(path)
+        return false
+      }
+      // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here.
+      store.pushRecent(path)
+      // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
+      // copy — LEAST recently focused first, so the most recently focused one ends on top (a
+      // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
+      const wanted = stripSlash(path)
+      const alreadyOpen = store
+        .get()
+        .windows.filter((w) => w.root !== null && stripSlash(w.root) === wanted)
+        .map((w) => ({ id: w.id, win: live.get(w.id) }))
+        .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
+      if (alreadyOpen.length > 0) {
+        const rank = (id: string): number => {
+          const at = focusOrder.indexOf(id)
+          return at === -1 ? Number.POSITIVE_INFINITY : at
+        }
+        for (const { win } of alreadyOpen.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
+        return true
+      }
+      openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
+      return true
     },
 
     closeWindow(id) {
