@@ -374,17 +374,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // copy — LEAST recently focused first, so the most recently focused one ends on top (a
       // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
       const wanted = stripSlash(path)
-      const open = store
+      const alreadyOpen = store
         .get()
         .windows.filter((w) => w.root !== null && stripSlash(w.root) === wanted)
         .map((w) => ({ id: w.id, win: live.get(w.id) }))
         .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
-      if (open.length > 0) {
+      if (alreadyOpen.length > 0) {
         const rank = (id: string): number => {
           const at = focusOrder.indexOf(id)
           return at === -1 ? Number.POSITIVE_INFINITY : at
         }
-        for (const { win } of [...open].sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
+        for (const { win } of alreadyOpen.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
         return true
       }
       openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })

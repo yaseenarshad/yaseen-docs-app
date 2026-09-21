@@ -2,10 +2,10 @@
 
 ## Goal
 - The sidebar header's top-left "vault name + change" button becomes a keyboard-first vault switcher modelled on GitHub Desktop's repository panel: click or ⌘O drops a panel flush under the header — filter input first (autofocused), every recent vault as a Welcome-style row (name + relative time / full path), the current vault included and tinted, "Open folder…" last — and ⏎ / click opens the highlighted vault in a NEW window on its remembered last file.
-- Done = prototype walked by Yasin on the demo rig (S1–S12 in the demo vault's `Start here.md`), decisions confirmed or amended, then review → merge to main with CONTRACTS.md/LAUNCH.md true and this ledger closed. NO release decided yet.
+- Done = walked and approved by Yasin on the demo rig, merged to main with CONTRACTS.md / LAUNCH.md / README true and this ledger closed. NO release (Yasin batches releases).
 
 ## Constraints
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-vault-switcher`, branch `yaz-1767-vault-switcher`, off main `ac9706c`. `/Users/yasin/Documents/GitHub/yaseen-docs-app` untouched. Nothing committed yet (commits go through the `/commit` skill).
+- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-vault-switcher`, branch `yaz-1767-vault-switcher`, off main `ac9706c`. `/Users/yasin/Documents/GitHub/yaseen-docs-app` untouched. Commits go through the `/commit` skill.
 - NO Playwright / e2e runs; NO agent-launched Electron. Verification = `npx vitest run` (all four projects) + `npm run typecheck` + Yasin's hand walkthrough in the dev app on the isolated profile (`YASEEN_DOCS_USER_DATA_DIR`, HMR, no `--watch`).
 - House style: comments cite issue ids; tests pin contracts (menu ids/accelerators, bridge method lists, hotkey list).
 - `ContextMenuSurface` changes are ADDITIVE (`width?`, `className?`); every existing menu renders exactly as before.
@@ -31,27 +31,20 @@
 
 ## State
 - Done:
-  - [x] Read LAUNCH.md, CONTRACTS.md (Menus, Multi-window), header-chrome ledger for house style.
-  - [x] D1: channel, `WindowHost.dirExists`, `openRecentBeside`, IPC handler, preload, `WindowApi.openRecent`; menu ⌥-click through the door; `MenuHost.dirExists` removed.
-  - [x] D5: `ContextMenuSurface` `width`/`className`; `VaultSwitcher.tsx`; CSS beside `.ctx-menu` and `.sidebar__root*`.
-  - [x] D3/D4/D6/D7: in `VaultSwitcher.tsx`; Sidebar header uses it; `switcherOpenRequest` prop.
-  - [x] D8: menu item + channel + preload + `useMenuEvents` + App handshake + `WINDOW_HOTKEYS` ⌘O.
-  - [x] D9 (locked mid-prototype): `focusOrder` + raise-instead-of-open in `openRecentBeside`; tests one-window / two-with-history / never-focused / mid-close; demo S13–S15 added to `Start here.md` in place (profile untouched).
-  - [x] Tests: `VaultSwitcher.test.tsx` (27), App ⌘O (4), `useMenuEvents`, `hotkeys`, `windows` (door ×3), `menu` (item/id/handler/⌥), ipc `window` (channel), preload `bridge` lists; `Sidebar.test.tsx` harness updated.
-  - [x] All four vitest projects green + `npm run typecheck` clean (see the summary handed to Yasin for counts).
-  - [x] Demo rig in the session scratchpad `yaz-1767/`: `setup-demo.sh` (idempotent; 10 vaults + `eleventh-vault`; `gone-vault` deleted after seeding; `lastfile-deleted` → `Missing.md`), `run-demo.sh` (dev app on the isolated profile, no `--watch`).
-- Now: [→] Demo pending Yasin's walkthrough (S1–S15 in `Recent Vaults Dropdown/Start here.md`).
-- Next:
-  - [ ] Yasin confirms/amends A1–A6; lock on Linear (parent + children tree as per house pattern).
-  - [ ] Docs pass before merge: CONTRACTS.md "Menus & shortcuts" (Switch Vault… row; Open Recent ⌥ row → "through `openRecentBeside`") and "Multi-window" (Open beside bullet: the switcher + lastFile restore); LAUNCH.md still says "click **change** in the sidebar header" (twice) — now stale.
-  - [ ] e2e specs are not run here; none reference the old "change" button (grepped), so no edits pending.
-  - [ ] Review → `/commit` → PR → merge; then remove vaults/profile/scripts/worktree.
+  - [x] 1- Scope (YAZ-1768): findings comment posted. Done.
+  - [x] Prototype in the worktree; demo rig on an isolated profile; Yasin walked S1–S19 (D6 chevron → Octicon, D8 ⌘O toggle, 120 ms settle-in and D9 raise-instead-of-duplicate came out of the walk, each re-walked). "approved, lock it in" 2026-09-21.
+  - [x] Linear tree created (YAZ-1768…1774); LOCKED D1–D9 + A1–A9 and the canonical scenario list S1–S19 on the parent; per-child learnings comments.
+  - [x] 2- Door (YAZ-1769): commit `2aab542`. Done.
+  - [x] 3- Panel (YAZ-1770): commit `11cdee3`. Done.
+  - [x] 4- Verify (YAZ-1771): 254 files / 4380 tests green, typecheck clean, Yasin's walkthrough. Done.
+  - [x] 5A audit (YAZ-1773): eleven items posted by file. Done.
+  - [x] 5B apply (YAZ-1774): highlight seeded by one effect (no second ranking); `alreadyOpen` rename; CONTRACTS.md (file map ×2, `window.*` row, `menu.*` row, Folder picking, Menus ×2, Open beside, hotkey reference), LAUNCH.md ×2, README ×1; this ledger closed.
+- SHIPPED: PR merged to main (see the HANDOFF comment on YAZ-1767). No release cut (Yasin batches releases). Demo rig, worktree and branch removed after the merge.
+- Now: nothing; this ledger is closed.
+- Next: nothing.
 
 ## Open Questions
-- UNCONFIRMED: should a dead row also be removed from the open panel's list the moment `openRecent` returns false (the MRU already dropped it), or keep Welcome's "disabled + Folder not found" until the next open? Implemented the latter (D5 as written).
-- UNCONFIRMED: `lastfile-deleted` (S8) — the new window opens with `file` = a missing path; the renderer's existing `onFileMissing` path handles it. Confirm the experience is acceptable rather than probing `lastFile` main-side.
-- UNCONFIRMED (D9): the current vault's own row now RAISES this window (it is open) rather than opening a second one — D3's "one rule for every row" still holds (the rule is the door), but ⌘⇧N remains the only way to get a second window on the current vault. Confirm that reading.
-- UNCONFIRMED: `.ctx-menu` sits at `z-index: 40`; confirm the panel clears the tab strip and any editor chrome at every sidebar width in the demo.
+- None. The four UNCONFIRMED items were confirmed by the walkthrough and locked as A7 (dead row stays until the next open), A8 (missing lastFile is the renderer's job), D9 reading (the current vault's row raises this window), A9 (z-index 40 clears everything at every sidebar width).
 
 ## Working Set
 - Desktop: `desktop/src/channels.ts`, `desktop/src/main/windows.ts`, `desktop/src/main/index.ts`, `desktop/src/main/menu.ts`, `desktop/src/main/ipc/window.ts`, `desktop/src/preload/index.ts`, `shared/types.ts`.
