@@ -1,6 +1,5 @@
 import {
   MAX_COLLAPSED_GROUP_KEYS,
-  MAX_FAVORITES,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_TOPICS_EXPANDED_PAGES,
   addRecentRoot,
@@ -113,18 +112,6 @@ export const storage = {
     const topicsExpanded = pages.slice(0, MAX_TOPICS_EXPANDED_PAGES)
     patchFolder(root, { topicsExpanded })
     send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { topicsExpanded }))
-  },
-
-  /**
-   * The Favorites tab's pinned files and folders (YAZ-1766 D2): `expanded`'s per-root bucket and
-   * `setFolder` patch, but PERSISTED — capped like `topicsExpanded`, and live across windows through
-   * the state broadcast (`subscribe`), since every window on the vault shares the one list.
-   */
-  getFavorites: (root: string): string[] => folderOf(root).favorites,
-  setFavorites(root: string, paths: readonly string[]): void {
-    const favorites = paths.slice(0, MAX_FAVORITES)
-    patchFolder(root, { favorites })
-    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { favorites }))
   },
 
   /**

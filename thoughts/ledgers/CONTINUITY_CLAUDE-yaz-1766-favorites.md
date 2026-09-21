@@ -20,6 +20,11 @@
 - **D8** tree chevron 10→14px box, 5→7px arrow (demo request; app-wide).
 - **D9** verification by hand + vitest, never Playwright.
 - **D10** the subset rule: reveal (and, per 3B1, inline create whose target dir is not on the tab) hops the lens to Files.
+- **D11** (YAZ-1794, 6A — supersedes D2's storage half) THE LIST moves into the vault: `<root>/.yaseendocs/favorites.json` = `{ version: 1, favorites: string[] }` of VAULT-RELATIVE POSIX paths, so GitHub sync carries it. Main module `desktop/src/main/favorites.ts` (absolute over the bridge `favorites.get/set/onChanged`, relative on disk), IPC `ipc/favorites.ts` mirroring `ipc/properties.ts`.
+- **D12** corrupt policy = properties' R2.5: malformed / wrong shape reads `[]`, every `set` rejects `INVALID_CONFIG`, the file is never overwritten.
+- **D13** repair in `ipc/fs.ts` beside `store.renamePath/removePath`: `favorites.renamePath/removePath` on the LONGEST open root owning the path; write only on change; a repair failure warns and never fails the file op.
+- **D14** no renderer prune: a favorite the tree lacks draws no row (not synced yet); main drops dead entries on the user's next write.
+- **D15** clean break: `FolderState.favorites`, its `setFolder` patch, `storage.getFavorites/setFavorites` and the old tests are REMOVED; `WindowEntry.focusFavorites` stays; `MAX_FAVORITES` re-documented for the vault file.
 
 ## State
 - Done:
@@ -33,8 +38,9 @@
   - [x] Rebased onto main `a842844` (YAZ-1767 vault switcher, PR #73): two text conflicts + seven `windows.test.ts` fixtures missing `focusFavorites`. Suites green after.
   - [x] 4A/4B hand pass by Yasin on `98741a5` ("it all works"); evidence comments posted; 4 Done.
 - SHIPPED and CLOSED OUT (2026-09-21): PR #74 → main `54a4252`. Release 0.9.24 cut from that main (the first release since 0.9.23; it also carries YAZ-1767). Linear: YAZ-1766 and every child Done; HANDOFF comments on the parent and each child. Demo vault, profile, script, worktree and branch removed. Playwright never run.
-- Now: nothing; this ledger is closed.
-- Next: nothing.
+- Reopened (YAZ-1794, worktree `yaseen-docs-app-favorites-vault`, branch `yaz-1766-favorites-vault` off `1ddf90d` / 0.9.24):
+  - [→] 6- Favorites in the vault: 6A main module + IPC + repair, 6B clean break (D15), 6C Sidebar on `api.favorites` + docs. Code + tests + docs written; typecheck / client / desktop green. NOT committed.
+- Next: Yasin's hand pass in the dev app (two windows, a synced vault), then `/commit` when asked.
 
 ## Open Questions
 - None. (Reorder inert while focused: confirmed in the demo. Inline create from a ♥ row: 3B1 hops to Files when the tab lacks the target dir.)

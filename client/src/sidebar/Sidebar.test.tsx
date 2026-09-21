@@ -64,6 +64,13 @@ function installBridge() {
       clipState: vi.fn(async (): Promise<FileClipState> => null),
       onClipChanged: vi.fn((_listener: (state: FileClipState) => void) => () => undefined),
     },
+    // The Favorites list (YAZ-1766 6A): `.yaseendocs/favorites.json` behind main; absolute paths both ways.
+    // Empty by default; the favorites block seeds `get` and captures the `onChanged` listener.
+    favorites: {
+      get: vi.fn(async (_root: string): Promise<string[]> => []),
+      set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
+      onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
+    },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: {
       reveal: vi.fn(async ({ path }: { path: string }) => ({ path })),
@@ -1684,9 +1691,10 @@ describe('focus mode (YAZ-1605)', () => {
  * The Favorites tab (YAZ-1766): a third lens listing the files and folders the user pinned from any
  * row's menu, in insertion order, each a full tree row — a pinned folder unfolds in place through
  * the Files tree's own expansion (D7), a pinned file inside a pinned folder shows twice (root and
- * nested), the toast names the kind, the list persists in the vault bucket (D2), root rows drag to
- * reorder (D4), and Focus keeps its own per-window list here (D5). One fresh vault and window per
- * mount, as the Focus block above does it.
+ * nested), the toast names the kind, the list persists in the vault's `.yaseendocs/favorites.json`
+ * through `favorites.get/set` (D2, in the vault since 6A/D11), root rows drag to reorder (D4), and
+ * Focus keeps its own per-window list here (D5). One fresh vault and window per mount, as the Focus
+ * block above does it.
  */
 describe('favorites (YAZ-1766)', () => {
   const note = (path: string, name: string): TreeNode => ({ type: 'file', name, path, size: 1, mtime: 1, kind: 'markdown' })
@@ -1700,21 +1708,21 @@ describe('favorites (YAZ-1766)', () => {
   ]
 
   let vaults = 0
-  /** A fresh vault + window; `favorites` seeds the PERSISTED per-vault list the way main hands it over at boot (D2). */
+  /** A fresh vault + window; `favorites` seeds what `favorites.get` answers — the vault file's list, absolute, as main hands it over (6A). */
   const mountVault = async (over: Partial<SidebarProps> = {}, opts: { favorites?: string[]; focusFavorites?: string[]; nodes?: (v: string) => TreeNode[] } = {}) => {
     const v = `/v-fav-${++vaults}`
-    let emit: ((s: AppState) => void) | undefined
+    let emit: ((c: { root: string }) => void) | undefined
     const m = await mount({ root: v, lens: 'files', ...over }, async (b) => {
       b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FAV)(v), generatedAt: 1 } as never)
-      b.state.get.mockResolvedValue({ ...defaultAppState(), folders: { [v]: { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: (opts.favorites ?? []).map((p) => `${v}${p}`) } } })
-      b.state.onChange.mockImplementation((l) => {
+      b.favorites.get.mockResolvedValue((opts.favorites ?? []).map((p) => `${v}${p}`))
+      b.favorites.onChanged.mockImplementation((l) => {
         emit = l
         return () => undefined
       })
       b.window.identity.mockResolvedValue({ id: 'w1', root: v, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: (opts.focusFavorites ?? []).map((p) => `${v}${p}`) })
       await storage.init()
     })
-    return { ...m, v, emit: (s: AppState) => emit?.(s) }
+    return { ...m, v, emit: (c: { root: string }) => emit?.(c) }
   }
 
   const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
@@ -1752,7 +1760,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(el.querySelector('.create-inline')).not.toBeNull()
   })
 
-  it('"Add to favorites" is on file AND folder rows in Files, never on blank space; adding toasts, persists to the vault bucket and lists the row on the tab', async () => {
+  it('"Add to favorites" is on file AND folder rows in Files, never on blank space; adding toasts, persists to the vault file and lists the row on the tab', async () => {
     const { el, v, bridge, props, rerender } = await mountVault()
     rightClick(rowByPath(el, `${v}/top.md`))
     expect(itemByLabel(el, 'Add to favorites')).toBeDefined()
@@ -1763,8 +1771,9 @@ describe('favorites (YAZ-1766)', () => {
     closeMenu(el)
     await pick(el, `${v}/Projects`, 'Add to favorites')
     expect(props.onNotice).toHaveBeenCalledWith('Added to favorites', 'favorite')
-    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { favorites: [`${v}/Projects`] })
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // vault content, not window identity
+    expect(bridge.favorites.set).toHaveBeenCalledWith(v, [`${v}/Projects`])
+    expect(bridge.state.setFolder).not.toHaveBeenCalled() // vault content, not app state (D15)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // nor window identity
     await rerender({ lens: 'favorites' })
     expect(topLabels(el)).toEqual(['Projects'])
     // The pinned row now reads Remove, on the Favorites tab and back on Files alike.
@@ -1792,13 +1801,13 @@ describe('favorites (YAZ-1766)', () => {
     await pick(el, `${v}/Projects`, 'Remove from favorites')
     expect(topLabels(el)).toEqual(['top'])
     expect(props.onNotice).toHaveBeenCalledWith('Removed from favorites', 'favorite')
-    expect(bridge.state.setFolder).toHaveBeenLastCalledWith(v, { favorites: [`${v}/top.md`] })
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/top.md`])
   })
 
   it('a restored list renders in STORED order (not tree order) and is never written back', async () => {
     const { el, bridge } = await mountVault({ lens: 'favorites' }, { favorites: ['/top.md', '/Projects', '/Notes'] })
     expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
-    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
   it('a favorited folder unfolds in place, and its fold is the Files tree\'s own (D7)', async () => {
@@ -1824,31 +1833,31 @@ describe('favorites (YAZ-1766)', () => {
     shiftClickRow(rowByPath(el, `${v}/Notes`))
     rightClick(rowByPath(el, `${v}/Notes`))
     await act(async () => itemByLabel(el, 'Add 2 to favorites')?.click())
-    expect(bridge.state.setFolder).toHaveBeenLastCalledWith(v, { favorites: [`${v}/Notes`, `${v}/Projects`] })
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Notes`, `${v}/Projects`])
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     shiftClickRow(rowByPath(el, `${v}/Projects`)) // already pinned…
     shiftClickRow(rowByPath(el, `${v}/top.md`)) // …this one not
     rightClick(rowByPath(el, `${v}/top.md`))
     expect(itemByLabel(el, 'Add 2 to favorites')).toBeDefined()
     await act(async () => itemByLabel(el, 'Add 2 to favorites')?.click())
-    expect(bridge.state.setFolder).toHaveBeenLastCalledWith(v, { favorites: [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`] })
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`])
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     shiftClickRow(rowByPath(el, `${v}/Notes`))
     shiftClickRow(rowByPath(el, `${v}/Projects`))
     rightClick(rowByPath(el, `${v}/Notes`))
     expect(itemByLabel(el, 'Remove 2 from favorites')).toBeDefined()
     await act(async () => itemByLabel(el, 'Remove 2 from favorites')?.click())
-    expect(bridge.state.setFolder).toHaveBeenLastCalledWith(v, { favorites: [`${v}/top.md`] })
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/top.md`])
   })
 
-  it('Focus on the Favorites tab writes THIS window\'s focusFavorites — never focusDirs or the vault bucket — and the eye is lens-local', async () => {
+  it('Focus on the Favorites tab writes THIS window\'s focusFavorites — never focusDirs or the vault file — and the eye is lens-local', async () => {
     const { el, v, bridge, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     await pick(el, `${v}/Projects`, 'Focus on folder')
     expect(topLabels(el)).toEqual(['Projects'])
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusFavorites: [`${v}/Projects`] })
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ focusDirs: expect.anything() }))
-    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, expect.objectContaining({ favorites: expect.anything() })) // the fold it opened is the one vault write
+    expect(bridge.favorites.set).not.toHaveBeenCalled() // the fold it opened is the one write, and that is app state
     expect(eye(el)?.getAttribute('aria-label')).toBe('Exit focus mode')
     await rerender({ lens: 'files' })
     expect(eye(el)).toBeNull() // Files carries its own focus, and it is empty
@@ -1881,7 +1890,7 @@ describe('favorites (YAZ-1766)', () => {
     drag(rowByPath(el, `${v}/Notes`), 'drop')
     expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
     expect(el.querySelector('.tree__row--drop-before, .tree__row--drop-after')).toBeNull()
-    expect(bridge.state.setFolder).toHaveBeenLastCalledWith(v, { favorites: [`${v}/top.md`, `${v}/Notes`, `${v}/Projects`] })
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/top.md`, `${v}/Notes`, `${v}/Projects`])
     // Below the midpoint lands AFTER; nothing moved on disk at any point.
     drag(rowByPath(el, `${v}/top.md`), 'dragstart')
     drag(rowByPath(el, `${v}/Projects`), 'dragover', 1)
@@ -1913,24 +1922,39 @@ describe('favorites (YAZ-1766)', () => {
     expect(el.querySelector('.tree__row--drop-before')).toBeNull()
     drag(rowByPath(el, `${v}/Notes`), 'drop')
     expect(topLabels(el)).toEqual(['Notes', 'Projects'])
-    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
-  it('another window\'s add lands through the state broadcast', async () => {
-    const { el, v, emit } = await mountVault({ lens: 'favorites' })
+  it('another window\'s — or a synced — write lands through favorites:changed for THIS root: re-read, never re-written', async () => {
+    const { el, v, bridge, emit } = await mountVault({ lens: 'favorites' })
     expect(bodyMsg(el)).not.toBeNull()
-    await act(async () => emit({ ...defaultAppState(), folders: { [v]: { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: [`${v}/top.md`] } } }))
+    const reads = bridge.favorites.get.mock.calls.length // the mount read (StrictMode runs the effect twice)
+    await act(async () => emit({ root: '/some-other-vault' }))
+    expect(bridge.favorites.get).toHaveBeenCalledTimes(reads) // another vault's change is not this window's
+    bridge.favorites.get.mockResolvedValue([`${v}/top.md`])
+    await act(async () => emit({ root: v }))
     expect(topLabels(el)).toEqual(['top'])
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
-  it('a favorite that leaves the tree is pruned from the stored list', async () => {
+  it('a refused write (a malformed favorites.json → INVALID_CONFIG, D12) reverts the list and toasts an error', async () => {
+    const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes'] })
+    bridge.favorites.set.mockRejectedValueOnce({ code: 'INVALID_CONFIG', message: 'favorites.json is malformed; fix or delete it' })
+    await pick(el, `${v}/Notes`, 'Remove from favorites')
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [])
+    expect(topLabels(el)).toEqual(['Notes']) // reverted
+    expect(props.onNotice).toHaveBeenCalledWith("Can't save favorites: favorites.json is malformed; fix or delete it", 'error')
+  })
+
+  it('a favorite the tree lacks (not synced yet, or gone) draws no row and is NOT pruned — no write (D14)', async () => {
     let fire: ((ev: WatchEvent) => void) | undefined
     const watch = { subscribe: (l: (ev: WatchEvent) => void) => ((fire = l), () => undefined) }
-    const { el, v, bridge } = await mountVault({ lens: 'favorites', watch }, { favorites: ['/Notes', '/Projects'] })
+    const { el, v, bridge } = await mountVault({ lens: 'favorites', watch }, { favorites: ['/Ghost.md', '/Notes', '/Projects'] })
+    expect(topLabels(el)).toEqual(['Notes', 'Projects'])
     bridge.tree.mockResolvedValue({ root: v, tree: FAV(v).filter((n) => n.path !== `${v}/Projects`), generatedAt: 2 } as never)
     await act(async () => fire?.({ type: 'unlinkDir', path: `${v}/Projects` }))
     expect(topLabels(el)).toEqual(['Notes'])
-    expect(bridge.state.setFolder).toHaveBeenLastCalledWith(v, { favorites: [`${v}/Notes`] })
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
   it('expand / collapse all acts on the favorited folders only', async () => {

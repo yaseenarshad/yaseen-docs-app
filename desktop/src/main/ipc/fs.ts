@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { CH } from '../../channels'
+import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import { readAsset, writeAsset } from '../fs/assets'
 import { copyEntry, pasteEntries } from '../fs/copy'
@@ -20,6 +21,16 @@ import { getColdStartDiff, getIndex } from '../vaultIndex'
 import type { WindowLookup } from '../windows'
 import { broadcastAll } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
+
+/** The open-vault roots (`AppState.windows`, null = Welcome) — where a favorites.json may need repair (YAZ-1766 D13). */
+const openRoots = (store: Store): string[] => store.get().windows.map((w) => w.root).filter((r): r is string => r !== null)
+
+/**
+ * The favorites.json repair (YAZ-1766 6A, D13) rides the SAME handlers as the store repair below,
+ * but never fails the file op or skips the broadcast: a corrupt or unwritable favorites.json is
+ * warned about and the rename/delete stands.
+ */
+const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[favorites] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
 export function registerFsIpc(store: Store, windows: WindowLookup): void {
@@ -71,6 +82,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     }
     const res = await renameFile(req)
     store.renamePath(res.oldPath, res.newPath)
+    await repairFavorites(favorites.renamePath(openRoots(store), res.oldPath, res.newPath))
     broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   })
@@ -97,6 +109,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     }
     const res = await removeEntry(req)
     store.removePath(res.path)
+    await repairFavorites(favorites.removePath(openRoots(store), res.path))
     broadcastAll(CH.fileDeleted, { path: res.path, kind: res.kind })
     return res
   })
@@ -109,6 +122,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CH.fileRepairRename, async (req: unknown) => {
     const res = await repairRename(req)
     store.renamePath(res.oldPath, res.newPath)
+    await repairFavorites(favorites.renamePath(openRoots(store), res.oldPath, res.newPath))
     broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   })
@@ -148,6 +162,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
       move: async (from, to) => {
         const r = await renameFile({ oldPath: from, newPath: to })
         store.renamePath(r.oldPath, r.newPath)
+        await repairFavorites(favorites.renamePath(openRoots(store), r.oldPath, r.newPath))
         broadcastAll(CH.fileRenamed, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
         return r
       },
