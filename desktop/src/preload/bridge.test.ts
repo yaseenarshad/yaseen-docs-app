@@ -15,8 +15,8 @@ vi.mock('electron', () => ({
  */
 const TOP = ['tree', 'readFile', 'readPdf', 'readImage', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarWidth', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
-const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'zoom', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
-const MENU = ['onCopyAs', 'onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onSettings', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab', 'onZoom'] as const satisfies readonly (keyof MenuApi)[]
+const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'openRecent', 'closeSelf', 'zoom', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
+const MENU = ['onCopyAs', 'onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onSwitchVault', 'onSettings', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab', 'onZoom'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
 const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted', 'clip', 'paste', 'clipState', 'onClipChanged'] as const satisfies readonly (keyof FileApi)[]
 const SHELL = ['reveal', 'openVsCode', 'openDefault', 'openLink', 'agentPrompt'] as const satisfies readonly (keyof ShellApi)[]

@@ -137,6 +137,12 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.duplicateWindow(entryFor(e))
   })
 
+  // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the
+  // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one
+  // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
+  // window may ask; the caller is not consulted.
+  handle(CH.windowOpenRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+
   // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.
   handleWithEvent(CH.menuPasteTextFallback, async (e, text: unknown) => {
     if (windows.idFor(e.sender) === undefined || typeof text !== 'string') throw new BridgeFailure('BAD_REQUEST', 'invalid paste target or text')

@@ -81,7 +81,7 @@ class FakeWindow {
     this.listeners.set(event, list)
     return this
   }
-  emit(event: 'move' | 'resize'): void {
+  emit(event: 'move' | 'resize' | 'focus'): void {
     for (const l of this.listeners.get(event) ?? []) l()
   }
   /** What Electron does on a user close: emit `close`; destroy only when nobody preventDefault-ed. */
@@ -111,6 +111,7 @@ const AREA: WindowBounds = { x: 0, y: 0, width: 1440, height: 900 }
 function makeHost(
   areas: WindowBounds[] = [AREA],
   exists: (path: string) => boolean = () => true,
+  dirExists: (path: string) => boolean = () => true,
 ): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow }> } {
   const created: Array<{ entry: WindowEntry; win: FakeWindow }> = []
   const host: WindowHost = {
@@ -121,6 +122,7 @@ function makeHost(
     },
     workAreas: () => areas,
     exists,
+    dirExists,
   }
   return { host, created }
 }
@@ -313,6 +315,111 @@ describe('createWindowManager: quit', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(w1.isDestroyed()).toBe(true)
     expect(store.get().windows).toHaveLength(2) // quit keeps every entry
+  })
+})
+
+describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-recent door)', () => {
+  it('a live folder: bumps it to the top of the MRU, opens a window on its remembered last file (D2), returns true', () => {
+    store.pushRecent('/v/other', 1)
+    store.pushRecent('/v/notes', 2)
+    store.setFolder('/v/other', { lastFile: '/v/other/Start here.md' })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(created).toHaveLength(1)
+    expect(created[0].entry.root).toBe('/v/other')
+    expect(created[0].entry.file).toBe('/v/other/Start here.md')
+    expect(created[0].entry.tabs).toEqual(['/v/other/Start here.md'])
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v/other', '/v/notes'])
+    expect(store.get().windows).toEqual([created[0].entry])
+  })
+
+  it('a vault with no remembered file opens on nothing (file null, no tabs)', () => {
+    const { host, created } = makeHost()
+    expect(createWindowManager(store, host).openRecentBeside('/v/fresh')).toBe(true)
+    expect(created[0].entry.file).toBeNull()
+    expect(created[0].entry.tabs).toEqual([])
+    expect(store.get().recents[0]?.path).toBe('/v/fresh')
+  })
+
+  it('D9: the vault is already open in ONE window → that window is raised, nothing new opens, true', () => {
+    store.upsertWindow({ id: 'w1', root: '/v/other/', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    expect(created).toHaveLength(1)
+    const w1 = created[0].win
+    w1.minimized = true
+    // Trailing slash on the stored root, none on the request: `resolveLinkTarget`'s comparison.
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(created).toHaveLength(1)
+    expect(w1.focusCount).toBe(1)
+    expect(w1.minimized).toBe(false)
+    expect(store.get().recents[0]?.path).toBe('/v/other')
+    expect(store.get().windows).toHaveLength(1)
+  })
+
+  it('D9: two windows on the vault, focus history A then B → raised A then B, so B (most recently focused) ends on top', () => {
+    const entry = (id: string) => ({ id, root: '/v/other', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics' as const, focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow(entry('a'))
+    store.upsertWindow(entry('b'))
+    store.upsertWindow({ ...entry('c'), root: '/v/notes' })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    const [a, b, c] = created.map((x) => x.win)
+    const order: string[] = []
+    a.focus = () => order.push('a')
+    b.focus = () => order.push('b')
+    c.focus = () => order.push('c')
+    a.emit('focus')
+    b.emit('focus')
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(order).toEqual(['a', 'b'])
+    expect(created).toHaveLength(3)
+
+    // The history moves: A focused again → A on top; C (another vault) is never touched.
+    order.length = 0
+    a.emit('focus')
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(order).toEqual(['b', 'a'])
+  })
+
+  it('D9: a window never focused ranks LAST (raised first, ends underneath)', () => {
+    const entry = (id: string) => ({ id, root: '/v/other', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics' as const, focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow(entry('a'))
+    store.upsertWindow(entry('b'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    const [a, b] = created.map((x) => x.win)
+    const order: string[] = []
+    a.focus = () => order.push('a')
+    b.focus = () => order.push('b')
+    a.emit('focus')
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(order).toEqual(['b', 'a'])
+  })
+
+  it('D9: a matching entry with NO live window (mid-close) falls through to a new window', () => {
+    store.upsertWindow({ id: 'w1', root: '/v/other', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    created[0].win.destroy() // `closed` fires: the manager forgets the live window and its focus rank
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(created[1].entry.root).toBe('/v/other')
+  })
+
+  it('a dead folder: pruned from the MRU, no window, returns false (GRO-2211)', () => {
+    store.pushRecent('/v/gone', 1)
+    store.pushRecent('/v/notes', 2)
+    const { host, created } = makeHost([AREA], () => true, (p) => p !== '/v/gone')
+    expect(createWindowManager(store, host).openRecentBeside('/v/gone')).toBe(false)
+    expect(created).toHaveLength(0)
+    expect(store.get().windows).toEqual([])
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v/notes'])
   })
 })
 
