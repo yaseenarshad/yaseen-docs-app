@@ -35,7 +35,7 @@ import { windowTitle } from './lib/windowTitle'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
 import { SettingsDialog } from './settings/SettingsDialog'
-import { type SidebarClipboard, Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
+import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { RightPanel } from './right-panel/RightPanel'
@@ -761,11 +761,6 @@ export function App() {
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
-      {root !== null && sidebarCollapsed && (
-        <button type="button" className="sidebar-reopen" onClick={toggleSidebar} title="Show sidebar" aria-label="Show sidebar">
-          <SidebarPanelIcon />
-        </button>
-      )}
       {root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
@@ -787,6 +782,7 @@ export function App() {
             canForward={canForward}
             onBack={back}
             onForward={forward}
+            onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
             onShowInSidebar={showInSidebar}
             onNotice={notify}
           />

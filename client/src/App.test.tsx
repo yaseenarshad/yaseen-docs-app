@@ -70,7 +70,6 @@ vi.mock('./editor/Editor', () => ({
   },
 }))
 vi.mock('./sidebar/Sidebar', () => ({
-  SidebarPanelIcon: () => null,
   Sidebar: (props: SidebarStubProps) => {
     captured.sidebar = props
     return <aside data-sidebar data-root={props.root} />
@@ -705,9 +704,11 @@ describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
   it('the lens survives collapse → reopen, because the value is App\'s and not the sidebar\'s', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => captured.sidebar?.onLensChange('files'))
+    // The strip's Show-sidebar button exists only while the sidebar is hidden (YAZ-1759).
+    expect(el.querySelector('[aria-label="Show sidebar"]')).toBeNull()
     act(() => captured.sidebar?.onCollapse())
     expect(el.querySelector('[data-sidebar]')).toBeNull()
-    act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar-nav__btn[aria-label="Show sidebar"]')?.click())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('files')
   })
@@ -764,7 +765,7 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     expect(captured.sidebar?.revealRequest).toBeNull()
 
     act(() => captured.sidebar?.onCollapse())
-    act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar-nav__btn[aria-label="Show sidebar"]')?.click())
     expect(captured.sidebar?.revealRequest).toBeNull()
 
     rightClick(el.querySelector('.tabbar__tab')!)
