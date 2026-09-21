@@ -118,8 +118,8 @@ const SEEDED_LENS = 'files' as const
 export function seededState(vault: string, file: string | null): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusTopics: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
-  state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } }
+  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: [] } }
   return state
 }
 
@@ -178,10 +178,11 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     sidebarLens: SEEDED_LENS,
     focusDirs: [],
     focusTopics: [],
+    focusFavorites: [],
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {
-    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [] }
+    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: [] }
   }
   return state
 }

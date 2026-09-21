@@ -58,6 +58,25 @@ export function findDirNode(tree: readonly TreeNode[], path: string): TreeNode |
   return null
 }
 
+/** The node at `path`, file OR dir, any depth — `findDirNode`'s kind-agnostic twin for the Favorites list (YAZ-1766); null once the tree no longer holds it. */
+export function findNode(tree: readonly TreeNode[], path: string): TreeNode | null {
+  for (const n of tree) {
+    if (n.path === path) return n
+    if (n.type === 'dir' && path.startsWith(`${n.path}/`)) return findNode(n.children, path)
+  }
+  return null
+}
+
+/**
+ * The Favorites tab's top rows (YAZ-1766 D4): every favorite the tree still holds, in the list's
+ * STORED order — the user's order, never the tree's — files and dirs alike. NOT `focusRoots`:
+ * nesting is kept (a file favorited beside its favorited parent shows at the root AND inside it),
+ * and a vanished path simply yields no row; the Sidebar prunes it from the stored list.
+ */
+export function favoriteRoots(tree: readonly TreeNode[], favorites: readonly string[]): TreeNode[] {
+  return favorites.flatMap((p) => findNode(tree, p) ?? [])
+}
+
 /**
  * Focus Mode's top rows (YAZ-1605): every dir in `focus`, in TREE order, OUTERMOST only — a focused
  * dir inside another focused dir is drawn once, under its parent, never twice. A vanished path

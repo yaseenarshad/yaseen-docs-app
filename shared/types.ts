@@ -461,17 +461,21 @@ export const MAX_COLLAPSED_GROUP_KEYS = 200
 /** Expanded Topics-tree pages per vault (🔒 D4, YAZ-848) are capped at this many — `folds`' cap, for a bucket of the same kind: one entry per page the user opened. */
 export const MAX_TOPICS_EXPANDED_PAGES = 500
 
+/** Favorited files + folders per vault (YAZ-1766 D2) are capped at this many — `topicsExpanded`'s cap, for a bucket of the same kind. */
+export const MAX_FAVORITES = 500
+
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
- * `topics` (the folder-page tree, an empty shell until YAZ-848) or `files` (the file explorer).
+ * `topics` (the folder-page tree, an empty shell until YAZ-848), `files` (the file explorer) or
+ * `favorites` (the pinned files and folders, YAZ-1766 D1 — a third tab right of Files).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
  * and no `FolderState` entry. Default `topics` — a pre-847 state file simply gains it, and a
  * pre-1628 file's retired global value seeds every window that has none of its own.
  */
-export type SidebarLens = 'topics' | 'files'
+export type SidebarLens = 'topics' | 'files' | 'favorites'
 /** The tabs' order, left→right: the default lens leads. */
-export const SIDEBAR_LENSES: readonly SidebarLens[] = ['topics', 'files']
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['topics', 'files', 'favorites']
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
@@ -626,6 +630,8 @@ export interface WindowEntry {
   focusDirs: string[]
   /** Its Topics twin: the folder PAGES this window's Topics tree is narrowed to, or empty. */
   focusTopics: string[]
+  /** Its Favorites twin (YAZ-1766 D5): the favorited DIRS this window's Favorites tab is narrowed to, or empty. */
+  focusFavorites: string[]
   bounds: WindowBounds
 }
 
@@ -653,6 +659,14 @@ export interface FolderState {
    * into any note's frontmatter.
    */
   topicsExpanded: string[]
+  /**
+   * The Favorites tab's pinned files AND folders (YAZ-1766 D2): absolute paths in INSERTION order
+   * (newest last; drag-to-reorder rewrites the order), max MAX_FAVORITES. Per vault and shared by
+   * every window on it — and unlike its two session siblings above it PERSISTS: a favorite is
+   * vault content the user chose, not chrome. Path-keyed, so `store.renamePath` / `store.removePath`
+   * repair it as they repair `expanded`.
+   */
+  favorites: string[]
 }
 
 /**
@@ -677,7 +691,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], favorites: [] }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
@@ -912,9 +926,10 @@ export interface WindowIdentity {
   sidebarCollapsed: boolean
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
-  /** Focus Mode's lists (YAZ-1605, per window since YAZ-1628): the same two as `WindowEntry`'s. */
+  /** Focus Mode's lists (YAZ-1605, per window since YAZ-1628; Favorites' own since YAZ-1766): the same three as `WindowEntry`'s. */
   focusDirs: string[]
   focusTopics: string[]
+  focusFavorites: string[]
 }
 
 export interface OpenWindowOptions {
@@ -932,8 +947,8 @@ export interface StateApi {
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
   removeRecent(path: string): Promise<void>
-  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped main-side (YAZ-848). */
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): Promise<void>
+  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` and `favorites` are capped main-side (YAZ-848, YAZ-1766). */
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'favorites'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
   /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */
@@ -950,7 +965,7 @@ export interface WindowApi {
    * re-enforces the tabs invariant against the entry as written (GRO-2232): a non-null `file`
    * missing from `tabs` is prepended; `file: null` clears `tabs`.
    */
-  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics'>>): Promise<void>
+  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'>>): Promise<void>
   open(opts: OpenWindowOptions): Promise<void>
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>

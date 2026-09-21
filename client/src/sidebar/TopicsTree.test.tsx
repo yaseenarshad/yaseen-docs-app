@@ -136,7 +136,7 @@ async function initStorage(state: AppState = defaultAppState()): Promise<void> {
   bridgeSetFolder = vi.fn(async () => undefined)
   const bridge = {
     state: { get: vi.fn(async () => state), setFolder: bridgeSetFolder, onChange: vi.fn(() => () => undefined) },
-    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: ROOT, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [] })) },
+    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: ROOT, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [] })) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   await storage.init()

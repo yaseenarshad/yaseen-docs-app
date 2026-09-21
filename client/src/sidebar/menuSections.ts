@@ -95,6 +95,8 @@ export interface MenuHandlers {
   onNewDatedFolder: (() => void) | null
   /** The direction rides along with the target so the caller never re-derives it after the close (🔒 D2, YAZ-817). */
   onToggleFolderPage: (path: string, isOn: boolean) => void
+  /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read, same idiom. */
+  onToggleFavorite: (paths: string[], isOn: boolean) => void
   onRename: (path: string) => void
   onDelete: (path: string) => void
 }
@@ -250,6 +252,21 @@ const rename: Leaf = (t, h) => {
   return { id: 'rename', label: 'Rename', onSelect: () => h.onRename(path) }
 }
 
+/**
+ * The favorite toggle (YAZ-1766 D3): ONE state-aware item on every ROW — file or dir, any lens —
+ * never on blank space. Inside a 2+ selection it names the whole ordered selection and counts it
+ * ("Add 3 to favorites"); `favoriteIsOn` is true only when EVERY path is already a favorite, so a
+ * mixed selection reads as Add and the handler adds the missing ones. Leads the "Open in ▸"
+ * group (Yasin, demo 2026-09-21): a place-verb beside the OS place-verbs, one hairline above Delete.
+ */
+const toggleFavorite: Leaf = (t, h) => {
+  const paths = t.favoritePaths
+  if (paths === null) return null
+  const isOn = t.favoriteIsOn
+  const n = paths.length > 1 ? `${paths.length} ` : ''
+  return { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, onSelect: () => h.onToggleFavorite(paths, isOn) }
+}
+
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
 /** "Open in ▸ New window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. */
@@ -320,7 +337,7 @@ const OPEN_GROUP: readonly Item[] = [openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath, copyForAgent]
 const CREATE_GROUP: readonly Item[] = [newNote, newFolderPage, newFolder, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [toggleFolderPage, rename]
-const OPEN_IN_GROUP: readonly Item[] = [openIn]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, openIn]
 const DELETE_GROUP: readonly Item[] = [del]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
