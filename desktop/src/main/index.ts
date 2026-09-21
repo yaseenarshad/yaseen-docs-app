@@ -123,6 +123,14 @@ const manager = createWindowManager(store, {
       return false
     }
   },
+  // The open-recent door's probe (YAZ-1767 D1; was the menu host's until the switcher shared the path).
+  dirExists(path) {
+    try {
+      return statSync(path).isDirectory()
+    } catch {
+      return false
+    }
+  },
 })
 
 /**
@@ -175,13 +183,6 @@ app.whenReady().then(() => {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
     openExternal: (url) => void shell.openExternal(url),
-    dirExists: (path) => {
-      try {
-        return statSync(path).isDirectory()
-      } catch {
-        return false
-      }
-    },
   })
   const applyMenu = (): void =>
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, isDev: !app.isPackaged }, handlers)))

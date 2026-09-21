@@ -32,6 +32,7 @@ import { buildMenuSections, countItems } from './menuSections'
 import type { NoticeKind } from '../lib/notice'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
+import { VaultSwitcher } from './VaultSwitcher'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 interface SidebarProps {
@@ -47,9 +48,17 @@ interface SidebarProps {
    * was showing, by Enter or by click alike. Never a tab: a folder has nothing to open.
    */
   onRevealInFiles: (path: string) => void
+  /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs the in-place picker, unchanged. */
   onPickFolder: () => void
-  /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
+  /** True while the native folder dialog is open; the switcher's "Open folder…" row is disabled meanwhile. */
   pickDisabled: boolean
+  /**
+   * ⌘O (YAZ-1767 D8): App's request counter for the vault switcher, threaded straight to the
+   * header's `VaultSwitcher`, which opens its panel and focuses the filter on every new value.
+   * 0 = nothing requested (App pins a request to the root it was made on, so a remount on
+   * another vault never replays it).
+   */
+  switcherOpenRequest: number
   /** Hide the sidebar (GRO-2023); TabBar leads its nav row with the Show-sidebar button while hidden (YAZ-1759). */
   onCollapse: () => void
   /**
@@ -339,6 +348,7 @@ export function Sidebar({
   onRevealInFiles,
   onPickFolder,
   pickDisabled,
+  switcherOpenRequest,
   onCollapse,
   lens,
   onLensChange,
@@ -1169,10 +1179,9 @@ export function Sidebar({
           dropOnDir(root)
         }}
       >
-        <button type="button" className="sidebar__root" onClick={onPickFolder} disabled={pickDisabled} title={root}>
-          <span className="sidebar__root-name">{basename(root)}</span>
-          <span className="sidebar__root-hint">change</span>
-        </button>
+        {/* The vault switcher (YAZ-1767): the trigger is the header's top-left button (name + chevron,
+            D6); its panel hangs off this header's rect (D5). "Open folder…" is its last row (D4). */}
+        <VaultSwitcher root={root} onPickFolder={onPickFolder} pickDisabled={pickDisabled} openRequest={switcherOpenRequest} />
         <button type="button" className="sidebar__collapse" onClick={onCollapse} title="Hide sidebar" aria-label="Hide sidebar">
           <SidebarPanelIcon />
         </button>

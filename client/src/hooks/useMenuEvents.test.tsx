@@ -14,6 +14,7 @@ function installBridge() {
   const openFolderListeners = new Set<() => void>()
   const openRootListeners = new Set<(path: string) => void>()
   const searchListeners = new Set<() => void>()
+  const switchVaultListeners = new Set<() => void>()
   const settingsListeners = new Set<() => void>()
   const toggleSidebarListeners = new Set<() => void>()
   const closeTabListeners = new Set<() => void>()
@@ -30,6 +31,7 @@ function installBridge() {
       onOpenFolder: sub(openFolderListeners),
       onOpenRoot: sub(openRootListeners),
       onSearch: sub(searchListeners),
+      onSwitchVault: sub(switchVaultListeners),
       onSettings: sub(settingsListeners),
       onToggleSidebar: sub(toggleSidebarListeners),
       onCloseTab: sub(closeTabListeners),
@@ -43,13 +45,14 @@ function installBridge() {
     emitOpenFolder: () => openFolderListeners.forEach((l) => l()),
     emitOpenRoot: (path: string) => openRootListeners.forEach((l) => l(path)),
     emitSearch: () => searchListeners.forEach((l) => l()),
+    emitSwitchVault: () => switchVaultListeners.forEach((l) => l()),
     emitSettings: () => settingsListeners.forEach((l) => l()),
     emitToggleSidebar: () => toggleSidebarListeners.forEach((l) => l()),
     emitCloseTab: () => closeTabListeners.forEach((l) => l()),
     emitNextTab: () => nextTabListeners.forEach((l) => l()),
     emitPrevTab: () => prevTabListeners.forEach((l) => l()),
     emitZoom: (step: -1 | 0 | 1) => zoomListeners.forEach((l) => l(step)),
-    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + settingsListeners.size + toggleSidebarListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size + zoomListeners.size,
+    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + switchVaultListeners.size + settingsListeners.size + toggleSidebarListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size + zoomListeners.size,
   }
 }
 
@@ -57,6 +60,7 @@ interface ProbeProps {
   onOpenFolder: () => void
   onOpenRoot: (path: string) => void
   onSearch: () => void
+  onSwitchVault: () => void
   onSettings: () => void
   onToggleSidebar: () => void
   onCloseTab: () => void
@@ -80,7 +84,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onZoom: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onZoom: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -90,6 +94,8 @@ describe('useMenuEvents', () => {
     expect(handlers.onOpenRoot).toHaveBeenCalledWith('/vaults/notes')
     act(() => b.emitSearch())
     expect(handlers.onSearch).toHaveBeenCalledTimes(1)
+    act(() => b.emitSwitchVault())
+    expect(handlers.onSwitchVault).toHaveBeenCalledTimes(1)
     act(() => b.emitSettings())
     expect(handlers.onSettings).toHaveBeenCalledTimes(1)
     act(() => b.emitToggleSidebar())

@@ -8,6 +8,8 @@ interface UseMenuEventsOptions {
   onOpenRoot: (path: string) => void
   /** File › Search Vault (⌘K): focus the sidebar's search bar, un-collapsing the sidebar first (YAZ-804). */
   onSearch: () => void
+  /** File › Switch Vault… (⌘O): open the sidebar header's vault switcher, un-collapsing the sidebar first (YAZ-1767 D8). */
+  onSwitchVault: () => void
   /** Yaseen Docs › Settings… (⌘,): open the settings dialog (YAZ-1679). */
   onSettings: () => void
   /** View › Toggle Sidebar: toggle only this renderer's window identity (YAZ-1280). */
@@ -23,10 +25,10 @@ interface UseMenuEventsOptions {
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onZoom }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onZoom }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = window.yaseenDocs.menu
-    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab), menu.onZoom(onZoom)]
+    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSwitchVault(onSwitchVault), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab), menu.onZoom(onZoom)]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onZoom])
+  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onZoom])
 }

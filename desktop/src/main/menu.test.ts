@@ -14,6 +14,7 @@ const noopHandlers = (): MenuHandlers => ({
   copyAs: vi.fn(),
   pasteAs: vi.fn(),
   newWindow: vi.fn(),
+  switchVault: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
   search: vi.fn(),
@@ -63,7 +64,7 @@ describe('buildMenuTemplate', () => {
     expect(handlers.settings).toHaveBeenCalledTimes(1)
   })
 
-  it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
+  it('File menu: New Window ⌘⇧N, Switch Vault… ⌘O, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
 
@@ -72,8 +73,15 @@ describe('buildMenuTemplate', () => {
     click(newWindow)
     expect(handlers.newWindow).toHaveBeenCalledTimes(1)
 
+    // ⌘O is Switch Vault… (YAZ-1767 D8): directly ABOVE Open Folder…, into the focused renderer.
+    const switchVault = file.find((i) => i.label === 'Switch Vault…')
+    expect(switchVault?.accelerator).toBe('CmdOrCtrl+O')
+    click(switchVault)
+    expect(handlers.switchVault).toHaveBeenCalledTimes(1)
+
     const openFolder = file.find((i) => i.label === 'Open Folder…')
     expect(openFolder?.accelerator).toBe('CmdOrCtrl+Shift+O')
+    expect(file.indexOf(openFolder as MenuItemConstructorOptions)).toBe(file.indexOf(switchVault as MenuItemConstructorOptions) + 1)
     click(openFolder)
     expect(handlers.openFolder).toHaveBeenCalledTimes(1)
 
@@ -231,6 +239,7 @@ describe('buildMenuTemplate', () => {
   it('actionable items carry stable ids so a live check can drive them', () => {
     const file = menuOf(build(), 'File')
     expect(file.find((i) => i.label === 'New Window')?.id).toBe('menu.file.new-window')
+    expect(file.find((i) => i.label === 'Switch Vault…')?.id).toBe('menu.file.switch-vault')
     expect(file.find((i) => i.label === 'Open Folder…')?.id).toBe('menu.file.open-folder')
     expect(file.find((i) => i.label === 'Search Vault')?.id).toBe('menu.file.search')
     expect(file.find((i) => i.label === 'Close Tab')?.id).toBe('menu.file.close-tab')
@@ -383,13 +392,13 @@ afterEach(async () => {
 
 const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
-function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, dirExists: (p: string) => boolean = () => true) {
-  const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }
+function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }) {
+  // `openRecentBeside` is the window manager's door (YAZ-1767 D1); the probe/prune/bump rules are windows.test's.
+  const windows = { idFor: vi.fn(), openRecentBeside: vi.fn(() => true), duplicateWindow: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
     openExternal: vi.fn(),
-    dirExists,
   }
   const handlers = createMenuHandlers(store, { ...windows, idFor: (wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined) }, host)
   return { handlers, windows, host }
@@ -461,31 +470,34 @@ describe('createMenuHandlers', () => {
     expect(() => unfocused.search()).not.toThrow()
   })
 
+  it('switchVault tells the focused renderer to open its vault switcher (YAZ-1767 D8)', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.switchVault()
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuSwitchVault)
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => unfocused.switchVault()).not.toThrow()
+  })
+
   it('openRecent in place sends the path to the focused renderer', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers, windows } = makeHandlers(wc)
     handlers.openRecent('/vaults/work', false)
     expect(wc.send).toHaveBeenCalledWith(CH.menuOpenRoot, '/vaults/work')
-    expect(windows.openWindow).not.toHaveBeenCalled()
+    expect(windows.openRecentBeside).not.toHaveBeenCalled()
   })
 
-  it('openRecent beside (⌥) opens a new window on the root and bumps the MRU', () => {
+  it('openRecent beside (⌥) goes through the window manager\'s one open-recent door (YAZ-1767 D1), never the renderer', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers, windows } = makeHandlers(wc)
     handlers.openRecent('/vaults/work', true)
-    expect(windows.openWindow).toHaveBeenCalledWith({ root: '/vaults/work', file: null })
+    expect(windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
     expect(wc.send).not.toHaveBeenCalled()
-    expect(store.get().recents[0]?.path).toBe('/vaults/work')
-  })
-
-  it('openRecent beside (⌥) on a dead folder prunes the MRU entry and opens nothing (GRO-2211)', () => {
-    store.pushRecent('/vaults/gone')
-    const wc = { id: 7, send: vi.fn() }
-    const { handlers, windows } = makeHandlers(wc, (p) => p !== '/vaults/gone')
-    handlers.openRecent('/vaults/gone', true)
-    expect(windows.openWindow).not.toHaveBeenCalled()
+    // The door's verdict (dead folder → false) is the manager's business; the menu ignores it.
+    windows.openRecentBeside.mockReturnValueOnce(false)
+    expect(() => handlers.openRecent('/vaults/gone', true)).not.toThrow()
     expect(wc.send).not.toHaveBeenCalled()
-    expect(store.get().recents.some((r) => r.path === '/vaults/gone')).toBe(false)
   })
 
   it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {
