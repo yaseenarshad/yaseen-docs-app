@@ -331,6 +331,9 @@ test('step 10 — dragging the edge past the minimum CLOSES the sidebar rather t
   await dragSidebar(win, -(WIDENED_W - 40))
   await expect(sidebar(win)).toHaveCount(0)
   await expect(win.locator('[aria-label="Show sidebar"]')).toBeVisible()
+  // YAZ-1759 regression guard: Playwright's trial click fails if anything covers Back — the
+  // reopen button used to float over it.
+  await backBtn(win).click({ trial: true })
   await shoot(win, 'easy-sidebar-closed')
   await quitApp(app)
 })

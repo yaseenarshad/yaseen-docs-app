@@ -97,7 +97,6 @@ button {
 
 .app {
   --content-max-width: 1040px;
-  position: relative; /* containing block for the floating sidebar-reopen button */
   display: flex;
   height: 100%;
   overflow: hidden;
@@ -202,11 +201,6 @@ button {
   flex: 1 1 100%;
 }
 
-/* Keep the property count labeled so the control is discoverable. */
-.page-header .frontmatter-panel__title {
-  font-size: 12px;
-}
-
 .page-header .frontmatter-panel__count {
   font-size: 12px;
 }
@@ -265,9 +259,9 @@ button {
 
 /* The properties panel (⚡ YAZ-883, folded into the header row by YAZ-918): its box dissolved
    (`display: contents` above), so only its PIECES carry styles now. Collapsed it is one small
-   muted chip — deliberately SUBORDINATE to the title beside it, since most pages have nothing to
-   say here. Header affordance is the backlinks / view-group chevron, rotated -90° while
-   collapsed. Expanded it is TYPED ROWS by default (⚡ YAZ-884) with the raw textarea as the
+   muted chip — chevron + properties glyph + bare count, the words in its tooltip (YAZ-1758) —
+   deliberately SUBORDINATE to the title beside it, since most pages have nothing to say here.
+   Header affordance is the backlinks / view-group chevron, rotated -90° while collapsed. Expanded it is TYPED ROWS by default (⚡ YAZ-884) with the raw textarea as the
    fallback under them. */
 .frontmatter-panel__header {
   display: flex;
@@ -291,11 +285,7 @@ button {
   transform: rotate(-90deg);
 }
 
-/* The label carries the weight, the count rides along plain — backlinks' own split. */
-.frontmatter-panel__title {
-  font-weight: 600;
-}
-
+/* The bare count rides along plain beside the glyph (YAZ-1758); the words are the tooltip's. */
 .frontmatter-panel__count {
   font-weight: 400;
 }
@@ -1026,21 +1016,6 @@ button {
 .sidebar__collapse:hover {
   color: var(--fg);
   background: var(--bg-hover);
-}
-
-.sidebar-reopen {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
-  padding: 6px;
-  border-radius: 6px;
-  color: var(--fg-muted);
-}
-
-.sidebar-reopen:hover {
-  color: var(--fg);
-  background: var(--bg-side);
 }
 
 .sidebar__root-name {

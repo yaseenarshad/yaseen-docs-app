@@ -211,13 +211,13 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
   it('is COLLAPSED by default and shows the top-level key count', () => {
     const el = mount(MESSY)
     expect(header(el)?.getAttribute('aria-expanded')).toBe('false')
-    expect(header(el)?.textContent).toBe('Properties (3)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
     expect(area(el)).toBeNull()
   })
 
   it('invalid frontmatter drops the count rather than guessing one', () => {
     const el = mount('---\ntags: [a, b\nstatus: : :\n---\nBody\n')
-    expect(header(el)?.textContent).toBe('Properties')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties')
   })
 
   it('expanding shows the EXACT raw interior — comments, quoting and list shape intact', () => {
@@ -248,7 +248,7 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
     // Its own write is the new disk truth: clean again, showing what it wrote.
     expect(btn(el, 'Save')).toBeNull()
     expect(area(el)?.value).toBe(INTERIOR.replace('status: draft', 'status: done'))
-    expect(header(el)?.textContent).toBe('Properties (3)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
   })
 
   it('invalid YAML blocks the write and says so inline', async () => {
@@ -313,7 +313,7 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
   it('a page with NO frontmatter offers "Add properties", and saving creates the block', async () => {
     readFile.mockResolvedValue(fileOf('Just a body\n'))
     const el = mount('Just a body\n')
-    expect(header(el)?.textContent).toBe('Add properties')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Add properties')
     expandRaw(el)
     expect(area(el)?.value).toBe('')
 
@@ -326,7 +326,9 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
       content: '---\nstatus: draft\n---\nJust a body\n',
       expectedMtime: 100,
     })
-    expect(header(el)?.textContent).toBe('Properties (1)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (1)')
+    // The chip itself shows only the glyph and the bare count (YAZ-1758).
+    expect(el.querySelector('.frontmatter-panel__count')?.textContent).toBe('1')
   })
 
   it('re-reads and retries ONCE on CONFLICT, keeping the concurrent body edit', async () => {
@@ -462,7 +464,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     // The form closes and the row is there, counted.
     expect(byLabel(el, 'New property name')).toBeNull()
     expect(keysOf(el)).toContain('author')
-    expect(header(el)?.textContent).toBe('Properties (7)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (7)')
   })
 
   it("a new key's first value is shaped by its DECLARED kind, not by the text", async () => {
@@ -492,7 +494,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile).toHaveBeenCalledWith({ path: PATH, content: TYPED.replace('pages: 12\n', ''), expectedMtime: 100 })
     expect(keysOf(el)).not.toContain('pages')
-    expect(header(el)?.textContent).toBe('Properties (5)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (5)')
   })
 
   it("a deleted key takes its OWN leading comment with it, and only that one", async () => {
@@ -712,7 +714,7 @@ describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
     expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings', 'note', 'tags'])
     setValue(search(el), '  FOLDER ')
     expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings'])
-    expect(header(el)?.textContent).toContain('(4)') // the count is the block's, not the match's
+    expect(el.querySelector('.frontmatter-panel__count')?.textContent).toBe('4') // the count is the block's, not the match's
     setValue(search(el), 'ta')
     expect(keysOf(el)).toEqual(['tags'])
     // Key only — `matchesColumn` would also match the canonical `note.` prefix and light up every row.

@@ -15,6 +15,19 @@ const svg = {
 }
 
 /**
+ * Panel-left pictogram shared by the sidebar's collapse button and the tab strip's Show-sidebar
+ * button (GRO-2023; moved here from `sidebar/Sidebar.tsx` by YAZ-1759 once TabBar wore it too).
+ */
+export function SidebarPanelIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <line x1="5.75" y1="2.5" x2="5.75" y2="13.5" />
+    </svg>
+  )
+}
+
+/**
  * 2×2 grid marking a FOLDER PAGE row in the outline (YAZ-820) and in its add-row picker; same
  * stroke weight as `SidebarPanelIcon`. It lived in `sidebar/Tree.tsx` while tree rows and tabs
  * wore it too; YAZ-844 left the folder page its only wearer, so it moved in with the rest of
