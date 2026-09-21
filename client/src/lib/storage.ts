@@ -1,5 +1,6 @@
 import {
   MAX_COLLAPSED_GROUP_KEYS,
+  MAX_FAVORITES,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_TOPICS_EXPANDED_PAGES,
   addRecentRoot,
@@ -24,7 +25,7 @@ import {
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [] }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -70,13 +71,13 @@ export const storage = {
 
   getRoot: (): string | null => identity.root,
   /**
-   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both
-   * Focus Mode lists (YAZ-1628) in the same write; re-setting the same root keeps them.
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and all
+   * three Focus Mode lists (YAZ-1628, YAZ-1766) in the same write; re-setting the same root keeps them.
    */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), focusDirs: [] as string[], focusTopics: [] as string[] }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), focusDirs: [] as string[], focusTopics: [] as string[], focusFavorites: [] as string[] }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity(patch))
   },
@@ -115,6 +116,18 @@ export const storage = {
   },
 
   /**
+   * The Favorites tab's pinned files and folders (YAZ-1766 D2): `expanded`'s per-root bucket and
+   * `setFolder` patch, but PERSISTED — capped like `topicsExpanded`, and live across windows through
+   * the state broadcast (`subscribe`), since every window on the vault shares the one list.
+   */
+  getFavorites: (root: string): string[] => folderOf(root).favorites,
+  setFavorites(root: string, paths: readonly string[]): void {
+    const favorites = paths.slice(0, MAX_FAVORITES)
+    patchFolder(root, { favorites })
+    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { favorites }))
+  },
+
+  /**
    * Focus Mode (YAZ-1605): a path list per lens, empty when off. Window identity since YAZ-1628,
    * like `sidebarCollapsed` below — no root argument, and a global state broadcast never follows
    * another window's focus into this one; a root change clears both lists (`setRoot`).
@@ -130,6 +143,13 @@ export const storage = {
     const focusTopics = [...pages]
     identity = { ...identity, focusTopics }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ focusTopics }))
+  },
+  /** The Favorites tab's own focus list (YAZ-1766 D5): the favorited dirs it is narrowed to. */
+  getFocusFavorites: (): string[] => identity.focusFavorites,
+  setFocusFavorites(dirs: readonly string[]): void {
+    const focusFavorites = [...dirs]
+    identity = { ...identity, focusFavorites }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ focusFavorites }))
   },
 
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */

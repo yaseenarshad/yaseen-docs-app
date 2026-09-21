@@ -8,7 +8,7 @@ import { folderPageSettings, newFolderPageProperties, turnIntoFolderPage } from 
 import { restoreFolderBody } from '../views/migrateFolderBody'
 import { createNewNote } from '../views/newNote'
 import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
-import { ChevronsIcon, EyeIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
+import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import { transformFile } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -18,7 +18,7 @@ import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
-import { allDirs, ancestorDirs, findDirNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
+import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
 import { HOME_LINK } from './ensureHome'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
@@ -31,7 +31,7 @@ import { SettingsButton } from '../settings/SettingsButton'
 import { buildMenuSections, countItems } from './menuSections'
 import type { NoticeKind } from '../lib/notice'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
-import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
+import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeReorder, type TreeSelection } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
@@ -244,6 +244,13 @@ export interface MenuTargets {
    * on file rows, plain pages and blank space. Its OWN field, per this split's doctrine.
    */
   focusPaths: string[] | null
+  /**
+   * "Add to favorites" / "Remove from favorites" (YAZ-1766 D3): the row, or the ordered 2+
+   * selection holding it — files and folders alike, every lens; null on blank space. Its OWN field.
+   */
+  favoritePaths: string[] | null
+  /** True only when EVERY `favoritePaths` entry is already a favorite — a mixed selection reads as Add. */
+  favoriteIsOn: boolean
 }
 
 /**
@@ -270,7 +277,7 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
 
 /**
  * The rows a "Focus on …" may narrow to, out of the right-clicked row or its 2+ selection (YAZ-1605):
- * Files keeps DIRS (a shift-selection may hold files — they are simply not focusable, as a folder
+ * Files — and Favorites (YAZ-1766 D5), the same disk reading — keeps DIRS (a shift-selection may hold files — they are simply not focusable, as a folder
  * is not openable for `openTabPaths`); Topics keeps FOLDER PAGES that are not Home (it unfolds
  * nothing, so a focus on it would be one leaf). Null, not `[]`, hides the item.
  */
@@ -333,7 +340,11 @@ async function createInTopic(root: string, folderPage: IndexRecord, kind: 'file'
 }
 
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
-const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'Files' }
+const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'Files', favorites: 'Favorites' }
+
+/** The Favorites tree's file move (YAZ-1766 D4): nothing on that tab drags to disk, so every callback is a no-op. */
+const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
+const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot (TopicsTree's twin). */
 const NEVER: ResolveLink = () => null
@@ -385,6 +396,14 @@ export function Sidebar({
   // window on the same vault is never affected.
   const [focusDirs, setFocusDirs] = useState<readonly string[]>(storage.getFocusDirs)
   const [focusTopics, setFocusTopics] = useState<readonly string[]>(storage.getFocusTopics)
+  const [focusFavorites, setFocusFavorites] = useState<readonly string[]>(storage.getFocusFavorites)
+  // Favorites (YAZ-1766 D2): the vault's pinned files and folders, in the user's order. Per VAULT
+  // and persisted, like `expanded`'s bucket — and shared by every window on it, so another window's
+  // add lands here through the state broadcast (below).
+  const [favorites, setFavorites] = useState<readonly string[]>(() => storage.getFavorites(root))
+  // Favorites drag-to-reorder (D4): the dragged root row + the hovered row and edge.
+  const [reorderDragging, setReorderDragging] = useState<string | null>(null)
+  const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
   // and nowhere else on purpose: this component is mounted `key={root}` and only while the
@@ -427,6 +446,12 @@ export function Sidebar({
   const focusNodes = useMemo(() => (tree === null || focusDirs.length === 0 ? [] : focusRoots(tree.tree, focusDirs)), [tree, focusDirs])
   // The expand/collapse-all button acts on the dirs ON SCREEN: the focused subtrees, or all of them.
   const shownDirs = useMemo(() => (focusNodes.length === 0 ? dirs : allDirs(focusNodes)), [dirs, focusNodes])
+  // The Favorites tab's rows (YAZ-1766 D4/D5): its own focus list when set, else the favorites — each
+  // in STORED order, off the live tree; nesting and redundancy are kept (`favoriteRoots`, not `focusRoots`).
+  const favoriteNodes = useMemo(() => (tree === null ? [] : favoriteRoots(tree.tree, focusFavorites.length > 0 ? focusFavorites : favorites)), [tree, favorites, focusFavorites])
+  const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
+  // What the chevrons button unfolds on the two disk-reading lenses.
+  const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
   const results = useSearchResults(root, watch, query, dirs)
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
@@ -475,8 +500,8 @@ export function Sidebar({
     return allExpandableTopics(topicRecords, folderPagesLookup(topicRecords, resolve ?? NEVER), resolve, focusTopics)
   }, [indexSource, topicRecords, focusTopics])
   // One button, the ACTIVE lens' store — never a set shared between the two readings of the vault.
-  const foldable = lens === 'topics' ? topics : shownDirs
-  const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : shownDirs.some((d) => expanded.includes(d))
+  const foldable = lens === 'topics' ? topics : bodyDirs
+  const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : bodyDirs.some((d) => expanded.includes(d))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const refresh = useCallback(() => {
@@ -507,23 +532,40 @@ export function Sidebar({
   useEffect(() => {
     // Idempotent like its Topics twin below (⚡ YAZ-874): the first render holds exactly what was
     // just read, and re-sending it would make the main process commit, write and broadcast for nothing.
-    const stored = storage.getExpanded(root)
-    if (stored.length === expanded.length && stored.every((dir, i) => dir === expanded[i])) return
+    if (sameList(storage.getExpanded(root), expanded)) return
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
   // Focus Mode's write-back (YAZ-1605), idempotent like the two above it — into this window's
   // identity (YAZ-1628), not the vault bucket.
   useEffect(() => {
-    const stored = storage.getFocusDirs()
-    if (stored.length === focusDirs.length && stored.every((dir, i) => dir === focusDirs[i])) return
+    if (sameList(storage.getFocusDirs(), focusDirs)) return
     storage.setFocusDirs(focusDirs)
   }, [focusDirs])
   useEffect(() => {
-    const stored = storage.getFocusTopics()
-    if (stored.length === focusTopics.length && stored.every((page, i) => page === focusTopics[i])) return
+    if (sameList(storage.getFocusTopics(), focusTopics)) return
     storage.setFocusTopics(focusTopics)
   }, [focusTopics])
+  useEffect(() => {
+    if (sameList(storage.getFocusFavorites(), focusFavorites)) return
+    storage.setFocusFavorites(focusFavorites)
+  }, [focusFavorites])
+
+  // Favorites' write-back (YAZ-1766 D2), idempotent like the rest — into the vault bucket, where every
+  // window on the vault reads it. The subscription is the other direction: another window's add or
+  // remove lands in the cache and replaces this list; the echo of THIS window's own write is a no-op.
+  useEffect(() => {
+    if (sameList(storage.getFavorites(root), favorites)) return
+    storage.setFavorites(root, favorites)
+  }, [root, favorites])
+  useEffect(
+    () =>
+      storage.subscribe(() => {
+        const next = storage.getFavorites(root)
+        setFavorites((prev) => (sameList(prev, next) ? prev : next))
+      }),
+    [root],
+  )
 
   // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
   // state in ⚡ YAZ-873, unchanged. Idempotent: the first render after a mount holds exactly what
@@ -531,8 +573,7 @@ export function Sidebar({
   // nothing — including on every Files-lens mount, where the tree is not even on screen.
   useEffect(() => {
     const next = [...topicsExpanded]
-    const stored = storage.getTopicsExpanded(root)
-    if (stored.length === next.length && stored.every((path, i) => path === next[i])) return
+    if (sameList(storage.getTopicsExpanded(root), next)) return
     storage.setTopicsExpanded(root, next)
   }, [root, topicsExpanded])
 
@@ -559,6 +600,18 @@ export function Sidebar({
     const kept = focusTopics.filter((page) => topicRecords.some((r) => r.path === page && isFolderPage(r)))
     if (kept.length !== focusTopics.length) setFocusTopics(kept)
   }, [topicRecords, focusTopics])
+  useEffect(() => {
+    if (tree === null || focusFavorites.length === 0) return
+    const kept = focusFavorites.filter((dir) => findDirNode(tree.tree, dir) !== null)
+    if (kept.length !== focusFavorites.length) setFocusFavorites(kept)
+  }, [tree, focusFavorites])
+  // Favorites (YAZ-1766): the store repairs rename and in-app delete; this covers what changed on
+  // disk behind the app's back — a favorite the tree no longer holds leaves the list.
+  useEffect(() => {
+    if (tree === null || favorites.length === 0) return
+    const kept = favorites.filter((p) => findNode(tree.tree, p) !== null)
+    if (kept.length !== favorites.length) setFavorites(kept)
+  }, [tree, favorites])
 
   // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
   // other lens is a different reading of the vault, and a typed query swaps the body for the flat
@@ -734,9 +787,12 @@ export function Sidebar({
         // Focus Mode (YAZ-1605): the plural selection's eligible rows, else the one row. Files → DIRS;
         // Topics → FOLDER PAGES that are not Home. Empty (a selection of files only) hides the item.
         focusPaths: focusable(lens, plural ?? (node === null ? [] : [node.path]), tree, indexSource.records, homePath),
+        // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
+        favoritePaths: node === null ? null : plural ?? [node.path],
+        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favorites.includes(p)),
       })
     },
-    [root, tree, indexSource, selectedPaths, orderedSelectedPaths, lens],
+    [root, tree, indexSource, selectedPaths, orderedSelectedPaths, lens, favorites],
   )
 
   /**
@@ -865,14 +921,31 @@ export function Sidebar({
         setFocusTopics(paths)
         setTopicsExpanded((prev) => (paths.every((p) => prev.has(p)) ? prev : new Set([...prev, ...paths])))
       } else {
-        setFocusDirs(paths)
+        // Favorites keeps its OWN list (YAZ-1766 D5); both disk lenses share the one expansion (D7).
+        if (lens === 'favorites') setFocusFavorites(paths)
+        else setFocusDirs(paths)
         for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
       }
     },
     [lens, root],
   )
-  const focused = lens === 'topics' ? focusTopics.length > 0 : focusNodes.length > 0
-  const exitFocus = useCallback(() => (lens === 'topics' ? setFocusTopics([]) : setFocusDirs([])), [lens])
+  const focused = lens === 'topics' ? focusTopics.length > 0 : lens === 'favorites' ? focusFavorites.length > 0 : focusNodes.length > 0
+  const exitFocus = useCallback(() => (lens === 'topics' ? setFocusTopics([]) : lens === 'favorites' ? setFocusFavorites([]) : setFocusDirs([])), [lens])
+
+  /**
+   * The favorite toggle (YAZ-1766 D3/D6): remove every path, or append the ones not yet pinned —
+   * insertion order, no duplicates. `isOn` arrives with the paths (the folder-page toggle's idiom).
+   * The toast confirms with its own glyph; the write-back effect persists.
+   */
+  const toggleFavorite = useCallback(
+    (paths: string[], isOn: boolean) => {
+      const n = paths.length > 1 ? `${paths.length} ` : ''
+      if (isOn) setFavorites((prev) => prev.filter((p) => !paths.includes(p)))
+      else setFavorites((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))])
+      onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite')
+    },
+    [onNotice],
+  )
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -901,6 +974,10 @@ export function Sidebar({
       // The input renders inside the target dir's children, so that dir must be open;
       // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
+      // Favorites shows a SUBSET of the vault (YAZ-1766, 3B1): a target dir it does not hold would give
+      // the input nowhere to mount, so the create moves to Files — where the `expandTo` above has
+      // already opened that dir. The reveal hop's rule (D10), applied to the other gesture that needs a row.
+      if (lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
       setCreating({
         kind,
         seed,
@@ -913,7 +990,7 @@ export function Sidebar({
       })
       setMenu(null)
     },
-    [menu, root],
+    [menu, root, lens, favoriteNodes, onLensChange],
   )
 
   const submitCreate = useCallback(
@@ -1129,6 +1206,36 @@ export function Sidebar({
     drop: dropOnDir,
   }
 
+  // ---- Favorites drag-to-reorder (YAZ-1766 D4): a root row dropped above/below another rewrites the list ----
+
+  const dropReorder = useCallback(() => {
+    const from = reorderDragging
+    const over = reorderOver
+    setReorderDragging(null)
+    setReorderOver(null)
+    if (from === null || over === null || over.path === from) return
+    setFavorites((prev) => {
+      const without = prev.filter((p) => p !== from)
+      const i = without.indexOf(over.path)
+      if (i < 0) return prev
+      const at = over.edge === 'before' ? i : i + 1
+      return [...without.slice(0, at), from, ...without.slice(at)]
+    })
+  }, [reorderDragging, reorderOver])
+
+  /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
+  const favoriteReorder: TreeReorder = {
+    dragging: reorderDragging,
+    over: reorderOver,
+    start: focusFavorites.length > 0 ? () => undefined : setReorderDragging,
+    hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
+    drop: dropReorder,
+    end: () => {
+      setReorderDragging(null)
+      setReorderOver(null)
+    },
+  }
+
   /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures — toggle (shift) and set (any other click, D9). */
   const selection: TreeSelection = {
     paths: selectedPaths,
@@ -1199,10 +1306,13 @@ export function Sidebar({
             type="button"
             role="tab"
             aria-selected={lens === id}
-            className={`sidebar__lens${lens === id ? ' sidebar__lens--active' : ''}`}
+            className={`sidebar__lens${id === 'favorites' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
             onClick={() => onLensChange(id)}
+            // Favorites is a glyph, not a word (YAZ-1766 D1): the label lives in `title` + `aria-label`.
+            title={id === 'favorites' ? LENS_LABEL[id] : undefined}
+            aria-label={id === 'favorites' ? LENS_LABEL[id] : undefined}
           >
-            {LENS_LABEL[id]}
+            {id === 'favorites' ? <HeartIcon /> : LENS_LABEL[id]}
           </button>
         ))}
         {/* One button for both directions AND both lenses (⚡ YAZ-862, ⚡ YAZ-873): anything open
@@ -1228,7 +1338,7 @@ export function Sidebar({
               lens === 'topics'
                 ? setTopicsExpanded(new Set(anyExpanded ? [] : topics))
                 : // Only the dirs ON SCREEN move (YAZ-1605): folds outside a focus are exactly as they were when it ends.
-                  dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !shownDirs.includes(d)) : [...new Set([...expanded, ...shownDirs])] })
+                  dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
             }
           >
             <ChevronsIcon />
@@ -1342,6 +1452,34 @@ export function Sidebar({
             creating={topicsPending}
             onNotice={onNotice}
           />
+        ) : lens === 'favorites' ? (
+          // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
+          // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
+          // every row carries the same menu. Nothing here drags to disk (an inert move); root rows
+          // drag to reorder the list (D4).
+          <>
+            {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
+            {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
+            {tree !== null && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
+            {tree !== null && favoriteNodes.length > 0 && (
+              <Tree
+                nodes={favoriteNodes}
+                dirPath={root}
+                expanded={new Set(expanded)}
+                activeFile={activeFile}
+                onToggle={(dir) => dispatch({ type: 'toggle', dir })}
+                onOpenFile={onOpenFile}
+                onOpenFileBackground={onOpenFileBackground}
+                onOpenDefault={openDefault}
+                onNodeContextMenu={openMenu}
+                pending={pending}
+                renaming={renaming}
+                move={INERT_MOVE}
+                reorder={favoriteReorder}
+                selection={selection}
+              />
+            )}
+          </>
         ) : (
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
@@ -1402,6 +1540,7 @@ export function Sidebar({
               onNewFolder: canNewFolder ? () => startCreate('dir') : null,
               onNewDatedFolder: canNewFolder ? () => startCreate('dir', datedFolderSeed()) : null,
               onToggleFolderPage: toggleFolderPage,
+              onToggleFavorite: toggleFavorite,
               onRename: (path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' }),
               onDelete: askDelete,
             },

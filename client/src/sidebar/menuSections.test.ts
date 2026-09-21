@@ -29,6 +29,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   folderPageIsOn: false,
   topicsAnchor: null,
   focusPaths: null,
+  favoritePaths: null,
+  favoriteIsOn: false,
   clip: null,
   ...over,
 })
@@ -51,6 +53,7 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onNewFolder: vi.fn(),
   onNewDatedFolder: vi.fn(),
   onToggleFolderPage: vi.fn(),
+  onToggleFavorite: vi.fn(),
   onRename: vi.fn(),
   onDelete: vi.fn(),
   ...over,
@@ -430,5 +433,43 @@ describe('Rename / Delete', () => {
     select(sections, 'Delete')
     expect(onRename).toHaveBeenCalledExactlyOnceWith('/v/sub')
     expect(onDelete).toHaveBeenCalledExactlyOnceWith('/v/sub')
+  })
+})
+
+/**
+ * The favorite toggle (YAZ-1766 D3): ONE state-aware item on every ROW — file or dir, whichever
+ * lens — never on blank space; it counts a 2+ selection and reads Add unless EVERY path is already
+ * pinned. It leads the "Open in ▸" group (Yasin, demo 2026-09-21), one hairline above Delete.
+ */
+describe('favorite toggle item (YAZ-1766 D3)', () => {
+  it('reads "Add to favorites" on a row that is not pinned, "Remove from favorites" on one that is', () => {
+    expect(labelsOf(build({ favoritePaths: ['/v/a.md'], favoriteIsOn: false }))).toContain('Add to favorites')
+    expect(labelsOf(build({ favoritePaths: ['/v/a.md'], favoriteIsOn: false }))).not.toContain('Remove from favorites')
+    expect(labelsOf(build({ favoritePaths: ['/v/dir'], favoriteIsOn: true }))).toContain('Remove from favorites')
+    expect(labelsOf(build({ favoritePaths: ['/v/dir'], favoriteIsOn: true }))).not.toContain('Add to favorites')
+  })
+
+  it('is absent on blank space (a null target)', () => {
+    expect(labelsOf(build(BLANK)).some((l) => l.includes('favorites'))).toBe(false)
+  })
+
+  it('counts a 2+ selection: "Add 2 to favorites" / "Remove 3 from favorites"', () => {
+    expect(labelsOf(build({ favoritePaths: ['/v/a.md', '/v/b'], favoriteIsOn: false }))).toContain('Add 2 to favorites')
+    expect(labelsOf(build({ favoritePaths: ['/v/a.md', '/v/b', '/v/c.md'], favoriteIsOn: true }))).toContain('Remove 3 from favorites')
+  })
+
+  it('a MIXED selection reads Add (isOn is false unless every path is pinned) and hands every path with the direction', () => {
+    const onToggleFavorite = vi.fn()
+    select(build({ favoritePaths: ['/v/a.md', '/v/b'], favoriteIsOn: false }, { onToggleFavorite }), 'Add 2 to favorites')
+    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/v/a.md', '/v/b'], false)
+    const onRemove = vi.fn()
+    select(build({ favoritePaths: ['/v/a.md'], favoriteIsOn: true }, { onToggleFavorite: onRemove }), 'Remove from favorites')
+    expect(onRemove).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
+  })
+
+  it('leads the "Open in ▸" group — the this-row group ends on Rename, and the toggle sits directly above the flyout', () => {
+    const sections = build({ ...FILE_ROW, favoritePaths: ['/v/Note.md'], favoriteIsOn: false })
+    expect(sections[3].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
   })
 })

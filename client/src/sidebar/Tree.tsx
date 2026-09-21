@@ -41,6 +41,29 @@ export interface TreeFileMove {
 }
 
 /**
+ * Favorites drag-to-reorder (YAZ-1766 D4): the SAME HTML5 idiom as `TreeFileMove`, but a separate
+ * mechanism — it rewrites the favorites LIST and never touches disk. Applied to depth-0 rows only:
+ * when it is present, nested rows are not draggable at all (no disk moves from the Favorites tab),
+ * and the file move above is expected to be inert.
+ */
+export interface TreeReorder {
+  /** The dragged root row's path; null when no drag is in flight. */
+  dragging: string | null
+  /** The hovered root row and which edge of it the drop lands on. */
+  over: { path: string; edge: 'before' | 'after' } | null
+  start: (path: string) => void
+  hover: (path: string, edge: 'before' | 'after') => void
+  drop: () => void
+  end: () => void
+}
+
+/** Which half of the hovered row the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
+const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
+  const r = e.currentTarget.getBoundingClientRect()
+  return e.clientY < r.top + r.height / 2 ? 'before' : 'after'
+}
+
+/**
  * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
  * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
  * a page standing under two parents in Topics shows selected on BOTH of its rows. A path is a
@@ -78,6 +101,8 @@ interface TreeProps {
   move: TreeFileMove
   /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Topics lens. */
   selection: TreeSelection
+  /** Favorites-only (YAZ-1766 D4): root rows reorder the list instead of moving files; nested rows do not drag. */
+  reorder?: TreeReorder
   depth?: number
 }
 
@@ -95,9 +120,15 @@ export function Tree({
   renaming,
   move,
   selection,
+  reorder,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, reorder }
+  // The reorder gesture lives on depth-0 rows alone; deeper rows of a reorderable tree drag nothing.
+  const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
+  // What a FILE row's drag does: move on disk (E1b) on an ordinary tree, reorder at depth 0 of a reorderable one, nothing below that.
+  const fileDrag: Pick<TreeFileMove, 'start' | 'end'> | null = reorder === undefined ? move : rowReorder
+  const dropEdge = (path: string) => (rowReorder?.over?.path === path ? ` tree__row--drop-${rowReorder.over.edge}` : '')
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -121,7 +152,7 @@ export function Tree({
             ) : (
               <button
                 type="button"
-                className={`tree__row tree__row--dir${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}`}
+                className={`tree__row tree__row--dir${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
@@ -139,7 +170,18 @@ export function Tree({
                   onToggle(node.path)
                 }}
                 onContextMenu={(e) => onNodeContextMenu(node, e)}
+                draggable={rowReorder !== null}
+                onDragStart={rowReorder === null ? undefined : (e) => {
+                  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+                  rowReorder.start(node.path)
+                }}
+                onDragEnd={rowReorder?.end}
                 onDragOver={(e) => {
+                  if (rowReorder !== null && rowReorder.dragging !== null) {
+                    e.preventDefault()
+                    rowReorder.hover(node.path, edgeOf(e))
+                    return
+                  }
                   if (move.dragging === null) return
                   e.preventDefault() // a dir row is a valid drop target while a file drag is in flight
                   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
@@ -150,7 +192,8 @@ export function Tree({
                 }}
                 onDrop={(e) => {
                   e.preventDefault()
-                  move.drop(node.path)
+                  if (rowReorder !== null && rowReorder.dragging !== null) rowReorder.drop()
+                  else move.drop(node.path)
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
@@ -169,7 +212,7 @@ export function Tree({
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}`}
+              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${dropEdge(node.path)}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={(e) => {
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
@@ -200,15 +243,24 @@ export function Tree({
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
               data-path={node.path}
-              draggable
-              onDragStart={(e) => {
+              draggable={fileDrag !== null}
+              onDragStart={fileDrag === null ? undefined : (e) => {
                 if (e.dataTransfer) {
                   e.dataTransfer.effectAllowed = 'move'
                   e.dataTransfer.setData('text/plain', node.path)
                 }
-                move.start(node.path)
+                fileDrag.start(node.path)
               }}
-              onDragEnd={move.end}
+              onDragEnd={fileDrag?.end}
+              onDragOver={rowReorder === null ? undefined : (e) => {
+                if (rowReorder.dragging === null) return
+                e.preventDefault()
+                rowReorder.hover(node.path, edgeOf(e))
+              }}
+              onDrop={rowReorder === null ? undefined : (e) => {
+                e.preventDefault()
+                rowReorder.drop()
+              }}
             >
               <span className="tree__label">{stripExt(node.name)}</span>
             </button>
