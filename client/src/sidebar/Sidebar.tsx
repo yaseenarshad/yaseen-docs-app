@@ -8,7 +8,7 @@ import { folderPageSettings, newFolderPageProperties, turnIntoFolderPage } from 
 import { restoreFolderBody } from '../views/migrateFolderBody'
 import { createNewNote } from '../views/newNote'
 import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
-import { ChevronsIcon, EyeIcon, SearchIcon } from '../views/view/icons'
+import { ChevronsIcon, EyeIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import { transformFile } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -328,16 +328,6 @@ const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'File
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot (TopicsTree's twin). */
 const NEVER: ResolveLink = () => null
-
-/** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
-export function SidebarPanelIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-      <line x1="5.75" y1="2.5" x2="5.75" y2="13.5" />
-    </svg>
-  )
-}
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
 export function Sidebar({

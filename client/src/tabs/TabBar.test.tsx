@@ -362,6 +362,19 @@ describe('TabBar history buttons (YAZ-721, LOCKED D2: buttons only — no shortc
     expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
   })
 
+  it('with the sidebar collapsed (YAZ-1759), Show sidebar leads the row as a peer of ◀ ▶ and reopens on click', () => {
+    const onShowSidebar = vi.fn()
+    const el = mount({ ...tabs, ...noNav, onShowSidebar })
+    const labels = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
+    expect(labels.map((b) => b.getAttribute('aria-label'))).toEqual(['Show sidebar', 'Back', 'Forward'])
+    expect(labels[0]?.title).toBe('Show sidebar')
+    expect(el.querySelector('.tabbar-nav')?.firstElementChild).toBe(labels[0])
+    act(() => btn(el, 'Show sidebar')?.click())
+    expect(onShowSidebar).toHaveBeenCalledTimes(1)
+    // A flex child of the nav row, not a floater over it — and still outside .tabbar (same guard as above).
+    expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
+  })
+
   it('each button is disabled exactly when its side of the stack has nowhere to go', () => {
     const el = mount({ ...tabs, canBack: true, canForward: false, onBack: vi.fn(), onForward: vi.fn() })
     expect(btn(el, 'Back')?.disabled).toBe(false)

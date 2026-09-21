@@ -70,7 +70,6 @@ vi.mock('./editor/Editor', () => ({
   },
 }))
 vi.mock('./sidebar/Sidebar', () => ({
-  SidebarPanelIcon: () => null,
   Sidebar: (props: SidebarStubProps) => {
     captured.sidebar = props
     return <aside data-sidebar data-root={props.root} />
@@ -707,7 +706,7 @@ describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
     act(() => captured.sidebar?.onLensChange('files'))
     act(() => captured.sidebar?.onCollapse())
     expect(el.querySelector('[data-sidebar]')).toBeNull()
-    act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar-nav__btn[aria-label="Show sidebar"]')?.click())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('files')
   })
@@ -764,7 +763,7 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     expect(captured.sidebar?.revealRequest).toBeNull()
 
     act(() => captured.sidebar?.onCollapse())
-    act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar-nav__btn[aria-label="Show sidebar"]')?.click())
     expect(captured.sidebar?.revealRequest).toBeNull()
 
     rightClick(el.querySelector('.tabbar__tab')!)

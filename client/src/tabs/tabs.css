@@ -29,7 +29,9 @@
   padding: 4px 0 0 8px;
 }
 
-/* ◀ ▶ sized and coloured like the per-tab ✕, but always visible — disabled says "nowhere to go". */
+/* ◀ ▶ sized and coloured like the per-tab ✕, but always visible — disabled says "nowhere to go".
+   While the sidebar is collapsed a Show-sidebar button (YAZ-1759) leads the row in the same dress,
+   so nothing floats over ◀. */
 .tabbar-nav__btn {
   display: inline-flex;
   padding: 2px 4px;
