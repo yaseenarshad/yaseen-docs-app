@@ -38,9 +38,9 @@
   - [x] Rebased onto main `a842844` (YAZ-1767 vault switcher, PR #73): two text conflicts + seven `windows.test.ts` fixtures missing `focusFavorites`. Suites green after.
   - [x] 4A/4B hand pass by Yasin on `98741a5` ("it all works"); evidence comments posted; 4 Done.
 - SHIPPED and CLOSED OUT (2026-09-21): PR #74 → main `54a4252`. Release 0.9.24 cut from that main (the first release since 0.9.23; it also carries YAZ-1767). Linear: YAZ-1766 and every child Done; HANDOFF comments on the parent and each child. Demo vault, profile, script, worktree and branch removed. Playwright never run.
-- Reopened (YAZ-1794, worktree `yaseen-docs-app-favorites-vault`, branch `yaz-1766-favorites-vault` off `1ddf90d` / 0.9.24):
-  - [→] 6- Favorites in the vault: 6A main module + IPC + repair, 6B clean break (D15), 6C Sidebar on `api.favorites` + docs. Code + tests + docs written; typecheck / client / desktop green. NOT committed.
-- Next: Yasin's hand pass in the dev app (two windows, a synced vault), then `/commit` when asked.
+- 6- SHIPPED and CLOSED OUT (2026-09-21): favorites moved into `<root>/.yaseendocs/favorites.json` (D11–D15; YAZ-1794 → 6A YAZ-1795, 6B YAZ-1796, 6C YAZ-1797, all Done). PR #75 `e5727fe` → main `dbe56ca`. Release 0.9.25. Hand pass by Yasin ("it worked"). Worktree `yaseen-docs-app-favorites-vault`, branch and demo rig removed.
+- Now: nothing; this ledger is closed.
+- Next: nothing.
 
 ## Open Questions
 - None. (Reorder inert while focused: confirmed in the demo. Inline create from a ♥ row: 3B1 hops to Files when the tab lacks the target dir.)
@@ -53,5 +53,5 @@
 ## Working Set
 - Source: `shared/types.ts`, `desktop/src/main/store.ts`, `desktop/src/main/ipc/state.ts`, `desktop/src/main/ipc/window.ts`, `client/src/lib/storage.ts`, `client/src/lib/treeState.ts`, `client/src/lib/notice.ts`, `client/src/components/NoticeIcon.tsx`, `client/src/sidebar/menuSections.ts`, `client/src/sidebar/Sidebar.tsx`, `client/src/sidebar/Tree.tsx`, `client/src/App.tsx`, `client/src/app.css`.
 - Tests: `treeState.test.ts`, `menuSections.test.ts`, `Sidebar.test.tsx`, `desktop/src/main/store.test.ts`; e2e edited, never run: `desktop/e2e/lenses.spec.ts`, `desktop/e2e/helpers.ts`.
-- Demo: `<scratchpad>/run-demo.sh` · vault `<scratchpad>/Favorites` · profile `<scratchpad>/profile-favorites`.
+- Demo rig: removed after close-out (recreate from the scenario comment on YAZ-1766 if needed).
 - Commands: `npm run typecheck` · `npx vitest run --project client` · `npx vitest run --project desktop`.
