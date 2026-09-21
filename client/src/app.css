@@ -261,8 +261,9 @@ button {
    (`display: contents` above), so only its PIECES carry styles now. Collapsed it is one small
    muted chip — chevron + properties glyph + bare count, the words in its tooltip (YAZ-1758) —
    deliberately SUBORDINATE to the title beside it, since most pages have nothing to say here.
-   Header affordance is the backlinks / view-group chevron, rotated -90° while collapsed. Expanded it is TYPED ROWS by default (⚡ YAZ-884) with the raw textarea as the
-   fallback under them. */
+   Header affordance is the backlinks / view-group chevron, rotated -90° while collapsed.
+   Expanded it is TYPED ROWS by default (⚡ YAZ-884) with the raw textarea as the fallback
+   under them. */
 .frontmatter-panel__header {
   display: flex;
   align-items: center;
