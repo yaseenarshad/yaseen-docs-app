@@ -5,10 +5,14 @@ interface ContextMenuSurfaceProps {
   y: number
   onClose: () => void
   children: ReactNode
+  /** A fixed width in px (YAZ-1767 D5): the vault switcher spans its anchor; menus keep their content width. */
+  width?: number
+  /** Extra class beside `ctx-menu` (YAZ-1767 D5): `ctx-menu--panel` restyles the surface as a flush drop-down panel. */
+  className?: string
 }
 
 /** Action-free context-menu mechanics shared by menus whose commands stay domain-owned. */
-export function ContextMenuSurface({ x, y, onClose, children }: ContextMenuSurfaceProps) {
+export function ContextMenuSurface({ x, y, onClose, children, width, className }: ContextMenuSurfaceProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const [position, setPosition] = useState({ left: x, top: y })
@@ -39,9 +43,9 @@ export function ContextMenuSurface({ x, y, onClose, children }: ContextMenuSurfa
   return (
     <div
       ref={menuRef}
-      className="ctx-menu"
+      className={['ctx-menu', className].filter(Boolean).join(' ')}
       role="menu"
-      style={{ left: position.left, top: position.top }}
+      style={{ left: position.left, top: position.top, width }}
       onMouseDown={(event) => event.stopPropagation()}
     >
       {children}

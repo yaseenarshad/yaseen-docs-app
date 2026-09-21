@@ -43,6 +43,8 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
+  // The vault switcher (YAZ-1767 D8): the sidebar header's panel, keyboard-first like ⌘K's bar.
+  { keys: '⌘O', label: 'Switch vault (type to filter, ⏎ brings it to the front or opens a new window)' },
   { keys: '⌘K', label: 'Search the vault' },
   { keys: '⌘,', label: 'Settings' },
   { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
