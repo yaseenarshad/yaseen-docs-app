@@ -1,0 +1,60 @@
+# CONTINUITY — vault switcher: recent vaults dropdown in the sidebar header (YAZ-1767)
+
+## Goal
+- The sidebar header's top-left "vault name + change" button becomes a keyboard-first vault switcher modelled on GitHub Desktop's repository panel: click or ⌘O drops a panel flush under the header — filter input first (autofocused), every recent vault as a Welcome-style row (name + relative time / full path), the current vault included and tinted, "Open folder…" last — and ⏎ / click opens the highlighted vault in a NEW window on its remembered last file.
+- Done = prototype walked by Yasin on the demo rig (S1–S12 in the demo vault's `Start here.md`), decisions confirmed or amended, then review → merge to main with CONTRACTS.md/LAUNCH.md true and this ledger closed. NO release decided yet.
+
+## Constraints
+- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-vault-switcher`, branch `yaz-1767-vault-switcher`, off main `ac9706c`. `/Users/yasin/Documents/GitHub/yaseen-docs-app` untouched. Nothing committed yet (commits go through the `/commit` skill).
+- NO Playwright / e2e runs; NO agent-launched Electron. Verification = `npx vitest run` (all four projects) + `npm run typecheck` + Yasin's hand walkthrough in the dev app on the isolated profile (`YASEEN_DOCS_USER_DATA_DIR`, HMR, no `--watch`).
+- House style: comments cite issue ids; tests pin contracts (menu ids/accelerators, bridge method lists, hotkey list).
+- `ContextMenuSurface` changes are ADDITIVE (`width?`, `className?`); every existing menu renders exactly as before.
+
+## Key Decisions (LOCKED by Yasin before the prototype; implemented exactly)
+- **D1 One back-end door.** `window.openRecent(path): Promise<boolean>` → `WindowManager.openRecentBeside(path)` (`desktop/src/main/windows.ts`): `!host.dirExists` → `store.removeRecent`, `false`, no window; else `store.pushRecent`, `openWindow({ root, file: folders[root].lastFile ?? null })`, `true`. `dirExists` moved from `MenuHost` onto `WindowHost` (`index.ts` implements with `statSync().isDirectory()`); the menu's ⌥-click branch now just calls `windows.openRecentBeside(path)`. Channel `window:open-recent`; IPC validates with `requireAbsPath`.
+- **D2** The new window restores `folders[root].lastFile` (inside D1).
+- **D3** The current vault IS a row (recents[0]); `aria-current="true"` + accent-soft tint, no glyph; activating it opens a second window (one rule for every row).
+- **D4** "Open folder…" is the LAST row under a hairline; runs the existing `onPickFolder` in place; disabled while `pickDisabled`.
+- **D5 Panel, not popup.** `ContextMenuSurface` + `width` + `className="ctx-menu--panel"` (padding 0, no top border, radius 0 0 8 8, max-height calc(100vh − 160px), scroll). Anchor = `.sidebar__header` rect (x=left, y=bottom, width). Rows = Welcome idiom. Dead folder → row disabled, "Folder not found" in `--danger`, panel STAYS open; success closes it. Rows read fresh from `storage.getRecentRoots()` on every open. Trigger `onMouseDown` stopPropagation so a second click toggles closed; `aria-haspopup="menu"`, `aria-expanded`. Header keeps the drag-to-root drop target and `title={root}`.
+- **D6** Trigger is one line: bold name + `▾`/`▴` chevron in `.sidebar__root-hint` (`aria-hidden`); the word "change" is gone; header height unchanged.
+- **D7 Filter + keyboard.** Filter input first, placeholder "Switch vault…", `aria-label="Switch vault"`, autofocused, query reset on every open. Ranking = `matchLinkCandidates` over basenames, uncapped; empty query = MRU order. Default highlight: empty query → first row that is NOT the current root (⌘O ⏎ = last-used other vault); all current → first row; typed → top match; no match → Open folder…. ↑/↓ clamp (never wrap); hover moves it; ⏎ activates; Esc closes on the first press. Typing never leaves the input (rows swallow mousedown). "Open folder…" always visible; "No matching vaults" above it when nothing matches. `.vault-switcher__row--active` is the highlight, `aria-current` is separate.
+- **D9 Vault already open → raise its windows, no new window.** `ManagedWindow.on` gains `'focus'`; the manager keeps `focusOrder` (ids, most recently focused FIRST; `focus` moves to the front, `closed` removes). `openRecentBeside`, after the dead-dir probe and the MRU bump, finds every `windows[]` entry whose root matches (`stripSlash` both sides, as `resolveLinkTarget`) with a live non-destroyed window: if any, `focusWindow` each LEAST recently focused first (never-focused ranks last) so the most recent ends on top, return true, open nothing; else open as before. `index.ts` needs nothing (BrowserWindow already emits `focus`). Pinned by four `windows.test.ts` cases; `menu.test.ts` unchanged.
+- **D8 ⌘O.** File › "Switch Vault…" `CmdOrCtrl+O`, id `menu.file.switch-vault`, directly above "Open Folder…"; channel `menu:switch-vault` → preload `menu.onSwitchVault` → `useMenuEvents.onSwitchVault` → App: root null → no-op; collapsed → `toggleSidebar()` first; then bump `switcherOpenRequest` → Sidebar → VaultSwitcher (effect keyed on the counter). `WINDOW_HOTKEYS` gains `⌘O`; the '⌥ Open Recent' tip stays (still true).
+
+### Decided by the implementing agent (NOT in the brief — confirm or amend)
+- **A1** App pins a ⌘O request to the root it was made on (`{ seq, root }`; Sidebar receives `seq` only while `root` matches, else 0) so the `key={root}` remount after an in-place "Open folder…" never replays a stale request and pops the panel on the new vault. Pinned by `App.test.tsx` "a request is pinned to the root it was made on".
+- **A2** Activating "Open folder…" closes the panel BEFORE running the picker (the native dialog fires no window mousedown, so nothing else would close it).
+- **A3** The filter input is `position: sticky` at the top of the scrolling panel (GitHub Desktop keeps its filter pinned).
+- **A4** A rejected `openRecent` (bridge error) is logged and treated like `false` — the row goes "Folder not found" rather than the panel hanging.
+- **A5** Current + highlighted on the same row: accent-soft background plus a 2px inset accent bar, so neither cue hides the other.
+- **A6** `menu.test.ts` no longer owns the dead-folder probe/prune assertions; they moved to `windows.test.ts` with the door. The menu test pins only that ⌥-click calls `openRecentBeside` and ignores its verdict.
+
+## State
+- Done:
+  - [x] Read LAUNCH.md, CONTRACTS.md (Menus, Multi-window), header-chrome ledger for house style.
+  - [x] D1: channel, `WindowHost.dirExists`, `openRecentBeside`, IPC handler, preload, `WindowApi.openRecent`; menu ⌥-click through the door; `MenuHost.dirExists` removed.
+  - [x] D5: `ContextMenuSurface` `width`/`className`; `VaultSwitcher.tsx`; CSS beside `.ctx-menu` and `.sidebar__root*`.
+  - [x] D3/D4/D6/D7: in `VaultSwitcher.tsx`; Sidebar header uses it; `switcherOpenRequest` prop.
+  - [x] D8: menu item + channel + preload + `useMenuEvents` + App handshake + `WINDOW_HOTKEYS` ⌘O.
+  - [x] D9 (locked mid-prototype): `focusOrder` + raise-instead-of-open in `openRecentBeside`; tests one-window / two-with-history / never-focused / mid-close; demo S13–S15 added to `Start here.md` in place (profile untouched).
+  - [x] Tests: `VaultSwitcher.test.tsx` (27), App ⌘O (4), `useMenuEvents`, `hotkeys`, `windows` (door ×3), `menu` (item/id/handler/⌥), ipc `window` (channel), preload `bridge` lists; `Sidebar.test.tsx` harness updated.
+  - [x] All four vitest projects green + `npm run typecheck` clean (see the summary handed to Yasin for counts).
+  - [x] Demo rig in the session scratchpad `yaz-1767/`: `setup-demo.sh` (idempotent; 10 vaults + `eleventh-vault`; `gone-vault` deleted after seeding; `lastfile-deleted` → `Missing.md`), `run-demo.sh` (dev app on the isolated profile, no `--watch`).
+- Now: [→] Demo pending Yasin's walkthrough (S1–S15 in `Recent Vaults Dropdown/Start here.md`).
+- Next:
+  - [ ] Yasin confirms/amends A1–A6; lock on Linear (parent + children tree as per house pattern).
+  - [ ] Docs pass before merge: CONTRACTS.md "Menus & shortcuts" (Switch Vault… row; Open Recent ⌥ row → "through `openRecentBeside`") and "Multi-window" (Open beside bullet: the switcher + lastFile restore); LAUNCH.md still says "click **change** in the sidebar header" (twice) — now stale.
+  - [ ] e2e specs are not run here; none reference the old "change" button (grepped), so no edits pending.
+  - [ ] Review → `/commit` → PR → merge; then remove vaults/profile/scripts/worktree.
+
+## Open Questions
+- UNCONFIRMED: should a dead row also be removed from the open panel's list the moment `openRecent` returns false (the MRU already dropped it), or keep Welcome's "disabled + Folder not found" until the next open? Implemented the latter (D5 as written).
+- UNCONFIRMED: `lastfile-deleted` (S8) — the new window opens with `file` = a missing path; the renderer's existing `onFileMissing` path handles it. Confirm the experience is acceptable rather than probing `lastFile` main-side.
+- UNCONFIRMED (D9): the current vault's own row now RAISES this window (it is open) rather than opening a second one — D3's "one rule for every row" still holds (the rule is the door), but ⌘⇧N remains the only way to get a second window on the current vault. Confirm that reading.
+- UNCONFIRMED: `.ctx-menu` sits at `z-index: 40`; confirm the panel clears the tab strip and any editor chrome at every sidebar width in the demo.
+
+## Working Set
+- Desktop: `desktop/src/channels.ts`, `desktop/src/main/windows.ts`, `desktop/src/main/index.ts`, `desktop/src/main/menu.ts`, `desktop/src/main/ipc/window.ts`, `desktop/src/preload/index.ts`, `shared/types.ts`.
+- Client: `client/src/sidebar/VaultSwitcher.tsx` (new), `client/src/sidebar/Sidebar.tsx`, `client/src/components/ContextMenuSurface.tsx`, `client/src/App.tsx`, `client/src/hooks/useMenuEvents.ts`, `client/src/settings/hotkeys.ts`, `client/src/app.css`.
+- Tests: `client/src/sidebar/VaultSwitcher.test.tsx` (new), `client/src/App.test.tsx`, `client/src/sidebar/Sidebar.test.tsx`, `client/src/hooks/useMenuEvents.test.tsx`, `client/src/settings/hotkeys.test.ts`, `desktop/src/main/windows.test.ts`, `desktop/src/main/menu.test.ts`, `desktop/src/main/ipc/window.test.ts`, `desktop/src/preload/bridge.test.ts`.
+- Commands: `npx vitest run` (or `--project client` / `--project desktop`) · `npm run typecheck` · demo: `<scratchpad>/yaz-1767/setup-demo.sh` then `<scratchpad>/yaz-1767/run-demo.sh` (scratchpad = `/private/tmp/claude-501/-Users-yasin-Documents-GitHub-yaseen-docs-app/5608c98e-cba0-4532-9f89-666f48fa00ab/scratchpad`).
