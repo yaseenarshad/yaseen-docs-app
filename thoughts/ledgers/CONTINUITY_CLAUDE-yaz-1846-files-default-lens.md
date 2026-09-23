@@ -7,6 +7,7 @@ Opening a vault lands the sidebar on **Files**, not Topics — ⌘O onto a vault
 - 🔒 D1: one constant `DEFAULT_SIDEBAR_LENS = 'files'` (`shared/types.ts`) replaces every `'topics'`-as-default literal (`windows.ts` openWindow + first launch, `store.ts` legacy fallback, `storage.ts` placeholder). Existing windows keep their persisted lens — no migration.
 - 🔒 D2: `storage.setRoot`'s root-CHANGE patch carries `sidebarLens: DEFAULT_SIDEBAR_LENS` (same single identity write); `App.openRoot` mirrors it. Same-root re-set keeps the lens. Reverses the old YAZ-847/1628 "a root change keeps the lens".
 - 🔒 D3: tab order stays Topics | Files | Favorites.
+- YAZ-1914 (merged mid-run): only the Welcome window switches vault in place; Open Folder / Open Recent / the switcher row on a vault window go to `openRecentBeside` → a new window → D1. So D2 now only fires Welcome → vault (and `onRootMissing` → Welcome).
 - ⌘⇧N (`duplicateWindow`) still copies the source lens. ⌘O onto an already-open vault raises it, lens untouched.
 - Yasin: never Playwright. Commits via /commit. npm at `/opt/homebrew/bin/npm`.
 
