@@ -412,6 +412,19 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(created[1].entry.root).toBe('/v/other')
   })
 
+  it('a SUBFOLDER of an open vault is its own vault: a new window on it, the parent vault untouched (YAZ-1914 S12)', () => {
+    store.upsertWindow({ id: 'w1', root: '/v/notes', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    const w1 = created[0].win
+    expect(manager.openRecentBeside('/v/notes/sub')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(created[1].entry.root).toBe('/v/notes/sub')
+    expect(w1.focusCount).toBe(0)
+    expect(store.get().windows.find((w) => w.id === 'w1')?.root).toBe('/v/notes')
+  })
+
   it('a dead folder: pruned from the MRU, no window, returns false (GRO-2211)', () => {
     store.pushRecent('/v/gone', 1)
     store.pushRecent('/v/notes', 2)

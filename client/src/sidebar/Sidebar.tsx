@@ -48,7 +48,7 @@ interface SidebarProps {
    * was showing, by Enter or by click alike. Never a tab: a folder has nothing to open.
    */
   onRevealInFiles: (path: string) => void
-  /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs the in-place picker, unchanged. */
+  /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
   onPickFolder: () => void
   /** True while the native folder dialog is open; the switcher's "Open folder…" row is disabled meanwhile. */
   pickDisabled: boolean
