@@ -160,6 +160,7 @@ describe('createWindowManager: restore', () => {
     expect(created[0].entry.tabs).toEqual([])
     expect(created[0].entry.rightPanel).toEqual(defaultRightPanelIdentity())
     expect(created[0].entry.sidebarCollapsed).toBe(false)
+    expect(created[0].entry.sidebarLens).toBe('files') // the default lens (YAZ-1846)
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
@@ -330,6 +331,7 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(created[0].entry.root).toBe('/v/other')
     expect(created[0].entry.file).toBe('/v/other/Start here.md')
     expect(created[0].entry.tabs).toEqual(['/v/other/Start here.md'])
+    expect(created[0].entry.sidebarLens).toBe('files') // ⌘O onto a vault with no window lands on Files (YAZ-1846)
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v/other', '/v/notes'])
     expect(store.get().windows).toEqual([created[0].entry])
   })
@@ -357,6 +359,7 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(w1.minimized).toBe(false)
     expect(store.get().recents[0]?.path).toBe('/v/other')
     expect(store.get().windows).toHaveLength(1)
+    expect(store.get().windows[0].sidebarLens).toBe('topics') // raising a window never touches its lens (YAZ-1846 B)
   })
 
   it('D9: two windows on the vault, focus history A then B → raised A then B, so B (most recently focused) ends on top', () => {
@@ -447,7 +450,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(created[0].entry.tabs).toEqual(['/v/a.md']) // the opened file is the one tab (GRO-2232)
     expect(created[0].entry.rightPanel).toEqual(defaultRightPanelIdentity())
     expect(created[0].entry.sidebarCollapsed).toBe(false)
-    expect(created[0].entry.sidebarLens).toBe('topics') // a new window starts on Topics (YAZ-847, YAZ-1628)
+    expect(created[0].entry.sidebarLens).toBe('files') // a new window starts on Files (YAZ-1846)
     expect(created[0].entry.focusDirs).toEqual([]) // a new window starts unfocused (YAZ-1628)
     expect(created[0].entry.focusTopics).toEqual([])
     expect(store.get().windows).toEqual([created[0].entry])
@@ -455,7 +458,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
 
   it('duplicateWindow copies the complete workspace identity, then the two entries can diverge', () => {
     const rightPanel = { open: true, width: 560, items: ['/v/right-a.md', '/v/right-b.md'], expanded: '/v/right-b.md' }
-    const from: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], rightPanel, sidebarCollapsed: true, sidebarLens: 'files', focusDirs: ['/v/a'], focusTopics: ['/v/T.md'], focusFavorites: [], bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    const from: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], rightPanel, sidebarCollapsed: true, sidebarLens: 'topics', focusDirs: ['/v/a'], focusTopics: ['/v/T.md'], focusFavorites: [], bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -468,7 +471,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(entry.rightPanel).toEqual(rightPanel)
     expect(entry.rightPanel.items).not.toBe(from.rightPanel.items)
     expect(entry.sidebarCollapsed).toBe(true)
-    expect(entry.sidebarLens).toBe('files') // the lens comes along too (YAZ-1628)
+    expect(entry.sidebarLens).toBe('topics') // the lens comes along too (YAZ-1628) — copied, not the Files default (YAZ-1846 G)
     // Both Focus Mode lists come along BY VALUE (YAZ-1628): the copy holds the same paths in fresh arrays.
     expect(entry.focusDirs).toEqual(['/v/a'])
     expect(entry.focusTopics).toEqual(['/v/T.md'])

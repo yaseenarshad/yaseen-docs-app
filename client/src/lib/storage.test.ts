@@ -131,7 +131,7 @@ describe('storage', () => {
     expect(storage.getRoot()).toBeNull()
     storage.setRoot('/notes')
     expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
     storage.setWorkspace('/notes', ['/notes/a.md'], '/notes/a.md', defaultRightPanelIdentity())
     storage.setRoot('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
@@ -139,7 +139,7 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual(['/notes/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
     expect(storage.getFile()).toBeNull()
     expect(storage.getTabs()).toEqual([])
   })
@@ -324,7 +324,7 @@ describe('storage', () => {
     b.emit({ ...defaultAppState(), sidebarWidth: 333 })
     expect(storage.getFocusFavorites()).toEqual(['/r1/a'])
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
     expect(storage.getFocusFavorites()).toEqual([])
   })
 
@@ -353,7 +353,7 @@ describe('storage', () => {
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r1' })
     expect(storage.getFocusTopics()).toEqual(['/r1/Admin.md'])
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
     expect(storage.getFocusDirs()).toEqual([])
     expect(storage.getFocusTopics()).toEqual([])
   })
@@ -368,7 +368,7 @@ describe('storage', () => {
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: false })
   })
 
-  it('sidebarLens is this window identity (YAZ-847, per window since YAZ-1628): restored at boot, written through window.setIdentity, deaf to state broadcasts, kept by a root change', async () => {
+  it('sidebarLens is this window identity (YAZ-847, per window since YAZ-1628): restored at boot, written through window.setIdentity, deaf to state broadcasts, reset to Files by a root change (YAZ-1846 D2)', async () => {
     expect(storage.getSidebarLens()).toBe('topics')
     storage.setSidebarLens('files')
     expect(storage.getSidebarLens()).toBe('files')
@@ -384,9 +384,14 @@ describe('storage', () => {
     b.emit({ ...defaultAppState(), sidebarWidth: 333 })
     expect(storage.getSidebarWidth()).toBe(333)
     expect(storage.getSidebarLens()).toBe('files')
-    // A root change keeps it: the lens is a view preference, not vault content.
+    // Re-setting the SAME root keeps it.
+    storage.setSidebarLens('topics')
+    storage.setRoot('/r1')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r1' })
+    expect(storage.getSidebarLens()).toBe('topics')
+    // A root CHANGE lands on Files (YAZ-1846 D2) — in the same single identity write.
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
     expect(storage.getSidebarLens()).toBe('files')
   })
 

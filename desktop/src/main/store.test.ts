@@ -209,13 +209,13 @@ describe('createStore: loading', () => {
     expect(persisted.windows.map((w) => w.sidebarLens)).toEqual(['files', 'topics', 'files'])
   })
 
-  it('sidebarLens migration treats a junk or missing legacy value as Topics — a PRE-847 file has no key anywhere (YAZ-847, YAZ-1628)', async () => {
+  it('sidebarLens migration treats a junk or missing legacy value as the default, Files — a PRE-847 file has no key anywhere (YAZ-847, YAZ-1628, YAZ-1846)', async () => {
     await seed(valid({ sidebarLens: 'graph', windows: [{ id: 'w', root: null, file: null, tabs: [], bounds }] }))
-    expect(createStore(file).get().windows[0].sidebarLens).toBe('topics')
+    expect(createStore(file).get().windows[0].sidebarLens).toBe('files')
     await seed(valid({ sidebarLens: 1, windows: [{ id: 'w', root: null, file: null, tabs: [], bounds, sidebarLens: 1 }] }))
-    expect(createStore(file).get().windows[0].sidebarLens).toBe('topics')
+    expect(createStore(file).get().windows[0].sidebarLens).toBe('files')
     await seed(valid({ windows: [{ id: 'w', root: null, file: null, tabs: [], bounds }] }))
-    expect(createStore(file).get().windows[0].sidebarLens).toBe('topics')
+    expect(createStore(file).get().windows[0].sidebarLens).toBe('files')
   })
 
   it('recents: a wrong shape reads as empty, a long list is capped', async () => {
