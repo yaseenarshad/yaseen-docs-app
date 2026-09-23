@@ -86,7 +86,7 @@ export interface WindowManager extends WindowLookup {
   duplicateWindow(from: WindowEntry): void
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
-   * switcher (`window:open-recent`) and the menu's ⌥-click on Open Recent both land here. Probes
+   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`. Probes
    * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
