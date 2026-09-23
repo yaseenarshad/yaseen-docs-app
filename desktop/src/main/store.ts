@@ -4,6 +4,7 @@ import {
   COMMENTS_ORDERS,
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
+  DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
@@ -246,7 +247,7 @@ function sanitizeState(raw: unknown): AppState | null {
   // YAZ-1628 migration, the same shape: a v1 file's retired global lens (YAZ-847) seeds only
   // windows without a valid lens of their own; a pre-847 file has none at all, and missing or
   // junk both read as the default. The returned state omits the old key too.
-  const legacySidebarLens: SidebarLens = isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : 'topics'
+  const legacySidebarLens: SidebarLens = isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : DEFAULT_SIDEBAR_LENS
   return {
     version: 1,
     settings: sanitizeSettings(raw.settings),
