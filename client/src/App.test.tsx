@@ -88,6 +88,7 @@ type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
+  const menuOpenFolder = new Set<() => void>()
   const menuSearch = new Set<() => void>()
   const menuSwitchVault = new Set<() => void>()
   const menuSettings = new Set<() => void>()
@@ -158,10 +159,12 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       open: vi.fn(),
       duplicate: vi.fn(),
       closeSelf: vi.fn(async () => undefined),
+      // Main's one open-recent door (YAZ-1767 D1): a vault window's picks and Open Recent land here (YAZ-1914 D1).
+      openRecent: vi.fn(async (_path: string) => true),
       onFlush: vi.fn(() => () => undefined),
     },
     menu: {
-      onOpenFolder: vi.fn(() => () => undefined),
+      onOpenFolder: menuSub(menuOpenFolder),
       onOpenRoot: vi.fn((l: (path: string) => void) => {
         menuOpenRoot.add(l)
         return () => menuOpenRoot.delete(l)
@@ -221,6 +224,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     bridge,
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
+    emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
     emitSearch: () => menuSearch.forEach((l) => l()),
     emitSwitchVault: () => menuSwitchVault.forEach((l) => l()),
     emitSettings: () => menuSettings.forEach((l) => l()),
@@ -501,16 +505,17 @@ describe('App on a null root (C2, GRO-2164)', () => {
   })
 })
 
-describe('App openRoot (C3, GRO-2165)', () => {
-  it('File › Open Recent switches the window in place: sidebar re-keyed, prior tabs cleared, file ← the folder\'s lastFile as the sole tab, hash synced', async () => {
+describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
+  it('File › Open Recent switches the Welcome window in place: sidebar keyed, file ← the folder\'s lastFile as the sole tab, hash synced', async () => {
     const state = withFolder(defaultAppState(), '/w', '/w/b.md')
-    const { bridge, el, emitOpenRoot } = await mount(state, { id: 'w1', root: '/v', file: '/v/old.md', tabs: ['/v/old.md', '/v/z.md'] })
+    const { bridge, el, emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/w/b.md')
     expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['b'])
     expect(location.hash).toBe('#/w/b.md')
     expect(bridge.state.pushRecent).toHaveBeenCalledWith('/w')
+    expect(bridge.window.openRecent).not.toHaveBeenCalled()
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
@@ -520,20 +525,74 @@ describe('App openRoot (C3, GRO-2165)', () => {
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
-    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
     expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] }]])
   })
 
-  it('a dead recent chosen from the menu drops the MRU entry and leaves the window on its folder', async () => {
-    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+  it('a dead recent chosen from the menu drops the MRU entry and leaves the window on Welcome', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     bridge.tree.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
     await act(async () => emitOpenRoot('/gone'))
     expect(bridge.state.removeRecent).toHaveBeenCalledWith('/gone')
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(el.querySelector('.welcome')).not.toBeNull()
+  })
+
+  it('a folder picked on Welcome (Open Folder…) switches the window in place (S5)', async () => {
+    const { bridge, el, emitOpenFolder } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    bridge.pickFolder.mockResolvedValueOnce({ path: '/w' } as never)
+    await act(async () => emitOpenFolder())
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(bridge.window.openRecent).not.toHaveBeenCalled()
+  })
+})
+
+describe('App vault-open rule in a vault window (YAZ-1914 D1 — never overwrite the open vault)', () => {
+  const VAULT = { id: 'w1', root: '/v', file: '/v/old.md', tabs: ['/v/old.md', '/v/z.md'] }
+
+  const expectUntouched = (bridge: ReturnType<typeof installBridge>['bridge'], el: HTMLElement): void => {
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['old', 'z'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ root: expect.anything() }))
+    expect(bridge.state.pushRecent).not.toHaveBeenCalled() // main's door bumps the MRU, not this window
+  }
+
+  it('File › Open Recent hands the path to main\'s open-recent door and leaves this window alone (S7)', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), VAULT)
+    await act(async () => emitOpenRoot('/w'))
+    expect(bridge.window.openRecent).toHaveBeenCalledExactlyOnceWith('/w')
+    expectUntouched(bridge, el)
+  })
+
+  it('a folder picked with Open Folder… goes through the same door (S1/S2)', async () => {
+    const { bridge, el, emitOpenFolder } = await mount(defaultAppState(), VAULT)
+    bridge.pickFolder.mockResolvedValueOnce({ path: '/w' } as never)
+    await act(async () => emitOpenFolder())
+    expect(bridge.window.openRecent).toHaveBeenCalledExactlyOnceWith('/w')
+    expectUntouched(bridge, el)
+  })
+
+  it('a cancelled dialog does nothing (S11)', async () => {
+    const { bridge, el, emitOpenFolder } = await mount(defaultAppState(), VAULT)
+    await act(async () => emitOpenFolder())
+    expect(bridge.pickFolder).toHaveBeenCalledOnce()
+    expect(bridge.window.openRecent).not.toHaveBeenCalled()
+    expectUntouched(bridge, el)
+  })
+
+  it('a dead folder (the door answers false) or a failed door leaves the window as it is (S10)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), VAULT)
+    bridge.window.openRecent.mockResolvedValueOnce(false)
+    await act(async () => emitOpenRoot('/gone'))
+    bridge.window.openRecent.mockRejectedValueOnce(new Error('ipc down'))
+    await act(async () => emitOpenRoot('/w'))
+    expect(error).toHaveBeenCalledWith('[open-vault] openRecent failed:', expect.any(Error))
+    expectUntouched(bridge, el)
+    error.mockRestore()
   })
 })
 
@@ -546,13 +605,16 @@ describe('App boot on a window entry with a file (D2, GRO-2168)', () => {
 })
 
 describe('App window title (C3, GRO-2165)', () => {
-  it('is "<file> — <folder>" with a file open, the folder alone without one, the app name on Welcome', async () => {
+  it('is the app name on Welcome, then "<file> — <folder>" once a folder with a file opens', async () => {
     const state = withFolder(defaultAppState(), '/vaults/w', '/vaults/w/Note.md')
     const { emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     expect(document.title).toBe('Yaseen Docs')
     await act(async () => emitOpenRoot('/vaults/w'))
     expect(document.title).toBe('Note — w')
-    await act(async () => emitOpenRoot('/vaults/empty'))
+  })
+
+  it('is the folder alone with no file open', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/vaults/empty', file: null, tabs: [] })
     expect(document.title).toBe('empty')
   })
 })
@@ -830,11 +892,11 @@ describe('App ⌘O vault switcher (YAZ-1767 D8)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
   })
 
-  it('a request is pinned to the root it was made on: after an in-place root switch the remounted sidebar reads 0', async () => {
-    const { emitSwitchVault, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+  it('a request is pinned to the root it was made on: after an in-place root change (the vault folder moved) the remounted sidebar reads 0', async () => {
+    const { emitSwitchVault, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => emitSwitchVault())
     expect(captured.sidebar?.switcherOpenRequest).toBe(1)
-    await act(async () => emitOpenRoot('/w'))
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
     expect(captured.sidebar?.root).toBe('/w')
     expect(captured.sidebar?.switcherOpenRequest).toBe(0)
     // A fresh request on the new root counts again.
@@ -1288,20 +1350,20 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
   })
 
-  it('clears an open rename confirmation when the window switches roots', async () => {
-    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), identity(), {}, feed)
+  it('clears an open rename confirmation when the window root changes (the vault folder moved)', async () => {
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), identity(), {}, feed)
     await act(async () => void await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
     expect(sheetText(el)).toContain("Rename 'B' to 'B2'?")
 
-    await act(async () => emitOpenRoot('/w'))
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
 
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).not.toHaveBeenCalled()
   })
 
-  it('silently cancels a deferred old-root catalog request after a root switch', async () => {
-    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), identity(), {}, feed)
+  it('silently cancels a deferred old-root catalog request after a root change (the vault folder moved)', async () => {
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), identity(), {}, feed)
     const oldRootRename = captured.sidebar?.onRenameFile
     let resolveOldTree!: (response: TreeResponse) => void
     bridge.tree.mockImplementation((path: string): Promise<TreeResponse> => path === '/v'
@@ -1313,7 +1375,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await Promise.resolve()
     })
 
-    await act(async () => emitOpenRoot('/w'))
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
     await act(async () => {
       resolveOldTree({
         root: '/v',

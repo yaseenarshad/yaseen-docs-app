@@ -23,13 +23,14 @@ describe('HOTKEYS source of truth', () => {
     expect(VIEW_HOTKEYS.find((h) => h.keys === '⌘⏎ / ⌥⏎')?.label).toMatch(/background tab.*right panel/i)
   })
 
-  it('covers the window & tab shortcuts from the application menu (B3 + Tabs) plus the open-beside tip', () => {
+  it('covers the window & tab shortcuts from the application menu (B3 + Tabs)', () => {
     const keys = WINDOW_HOTKEYS.map((h) => h.keys)
     // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (Close Window) and the tab-switch pairs live in the
-    // menu (menu.ts, GRO-2161/2232); ⌥-click Open Recent = open beside (GRO-2211).
-    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘O', '⌘K', '⌘,', '⌘B', '⌘⇧C', '⌘X / ⌘C', '⌘V', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[', '⌥ Open Recent']) {
+    // menu (menu.ts, GRO-2161/2232). No '⌥ Open Recent' tip: ⌥ no longer differs from a plain click (YAZ-1914 D2).
+    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘O', '⌘K', '⌘,', '⌘B', '⌘⇧C', '⌘X / ⌘C', '⌘V', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[']) {
       expect(keys).toContain(expected)
     }
+    expect(keys).not.toContain('⌥ Open Recent')
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘B')?.label).toMatch(/outside editing surfaces/i)
     // ⌘O (YAZ-1767 D8): the switcher's two verbs, filter then open — in a NEW window, never in place.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘O')?.label).toMatch(/switch vault.*filter.*new window/i)
