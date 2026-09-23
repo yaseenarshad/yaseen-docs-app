@@ -1,7 +1,7 @@
 {
   "name": "yaseen-milkdown",
   "private": true,
-  "version": "0.9.25",
+  "version": "0.9.26",
   "description": "Yaseen Docs: local markdown editor as an Electron desktop app (React + Milkdown Crepe renderer, main-process file layer)",
   "workspaces": [
     "client",
