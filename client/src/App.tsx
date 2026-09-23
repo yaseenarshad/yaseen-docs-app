@@ -269,7 +269,9 @@ export function App() {
   }, [root, file])
 
   /**
-   * Switch this window to `path` in place (C3, GRO-2165). Resolves false — and drops the dead
+   * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
+   * explicit "Open in this window" (YAZ-1798 D11); every other open from a vault window goes beside
+   * through `openVault` (YAZ-1914). Resolves false — and drops the dead
    * MRU entry — when the folder is gone on disk (C2), leaving the window as it is; any other
    * probe failure still switches, and the sidebar surfaces the error.
    */
@@ -284,6 +286,7 @@ export function App() {
     }
     storage.setRoot(path) // ONE identity write: { root, file: null, tabs: [] } (Tabs rule 13)
     storage.pushRecentRoot(path)
+    setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
     setRoot(path)
     // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down.
@@ -291,7 +294,22 @@ export function App() {
     return true
   }, [resetTabs])
 
-  const { pick, picking } = usePickFolder({ onPicked: openRoot })
+  /**
+   * The ONE vault-open rule (YAZ-1914): a window that already shows a vault never changes vault —
+   * the path goes to main's open-recent door (raise its windows, else a NEW window on its last
+   * file — YAZ-1767 D1/D9). Only the Welcome window (root null) becomes the vault in place. The
+   * one opt-in exception is the vault menu's "Open in this window" (YAZ-1798 D11), which says so
+   * in its label and calls `openRoot` directly.
+   */
+  const openVault = useCallback((path: string): void => {
+    if (root === null) {
+      void openRoot(path)
+      return
+    }
+    void window.yaseenDocs.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
+  }, [root, openRoot])
+
+  const { pick, picking } = usePickFolder({ onPicked: openVault })
 
   // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
   // the WINDOW through the real close path so the close/flush handshake runs.
@@ -309,7 +327,8 @@ export function App() {
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
   // request counter the sidebar header's panel consumes. The request is pinned to the root it was
   // made on: the Sidebar remounts `key={root}`, and a stale counter must not reopen the panel on
-  // the vault an in-place "Open folder…" just switched to. Welcome (root null) has no switcher.
+  // the root after an in-place change (the vault folder moved, YAZ-1914; the vault menu's Open in this
+  // window, YAZ-1798). Welcome (root null) has no switcher.
   const [switcherRequest, setSwitcherRequest] = useState<{ seq: number; root: string | null }>({ seq: 0, root: null })
   const openVaultSwitcher = useCallback(() => {
     if (root === null) return
@@ -345,7 +364,7 @@ export function App() {
 
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;

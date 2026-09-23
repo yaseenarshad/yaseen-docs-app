@@ -57,7 +57,6 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
   { keys: '⌘⇧] / ⌘⇧[', label: 'Next / previous tab' },
-  { keys: '⌥ Open Recent', label: '⌥-click a recent folder to open it in a new window' },
 ]
 
 export const MOUSE_TIPS: readonly HotkeyEntry[] = [
