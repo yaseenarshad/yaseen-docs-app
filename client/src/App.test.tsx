@@ -522,7 +522,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
       [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] }],
       [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
-    expect(captured.sidebar?.lens).toBe('files') // the window was on Topics; a new vault lands on Files (YAZ-1846 D2)
+    expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Topics; the vault lands on Files (YAZ-1846 D2)
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
