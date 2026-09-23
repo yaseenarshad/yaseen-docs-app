@@ -107,24 +107,16 @@ describe('buildMenuTemplate', () => {
     expect(close?.accelerator).toBe('CmdOrCtrl+Shift+W')
   })
 
-  it('Open Recent lists recents in MRU order; plain click opens in place, ⌥-click beside', () => {
+  it('Open Recent lists recents in MRU order; every click — plain or ⌥ — hands the path over the same way (YAZ-1914 D2)', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
     expect(recent.map((i) => i.label)).toEqual(['/vaults/notes', '/vaults/work', '/vaults/old'])
 
     click(recent[1])
-    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/work', false)
+    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/work')
     click(recent[0], { altKey: true })
-    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/notes', true)
-  })
-
-  it('a programmatic click (menuItem.click(), no event — Playwright) opens in place, not a crash', () => {
-    const handlers = noopHandlers()
-    const file = menuOf(build(RECENTS, false, handlers), 'File')
-    const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
-    recent[0].click?.(undefined as never, undefined, undefined as never)
-    expect(handlers.openRecent).toHaveBeenCalledWith('/vaults/notes', false)
+    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/notes')
   })
 
   it('Open Recent with no recents shows one disabled placeholder', () => {
@@ -393,8 +385,7 @@ afterEach(async () => {
 const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }) {
-  // `openRecentBeside` is the window manager's door (YAZ-1767 D1); the probe/prune/bump rules are windows.test's.
-  const windows = { idFor: vi.fn(), openRecentBeside: vi.fn(() => true), duplicateWindow: vi.fn() }
+  const windows = { idFor: vi.fn(), duplicateWindow: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
@@ -480,24 +471,11 @@ describe('createMenuHandlers', () => {
     expect(() => unfocused.switchVault()).not.toThrow()
   })
 
-  it('openRecent in place sends the path to the focused renderer', () => {
+  it('openRecent sends the path to the focused renderer, which applies the one vault-open rule (YAZ-1914 D1)', () => {
     const wc = { id: 7, send: vi.fn() }
-    const { handlers, windows } = makeHandlers(wc)
-    handlers.openRecent('/vaults/work', false)
-    expect(wc.send).toHaveBeenCalledWith(CH.menuOpenRoot, '/vaults/work')
-    expect(windows.openRecentBeside).not.toHaveBeenCalled()
-  })
-
-  it('openRecent beside (⌥) goes through the window manager\'s one open-recent door (YAZ-1767 D1), never the renderer', () => {
-    const wc = { id: 7, send: vi.fn() }
-    const { handlers, windows } = makeHandlers(wc)
-    handlers.openRecent('/vaults/work', true)
-    expect(windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
-    expect(wc.send).not.toHaveBeenCalled()
-    // The door's verdict (dead folder → false) is the manager's business; the menu ignores it.
-    windows.openRecentBeside.mockReturnValueOnce(false)
-    expect(() => handlers.openRecent('/vaults/gone', true)).not.toThrow()
-    expect(wc.send).not.toHaveBeenCalled()
+    const { handlers } = makeHandlers(wc)
+    handlers.openRecent('/vaults/work')
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuOpenRoot, '/vaults/work')
   })
 
   it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {
