@@ -470,12 +470,15 @@ export const MAX_FAVORITES = 500
  * `favorites` (the pinned files and folders, YAZ-1766 D1 — a third tab right of Files).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
- * and no `FolderState` entry. Default `topics` — a pre-847 state file simply gains it, and a
- * pre-1628 file's retired global value seeds every window that has none of its own.
+ * and no `FolderState` entry. Default `DEFAULT_SIDEBAR_LENS` (`files` since YAZ-1846) — a
+ * pre-847 state file simply gains it, and a pre-1628 file's retired global value seeds every
+ * window that has none of its own.
  */
 export type SidebarLens = 'topics' | 'files' | 'favorites'
-/** The tabs' order, left→right: the default lens leads. */
+/** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). */
 export const SIDEBAR_LENSES: readonly SidebarLens[] = ['topics', 'files', 'favorites']
+/** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
+export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */

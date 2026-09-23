@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_TOPICS_EXPANDED_PAGES,
@@ -24,7 +25,7 @@ import {
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [] }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusTopics: [], focusFavorites: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -71,12 +72,13 @@ export const storage = {
   getRoot: (): string | null => identity.root,
   /**
    * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and all
-   * three Focus Mode lists (YAZ-1628, YAZ-1766) in the same write; re-setting the same root keeps them.
+   * three Focus Mode lists (YAZ-1628, YAZ-1766), and lands the lens on Files (🔒 D2, YAZ-1846),
+   * in the same write; re-setting the same root keeps them.
    */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), focusDirs: [] as string[], focusTopics: [] as string[], focusFavorites: [] as string[] }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusTopics: [] as string[], focusFavorites: [] as string[] }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity(patch))
   },
