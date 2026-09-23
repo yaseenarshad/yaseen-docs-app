@@ -269,8 +269,9 @@ export function App() {
   }, [root, file])
 
   /**
-   * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window only: a window that
-   * already shows a vault opens other vaults beside through `openVault` (YAZ-1914). Resolves false — and drops the dead
+   * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
+   * explicit "Open in this window" (YAZ-1798 D11); every other open from a vault window goes beside
+   * through `openVault` (YAZ-1914). Resolves false — and drops the dead
    * MRU entry — when the folder is gone on disk (C2), leaving the window as it is; any other
    * probe failure still switches, and the sidebar surfaces the error.
    */
@@ -296,7 +297,9 @@ export function App() {
   /**
    * The ONE vault-open rule (YAZ-1914): a window that already shows a vault never changes vault —
    * the path goes to main's open-recent door (raise its windows, else a NEW window on its last
-   * file — YAZ-1767 D1/D9). Only the Welcome window (root null) becomes the vault in place.
+   * file — YAZ-1767 D1/D9). Only the Welcome window (root null) becomes the vault in place. The
+   * one opt-in exception is the vault menu's "Open in this window" (YAZ-1798 D11), which says so
+   * in its label and calls `openRoot` directly.
    */
   const openVault = useCallback((path: string): void => {
     if (root === null) {
@@ -324,7 +327,8 @@ export function App() {
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
   // request counter the sidebar header's panel consumes. The request is pinned to the root it was
   // made on: the Sidebar remounts `key={root}`, and a stale counter must not reopen the panel on
-  // the root after an in-place change (the vault folder moved, YAZ-1914). Welcome (root null) has no switcher.
+  // the root after an in-place change (the vault folder moved, YAZ-1914; the vault menu's Open in this
+  // window, YAZ-1798). Welcome (root null) has no switcher.
   const [switcherRequest, setSwitcherRequest] = useState<{ seq: number; root: string | null }>({ seq: 0, root: null })
   const openVaultSwitcher = useCallback(() => {
     if (root === null) return
@@ -786,6 +790,8 @@ export function App() {
           onSearchFocusHandled={searchFocusHandled}
           // ⌘O (YAZ-1767 D8): only a request made on THIS root counts; any other reads as none.
           switcherOpenRequest={switcherRequest.root === root ? switcherRequest.seq : 0}
+          // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
+          onOpenVaultHere={openRoot}
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}
