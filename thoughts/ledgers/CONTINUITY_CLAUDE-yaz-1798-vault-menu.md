@@ -19,14 +19,14 @@
 - Done:
   - [x] Scoping in chat; decisions locked; subissues created (YAZ-1935..1940)
   - [x] 1- YAZ-1935 Scope (comment posted, G1–G6)
-- Now: [→] 2- YAZ-1936 Build the menu
-- Remaining:
-  - [ ] 3- YAZ-1937 Verify by hand (S1–S20) + unit + typecheck
-  - [ ] 4A- YAZ-1939 Audit (comment only)
-  - [ ] 4B- YAZ-1940 Apply, docs, ledger, cleanup, merge
+  - [x] 2- YAZ-1936 Build the menu (`88d9595`)
+  - [x] 3- YAZ-1937 Yasin's hand pass: "all good" (S10 N/A until 1846 lands)
+  - [x] 4A- YAZ-1939 Audit (A1–A5)
+  - [x] 4B- YAZ-1940 Applied A1/A2, docs checked, merged to main, rig + worktree removed
+- CLOSED 2026-09-23. See the HANDOFF comment on YAZ-1798.
 
 ## Open Questions
-- UNCONFIRMED: does Chromium dispatch `contextmenu` to a disabled button (S4 / G1)?
+- None. (G1 resolved by S4: a grey "Folder not found" row shows no vault menu.)
 
 ## Working Set
 - `client/src/sidebar/vaultMenuSections.ts` (new) + test, `client/src/sidebar/VaultSwitcher.tsx` + test, `client/src/sidebar/Sidebar.tsx`, `client/src/App.tsx`, `client/src/settings/hotkeys.ts`, `docs/CONTRACTS.md`, `README.md`.

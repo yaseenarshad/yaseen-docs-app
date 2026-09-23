@@ -1,5 +1,5 @@
 import { basename } from '../lib/paths'
-import type { MenuAction, MenuSection } from './menuSections'
+import { errorText, type MenuAction, type MenuSection } from './menuSections'
 
 /**
  * The vault right-click menu AS DATA (YAZ-1798 D2/D7): GitHub Desktop's repository menu, kept to
@@ -27,8 +27,6 @@ export interface VaultMenuHandlers {
   /** The sidebar's passive notice — every copy confirms or reports, the `menuSections` idiom (D9). */
   onNotice: (message: string) => void
 }
-
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /** A clipboard copy that says what it did — or why it could not. */
 const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers): MenuAction => ({
