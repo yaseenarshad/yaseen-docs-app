@@ -519,9 +519,10 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] }],
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] }],
       [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
+    expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Topics; the vault lands on Files (YAZ-1846 D2)
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
@@ -529,7 +530,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on Welcome', async () => {
@@ -752,7 +753,7 @@ describe('App sidebar resize (YAZ-738)', () => {
  * collapse → reopen step below is the whole reason the value lives here.
  */
 describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
-  it('mounts the sidebar on the STORED lens — Topics by default', async () => {
+  it('mounts the sidebar on the STORED lens (the fixture\'s Topics)', async () => {
     await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(captured.sidebar?.lens).toBe('topics')
   })
@@ -814,7 +815,7 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
 
   it('a folder search row flips the lens to FILES and issues the same reveal request, ids shared with the tab menu (🔒 D3, YAZ-1491)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
-    expect(captured.sidebar?.lens).toBe('topics') // the default lens: the row was chosen from Topics
+    expect(captured.sidebar?.lens).toBe('topics') // the fixture's lens: the row was chosen from Topics
     act(() => captured.sidebar?.onRevealInFiles?.('/v/sub'))
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/sub', lens: 'files' })
@@ -1584,7 +1585,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
   })
 })
 
