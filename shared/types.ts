@@ -993,7 +993,8 @@ export interface WindowApi {
    * focused on top, and nothing new opens (🔒 D9); not open → a NEW window on that vault's
    * `folders[root].lastFile` (D2). A folder that no longer exists on disk is pruned from the MRU
    * instead and NOTHING opens — the result is `false`, so the row can say "Folder not found" the
-   * way Welcome does. The menu's ⌥-click on Open Recent goes through the same door in main.
+   * way Welcome does. A vault window's Open Folder… and File › Open Recent use the same door
+   * (App's `openVault`, YAZ-1914) — only the Welcome window ever switches in place.
    */
   openRecent(path: string): Promise<boolean>
   /**
@@ -1030,7 +1031,7 @@ export interface MenuApi {
   onPasteAs(listener: (request: ClipboardPasteRequest) => boolean): () => void
   /** File › Open Folder… (⌘⇧O) targeted this window: run the pick-folder flow. Returns an unsubscribe. */
   onOpenFolder(listener: () => void): () => void
-  /** File › Open Recent chose `path` for this window: switch the root in place. Returns an unsubscribe. */
+  /** File › Open Recent chose `path` for this window: Welcome switches in place, a vault window opens it beside (YAZ-1914). Returns an unsubscribe. */
   onOpenRoot(listener: (path: string) => void): () => void
   /** File › Search Vault (⌘K) targeted this window: focus the sidebar search bar (YAZ-804). Returns an unsubscribe. */
   onSearch(listener: () => void): () => void
