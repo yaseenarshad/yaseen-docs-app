@@ -771,6 +771,8 @@ export function App() {
           onSearchFocusHandled={searchFocusHandled}
           // ⌘O (YAZ-1767 D8): only a request made on THIS root counts; any other reads as none.
           switcherOpenRequest={switcherRequest.root === root ? switcherRequest.seq : 0}
+          // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
+          onOpenVaultHere={openRoot}
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}

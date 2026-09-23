@@ -106,6 +106,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     pickDisabled: false,
     // The header's vault switcher (YAZ-1767): 0 = no ⌘O pending; the panel itself is VaultSwitcher.test's subject.
     switcherOpenRequest: 0,
+    onOpenVaultHere: vi.fn(async () => true),
     onCollapse: vi.fn(),
     // Every test below this line is about the FILE TREE, so the harness mounts the FILES lens
     // (YAZ-847). The app's own default is Topics — App owns and persists the value, and the
