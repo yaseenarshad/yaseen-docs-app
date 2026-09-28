@@ -161,7 +161,11 @@
   flex-direction: column;
 }
 
-.right-panel__editor-layer--hidden { visibility: hidden; }
+.right-panel__editor-layer--hidden {
+  visibility: hidden;
+  /* YAZ-2195: skip style, layout and paint while hidden, as `.tabstack__layer--hidden` does. */
+  content-visibility: hidden;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .right-panel { transition: none; }
