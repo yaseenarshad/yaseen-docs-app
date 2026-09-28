@@ -33,6 +33,7 @@ import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
+import { flushWindow } from './lib/windowFlush'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
 import { SettingsDialog } from './settings/SettingsDialog'
@@ -103,6 +104,9 @@ export function App() {
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
+  // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
+  // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
+  useEffect(() => window.yaseenDocs.window.onFlush(flushWindow), [])
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
   // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
   // vault index, so index changes restyle links live without any editor remounting. The stable

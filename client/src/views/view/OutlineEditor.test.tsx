@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { flushWindow } from '../../lib/windowFlush'
 import { OutlineEditor } from './OutlineEditor'
 
 // React's act() refuses to run outside a test renderer unless this flag is set.
@@ -205,5 +206,39 @@ describe('a later `markdown` lands as a diff over the live editor (YAZ-1356)', (
     await tick(900)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(bullets(host)).toEqual(['', 'alpha'])
+  })
+})
+
+describe('the close/quit handshake (YAZ-2174)', () => {
+  it('reports the LIVE document at once, inside Crepe’s own listener debounce, and only once', async () => {
+    const onChange = vi.fn()
+    const host = await mount('- alpha\n', onChange)
+    press(host, 'Enter')
+    // The DOM has the keystroke; neither Crepe's 200ms listener nor our 500ms timer has fired.
+    await waitFor(() => bullets(host).length === 2)
+    expect(onChange).not.toHaveBeenCalled()
+    await act(() => flushWindow())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('*\n* alpha\n')
+    await tick(900) // the listener's late emission is the document just reported: no second write
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports nothing when nothing was typed', async () => {
+    const onChange = vi.fn()
+    await mount('- alpha\n    - beta\n', onChange)
+    await act(() => flushWindow())
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('leaves the handshake on unmount', async () => {
+    const onChange = vi.fn()
+    const host = await mount('- alpha\n', onChange)
+    press(host, 'Enter')
+    await waitFor(() => bullets(host).length === 2)
+    act(() => root?.unmount())
+    root = null
+    const reported = onChange.mock.calls.length
+    await flushWindow()
+    expect(onChange).toHaveBeenCalledTimes(reported)
   })
 })

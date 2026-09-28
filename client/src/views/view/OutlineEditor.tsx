@@ -28,7 +28,9 @@
  * `markdownUpdated` ~200ms, this adds the same 500ms `useAutosave` uses, and the caller owns the
  * settings write. Only real edits are reported — the seed's normalisation on the way through
  * Milkdown (`- ` at four spaces becomes `* ` at two) is not a document change and never fires — and
- * on unmount the pending edit is flushed, so switching views never drops the last keystroke.
+ * on unmount the pending edit is flushed, so switching views never drops the last keystroke. A
+ * window closing or the app quitting runs no unmount, so the close/quit handshake flushes too, from
+ * the LIVE document (YAZ-2174).
  */
 import { useEffect, useMemo, useRef } from 'react'
 import type { Crepe } from '@milkdown/crepe'
@@ -36,6 +38,7 @@ import { applyExternalMarkdown } from '../../editor/external/applyExternalMarkdo
 import { lockToBullets, outlineFeatures } from '../../editor/outline/bulletsOnly'
 import { createCrepe, getMarkdownForSave } from '../../editor/createCrepe'
 import { FindBar } from '../../editor/find/FindBar'
+import { onWindowFlush } from '../../lib/windowFlush'
 import { createFindChannel } from '../../editor/find/findChannel'
 import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../../editor/wikilink/wikilinkPicker'
@@ -154,7 +157,18 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
       guard(crepe, seeded.length)
     })
 
+    // The close/quit handshake: pull the live document past Crepe's ~200ms listener debounce and
+    // hand it over now; `flushWindow` then waits for the settings write it starts. A document the
+    // caller already has (nothing typed, or a read-only seed-loss editor) writes nothing.
+    const offFlush = onWindowFlush(() => {
+      if (timer !== null) clearTimeout(timer)
+      const live = crepeRef.current === null ? null : getMarkdownForSave(crepeRef.current)
+      if (live !== null) pending = live === knownRef.current ? null : live
+      flush()
+    })
+
     return () => {
+      offFlush()
       crepeRef.current = null
       if (timer !== null) clearTimeout(timer)
       flush()
