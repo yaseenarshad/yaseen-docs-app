@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { writeFileSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { TreeNode } from '@shared/types'
+import { STALE_FLIGHT_MS, type TreeNode } from '@shared/types'
 import { buildTree } from './fsUtils'
 import { tree } from './tree'
 import { failure, makeFixture } from './testFixture'
@@ -152,4 +152,28 @@ describe('tree: one walk per root at a time (YAZ-2191)', () => {
     expect((await failure(tree(missing))).code).toBe('NOT_FOUND')
     expect((await tree(root)).root).toBe(root)
   })
+
+  it('liveness: a caller arriving after a walk has hung STALE_FLIGHT_MS walks on its own; the hung one, recovering, clobbers nothing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      let recover!: () => void
+      vi.mocked(buildTree).mockImplementationOnce(() => new Promise((r) => (recover = () => r([])))) // a hung volume
+      const hung = tree(root)
+      const queued = tree(root) // arrived in time: waits behind the hung walk, as designed
+      vi.setSystemTime(Date.now() + STALE_FLIGHT_MS + 1)
+      const fresh = tree(root)
+      const joiner = tree(root) // mid the fresh walk: joins ITS trailing walk
+      expect((await fresh).root).toBe(root)
+      expect((await joiner).root).toBe(root)
+      recover()
+      expect((await hung).tree).toEqual([])
+      expect((await queued).tree.length).toBeGreaterThan(0) // its trailing walk still ran, on its own
+      vi.mocked(buildTree).mockClear()
+      await Promise.all([tree(root), tree(root)])
+      expect(walks()).toBe(2) // back to one flight per root
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
 })

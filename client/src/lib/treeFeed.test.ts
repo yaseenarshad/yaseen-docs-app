@@ -4,7 +4,7 @@
  * `api.tree` is mocked so each request can be held open and counted.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { TreeResponse } from '@shared/types'
+import { STALE_FLIGHT_MS, type TreeResponse } from '@shared/types'
 import { currentTurn, fetchTree, onTree, treeSentSince } from './treeFeed'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -76,5 +76,26 @@ describe('the tree feed (YAZ-2191)', () => {
     held[0].answer(response(1))
     await nextTurn()
     expect(treeSentSince(root, currentTurn())).toBe(false)
+  })
+
+  it('liveness: a call after a request has hung STALE_FLIGHT_MS sends its own; the hung answer, if it ever comes, is never applied over it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const seen: number[] = []
+      const off = onTree(root, (o) => o.status === 'fulfilled' && seen.push(o.value.generatedAt))
+      void fetchTree(root) // held[0]: hangs
+      await nextTurn()
+      vi.setSystemTime(Date.now() + STALE_FLIGHT_MS + 1)
+      const fresh = fetchTree(root)
+      expect(api.tree).toHaveBeenCalledTimes(2)
+      held[1].answer(response(2))
+      expect(await fresh).toEqual(response(2))
+      held[0].answer(response(1)) // the volume recovers late
+      await nextTurn()
+      expect(seen).toEqual([2])
+      off()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
