@@ -100,7 +100,7 @@
  *    Crepe's stock `<img>` — the folder-page outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
  */
-import { Crepe, CrepeFeature } from '@milkdown/crepe'
+import { Crepe, CrepeFeature } from './crepe'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
