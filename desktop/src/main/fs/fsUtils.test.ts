@@ -106,13 +106,13 @@ describe('createDurable (YAZ-2177)', () => {
       expect(await readdir(dir)).toEqual(['a.md'])
     }))
 
-  it('a volume without hard links (exFAT/FAT: ENOTSUP) still lands the file, by rename', () =>
+  it('a volume without hard links (exFAT/FAT: ENOTSUP) writes the name itself, fsynced, never by rename', () =>
     withDir(async (dir) => {
       const log = await traceDurability()
       vi.mocked(link).mockRejectedValueOnce(ENOTSUP())
       const file = path.join(dir, 'a.md')
       await createDurable(file, 'body')
-      expect(log).toEqual(['sync a.md.tmp', 'rename a.md.tmp → a.md'])
+      expect(log).toEqual(['sync a.md.tmp', 'sync a.md'])
       expect(await readFile(file, 'utf8')).toBe('body')
       expect(await readdir(dir)).toEqual(['a.md'])
     }))
