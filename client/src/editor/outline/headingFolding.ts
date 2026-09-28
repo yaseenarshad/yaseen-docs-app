@@ -22,9 +22,11 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { innermostItemPos, LIST_NODE_NAMES } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
+import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 /** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. */
@@ -266,6 +268,29 @@ const getCollapsedKeys = ({ entries, collapsedHeadingPositions }: HeadingFolding
     .map(({ foldKey }) => foldKey)
     .sort()
 
+/**
+ * An edit that leaves every foldable heading where the mapping puts it, with the same key, label and
+ * fold, needs no new decorations: the previous set, mapped, is exactly what `decorations` builds
+ * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a section is that case, so a keystroke skips
+ * the rebuild. A carried chevron reads its live position at click time, so it acts like a new one.
+ */
+const carryDecorations = (previous: HeadingFoldingState, entries: readonly HeadingEntry[], collapsed: ReadonlySet<number>, mapping: Mapping, doc: ProseNode): void => {
+  const cached = decorationCache.get(previous.entries)
+  if (cached === undefined || cached.collapsedKey !== collapsedKey(previous.collapsedHeadingPositions) || entries.length !== previous.entries.length) return
+  const unchanged = entries.every((entry, i) => {
+    const before = previous.entries[i]
+    const folded = collapsed.has(entry.headingPos)
+    return (
+      entry.foldKey === before.foldKey &&
+      entry.label === before.label &&
+      folded === previous.collapsedHeadingPositions.has(before.headingPos) &&
+      widgetLands(mapping, before.headingPos + 1, entry.headingPos + 1) &&
+      (!folded || nodeRangesLand(mapping, before.sectionBlockRanges, entry.sectionBlockRanges))
+    )
+  })
+  if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
+}
+
 export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: HeadingFoldingOptions = {}) =>
   $prose(
     () =>
@@ -351,7 +376,7 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
-            }
+            } else if (transaction.docChanged) carryDecorations(previousState, entries, collapsedHeadingPositions, transaction.mapping, newState.doc)
             return { entries, collapsedHeadingPositions, lastToggle }
           },
         },
@@ -359,9 +384,9 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
             if (!foldingState) return DecorationSet.empty
-            const collapsedKey = [...foldingState.collapsedHeadingPositions].sort((a, b) => a - b).join(',')
+            const key = collapsedKey(foldingState.collapsedHeadingPositions)
             const cached = decorationCache.get(foldingState.entries)
-            if (cached?.collapsedKey === collapsedKey) return cached.set
+            if (cached?.collapsedKey === key) return cached.set
 
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
@@ -414,7 +439,7 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
             })
             const set = DecorationSet.create(state.doc, decorations)
-            decorationCache.set(foldingState.entries, { collapsedKey, set })
+            decorationCache.set(foldingState.entries, { collapsedKey: key, set })
             return set
           },
         },

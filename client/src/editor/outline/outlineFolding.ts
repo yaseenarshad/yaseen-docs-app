@@ -23,10 +23,12 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
+import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 interface OutlineEntry {
@@ -300,6 +302,30 @@ const getCollapsedKeys = ({ entries, collapsedItemPositions }: OutlineFoldingSta
     .map(({ foldKey }) => foldKey)
     .sort()
 
+/**
+ * An edit that leaves every foldable item where the mapping puts it, with the same key, label and
+ * fold, needs no new decorations: the previous set, mapped, is exactly what `decorations` builds
+ * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a bullet is that case, so a keystroke skips
+ * the rebuild. A carried chevron reads its live position at click time, so it acts like a new one.
+ */
+const carryDecorations = (previous: OutlineFoldingState, entries: readonly OutlineEntry[], collapsed: ReadonlySet<number>, mapping: Mapping, doc: ProseNode): void => {
+  const cached = decorationCache.get(previous.entries)
+  if (cached === undefined || cached.collapsedKey !== collapsedKey(previous.collapsedItemPositions) || entries.length !== previous.entries.length) return
+  const unchanged = entries.every((entry, i) => {
+    const before = previous.entries[i]
+    const folded = collapsed.has(entry.itemPos)
+    return (
+      entry.foldKey === before.foldKey &&
+      entry.label === before.label &&
+      folded === previous.collapsedItemPositions.has(before.itemPos) &&
+      widgetLands(mapping, before.itemPos + 1, entry.itemPos + 1) &&
+      nodeRangesLand(mapping, before.imageRanges, entry.imageRanges) &&
+      (!folded || nodeRangesLand(mapping, before.nestedListRanges, entry.nestedListRanges))
+    )
+  })
+  if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
+}
+
 export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) =>
   $prose(
     () =>
@@ -385,7 +411,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
-            }
+            } else if (transaction.docChanged) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
             return { entries, collapsedItemPositions, lastToggle }
           },
         },
@@ -426,9 +452,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
             if (!foldingState) return DecorationSet.empty
-            const collapsedKey = [...foldingState.collapsedItemPositions].sort((a, b) => a - b).join(',')
+            const key = collapsedKey(foldingState.collapsedItemPositions)
             const cached = decorationCache.get(foldingState.entries)
-            if (cached?.collapsedKey === collapsedKey) return cached.set
+            if (cached?.collapsedKey === key) return cached.set
 
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
@@ -487,7 +513,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
             })
             const set = DecorationSet.create(state.doc, decorations)
-            decorationCache.set(foldingState.entries, { collapsedKey, set })
+            decorationCache.set(foldingState.entries, { collapsedKey: key, set })
             return set
           },
         },
