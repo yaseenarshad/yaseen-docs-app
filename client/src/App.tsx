@@ -31,6 +31,7 @@ import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { attentionCopy, buildSetupPrompt } from './lib/syncAttention'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
+import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
@@ -263,10 +264,11 @@ export function App() {
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
   useEffect(() => syncHash(file), [file])
 
-  // The OS window title mirrors what is open (C3, GRO-2165); Electron follows document.title.
+  // The OS window title mirrors what is open (C3, GRO-2165) under the vault's display name (YAZ-1974 D4); Electron follows document.title.
+  const vaultName = useVaultName(root)
   useEffect(() => {
-    document.title = windowTitle(root, file)
-  }, [root, file])
+    document.title = windowTitle(vaultName, file)
+  }, [vaultName, file])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
