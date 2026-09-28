@@ -1,4 +1,4 @@
-import type { TreeResponse } from '@shared/types'
+import { STALE_FLIGHT_MS, type TreeResponse } from '@shared/types'
 import { api } from '../api'
 
 /**
@@ -10,7 +10,9 @@ import { api } from '../api'
  *   - a call while an older request is on the wire joins the ONE request queued behind it, never
  *     the running one, so every answer still post-dates its call (main's `fs/tree.ts` rule);
  *   - every answer reaches every `onTree` listener of that root, in request order, so whoever
- *     asked, everyone holds the newest tree.
+ *     asked, everyone holds the newest tree;
+ *   - a request on the wire longer than `STALE_FLIGHT_MS` is bypassed: the call sends its own, and
+ *     should the hung one ever answer, that older answer is dropped.
  */
 type Outcome = PromiseSettledResult<TreeResponse>
 
@@ -18,8 +20,12 @@ interface Feed {
   listeners: Set<(outcome: Outcome) => void>
   onWire: Promise<TreeResponse> | null
   queued: Promise<TreeResponse> | null
-  /** The turn the latest request was sent in. */
+  /** The turn the latest request was sent in, and when. */
   sentTurn: number
+  sentAt: number
+  /** Numbers each request; only answers newer than the last one delivered reach the listeners. */
+  sent: number
+  delivered: number
 }
 
 const feeds = new Map<string, Feed>()
@@ -41,16 +47,20 @@ export function currentTurn(): number {
 
 function feedOf(root: string): Feed {
   let feed = feeds.get(root)
-  if (feed === undefined) feeds.set(root, (feed = { listeners: new Set(), onWire: null, queued: null, sentTurn: 0 }))
+  if (feed === undefined) feeds.set(root, (feed = { listeners: new Set(), onWire: null, queued: null, sentTurn: 0, sentAt: 0, sent: 0, delivered: 0 }))
   return feed
 }
 
 function send(root: string, feed: Feed): Promise<TreeResponse> {
   const request = api.tree(root)
+  const seq = ++feed.sent
   feed.onWire = request
   feed.sentTurn = currentTurn()
+  feed.sentAt = Date.now()
   const settle = (outcome: Outcome) => {
     if (feed.onWire === request) feed.onWire = null
+    if (seq < feed.delivered) return // a bypassed request answering late: never over a newer answer
+    feed.delivered = seq
     for (const listener of [...feed.listeners]) listener(outcome)
   }
   request.then(
@@ -64,12 +74,18 @@ function send(root: string, feed: Feed): Promise<TreeResponse> {
 export function fetchTree(root: string): Promise<TreeResponse> {
   const feed = feedOf(root)
   if (feed.onWire === null) return send(root, feed)
-  if (feed.sentTurn === currentTurn()) return feed.onWire
-  const again = () => {
-    feed.queued = null
+  if (Date.now() - feed.sentAt > STALE_FLIGHT_MS) {
+    feed.queued = null // the hung request's queue stays with it; later calls queue behind this one
     return send(root, feed)
   }
-  return (feed.queued ??= feed.onWire.then(again, again))
+  if (feed.sentTurn === currentTurn()) return feed.onWire
+  if (feed.queued !== null) return feed.queued
+  const queued: Promise<TreeResponse> = feed.onWire.then(again, again)
+  function again(): Promise<TreeResponse> {
+    if (feed.queued === queued) feed.queued = null
+    return send(root, feed)
+  }
+  return (feed.queued = queued)
 }
 
 /** Every answer for `root`, whoever asked for it; returns the unsubscribe. */
