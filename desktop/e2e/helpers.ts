@@ -31,7 +31,11 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
   if (seedState !== undefined) {
     await writeFile(path.join(userData, 'yaseendocs.json'), JSON.stringify(seedState, null, 2))
   }
-  return _electron.launch({ args: [MAIN_ENTRY, `--user-data-dir=${userData}`] })
+  // YASEEN_DOCS_E2E: the dev binary must not claim the machine's yaseendocs:// handler (YAZ-2168).
+  return _electron.launch({
+    args: [MAIN_ENTRY, `--user-data-dir=${userData}`],
+    env: { ...process.env, YASEEN_DOCS_E2E: '1' },
+  })
 }
 
 /**
