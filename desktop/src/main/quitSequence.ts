@@ -1,6 +1,6 @@
 /** The steps quitting drives; `index.ts` passes the live ones, tests fake them. */
 export interface QuitDeps {
-  /** Every renderer's close/quit handshake, then its destroy (sequential, 5 s cap each — windows.ts). */
+  /** Every renderer's close/quit handshake, then its destroy (all at once under one 5 s cap, YAZ-2198 — windows.ts). */
   flushWindows(): Promise<void>
   /** The state file's pending debounced write. */
   flushStore(): Promise<void>

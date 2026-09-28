@@ -272,36 +272,36 @@ describe('createWindowManager: close', () => {
 })
 
 describe('createWindowManager: quit', () => {
-  it('flushes every window sequentially, keeps all entries, saves final bounds, then resolves', async () => {
+  it('flushes every window at once (YAZ-2198), keeps all entries, saves final bounds, and resolves once the last has flushed', async () => {
     const { manager, w1, w2 } = seedTwo()
     w1.bounds = { x: 111, y: 11, width: 800, height: 600 }
     const done = vi.fn()
     void manager.flushAllForQuit().then(done)
     await vi.advanceTimersByTimeAsync(0)
-    expect(w1.flushCount()).toBe(1)
-    expect(w2.flushCount()).toBe(0) // sequential: w2 is not asked until w1 acked
-    manager.handleFlushed(w1.webContents)
-    await vi.advanceTimersByTimeAsync(0)
-    expect(w1.isDestroyed()).toBe(true)
-    expect(w2.flushCount()).toBe(1)
-    expect(done).not.toHaveBeenCalled()
+    expect([w1.flushCount(), w2.flushCount()]).toEqual([1, 1]) // both asked together, not one after the other
     manager.handleFlushed(w2.webContents)
     await vi.advanceTimersByTimeAsync(0)
     expect(w2.isDestroyed()).toBe(true)
+    expect(w1.isDestroyed()).toBe(false)
+    expect(done).not.toHaveBeenCalled()
+    manager.handleFlushed(w1.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w1.isDestroyed()).toBe(true)
     expect(done).toHaveBeenCalled()
     expect(store.get().windows.map((w) => w.id)).toEqual(['w1', 'w2'])
     expect(store.get().windows[0].bounds).toEqual({ x: 111, y: 11, width: 800, height: 600 })
   })
 
-  it('hung renderers cannot block quit: each handshake times out on its own', async () => {
+  it('a hung renderer cannot delay the others past the one 5 s cap: quit takes one cap in total, not one per window', async () => {
     const { manager, w1, w2 } = seedTwo()
     const done = vi.fn()
     void manager.flushAllForQuit().then(done)
+    await vi.advanceTimersByTimeAsync(0)
+    manager.handleFlushed(w2.webContents) // w2 answers; w1 hangs
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w2.isDestroyed()).toBe(true)
     await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
     expect(w1.isDestroyed()).toBe(true)
-    expect(done).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
-    expect(w2.isDestroyed()).toBe(true)
     expect(done).toHaveBeenCalled()
     expect(store.get().windows).toHaveLength(2)
   })

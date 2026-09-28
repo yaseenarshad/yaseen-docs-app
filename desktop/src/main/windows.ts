@@ -105,7 +105,7 @@ export interface WindowManager extends WindowLookup {
   linkNotice(message: string): void
   /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`). */
   handleFlushed(sender: { id: number }): void
-  /** `before-quit`: handshake every window sequentially; `windows[]` is kept so relaunch restores them. */
+  /** `before-quit`: handshake every window at once (YAZ-2198); `windows[]` is kept so relaunch restores them. */
   flushAllForQuit(): Promise<void>
 }
 
@@ -433,12 +433,16 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     async flushAllForQuit() {
       quitting = true
-      for (const [id, win] of [...live]) {
-        if (win.isDestroyed()) continue
-        commitBounds(id, win)
-        await flushRenderer(win)
-        if (!win.isDestroyed()) win.destroy()
-      }
+      // Every renderer at once (YAZ-2198): quit waits one FLUSH_TIMEOUT_MS cap in total, not one per
+      // window, and still resolves only once every window has flushed (`runQuitSequence`'s order).
+      const wins = [...live].filter(([, win]) => !win.isDestroyed())
+      for (const [id, win] of wins) commitBounds(id, win)
+      await Promise.all(
+        wins.map(async ([, win]) => {
+          await flushRenderer(win)
+          if (!win.isDestroyed()) win.destroy()
+        }),
+      )
     },
   }
 }
