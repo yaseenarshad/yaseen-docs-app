@@ -354,6 +354,19 @@ describe('heading folding: widget quality', () => {
   })
 })
 
+describe('heading folding: chevron after an edit above it', () => {
+  it('still toggles its own heading once typing above has moved it (the reused widget reads its live position)', async () => {
+    const { crepe, root } = await mount({ defaultValue: DOC })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const chevron = toggleFor(root, 'Section B')
+    view.dispatch(view.state.tr.insertText('XYZ', 3))
+    expect(toggleFor(root, 'Section B')).toBe(chevron)
+    chevron.click()
+    expect(toggleFor(root, 'Section B').getAttribute('aria-expanded')).toBe('false')
+    expect(foldedText(root)).toBe('Beta body.')
+  })
+})
+
 describe('heading folding: decoration reuse (YAZ-2131 4C)', () => {
   /** The plugin's own `decorations` prop, called the way ProseMirror calls it on every view update. */
   const decorationsOf = (view: EditorView) => {
