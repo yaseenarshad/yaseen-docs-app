@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { rm, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TreeNode } from '@shared/types'
 import { tree } from './tree'
@@ -64,6 +64,21 @@ describe('tree', () => {
       expect(all.find((node) => node.name === 'archive.zip')?.kind).toBeNull()
     } finally {
       await Promise.all(candidates.map(([file]) => rm(file, { force: true })))
+    }
+  })
+
+  it("hides a crash-left atomic-write tmp (never deletes it), while names that merely contain `.tmp` still show (YAZ-2179)", async () => {
+    const leftover = path.join(root, 'alpha', 'a.md.tmp-0123456789ab')
+    const lookalikes = ['notes.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'y.md.tmp-0123456789AB', 'z.md.tmp-0123456789a']
+    try {
+      await writeFile(leftover, '# a (the only copy of a torn save)')
+      await Promise.all(lookalikes.map((name) => writeFile(path.join(root, name), 'mine')))
+      const all = files(await tree(root)).map((node) => node.name)
+      expect(all).not.toContain('a.md.tmp-0123456789ab')
+      expect(all).toEqual(expect.arrayContaining(lookalikes))
+      expect(await readFile(leftover, 'utf8')).toBe('# a (the only copy of a torn save)')
+    } finally {
+      await Promise.all([leftover, ...lookalikes.map((name) => path.join(root, name))].map((file) => rm(file, { force: true })))
     }
   })
 

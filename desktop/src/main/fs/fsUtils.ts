@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { link, lstat, open, readdir, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { BridgeError, FileKind, TreeNode } from '@shared/types'
-import { fileKind, isMarkdown, isSupportedFile } from '@shared/fileKind'
+import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
 
@@ -106,8 +106,9 @@ export async function requireDir(dir: string): Promise<void> {
 /**
  * Recursive tree of every regular file under `dir`, each carrying its preview `kind` (`null` = no
  * in-app viewer, YAZ-1577 D1). Dirs first, then files, each sorted case-insensitively; every dir
- * shows even when empty, so freshly created folders are visible (GRO-2022 D1). Dot-entries and
- * `node_modules` are skipped; unreadable subdirs are skipped.
+ * shows even when empty, so freshly created folders are visible (GRO-2022 D1). Dot-entries,
+ * `node_modules` and crash-left atomic-write tmps (`isAtomicTmp`, YAZ-2179) are skipped;
+ * unreadable subdirs are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -115,7 +116,7 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
   const files: TreeNode[] = []
   await Promise.all(
     entries.map(async (e) => {
-      if (isSkipped(e.name)) return
+      if (isSkipped(e.name) || isAtomicTmp(e.name)) return
       const full = path.join(dir, e.name)
       if (e.isDirectory()) {
         const children = await buildTree(full).catch(() => null)
@@ -147,7 +148,7 @@ async function writeDurable(file: string, content: string | Uint8Array, flag: 'w
 
 /** The sibling a write lands in before it takes `file`'s name: same dir, so the rename or link is atomic. */
 function tmpSibling(file: string): string {
-  return `${file}.tmp-${randomBytes(6).toString('hex')}`
+  return `${file}.tmp-${randomBytes(ATOMIC_TMP_HEX_LEN / 2).toString('hex')}`
 }
 
 /** Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist. */

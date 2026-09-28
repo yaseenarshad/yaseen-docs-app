@@ -2,6 +2,7 @@ import { watch, type FSWatcher } from 'chokidar'
 import type { Stats } from 'node:fs'
 import path from 'node:path'
 import type { WatchEvent } from '@shared/types'
+import { isAtomicTmp } from '@shared/fileKind'
 import { isSkipped } from './fsUtils'
 
 type Listener = (ev: WatchEvent) => void
@@ -19,10 +20,13 @@ export function activeWatcherRoots(): string[] {
   return [...entries.keys()]
 }
 
-/** Dot-entries and `node_modules` at any depth; every regular file is watched, viewer or not (YAZ-1577 D1). */
+/**
+ * Dot-entries and `node_modules` at any depth, and atomic-write tmps (YAZ-2179); every other regular
+ * file is watched, viewer or not (YAZ-1577 D1).
+ */
 function ignored(root: string, p: string): boolean {
   const rel = path.relative(root, p)
-  return rel !== '' && rel.split(path.sep).some(isSkipped)
+  return rel !== '' && (rel.split(path.sep).some(isSkipped) || isAtomicTmp(rel))
 }
 
 function createEntry(root: string): Entry {

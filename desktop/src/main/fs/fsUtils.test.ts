@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { link, mkdtemp, open, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { isAtomicTmp } from '@shared/fileKind'
 import { atomicWrite, createDurable } from './fsUtils'
 
 // Pass-through spies: the durability tests watch each handle's `sync` and the rename/link that names the bytes.
@@ -139,3 +140,14 @@ describe('createDurable (YAZ-2177)', () => {
       expect(await readdir(dir)).toEqual([])
     }))
 })
+
+it('every tmp name a write lands in is one `isAtomicTmp` hides, beside its target (YAZ-2179)', () =>
+  withDir(async (dir) => {
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    const tmps: string[] = []
+    vi.mocked(open).mockImplementation((file, ...rest) => (tmps.push(String(file)), real.open(file, ...rest)))
+    await atomicWrite(path.join(dir, 'a.md'), 'x')
+    await createDurable(path.join(dir, 'p.png'), new Uint8Array([1]))
+    expect(tmps.map((t) => path.dirname(t))).toEqual([dir, dir])
+    expect(tmps.map((t) => path.basename(t)).every(isAtomicTmp)).toBe(true)
+  }))
