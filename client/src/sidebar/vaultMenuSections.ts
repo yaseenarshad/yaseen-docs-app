@@ -51,7 +51,7 @@ const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers):
 
 export function buildVaultMenuSections({ path, name, isCurrent, renamed }: VaultMenuTarget, h: VaultMenuHandlers): MenuSection[] {
   return [
-    isCurrent ? [] : [{ id: 'open-here', label: 'Open in this window', onSelect: () => h.onOpenHere(path) }],
+    isCurrent ? [] : [{ id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) }],
     [
       { id: 'rename', label: 'Set display name', onSelect: () => h.onRename(path) },
       ...(renamed ? [{ id: 'reset-name', label: 'Reset to folder name', onSelect: () => h.onResetName(path) }] : []),

@@ -1,8 +1,9 @@
 /**
  * The sidebar header's vault switcher (YAZ-1767): GitHub Desktop's repository panel, keyboard-first.
  * The header's top-left button is the trigger — bold vault name plus a small chevron (D6) — and the
- * panel it drops is a `ContextMenuSurface` stretched to the header's own rect (D5), flush with the
- * sidebar. Its first element is the filter input, autofocused, query reset on every open (D7);
+ * panel it drops is a `ContextMenuSurface` hung off the header's own rect (D5), flush with the
+ * sidebar and at least as wide — wider when a name needs it, so no name is ever cut (YAZ-1974 D7).
+ * Its first element is the filter input, autofocused, query reset on every open (D7);
  * below it every recent vault as ONE line — name, then relative time (YAZ-1974 D2) — the CURRENT
  * vault included and marked `aria-current` (D3); and LAST, under a hairline, "Open folder…" — the
  * folder picker (D4), which opens the picked folder beside like a vault row does (YAZ-1914
@@ -26,8 +27,8 @@
  * with an EMPTY query it starts on the first row that is NOT the current vault — so ⌘O ⏎ jumps to
  * the last-used OTHER vault, like ⌘Tab — with a typed query on the top match, and with no match on
  * Open folder…. ↑/↓ clamp at both ends (the `[[` picker's no-wrap rule), hover moves it too, ⏎
- * activates it, Esc closes (the menu convention — not the search bar's two-press rule). Typing
- * never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
+ * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8) — Esc
+ * closes (the menu convention — not the search bar's two-press rule). Typing never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
  * it is visible whatever the query; a query with no vault match shows "No matching vaults" above it.
  *
  * ⌘O (D8): App bumps `openRequest`; each new value toggles the panel — opens it with the filter focused, or closes it.
@@ -258,7 +259,8 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     if (dropClick.current) inputRef.current?.focus()
   }
 
-  const activate = (index: number): void => {
+  /** `here` = ⇧ held (YAZ-1974 D8): "Open in this window" instead of beside; on the current vault it is a plain ⏎. */
+  const activate = (index: number, here = false): void => {
     if (index === openFolderIndex) {
       if (pickDisabled) return
       closePanel()
@@ -267,10 +269,11 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     }
     const row = matches[index]
     if (row === undefined || missing.has(row.path)) return
-    choose(row.path)
+    if (here && row.path !== root) settle(row.path, onOpenHere(row.path), 'openHere')
+    else choose(row.path)
   }
-  const clickRow = (index: number): void => {
-    if (!dropClick.current) activate(index)
+  const clickRow = (index: number, e: MouseEvent): void => {
+    if (!dropClick.current) activate(index, e.shiftKey)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -287,7 +290,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
         return
       case 'Enter':
         e.preventDefault()
-        activate(active)
+        activate(active, e.shiftKey)
         return
       case 'Escape':
         e.preventDefault()
@@ -324,7 +327,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
       )}
       {panel !== null && (
         // The top layer closes alone (D4): the vault menu first; a rename field ends on its own blur, so click-away keeps the panel.
-        <ContextMenuSurface x={panel.anchor.x} y={panel.anchor.y} width={panel.anchor.width} className="ctx-menu--panel" onClose={vaultMenu !== null ? closeVaultMenu : renaming !== null ? () => undefined : closePanel}>
+        <ContextMenuSurface x={panel.anchor.x} y={panel.anchor.y} minWidth={panel.anchor.width} className="ctx-menu--panel" onClose={vaultMenu !== null ? closeVaultMenu : renaming !== null ? () => undefined : closePanel}>
           <div className="vault-switcher" onWheel={() => setPathTip(null)}>
             <input
               ref={inputRef}
@@ -362,7 +365,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                     disabled={gone}
                     onMouseDown={rowMouseDown}
                     onMouseEnter={() => setActive(i)}
-                    onClick={() => clickRow(i)}
+                    onClick={(e) => clickRow(i, e)}
                     onContextMenu={(e) => openVaultMenu(row.path, 'row', e)}
                   >
                     <span className="vault-switcher__name">{row.name}</span>
@@ -388,7 +391,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               disabled={pickDisabled}
               onMouseDown={rowMouseDown}
               onMouseEnter={() => setActive(openFolderIndex)}
-              onClick={() => clickRow(openFolderIndex)}
+              onClick={(e) => clickRow(openFolderIndex, e)}
             >
               {OPEN_FOLDER_TEXT}
             </button>
