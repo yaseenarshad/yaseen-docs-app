@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
+import { APP_SCHEME } from './appScheme'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { registerAgentIpc } from './ipc/agent'
@@ -70,9 +71,7 @@ app.on('open-file', (event, path) => {
   links.push(fileLink(path))
 })
 
-// Privileged scheme: `standard` gives a real origin (history API, relative URLs), `secure` treats it
-// like https. VS Code (vscode-file://) and Obsidian (app://obsidian.md) do the same.
-protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
 
