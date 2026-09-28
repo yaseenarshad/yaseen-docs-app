@@ -182,7 +182,7 @@ describe('VaultSwitcher: the trigger (D6)', () => {
     expect(panel(el)).toBeNull()
   })
 
-  it('the panel spans the header rect (D5): a ctx-menu with the panel class and the header width', () => {
+  it('the panel hangs off the header rect (D5): a ctx-menu with the panel class, at least the header width (YAZ-1974 D7: it grows to fit a long name)', () => {
     const { el } = render()
     const header = el.querySelector<HTMLElement>('.sidebar__header')!
     header.getBoundingClientRect = () => ({ left: 0, top: 0, right: 260, bottom: 41, width: 260, height: 41, x: 0, y: 0, toJSON: () => ({}) })
@@ -190,7 +190,8 @@ describe('VaultSwitcher: the trigger (D6)', () => {
     const p = panel(el)!
     expect(p.classList.contains('ctx-menu')).toBe(true)
     expect(p.getAttribute('role')).toBe('menu')
-    expect(p.style.width).toBe('260px')
+    expect(p.style.minWidth).toBe('260px')
+    expect(p.style.width).toBe('')
   })
 })
 
@@ -378,6 +379,28 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     key(el, 'Enter')
     await settle()
     expect(openRecent).toHaveBeenCalledExactlyOnceWith('/v/Notes Archive')
+  })
+
+  it('⇧⏎ / ⇧-click open the vault IN this window (YAZ-1974 D8): onOpenHere, never openRecent; on the current vault they are a plain ⏎', async () => {
+    const { el, props } = render()
+    openPanel(el)
+    act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
+    await settle()
+    expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
+
+    openPanel(el)
+    act(() => void rows(el)[2].dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true })))
+    await settle()
+    expect(props.onOpenHere).toHaveBeenLastCalledWith('/v/Archive')
+    expect(openRecent).not.toHaveBeenCalled()
+
+    openPanel(el)
+    act(() => void rows(el)[0].dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true })))
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(props.onOpenHere).toHaveBeenCalledTimes(2)
   })
 
   it('Enter on Open folder… runs the picker; not while pickDisabled', () => {

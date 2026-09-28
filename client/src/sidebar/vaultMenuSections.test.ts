@@ -41,6 +41,10 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
     ])
   })
 
+  it('Open in this window names its hotkey, ⇧⏎ (YAZ-1974 D8)', () => {
+    expect(buildVaultMenuSections(target(), handlers())[0][0].hint).toBe('⇧⏎')
+  })
+
   it('a renamed vault also offers Reset to folder name, beside Set display name (YAZ-1974 D5)', () => {
     expect(groupsOf(buildVaultMenuSections(target({ name: 'Launch', renamed: true }), handlers()))).toEqual([
       ['Open in this window'],

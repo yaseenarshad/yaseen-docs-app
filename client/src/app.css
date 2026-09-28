@@ -1074,9 +1074,7 @@ button {
 .vault-switcher__name {
   min-width: 0;
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere; /* never cut: past the panel's cap a name wraps (YAZ-1974 D7) */
 }
 
 .vault-switcher__when {
@@ -1438,6 +1436,9 @@ button {
    top corners so it sits flush, and it scrolls rather than outgrowing the window. */
 .ctx-menu--panel {
   padding: 0;
+  /* As wide as the longest name, up to a cap (YAZ-1974 D7); never narrower than the header (min-width, inline). */
+  width: max-content;
+  max-width: min(480px, calc(100vw - 16px));
   border-top: none;
   border-radius: 0 0 8px 8px;
   max-height: calc(100vh - 160px);
