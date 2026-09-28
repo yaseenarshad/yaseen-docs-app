@@ -1,9 +1,9 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AssetResponse, AssetWriteRequest, AssetWriteResponse } from '@shared/types'
 import { DRAWING_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_BYTES } from '@shared/types'
 import { linkTarget } from '../vaultIndex/scan'
-import { atomicWrite, BridgeFailure, byNameCi, fsCall, isSkipped, requireAbsPath, requireDir } from './fsUtils'
+import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir } from './fsUtils'
 
 /**
  * `window.yaseenDocs.readAsset(root, ref)` / `.writeAsset(req)` (Bases 4E, GRO-2139 — Desktop
@@ -182,7 +182,7 @@ export async function writeAsset(req: AssetWriteRequest): Promise<AssetWriteResp
     // has no folder to write into.
     await mkdir(path.dirname(file), { recursive: true })
     if (create === true) {
-      await writeFile(file, body, { flag: 'wx' }) // EEXIST → ALREADY_EXISTS, exactly like createFile
+      await createDurable(file, body) // EEXIST → ALREADY_EXISTS, exactly like createFile
       const st = await stat(file)
       return { path: file, mtime: st.mtimeMs, size: st.size }
     }
