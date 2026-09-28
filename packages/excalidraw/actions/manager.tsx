@@ -40,6 +40,11 @@ export const VIEW_MODE_SELECTION_ACTIONS = new Set<string>([
 export const isViewModeSelectionAction = (action: Pick<Action, "name">) =>
   VIEW_MODE_SELECTION_ACTIONS.has(action.name);
 
+const isViewModeAction = (action: Action, appState: Readonly<AppState>) =>
+  typeof action.viewMode === "function"
+    ? action.viewMode(appState)
+    : action.viewMode === true;
+
 const trackAction = (
   action: Action,
   source: ActionSource,
@@ -149,7 +154,7 @@ export class ActionManager {
 
     if (
       this.getAppState().viewModeEnabled &&
-      action.viewMode !== true &&
+      !isViewModeAction(action, this.getAppState()) &&
       !(
         this.app.isViewModeSelectionEnabled() &&
         isViewModeSelectionAction(action)
@@ -198,7 +203,7 @@ export class ActionManager {
     if (
       source !== "api" &&
       this.app.isViewModeSelectionEnabled() &&
-      action.viewMode !== true &&
+      !isViewModeAction(action, this.getAppState()) &&
       !isViewModeSelectionAction(action)
     ) {
       return;

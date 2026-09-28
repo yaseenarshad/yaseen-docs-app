@@ -298,7 +298,7 @@ function CommandPaletteInner({
         shortcut: getShortcutFromShortcutName(action.name as ShortcutName),
         keywords: action.keywords,
         predicate: action.predicate,
-        viewMode: action.viewMode,
+        viewMode: action.viewMode === true,
         perform: () => {
           actionManager.executeAction(action, "commandPalette");
         },

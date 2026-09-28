@@ -25,6 +25,8 @@ import {
   shouldRotateWithDiscreteAngle,
   isArrowKey,
   KEYS,
+  randomId,
+  getSizeFromPoints,
   APP_NAME,
   CURSOR_TYPE,
   DEFAULT_STROKE_STREAMLINE,
@@ -129,6 +131,7 @@ import {
   newElementWith,
   newFrameElement,
   newFreeDrawElement,
+  CONSTANT_WIDTH_FREEDRAW,
   newEmbeddableElement,
   newMagicFrameElement,
   newIframeElement,
@@ -442,7 +445,7 @@ import {
   getViewportForZoomWithScrollConstraints,
 } from "../viewport";
 import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
-import { LaserTrails } from "../laserTrails";
+import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
@@ -3649,6 +3652,7 @@ class App extends React.Component<AppProps, AppState> {
       }));
       this.resetStore();
       this.resetHistory();
+      this.laserTrails.reset();
     },
   );
 
@@ -4374,6 +4378,25 @@ class App extends React.Component<AppProps, AppState> {
         this.state.scrollY,
         this.state.zoom,
       );
+    }
+
+    // leaving the laser keeps its marks, but ends a stroke still being drawn
+    if (
+      prevState.activeTool.type === "laser" &&
+      this.state.activeTool.type !== "laser"
+    ) {
+      this.laserTrails.endPath();
+    }
+
+    // static laser marks don't animate, so redraw them when the viewport moves
+    if (
+      prevState.zoom.value !== this.state.zoom.value ||
+      prevState.scrollX !== this.state.scrollX ||
+      prevState.scrollY !== this.state.scrollY ||
+      prevState.offsetLeft !== this.state.offsetLeft ||
+      prevState.offsetTop !== this.state.offsetTop
+    ) {
+      this.laserTrails.redraw();
     }
 
     if (prevState.userToFollow !== this.state.userToFollow) {
@@ -5705,6 +5728,94 @@ class App extends React.Component<AppProps, AppState> {
     return true;
   };
 
+  /**
+   * While the laser is active, Enter keeps the visible marks, ⇧Enter makes
+   * them part of the drawing, and Esc clears them (a laser undo step) and
+   * switches to the selection tool. Other tool switches keep the marks.
+   * A focused control (e.g. a laser bar button) keeps its own Enter/Esc.
+   */
+  private maybeHandleLaserKeyDown(event: React.KeyboardEvent | KeyboardEvent) {
+    if (this.state.activeTool.type !== "laser" || isInteractive(event.target)) {
+      return false;
+    }
+
+    if (event.key === KEYS.ESCAPE) {
+      event.preventDefault();
+      this.laserTrails.clear();
+      this.setActiveTool({ type: "selection" });
+      return true;
+    }
+
+    if (event.key === KEYS.ENTER && !event[KEYS.CTRL_OR_CMD] && !event.altKey) {
+      event.preventDefault();
+      if (event.shiftKey) {
+        this.makeLaserMarksPermanent();
+      } else {
+        this.laserTrails.keep();
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Turns the visible local laser marks into grouped freedraw elements (one
+   * undo step), then selects them with the selection tool.
+   */
+  public makeLaserMarksPermanent = () => {
+    if (this.state.viewModeEnabled) {
+      return false;
+    }
+
+    const strokes = this.laserTrails.takeVisibleStrokes();
+    if (strokes.length === 0) {
+      return false;
+    }
+
+    const groupId = randomId();
+    const elements = strokes.map(({ points, color, size }) => {
+      const [x, y] = points[0];
+      const localPoints = points.map(([px, py]) =>
+        pointFrom<LocalPoint>(px - x, py - y),
+      );
+
+      return newFreeDrawElement({
+        type: "freedraw",
+        x,
+        y,
+        ...getSizeFromPoints(localPoints),
+        strokeColor: color,
+        // the laser's outline radius is `size` screen px; a constant-width
+        // freedraw draws the same geometry with radius strokeWidth * factor
+        strokeWidth:
+          size / this.state.zoom.value / CONSTANT_WIDTH_FREEDRAW.SIZE_FACTOR,
+        roughness: 0,
+        simulatePressure: false,
+        strokeOptions: {
+          variability: "constant",
+          streamline: LASER_STREAMLINE,
+        },
+        groupIds: [groupId],
+        frameId: null,
+        points: localPoints,
+      });
+    });
+
+    this.insertNewElements(elements);
+    this.store.scheduleCapture();
+    this.setState({
+      activeTool: updateActiveTool(this.state, { type: "selection" }),
+      selectedElementIds: makeNextSelectedElementIds(
+        Object.fromEntries(elements.map((element) => [element.id, true])),
+        this.state,
+      ),
+      selectedGroupIds: { [groupId]: true },
+      editingGroupId: null,
+    });
+    return true;
+  };
+
   // Input handling
   private onKeyDown = withBatchedUpdates(
     (event: React.KeyboardEvent | KeyboardEvent) => {
@@ -5903,6 +6014,10 @@ class App extends React.Component<AppProps, AppState> {
         } else {
           maybeHandleArrowPointlikeDrag({ app: this, event });
         }
+      }
+
+      if (this.maybeHandleLaserKeyDown(event)) {
+        return;
       }
 
       if (this.actionManager.handleKeyDown(event)) {

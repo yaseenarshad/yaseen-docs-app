@@ -430,6 +430,9 @@ export {
   MIME_TYPES,
   ROUNDNESS,
   DEFAULT_LASER_COLOR,
+  LASER_TRAIL_MODES,
+  LASER_COLORS,
+  LASER_SIZES,
   UserIdleState,
   normalizeLink,
   sceneCoordsToViewportCoords,
@@ -437,6 +440,7 @@ export {
   getFormFactor,
   throttleRAF,
 } from "@excalidraw/common";
+export type { LaserTrailMode, LaserColor, LaserSize } from "@excalidraw/common";
 
 export {
   mutateElement,
