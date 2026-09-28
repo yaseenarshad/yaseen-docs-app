@@ -1,3 +1,6 @@
+import { afterAll } from 'vitest'
+import { trackMilkdownTimeouts } from './test-timers'
+
 // jsdom lacks a few layout/observer APIs that ProseMirror/CodeMirror touch; Crepe otherwise runs fine in jsdom.
 class NoopObserver {
   observe() {}
@@ -19,3 +22,5 @@ if (!Range.prototype.getClientRects) {
   Range.prototype.getBoundingClientRect = () => new DOMRect()
 }
 document.elementFromPoint ??= () => null
+// Milkdown's readiness timeouts outlive `editor.destroy()`; cancel them before jsdom goes (YAZ-2233).
+afterAll(trackMilkdownTimeouts())
