@@ -39,16 +39,16 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
 }
 
 /**
- * The REAL quit path (what ⌘Q runs): `app.quit()` fires `before-quit`, which flushes every
- * renderer's autosave and the pending state write before `app.exit(0)`. Resolves once the
- * process is actually gone, so the state file on disk is final when this returns.
+ * The REAL quit path (what ⌘Q runs): Playwright's `app.close()` calls `app.quit()`, which fires
+ * `before-quit` — every renderer's autosave and the pending state write flush before `app.exit(0)`.
+ * It also drops Playwright's Node inspector session itself. A bare `app.quit()` left that to
+ * Playwright spotting "Waiting for the debugger to disconnect..." on stderr, and now and then the
+ * exited app sat parked on that line past the 15s below (YAZ-2168). Resolves once the process is
+ * actually gone, so the state file on disk is final when this returns.
  */
 export async function quitApp(app: ElectronApplication): Promise<void> {
-  const closed = new Promise<void>((resolve) => app.on('close', () => resolve()))
-  // The evaluate connection can drop mid-call while the app exits — that is success, not failure.
-  await app.evaluate(({ app: electronApp }) => electronApp.quit()).catch(() => undefined)
   await Promise.race([
-    closed,
+    app.close(),
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error('app did not exit within 15s of app.quit()')), 15_000)),
   ])
 }
