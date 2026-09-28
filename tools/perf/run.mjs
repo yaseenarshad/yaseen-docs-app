@@ -13,7 +13,7 @@
  *           temp root and empty or this harness's own; removed when the run ends
  *   --out   where the JSON goes (default <tmpdir>/yaseen-docs-perf-<time>.json)
  * Compare builds on the same machine, idle, with the same --runs. A scenario whose runs saw a
- * 1-minute load over half the cores is flagged `noisy`; its time and CPU metrics are `loadSensitive`.
+ * 1-minute load over 10 is flagged `noisy`; its time and CPU metrics are `loadSensitive`.
  */
 import fs from 'node:fs'
 import os from 'node:os'
@@ -55,6 +55,8 @@ for (const { bin } of apps) {
 const out = path.resolve(opt('out', path.join(os.tmpdir(), `yaseen-docs-perf-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)))
 const work = claimWorkDir(path.resolve(opt('work', path.join(os.tmpdir(), 'yaseen-docs-perf'))))
 const load1 = () => Math.round(os.loadavg()[0] * 10) / 10
+/** Above this 1-minute load a timing run is not a usable number (several agents share this Mac). */
+const NOISY_LOAD = 10
 /** Leaves the machine as it was: nothing of ours running, the work dir gone, `yaseendocs://` back on the installed app. */
 function teardown() {
   killLaunched()
@@ -88,7 +90,7 @@ try {
     const metrics = summarizeRuns(contenders[0].results)
     report.scenarios[name] = {
       load: { min: Math.min(...load), max: Math.max(...load), runs: load },
-      noisy: Math.max(...load) > os.cpus().length / 2,
+      noisy: Math.max(...load) > NOISY_LOAD,
       loadSensitive: Object.keys(metrics).filter(loadSensitive),
       metrics,
       ...(contenders[1] && { vs: summarizeRuns(contenders[1].results) }),

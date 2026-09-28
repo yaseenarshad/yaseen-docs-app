@@ -1,5 +1,5 @@
 {
-  "$comment": "FROZEN. What v0.9.27 (main @ 63aeeea, packaged with `npm run desktop:build`) measured, the before-number for every YAZ-2131 child. Never edited after the fact; budget.json holds the moving ceilings. size: `npm run perf:budget -- --json` (MB = 10^6 B). asarNodeModulesFiles counts files: 12 (chokidar + readdirp); `asar list` shows 17 entries with the 5 directories. drawingAssetBytes is informational only (the drawing component is out of scope).",
+  "$comment": "FROZEN. What v0.9.27 (main @ 63aeeea, packaged with `npm run desktop:build`) measured, the before-number for every YAZ-2131 child. Never edited after the fact; budget.json holds the moving ceilings. size: `npm run perf:budget -- --json` (MB = 10^6 B). perf: `npm run perf` in a quiet window (every run at 1-minute load under 10, recorded per scenario), median / p95 / cv over the measured runs after one discarded warm-up; null = not painted within the scenario cap (the 20k-line note: ~24 min on v0.9.27). asarNodeModulesFiles counts files: 12 (chokidar + readdirp); `asar list` shows 17 entries with the 5 directories. drawingAssetBytes is informational only (the drawing component is out of scope).",
   "version": "0.9.27",
   "commit": "63aeeea",
   "size": {
@@ -17,5 +17,441 @@
     "rendererMapBytes": 0,
     "mainBundleBytes": 411774,
     "drawingAssetBytes": 13556480
+  },
+  "perf": {
+    "measured": "2026-09-28",
+    "app": "desktop/dist-app/mac-arm64/Yaseen Docs.app (v0.9.27 @ 63aeeea)",
+    "scenarios": {
+      "launch": {
+        "runs": 5,
+        "load": {
+          "min": 3.8,
+          "max": 5.8,
+          "runs": [
+            3.8,
+            3.8,
+            5.8,
+            5.8,
+            5.8
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "spawnToMainMs": {
+            "median": 87.4,
+            "p95": 89.2,
+            "cv": 0.03
+          },
+          "spawnToNavMs": {
+            "median": 173.6,
+            "p95": 178.2,
+            "cv": 0.01
+          },
+          "navToFirstPaintMs": {
+            "median": 232,
+            "p95": 248,
+            "cv": 0.03
+          },
+          "navToDocMs": {
+            "median": 259.5,
+            "p95": 276.6,
+            "cv": 0.03
+          },
+          "spawnToDocMs": {
+            "median": 433.1,
+            "p95": 451.3,
+            "cv": 0.02
+          },
+          "freshSpawnToDocMs": {
+            "median": 450.5,
+            "p95": 473.7,
+            "cv": 0.03
+          },
+          "tabs10SpawnToDocMs": {
+            "median": 450,
+            "p95": 452.3,
+            "cv": 0.02
+          },
+          "windows3SpawnToLastDocMs": {
+            "median": 509.1,
+            "p95": 531.1,
+            "cv": 0.02
+          }
+        }
+      },
+      "sidebar-resize": {
+        "runs": 5,
+        "load": {
+          "min": 5.6,
+          "max": 6.2,
+          "runs": [
+            5.9,
+            6.2,
+            5.8,
+            5.8,
+            5.6
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "moveP50Ms": {
+            "median": 49.9,
+            "p95": 50.1,
+            "cv": 0
+          },
+          "moveP95Ms": {
+            "median": 52.5,
+            "p95": 58.9,
+            "cv": 0.06
+          },
+          "moveMaxMs": {
+            "median": 58.8,
+            "p95": 62.9,
+            "cv": 0.06
+          }
+        }
+      },
+      "tab-switch": {
+        "runs": 5,
+        "load": {
+          "min": 4.5,
+          "max": 5.7,
+          "runs": [
+            5.7,
+            5.4,
+            5.1,
+            4.8,
+            4.5
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "firstVisitMs": {
+            "median": 132.4,
+            "p95": 135.9,
+            "cv": 0.04
+          },
+          "revisitP50Ms": {
+            "median": 37.6,
+            "p95": 38.3,
+            "cv": 0.06
+          },
+          "revisitP95Ms": {
+            "median": 39.7,
+            "p95": 40.9,
+            "cv": 0.02
+          }
+        }
+      },
+      "storm": {
+        "runs": 5,
+        "load": {
+          "min": 4.3,
+          "max": 5.3,
+          "runs": [
+            4.4,
+            4.5,
+            4.3,
+            5.3,
+            5
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "addCpuSec": {
+            "median": 2.8,
+            "p95": 3.6,
+            "cv": 0.14
+          },
+          "addPeakRssMb": {
+            "median": 546.4,
+            "p95": 617.8,
+            "cv": 0.09
+          },
+          "addIpcMaxMs": {
+            "median": 109.1,
+            "p95": 194,
+            "cv": 0.26
+          },
+          "addSettleMs": {
+            "median": 1557.5,
+            "p95": 2073,
+            "cv": 0.12
+          },
+          "renameCpuSec": {
+            "median": 8.5,
+            "p95": 9.4,
+            "cv": 0.05
+          },
+          "renamePeakRssMb": {
+            "median": 1001.8,
+            "p95": 1158.9,
+            "cv": 0.07
+          },
+          "renameIpcMaxMs": {
+            "median": 528.2,
+            "p95": 568.4,
+            "cv": 0.16
+          },
+          "renameSettleMs": {
+            "median": 3586.7,
+            "p95": 4105.9,
+            "cv": 0.06
+          }
+        }
+      },
+      "watcher": {
+        "runs": 5,
+        "load": {
+          "min": 3.3,
+          "max": 4.2,
+          "runs": [
+            4.2,
+            3.7,
+            3.3,
+            3.4,
+            3.4
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "fds2k": {
+            "median": 2077,
+            "p95": 2077,
+            "cv": 0
+          },
+          "addToRowMs": {
+            "median": 258.2,
+            "p95": 264.2,
+            "cv": 0.01
+          },
+          "changeToEditorMs": {
+            "median": 283.4,
+            "p95": 287.9,
+            "cv": 0.01
+          },
+          "fds10k": {
+            "median": 10000,
+            "p95": 10000,
+            "cv": 0
+          }
+        }
+      },
+      "quit": {
+        "runs": 5,
+        "load": {
+          "min": 2.8,
+          "max": 3.3,
+          "runs": [
+            2.8,
+            3.3,
+            3.3,
+            3.3,
+            3.2
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "quitMs": {
+            "median": 94.4,
+            "p95": 99,
+            "cv": 0.09
+          }
+        }
+      },
+      "open-big": {
+        "runs": 3,
+        "load": {
+          "min": 2.2,
+          "max": 2.6,
+          "runs": [
+            2.6,
+            2.3,
+            2.2
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "bullets1kLongTaskMs": {
+            "median": 489,
+            "p95": 492,
+            "cv": 0.04
+          },
+          "bullets1kMs": {
+            "median": 729.3,
+            "p95": 753.4,
+            "cv": 0.04
+          },
+          "prose5kLongTaskMs": {
+            "median": 5081,
+            "p95": 5087,
+            "cv": 0
+          },
+          "prose5kMs": {
+            "median": 5696.4,
+            "p95": 5717.1,
+            "cv": 0
+          },
+          "code5kLongTaskMs": {
+            "median": 1098,
+            "p95": 1099,
+            "cv": 0.01
+          },
+          "code5kMs": {
+            "median": 1464,
+            "p95": 1490.1,
+            "cv": 0.01
+          },
+          "bullets5kLongTaskMs": {
+            "median": 20521,
+            "p95": 20531,
+            "cv": 0
+          },
+          "bullets5kMs": {
+            "median": 21528.9,
+            "p95": 21541.5,
+            "cv": 0
+          },
+          "bullets20kLongTaskMs": {
+            "median": null,
+            "runs": [
+              null,
+              null,
+              null
+            ]
+          },
+          "bullets20kMs": {
+            "median": null,
+            "runs": [
+              null,
+              null,
+              null
+            ]
+          },
+          "timedOut": {
+            "median": null,
+            "runs": [
+              "bullets20k",
+              "bullets20k",
+              "bullets20k"
+            ]
+          }
+        }
+      },
+      "typing": {
+        "runs": 3,
+        "load": {
+          "min": 3.1,
+          "max": 5,
+          "runs": [
+            5,
+            4.1,
+            3.1
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "bullets5kKeyP50Ms": {
+            "median": 36.3,
+            "p95": 36.4,
+            "cv": 0.01
+          },
+          "bullets5kKeyP95Ms": {
+            "median": 40.2,
+            "p95": 42,
+            "cv": 0.03
+          },
+          "bullets5kKeyMaxMs": {
+            "median": 153.1,
+            "p95": 180,
+            "cv": 0.08
+          },
+          "bullets20kKeyP50Ms": {
+            "median": null,
+            "runs": [
+              null,
+              null,
+              null
+            ]
+          },
+          "bullets20kKeyP95Ms": {
+            "median": null,
+            "runs": [
+              null,
+              null,
+              null
+            ]
+          },
+          "bullets20kKeyMaxMs": {
+            "median": null,
+            "runs": [
+              null,
+              null,
+              null
+            ]
+          }
+        }
+      },
+      "idle": {
+        "runs": 3,
+        "load": {
+          "min": 1.9,
+          "max": 2.9,
+          "runs": [
+            2.9,
+            2,
+            1.9
+          ]
+        },
+        "noisy": false,
+        "metrics": {
+          "mainCpuPct": {
+            "median": 0.2,
+            "p95": 0.2,
+            "cv": 0.04
+          },
+          "mainRssMb": {
+            "median": 152.5,
+            "p95": 152.5,
+            "cv": 0
+          },
+          "gpuCpuPct": {
+            "median": 1,
+            "p95": 1.1,
+            "cv": 0.04
+          },
+          "gpuRssMb": {
+            "median": 75.9,
+            "p95": 76.6,
+            "cv": 0.01
+          },
+          "utilityCpuPct": {
+            "median": 0,
+            "p95": 0,
+            "cv": 0.71
+          },
+          "utilityRssMb": {
+            "median": 32.6,
+            "p95": 32.7,
+            "cv": 0
+          },
+          "rendererCpuPct": {
+            "median": 0.6,
+            "p95": 0.7,
+            "cv": 0.03
+          },
+          "rendererRssMb": {
+            "median": 188.3,
+            "p95": 188.5,
+            "cv": 0
+          }
+        }
+      }
+    },
+    "machine": {
+      "cpu": "Apple M3",
+      "cores": 8,
+      "os": "Darwin 24.6.0"
+    }
   }
 }
