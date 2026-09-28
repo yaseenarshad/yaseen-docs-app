@@ -146,6 +146,9 @@ test('step 1 — every reference shape resolves the way Obsidian would, or break
   expect(await brokenChips(win).allTextContents()).toEqual(BROKEN_SRCS.map((src) => `Broken image: ${src}`))
 
   // --- code is code: the fenced image line is TEXT, and CodeMirror holds it ---
+  // Milkdown mounts a code block's CodeMirror only within 200px of the viewport (a plain `<pre>`
+  // stands in until then), and this block sits below the images: bring it on screen first.
+  await layer(win).locator('.milkdown-code-block').scrollIntoViewIfNeeded()
   await expect(layer(win).locator('.cm-content')).toContainText('![fenced](images/a.png)')
   await expect(layer(win).locator('.cm-content .image-view')).toHaveCount(0)
 
