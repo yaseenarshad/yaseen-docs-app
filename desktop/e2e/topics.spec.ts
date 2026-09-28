@@ -363,7 +363,8 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
   await rowFor(win, 'inbox').click({ button: 'right' })
   // 🔒 D7 (YAZ-1674, amended) order: the Open group (empty on one row), clipboard (Cut / Copy /
   // a disabled Paste — a disk-folder row gets the disk verb), create, this row (Rename), then
-  // "Open in ▸" as its OWN group, then Delete. Hints and the chevron are CSS, not text.
+  // "Add to favorites" + "Open in ▸" as their OWN group (YAZ-1766 D3 leads it with the heart
+  // item on every file or dir row), then Delete. Hints and the chevron are CSS, not text.
   await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([
     'Cut',
     'Copy',
@@ -374,6 +375,7 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
     'New folder',
     'New dated folder',
     'Rename',
+    'Add to favorites',
     'Open in', // its own group after the this-row group (D7 amended)
     'Delete',
   ])
