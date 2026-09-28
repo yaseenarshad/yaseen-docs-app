@@ -83,6 +83,13 @@ export const OUTLINE_FOLDED_IMAGE_ATTR = 'data-outline-folded-image'
  */
 export const OUTLINE_FOLDABLE_IMAGE_ATTR = 'data-outline-foldable-image'
 
+/**
+ * ProseMirror asks for `decorations` on EVERY view update, caret moves included. `entries` keeps its
+ * identity until the doc changes, so the set built for it and the same folded positions is exactly
+ * what a rebuild would produce (YAZ-2131 4C).
+ */
+const decorationCache = new WeakMap<readonly OutlineEntry[], { collapsedKey: string; set: DecorationSet }>()
+
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 
@@ -311,6 +318,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             }
           },
           apply: (transaction, previousState, _oldState, newState) => {
+            // A caret move changes no entry, fold or ⌘Z eligibility: keep the SAME state object (YAZ-2131 4C).
+            if (!transaction.docChanged && transaction.getMeta(pluginKey) === undefined && transaction.getMeta(VIEW_ACTION_META) === undefined)
+              return previousState
             const entries = transaction.docChanged ? getOutlineEntries(newState.doc) : previousState.entries
             const foldablePositions = new Set(entries.map(({ itemPos }) => itemPos))
             const collapsedItemPositions = new Set<number>()
@@ -416,6 +426,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
             if (!foldingState) return DecorationSet.empty
+            const collapsedKey = [...foldingState.collapsedItemPositions].sort((a, b) => a - b).join(',')
+            const cached = decorationCache.get(foldingState.entries)
+            if (cached?.collapsedKey === collapsedKey) return cached.set
 
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
@@ -468,7 +481,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 })
               }
             })
-            return DecorationSet.create(state.doc, decorations)
+            const set = DecorationSet.create(state.doc, decorations)
+            decorationCache.set(foldingState.entries, { collapsedKey, set })
+            return set
           },
         },
         view: (view) => {

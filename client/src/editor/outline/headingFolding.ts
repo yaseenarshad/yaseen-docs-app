@@ -67,6 +67,13 @@ export interface HeadingFoldingOptions {
 export const HEADING_TOGGLE_CLASS = 'heading-toggle'
 export const HEADING_FOLDED_ATTR = 'data-heading-folded'
 
+/**
+ * ProseMirror asks for `decorations` on EVERY view update, caret moves included. `entries` keeps its
+ * identity until the doc changes, so the set built for it and the same folded positions is exactly
+ * what a rebuild would produce (YAZ-2131 4C).
+ */
+const decorationCache = new WeakMap<readonly HeadingEntry[], { collapsedKey: string; set: DecorationSet }>()
+
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<HeadingFoldingState>('mdapp-heading-folding')
 
@@ -277,6 +284,9 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             }
           },
           apply: (transaction, previousState, _oldState, newState) => {
+            // A caret move changes no entry, fold or ⌘Z eligibility: keep the SAME state object (YAZ-2131 4C).
+            if (!transaction.docChanged && transaction.getMeta(pluginKey) === undefined && transaction.getMeta(VIEW_ACTION_META) === undefined)
+              return previousState
             const entries = transaction.docChanged ? getHeadingEntries(newState.doc) : previousState.entries
             const headingPositions = new Set(entries.map(({ headingPos }) => headingPos))
             const collapsedHeadingPositions = new Set<number>()
@@ -349,6 +359,9 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
             if (!foldingState) return DecorationSet.empty
+            const collapsedKey = [...foldingState.collapsedHeadingPositions].sort((a, b) => a - b).join(',')
+            const cached = decorationCache.get(foldingState.entries)
+            if (cached?.collapsedKey === collapsedKey) return cached.set
 
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
@@ -395,7 +408,9 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 })
               }
             })
-            return DecorationSet.create(state.doc, decorations)
+            const set = DecorationSet.create(state.doc, decorations)
+            decorationCache.set(foldingState.entries, { collapsedKey, set })
+            return set
           },
         },
         view: (view) => {

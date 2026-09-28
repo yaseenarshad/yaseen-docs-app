@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { Autosave } from '../../lib/autosave'
 import {
@@ -350,5 +351,33 @@ describe('heading folding: widget quality', () => {
     const collapsed = toggleFor(root, 'Part 1')
     expect(collapsed.getAttribute('aria-expanded')).toBe('false')
     expect(collapsed.querySelector('svg')).not.toBeNull()
+  })
+})
+
+describe('heading folding: decoration reuse (YAZ-2131 4C)', () => {
+  /** The plugin's own `decorations` prop, called the way ProseMirror calls it on every view update. */
+  const decorationsOf = (view: EditorView) => {
+    const plugin = view.state.plugins.find((p) => (p as unknown as { key: string }).key.startsWith('mdapp-heading-folding'))!
+    return () => plugin.props.decorations!.call(plugin, view.state)
+  }
+
+  it('returns the identical set after a selection-only transaction, a new one after a fold toggle or a doc edit', async () => {
+    const { crepe, root } = await mount({ defaultValue: DOC })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const decorations = decorationsOf(view)
+    const initial = decorations()
+    expect(decorations()).toBe(initial)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 5)))
+    expect(decorations()).toBe(initial)
+
+    toggleFor(root, 'Section A').click()
+    const folded = decorations()
+    expect(folded).not.toBe(initial)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)))
+    expect(decorations()).toBe(folded)
+
+    view.dispatch(view.state.tr.insertText('!', 3))
+    expect(decorations()).not.toBe(folded)
+    expect(toggleFor(root, 'Section A').getAttribute('aria-expanded')).toBe('false')
   })
 })
