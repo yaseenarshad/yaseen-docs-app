@@ -149,8 +149,8 @@ describe('main startup order (YAZ-2172)', () => {
   })
 })
 
-describe('main quit order (YAZ-2172; YAZ-2174 extracts it)', () => {
-  it('before-quit flushes the renderers first, then the store, index cache and git sync, and exits only once those settle (YAZ-1081 D2)', async () => {
+describe('main quit order: before-quit runs runQuitSequence with the live deps (YAZ-2172, YAZ-2174)', () => {
+  it('flushes the renderers first, then the store, index cache and git sync, and exits only once those settle (YAZ-1081 D2)', async () => {
     h.s.ready()
     await settle() // `whenReady` ran: registerIpc handed back the sync manager
     const renderers = gate()
@@ -176,5 +176,34 @@ describe('main quit order (YAZ-2172; YAZ-2174 extracts it)', () => {
     await settle()
     expect(h.s.order).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'gitSync.flushForQuit', 'exit'])
     expect(h.app.exit).toHaveBeenCalledExactlyOnceWith(0)
+  })
+
+  it('one rejected step skips none of the others, and the app still exits', async () => {
+    h.s.ready()
+    await settle()
+    h.manager.flushAllForQuit.mockRejectedValueOnce(new Error('a window hung'))
+    h.store.flush.mockRejectedValueOnce(new Error('disk full'))
+    h.s.order.length = 0
+    h.s.on.get('before-quit')!(event())
+    await settle()
+    expect(h.s.order).toEqual(['flushIndexCache', 'gitSync.flushForQuit', 'exit'])
+    expect(h.store.flush).toHaveBeenCalledOnce()
+    expect(h.manager.flushAllForQuit).toHaveBeenCalledOnce()
+  })
+
+  it('a quit before ready (no sync manager yet) still flushes and exits', async () => {
+    h.s.on.get('before-quit')!(event())
+    await settle()
+    expect(h.s.order.slice(h.s.order.indexOf('flushAllForQuit'))).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'exit'])
+  })
+})
+
+describe('runQuitSequence (YAZ-2174)', () => {
+  it('never rejects, whichever step fails, and always exits', async () => {
+    const { runQuitSequence } = await import('./quitSequence')
+    const exit = vi.fn()
+    const fail = () => Promise.reject(new Error('no'))
+    await expect(runQuitSequence({ flushWindows: fail, flushStore: fail, flushIndex: fail, flushSync: fail, exit })).resolves.toBeUndefined()
+    expect(exit).toHaveBeenCalledOnce()
   })
 })
