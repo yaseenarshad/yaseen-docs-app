@@ -897,6 +897,25 @@ describe('createStore: persistence', () => {
     expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
   })
 
+  it('a change that leaves the file byte-identical (folder expand / collapse) writes nothing; the next real change does (YAZ-2198)', async () => {
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
+    await store.flush()
+    expect(renames()).toHaveLength(1)
+    store.setFolder('/v', { expanded: ['/v/sub'] })
+    await store.flush()
+    store.setFolder('/v', { topicsExpanded: ['/v/Metrics.md'], expanded: [] })
+    await store.flush()
+    expect(renames()).toHaveLength(2) // the folder's first entry is real bytes; the expand/collapse after it is not
+    store.setFolder('/v', { expanded: ['/v/other'] })
+    await store.flush()
+    expect(renames()).toHaveLength(2)
+    store.setSidebarWidth(333)
+    await store.flush()
+    expect(renames()).toHaveLength(3)
+    expect((await onDisk()).sidebarWidth).toBe(333)
+  })
+
   it('the display name is persisted and restored; a junk one reads as null (YAZ-1974 D3)', async () => {
     const store = createStore(file)
     store.setFolder('/v', { name: 'Business Wiki' })
