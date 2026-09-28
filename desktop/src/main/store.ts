@@ -300,14 +300,23 @@ export function createStore(filePath: string): Store {
   let timer: ReturnType<typeof setTimeout> | null = null
   /** Writes are chained so two atomic writes can never land out of order. */
   let chain: Promise<void> = Promise.resolve()
+  /**
+   * The text of the last successful write (YAZ-2198). Session-only state (`expanded`,
+   * `topicsExpanded`) never reaches disk, so every folder expand / collapse used to rewrite
+   * byte-identical JSON; identical text is skipped. The first write after a launch always writes.
+   */
+  let lastWritten: string | null = null
 
   const write = (): Promise<void> => {
     dirty = false
     const snapshot = state
     chain = chain
       .then(async () => {
+        const text = `${JSON.stringify(toDisk(snapshot), null, 2)}\n`
+        if (text === lastWritten) return
         mkdirSync(dirname(filePath), { recursive: true })
-        await atomicWrite(filePath, `${JSON.stringify(toDisk(snapshot), null, 2)}\n`)
+        await atomicWrite(filePath, text)
+        lastWritten = text
       })
       .catch((err: unknown) => console.error(`[store] failed to write ${filePath}: ${String(err)}`))
     return chain
