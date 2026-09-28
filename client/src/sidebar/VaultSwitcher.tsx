@@ -3,10 +3,12 @@
  * The header's top-left button is the trigger — bold vault name plus a small chevron (D6) — and the
  * panel it drops is a `ContextMenuSurface` stretched to the header's own rect (D5), flush with the
  * sidebar. Its first element is the filter input, autofocused, query reset on every open (D7);
- * below it every recent vault as a Welcome-style row (name + relative time, then the full path,
- * because two vaults can share a basename), the CURRENT vault included and marked `aria-current`
- * (D3); and LAST, under a hairline, "Open folder…" — the folder picker (D4), which opens the
- * picked folder beside like a vault row does (YAZ-1914 amended D4 — it was in place).
+ * below it every recent vault as ONE line — name, then relative time (YAZ-1974 D2) — the CURRENT
+ * vault included and marked `aria-current` (D3); and LAST, under a hairline, "Open folder…" — the
+ * folder picker (D4), which opens the picked folder beside like a vault row does (YAZ-1914
+ * amended D4 — it was in place). Two vaults can share a name, so the full path is one hover away:
+ * a row's ⓘ, shown while the row is hovered, draws the WHOLE path wrapped at its slashes in a
+ * tooltip portalled to <body> — the panel's scroll box never clips it. Mouse-only, by design.
  *
  * ONE rule for every vault row (D1/D3): activating it — click or ⏎ — asks main's one open-recent
  * door, `window.openRecent(path)`, which brings that vault to the front: its open windows raised
@@ -15,7 +17,11 @@
  * the row is disabled with "Folder not found" in the time slot and the panel STAYS open
  * (Welcome's behaviour), so the next choice is one keystroke away. `true` closes the panel.
  *
- * The keyboard model (D7): ranking is `matchLinkCandidates` over the basenames (the `[[` picker's
+ * Names (YAZ-1974 D4): the trigger and every row show the vault's display name
+ * (`storage.vaultName`, the folder name when none is set). The filter matches the display name
+ * AND the folder name (D6) — one row per vault, at its better rank.
+ *
+ * The keyboard model (D7): ranking is `matchLinkCandidates` over those names (the `[[` picker's
  * ranking: exact, then prefix, then substring; an empty query is MRU order). One highlighted row;
  * with an EMPTY query it starts on the first row that is NOT the current vault — so ⌘O ⏎ jumps to
  * the last-used OTHER vault, like ⌘Tab — with a typed query on the top match, and with no match on
@@ -32,14 +38,22 @@
  * is the ONE deliberate in-place switch (D8/D11); a `false` from it greys the row exactly like a
  * click's. The menu is the top layer while it stands (D4): Esc and click-away close it alone, and
  * the filter ignores ↑/↓/⏎/Esc until it is gone. Right-click never moves the highlight.
+ *
+ * "Set display name" (YAZ-1974 D5) turns the name into an inline field where it was right-clicked —
+ * the header or the row, a `<div>` in place of the `<button>` meanwhile. ⏎ or blur saves, Esc
+ * cancels, an empty field is the folder name again; the field is the top layer while it stands:
+ * Esc and click-away end it alone, and a click on another row only ends it, never opens a vault.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
 import { basename } from '../lib/paths'
 import { relativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
-import { TriangleIcon } from '../views/view/icons'
+import { useVaultName } from '../lib/useVaultName'
+import { TextField } from '../views/view/TextField'
+import { InfoIcon, TriangleIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { buildVaultMenuSections } from './vaultMenuSections'
 
@@ -60,12 +74,16 @@ export interface VaultSwitcherProps {
   onNotice: (message: string) => void
 }
 
-/** One recent vault as the panel ranks and draws it. `name` is what `matchLinkCandidates` matches on. */
+/** One recent vault as the panel ranks and draws it: `name` is its display name, `folder` its basename — the filter matches both (YAZ-1974 D6). */
 export interface VaultRow {
   name: string
+  folder: string
   path: string
   lastOpened: number
 }
+
+/** Where a vault's name stands — and so where "Set display name" turns it into a field (YAZ-1974 D5). */
+type RenameAt = 'header' | 'row'
 
 interface PanelState {
   rows: VaultRow[]
@@ -78,9 +96,15 @@ export const NO_MATCH_TEXT = 'No matching vaults'
 export const MISSING_TEXT = 'Folder not found'
 export const OPEN_FOLDER_TEXT = 'Open folder…'
 
-/** The rows `query` keeps, ranked (D7): an empty query is MRU order untouched; otherwise the `[[` picker's ranking, uncapped. */
+/**
+ * The rows `query` keeps, ranked (D7): an empty query is MRU order untouched; otherwise the `[[`
+ * picker's ranking, uncapped, over one candidate per name a row answers to — its display name and,
+ * when it differs, its folder name (YAZ-1974 D6, the picker's alias idea) — each row once, at its best rank.
+ */
 export function rankVaultRows(rows: readonly VaultRow[], query: string): VaultRow[] {
-  return query.trim() === '' ? [...rows] : matchLinkCandidates(rows, query, Math.max(1, rows.length))
+  if (query.trim() === '') return [...rows]
+  const candidates = rows.flatMap((row) => (row.folder === row.name ? [{ name: row.name, row }] : [{ name: row.name, row }, { name: row.folder, row }]))
+  return [...new Set(matchLinkCandidates(candidates, query, candidates.length).map((c) => c.row))]
 }
 
 /**
@@ -94,25 +118,41 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 }
 
 export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, onOpenHere, onReveal, onOpenVsCode, onNotice }: VaultSwitcherProps) {
-  const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  /** The header's name slot — the trigger, or its rename field (YAZ-1974 D5) — so the panel finds its anchor either way. */
+  const slotRef = useRef<HTMLElement | null>(null)
+  const setSlot = useCallback((el: HTMLElement | null) => {
+    slotRef.current = el
+  }, [])
   const [panel, setPanel] = useState<PanelState | null>(null)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const [missing, setMissing] = useState<ReadonlySet<string>>(() => new Set())
-  /** The right-click menu (YAZ-1798), pinned to the vault it was opened on. */
-  const [vaultMenu, setVaultMenu] = useState<{ path: string; x: number; y: number } | null>(null)
+  /** The right-click menu (YAZ-1798), pinned to the vault it was opened on — and where: its rename happens there (YAZ-1974 D5). */
+  const [vaultMenu, setVaultMenu] = useState<{ path: string; at: RenameAt; x: number; y: number } | null>(null)
+  /** The name currently an inline field (YAZ-1974 D5): the header's, or a row's. */
+  const [renaming, setRenaming] = useState<{ path: string; at: RenameAt } | null>(null)
+  /** The ⓘ tooltip (YAZ-1974 D2): the hovered row's path and rect, while the pointer is on its ⓘ. */
+  const [pathTip, setPathTip] = useState<{ path: string; rect: DOMRect } | null>(null)
+  /** Set by a row's mousedown mid-rename, so the click it starts only ends the rename (D5). */
+  const dropClick = useRef(false)
+  const name = useVaultName(root)
   const open = panel !== null
 
   const openPanel = useCallback(() => {
-    // Anchor = the `.sidebar__header` rect (the trigger's parent): the panel hangs off the whole header, flush with the sidebar (D5).
-    const rect = triggerRef.current?.parentElement?.getBoundingClientRect()
-    const rows = storage.getRecentRoots().map((r) => ({ name: basename(r.path), path: r.path, lastOpened: r.lastOpened }))
+    // Anchor = the `.sidebar__header` rect (the name slot's parent): the panel hangs off the whole header, flush with the sidebar (D5).
+    const rect = slotRef.current?.parentElement?.getBoundingClientRect()
+    const rows = storage.getRecentRoots().map((r) => ({ name: storage.vaultName(r.path), folder: basename(r.path), path: r.path, lastOpened: r.lastOpened }))
     setPanel({ rows, now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
     setQuery('')
     setMissing(new Set())
   }, [])
-  const closePanel = useCallback(() => setPanel(null), [])
+  // A row's rename field and the ⓘ tooltip go with the panel (a field that unmounts is a cancel); the header's stays.
+  const closePanel = useCallback(() => {
+    setPanel(null)
+    setRenaming((r) => (r?.at === 'row' ? null : r))
+    setPathTip(null)
+  }, [])
   const closeVaultMenu = useCallback(() => setVaultMenu(null), [])
 
   // The filter takes focus whenever the panel mounts (D7).
@@ -173,11 +213,49 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     inputRef.current?.focus()
   }
 
+  /** Save a display name (YAZ-1974 D5) — `null` is Reset to folder name — and redraw the open panel's row with it, `removeRow`'s idiom. */
+  const saveName = (path: string, raw: string | null): void => {
+    storage.setVaultName(path, raw)
+    const next = storage.vaultName(path)
+    setPanel((p) => (p === null ? p : { ...p, rows: p.rows.map((r) => (r.path === path ? { ...r, name: next } : r)) }))
+    inputRef.current?.focus()
+  }
+  const endRename = (): void => {
+    setRenaming(null)
+    inputRef.current?.focus()
+  }
+  /** The inline field (D5): the display name selected, the folder name as placeholder; ⏎ / blur save, Esc cancels, empty = the folder name. */
+  const nameField = (path: string, value: string) => (
+    <TextField
+      className="vault-switcher__rename"
+      value={value}
+      placeholder={basename(path)}
+      aria-label="Display name"
+      autoFocus
+      selectOnMount
+      normalize={(draft) => draft.trim()}
+      onCommit={(next) => saveName(path, next)}
+      onDone={endRename}
+    />
+  )
+
   /** Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — its MRU entry is already gone. */
-  const openVaultMenu = (path: string, e: MouseEvent): void => {
+  const openVaultMenu = (path: string, at: RenameAt, e: MouseEvent): void => {
     e.preventDefault()
     if (missing.has(path)) return
-    setVaultMenu({ path, x: e.clientX, y: e.clientY })
+    setPathTip(null)
+    setVaultMenu({ path, at, x: e.clientX, y: e.clientY })
+  }
+
+  /**
+   * Rows swallow their mousedown so typing never leaves the filter (D7). Mid-rename (YAZ-1974 D5)
+   * it ends the rename instead — the filter takes focus, the field's blur saves — and the click it
+   * starts is dropped, so a vault never opens by accident.
+   */
+  const rowMouseDown = (e: MouseEvent): void => {
+    e.preventDefault()
+    dropClick.current = renaming !== null
+    if (dropClick.current) inputRef.current?.focus()
   }
 
   const activate = (index: number): void => {
@@ -190,6 +268,9 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     const row = matches[index]
     if (row === undefined || missing.has(row.path)) return
     choose(row.path)
+  }
+  const clickRow = (index: number): void => {
+    if (!dropClick.current) activate(index)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -219,25 +300,32 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
 
   return (
     <>
-      {/* stopPropagation on mousedown: the surface closes on any window mousedown, so without it a
-          second click on the trigger would close and immediately reopen the panel. */}
-      <button
-        ref={triggerRef}
-        type="button"
-        className="sidebar__root"
-        title={root}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={() => (open ? closePanel() : openPanel())}
-        onContextMenu={(e) => openVaultMenu(root, e)}
-      >
-        <span className="sidebar__root-name">{basename(root)}</span>
-        <span className="sidebar__root-hint" aria-hidden="true"><TriangleIcon up={open} /></span>
-      </button>
+      {renaming?.at === 'header' ? (
+        <div ref={setSlot} className="sidebar__root">
+          {nameField(root, name)}
+        </div>
+      ) : (
+        // stopPropagation on mousedown: the surface closes on any window mousedown, so without it a
+        // second click on the trigger would close and immediately reopen the panel.
+        <button
+          ref={setSlot}
+          type="button"
+          className="sidebar__root"
+          title={root}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={() => (open ? closePanel() : openPanel())}
+          onContextMenu={(e) => openVaultMenu(root, 'header', e)}
+        >
+          <span className="sidebar__root-name">{name}</span>
+          <span className="sidebar__root-hint" aria-hidden="true"><TriangleIcon up={open} /></span>
+        </button>
+      )}
       {panel !== null && (
-        <ContextMenuSurface x={panel.anchor.x} y={panel.anchor.y} width={panel.anchor.width} className="ctx-menu--panel" onClose={vaultMenu !== null ? closeVaultMenu : closePanel}>
-          <div className="vault-switcher">
+        // The top layer closes alone (D4): the vault menu first; a rename field ends on its own blur, so click-away keeps the panel.
+        <ContextMenuSurface x={panel.anchor.x} y={panel.anchor.y} width={panel.anchor.width} className="ctx-menu--panel" onClose={vaultMenu !== null ? closeVaultMenu : renaming !== null ? () => undefined : closePanel}>
+          <div className="vault-switcher" onWheel={() => setPathTip(null)}>
             <input
               ref={inputRef}
               className="vault-switcher__filter"
@@ -254,6 +342,15 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               {matches.length === 0 && <div className="vault-switcher__empty">{NO_MATCH_TEXT}</div>}
               {matches.map((row, i) => {
                 const gone = missing.has(row.path)
+                const when = <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : ''}`}>{gone ? MISSING_TEXT : relativeTime(row.lastOpened, panel.now)}</span>
+                if (renaming?.at === 'row' && renaming.path === row.path) {
+                  return (
+                    <div key={row.path} className="vault-switcher__row vault-switcher__row--renaming">
+                      {nameField(row.path, row.name)}
+                      {when}
+                    </div>
+                  )
+                }
                 return (
                   <button
                     key={row.path}
@@ -263,14 +360,22 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                     className={`vault-switcher__row${i === active ? ' vault-switcher__row--active' : ''}`}
                     aria-current={row.path === root ? 'true' : undefined}
                     disabled={gone}
-                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseDown={rowMouseDown}
                     onMouseEnter={() => setActive(i)}
-                    onClick={() => activate(i)}
-                    onContextMenu={(e) => openVaultMenu(row.path, e)}
+                    onClick={() => clickRow(i)}
+                    onContextMenu={(e) => openVaultMenu(row.path, 'row', e)}
                   >
                     <span className="vault-switcher__name">{row.name}</span>
-                    <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : ''}`}>{gone ? MISSING_TEXT : relativeTime(row.lastOpened, panel.now)}</span>
-                    <span className="vault-switcher__path">{row.path}</span>
+                    {/* Part of its row (D2): a click is the row's click, a right-click the row's menu. */}
+                    <span
+                      className="vault-switcher__info"
+                      aria-hidden="true"
+                      onMouseEnter={(e) => setPathTip({ path: row.path, rect: e.currentTarget.parentElement!.getBoundingClientRect() })}
+                      onMouseLeave={() => setPathTip(null)}
+                    >
+                      <InfoIcon />
+                    </span>
+                    {when}
                   </button>
                 )
               })}
@@ -281,22 +386,51 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               tabIndex={-1}
               className={`vault-switcher__row vault-switcher__open${active === openFolderIndex ? ' vault-switcher__row--active' : ''}`}
               disabled={pickDisabled}
-              onMouseDown={(e) => e.preventDefault()}
+              onMouseDown={rowMouseDown}
               onMouseEnter={() => setActive(openFolderIndex)}
-              onClick={() => activate(openFolderIndex)}
+              onClick={() => clickRow(openFolderIndex)}
             >
               {OPEN_FOLDER_TEXT}
             </button>
           </div>
         </ContextMenuSurface>
       )}
+      {pathTip !== null &&
+        createPortal(
+          // Under the row, or above it when there is more room there (the last rows); `<wbr>` after every `/` is where the WHOLE path wraps (D2).
+          <div
+            className="vault-switcher__tip"
+            role="tooltip"
+            style={{
+              left: pathTip.rect.left,
+              width: pathTip.rect.width,
+              ...(window.innerHeight - pathTip.rect.bottom >= pathTip.rect.top ? { top: pathTip.rect.bottom } : { bottom: window.innerHeight - pathTip.rect.top }),
+            }}
+          >
+            {pathTip.path.split(/(?<=\/)/).map((part, i) => (
+              <Fragment key={i}>
+                {part}
+                <wbr />
+              </Fragment>
+            ))}
+          </div>,
+          document.body,
+        )}
       {vaultMenu !== null && (
         <ContextMenu
           x={vaultMenu.x}
           y={vaultMenu.y}
           sections={buildVaultMenuSections(
-            { path: vaultMenu.path, isCurrent: vaultMenu.path === root },
-            { onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'), onReveal, onOpenVsCode, onRemove: removeRow, onNotice },
+            { path: vaultMenu.path, name: storage.vaultName(vaultMenu.path), isCurrent: vaultMenu.path === root, renamed: storage.vaultName(vaultMenu.path) !== basename(vaultMenu.path) },
+            {
+              onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
+              onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
+              onResetName: (path) => saveName(path, null),
+              onReveal,
+              onOpenVsCode,
+              onRemove: removeRow,
+              onNotice,
+            },
           )}
           onClose={closeVaultMenu}
         />
