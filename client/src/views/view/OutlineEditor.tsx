@@ -137,7 +137,12 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
       defaultValue: serializeOutline(seeded),
       features: outlineFeatures,
       onMarkdownUpdated: (md) => {
-        if (md === knownRef.current) return // an external apply's own emission: not the user's edit, never written back
+        // Back at what the caller already has — an external apply's own emission, or an undo to it
+        // inside the debounce: nothing to write, and an earlier pending edit is void (YAZ-2174).
+        if (md === knownRef.current) {
+          pending = null
+          return
+        }
         pending = md
         if (timer === null) timer = setTimeout(flush, DEBOUNCE_MS)
       },

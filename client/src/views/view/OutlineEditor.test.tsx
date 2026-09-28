@@ -130,6 +130,22 @@ describe('OutlineEditor (YAZ-901)', () => {
   })
 })
 
+describe('an undo back to the last reported document (YAZ-2174)', () => {
+  it('within the 500ms debounce writes nothing: the pre-undo text is never saved', async () => {
+    const onChange = vi.fn()
+    const host = await mount('- alpha\n', onChange)
+    press(host, 'Enter')
+    await waitFor(() => bullets(host).length === 2)
+    await tick(250) // past Crepe's 200ms listener: the Enter is pending, our 500ms timer is running
+    act(() => {
+      host.querySelector('.ProseMirror')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', metaKey: true, bubbles: true, cancelable: true }))
+    })
+    await waitFor(() => bullets(host).length === 1)
+    await tick(900)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
 describe('a later `markdown` lands as a diff over the live editor (YAZ-1356)', () => {
   it('shows the new bullet without remounting: same ProseMirror node, no re-seed', async () => {
     const host = await mount('- alpha\n- beta\n')
