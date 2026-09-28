@@ -124,7 +124,8 @@ export async function launch({ bin, profile }) {
   const port = await freePort()
   const spawnedAt = now()
   const child = spawn(bin, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--inspect=0', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'], {
-    env: { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile },
+    // YASEEN_DOCS_E2E=1: a guarded build leaves the machine's yaseendocs:// handler alone (v0.9.27 predates the guard).
+    env: { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile, YASEEN_DOCS_E2E: '1' },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   running.add(child.pid)
@@ -204,4 +205,19 @@ export async function launch({ bin, profile }) {
     return gone
   }
   return { pid: child.pid, spawnedAt, main, windows, quit }
+}
+
+const LSREGISTER = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+const HANDLER_OF_YASEENDOCS = `ObjC.import('AppKit'); $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString('yaseendocs://x')).path.js`
+export const INSTALLED_APP = '/Applications/Yaseen Docs.app'
+
+/**
+ * Teardown after a measurement session: launching a bundle registers it with LaunchServices, and a
+ * build without the E2E guard also claims `yaseendocs://` (same bundle id as the installed app).
+ * Unregisters every bundle the run launched and returns which app now answers `yaseendocs://`;
+ * anything but the installed app means the user's deep links are pointing at a test copy.
+ */
+export function releaseLaunchServices(bundles) {
+  for (const b of bundles) execFileSync(LSREGISTER, ['-u', b])
+  return execFileSync('osascript', ['-l', 'JavaScript', '-e', HANDLER_OF_YASEENDOCS]).toString().trim()
 }

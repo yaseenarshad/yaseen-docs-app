@@ -22,7 +22,8 @@ npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # A/B
 - **Load.** The 1-minute load average is recorded before every run. A scenario whose runs saw a load over half the cores is marked `noisy`, and its time and CPU metrics are listed as `loadSensitive` (sizes, counts and fds are not). Compare builds on an idle machine with the same `--runs`.
 - **Isolation.** Every launch passes `--user-data-dir=<work>/<scenario>/profile…` and sets `YASEEN_DOCS_USER_DATA_DIR` to the same path. Vaults are generated into `--work` (default `<tmpdir>/yaseen-docs-perf`), which must be under a temp root and empty or the harness's own, and is removed when the run ends. The harness signals only the PIDs it spawned: it quits through `app.quit()` (what ⌘Q calls) and SIGKILLs its own main and helpers if a quit hangs or the harness is interrupted (Ctrl-C). Before measuring anything, every launch checks that main's `userData` is the isolated profile.
 - **Instrumentation.** Main runs with `--inspect=0` (to read main's clock and call `app.quit()`) and Chromium with `--remote-debugging-port`, on both sides of an A/B alike.
-- Launching a packaged copy registers it with LaunchServices, and v0.9.27 calls `setAsDefaultProtocolClient('yaseendocs')` at start. Launch the installed app once afterwards to take `yaseendocs://` back.
+- **LaunchServices.** Every launch sets `YASEEN_DOCS_E2E=1`, so a guarded build leaves `yaseendocs://` alone; v0.9.27 predates the guard and claims it. So every run (and a Ctrl-C) ends by unregistering each bundle it launched (`lsregister -u`) and checking that `yaseendocs://` opens `/Applications/Yaseen Docs.app` again. The JSON records the answer as `yaseendocsHandler`, and anything else prints a warning.
+- **Machine load.** Timing runs only make sense on a quiet machine (1-minute load under ~10). Several agents share this Mac, so ask for a quiet window before a timing run.
 
 ## Scenarios
 
