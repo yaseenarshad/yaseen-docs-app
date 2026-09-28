@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, copyVault, expandDirs, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -163,6 +163,8 @@ test('step 2 — a frontmatter alias is its own row, labelled "Alias — Basenam
 
 test('step 3 — ⌘-click on a row opens a BACKGROUND tab; the active tab never moves', async () => {
   await reset(win)
+  // Since YAZ-1646 the launch no longer unfolds the restored tab's ancestors: open `roles/` by hand.
+  await expandDirs(win, [path.join(vault, 'roles')])
   await fileRow(win, 'CEO').click() // an active tab to leave alone
   await expect(activeTab(win)).toHaveText('CEO')
 
