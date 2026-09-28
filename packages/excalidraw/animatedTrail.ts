@@ -5,7 +5,7 @@ import {
   sceneCoordsToViewportCoords,
 } from "@excalidraw/common";
 
-import type { LaserPointerOptions } from "@excalidraw/laser-pointer";
+import type { LaserPointerOptions, Point } from "@excalidraw/laser-pointer";
 
 import { AnimationController } from "./renderer/animation";
 
@@ -25,14 +25,35 @@ export interface AnimatedTrailOptions {
   fill: (trail: AnimatedTrail) => string;
   stroke?: (trail: AnimatedTrail) => string;
   animateTrail?: boolean;
+  /**
+   * A static trail looks the same on every frame: it doesn't keep the
+   * animation loop running (it's redrawn on `redraw()` instead) and it isn't
+   * dropped when its outline is momentarily empty.
+   */
+  isStatic?: (trail: LaserPointer) => boolean;
+  /** called when the set of finished trails changes */
+  onTrailsChange?: () => void;
 }
+
+/** per-stroke overrides of the trail-wide options */
+export type TrailStrokeOptions = Partial<LaserPointerOptions> & {
+  fill?: string;
+};
 
 export class AnimatedTrail implements Trail {
   private currentTrail?: LaserPointer;
   private pastTrails: LaserPointer[] = [];
+  private trailFills = new WeakMap<LaserPointer, string>();
+  private staticOutlines = new WeakMap<
+    LaserPointer,
+    { size: number; outline: Point[] }
+  >();
 
   private container?: SVGSVGElement;
   private trailElement: SVGPathElement;
+  // one <path> per run of consecutive trails sharing a fill, so per-stroke
+  // fills keep their z-order (the first one is always `trailElement`)
+  private pathElements: SVGPathElement[];
   private trailAnimation?: SVGAnimateElement;
   private key: string;
 
@@ -45,6 +66,7 @@ export class AnimatedTrail implements Trail {
   ) {
     this.key = `animated-trail-${AnimatedTrail.counter++}`;
     this.trailElement = document.createElementNS(SVG_NS, "path");
+    this.pathElements = [this.trailElement];
     if (this.options.animateTrail) {
       this.trailAnimation = document.createElementNS(SVG_NS, "animate");
       // TODO: make this configurable
@@ -75,11 +97,19 @@ export class AnimatedTrail implements Trail {
   }
 
   private cleanup() {
+    const hadTrails = this.pastTrails.length > 0;
     this.pastTrails = [];
     this.currentTrail = undefined;
 
-    if (this.trailElement.parentNode === this.container) {
-      this.container?.removeChild(this.trailElement);
+    for (const element of this.pathElements) {
+      if (element.parentNode === this.container) {
+        this.container?.removeChild(element);
+      }
+    }
+    this.pathElements = [this.trailElement];
+
+    if (hadTrails) {
+      this.options.onTrailsChange?.();
     }
   }
 
@@ -94,12 +124,15 @@ export class AnimatedTrail implements Trail {
 
     if (!AnimationController.running(this.key)) {
       AnimationController.start(this.key, () => {
-        const needsNext = this.onFrame();
-        if (needsNext) {
+        const { visible, animating } = this.onFrame();
+        if (animating) {
           return { keep: true };
         }
 
-        this.cleanup();
+        // static trails stay on screen without keeping the loop running
+        if (!visible) {
+          this.cleanup();
+        }
 
         return null;
       });
@@ -111,8 +144,29 @@ export class AnimatedTrail implements Trail {
     this.cleanup();
   }
 
+  /** redraws the trails once (e.g. static ones after a viewport change) */
+  redraw() {
+    if (this.container && (this.currentTrail || this.pastTrails.length)) {
+      this.start();
+    }
+  }
+
+  private createTrail(strokeOptions?: TrailStrokeOptions) {
+    const { fill, ...options } = strokeOptions ?? {};
+    const trail = new LaserPointer({ ...this.options, ...options });
+    if (fill) {
+      this.trailFills.set(trail, fill);
+    }
+    return trail;
+  }
+
   startPath(x: number, y: number) {
-    this.currentTrail = new LaserPointer(this.options);
+    this.startStyledPath(x, y);
+  }
+
+  /** starts a path whose options (e.g. fill, size) override the trail's */
+  startStyledPath(x: number, y: number, strokeOptions?: TrailStrokeOptions) {
+    this.currentTrail = this.createTrail(strokeOptions);
 
     this.currentTrail.addPoint([x, y, performance.now()]);
 
@@ -133,17 +187,47 @@ export class AnimatedTrail implements Trail {
       this.pastTrails.push(this.currentTrail);
       this.currentTrail = undefined;
       this.update();
+      this.options.onTrailsChange?.();
     }
+  }
+
+  /** builds a finished trail from points, without adding it to this trail */
+  createFinishedTrail(points: Point[], strokeOptions?: TrailStrokeOptions) {
+    const trail = this.createTrail(strokeOptions);
+    for (const point of points) {
+      trail.addPoint(point);
+    }
+    trail.close();
+    trail.options.keepHead = false;
+    return trail;
+  }
+
+  getTrailFill(trail: LaserPointer) {
+    return this.trailFills.get(trail);
   }
 
   getCurrentTrail() {
     return this.currentTrail;
   }
 
+  getPastTrails(): readonly LaserPointer[] {
+    return this.pastTrails;
+  }
+
+  setPastTrails(trails: LaserPointer[]) {
+    this.pastTrails = trails;
+    this.update();
+    this.options.onTrailsChange?.();
+  }
+
   clearTrails() {
+    const hadTrails = this.pastTrails.length > 0;
     this.pastTrails = [];
     this.currentTrail = undefined;
     this.update();
+    if (hadTrails) {
+      this.options.onTrailsChange?.();
+    }
   }
 
   private update() {
@@ -155,63 +239,127 @@ export class AnimatedTrail implements Trail {
   }
 
   private onFrame() {
-    const paths: string[] = [];
+    const state = this.app.state;
+    const defaultFill = (this.options.fill ?? (() => "black"))(this);
+    const paths: { fill: string; path: string }[] = [];
+    const pastTrails: LaserPointer[] = [];
+    let animating = !!this.currentTrail;
 
     for (const trail of this.pastTrails) {
-      paths.push(this.drawTrail(trail, this.app.state));
+      const isStatic = !!this.options.isStatic?.(trail);
+      const outline = this.getStrokeOutline(trail, state, isStatic);
+
+      if (outline.length === 0 && !isStatic) {
+        continue;
+      }
+
+      pastTrails.push(trail);
+      animating = animating || !isStatic;
+      paths.push({
+        fill: this.trailFills.get(trail) ?? defaultFill,
+        path: this.drawTrail(outline, state),
+      });
     }
 
     if (this.currentTrail) {
-      const currentPath = this.drawTrail(this.currentTrail, this.app.state);
-      paths.push(currentPath);
+      paths.push({
+        fill: this.trailFills.get(this.currentTrail) ?? defaultFill,
+        path: this.drawTrail(
+          this.getStrokeOutline(this.currentTrail, state, false),
+          state,
+        ),
+      });
     }
 
-    this.pastTrails = this.pastTrails.filter(
-      (t) =>
-        t.getStrokeOutline(t.options.size / this.app.state.zoom.value)
-          .length !== 0,
-    );
+    const trailsChanged = pastTrails.length !== this.pastTrails.length;
+    this.pastTrails = pastTrails;
 
-    if (paths.length === 0) {
-      // Clean up the SVG path if there are no trails to render
-      this.trailElement.setAttribute("d", "");
+    this.render(paths);
 
-      return false;
+    if (trailsChanged) {
+      this.options.onTrailsChange?.();
     }
 
-    const svgPaths = paths.join(" ").trim();
-    this.trailElement.setAttribute("d", svgPaths);
-
-    if (this.trailAnimation) {
-      this.trailElement.setAttribute(
-        "fill",
-        (this.options.fill ?? (() => "black"))(this),
-      );
-      this.trailElement.setAttribute(
-        "stroke",
-        (this.options.stroke ?? (() => "black"))(this),
-      );
-    } else {
-      this.trailElement.setAttribute(
-        "fill",
-        (this.options.fill ?? (() => "black"))(this),
-      );
-    }
-
-    return true;
+    return { visible: paths.length > 0, animating };
   }
 
-  private drawTrail(trail: LaserPointer, state: AppState): string {
-    const _stroke = trail
-      .getStrokeOutline(trail.options.size / state.zoom.value)
-      .map(([x, y]) => {
-        const result = sceneCoordsToViewportCoords(
-          { sceneX: x, sceneY: y },
-          state,
-        );
+  private render(paths: { fill: string; path: string }[]) {
+    const runs: { fill: string; d: string }[] = [];
+    for (const { fill, path } of paths) {
+      const lastRun = runs[runs.length - 1];
+      if (lastRun && lastRun.fill === fill) {
+        lastRun.d += ` ${path}`;
+      } else {
+        runs.push({ fill, d: path });
+      }
+    }
 
-        return [result.x, result.y];
-      });
+    if (runs.length === 0) {
+      // Clean up the SVG path if there are no trails to render
+      this.trailElement.setAttribute("d", "");
+    }
+
+    runs.forEach((run, index) => {
+      let element = this.pathElements[index];
+      if (!element) {
+        element = document.createElementNS(SVG_NS, "path");
+        this.pathElements.push(element);
+      }
+
+      const previous = this.pathElements[index - 1];
+      if (
+        previous &&
+        this.container &&
+        (element.parentNode !== this.container ||
+          element.previousSibling !== previous)
+      ) {
+        this.container.insertBefore(element, previous.nextSibling);
+      }
+
+      element.setAttribute("d", run.d.trim());
+      element.setAttribute("fill", run.fill);
+      if (this.trailAnimation) {
+        element.setAttribute(
+          "stroke",
+          (this.options.stroke ?? (() => "black"))(this),
+        );
+      }
+    });
+
+    for (const element of this.pathElements.splice(Math.max(1, runs.length))) {
+      element.remove();
+    }
+  }
+
+  private getStrokeOutline(
+    trail: LaserPointer,
+    state: AppState,
+    isStatic: boolean,
+  ) {
+    const size = trail.options.size / state.zoom.value;
+
+    if (!isStatic) {
+      return trail.getStrokeOutline(size);
+    }
+
+    const cached = this.staticOutlines.get(trail);
+    if (cached?.size === size) {
+      return cached.outline;
+    }
+    const outline = trail.getStrokeOutline(size);
+    this.staticOutlines.set(trail, { size, outline });
+    return outline;
+  }
+
+  private drawTrail(outline: Point[], state: AppState): string {
+    const _stroke = outline.map(([x, y]) => {
+      const result = sceneCoordsToViewportCoords(
+        { sceneX: x, sceneY: y },
+        state,
+      );
+
+      return [result.x, result.y];
+    });
 
     const stroke = this.trailAnimation
       ? _stroke.slice(0, _stroke.length / 2)

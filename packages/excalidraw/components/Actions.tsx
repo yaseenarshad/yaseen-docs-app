@@ -53,6 +53,7 @@ import { useExcalidrawContainer } from "./App";
 import Stack from "./Stack";
 import { Tooltip } from "./Tooltip";
 import { PropertiesPopover } from "./PropertiesPopover";
+import { LaserToolbarSection } from "./LaserToolbarSection";
 import {
   sharpArrowIcon,
   roundArrowIcon,
@@ -388,6 +389,28 @@ export const ContextualPropertiesToolbar = ({
   const targetElements = getTargetElements(elementsMap, appState);
   const hasFullStylesPanel =
     deriveStylesPanelMode(app.editorInterface) === "full";
+  const isLaserTarget =
+    hasFullStylesPanel && appState.activeTool.type === "laser";
+
+  if (isLaserTarget) {
+    return appState.viewModeEnabled ? null : (
+      <Island
+        className="contextual-properties-toolbar"
+        padding={1}
+        data-prevent-outside-click
+        data-viewport-ui="top"
+        role="toolbar"
+        aria-label="Laser properties"
+      >
+        <LaserToolbarSection
+          app={app}
+          appState={appState}
+          renderAction={renderAction}
+        />
+      </Island>
+    );
+  }
+
   const isTextTarget =
     hasFullStylesPanel &&
     (appState.activeTool.type === "text" ||

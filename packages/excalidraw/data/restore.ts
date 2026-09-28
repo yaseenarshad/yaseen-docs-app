@@ -23,6 +23,9 @@ import {
   STROKE_WIDTH_KEYS,
   normalizeVectorStrokeWidth,
   WRITING_STROKE_WIDTH,
+  LASER_COLORS,
+  LASER_SIZES,
+  LASER_TRAIL_MODES,
   type StrokeWidthKey,
 } from "@excalidraw/common";
 import {
@@ -1177,6 +1180,19 @@ export const restoreAppState = (
       nextAppState.currentItemVectorStrokeWidth,
   );
   nextAppState.writingMode = nextAppState.writingMode === true;
+  if (!LASER_TRAIL_MODES.includes(nextAppState.laserTrailMode)) {
+    nextAppState.laserTrailMode = defaultAppState.laserTrailMode;
+  }
+  // presets only, like the host's canvas prefs guard
+  if (!(LASER_COLORS as readonly string[]).includes(nextAppState.laserColor)) {
+    nextAppState.laserColor = defaultAppState.laserColor;
+  }
+  if (
+    typeof nextAppState.laserSize !== "string" ||
+    !Object.prototype.hasOwnProperty.call(LASER_SIZES, nextAppState.laserSize)
+  ) {
+    nextAppState.laserSize = defaultAppState.laserSize;
+  }
   nextAppState.currentItemWritingStrokeWidth = normalizeVectorStrokeWidth(
     nextAppState.currentItemWritingStrokeWidth,
     WRITING_STROKE_WIDTH,

@@ -15,6 +15,7 @@ import {
   VECTOR_STROKE_WIDTH,
   WRITING_STROKE_WIDTH,
   ROUGHNESS,
+  LASER_COLORS,
   isTestEnv,
 } from "@excalidraw/common";
 
@@ -71,6 +72,9 @@ export const getDefaultAppState = (): Omit<
     penDetected: false,
     writingMode: false,
     currentItemWritingStrokeWidth: WRITING_STROKE_WIDTH.default,
+    laserTrailMode: "fade",
+    laserColor: LASER_COLORS[0],
+    laserSize: "S",
     errorMessage: null,
     exportBackground: true,
     exportScale: defaultExportScale,
@@ -216,6 +220,9 @@ const APP_STATE_STORAGE_CONF = (<
     export: false,
     server: false,
   },
+  laserTrailMode: { browser: true, export: false, server: false },
+  laserColor: { browser: true, export: false, server: false },
+  laserSize: { browser: true, export: false, server: false },
   errorMessage: { browser: false, export: false, server: false },
   exportBackground: { browser: true, export: false, server: false },
   exportEmbedScene: { browser: true, export: false, server: false },

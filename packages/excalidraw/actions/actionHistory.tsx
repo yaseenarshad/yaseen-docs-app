@@ -66,16 +66,26 @@ const executeHistoryAction = (
 
 type ActionCreator = (history: History) => Action;
 
+/** while the laser is active, undo/redo step the laser's own mark history */
+const isLaserActive = (appState: Readonly<Pick<AppState, "activeTool">>) =>
+  appState.activeTool.type === "laser";
+
 export const createUndoAction: ActionCreator = (history) => ({
   name: "undo",
   label: "buttons.undo",
   icon: UndoIcon,
   trackEvent: { category: "history" },
-  viewMode: false,
-  perform: (elements, appState, value, app) =>
-    executeHistoryAction(app, appState, () =>
+  // the laser's marks can be undone while presenting in view mode
+  viewMode: isLaserActive,
+  perform: (elements, appState, value, app) => {
+    if (isLaserActive(appState)) {
+      app.laserTrails.undo();
+      return { captureUpdate: CaptureUpdateAction.NEVER };
+    }
+    return executeHistoryAction(app, appState, () =>
       history.undo(arrayToMap(elements) as SceneElementsMap, appState),
-    ),
+    );
+  },
   keyTest: (event) =>
     event[KEYS.CTRL_OR_CMD] && matchKey(event, KEYS.Z) && !event.shiftKey,
   PanelComponent: ({ appState, updateData, data, app }) => {
@@ -86,6 +96,10 @@ export const createUndoAction: ActionCreator = (history) => ({
         history.isRedoStackEmpty,
       ),
     );
+    const laserHistory = useEmitter(
+      app.laserTrails.onChange,
+      app.laserTrails.getSnapshot(),
+    );
     const isMobile = useStylesPanelMode() === "mobile";
 
     return (
@@ -93,10 +107,13 @@ export const createUndoAction: ActionCreator = (history) => ({
         type="button"
         icon={UndoIcon}
         aria-label={t("buttons.undo")}
+        title={data?.title}
         onClick={updateData}
         size={data?.size || "medium"}
-        disabled={isUndoStackEmpty}
-        data-testid="button-undo"
+        disabled={
+          isLaserActive(appState) ? !laserHistory.canUndo : isUndoStackEmpty
+        }
+        data-testid={data?.testId ?? "button-undo"}
         style={{
           ...(isMobile ? MOBILE_ACTION_BUTTON_BG : {}),
         }}
@@ -110,11 +127,16 @@ export const createRedoAction: ActionCreator = (history) => ({
   label: "buttons.redo",
   icon: RedoIcon,
   trackEvent: { category: "history" },
-  viewMode: false,
-  perform: (elements, appState, __, app) =>
-    executeHistoryAction(app, appState, () =>
+  viewMode: isLaserActive,
+  perform: (elements, appState, __, app) => {
+    if (isLaserActive(appState)) {
+      app.laserTrails.redo();
+      return { captureUpdate: CaptureUpdateAction.NEVER };
+    }
+    return executeHistoryAction(app, appState, () =>
       history.redo(arrayToMap(elements) as SceneElementsMap, appState),
-    ),
+    );
+  },
   keyTest: (event) =>
     (event[KEYS.CTRL_OR_CMD] && event.shiftKey && matchKey(event, KEYS.Z)) ||
     (event[KEYS.CTRL_OR_CMD] && !event.shiftKey && matchKey(event, KEYS.Y)),
@@ -126,6 +148,10 @@ export const createRedoAction: ActionCreator = (history) => ({
         history.isRedoStackEmpty,
       ),
     );
+    const laserHistory = useEmitter(
+      app.laserTrails.onChange,
+      app.laserTrails.getSnapshot(),
+    );
     const isMobile = useStylesPanelMode() === "mobile";
 
     return (
@@ -133,10 +159,13 @@ export const createRedoAction: ActionCreator = (history) => ({
         type="button"
         icon={RedoIcon}
         aria-label={t("buttons.redo")}
+        title={data?.title}
         onClick={updateData}
         size={data?.size || "medium"}
-        disabled={isRedoStackEmpty}
-        data-testid="button-redo"
+        disabled={
+          isLaserActive(appState) ? !laserHistory.canRedo : isRedoStackEmpty
+        }
+        data-testid={data?.testId ?? "button-redo"}
         style={{
           ...(isMobile ? MOBILE_ACTION_BUTTON_BG : {}),
         }}

@@ -5,6 +5,8 @@ import type {
   MIME_TYPES,
   EditorInterface,
   StrokeWidthKey,
+  LaserTrailMode,
+  LaserSize,
 } from "@excalidraw/common";
 
 import type { LinearElementEditor } from "@excalidraw/element";
@@ -431,6 +433,11 @@ export interface AppState {
   penDetected: boolean;
   writingMode: boolean;
   currentItemWritingStrokeWidth: number;
+
+  // laser pointer
+  laserTrailMode: LaserTrailMode;
+  laserColor: string;
+  laserSize: LaserSize;
 
   exportBackground: boolean;
   exportEmbedScene: boolean;
@@ -1134,6 +1141,8 @@ export type AppClassProperties = {
   dismissLinearEditor: App["dismissLinearEditor"];
   flowchart: App["flowchart"];
   drawShape: App["drawShape"];
+  laserTrails: App["laserTrails"];
+  makeLaserMarksPermanent: App["makeLaserMarksPermanent"];
   cursor: App["cursor"];
   isToolLocked: App["isToolLocked"];
   getEffectiveGridSize: App["getEffectiveGridSize"];

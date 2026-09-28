@@ -1186,7 +1186,7 @@ const VARIABLE_WIDTH_FREEDRAW = {
   SMOOTHING: 0.5,
 } as const;
 
-const CONSTANT_WIDTH_FREEDRAW = {
+export const CONSTANT_WIDTH_FREEDRAW = {
   /** Stroke size relative to `strokeWidth` for uniform (laser) strokes. */
   SIZE_FACTOR: 1.4,
 } as const;

@@ -24,6 +24,19 @@ export const ELEMENT_TRANSLATE_AMOUNT = 1;
 export const TEXT_TO_CENTER_SNAP_THRESHOLD = 30;
 export const SHIFT_LOCKING_ANGLE = Math.PI / 12;
 export const DEFAULT_LASER_COLOR = "red";
+export const LASER_HOLD_MS = 5000;
+export const LASER_TRAIL_MODES = ["fade", "hold", "sticky"] as const;
+export type LaserTrailMode = typeof LASER_TRAIL_MODES[number];
+// red, yellow, green, blue, purple
+export const LASER_COLORS = [
+  "#ff0000",
+  "#ffd400",
+  "#00c853",
+  "#2979ff",
+  "#d500f9",
+] as const;
+export const LASER_SIZES = { S: 2, M: 3.5, L: 5 } as const;
+export type LaserSize = keyof typeof LASER_SIZES;
 export const CURSOR_TYPE = {
   TEXT: "text",
   CROSSHAIR: "crosshair",
