@@ -1,9 +1,17 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { writeFileSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TreeNode } from '@shared/types'
+import { buildTree } from './fsUtils'
 import { tree } from './tree'
 import { failure, makeFixture } from './testFixture'
+
+// A pass-through spy: the single-flight tests count real walks.
+vi.mock('./fsUtils', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./fsUtils')>()
+  return { ...m, buildTree: vi.fn(m.buildTree) }
+})
 
 let root: string
 let cleanup: () => Promise<void>
@@ -109,3 +117,39 @@ const files = (body: Awaited<ReturnType<typeof tree>>): FileNode[] => {
   const collect = (nodes: TreeNode[]): FileNode[] => nodes.flatMap((node) => (node.type === 'dir' ? collect(node.children) : [node]))
   return collect(body.tree)
 }
+
+describe('tree: one walk per root at a time (YAZ-2191)', () => {
+  const walks = () => vi.mocked(buildTree).mock.calls.filter(([dir]) => dir === root).length
+
+  it('N callers during a walk share ONE trailing walk, whose answer post-dates their request', async () => {
+    vi.mocked(buildTree).mockClear()
+    const first = tree(root)
+    const late = path.join(root, 'arrived-mid-walk.md')
+    writeFileSync(late, 'x') // the change behind the calls below, landing after the first walk began
+    try {
+      const joiners = Array.from({ length: 10 }, () => tree(root))
+      const answers = await Promise.all([first, ...joiners])
+      expect(walks()).toBe(2)
+      expect(answers[1]).not.toBe(answers[0]) // never the running walk's answer
+      for (const a of answers.slice(1)) expect(a).toBe(answers[1]) // one shared answer
+      expect(flatten(answers[1].tree)).toContain(late)
+    } finally {
+      await rm(late)
+    }
+  })
+
+  it('a call after the flight settles walks again: nothing is cached', async () => {
+    await tree(root)
+    vi.mocked(buildTree).mockClear()
+    await tree(root)
+    expect(walks()).toBe(1)
+  })
+
+  it('a failed walk rejects its callers and leaves the next call free to walk', async () => {
+    const missing = path.join(root, 'gone')
+    const [a, b] = await Promise.allSettled([tree(missing), tree(missing)])
+    expect([a.status, b.status]).toEqual(['rejected', 'rejected'])
+    expect((await failure(tree(missing))).code).toBe('NOT_FOUND')
+    expect((await tree(root)).root).toBe(root)
+  })
+})
