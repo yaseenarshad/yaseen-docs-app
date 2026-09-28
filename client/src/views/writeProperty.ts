@@ -9,9 +9,10 @@ export interface PropertyWrite {
 }
 
 /**
- * Whole-file transforms still in flight. Most callers fire and forget (a property tick, a comment,
- * a column width), and one is two IPC round trips, so the close/quit handshake awaits these
- * (YAZ-2174): a window destroyed between the read and the write would never issue the write.
+ * Whole-file writes still in flight: every `transformFile`, and the properties panel's raw-YAML
+ * Save. Most callers fire and forget (a property tick, a comment, a column width), and one is two
+ * IPC round trips, so the close/quit handshake awaits these (YAZ-2174): a window destroyed between
+ * the read and the write would never issue the write.
  */
 const inflight = new Set<Promise<unknown>>()
 
@@ -27,13 +28,17 @@ export async function settleFileWrites(): Promise<void> {
  * read when the transform was a no-op — so a caller can adopt exactly what landed (YAZ-1472).
  */
 export function transformFile(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
-  const run = runTransform(path, transform)
-  inflight.add(run)
-  void run.then(
-    () => inflight.delete(run),
-    () => inflight.delete(run),
+  return trackFileWrite(runTransform(path, transform))
+}
+
+/** Puts `write` in the set `settleFileWrites` awaits until it settles; returns it unchanged. */
+export function trackFileWrite<T>(write: Promise<T>): Promise<T> {
+  inflight.add(write)
+  void write.then(
+    () => inflight.delete(write),
+    () => inflight.delete(write),
   )
-  return run
+  return write
 }
 
 async function runTransform(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {

@@ -14,6 +14,7 @@ import { FrontmatterPanel, type FrontmatterPanelProps } from './FrontmatterPanel
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { TEST_RECORDS } from '../views/testRecords'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { settleFileWrites } from '../views/writeProperty'
 
 vi.mock('../api', async (importOriginal) => {
   const { propertiesStub } = await import('../views/propertiesStub')
@@ -249,6 +250,25 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
     expect(btn(el, 'Save')).toBeNull()
     expect(area(el)?.value).toBe(INTERIOR.replace('status: draft', 'status: done'))
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
+  })
+
+  it('a Save in flight joins the close/quit flush: the flush settles only once its write has landed (YAZ-2174)', async () => {
+    readFile.mockResolvedValue(fileOf(MESSY))
+    let land!: () => void
+    writeFile.mockImplementationOnce(() => new Promise((r) => (land = () => r({ path: PATH, mtime: 200, size: 10 }))))
+    const el = mount(MESSY)
+    expandRaw(el)
+    typeInto(el, INTERIOR.replace('status: draft', 'status: done'))
+    click(btn(el, 'Save'))
+    let flushed = false
+    const flush = settleFileWrites().then(() => (flushed = true))
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalledOnce())
+    expect(flushed).toBe(false)
+    await act(async () => {
+      land()
+      await flush
+    })
+    expect(flushed).toBe(true)
   })
 
   it('invalid YAML blocks the write and says so inline', async () => {
