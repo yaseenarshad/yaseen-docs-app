@@ -9,6 +9,7 @@ import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { registerAgentIpc } from './ipc/agent'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { claimDeepLinkScheme } from './deepLinkScheme'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
@@ -41,8 +42,7 @@ app.on('second-instance', (_event, argv) => {
   win.focus()
 })
 
-// Deep links (E1, GRO-2171): the packaged bundle's `protocols` Info.plist entry is F1's job.
-app.setAsDefaultProtocolClient('yaseendocs')
+claimDeepLinkScheme(app, process.env)
 
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
