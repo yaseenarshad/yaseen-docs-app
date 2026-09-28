@@ -28,7 +28,8 @@ import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from './fsUtils'
  *
  * `shell.trashItem` is a MOVE at the filesystem layer, so the shared watcher emits a normal
  * `unlink` (files) or `unlinkDir` + one `unlink` per descendant (folders) — verified against
- * the app's own chokidar options in the GRO-2275 scope pass. The tree and the vault index
+ * the app's then-chokidar options in the GRO-2275 scope pass, and pinned for every engine by
+ * `watchConformance.ts` (YAZ-2192). The tree and the vault index
  * therefore heal themselves and need no push, exactly as rename relies on.
  */
 export async function removeEntry(req: unknown): Promise<DeleteResponse> {
