@@ -20,6 +20,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claimWorkDir } from './lib/work.mjs'
+import { killLaunched } from './lib/app.mjs'
 import { abba, loadSensitive, summarizeRuns } from './lib/stats.mjs'
 import * as launch from './scenarios/launch.mjs'
 import * as openBig from './scenarios/open-big.mjs'
@@ -54,6 +55,13 @@ for (const { bin } of apps) {
 const out = path.resolve(opt('out', path.join(os.tmpdir(), `yaseen-docs-perf-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)))
 const work = claimWorkDir(path.resolve(opt('work', path.join(os.tmpdir(), 'yaseen-docs-perf'))))
 const load1 = () => Math.round(os.loadavg()[0] * 10) / 10
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    killLaunched()
+    work.remove()
+    process.exit(130)
+  })
+}
 
 const report = { app: bundles[0], ...(bundles[1] && { vs: bundles[1] }), machine: { cpu: os.cpus()[0].model, cores: os.cpus().length, os: `${os.type()} ${os.release()}` }, runs, warmupDiscarded: 1, scenarios: {} }
 try {

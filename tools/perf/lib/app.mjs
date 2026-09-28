@@ -72,6 +72,22 @@ async function attach(wsUrl) {
   return { ev, waitFor, mouse, type, close: () => ws.close() }
 }
 
+/** Every app main this module started and has not seen exit. */
+const running = new Set()
+
+/** SIGKILLs every app this process launched that is still running, and its helpers: for a harness interrupted mid-run. */
+export function killLaunched() {
+  for (const pid of running) {
+    for (const p of [...helpers(pid).map((h) => h.pid), pid]) {
+      try {
+        process.kill(p, 'SIGKILL')
+      } catch {
+        // already gone
+      }
+    }
+  }
+}
+
 /** Helper processes (renderer, gpu-process, utility) of `pid`, by Chromium `--type`. */
 export function helpers(pid) {
   return execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='])
@@ -111,7 +127,13 @@ export async function launch({ bin, profile }) {
     env: { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
-  const exited = new Promise((r) => child.once('exit', () => r(now())))
+  running.add(child.pid)
+  const exited = new Promise((r) =>
+    child.once('exit', () => {
+      running.delete(child.pid)
+      r(now())
+    }),
+  )
   // stderr is drained for the whole session (a full pipe would block the app); the first thing main prints is its inspector URL.
   const mainWs = new Promise((resolve, reject) => {
     let err = ''
@@ -133,28 +155,28 @@ export async function launch({ bin, profile }) {
 
   /**
    * Sessions on the app's window pages (`app://yaseen/…?win=<id>`, `.win` = the id) once `count` exist.
-   * First proves main is on the isolated profile: a run that would touch the real one stops here.
+   * Then proves main is on the isolated profile: a run that would touch the real one stops here.
    */
   const windows = async (count = 1, timeoutMs = 30_000) => {
+    const end = performance.now() + timeoutMs
+    let list = []
+    while (list.length < count) {
+      if (performance.now() > end) throw new Error(`fewer than ${count} app windows within ${timeoutMs} ms`)
+      await sleep(10)
+      list = await fetch(`http://127.0.0.1:${port}/json/list`)
+        .then((r) => r.json())
+        .then((all) => all.filter((t) => t.type === 'page' && t.url.startsWith('app://yaseen/')))
+        .catch(() => []) // the DevTools endpoint is not listening yet
+    }
     const userData = await (await main()).ev(`process.mainModule.require('electron').app.getPath('userData')`)
     if (realpathSync(userData) !== realpathSync(profile)) throw new Error(`main is on ${userData}, not the isolated profile ${profile}`)
-    const end = performance.now() + timeoutMs
-    while (performance.now() < end) {
-      try {
-        const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).filter((t) => t.type === 'page' && t.url.startsWith('app://yaseen/'))
-        if (list.length >= count) return await Promise.all(list.map(async (t) => Object.assign(await attach(t.webSocketDebuggerUrl), { win: new URL(t.url).searchParams.get('win') })))
-      } catch {
-        // the DevTools endpoint is not listening yet
-      }
-      await sleep(10)
-    }
-    throw new Error(`fewer than ${count} app windows within ${timeoutMs} ms`)
+    return Promise.all(list.map(async (t) => Object.assign(await attach(t.webSocketDebuggerUrl), { win: new URL(t.url).searchParams.get('win') })))
   }
 
   /**
    * Quits the way ⌘Q does (`app.quit()` → before-quit → flush) and resolves to the epoch ms the
-   * process was gone. A quit that hangs (a frozen renderer) is SIGKILLed after 10 s, together with
-   * the helpers this launch spawned, so nothing of ours is left running.
+   * process was gone, or null when a hung quit (a frozen renderer) had to be SIGKILLed after 10 s.
+   * Either way the helpers this launch spawned are gone too, so nothing of ours is left running.
    */
   const quit = async () => {
     const kids = helpers(child.pid).map((h) => h.pid)
@@ -165,9 +187,13 @@ export async function launch({ bin, profile }) {
     } catch {
       child.kill('SIGTERM')
     }
-    const gone = await Promise.race([exited, sleep(10_000)])
-    if (gone !== undefined) return gone
-    child.kill('SIGKILL')
+    let gone = await Promise.race([exited, sleep(10_000)])
+    if (gone === undefined) {
+      child.kill('SIGKILL')
+      await exited
+      gone = null
+    }
+    // A main stopped early (or killed) can leave a helper behind, reparented to launchd.
     for (const pid of kids) {
       try {
         process.kill(pid, 'SIGKILL')
@@ -175,8 +201,7 @@ export async function launch({ bin, profile }) {
         // already gone
       }
     }
-    await exited
-    return null
+    return gone
   }
   return { pid: child.pid, spawnedAt, main, windows, quit }
 }
