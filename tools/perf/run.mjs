@@ -20,7 +20,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claimWorkDir } from './lib/work.mjs'
-import { killLaunched } from './lib/app.mjs'
+import { INSTALLED_APP, killLaunched, releaseLaunchServices } from './lib/app.mjs'
 import { abba, loadSensitive, summarizeRuns } from './lib/stats.mjs'
 import * as launch from './scenarios/launch.mjs'
 import * as openBig from './scenarios/open-big.mjs'
@@ -55,10 +55,17 @@ for (const { bin } of apps) {
 const out = path.resolve(opt('out', path.join(os.tmpdir(), `yaseen-docs-perf-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)))
 const work = claimWorkDir(path.resolve(opt('work', path.join(os.tmpdir(), 'yaseen-docs-perf'))))
 const load1 = () => Math.round(os.loadavg()[0] * 10) / 10
+/** Leaves the machine as it was: nothing of ours running, the work dir gone, `yaseendocs://` back on the installed app. */
+function teardown() {
+  killLaunched()
+  work.remove()
+  const handler = releaseLaunchServices(bundles)
+  if (handler !== INSTALLED_APP) console.error(`WARNING: yaseendocs:// now opens ${handler}, not ${INSTALLED_APP}. Launch the installed app once to take it back.`)
+  return handler
+}
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
-    killLaunched()
-    work.remove()
+    teardown()
     process.exit(130)
   })
 }
@@ -88,7 +95,7 @@ try {
     }
   }
 } finally {
-  work.remove()
+  report.yaseendocsHandler = teardown()
 }
 fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`)
 
