@@ -956,9 +956,8 @@ button {
 
 /* ---------- sidebar ---------- */
 
-/* --side-w is stamped on .app from AppState.sidebarWidth (YAZ-738). */
+/* The width is set on .sidebar itself from AppState.sidebarWidth (YAZ-738, YAZ-2194). */
 .sidebar {
-  width: var(--side-w);
   flex: none;
   display: flex;
   flex-direction: column;

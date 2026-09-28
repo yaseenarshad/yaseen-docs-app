@@ -17,6 +17,16 @@ import { EMPTY_SELECTION } from '../lib/selection'
 // how a test hands the Sidebar a focus restored from an earlier session (YAZ-1605).
 import { storage } from '../lib/storage'
 
+/**
+ * File-row render counter (YAZ-2194): every file row renders its label through `stripExt`, so the
+ * REAL function behind a counting wrapper tells which rows a change re-rendered.
+ */
+const labelRenders = vi.hoisted(() => ({ names: [] as string[] }))
+vi.mock('../lib/paths', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/paths')>()
+  return { ...real, stripExt: (name: string) => (labelRenders.names.push(name), real.stripExt(name)) }
+})
+
 // Forward uses the one-key writer; reverse uses its shared whole-file transform because the
 // migrated outline and flag must change atomically (YAZ-1022).
 vi.mock('../views/writeProperty', () => ({ transformFile: vi.fn(), writeProperty: vi.fn() }))
@@ -96,6 +106,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
   root = createRoot(el)
   const props: SidebarProps = {
     root: '/v',
+    width: 260,
     activeFile: null,
     watch: { subscribe: () => () => undefined },
     onOpenFile: vi.fn(),
@@ -3648,5 +3659,45 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     shiftClickRow(rowByPath(el, '/v/c.md'))
     act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
+  })
+})
+
+describe('the tree re-renders only the rows a change touches (YAZ-2194)', () => {
+  const NESTED: TreeNode[] = [
+    { type: 'dir', name: 'A', path: '/v/A', children: ['a1.md', 'a2.md', 'a3.md'].map((name) => ({ type: 'file' as const, name, path: `/v/A/${name}`, size: 1, mtime: 1, kind: 'markdown' as const })) },
+    { type: 'dir', name: 'B', path: '/v/B', children: ['b1.md', 'b2.md'].map((name) => ({ type: 'file' as const, name, path: `/v/B/${name}`, size: 1, mtime: 1, kind: 'markdown' as const })) },
+    { type: 'file', name: 'r.md', path: '/v/r.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const mountNested = async () => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/A', '/v/B'])
+    const mounted = await mount({ activeFile: '/v/A/a1.md' }, (bridge) => bridge.tree.mockResolvedValue({ root: '/v', tree: NESTED, generatedAt: 1 }))
+    expect(mounted.el.querySelectorAll('.tree__row--file')).toHaveLength(6)
+    labelRenders.names = []
+    return mounted
+  }
+  const rendered = () => [...new Set(labelRenders.names)].sort()
+
+  it('collapsing a folder re-renders its parent level only — never the sibling folder\'s rows', async () => {
+    const { el } = await mountNested()
+    const b = [...el.querySelectorAll<HTMLButtonElement>('.tree__row--dir')].find((row) => row.dataset.path === '/v/B')!
+    await act(async () => b.click())
+    expect(el.querySelectorAll('.tree__row--file')).toHaveLength(4)
+    expect(rendered()).toEqual(['r.md'])
+  })
+
+  it('a tab switch re-renders the levels holding the old and the new active file only', async () => {
+    const { rerender } = await mountNested()
+    await rerender({ activeFile: '/v/B/b1.md' })
+    expect(rendered()).toEqual(['a1.md', 'a2.md', 'a3.md', 'b1.md', 'b2.md', 'r.md'])
+    labelRenders.names = []
+    await rerender({ activeFile: '/v/B/b2.md' })
+    expect(rendered()).toEqual(['b1.md', 'b2.md', 'r.md'])
+  })
+
+  it('a sidebar resize re-renders no row at all', async () => {
+    const { el, rerender } = await mountNested()
+    await rerender({ width: 300 })
+    expect(el.querySelector<HTMLElement>('.sidebar')?.style.width).toBe('300px')
+    expect(rendered()).toEqual([])
   })
 })
