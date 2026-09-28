@@ -31,6 +31,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   focusPaths: null,
   favoritePaths: null,
   favoriteIsOn: false,
+  lens: 'files',
+  leaveSearchTo: null,
   clip: null,
   ...over,
 })

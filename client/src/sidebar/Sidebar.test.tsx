@@ -1104,10 +1104,122 @@ describe('search results (YAZ-803)', () => {
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
   })
 
-  it('right-clicking the results offers no menu — "New note" there would have no target', async () => {
+  it('right-clicking blank space in the results offers no menu — not even the OS one (YAZ-803, YAZ-2050)', async () => {
     const { el } = await search('a')
-    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    let reached = true
+    act(() => void (reached = el.querySelector('.sidebar__body')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))))
+    expect(reached).toBe(false) // default-prevented: Electron's Cut/Copy/Paste menu never opens
     expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+/**
+ * A search row's right-click (YAZ-2050): the SAME menu its tree row gets. 🔒 D1: it follows the
+ * FILES rules on every tab — a search row is a disk row. 🔒 D2: the items that draw INTO the tree
+ * (Rename, the New group, Focus) leave the search through the folder-row door (`onRevealInFiles`,
+ * YAZ-1491 D3) and then act; everything else acts in place and the query stays.
+ */
+describe('search-row context menu (YAZ-2050)', () => {
+  /** `a` is the tree's own `/v/a.md`, so its row exists once the search is left. */
+  const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const search = async (query: string, over: Partial<SidebarProps> = {}) => {
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], generatedAt: 1 } as never))
+    const input = searchInput(m.el)!
+    await type(input, query)
+    return { ...m, input }
+  }
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const closeMenu = (el: HTMLElement) => act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  const labels = (el: HTMLElement) => menuItems(el).map((b) => b.textContent)
+  const result = (el: HTMLElement, dir = false) => el.querySelector(`.search-results__row${dir ? '--dir' : ':not(.search-results__row--dir)'}`)
+  /** What App does with `onRevealInFiles`: flip to Files and issue the reveal the Sidebar consumes. */
+  const appReveals = (rerender: (next: Partial<SidebarProps>) => Promise<void>, path: string) =>
+    rerender({ lens: 'files', revealRequest: { id: 1, path, lens: 'files' } })
+
+  /** Drop the current mount so the next `mount` in the same test starts clean. */
+  const unmountNow = () => {
+    act(() => root?.unmount())
+    container?.remove()
+  }
+  /** The tree row's menu, read off a fresh mount — the reference every search-row menu must equal. */
+  const treeMenu = async (selector: string) => {
+    const { el } = await mount()
+    rightClick(el.querySelector(selector))
+    const out = labels(el)
+    unmountNow()
+    return out
+  }
+
+  it('a FILE result opens the file row\'s menu, not the OS edit menu', async () => {
+    const expected = await treeMenu('.tree__row--file')
+    const { el } = await search('a')
+    let reached = true
+    act(() => void (reached = result(el)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))))
+    expect(reached).toBe(false)
+    expect(labels(el)).toEqual(expected)
+  })
+
+  it('a FOLDER result opens the folder row\'s menu', async () => {
+    const expected = await treeMenu('.tree__row--dir')
+    const { el } = await search('sub')
+    rightClick(result(el, true))
+    expect(labels(el)).toEqual(expected)
+    expect(labels(el)).toContain('Focus on folder')
+  })
+
+  it('follows the FILES rules on the Topics tab too (🔒 D1): Paste, New folder, "Focus on folder"', async () => {
+    const files = await search('a')
+    rightClick(result(files.el))
+    const expected = labels(files.el)
+    unmountNow()
+    const topics = await search('a', { lens: 'topics' })
+    rightClick(result(topics.el))
+    expect(labels(topics.el)).toEqual(expected)
+    expect(labels(topics.el)).toEqual(expect.arrayContaining(['Paste', 'New folder']))
+    closeMenu(topics.el)
+    await type(topics.input, 'sub')
+    rightClick(result(topics.el, true))
+    expect(itemByLabel(topics.el, 'Focus on folder')).toBeDefined()
+  })
+
+  it('Rename leaves the search, then the inline input mounts on the row (🔒 D2)', async () => {
+    const { el, input, props, rerender } = await search('a')
+    rightClick(result(el))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    await appReveals(rerender, '/v/a.md')
+    expect(input.value).toBe('')
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('a')
+  })
+
+  it('New note leaves the search, then the create input mounts in the row\'s folder (🔒 D2)', async () => {
+    const { el, props, rerender } = await search('sub')
+    rightClick(result(el, true))
+    act(() => itemByLabel(el, 'New note')?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    await appReveals(rerender, '/v/sub')
+    expect(el.querySelector('.create-inline__input')).not.toBeNull()
+  })
+
+  it('Focus from the Topics tab lands focused in FILES (🔒 D1 + D2)', async () => {
+    const { el, props, rerender } = await search('sub', { lens: 'topics' })
+    rightClick(result(el, true))
+    await act(async () => itemByLabel(el, 'Focus on folder')?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    await appReveals(rerender, '/v/sub')
+    const top = [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
+    expect(top).toEqual(['sub'])
+    expect(el.querySelector('.sidebar__focus-off')).not.toBeNull()
+  })
+
+  it('items that need no tree act in place and keep the search (🔒 D2)', async () => {
+    const { el, input, props, bridge } = await search('a')
+    rightClick(result(el))
+    await clickSubAsync(el, 'Reveal in Finder')
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
+    expect(input.value).toBe('a')
+    expect(el.querySelector('.search-results')).not.toBeNull()
   })
 })
 
