@@ -16,6 +16,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import { flushWindow } from './lib/windowFlush'
 import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
 interface SidebarStubProps {
@@ -315,6 +316,13 @@ describe('App per-window sidebar visibility (YAZ-1280)', () => {
  * the listener and reads the selection through the `selectionRef` window the (here mocked)
  * Sidebar maintains; with no rows in the DOM the copy falls back to the set's own order.
  */
+describe('App close/quit handshake (YAZ-2174)', () => {
+  it('hands the window flush to the bridge, so the writers below App join the handshake', async () => {
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    expect(bridge.window.onFlush).toHaveBeenCalledWith(flushWindow)
+  })
+})
+
 describe('App ⌘⇧C copy path (YAZ-1338)', () => {
   function installClipboard() {
     const writeText = vi.fn(async () => undefined)
