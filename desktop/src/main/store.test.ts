@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_TOPICS_EXPANDED_PAGES, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_TOPICS_EXPANDED_PAGES, MAX_VAULT_NAME, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultName, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -47,6 +47,20 @@ describe('addRecentRoot', () => {
   })
 })
 
+describe('cleanVaultName (YAZ-1974 D3)', () => {
+  it('trims and caps a name; empty, whitespace or a non-string is null (= the folder name)', () => {
+    expect(cleanVaultName('  Business Wiki  ')).toBe('Business Wiki')
+    expect(cleanVaultName('🚀 Launch')).toBe('🚀 Launch')
+    expect(cleanVaultName('x'.repeat(100))).toBe('x'.repeat(MAX_VAULT_NAME))
+    expect(cleanVaultName('🚀'.repeat(100))).toBe('🚀'.repeat(MAX_VAULT_NAME))
+    expect(cleanVaultName('')).toBeNull()
+    expect(cleanVaultName('   ')).toBeNull()
+    expect(cleanVaultName(5)).toBeNull()
+    expect(cleanVaultName(null)).toBeNull()
+    expect(cleanVaultName(undefined)).toBeNull()
+  })
+})
+
 describe('createStore: loading', () => {
   it('a missing file yields the defaults and creates nothing until the first change', () => {
     const store = createStore(file)
@@ -61,10 +75,10 @@ describe('createStore: loading', () => {
       sidebarWidth: 320,
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'files' })],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'], name: null } },
     }
     await seed(state)
-    expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], topicsExpanded: [] } } })
+    expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], topicsExpanded: [], name: null } } })
   })
 
   it('settings fall back field by field (partial shapes, junk types, width/colour ranges)', async () => {
@@ -317,12 +331,12 @@ describe('createStore: loading', () => {
       }),
     )
     const { folders } = createStore(file).get()
-    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, topicsExpanded: [] })
+    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, topicsExpanded: [], name: null })
     expect(folders['/b']).toBeUndefined()
     expect(folders['/c'].expanded).toEqual([]) // a session list: the file's value is ignored (YAZ-1642)
     expect(folders['/c'].lastFile).toBe('/c/a.md')
     expect(folders['/c'].folds['/c/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
-    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     await seed(valid({ folders: [] }))
     expect(createStore(file).get().folders).toEqual({})
   })
@@ -339,7 +353,7 @@ describe('createStore: loading', () => {
     )
     const { folders } = createStore(file).get()
     expect(folders['/a'].baseGroups).toEqual({ '/a/x.md::T': ['v:idea'] })
-    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     expect(folders['/c'].baseGroups['/c/x.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
 
@@ -368,7 +382,7 @@ describe('createStore: loading', () => {
     )
     const store = createStore(file)
     // No migration: the vault bucket could not say WHICH window was focused, so every window starts unfocused.
-    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     expect(store.get().windows[0]).toMatchObject({ focusDirs: [], focusTopics: [], focusFavorites: [] })
     store.setSidebarWidth(321)
     await store.flush()
@@ -463,13 +477,27 @@ describe('createStore: mutations', () => {
   it('setFolder creates the entry with defaults, merges the patch and ignores unknown keys', () => {
     const store = createStore(file)
     store.setFolder('/r1', { expanded: ['/r1/a'] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     store.setFolder('/r1', { lastFile: '/r1/a/x.md' })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     store.setFolder('/r1', { lastFile: null, folds: { '/r1/a.md': ['k'] } } as never)
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     store.setFolder('/r2', {})
-    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
+  })
+
+  it('setFolder cleans the display name, other patches leave it alone, and removeRecent keeps it (YAZ-1974 D3)', () => {
+    const store = createStore(file)
+    store.pushRecent('/v', 1)
+    store.setFolder('/v', { name: '  Business Wiki  ' })
+    expect(store.get().folders['/v'].name).toBe('Business Wiki')
+    store.setFolder('/v', { lastFile: '/v/a.md' })
+    store.removeRecent('/v') // forgets the MRU entry only — folders are not pruned with recents
+    expect(store.get().folders['/v'].name).toBe('Business Wiki')
+    store.setFolder('/v', { name: 'x'.repeat(MAX_VAULT_NAME + 20) })
+    expect(store.get().folders['/v'].name).toHaveLength(MAX_VAULT_NAME)
+    store.setFolder('/v', { name: '   ' })
+    expect(store.get().folders['/v'].name).toBeNull()
   })
 
   it('two windows on one root hold independent focusDirs / focusTopics — upsertWindow on one leaves the other untouched (YAZ-1628)', () => {
@@ -492,7 +520,7 @@ describe('createStore: mutations', () => {
     store.setFolder('/r1', { expanded: ['/r1/dir'] })
     expect(store.get().folders['/r1'].topicsExpanded).toEqual(['/r1/Metrics.md', '/r1/Home.md']) // the other fields survive
     store.setFolder('/r1', { topicsExpanded: [] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/dir'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/dir'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     store.setFolder('/r2', { topicsExpanded: Array.from({ length: MAX_TOPICS_EXPANDED_PAGES + 50 }, (_, i) => `/r2/p${i}.md`) })
     expect(store.get().folders['/r2'].topicsExpanded).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
   })
@@ -502,13 +530,13 @@ describe('createStore: mutations', () => {
     store.setFolds('/r1', '/r1/a.md', ['k1', 'k2'])
     store.setFolds('/r1', '/r1/b.md', ['k3'])
     store.setFolds('/r2', '/r2/a.md', ['k4'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, topicsExpanded: [], name: null })
     store.setFolds('/r1', '/r1/a.md', ['k2']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].folds['/r1/a.md']).toEqual(['k2'])
     store.setFolder('/r1', { lastFile: '/r1/a.md' })
     store.setFolds('/r1', '/r1/a.md', [])
     store.setFolds('/r1', '/r1/b.md', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     store.setFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `k${i}`))
     expect(store.get().folders['/r2'].folds['/r2/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
   })
@@ -518,12 +546,12 @@ describe('createStore: mutations', () => {
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:idea', 'v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', ['∅'])
     store.setBaseGroups('/r2', '/r2/a.md::T', ['v:x'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, topicsExpanded: [], name: null })
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:done']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].baseGroups['/r1/a.md::T']).toEqual(['v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T', [])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
     store.setBaseGroups('/r2', '/r2/a.md::T', Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`))
     expect(store.get().folders['/r2'].baseGroups['/r2/a.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
@@ -801,9 +829,18 @@ describe('createStore: mutations', () => {
         topicsExpanded: [`${NEW}/Metrics.md`, '/v/Home.md'],
         folds: { [`${NEW}/a.md`]: ['k1'], '/v/x.md': ['k2'] },
         baseGroups: { [`${NEW}/T.md::Table`]: ['g1'] },
+        name: null,
       })
       expect(store.get().folders[OLD]).toBeUndefined()
-      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, topicsExpanded: [] })
+      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
+    })
+
+    it('a renamed vault ROOT keeps its display name under the new key (YAZ-1974 D3)', () => {
+      const store = createStore(file)
+      store.setFolder(OLD, { name: 'Old Notes' })
+      store.renamePath(OLD, NEW)
+      expect(store.get().folders[NEW].name).toBe('Old Notes')
+      expect(store.get().folders[OLD]).toBeUndefined()
     })
 
     it('remaps a recents entry at or under the dir (a subfolder that was opened as a vault)', () => {
@@ -847,17 +884,27 @@ describe('createStore: persistence', () => {
     await vi.advanceTimersByTimeAsync(60)
     await store.flush()
     expect(renames()).toHaveLength(1)
-    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {} } } })
+    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: null } } })
     expect((await readdir(dir)).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 
   it('the two session lists live in get() for every window but never reach disk, so a relaunch starts collapsed (YAZ-1642)', async () => {
     const store = createStore(file)
     store.setFolder('/v', { expanded: ['/v/sub'], topicsExpanded: ['/v/Metrics.md'] })
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/v/Metrics.md'] })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/v/Metrics.md'], name: null })
     await store.flush()
-    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {} })
-    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null })
+  })
+
+  it('the display name is persisted and restored; a junk one reads as null (YAZ-1974 D3)', async () => {
+    const store = createStore(file)
+    store.setFolder('/v', { name: 'Business Wiki' })
+    await store.flush()
+    expect((await onDisk()).folders['/v'].name).toBe('Business Wiki')
+    expect(createStore(file).get().folders['/v'].name).toBe('Business Wiki')
+    await seed(valid({ folders: { '/v': { lastFile: null, name: 42 } } }))
+    expect(createStore(file).get().folders['/v'].name).toBeNull()
   })
 
   it('flush writes at once, cancels the pending timer, and is a no-op when nothing changed', async () => {

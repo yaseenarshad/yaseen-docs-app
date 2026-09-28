@@ -4,13 +4,15 @@
  * an open panel, D6 the one-line trigger, D7 the filter/keyboard model (ranking, default
  * highlight skipping the current vault, clamp, Enter, Esc, focus never leaving the input), D8 the
  * ⌘O request. Every CLICK goes through the mocked `window.yaseenDocs.window.openRecent` — the one
- * back-end door (D1). The right-click menu (YAZ-1798) is pinned at the bottom: its "Open in this
- * window" is the only in-place open, through the `onOpenHere` prop.
+ * back-end door (D1). The right-click menu (YAZ-1798) is pinned below: its "Open in this
+ * window" is the only in-place open, through the `onOpenHere` prop. Display names, their inline
+ * field and the one-line rows' ⓘ path tooltip (YAZ-1974) are pinned last, over the REAL `storage`
+ * on a fake bridge, so a name set in one test never leaks into the next.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { RecentRoots } from '@shared/types'
+import { defaultAppState, defaultFolderState, type AppState, type RecentRoots } from '@shared/types'
 import { storage } from '../lib/storage'
 import { MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
@@ -27,14 +29,33 @@ const RECENTS: RecentRoots = [
 ]
 
 let openRecent: ReturnType<typeof vi.fn>
+let setFolder: ReturnType<typeof vi.fn>
+/** Main's `state.onChange` broadcast into this window — another window's write landing here. */
+let broadcast: (state: AppState) => void
 let recentsSpy: ReturnType<typeof vi.spyOn>
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-beforeEach(() => {
+/** Seeds the storage cache with display names (YAZ-1974 D3), path → name. */
+const withNames = (names: Record<string, string>): AppState => ({
+  ...defaultAppState(),
+  folders: Object.fromEntries(Object.entries(names).map(([path, name]) => [path, { ...defaultFolderState(), name }])),
+})
+
+beforeEach(async () => {
   vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
   openRecent = vi.fn(async () => true)
-  Object.defineProperty(window, 'yaseenDocs', { value: { window: { openRecent } }, configurable: true, writable: true })
+  setFolder = vi.fn(async () => undefined)
+  const state = {
+    get: async () => defaultAppState(),
+    setFolder,
+    onChange: (listener: (s: AppState) => void) => {
+      broadcast = listener
+      return () => undefined
+    },
+  }
+  Object.defineProperty(window, 'yaseenDocs', { value: { window: { openRecent, identity: async () => ({}) }, state }, configurable: true, writable: true })
+  await storage.init()
   recentsSpy = vi.spyOn(storage, 'getRecentRoots').mockReturnValue(RECENTS)
 })
 
@@ -89,16 +110,39 @@ const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.v
 const openFolderRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.vault-switcher__open')!
 const activeRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.vault-switcher__row--active')
 const names = (el: HTMLElement) => rows(el).map((r) => r.querySelector('.vault-switcher__name')?.textContent)
+const tooltip = () => document.querySelector<HTMLElement>('[role="tooltip"]')
+const hoverInfo = (row: HTMLElement) => act(() => void row.querySelector('.vault-switcher__info')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+const leaveInfo = (row: HTMLElement) => act(() => void row.querySelector('.vault-switcher__info')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: row })))
+/** A row's full path, read the only way the panel shows it: its ⓘ tooltip (YAZ-1974 D2). */
+const pathOf = (row: HTMLElement) => {
+  hoverInfo(row)
+  const path = tooltip()?.textContent
+  leaveInfo(row)
+  return path
+}
 
 const openPanel = (el: HTMLElement) => act(() => trigger(el).click())
 const key = (el: HTMLElement, k: string) => act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
-const type = async (el: HTMLElement, value: string) => {
+/** Types into an input the way React sees it: the native value setter, then an `input` event. */
+const fill = async (input: HTMLInputElement, value: string) => {
   const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   await act(async () => {
-    set?.call(filter(el), value)
-    filter(el).dispatchEvent(new Event('input', { bubbles: true }))
+    set?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
   })
 }
+const type = (el: HTMLElement, value: string) => fill(filter(el), value)
+/** The vault right-click menu (YAZ-1798). */
+const vaultMenu = () => document.querySelector<HTMLElement>('.ctx-overlay .ctx-menu')
+const menuLabels = () => [...(vaultMenu()?.querySelectorAll('.ctx-menu__item') ?? [])].map((b) => b.textContent)
+const menuItem = (label: string) => [...(vaultMenu()?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === label)!
+/** Dispatches a right-click and reports whether the native menu was swallowed (G1). */
+const rightClick = (target: HTMLElement) => {
+  const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })
+  act(() => void target.dispatchEvent(e))
+  return e.defaultPrevented
+}
+const pick = (label: string) => act(() => menuItem(label).click())
 /** Settles the `openRecent` promise chain inside act. */
 const settle = () => act(async () => {})
 
@@ -151,15 +195,13 @@ describe('VaultSwitcher: the trigger (D6)', () => {
 })
 
 describe('VaultSwitcher: the rows (D3/D4/D5)', () => {
-  it('lists every recent vault in MRU order — the current vault included and marked aria-current — with name, relative time and full path; Open folder… is the last row', () => {
+  it('lists every recent vault in MRU order — the current vault included and marked aria-current — with name and relative time; Open folder… is the last row', () => {
     const { el } = render()
     openPanel(el)
     expect(names(el)).toEqual(['Notes', 'Notes', 'Archive', 'Notes Archive'])
     const [current, other] = rows(el)
     expect(current.getAttribute('aria-current')).toBe('true')
     expect(other.getAttribute('aria-current')).toBeNull()
-    expect(current.querySelector('.vault-switcher__path')?.textContent).toBe(ROOT)
-    expect(other.querySelector('.vault-switcher__path')?.textContent).toBe('/w/Notes')
     expect(current.querySelector('.vault-switcher__when')?.textContent).toBe('1 minute ago')
     expect(other.querySelector('.vault-switcher__when')?.textContent).toBe('2 hours ago')
     // Open folder… is outside the rows list, after it, and reads as the last menu item.
@@ -265,7 +307,7 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     const { el } = render()
     openPanel(el)
     expect(activeRow(el)).toBe(rows(el)[1])
-    expect(activeRow(el)?.querySelector('.vault-switcher__path')?.textContent).toBe('/w/Notes')
+    expect(pathOf(activeRow(el)!)).toBe('/w/Notes')
   })
 
   it('when every row is the current vault the highlight starts on the first row', () => {
@@ -280,7 +322,7 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     openPanel(el)
     await type(el, 'arch')
     expect(activeRow(el)).toBe(rows(el)[0])
-    expect(activeRow(el)?.querySelector('.vault-switcher__path')?.textContent).toBe('/v/Archive')
+    expect(pathOf(activeRow(el)!)).toBe('/v/Archive')
   })
 
   it('no match: a muted "No matching vaults" line above Open folder…, which is always visible and takes the highlight', async () => {
@@ -406,7 +448,7 @@ describe('VaultSwitcher: ⌘O (D8)', () => {
 })
 
 describe('VaultSwitcher: pure helpers', () => {
-  const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), path, lastOpened: i }))
+  const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), folder: path.slice(path.lastIndexOf('/') + 1), path, lastOpened: i }))
 
   it('rankVaultRows: empty query keeps MRU order, otherwise exact > prefix > substring, uncapped', () => {
     const list = rowsOf('/a/Notes', '/b/Old Notes', '/c/Notes Archive', '/d/Other', '/e/n1', '/f/n2', '/g/n3', '/h/n4', '/i/n5', '/j/n6')
@@ -414,6 +456,17 @@ describe('VaultSwitcher: pure helpers', () => {
     expect(rankVaultRows(list, 'notes').map((r) => r.path)).toEqual(['/a/Notes', '/c/Notes Archive', '/b/Old Notes'])
     // The [[ picker caps at 8; the switcher shows every match.
     expect(rankVaultRows(list, 'n')).toHaveLength(9)
+  })
+
+  it('rankVaultRows matches the display name AND the folder name, one row per vault at its best rank (YAZ-1974 D6)', () => {
+    const [wiki, notes, lead] = rowsOf('/v/business-wiki-MASTER', '/v/Notes', '/v/leadnurtureai')
+    const list = [{ ...wiki, name: 'Business Wiki' }, { ...notes, name: 'Wiki Notes' }, lead]
+    expect(rankVaultRows(list, 'busi').map((r) => r.path)).toEqual(['/v/business-wiki-MASTER']) // display-name prefix (and folder prefix: still once)
+    expect(rankVaultRows(list, 'wiki-MASTER').map((r) => r.path)).toEqual(['/v/business-wiki-MASTER']) // folder-name match
+    // "wiki": Wiki Notes is a prefix match, Business Wiki a substring on both names — once, after it.
+    expect(rankVaultRows(list, 'wiki').map((r) => r.path)).toEqual(['/v/Notes', '/v/business-wiki-MASTER'])
+    expect(rankVaultRows(list, 'notes').map((r) => r.path)).toEqual(['/v/Notes']) // the folder name still finds a renamed vault
+    expect(rankVaultRows(list, 'lead').map((r) => r.path)).toEqual(['/v/leadnurtureai']) // un-renamed: as before
   })
 
   it('defaultHighlight: skips the current root on an empty query, 0 otherwise (which is Open folder… when nothing matches)', () => {
@@ -428,35 +481,25 @@ describe('VaultSwitcher: pure helpers', () => {
 })
 
 describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
-  const vaultMenu = () => document.querySelector<HTMLElement>('.ctx-overlay .ctx-menu')
-  const menuLabels = () => [...(vaultMenu()?.querySelectorAll('.ctx-menu__item') ?? [])].map((b) => b.textContent)
-  const menuItem = (label: string) => [...(vaultMenu()?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === label)!
-  /** Dispatches a right-click and reports whether the native menu was swallowed (G1). */
-  const rightClick = (target: HTMLElement) => {
-    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })
-    act(() => void target.dispatchEvent(e))
-    return e.defaultPrevented
-  }
-  const pick = (label: string) => act(() => menuItem(label).click())
   const OTHER = RECENTS[2].path // '/v/Archive'
   const otherRow = (el: HTMLElement) => rows(el)[2]
 
   it('the trigger opens the CURRENT vault\'s menu (no Open in this window, no Remove) and leaves the panel closed; the native menu is swallowed', () => {
     const { el } = render()
     expect(rightClick(trigger(el))).toBe(true)
-    expect(menuLabels()).toEqual(['Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     expect(panel(el)).toBeNull()
   })
 
-  it('the current vault\'s own row gets the same four; another row gets all seven — and the highlight never moves', () => {
+  it('the current vault\'s own row gets the same five; another row gets all eight — and the highlight never moves', () => {
     const { el } = render()
     openPanel(el)
     const before = activeRow(el)
     rightClick(rows(el)[0])
-    expect(menuLabels()).toEqual(['Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     rightClick(otherRow(el))
-    expect(menuLabels()).toEqual(['Open in this window', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open in this window', 'Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(activeRow(el)).toBe(before)
   })
 
@@ -473,7 +516,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(props.onOpenVsCode).toHaveBeenCalledWith(OTHER)
   })
 
-  it('Copy vault name writes the basename and confirms through onNotice', async () => {
+  it('Copy vault name writes the folder name of an un-renamed vault and confirms through onNotice', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, props } = render()
@@ -492,7 +535,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     rightClick(otherRow(el))
     pick('Remove from recent vaults')
     expect(remove).toHaveBeenCalledWith(OTHER)
-    expect(rows(el).map((r) => r.querySelector('.vault-switcher__path')?.textContent)).not.toContain(OTHER)
+    expect(rows(el).map(pathOf)).not.toContain(OTHER)
     expect(panel(el)).not.toBeNull()
     expect(document.activeElement).toBe(filter(el))
     remove.mockRestore()
@@ -545,5 +588,218 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     act(() => void document.querySelector('.ctx-overlay')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     expect(vaultMenu()).toBeNull()
     expect(panel(el)).not.toBeNull()
+  })
+})
+
+describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
+  const OTHER = RECENTS[2].path // '/v/Archive'
+  const otherRow = (el: HTMLElement) => rows(el)[2]
+  const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.vault-switcher__rename')
+  const fieldKey = (el: HTMLElement, k: string) => act(() => void field(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+  /** Right-click → Set display name on `target`, then type `value` into the field it opens. */
+  const rename = async (el: HTMLElement, target: HTMLElement, value: string) => {
+    rightClick(target)
+    pick('Set display name')
+    await fill(field(el)!, value)
+  }
+
+  it('the trigger and the rows show display names; the trigger keeps the full path as its tooltip', () => {
+    act(() => broadcast(withNames({ [ROOT]: 'Docs Vault', [OTHER]: '🚀 Launch' })))
+    const { el } = render()
+    expect(trigger(el).querySelector('.sidebar__root-name')?.textContent).toBe('Docs Vault')
+    expect(trigger(el).title).toBe(ROOT)
+    openPanel(el)
+    expect(names(el)).toEqual(['Docs Vault', 'Notes', '🚀 Launch', 'Notes Archive'])
+  })
+
+  it('a rename landing from another window updates the header live (S12)', () => {
+    const { el } = render()
+    act(() => broadcast(withNames({ [ROOT]: 'Docs Vault' })))
+    expect(trigger(el).querySelector('.sidebar__root-name')?.textContent).toBe('Docs Vault')
+  })
+
+  it('the filter finds a renamed row by its display name and by its folder name, once', async () => {
+    act(() => broadcast(withNames({ [OTHER]: 'Old Stuff' })))
+    const { el } = render()
+    openPanel(el)
+    await type(el, 'old')
+    expect(names(el)).toEqual(['Old Stuff'])
+    await type(el, 'archive')
+    expect(names(el)).toEqual(['Old Stuff', 'Notes Archive'])
+  })
+
+  it('Set display name on a row: a focused field, name selected, folder name as placeholder — ⏎ saves, the row shows it, the panel stays with the filter focused', async () => {
+    const { el } = render()
+    openPanel(el)
+    rightClick(otherRow(el))
+    pick('Set display name')
+    const input = field(el)!
+    expect(otherRow(el).tagName).toBe('DIV') // no input inside a <button>
+    expect(document.activeElement).toBe(input)
+    expect([input.value, input.placeholder, input.selectionStart, input.selectionEnd]).toEqual(['Archive', 'Archive', 0, 'Archive'.length])
+    await fill(input, '  Old Stuff ')
+    fieldKey(el, 'Enter')
+    expect(field(el)).toBeNull()
+    expect(names(el)[2]).toBe('Old Stuff')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { name: 'Old Stuff' })
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+    rightClick(otherRow(el))
+    expect(menuLabels()).toContain('Reset to folder name')
+  })
+
+  it('blur saves', async () => {
+    const { el } = render()
+    openPanel(el)
+    await rename(el, otherRow(el), 'Old Stuff')
+    act(() => filter(el).focus())
+    expect(field(el)).toBeNull()
+    expect(names(el)[2]).toBe('Old Stuff')
+    expect(panel(el)).not.toBeNull()
+  })
+
+  it('Esc throws the edit away and closes ONLY the field (the layer rule); the next Esc closes the panel', async () => {
+    const { el } = render()
+    openPanel(el)
+    await rename(el, otherRow(el), 'Old Stuff')
+    fieldKey(el, 'Escape')
+    expect(field(el)).toBeNull()
+    expect(names(el)[2]).toBe('Archive')
+    expect(setFolder).not.toHaveBeenCalled()
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+    key(el, 'Escape')
+    expect(panel(el)).toBeNull()
+  })
+
+  it('a click-away outside the panel saves and keeps the panel', async () => {
+    const { el } = render()
+    openPanel(el)
+    await rename(el, otherRow(el), 'Old Stuff')
+    act(() => void window.dispatchEvent(new MouseEvent('mousedown')))
+    expect(panel(el)).not.toBeNull()
+    act(() => field(el)!.blur()) // the browser's own focus change on that mousedown
+    expect(names(el)[2]).toBe('Old Stuff')
+  })
+
+  it('the first click on another row only ends the rename (saved) — it never opens that vault; the next click does', async () => {
+    const { el } = render()
+    openPanel(el)
+    await rename(el, otherRow(el), 'Old Stuff')
+    const target = rows(el)[1]
+    act(() => {
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      target.click()
+    })
+    await settle()
+    expect(field(el)).toBeNull()
+    expect(names(el)[2]).toBe('Old Stuff')
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(panel(el)).not.toBeNull()
+    act(() => {
+      rows(el)[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      rows(el)[1].click()
+    })
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+  })
+
+  it('an empty field, or the folder name itself, is no custom name: back to the folder name, no Reset item', async () => {
+    act(() => broadcast(withNames({ [OTHER]: 'Old Stuff' })))
+    const { el } = render()
+    openPanel(el)
+    await rename(el, otherRow(el), '   ')
+    fieldKey(el, 'Enter')
+    expect(names(el)[2]).toBe('Archive')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { name: null })
+    rightClick(otherRow(el))
+    expect(menuLabels()).not.toContain('Reset to folder name')
+    pick('Set display name')
+    await fill(field(el)!, 'Archive ')
+    fieldKey(el, 'Enter')
+    expect(storage.vaultName(OTHER)).toBe('Archive')
+  })
+
+  it('Reset to folder name drops the display name', () => {
+    act(() => broadcast(withNames({ [OTHER]: 'Old Stuff' })))
+    const { el } = render()
+    openPanel(el)
+    rightClick(otherRow(el))
+    pick('Reset to folder name')
+    expect(names(el)[2]).toBe('Archive')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { name: null })
+    expect(document.activeElement).toBe(filter(el))
+  })
+
+  it('Set display name on the header renames the CURRENT vault in the header, the panel closed', async () => {
+    const { el } = render()
+    await rename(el, trigger(el), 'Docs Vault')
+    expect(trigger(el).tagName).toBe('DIV')
+    fieldKey(el, 'Enter')
+    expect(trigger(el).tagName).toBe('BUTTON')
+    expect(trigger(el).querySelector('.sidebar__root-name')?.textContent).toBe('Docs Vault')
+    expect(setFolder).toHaveBeenLastCalledWith(ROOT, { name: 'Docs Vault' })
+    expect(panel(el)).toBeNull()
+  })
+})
+
+describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', () => {
+  const LONG = '/Users/yasin/Documents/GitHub/content-skills/content-app-planning-with-a-very-long-folder-name'
+
+  it('each row is ONE line — a name, an ⓘ and a time — and no path anywhere in the panel', () => {
+    const { el } = render()
+    openPanel(el)
+    for (const row of rows(el)) {
+      expect(row.querySelectorAll('.vault-switcher__name')).toHaveLength(1)
+      expect(row.querySelectorAll('.vault-switcher__info svg')).toHaveLength(1)
+      expect(row.querySelectorAll('.vault-switcher__when')).toHaveLength(1)
+      expect(row.children).toHaveLength(3)
+    }
+    expect(panel(el)!.textContent).not.toContain('/')
+    expect(tooltip()).toBeNull()
+  })
+
+  it('hovering the ⓘ draws the WHOLE path in a tooltip portalled to <body>, breakable after every slash; leaving clears it', () => {
+    recentsSpy.mockReturnValue([RECENTS[0], { path: LONG, lastOpened: NOW }])
+    const { el } = render()
+    openPanel(el)
+    hoverInfo(rows(el)[1])
+    const tip = tooltip()!
+    expect(tip.parentElement).toBe(document.body)
+    expect(tip.textContent).toBe(LONG)
+    expect(tip.querySelectorAll('wbr')).toHaveLength(LONG.split('/').length)
+    leaveInfo(rows(el)[1])
+    expect(tooltip()).toBeNull()
+  })
+
+  it('the two "Notes" vaults tell apart by their tooltips; a dead row still shows its path', async () => {
+    openRecent.mockResolvedValueOnce(false)
+    const { el } = render()
+    openPanel(el)
+    expect([pathOf(rows(el)[0]), pathOf(rows(el)[1])]).toEqual([ROOT, '/w/Notes'])
+    act(() => rows(el)[1].click())
+    await settle()
+    expect(rows(el)[1].disabled).toBe(true)
+    expect(pathOf(rows(el)[1])).toBe('/w/Notes')
+  })
+
+  it('the ⓘ is part of its row: a click opens the vault, a right-click is the row\'s menu', async () => {
+    const { el } = render()
+    openPanel(el)
+    const info = rows(el)[2].querySelector<HTMLElement>('.vault-switcher__info')!
+    expect(rightClick(info)).toBe(true)
+    expect(menuLabels()).toContain('Remove from recent vaults')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    act(() => info.click())
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/v/Archive')
+  })
+
+  it('closing the panel takes the tooltip with it', () => {
+    const { el } = render()
+    openPanel(el)
+    hoverInfo(rows(el)[1])
+    key(el, 'Escape')
+    expect(tooltip()).toBeNull()
   })
 })

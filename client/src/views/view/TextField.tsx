@@ -17,14 +17,20 @@ interface TextFieldProps {
   /** `id` of a `datalist` the caller renders — value suggestions (YAZ-1232). */
   list?: string
   autoFocus?: boolean
+  /** Select the whole value when the field mounts, so typing replaces it (Finder's rename, YAZ-1974 D5). */
+  selectOnMount?: boolean
   'aria-label'?: string
 }
 
 /** Text input that reports its value once per edit (GRO-2135), so every config change is one `onChange`. */
-export function TextField({ value, onCommit, normalize, onDone, ...rest }: TextFieldProps) {
+export function TextField({ value, onCommit, normalize, onDone, selectOnMount, ...rest }: TextFieldProps) {
   const [draft, setDraft] = useState(value)
   const done = useRef(false)
+  const input = useRef<HTMLInputElement>(null)
   useEffect(() => setDraft(value), [value])
+  useEffect(() => {
+    if (selectOnMount === true) input.current?.select()
+  }, [])
 
   const finish = (commit: boolean) => {
     if (done.current) return
@@ -43,6 +49,7 @@ export function TextField({ value, onCommit, normalize, onDone, ...rest }: TextF
   return (
     <input
       {...rest}
+      ref={input}
       value={draft}
       onChange={(e) => {
         done.current = false

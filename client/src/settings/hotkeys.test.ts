@@ -50,8 +50,9 @@ describe('HOTKEYS source of truth', () => {
     // ONE shared ⌘-click convention: sidebar file rows (I3) AND editor wiki links (Links C).
     expect(byKeys('⌘-click file or link')?.label).toMatch(/background tab/i)
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
-    // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it.
+    // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5).
     expect(byKeys('Right-click vault')?.label).toMatch(/Open in this window/)
+    expect(byKeys('Right-click vault')?.label).toMatch(/Set display name/)
     // Multi-select (YAZ-1336 🔒 D2 → YAZ-1337): ⇧-click toggles rows, and the tip has to say what
     // that is FOR — the two plural items a right-click then offers.
     expect(byKeys('⇧-click file or folder')?.label).toMatch(/multi-selection/i)

@@ -19,6 +19,7 @@ import {
   THEMES,
   THREAD_WIDTHS,
   addRecentRoot,
+  cleanVaultName,
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
@@ -27,6 +28,7 @@ import {
   type AppState,
   type CommentsOrder,
   type ContentWidth,
+  type FolderPatch,
   type FolderState,
   type NewNoteLocation,
   type RecentRoots,
@@ -52,7 +54,7 @@ export interface Store {
   setSidebarWidth(width: number): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): void
+  setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
@@ -219,6 +221,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     topicsExpanded: [],
+    name: cleanVaultName(raw.name),
   }
 }
 
@@ -352,6 +355,7 @@ export function createStore(filePath: string): Store {
         // Capped here as well as in the renderer (`folds` / `baseGroups`' rule): the store is
         // what a hand-edited or third-party write lands in, and this bucket grows per page.
         ...(patch.topicsExpanded !== undefined ? { topicsExpanded: patch.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) } : {}),
+        ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
       }
       commit({ ...state, folders: { ...state.folders, [root]: next } })
     },
