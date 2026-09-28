@@ -384,9 +384,15 @@ export const outlineCaret = (w: Page): Promise<OutlineCaret | null> =>
  * the DOM cannot be trusted on, because the picker's session is computed from `state.selection`:
  * an OPEN picker means PM's caret is inside an unclosed `[[…`, which on a link line means it has
  * not got past the hidden `]]` yet, however the DOM measures it.
+ *
+ * Between the reads the page runs a frame and a task, so a pending `selectionchange` reaches
+ * ProseMirror first: it either adopts the DOM caret or puts the DOM back on its own, and the
+ * second read sees which. Without that, a keystroke could land on a caret PM never read, and an
+ * Enter at a link line's end split it before the hidden `]]` (YAZ-2168).
  */
 export const settledCaret = async (w: Page): Promise<(OutlineCaret & { picking: boolean }) | null> => {
   const first = await outlineCaret(w)
+  await w.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
   const second = await outlineCaret(w)
   if (second === null || JSON.stringify(first) !== JSON.stringify(second)) return null
   return { ...second, picking: (await linkPicker(w).count()) > 0 }
@@ -399,9 +405,14 @@ const at = (text: string, offset: number) => ({ text, offset, live: true, pickin
 export async function caretAtEndOfLine(w: Page, scope: Locator, i: number): Promise<void> {
   const line = outlineLines(scope).nth(i)
   const text = (await line.textContent()) ?? ''
+  const caretInLine = () =>
+    line.evaluate((el) => el.closest('.ProseMirror') === document.activeElement && el.contains(document.getSelection()?.anchorNode ?? null))
   await expect
     .poll(async () => {
-      await line.click() // free to repeat: a click never changes the document
+      // Click only while the caret is elsewhere. ProseMirror counts clicks itself (same spot, 500ms),
+      // so a retry's re-click reads as a double or triple click: PM selects the word or the whole
+      // line while the DOM caret sits at its end, and the next Enter or Backspace deletes it (YAZ-2168).
+      if (!(await caretInLine())) await line.click()
       await w.keyboard.press('Meta+ArrowRight')
       return settledCaret(w)
     })
