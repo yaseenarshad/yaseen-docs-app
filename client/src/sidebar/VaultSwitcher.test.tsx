@@ -14,7 +14,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultFolderState, type AppState, type RecentRoots } from '@shared/types'
 import { storage } from '../lib/storage'
-import { MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
+import { MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -401,6 +401,22 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     await settle()
     expect(openRecent).toHaveBeenCalledExactlyOnceWith(ROOT)
     expect(props.onOpenHere).toHaveBeenCalledTimes(2)
+  })
+
+  it('holding ⇧ says so on the highlighted row (YAZ-1974 D9): "Open here" in its time slot, never on the current vault; released, the time is back', () => {
+    const { el } = render()
+    openPanel(el)
+    const shift = (type: 'keydown' | 'keyup', shiftKey: boolean) => act(() => void window.dispatchEvent(new KeyboardEvent(type, { key: 'Shift', shiftKey })))
+    const when = (row: HTMLElement) => row.querySelector('.vault-switcher__when')?.textContent
+    shift('keydown', true)
+    expect(when(activeRow(el)!)).toBe(OPEN_HERE_TEXT)
+    expect(rows(el).filter((r) => when(r) === OPEN_HERE_TEXT)).toHaveLength(1)
+    key(el, 'ArrowUp')
+    expect(activeRow(el)).toBe(rows(el)[0])
+    expect(when(rows(el)[0])).toBe('1 minute ago')
+    shift('keyup', false)
+    key(el, 'ArrowDown')
+    expect(when(activeRow(el)!)).not.toBe(OPEN_HERE_TEXT)
   })
 
   it('Enter on Open folder… runs the picker; not while pickDisabled', () => {

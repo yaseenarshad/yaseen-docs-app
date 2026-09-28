@@ -27,7 +27,8 @@
  * with an EMPTY query it starts on the first row that is NOT the current vault — so ⌘O ⏎ jumps to
  * the last-used OTHER vault, like ⌘Tab — with a typed query on the top match, and with no match on
  * Open folder…. ↑/↓ clamp at both ends (the `[[` picker's no-wrap rule), hover moves it too, ⏎
- * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8) — Esc
+ * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8), and
+ * while ⇧ is held the highlighted row says so: "Open here" in its time slot (D9) — Esc
  * closes (the menu convention — not the search bar's two-press rule). Typing never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
  * it is visible whatever the query; a query with no vault match shows "No matching vaults" above it.
  *
@@ -96,6 +97,8 @@ interface PanelState {
 export const NO_MATCH_TEXT = 'No matching vaults'
 export const MISSING_TEXT = 'Folder not found'
 export const OPEN_FOLDER_TEXT = 'Open folder…'
+/** The highlighted row's time slot while ⇧ is held (YAZ-1974 D9): what ⇧⏎ / ⇧-click will do. */
+export const OPEN_HERE_TEXT = 'Open here'
 
 /**
  * The rows `query` keeps, ranked (D7): an empty query is MRU order untouched; otherwise the `[[`
@@ -137,6 +140,8 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   const [pathTip, setPathTip] = useState<{ path: string; rect: DOMRect } | null>(null)
   /** Set by a row's mousedown mid-rename, so the click it starts only ends the rename (D5). */
   const dropClick = useRef(false)
+  /** ⇧ held while the panel is up (YAZ-1974 D9) — tracked on window so the cue shows before any ⏎ or click. */
+  const [shiftHeld, setShiftHeld] = useState(false)
   const name = useVaultName(root)
   const open = panel !== null
 
@@ -159,6 +164,21 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   // The filter takes focus whenever the panel mounts (D7).
   useEffect(() => {
     if (open) inputRef.current?.focus()
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const sync = (e: globalThis.KeyboardEvent) => setShiftHeld(e.shiftKey)
+    const release = () => setShiftHeld(false)
+    window.addEventListener('keydown', sync)
+    window.addEventListener('keyup', sync)
+    window.addEventListener('blur', release)
+    return () => {
+      window.removeEventListener('keydown', sync)
+      window.removeEventListener('keyup', sync)
+      window.removeEventListener('blur', release)
+      setShiftHeld(false)
+    }
   }, [open])
 
   // ⌘O (D8) TOGGLES: each new request value opens the panel with a fresh query, or closes it when
@@ -345,7 +365,12 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               {matches.length === 0 && <div className="vault-switcher__empty">{NO_MATCH_TEXT}</div>}
               {matches.map((row, i) => {
                 const gone = missing.has(row.path)
-                const when = <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : ''}`}>{gone ? MISSING_TEXT : relativeTime(row.lastOpened, panel.now)}</span>
+                const here = shiftHeld && i === active && row.path !== root && !gone
+                const when = (
+                  <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here ? ' vault-switcher__when--here' : ''}`}>
+                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : relativeTime(row.lastOpened, panel.now)}
+                  </span>
+                )
                 if (renaming?.at === 'row' && renaming.path === row.path) {
                   return (
                     <div key={row.path} className="vault-switcher__row vault-switcher__row--renaming">

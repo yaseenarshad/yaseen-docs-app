@@ -1087,6 +1087,12 @@ button {
   color: var(--danger);
 }
 
+/* ⇧ held (YAZ-1974 D9): the highlighted row will open IN this window. */
+.vault-switcher__when--here {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* The path's ⓘ (D2): shown while its ROW is hovered — a dead row too, `:hover` works on `:disabled` —
    by visibility, not display, so nothing shifts (the tab ✕ idiom, tabs.css). Mouse-only on purpose. */
 .vault-switcher__info {
