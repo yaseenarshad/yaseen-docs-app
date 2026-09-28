@@ -13,12 +13,13 @@ import { useAutosave, type AutosaveHandle } from './useAutosave'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { writeFile: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn() },
 }))
 
 import { api, BridgeRequestError } from '../api'
 
 const writeFile = vi.mocked(api.writeFile)
+const readFile = vi.mocked(api.readFile)
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const PATH = '/vault/note.md'
@@ -48,6 +49,9 @@ beforeEach(() => {
   flushListener = null
   writeFile.mockReset()
   writeFile.mockResolvedValue({ path: PATH, mtime: 2, size: 0 })
+  // What a CONFLICT re-read finds unless a test says otherwise: someone else changed the BODY.
+  readFile.mockReset()
+  readFile.mockResolvedValue({ path: PATH, content: `${FM}someone else`, mtime: 42, size: 0 })
   Object.defineProperty(window, 'yaseenDocs', {
     value: { window: { onFlush: (listener: () => Promise<void> | void) => ((flushListener = listener), offFlush) } },
     configurable: true,
@@ -129,5 +133,57 @@ describe('useAutosave (YAZ-2172)', () => {
       await handshake
     })
     expect(settled).toBe(true)
+  })
+
+  describe('a CONFLICT whose disk change is frontmatter only (YAZ-2175)', () => {
+    const FM2 = '---\nstatus: done\n---\n'
+
+    it("is the app's own property/comment write: the save adopts the new block and retries once, with no bar", async () => {
+      writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 42)).mockResolvedValueOnce({ path: PATH, mtime: 43, size: 0 })
+      readFile.mockResolvedValueOnce({ path: PATH, content: `${FM2}body`, mtime: 42, size: 0 })
+      const autosave = mountAttached(() => 'body')
+      act(() => autosave.update('mine'))
+      await act(() => autosave.flush())
+      expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM2}mine`, expectedMtime: 42 })
+      expect(writeFile).toHaveBeenCalledTimes(2)
+      expect(handle.conflictMtime).toBeNull()
+      expect(handle.status).toBe('saved')
+      // The block stays adopted: the next save carries it and the landed mtime.
+      act(() => autosave.update('mine again'))
+      await act(() => autosave.flush())
+      expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM2}mine again`, expectedMtime: 43 })
+    })
+
+    it('a genuine BODY change on disk still raises the bar, with no second write', async () => {
+      writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 42))
+      readFile.mockResolvedValueOnce({ path: PATH, content: `${FM2}someone else's body`, mtime: 42, size: 0 })
+      const autosave = mountAttached(() => 'body')
+      act(() => autosave.update('mine'))
+      await act(() => autosave.flush())
+      expect(writeFile).toHaveBeenCalledTimes(1)
+      expect(handle.conflictMtime).toBe(42)
+      expect(handle.status).toBe('unsaved')
+    })
+
+    it('retries once only: a second CONFLICT raises the bar with the newest mtime', async () => {
+      writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 42)).mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer again', 44))
+      readFile.mockResolvedValueOnce({ path: PATH, content: `${FM2}body`, mtime: 42, size: 0 })
+      const autosave = mountAttached(() => 'body')
+      act(() => autosave.update('mine'))
+      await act(() => autosave.flush())
+      expect(writeFile).toHaveBeenCalledTimes(2)
+      expect(readFile).toHaveBeenCalledTimes(1)
+      expect(handle.conflictMtime).toBe(44)
+    })
+
+    it('a re-read that fails raises the bar as before', async () => {
+      writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 42))
+      readFile.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
+      const autosave = mountAttached(() => 'body')
+      act(() => autosave.update('mine'))
+      await act(() => autosave.flush())
+      expect(writeFile).toHaveBeenCalledTimes(1)
+      expect(handle.conflictMtime).toBe(42)
+    })
   })
 })
