@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
@@ -106,7 +107,7 @@ interface TreeProps {
   depth?: number
 }
 
-export function Tree({
+function TreeLevel({
   nodes,
   dirPath,
   expanded,
@@ -270,3 +271,33 @@ export function Tree({
     </ul>
   )
 }
+
+/** `path` sits somewhere below `dir`. */
+const below = (path: string | null, dir: string): boolean => path !== null && path.startsWith(`${dir}/`)
+
+/** Whether a path in one set but not the other sits below `dir`. */
+function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, dir: string): boolean {
+  if (a === b) return false
+  for (const path of a) if (!b.has(path) && below(path, dir)) return true
+  for (const path of b) if (!a.has(path) && below(path, dir)) return true
+  return false
+}
+
+/**
+ * A level re-renders only when something BELOW its own directory changed (YAZ-2194): every row it
+ * draws, and every level it nests, sits below `dirPath`. So a folder toggle re-renders that folder's
+ * ancestor levels, a tab switch the levels holding the old and the new active file, and a resize or
+ * a save none at all. Every other prop is compared by identity, as `memo` does.
+ */
+function sameLevel(prev: TreeProps, next: TreeProps): boolean {
+  const keys = new Set([...Object.keys(prev), ...Object.keys(next)] as (keyof TreeProps)[])
+  for (const key of keys) {
+    if (key === 'expanded' || key === 'activeFile' || key === 'selection') continue
+    if (!Object.is(prev[key], next[key])) return false
+  }
+  if (prev.activeFile !== next.activeFile && (below(prev.activeFile, next.dirPath) || below(next.activeFile, next.dirPath))) return false
+  if (prev.selection.toggle !== next.selection.toggle || prev.selection.set !== next.selection.set) return false
+  return !changedBelow(prev.expanded, next.expanded, next.dirPath) && !changedBelow(prev.selection.paths, next.selection.paths, next.dirPath)
+}
+
+export const Tree = memo(TreeLevel, sameLevel)

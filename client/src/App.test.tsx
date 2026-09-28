@@ -41,6 +41,8 @@ interface SidebarStubProps {
   /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
   unadopted: boolean
   onCreateHome: () => void
+  /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
+  width: number
   viewOnlyLinks: ViewOnlyLinkSource
   /**
    * ⌘⇧C's read-only window into the sidebar's selection (YAZ-1338, 🔒 D4): App owns the
@@ -727,23 +729,32 @@ describe('App sidebar resize (YAZ-738)', () => {
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx }))
     window.dispatchEvent(new MouseEvent('mouseup', { clientX: dx }))
   }
-  const sideW = (el: HTMLElement) => el.querySelector<HTMLElement>('.app')?.style.getPropertyValue('--side-w')
+  const sideW = () => captured.sidebar?.width
+  const toggle = (el: HTMLElement) => act(() => void el.querySelector('.app')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })))
 
   it('a drag widens the sidebar live and persists the new width once', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
-    expect(sideW(el)).toBe('260px')
+    expect(sideW()).toBe(260)
     act(() => drag(el, 120))
-    expect(sideW(el)).toBe('380px')
+    expect(sideW()).toBe(380)
     expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+  })
+
+  it('the width goes to the sidebar alone, never to the whole window as an inherited variable (YAZ-2194)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => drag(el, 120))
+    expect(el.querySelector<HTMLElement>('.app')?.style.getPropertyValue('--side-w')).toBe('')
   })
 
   it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 50 - 260))
     expect(el.querySelector('[data-sidebar]')).toBeNull()
-    expect(sideW(el)).toBe('260px')
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+    toggle(el)
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(sideW()).toBe(260)
   })
 })
 
