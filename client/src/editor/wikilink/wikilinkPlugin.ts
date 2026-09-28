@@ -270,14 +270,14 @@ function update(
       return false
     })
   }
+  // One remove and one add for all of them: a select-all edit touches every block in one tree pass.
+  const stale: Decoration[] = []
+  const fresh: Decoration[] = []
   for (const [pos, block] of blocks) {
-    set = set.remove(set.find(pos, pos + block.nodeSize))
-    if (block.type.name === 'code_block') continue
-    const decorations: Decoration[] = []
-    decorateBlock(decorations, block, pos, state.selection, source, viewOnly)
-    set = set.add(doc, decorations)
+    stale.push(...set.find(pos, pos + block.nodeSize))
+    if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly)
   }
-  return set
+  return set.remove(stale).add(doc, fresh)
 }
 
 export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource) {
