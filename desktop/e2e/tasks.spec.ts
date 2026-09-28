@@ -29,7 +29,7 @@ let win: Page
 const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 /** The item whose OWN line reads `text`, and its box (`bullet` / `unchecked` / `checked`). */
 const item = (w: Page, text: string) => editorOf(w).locator(`li.list-item:has(> .children > .content-dom > p:text-is("${text}"))`)
-const box = (w: Page, text: string) => item(w, text).locator('> .label-wrapper > .label')
+const box = (w: Page, text: string) => item(w, text).locator(':scope > .label-wrapper > .label')
 const disk = () => readFile(notePath, 'utf8')
 
 /** ⌘Enter with the caret in `text`'s line, retried until the box shows `next` (a key can drop mid-render). */
