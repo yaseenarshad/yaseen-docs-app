@@ -17,7 +17,7 @@
  * options — the plugins that exist to EDIT are simply never registered — then `setReadonly(true)`.
  */
 import { type CSSProperties, type MouseEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { CrepeFeature } from '@milkdown/crepe'
+import { CrepeFeature } from '../../editor/crepe'
 import type { FileResponse, IndexRecord } from '@shared/types'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../../api'
