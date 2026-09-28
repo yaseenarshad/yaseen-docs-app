@@ -1,7 +1,7 @@
 import { KEYS } from "@excalidraw/common";
 import { fireEvent, waitFor } from "@testing-library/react";
 
-import { Excalidraw } from "../..";
+import { Excalidraw } from "../../index";
 import { Keyboard } from "../../tests/helpers/ui";
 import { act, render } from "../../tests/test-utils";
 
