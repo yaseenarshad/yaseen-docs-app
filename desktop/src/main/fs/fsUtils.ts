@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { link, lstat, open, readdir, rename, stat, unlink } from 'node:fs/promises'
+import { link, open, readdir, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { BridgeError, FileKind, TreeNode } from '@shared/types'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -169,25 +169,19 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
  * Creates `file` durably and never over anything (YAZ-2177): a fsynced tmp sibling is `link`ed to
  * the name, and `link` refuses an existing one with EEXIST exactly like the `wx` write it replaces,
  * so callers still answer ALREADY_EXISTS (and `writeImage` still picks the next suffix). A volume
- * without hard links (exFAT/FAT say ENOTSUP, draw YAZ-2122) renames instead, once `lstat` has seen
- * the name free: `rename` would replace. Parent dir must exist.
+ * without hard links (exFAT/FAT) gets a fsynced `wx` write straight onto the name instead: still
+ * never over anything — a rename could replace a file created in between. Parent dir must exist.
  */
 export async function createDurable(file: string, content: string | Uint8Array): Promise<void> {
   const tmp = tmpSibling(file)
   try {
     await writeDurable(tmp, content, 'wx')
-    await link(tmp, file).catch(async (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EEXIST') throw err
-      await lstat(file).then(
-        () => {
-          throw Object.assign(new Error(`EEXIST: file already exists, '${file}'`), { code: 'EEXIST' })
-        },
-        (e: NodeJS.ErrnoException) => {
-          if (e.code !== 'ENOENT') throw e
-        },
-      )
-      await rename(tmp, file)
-    })
+    try {
+      await link(tmp, file)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') throw err
+      await writeDurable(file, content, 'wx')
+    }
   } finally {
     await unlink(tmp).catch(() => undefined)
   }
