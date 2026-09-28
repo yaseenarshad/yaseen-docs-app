@@ -1,0 +1,21 @@
+{
+  "$comment": "FROZEN. What v0.9.27 (main @ 63aeeea, packaged with `npm run desktop:build`) measured, the before-number for every YAZ-2131 child. Never edited after the fact; budget.json holds the moving ceilings. size: `npm run perf:budget -- --json` (MB = 10^6 B). asarNodeModulesFiles counts files: 12 (chokidar + readdirp); `asar list` shows 17 entries with the 5 directories. drawingAssetBytes is informational only (the drawing component is out of scope).",
+  "version": "0.9.27",
+  "commit": "63aeeea",
+  "size": {
+    "appBytes": 324670162,
+    "frameworksBytes": 288532029,
+    "asarBytes": 35059247,
+    "dmgBytes": 140906184,
+    "chromiumLocaleCount": 220,
+    "chromiumLocaleBytes": 48655444,
+    "lprojCount": 55,
+    "asarNodeModulesFiles": 12,
+    "rendererEagerJsBytes": 4850821,
+    "rendererEagerCssBytes": 277906,
+    "rendererTotalBytes": 20786807,
+    "rendererMapBytes": 0,
+    "mainBundleBytes": 411774,
+    "drawingAssetBytes": 13556480
+  }
+}

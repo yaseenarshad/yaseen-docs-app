@@ -1,0 +1,20 @@
+{
+  "$comment": "Ceilings for `npm run perf:budget` / `perf:budget:ci` (bytes / counts). Set to the frozen v0.9.27 build (baseline.json). THE RATCHET (YAZ-2131): a change that shrinks a metric lowers its ceiling here in the same PR; raising one needs Yasin's OK in the PR description. `sizeTolerance` absorbs build-to-build jitter only (the same tree gives a DMG tens of bytes apart). `target` is a goal, never enforced. drawingAssetBytes has no row on purpose: the drawing component is out of scope, so its bytes are reported, never gated.",
+  "baseline": "v0.9.27 @ 63aeeea",
+  "sizeTolerance": 0.001,
+  "size": {
+    "appBytes": { "max": 324670162 },
+    "frameworksBytes": { "max": 288532029 },
+    "asarBytes": { "max": 35059247 },
+    "dmgBytes": { "max": 140906184 },
+    "chromiumLocaleCount": { "max": 220 },
+    "chromiumLocaleBytes": { "max": 48655444 },
+    "lprojCount": { "max": 55, "min": 55, "$comment": "The app-level .lproj markers keep Open/Save panels in the OS language: exactly 55." },
+    "asarNodeModulesFiles": { "max": 12, "target": 0 },
+    "rendererEagerJsBytes": { "max": 4850821 },
+    "rendererEagerCssBytes": { "max": 277906 },
+    "rendererTotalBytes": { "max": 20786807 },
+    "rendererMapBytes": { "max": 0 },
+    "mainBundleBytes": { "max": 411774 }
+  }
+}

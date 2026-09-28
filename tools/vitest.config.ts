@@ -9,7 +9,7 @@ export default defineConfig({
   test: {
     name: 'tools',
     environment: 'node',
-    include: ['*.test.mjs'],
+    include: ['*.test.mjs', 'perf/*.test.mjs'],
     // Each case builds a vault, `git init`s it and runs the migration end to end.
     testTimeout: 60_000,
   },
