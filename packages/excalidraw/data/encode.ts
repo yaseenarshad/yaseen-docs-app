@@ -1,6 +1,7 @@
-import { deflate, inflate } from "pako";
-
 import { encryptData, decryptData } from "./encryption";
+
+// pako (~45 KB minified) serves only embedded scenes and encrypted files, so it
+// is imported on first use instead of loading with the editor (YAZ-2073 5B)
 
 // -----------------------------------------------------------------------------
 // byte (binary) strings
@@ -96,18 +97,18 @@ type EncodedData = {
 /**
  * Encodes (and potentially compresses via zlib) text to byte string
  */
-export const encode = ({
+export const encode = async ({
   text,
   compress,
 }: {
   text: string;
   /** defaults to `true`. If compression fails, falls back to bstring alone. */
   compress?: boolean;
-}): EncodedData => {
+}): Promise<EncodedData> => {
   let deflated!: string;
   if (compress !== false) {
     try {
-      deflated = toByteString(deflate(text));
+      deflated = toByteString((await import("pako")).deflate(text));
     } catch (error: any) {
       console.error("encode: cannot deflate", error);
     }
@@ -120,7 +121,7 @@ export const encode = ({
   };
 };
 
-export const decode = (data: EncodedData): string => {
+export const decode = async (data: EncodedData): Promise<string> => {
   let decoded: string;
 
   switch (data.encoding) {
@@ -135,6 +136,7 @@ export const decode = (data: EncodedData): string => {
   }
 
   if (data.compressed) {
+    const { inflate } = await import("pako");
     return inflate(new Uint8Array(byteStringToArrayBuffer(decoded)), {
       to: "string",
     });
@@ -300,7 +302,7 @@ const _encryptAndCompress = async (
 ) => {
   const { encryptedBuffer, iv } = await encryptData(
     encryptionKey,
-    deflate(data) as Uint8Array<ArrayBuffer>,
+    (await import("pako")).deflate(data) as Uint8Array<ArrayBuffer>,
   );
 
   return { iv, buffer: new Uint8Array(encryptedBuffer) };
@@ -365,7 +367,7 @@ const _decryptAndDecompress = async (
   );
 
   if (isCompressed) {
-    return inflate(decryptedBuffer);
+    return (await import("pako")).inflate(decryptedBuffer);
   }
 
   return decryptedBuffer;

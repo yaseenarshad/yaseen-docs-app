@@ -48,6 +48,16 @@ import { RobotoFontFaces } from "./Roboto";
 import { VirgilFontFaces } from "./Virgil";
 import { XiaolaiFontFaces } from "./Xiaolai";
 
+/** A face's slot in `document.fonts`: two faces with the same key compete for the same text. */
+const fontFaceKey = (face: FontFace) =>
+  [
+    face.family.replace(/["']/g, ""),
+    face.weight,
+    face.style,
+    face.stretch,
+    face.unicodeRange,
+  ].join("|");
+
 export class Fonts {
   // it's ok to track fonts across multiple instances only once, so let's use
   // a static member to reduce memory footprint
@@ -209,7 +219,10 @@ export class Fonts {
   private static async loadFontFaces(
     elements: readonly ExcalidrawElement[],
   ): Promise<FontFace[]> {
-    // add all registered font faces into the `document.fonts` (if not added already)
+    // add all registered font faces into the `document.fonts` (if not added already),
+    // except where `fonts.css` already declares the same face (the Assistant UI font):
+    // the browser would fetch both copies of the one file (YAZ-2073 5B)
+    const declared = new Set(Array.from(window.document.fonts, fontFaceKey));
     for (const { fontFaces, metadata } of Fonts.registered.values()) {
       // skip registering font faces for local fonts (i.e. Helvetica)
       if (metadata.local) {
@@ -217,7 +230,10 @@ export class Fonts {
       }
 
       for (const { fontFace } of fontFaces) {
-        if (!window.document.fonts.has(fontFace)) {
+        if (
+          !window.document.fonts.has(fontFace) &&
+          !declared.has(fontFaceKey(fontFace))
+        ) {
           window.document.fonts.add(fontFace);
         }
       }
