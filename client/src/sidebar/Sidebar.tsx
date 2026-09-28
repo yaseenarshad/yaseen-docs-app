@@ -253,6 +253,16 @@ export interface MenuTargets {
   favoritePaths: string[] | null
   /** True only when EVERY `favoritePaths` entry is already a favorite — a mixed selection reads as Add. */
   favoriteIsOn: boolean
+  /**
+   * The lens the items act in (🔒 D1, YAZ-2050): the active one, or FILES for a search row — a search
+   * row is a disk row, whichever tab sits under the query. Every lens rule in the menu path reads this.
+   */
+  lens: SidebarLens
+  /**
+   * A search row's path (🔒 D2, YAZ-2050), null for every tree row and blank space: the items that
+   * draw INTO the tree (an inline input, Focus) reveal it in Files first, since the tree is hidden.
+   */
+  leaveSearchTo: string | null
 }
 
 /**
@@ -772,9 +782,13 @@ export function Sidebar({
       // folder-page toggle's label and Focus's Topics gate (YAZ-1605).
       const isFolderPageRow = notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r))
       const homePath = indexSource.resolve === null ? null : indexSource.resolve(HOME_LINK)
+      // Only a search ROW opens a menu while searching (blank space there offers none), so `searching` names the origin.
+      const menuLens: SidebarLens = searching ? 'files' : lens
       setMenu({
         x: e.clientX,
         y: e.clientY,
+        lens: menuLens,
+        leaveSearchTo: searching ? (node?.path ?? null) : null,
         targetDir: targetDirFor(node, root),
         rowKind: node?.type ?? null,
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
@@ -803,13 +817,13 @@ export function Sidebar({
         topicsAnchor,
         // Focus Mode (YAZ-1605): the plural selection's eligible rows, else the one row. Files → DIRS;
         // Topics → FOLDER PAGES that are not Home. Empty (a selection of files only) hides the item.
-        focusPaths: focusable(lens, plural ?? (node === null ? [] : [node.path]), tree, indexSource.records, homePath),
+        focusPaths: focusable(menuLens, plural ?? (node === null ? [] : [node.path]), tree, indexSource.records, homePath),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null ? null : plural ?? [node.path],
         favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favorites.includes(p)),
       })
     },
-    [root, tree, indexSource, selectedPaths, orderedSelectedPaths, lens, favorites],
+    [root, tree, indexSource, selectedPaths, orderedSelectedPaths, lens, searching, favorites],
   )
 
   /**
@@ -928,23 +942,24 @@ export function Sidebar({
   }, [clipboardRef, menu, selectedPaths, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir])
 
   /**
-   * Focus Mode (YAZ-1605): narrow the ACTIVE lens to these folders / topics — REPLACING any focus,
+   * Focus Mode (YAZ-1605): narrow `inLens` — the menu's pinned lens, FILES for a search row (🔒 D1,
+   * YAZ-2050) — to these folders / topics, REPLACING any focus,
    * one or many — and OPEN each row (the synthetic-child idiom `startCreate` uses), so the tree
    * never lands on closed chevrons.
    */
   const focusOn = useCallback(
-    (paths: string[]) => {
-      if (lens === 'topics') {
+    (paths: string[], inLens: SidebarLens) => {
+      if (inLens === 'topics') {
         setFocusTopics(paths)
         setTopicsExpanded((prev) => (paths.every((p) => prev.has(p)) ? prev : new Set([...prev, ...paths])))
       } else {
         // Favorites keeps its OWN list (YAZ-1766 D5); both disk lenses share the one expansion (D7).
-        if (lens === 'favorites') setFocusFavorites(paths)
+        if (inLens === 'favorites') setFocusFavorites(paths)
         else setFocusDirs(paths)
         for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
       }
     },
-    [lens, root],
+    [root],
   )
   const focused = lens === 'topics' ? focusTopics.length > 0 : lens === 'favorites' ? focusFavorites.length > 0 : focusNodes.length > 0
   const exitFocus = useCallback(() => (lens === 'topics' ? setFocusTopics([]) : lens === 'favorites' ? setFocusFavorites([]) : setFocusDirs([])), [lens])
@@ -994,7 +1009,7 @@ export function Sidebar({
       // Favorites shows a SUBSET of the vault (YAZ-1766, 3B1): a target dir it does not hold would give
       // the input nowhere to mount, so the create moves to Files — where the `expandTo` above has
       // already opened that dir. The reveal hop's rule (D10), applied to the other gesture that needs a row.
-      if (lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
+      if (menu.lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
       setCreating({
         kind,
         seed,
@@ -1007,7 +1022,7 @@ export function Sidebar({
       })
       setMenu(null)
     },
-    [menu, root, lens, favoriteNodes, onLensChange],
+    [menu, root, favoriteNodes, onLensChange],
   )
 
   const submitCreate = useCallback(
@@ -1281,7 +1296,18 @@ export function Sidebar({
     creating === null ? null : { kind: creating.kind, seed: creating.seed, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
 
   // ONE gate for both disk-folder births (YAZ-948 rule; YAZ-1604 adds the dated twin).
-  const canNewFolder = menu !== null && !(lens === 'topics' && menu.rowKind !== 'dir')
+  const canNewFolder = menu !== null && !(menu.lens === 'topics' && menu.rowKind !== 'dir')
+
+  // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through the folder-row
+  // door (YAZ-1491 D3): App flips to Files; the reveal clears the query, ends a focus that would hide
+  // the row, expands and flashes it — and the item's input or focus lands beside the row it names.
+  const viaTree =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A): void => {
+      const leaveTo = menu?.leaveSearchTo ?? null
+      if (leaveTo !== null) onRevealInFiles(leaveTo)
+      run(...args)
+    }
 
   return (
     <aside className="sidebar">
@@ -1416,14 +1442,15 @@ export function Sidebar({
         />
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
-          results list has no such target, so right-clicking it offers nothing (YAZ-803).
+          results list has no such target, so right-clicking it offers nothing (YAZ-803) — not even
+          Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the full menu.
           BOTH lenses offer it since YAZ-948 — 🔒 YAZ-847 withheld it from Topics only until
           that tree had a menu of its own to be consistent with, which YAZ-865 gave its rows.
           Blank space means the same thing in either lens: the vault ROOT. */}
       <div
         ref={bodyRef}
         className="sidebar__body"
-        onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}
+        onContextMenu={(e) => (searching ? e.preventDefault() : openMenu(null, e))}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright
@@ -1450,7 +1477,7 @@ export function Sidebar({
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
-            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} />
+            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} onRowContextMenu={(hit, e) => openMenu({ type: hit.kind, path: hit.path }, e)} />
           ) : (
             <p className="sidebar__msg">No matches</p>
           )
@@ -1550,8 +1577,8 @@ export function Sidebar({
               onOpenVsCode: openVsCode,
               onOpenDefault: openDefault,
               onReveal: reveal,
-              focusLabel: focusLabel(lens, menu.focusPaths?.length ?? 0),
-              onFocus: focusOn,
+              focusLabel: focusLabel(menu.lens, menu.focusPaths?.length ?? 0),
+              onFocus: viaTree((paths) => focusOn(paths, menu.lens)),
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
               // Paste goes exactly where "New folder" goes (🔒 D5, YAZ-1674): a Topics PAGE row and
@@ -1559,15 +1586,15 @@ export function Sidebar({
               onPaste: canNewFolder ? () => void pasteInto(menu.targetDir) : null,
               onNotice,
               onCopyForAgent: (path) => void copyForAgent(path, onNotice),
-              onNewNote: () => startCreate('file'),
-              onNewFolderPage: () => startCreate('folderPage'),
+              onNewNote: viaTree(() => startCreate('file')),
+              onNewFolderPage: viaTree(() => startCreate('folderPage')),
               // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
               // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
-              onNewFolder: canNewFolder ? () => startCreate('dir') : null,
-              onNewDatedFolder: canNewFolder ? () => startCreate('dir', datedFolderSeed()) : null,
+              onNewFolder: canNewFolder ? viaTree(() => startCreate('dir')) : null,
+              onNewDatedFolder: canNewFolder ? viaTree(() => startCreate('dir', datedFolderSeed())) : null,
               onToggleFolderPage: toggleFolderPage,
               onToggleFavorite: toggleFavorite,
-              onRename: (path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' }),
+              onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })),
               onDelete: askDelete,
             },
           )}
