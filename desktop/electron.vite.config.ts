@@ -56,15 +56,18 @@ function excalidrawAssets(): Plugin {
 
 export default defineConfig({
   main: {
-    // No externalizeDepsPlugin: chokidar 4 is pure JS and gets bundled, so the packaged app
-    // needs no node_modules at all (spike decision, see GRO-2151 findings).
+    // Every dependency is bundled into `out/main` (chokidar 4 is pure JS), so the packaged app ships
+    // no node_modules at all (GRO-2151). electron-vite 5 externalizes `desktop/package.json`'s
+    // `dependencies` by default, so chokidar is a devDependency and `externalizeDeps` is off;
+    // `tools/mainBundle.test.mjs` fails if the bundle requires anything but Node built-ins and
+    // electron (YAZ-2185).
     resolve: { alias: { '@shared': shared } },
     // Two entries (YAZ-1617): the app, and the `yaseendocs` command the packaged shim runs as plain Node.
-    build: { rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
+    build: { externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
   },
   preload: {
     resolve: { alias: { '@shared': shared } },
-    build: { rollupOptions: { input: resolve(here, 'src/preload/index.ts') } },
+    build: { externalizeDeps: false, rollupOptions: { input: resolve(here, 'src/preload/index.ts') } },
   },
   renderer: {
     root: client,
