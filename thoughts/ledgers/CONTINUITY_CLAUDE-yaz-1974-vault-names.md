@@ -12,14 +12,15 @@
 
 ## Key Decisions
 - D1 both ideas · D2 hover ⓘ, full wrapped path, portal tooltip · D3 `FolderState.name` in the app state file · D4 `storage.vaultName` everywhere except Open Recent + disk-error notices · D5 "Set display name" / "Reset to folder name" inline via `TextField` · D6 filter matches display + folder name.
+- Found in the hand pass, locked with Yasin: D7 panel grows to fit names (min = header, cap 480px, then wrap) · D8 ⇧⏎ / ⇧-click = Open in this window · D9 holding ⇧ shows "Open here" on the highlighted row.
 
 ## State
 - Done:
   - [x] 1- Scope (YAZ-2039)
-- Now: [→] 2- Build (YAZ-2040): 2A store · 2B surfaces + filter · 2C inline rename · 2D one-line rows + ⓘ
-- Remaining:
-  - [ ] 3- Hand pass S1–S30 (YAZ-2045)
-  - [ ] 4A audit (YAZ-2047) · 4B apply, docs, ledger close (YAZ-2048)
+  - [x] 2- Build (YAZ-2040): 2A store · 2B surfaces + filter · 2C inline rename · 2D one-line rows + ⓘ
+  - [x] 3- Hand pass S1–S34 — Yasin: "everything passed" (YAZ-2045)
+  - [x] 4A audit (YAZ-2047) · 4B apply, docs, ledger close (YAZ-2048)
+- CLOSED 2026-09-27: merged to main, released as 0.9.27.
 
 ## Open Questions
 - (none)

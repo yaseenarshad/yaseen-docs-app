@@ -260,6 +260,12 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     />
   )
 
+  /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all. */
+  const menuTarget = (path: string) => {
+    const name = storage.vaultName(path)
+    return { path, name, isCurrent: path === root, renamed: name !== basename(path) }
+  }
+
   /** Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — its MRU entry is already gone. */
   const openVaultMenu = (path: string, at: RenameAt, e: MouseEvent): void => {
     e.preventDefault()
@@ -449,7 +455,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
           x={vaultMenu.x}
           y={vaultMenu.y}
           sections={buildVaultMenuSections(
-            { path: vaultMenu.path, name: storage.vaultName(vaultMenu.path), isCurrent: vaultMenu.path === root, renamed: storage.vaultName(vaultMenu.path) !== basename(vaultMenu.path) },
+            menuTarget(vaultMenu.path),
             {
               onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
               onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
