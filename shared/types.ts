@@ -461,6 +461,16 @@ export const MAX_COLLAPSED_GROUP_KEYS = 200
 /** Expanded Topics-tree pages per vault (🔒 D4, YAZ-848) are capped at this many — `folds`' cap, for a bucket of the same kind: one entry per page the user opened. */
 export const MAX_TOPICS_EXPANDED_PAGES = 500
 
+/** A vault display name (YAZ-1974 D3) is cut to this many characters (code points, so an emoji is never split). */
+export const MAX_VAULT_NAME = 80
+
+/** A display name as stored (YAZ-1974 D3): trimmed and capped; empty or not a string → null (= the folder name). */
+export function cleanVaultName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const name = [...raw.trim()].slice(0, MAX_VAULT_NAME).join('')
+  return name === '' ? null : name
+}
+
 /** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write — `topicsExpanded`'s cap, for a list of the same kind. */
 export const MAX_FAVORITES = 500
 
@@ -662,7 +672,12 @@ export interface FolderState {
    * into any note's frontmatter.
    */
   topicsExpanded: string[]
+  /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
+  name: string | null
 }
+
+/** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'name'>>
 
 /**
  * The whole persisted app state — one user-global JSON file, owned by the main process
@@ -686,7 +701,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
@@ -965,8 +980,8 @@ export interface StateApi {
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
   removeRecent(path: string): Promise<void>
-  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped main-side (YAZ-848). */
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): Promise<void>
+  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped and `name` cleaned main-side (YAZ-848, YAZ-1974). */
+  setFolder(root: string, patch: FolderPatch): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
   /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */

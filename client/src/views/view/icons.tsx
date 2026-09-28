@@ -123,6 +123,15 @@ export const EyeIcon = () => (
   </svg>
 )
 
+/** Circled "i", for the vault switcher row's full-path tooltip (YAZ-1974 D2). */
+export const InfoIcon = () => (
+  <svg {...svg}>
+    <circle cx="8" cy="8" r="6.5" />
+    <path d="M8 7.2v4.3" />
+    <circle cx="8" cy="4.9" r="0.4" fill="currentColor" />
+  </svg>
+)
+
 /** The Favorites lens tab (YAZ-1766 D1, a glyph not a word — Yasin, demo 2026-09-21); filled while active via CSS. */
 export const HeartIcon = () => (
   <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="heart-icon">

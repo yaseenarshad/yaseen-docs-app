@@ -4,6 +4,7 @@ import {
   MAX_FOLD_KEYS_PER_FILE,
   MAX_TOPICS_EXPANDED_PAGES,
   addRecentRoot,
+  cleanVaultName,
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
@@ -15,6 +16,7 @@ import {
   type SidebarLens,
   type WindowIdentity,
 } from '@shared/types'
+import { basename } from './paths'
 
 /**
  * The renderer's view of the app state (D9, GRO-2159): an in-memory cache of the main-owned
@@ -95,6 +97,16 @@ export const storage = {
   removeRecentRoot(path: string): void {
     state = { ...state, recents: state.recents.filter((r) => r.path !== path) }
     send('state.removeRecent', () => window.yaseenDocs.state.removeRecent(path))
+  },
+
+  /** What the app calls a vault (YAZ-1974 D4): its display name, else its folder name. */
+  vaultName: (root: string): string => folderOf(root).name ?? basename(root),
+  /** Set (or, with null / empty / the folder's own name, clear) a vault's display name (D3, D5). */
+  setVaultName(root: string, raw: string | null): void {
+    const clean = cleanVaultName(raw)
+    const name = clean === basename(root) ? null : clean
+    patchFolder(root, { name })
+    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { name }))
   },
 
   getExpanded: (root: string): string[] => folderOf(root).expanded,
