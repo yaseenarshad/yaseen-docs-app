@@ -1,6 +1,8 @@
 import { vi } from "vitest";
 
-import { LASER_COLORS, LASER_HOLD_MS } from "@excalidraw/common";
+import { fireEvent } from "@testing-library/react";
+
+import { LASER_HOLD_MS } from "@excalidraw/common";
 
 import {
   clearAppStateForDatabase,
@@ -14,13 +16,23 @@ import { AnimationController } from "../renderer/animation";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
-import { act, render } from "./test-utils";
+import { act, render, unmountComponent } from "./test-utils";
+
+import type { NormalizedZoomValue } from "../types";
 
 const { h } = window;
 const mouse = new Pointer("mouse");
 
 const byTestId = (testId: string) =>
   document.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`);
+
+/** a laser bar radio (trail mode or size), by its visible label */
+const radio = (label: string) =>
+  [...document.querySelectorAll(".RadioGroup__choice")]
+    .find((choice) => choice.textContent === label)!
+    .querySelector("input")!;
+
+const clickClear = () => act(() => byTestId("laser-clear")!.click());
 
 const getPaths = () =>
   [...document.querySelectorAll(".SVGLayer svg path")].filter(
@@ -66,14 +78,13 @@ describe("laser trail settings", () => {
   it("defaults to today's laser and persists only in browser storage", () => {
     const appState = getDefaultAppState();
     expect(appState.laserTrailMode).toBe("fade");
-    expect(appState.laserColor).toBe(LASER_COLORS[0]);
     expect(appState.laserColor).toBe("#ff0000");
     expect(appState.laserSize).toBe("S");
 
     const custom = {
       ...appState,
       laserTrailMode: "sticky" as const,
-      laserColor: "#2979ff",
+      laserColor: "#2979ff" as const,
       laserSize: "L" as const,
     };
     expect(clearAppStateForLocalStorage(custom)).toMatchObject({
@@ -118,9 +129,11 @@ describe("laser trail settings", () => {
       laserSize: "M",
     });
 
-    // only the presets: a custom or upper-case hex resets, like the host's guard
+    // only the presets: a custom or upper-case hex resets
     for (const laserColor of ["#123456", "#FF0000"]) {
-      expect(restoreAppState({ laserColor }, null).laserColor).toBe("#ff0000");
+      expect(restoreAppState({ laserColor } as any, null).laserColor).toBe(
+        "#ff0000",
+      );
     }
   });
 });
@@ -157,6 +170,8 @@ describe("laser trail modes", () => {
     // full strength: outline is 2 * size (S = 2) tall
     expect(getPaths()).toHaveLength(1);
     expect(getMarksBounds().height).toBeCloseTo(4, 0);
+    // held marks don't keep the render loop running; a timer wakes it
+    expect(AnimationController.isIdle()).toBe(true);
 
     // new activity pushes the fade of all Hold strokes back
     drawStroke(100, 10, 10, 300);
@@ -175,7 +190,7 @@ describe("laser trail modes", () => {
     advance(60_000);
     expect(getPaths()).toHaveLength(1);
     expect(getMarksBounds().height).toBeCloseTo(4, 0);
-    expect((AnimationController as any).animations.size).toBe(0);
+    expect(AnimationController.isIdle()).toBe(true);
 
     // marks are never scene elements
     expect(h.elements).toHaveLength(0);
@@ -190,6 +205,15 @@ describe("laser trail modes", () => {
     expect(getMarksBounds().maxX).toBeGreaterThan(550);
   });
 
+  it("hold: a long stroke (> 100 points) stays whole while held", () => {
+    API.setAppState({ laserTrailMode: "hold" });
+
+    drawStroke(100, 150, 4);
+    advance(LASER_HOLD_MS - 1000);
+    expect(getMarksBounds().minX).toBeLessThan(100);
+    expect(getMarksBounds().maxX).toBeGreaterThan(690);
+  });
+
   it("sticky marks stay pinned to the canvas when the viewport scrolls", () => {
     API.setAppState({ laserTrailMode: "sticky" });
 
@@ -199,6 +223,20 @@ describe("laser trail modes", () => {
 
     API.setAppState({ scrollX: h.state.scrollX + 50 });
     expect(getMarksBounds().minX).toBeCloseTo(minX + 50, 0);
+  });
+
+  it("sticky marks keep their on-screen thickness when zooming", () => {
+    API.setAppState({ laserTrailMode: "sticky" });
+
+    drawStroke(100, 10);
+    advance(100);
+    // the stroke starts at x=100 with a 2px radius
+    expect(getMarksBounds().minX).toBeCloseTo(98, 0);
+
+    API.setAppState({ zoom: { value: 2 as NormalizedZoomValue } });
+    // pinned to the canvas (x=100 is now at 200), still 2px thick on screen
+    expect(getMarksBounds().minX).toBeCloseTo(198, 0);
+    expect(getMarksBounds().height).toBeCloseTo(4, 0);
   });
 
   it("each stroke keeps the colour and size it was drawn with", () => {
@@ -284,6 +322,17 @@ describe("laser trail modes", () => {
     expect(getMarksBounds().height).toBeCloseTo(4, 0);
   });
 
+  it("Keep while Hold strokes are still held makes them sticky", () => {
+    API.setAppState({ laserTrailMode: "hold" });
+    drawStroke(100, 10);
+    advance(1000);
+
+    act(() => byTestId("laser-keep")!.click());
+    advance(LASER_HOLD_MS * 3);
+    expect(getPaths()).toHaveLength(1);
+    expect(getMarksBounds().height).toBeCloseTo(4, 0);
+  });
+
   it("the Keep and Clear buttons act on the local marks", () => {
     const keep = byTestId("laser-keep")!;
     const clear = byTestId("laser-clear")!;
@@ -307,9 +356,9 @@ describe("laser trail modes", () => {
   });
 
   it("the mode, colour and size controls write the app state", () => {
-    act(() => byTestId("laser-mode-hold")!.click());
+    act(() => radio("Hold").click());
     act(() => byTestId("laser-color-#d500f9")!.click());
-    act(() => byTestId("laser-size-M")!.click());
+    act(() => radio("M").click());
 
     expect(h.state.laserTrailMode).toBe("hold");
     expect(h.state.laserColor).toBe("#d500f9");
@@ -321,7 +370,7 @@ describe("laser trail modes", () => {
     drawStroke(100, 10);
     drawStroke(100, 10, 10, 300);
 
-    act(() => h.app.laserTrails.clear());
+    clickClear();
     advance(20);
     expect(getPaths()).toHaveLength(0);
 
@@ -344,7 +393,7 @@ describe("laser trail modes", () => {
   it("Clear, then another tool and back to the laser: ⌘Z restores", () => {
     API.setAppState({ laserTrailMode: "sticky" });
     drawStroke(100, 10);
-    act(() => h.app.laserTrails.clear());
+    clickClear();
 
     act(() => {
       h.app.setActiveTool({ type: "selection" });
@@ -372,7 +421,8 @@ describe("laser trail modes", () => {
     advance(20);
     expect(h.history.undoStack.length).toBe(undoSteps - 1);
     expect(getPaths()).toHaveLength(1);
-    expect(h.app.laserTrails.getSnapshot().canUndo).toBe(true);
+    setLaser();
+    expect(byTestId("laser-button-undo")!.disabled).toBe(false);
   });
 
   it("⌘Z while the laser is active never touches the board history", () => {
@@ -463,6 +513,93 @@ describe("laser trail modes", () => {
     expect(byTestId("laser-make-permanent")!.disabled).toBe(true);
   });
 
+  it("⇧Enter sizes the strokes to how thick the marks look on screen", () => {
+    API.setAppState({ laserTrailMode: "sticky", laserSize: "L" });
+    API.setAppState({ zoom: { value: 2 as NormalizedZoomValue } });
+    drawStroke(100, 10);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress("Enter");
+    });
+    // L = 5px on screen at zoom 2 → 2.5 scene px, drawn at strokeWidth * 1.4
+    expect(h.elements[0].strokeWidth).toBeCloseTo(5 / 2 / 1.4);
+  });
+
+  it("⇧Enter does nothing in view mode", () => {
+    API.setAppState({ laserTrailMode: "sticky" });
+    drawStroke(100, 10);
+    API.setAppState({ viewModeEnabled: true });
+    setLaser();
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress("Enter");
+    });
+    expect(h.elements).toHaveLength(0);
+    advance(20);
+    expect(getPaths()).toHaveLength(1);
+  });
+
+  it("⌘Enter and ⌥Enter don't keep the marks", () => {
+    drawStroke(100, 10);
+    Keyboard.withModifierKeys({ ctrl: true }, () => {
+      Keyboard.keyPress("Enter");
+    });
+    Keyboard.withModifierKeys({ alt: true }, () => {
+      Keyboard.keyPress("Enter");
+    });
+    advance(5000);
+    expect(getPaths()).toHaveLength(0);
+  });
+
+  it("Enter and Esc leave the marks alone while another tool is active", () => {
+    API.setAppState({ laserTrailMode: "sticky" });
+    drawStroke(100, 10);
+    API.setAppState({ laserTrailMode: "fade" });
+    drawStroke(100, 10, 10, 300);
+    act(() => {
+      h.app.setActiveTool({ type: "rectangle" });
+    });
+
+    Keyboard.keyPress("Enter");
+    Keyboard.keyPress("Escape");
+    advance(5000);
+    // the fade stroke wasn't kept, the sticky one wasn't cleared
+    expect(getPaths()).toHaveLength(1);
+    expect(getMarksBounds().height).toBeCloseTo(4, 0);
+  });
+
+  it("a focused control keeps its own Enter and Esc", () => {
+    drawStroke(100, 10);
+    const clear = byTestId("laser-clear")!;
+    clear.focus();
+
+    // Enter is left to the browser to press the button: no Keep
+    expect(fireEvent.keyDown(clear, { key: "Enter" })).toBe(true);
+    advance(5000);
+    expect(getPaths()).toHaveLength(0);
+
+    // Esc doesn't clear the marks
+    API.setAppState({ laserTrailMode: "sticky" });
+    drawStroke(100, 10);
+    clear.focus();
+    fireEvent.keyDown(clear, { key: "Escape" });
+    advance(20);
+    expect(getPaths()).toHaveLength(1);
+  });
+
+  it("resetScene drops the marks and their history", () => {
+    API.setAppState({ laserTrailMode: "sticky" });
+    drawStroke(100, 10);
+    clickClear();
+
+    act(() => h.app.api.resetScene());
+    setLaser();
+    expect(byTestId("laser-button-undo")!.disabled).toBe(true);
+    Keyboard.undo();
+    advance(20);
+    expect(getPaths()).toHaveLength(0);
+  });
+
   it("the Make permanent button converts the marks", () => {
     drawStroke(100, 10);
     const button = byTestId("laser-make-permanent")!;
@@ -485,14 +622,6 @@ describe("laser undo rule", () => {
       `.contextual-properties-toolbar [data-testid="${testId}"]`,
     )!;
 
-  it("the laser bar's undo/redo don't reuse the footer's test ids", () => {
-    setLaser();
-    expect(barButton("laser-button-undo")).not.toBeNull();
-    expect(
-      document.querySelectorAll('[data-testid="button-undo"]'),
-    ).toHaveLength(1);
-  });
-
   beforeEach(async () => {
     await render(<Excalidraw handleKeyboardGlobally />);
     vi.useFakeTimers({
@@ -508,9 +637,16 @@ describe("laser undo rule", () => {
     vi.useRealTimers();
   });
 
+  it("the laser bar's undo/redo don't reuse the footer's test ids", () => {
+    expect(barButton("laser-button-undo")).not.toBeNull();
+    expect(
+      document.querySelectorAll('[data-testid="button-undo"]'),
+    ).toHaveLength(1);
+  });
+
   it("the footer undo/redo buttons step the laser history while the laser is active", () => {
     drawStroke(100, 10);
-    act(() => h.app.laserTrails.clear());
+    clickClear();
     advance(20);
     expect(getPaths()).toHaveLength(0);
 
@@ -578,7 +714,10 @@ describe("laser undo rule", () => {
     Keyboard.undo();
     expect(h.history.undoStack.length).toBe(undoSteps - 2);
     // the laser history is untouched
-    expect(h.app.laserTrails.getSnapshot().canUndo).toBe(true);
+    act(() => {
+      h.app.setActiveTool({ type: "laser" });
+    });
+    expect(barButton("laser-button-undo").disabled).toBe(false);
   });
 
   it("laser undo works in view mode", () => {
@@ -587,10 +726,24 @@ describe("laser undo rule", () => {
     act(() => {
       h.app.setActiveTool({ type: "laser" });
     });
-    act(() => h.app.laserTrails.clear());
+    Keyboard.keyPress("Escape");
+    advance(20);
+    expect(getPaths()).toHaveLength(0);
 
+    act(() => {
+      h.app.setActiveTool({ type: "laser" });
+    });
     Keyboard.undo();
     advance(20);
     expect(getPaths()).toHaveLength(1);
+  });
+
+  it("unmounting drops the laser history", () => {
+    drawStroke(100, 10);
+    const { laserTrails } = h.app;
+    expect(laserTrails.getSnapshot().canUndo).toBe(true);
+
+    unmountComponent();
+    expect(laserTrails.getSnapshot().canUndo).toBe(false);
   });
 });

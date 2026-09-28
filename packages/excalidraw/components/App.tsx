@@ -4393,11 +4393,8 @@ class App extends React.Component<AppProps, AppState> {
       prevState.zoom.value !== this.state.zoom.value ||
       prevState.scrollX !== this.state.scrollX ||
       prevState.scrollY !== this.state.scrollY ||
-      prevState.width !== this.state.width ||
-      prevState.height !== this.state.height ||
       prevState.offsetLeft !== this.state.offsetLeft ||
-      prevState.offsetTop !== this.state.offsetTop ||
-      prevState.theme !== this.state.theme
+      prevState.offsetTop !== this.state.offsetTop
     ) {
       this.laserTrails.redraw();
     }
@@ -5735,10 +5732,10 @@ class App extends React.Component<AppProps, AppState> {
    * While the laser is active, Enter keeps the visible marks, ⇧Enter makes
    * them part of the drawing, and Esc clears them (a laser undo step) and
    * switches to the selection tool. Other tool switches keep the marks.
-   * Undo/redo route through the history actions.
+   * A focused control (e.g. a laser bar button) keeps its own Enter/Esc.
    */
   private maybeHandleLaserKeyDown(event: React.KeyboardEvent | KeyboardEvent) {
-    if (this.state.activeTool.type !== "laser") {
+    if (this.state.activeTool.type !== "laser" || isInteractive(event.target)) {
       return false;
     }
 
@@ -5789,26 +5786,19 @@ class App extends React.Component<AppProps, AppState> {
         y,
         ...getSizeFromPoints(localPoints),
         strokeColor: color,
-        backgroundColor: "transparent",
-        fillStyle: "solid",
         // the laser's outline radius is `size` screen px; a constant-width
         // freedraw draws the same geometry with radius strokeWidth * factor
         strokeWidth:
           size / this.state.zoom.value / CONSTANT_WIDTH_FREEDRAW.SIZE_FACTOR,
-        strokeStyle: "solid",
         roughness: 0,
-        opacity: 100,
-        roundness: null,
         simulatePressure: false,
         strokeOptions: {
           variability: "constant",
           streamline: LASER_STREAMLINE,
         },
-        locked: false,
         groupIds: [groupId],
         frameId: null,
         points: localPoints,
-        pressures: [],
       });
     });
 

@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { useId } from "react";
 
 import {
   LASER_COLORS,
@@ -6,10 +7,13 @@ import {
   LASER_TRAIL_MODES,
 } from "@excalidraw/common";
 
-import type { LaserSize, LaserTrailMode } from "@excalidraw/common";
+import type { LaserColor, LaserSize, LaserTrailMode } from "@excalidraw/common";
 
 import { useEmitter } from "../hooks/useEmitter";
 import { getShortcutKey } from "../shortcut";
+
+import { ContextualToolbarDivider } from "./Actions";
+import { RadioGroup } from "./RadioGroup";
 
 import "./LaserToolbarSection.scss";
 
@@ -25,7 +29,7 @@ const MODES: Record<LaserTrailMode, { label: string; title: string }> = {
   sticky: { label: "Sticky", title: "Sticky: marks stay until you clear them" },
 };
 
-const COLOR_NAMES: Record<typeof LASER_COLORS[number], string> = {
+const COLOR_NAMES: Record<LaserColor, string> = {
   "#ff0000": "Red",
   "#ffd400": "Yellow",
   "#00c853": "Green",
@@ -48,10 +52,12 @@ export const LaserToolbarSection = ({
   appState: UIAppState;
   renderAction: ActionManager["renderAction"];
 }) => {
-  const { canKeep, canClear } = useEmitter(
+  const { canKeep, hasMarks } = useEmitter(
     app.laserTrails.onChange,
     app.laserTrails.getSnapshot(),
   );
+  // radio names are document-wide, and a host can mount several editors
+  const id = useId();
   const undoHint = getShortcutKey("CtrlOrCmd+Z");
   const redoHint = getShortcutKey("CtrlOrCmd+Shift+Z");
 
@@ -59,37 +65,21 @@ export const LaserToolbarSection = ({
     <>
       <fieldset className="context-fieldset">
         <legend>Laser trail</legend>
-        <div
-          className="laser-toolbar__segmented"
-          role="radiogroup"
-          aria-label="Laser trail"
-        >
-          {LASER_TRAIL_MODES.map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              role="radio"
-              aria-checked={appState.laserTrailMode === mode}
-              className={clsx("laser-toolbar__segment", {
-                active: appState.laserTrailMode === mode,
-              })}
-              title={
-                mode === "sticky"
-                  ? `${MODES[mode].title} (undo ${undoHint})`
-                  : MODES[mode].title
-              }
-              data-testid={`laser-mode-${mode}`}
-              onClick={() => app.setAppState({ laserTrailMode: mode })}
-            >
-              {MODES[mode].label}
-            </button>
-          ))}
-        </div>
+        <RadioGroup
+          name={`${id}-laser-trail`}
+          value={appState.laserTrailMode}
+          onChange={(laserTrailMode) => app.setAppState({ laserTrailMode })}
+          choices={LASER_TRAIL_MODES.map((mode) => ({
+            value: mode,
+            label: MODES[mode].label,
+            ariaLabel:
+              mode === "sticky"
+                ? `${MODES[mode].title} (undo ${undoHint})`
+                : MODES[mode].title,
+          }))}
+        />
       </fieldset>
-      <div
-        className="contextual-properties-toolbar__divider"
-        aria-hidden="true"
-      />
+      <ContextualToolbarDivider />
       <fieldset className="context-fieldset">
         <legend>Laser color</legend>
         <div
@@ -108,47 +98,28 @@ export const LaserToolbarSection = ({
               className={clsx("laser-toolbar__swatch", {
                 active: appState.laserColor === color,
               })}
-              style={{ "--swatch-color": color } as React.CSSProperties}
+              style={{ "--swatch-color": color }}
               data-testid={`laser-color-${color}`}
               onClick={() => app.setAppState({ laserColor: color })}
             />
           ))}
         </div>
       </fieldset>
-      <div
-        className="contextual-properties-toolbar__divider"
-        aria-hidden="true"
-      />
+      <ContextualToolbarDivider />
       <fieldset className="context-fieldset">
         <legend>Laser size</legend>
-        <div
-          className="laser-toolbar__segmented"
-          role="radiogroup"
-          aria-label="Laser size"
-        >
-          {(Object.keys(LASER_SIZES) as LaserSize[]).map((size) => (
-            <button
-              key={size}
-              type="button"
-              role="radio"
-              aria-checked={appState.laserSize === size}
-              aria-label={SIZE_NAMES[size]}
-              title={SIZE_NAMES[size]}
-              className={clsx("laser-toolbar__segment", {
-                active: appState.laserSize === size,
-              })}
-              data-testid={`laser-size-${size}`}
-              onClick={() => app.setAppState({ laserSize: size })}
-            >
-              {size}
-            </button>
-          ))}
-        </div>
+        <RadioGroup
+          name={`${id}-laser-size`}
+          value={appState.laserSize}
+          onChange={(laserSize) => app.setAppState({ laserSize })}
+          choices={(Object.keys(LASER_SIZES) as LaserSize[]).map((size) => ({
+            value: size,
+            label: size,
+            ariaLabel: SIZE_NAMES[size],
+          }))}
+        />
       </fieldset>
-      <div
-        className="contextual-properties-toolbar__divider"
-        aria-hidden="true"
-      />
+      <ContextualToolbarDivider />
       <div className="laser-toolbar__history">
         {renderAction("undo", {
           size: "small",
@@ -157,19 +128,18 @@ export const LaserToolbarSection = ({
         })}
         {renderAction("redo", {
           size: "small",
-          title: `Redo (${redoHint})`,
+          title: `Redo laser marks (${redoHint})`,
           testId: "laser-button-redo",
         })}
       </div>
-      <div
-        className="contextual-properties-toolbar__divider"
-        aria-hidden="true"
-      />
+      <ContextualToolbarDivider />
       <button
         type="button"
         className="laser-toolbar__button"
         aria-label="Keep marks"
-        title="Keep the visible marks until cleared (↵)"
+        title={`Keep the visible marks until cleared (${getShortcutKey(
+          "Enter",
+        )})`}
         data-testid="laser-keep"
         disabled={!canKeep}
         onClick={() => app.laserTrails.keep()}
@@ -180,9 +150,11 @@ export const LaserToolbarSection = ({
         type="button"
         className="laser-toolbar__button"
         aria-label="Make marks permanent"
-        title="Make the marks part of the drawing (⇧↵)"
+        title={`Make the marks part of the drawing (${getShortcutKey(
+          "Shift+Enter",
+        )})`}
         data-testid="laser-make-permanent"
-        disabled={!canClear}
+        disabled={!hasMarks}
         onClick={() => app.makeLaserMarksPermanent()}
       >
         Make permanent
@@ -193,7 +165,7 @@ export const LaserToolbarSection = ({
         aria-label="Clear marks"
         title={`Clear all marks (undo ${undoHint})`}
         data-testid="laser-clear"
-        disabled={!canClear}
+        disabled={!hasMarks}
         onClick={() => app.laserTrails.clear()}
       >
         Clear

@@ -430,7 +430,6 @@ export {
   MIME_TYPES,
   ROUNDNESS,
   DEFAULT_LASER_COLOR,
-  LASER_HOLD_MS,
   LASER_TRAIL_MODES,
   LASER_COLORS,
   LASER_SIZES,
@@ -441,7 +440,7 @@ export {
   getFormFactor,
   throttleRAF,
 } from "@excalidraw/common";
-export type { LaserTrailMode, LaserSize } from "@excalidraw/common";
+export type { LaserTrailMode, LaserColor, LaserSize } from "@excalidraw/common";
 
 export {
   mutateElement,

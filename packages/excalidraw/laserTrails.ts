@@ -39,7 +39,7 @@ const fadeSize = (c: SizeMappingDetails) => {
 
 export type LaserTrailsSnapshot = {
   canKeep: boolean;
-  canClear: boolean;
+  hasMarks: boolean;
   canUndo: boolean;
   canRedo: boolean;
 };
@@ -61,7 +61,7 @@ export class LaserTrails implements Trail {
 
   private snapshot: LaserTrailsSnapshot = {
     canKeep: false,
-    canClear: false,
+    hasMarks: false,
     canUndo: false,
     canRedo: false,
   };
@@ -111,18 +111,9 @@ export class LaserTrails implements Trail {
   }
 
   private hasHoldStrokes() {
-    const current = this.localTrail.getCurrentTrail();
-    return (
-      (!!current && this.strokeModes.get(current) === "hold") ||
-      this.localTrail
-        .getPastTrails()
-        .some((trail) => this.strokeModes.get(trail) === "hold")
-    );
-  }
-
-  private touch() {
-    this.lastActivity = performance.now();
-    this.scheduleHoldDecay();
+    return this.localTrail
+      .getPastTrails()
+      .some((trail) => this.strokeModes.get(trail) === "hold");
   }
 
   /** wakes the (otherwise idle) render loop when the Hold strokes start to
@@ -156,7 +147,7 @@ export class LaserTrails implements Trail {
     const trails = this.localTrail.getPastTrails();
     const snapshot: LaserTrailsSnapshot = {
       canKeep: trails.some((trail) => this.strokeModes.get(trail) !== "sticky"),
-      canClear: trails.length > 0,
+      hasMarks: trails.length > 0,
       canUndo: this.historyIndex > 0,
       canRedo: this.historyIndex < this.history.length - 1,
     };
@@ -192,23 +183,18 @@ export class LaserTrails implements Trail {
     this.emitChange();
   }
 
-  /** steps the sticky strokes back; `false` if there's nothing to undo */
   undo() {
-    if (this.historyIndex === 0) {
-      return false;
+    if (this.historyIndex > 0) {
+      this.historyIndex--;
+      this.restoreHistoryEntry();
     }
-    this.historyIndex--;
-    this.restoreHistoryEntry();
-    return true;
   }
 
   redo() {
-    if (this.historyIndex >= this.history.length - 1) {
-      return false;
+    if (this.historyIndex < this.history.length - 1) {
+      this.historyIndex++;
+      this.restoreHistoryEntry();
     }
-    this.historyIndex++;
-    this.restoreHistoryEntry();
-    return true;
   }
 
   private resetHistory() {
@@ -268,14 +254,10 @@ export class LaserTrails implements Trail {
       changed = true;
     }
 
-    if (!changed) {
-      return false;
+    if (changed) {
+      this.localTrail.setPastTrails(trails);
+      this.commit();
     }
-
-    this.localTrail.setPastTrails(trails);
-    this.scheduleHoldDecay();
-    this.commit();
-    return true;
   }
 
   /**
@@ -291,7 +273,7 @@ export class LaserTrails implements Trail {
       if (points.length > 0) {
         strokes.push({
           points,
-          color: this.localTrail.getTrailFill(trail) ?? DEFAULT_LASER_COLOR,
+          color: this.localTrail.getTrailFill(trail),
           size: trail.options.size,
         });
       }
@@ -307,7 +289,6 @@ export class LaserTrails implements Trail {
   clear() {
     const hadStickyTrails = this.getStickyTrails().length > 0;
     this.localTrail.clearTrails();
-    this.scheduleHoldDecay();
     if (hadStickyTrails) {
       this.commit();
     }
@@ -316,7 +297,6 @@ export class LaserTrails implements Trail {
   /** removes all local marks and drops their history (e.g. new scene) */
   reset() {
     this.localTrail.clearTrails();
-    this.scheduleHoldDecay();
     this.resetHistory();
   }
 
@@ -329,6 +309,7 @@ export class LaserTrails implements Trail {
     const { laserTrailMode, laserColor, laserSize } = this.app.state;
 
     this.localTrail.startStyledPath(x, y, {
+      // updateScene doesn't run restoreAppState, so a host can pass anything
       size: LASER_SIZES[laserSize] ?? LASER_SIZES.S,
       fill: laserColor,
       sizeMapping: this.getSizeMapping(laserTrailMode),
@@ -338,13 +319,13 @@ export class LaserTrails implements Trail {
     if (trail) {
       this.strokeModes.set(trail, laserTrailMode);
     }
-    this.touch();
+    this.lastActivity = performance.now();
   }
 
   addPointToPath(x: number, y: number): void {
     if (this.localTrail.hasCurrentTrail) {
       this.localTrail.addPointToPath(x, y);
-      this.touch();
+      this.lastActivity = performance.now();
     }
   }
 
@@ -353,7 +334,8 @@ export class LaserTrails implements Trail {
     this.localTrail.endPath();
 
     if (trail) {
-      this.touch();
+      this.lastActivity = performance.now();
+      this.scheduleHoldDecay();
       if (this.strokeModes.get(trail) === "sticky") {
         this.commit();
       }

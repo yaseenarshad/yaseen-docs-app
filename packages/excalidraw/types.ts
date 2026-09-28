@@ -6,6 +6,7 @@ import type {
   EditorInterface,
   StrokeWidthKey,
   LaserTrailMode,
+  LaserColor,
   LaserSize,
 } from "@excalidraw/common";
 
@@ -436,7 +437,7 @@ export interface AppState {
 
   // laser pointer
   laserTrailMode: LaserTrailMode;
-  laserColor: string;
+  laserColor: LaserColor;
   laserSize: LaserSize;
 
   exportBackground: boolean;

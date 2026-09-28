@@ -27,7 +27,6 @@ export const DEFAULT_LASER_COLOR = "red";
 export const LASER_HOLD_MS = 5000;
 export const LASER_TRAIL_MODES = ["fade", "hold", "sticky"] as const;
 export type LaserTrailMode = typeof LASER_TRAIL_MODES[number];
-// red, yellow, green, blue, purple
 export const LASER_COLORS = [
   "#ff0000",
   "#ffd400",
@@ -35,6 +34,7 @@ export const LASER_COLORS = [
   "#2979ff",
   "#d500f9",
 ] as const;
+export type LaserColor = typeof LASER_COLORS[number];
 export const LASER_SIZES = { S: 2, M: 3.5, L: 5 } as const;
 export type LaserSize = keyof typeof LASER_SIZES;
 export const CURSOR_TYPE = {

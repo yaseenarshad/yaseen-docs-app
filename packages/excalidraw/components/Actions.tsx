@@ -386,14 +386,11 @@ export const ContextualPropertiesToolbar = ({
   renderAction: ActionManager["renderAction"];
   app: AppClassProperties;
 }) => {
-  const targetElements = getTargetElements(elementsMap, appState);
   const hasFullStylesPanel =
     deriveStylesPanelMode(app.editorInterface) === "full";
-  const isLaserTarget =
-    hasFullStylesPanel && appState.activeTool.type === "laser";
 
-  if (isLaserTarget) {
-    return appState.viewModeEnabled ? null : (
+  if (hasFullStylesPanel && appState.activeTool.type === "laser") {
+    return (
       <Island
         className="contextual-properties-toolbar"
         padding={1}
@@ -411,6 +408,7 @@ export const ContextualPropertiesToolbar = ({
     );
   }
 
+  const targetElements = getTargetElements(elementsMap, appState);
   const isTextTarget =
     hasFullStylesPanel &&
     (appState.activeTool.type === "text" ||
@@ -686,7 +684,7 @@ export const ContextualPropertiesToolbar = ({
   );
 };
 
-const ContextualToolbarDivider = () => (
+export const ContextualToolbarDivider = () => (
   <div className="contextual-properties-toolbar__divider" aria-hidden="true" />
 );
 

@@ -154,6 +154,10 @@ export class AnimationController {
     return AnimationController.animations.has(key);
   }
 
+  static isIdle() {
+    return AnimationController.animations.size === 0;
+  }
+
   static cancel(key: string) {
     AnimationController.animations.delete(key);
     AnimationController.cancelScheduledFrameIfIdle();

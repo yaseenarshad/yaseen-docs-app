@@ -25,11 +25,7 @@ export interface AnimatedTrailOptions {
   fill: (trail: AnimatedTrail) => string;
   stroke?: (trail: AnimatedTrail) => string;
   animateTrail?: boolean;
-  /**
-   * A static trail looks the same on every frame: it doesn't keep the
-   * animation loop running (it's redrawn on `redraw()` instead) and it isn't
-   * dropped when its outline is momentarily empty.
-   */
+  /** static trails don't keep the loop running; `redraw()` repaints them */
   isStatic?: (trail: LaserPointer) => boolean;
   /** called when the set of finished trails changes */
   onTrailsChange?: () => void;
@@ -50,6 +46,7 @@ export class AnimatedTrail implements Trail {
   >();
 
   private container?: SVGSVGElement;
+  private groupElement: SVGGElement;
   private trailElement: SVGPathElement;
   // one <path> per run of consecutive trails sharing a fill, so per-stroke
   // fills keep their z-order (the first one is always `trailElement`)
@@ -65,7 +62,9 @@ export class AnimatedTrail implements Trail {
       Partial<AnimatedTrailOptions>,
   ) {
     this.key = `animated-trail-${AnimatedTrail.counter++}`;
+    this.groupElement = document.createElementNS(SVG_NS, "g");
     this.trailElement = document.createElementNS(SVG_NS, "path");
+    this.groupElement.appendChild(this.trailElement);
     this.pathElements = [this.trailElement];
     if (this.options.animateTrail) {
       this.trailAnimation = document.createElementNS(SVG_NS, "animate");
@@ -101,12 +100,10 @@ export class AnimatedTrail implements Trail {
     this.pastTrails = [];
     this.currentTrail = undefined;
 
-    for (const element of this.pathElements) {
-      if (element.parentNode === this.container) {
-        this.container?.removeChild(element);
-      }
+    this.groupElement.remove();
+    for (const element of this.pathElements.splice(1)) {
+      element.remove();
     }
-    this.pathElements = [this.trailElement];
 
     if (hadTrails) {
       this.options.onTrailsChange?.();
@@ -118,8 +115,8 @@ export class AnimatedTrail implements Trail {
       this.container = container;
     }
 
-    if (this.trailElement.parentNode !== this.container && this.container) {
-      this.container.appendChild(this.trailElement);
+    if (this.groupElement.parentNode !== this.container && this.container) {
+      this.container.appendChild(this.groupElement);
     }
 
     if (!AnimationController.running(this.key)) {
@@ -203,7 +200,9 @@ export class AnimatedTrail implements Trail {
   }
 
   getTrailFill(trail: LaserPointer) {
-    return this.trailFills.get(trail);
+    return (
+      this.trailFills.get(trail) ?? (this.options.fill ?? (() => "black"))(this)
+    );
   }
 
   getCurrentTrail() {
@@ -240,7 +239,6 @@ export class AnimatedTrail implements Trail {
 
   private onFrame() {
     const state = this.app.state;
-    const defaultFill = (this.options.fill ?? (() => "black"))(this);
     const paths: { fill: string; path: string }[] = [];
     const pastTrails: LaserPointer[] = [];
     let animating = !!this.currentTrail;
@@ -256,14 +254,14 @@ export class AnimatedTrail implements Trail {
       pastTrails.push(trail);
       animating = animating || !isStatic;
       paths.push({
-        fill: this.trailFills.get(trail) ?? defaultFill,
+        fill: this.getTrailFill(trail),
         path: this.drawTrail(outline, state),
       });
     }
 
     if (this.currentTrail) {
       paths.push({
-        fill: this.trailFills.get(this.currentTrail) ?? defaultFill,
+        fill: this.getTrailFill(this.currentTrail),
         path: this.drawTrail(
           this.getStrokeOutline(this.currentTrail, state, false),
           state,
@@ -304,16 +302,7 @@ export class AnimatedTrail implements Trail {
       if (!element) {
         element = document.createElementNS(SVG_NS, "path");
         this.pathElements.push(element);
-      }
-
-      const previous = this.pathElements[index - 1];
-      if (
-        previous &&
-        this.container &&
-        (element.parentNode !== this.container ||
-          element.previousSibling !== previous)
-      ) {
-        this.container.insertBefore(element, previous.nextSibling);
+        this.groupElement.appendChild(element);
       }
 
       element.setAttribute("d", run.d.trim());

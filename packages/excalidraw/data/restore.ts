@@ -1183,7 +1183,7 @@ export const restoreAppState = (
   if (!LASER_TRAIL_MODES.includes(nextAppState.laserTrailMode)) {
     nextAppState.laserTrailMode = defaultAppState.laserTrailMode;
   }
-  // presets only, like the host's canvas prefs guard
+  // presets only
   if (!(LASER_COLORS as readonly string[]).includes(nextAppState.laserColor)) {
     nextAppState.laserColor = defaultAppState.laserColor;
   }

@@ -66,7 +66,8 @@ const executeHistoryAction = (
 
 type ActionCreator = (history: History) => Action;
 
-/** while the laser is active, undo/redo step the laser's own mark history */
+/** while the laser is active, undo/redo step the laser's own mark history,
+ * also in view mode (presenting) */
 const isLaserActive = (appState: Readonly<Pick<AppState, "activeTool">>) =>
   appState.activeTool.type === "laser";
 
@@ -75,12 +76,11 @@ export const createUndoAction: ActionCreator = (history) => ({
   label: "buttons.undo",
   icon: UndoIcon,
   trackEvent: { category: "history" },
-  // the laser's marks can be undone while presenting in view mode
   viewMode: isLaserActive,
   perform: (elements, appState, value, app) => {
     if (isLaserActive(appState)) {
       app.laserTrails.undo();
-      return { captureUpdate: CaptureUpdateAction.NEVER };
+      return false;
     }
     return executeHistoryAction(app, appState, () =>
       history.undo(arrayToMap(elements) as SceneElementsMap, appState),
@@ -131,7 +131,7 @@ export const createRedoAction: ActionCreator = (history) => ({
   perform: (elements, appState, __, app) => {
     if (isLaserActive(appState)) {
       app.laserTrails.redo();
-      return { captureUpdate: CaptureUpdateAction.NEVER };
+      return false;
     }
     return executeHistoryAction(app, appState, () =>
       history.redo(arrayToMap(elements) as SceneElementsMap, appState),
