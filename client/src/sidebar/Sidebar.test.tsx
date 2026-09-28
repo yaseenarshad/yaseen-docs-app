@@ -26,6 +26,9 @@ import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
+/** Past the 100 ms quiet window a watcher burst waits out before its one tree read (YAZ-2191). */
+const afterQuiet = () => act(() => new Promise<void>((r) => setTimeout(r, 150)))
+
 const TREE: TreeNode[] = [
   { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
   { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
@@ -462,6 +465,54 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
   })
 })
 
+describe('Sidebar tree refresh is coalesced (YAZ-2191)', () => {
+  const withWatcher = () => {
+    const listeners: ((ev: WatchEvent) => void)[] = []
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        listeners.push(l)
+        return () => void listeners.splice(listeners.indexOf(l), 1)
+      },
+    }
+    return { watch, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
+  }
+  const wait = (ms: number) => act(() => new Promise<void>((r) => setTimeout(r, ms)))
+
+  it('a burst of structural events is ONE tree read, 100 ms after the last of them', async () => {
+    const { watch, fire } = withWatcher()
+    const { bridge } = await mount({ watch })
+    const before = bridge.tree.mock.calls.length
+    act(() => {
+      for (let i = 0; i < 50; i++) fire({ type: 'add', path: `/v/pulled-${i}.md`, mtime: 1 })
+    })
+    await wait(60)
+    act(() => fire({ type: 'unlinkDir', path: '/v/sub' }))
+    await wait(60)
+    expect(bridge.tree.mock.calls.length).toBe(before) // still inside the quiet window
+    await wait(80)
+    expect(bridge.tree.mock.calls.length).toBe(before + 1)
+  })
+
+  it('`ready` refreshes at once, and a `change` never refreshes', async () => {
+    const { watch, fire } = withWatcher()
+    const { bridge } = await mount({ watch })
+    const before = bridge.tree.mock.calls.length
+    act(() => fire({ type: 'change', path: '/v/a.md', mtime: 2 }))
+    await wait(150)
+    expect(bridge.tree.mock.calls.length).toBe(before)
+    act(() => fire({ type: 'ready', root: '/v' }))
+    expect(bridge.tree.mock.calls.length).toBe(before + 1)
+  })
+
+  it('shows the tree another consumer of the window fetched (the one feed)', async () => {
+    const { bridge, el } = await mount()
+    const { fetchTree } = await import('../lib/treeFeed')
+    bridge.tree.mockResolvedValue({ root: '/v', tree: [...TREE, { type: 'file', name: 'fresh.md', path: '/v/fresh.md', size: 1, mtime: 1, kind: 'markdown' }], generatedAt: 9 })
+    await act(async () => void (await fetchTree('/v')))
+    expect([...el.querySelectorAll('.tree__label')].map((l) => l.textContent)).toContain('fresh')
+  })
+})
+
 describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
   it('activating a file the tree does not show probes a FRESH tree and fires onFileMissing when it is really gone', async () => {
     const { bridge, props, rerender } = await mount({ activeFile: '/v/a.md' })
@@ -502,6 +553,7 @@ describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
     const { bridge, props } = await mount({ activeFile: '/v/a.md', watch })
     bridge.tree.mockImplementation(async (r: string) => ({ root: r, tree: TREE.filter((n) => n.path !== '/v/a.md'), generatedAt: 3 }))
     await act(async () => emit?.({ type: 'unlink', path: '/v/a.md' }))
+    await afterQuiet()
     expect(props.onFileMissing).not.toHaveBeenCalled()
   })
 })
@@ -890,9 +942,11 @@ describe('persistent search bar (YAZ-801)', () => {
   const pressEscape = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
 
   it('renders while the tree is still loading', async () => {
-    const { el } = await mount({}, (b) => b.tree.mockImplementation(() => new Promise(() => undefined)))
+    let answer!: () => void
+    const { el } = await mount({}, (b) => b.tree.mockImplementation((r: string) => new Promise((resolve) => (answer = () => resolve({ root: r, tree: [], generatedAt: 1 })))))
     expect(el.textContent).toContain('Loading…')
     expect(searchInput(el)).not.toBeNull()
+    await act(async () => answer()) // the window's one tree feed must not be left waiting on it (YAZ-2191)
   })
 
   it('renders when the tree failed to load', async () => {
@@ -1098,6 +1152,7 @@ describe('search results (YAZ-803)', () => {
     expect(activeLabel(el)).toBe('Anchor') // index 1 of two rows
     bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], generatedAt: 2 } as never)
     await act(async () => [...listeners].forEach((l) => l({ type: 'unlink', path: '/v/Docs/Anchor.md' })))
+    await afterQuiet()
     expect(rowLabels(el)).toEqual(['Alpha'])
     expect(activeLabel(el)).toBe('Alpha') // the stale index 1 clamps onto the last row, not onto nothing
     await press(input, 'Enter')
@@ -1742,6 +1797,7 @@ describe('focus mode (YAZ-1605)', () => {
     await focusRow(el, `${v}/Projects`)
     bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/Projects`), generatedAt: 2 } as never)
     await act(async () => fire({ type: 'unlinkDir', path: `${v}/Projects` }))
+    await afterQuiet()
     expect(eye(el)).toBeNull()
     expect(topLabels(el)).toEqual(['Notes', 'Projects-Archive', 'top'])
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [] })
@@ -1756,6 +1812,7 @@ describe('focus mode (YAZ-1605)', () => {
     await act(async () => itemByLabel(el, 'Focus on 2 folders')?.click())
     bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/Projects`), generatedAt: 2 } as never)
     await act(async () => fire({ type: 'unlinkDir', path: `${v}/Projects` }))
+    await afterQuiet()
     expect(eye(el)).not.toBeNull()
     expect(topLabels(el)).toEqual(['Notes'])
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [`${v}/Notes`] })
@@ -2066,6 +2123,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(topLabels(el)).toEqual(['Notes', 'Projects'])
     bridge.tree.mockResolvedValue({ root: v, tree: FAV(v).filter((n) => n.path !== `${v}/Projects`), generatedAt: 2 } as never)
     await act(async () => fire?.({ type: 'unlinkDir', path: `${v}/Projects` }))
+    await afterQuiet()
     expect(topLabels(el)).toEqual(['Notes'])
     expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
@@ -3022,6 +3080,7 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     // b is deleted on disk: the watcher-driven refresh brings the tree that no longer has it.
     bridge.tree.mockResolvedValue({ root: '/v', tree: [A], generatedAt: 2 })
     await act(async () => emit?.({ type: 'unlink', path: '/v/b.md' }))
+    await afterQuiet()
     expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/a.md'])
   })
 
@@ -3041,6 +3100,7 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     expect(selectedRows(el)).toHaveLength(3)
     bridge.tree.mockResolvedValue({ root: '/v', tree: [KEPT, A], generatedAt: 2 })
     await act(async () => emit?.({ type: 'unlinkDir', path: '/v/gone' }))
+    await afterQuiet()
     expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/kept', '/v/a.md'])
   })
 })

@@ -16,6 +16,9 @@ import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { folderCandidates, searchCandidates, searchTitles, type SearchCandidate } from './searchCandidates'
 
+/** Quiet time before a watcher burst's one index read (YAZ-2191; the sidebar's tree read waits the same). */
+const STRUCTURAL_REFRESH_MS = 100
+
 export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[]): SearchCandidate[] {
   const [records, setRecords] = useState<readonly IndexRecord[]>([])
   // Latched by the first non-empty query and never unlatched: after that the snapshot stays warm
@@ -28,25 +31,38 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
 
   useEffect(() => {
     if (!activated) return
-    let cancelled = false
+    /** Bumped per read and on teardown: only the newest read's answer is ever applied (YAZ-2191). */
+    let generation = 0
     const load = () => {
+      const mine = ++generation
       // An unreadable index leaves search with no rows — quietly. Search is an accelerator, not a
       // view: a banner here would shout about something the tree below is already showing fine.
       api.index(root).then(
         (res) => {
-          if (!cancelled) setRecords(res.records)
+          if (mine === generation) setRecords(res.records)
         },
         () => undefined,
       )
     }
     load()
-    // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering missed events.
+    // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
+    // missed events, and reads at once. Any other burst is ONE read, 100 ms after its last event
+    // (YAZ-2191): it used to be one whole-index fetch per event.
+    let timer: ReturnType<typeof setTimeout> | null = null
     const off = watch.subscribe((ev) => {
-      if (ev.type !== 'change' && ev.type !== 'error') load()
+      if (ev.type === 'change' || ev.type === 'error') return
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      if (ev.type === 'ready') return load()
+      timer = setTimeout(() => {
+        timer = null
+        load()
+      }, STRUCTURAL_REFRESH_MS)
     })
     return () => {
-      cancelled = true
+      generation++
       off()
+      if (timer !== null) clearTimeout(timer)
     }
   }, [root, watch, activated])
 
