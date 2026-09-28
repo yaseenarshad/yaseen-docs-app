@@ -122,13 +122,16 @@ describe("dragSelectedElements", () => {
       syncInvalidIndices([rectangle, label, unrelated, second]),
     );
     const order = scene.getNonDeletedElements().map((element) => element.id);
+    // this fork anchors a centered text element on the given x, so read the
+    // label position back instead of assuming upstream's (10, 15)
+    const labelBefore = { x: label.x, y: label.y };
 
     drag(scene, [rectangle, second]);
 
     expect(scene.getNonDeletedElements().map(({ x, y }) => ({ x, y }))).toEqual(
       [
         { x: 20, y: 30 },
-        { x: 30, y: 45 },
+        { x: labelBefore.x + 20, y: labelBefore.y + 30 },
         { x: 500, y: 600 },
         { x: 220, y: 330 },
       ],
