@@ -2,9 +2,9 @@
  * The lens tabs (6A-, YAZ-847) end-to-end against the REAL app: chrome v2 ROW 1 — **Topics ⇄
  * Files** — above the persistent search bar.
  *
- * Topics is the DEFAULT lens and holds the folder-page tree (YAZ-848, driven in full by
- * `topics.spec.ts` over the encyclopedia fixture); Files is today's file explorer, unchanged,
- * behind a tab. This spec is about the TABS — which body each one swaps in, and that the choice
+ * Files is the DEFAULT lens since YAZ-1846 (Topics was before it) and is today's file explorer,
+ * unchanged; Topics holds the folder-page tree (YAZ-848, driven in full by `topics.spec.ts` over
+ * the encyclopedia fixture) behind a tab. This spec is about the TABS — which body each one swaps in, and that the choice
  * is WINDOW identity (`WindowEntry.sidebarLens`, per window since YAZ-1628) surviving quit →
  * relaunch the way `sidebarWidth` does (easyWave step 2's shape). The g1 fixture declares no folder page at all, so Topics here
  * is the honest minimum: no roots, and every page under the Uncategorized row.
@@ -12,7 +12,7 @@
  * The seed here is deliberately NOT `seededState`'s: that helper pre-selects Files for the rest
  * of the suite (every other spec is about the tree), so this one seeds a PRE-847 state file —
  * every key of a valid state except `sidebarLens` — which is also the honest upgrade case: an
- * existing user's `yaseendocs.json` gains the lens and lands on Topics.
+ * existing user's `yaseendocs.json` gains the lens and lands on the default, Files (YAZ-1846).
  *
  * The ⌘K accelerator itself is not driven here (Playwright cannot fire a native menu
  * accelerator — search.spec.ts's note; `desktop/src/main/menu.test.ts` pins the binding). What
@@ -79,18 +79,17 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- the default and the switch
 
-test('step 1 — a state file with no lens boots on TOPICS: the folder-page tree, never the file tree', async () => {
+test('step 1 — a state file with no lens boots on FILES (YAZ-1846 D1): the file tree, never the folder-page tree', async () => {
   app = await launchApp({ userData, seedState: preLensState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(lensTab(win, 'Topics')).toBeVisible()
   await expect(lensTab(win, 'Files')).toBeVisible()
-  await expectLens(win, 'Topics')
-  // No folder page in this fixture: no roots, and every page waiting under Uncategorized.
-  await expect(uncategorized(win)).toContainText('Uncategorized')
-  await expect(fileRows(win)).toHaveCount(0)
+  await expectLens(win, 'Files')
+  await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
+  await expect(uncategorized(win)).toHaveCount(0)
   await expect(bodyMsg(win)).toHaveCount(0)
   await expect(searchBar(win)).toBeVisible() // ALWAYS visible — on this lens too (the locked YAZ-739 rule)
-  await shoot(win, 'lens-01-topics-default')
+  await shoot(win, 'lens-01-files-default')
 })
 
 /*
@@ -103,7 +102,17 @@ test('step 1 — a state file with no lens boots on TOPICS: the folder-page tree
  * in `client/src/sidebar/Sidebar.test.tsx`.
  */
 
-test('step 2 — clicking Files shows today\'s tree, and the choice reaches the state file', async () => {
+test('step 2 — clicking Topics shows the folder-page tree, clicking Files today\'s tree; each choice reaches the state file', async () => {
+  await lensTab(win, 'Topics').click()
+  await expectLens(win, 'Topics')
+  // No folder page in this fixture: no roots, and every page waiting under Uncategorized.
+  await expect(uncategorized(win)).toContainText('Uncategorized')
+  await expect(fileRows(win)).toHaveCount(0)
+  await expect(bodyMsg(win)).toHaveCount(0)
+  await expect(searchBar(win)).toBeVisible()
+  await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('topics')
+  await shoot(win, 'lens-02-topics-tree')
+
   await lensTab(win, 'Files').click()
   await expectLens(win, 'Files')
   await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
@@ -138,17 +147,18 @@ test('step 3 — a query replaces the ACTIVE tab\'s body; the tabs row stays, an
 
 // ---------------------------------------------------------------- persistence
 
+// Topics, the NON-default lens since YAZ-1846, so the relaunch proves persistence rather than the default.
 test('step 4 — the lens survives quit → relaunch, on disk as its WindowEntry.sidebarLens', async () => {
-  await lensTab(win, 'Files').click()
-  await expectLens(win, 'Files')
-  await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('files')
+  await expectLens(win, 'Topics') // where step 3 left it
+  await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('topics')
 
   await quitApp(app)
-  expect((await readState(userData)).windows[0]?.sidebarLens).toBe('files')
+  expect((await readState(userData)).windows[0]?.sidebarLens).toBe('topics')
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expectLens(win, 'Files')
-  await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
-  await shoot(win, 'lens-04-files-restored')
+  await expectLens(win, 'Topics')
+  await expect(uncategorized(win)).toContainText('Uncategorized')
+  await expect(fileRows(win)).toHaveCount(0)
+  await shoot(win, 'lens-04-topics-restored')
   await quitApp(app)
 })
