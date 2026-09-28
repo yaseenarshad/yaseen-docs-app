@@ -6,6 +6,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { Autosave } from '../../lib/autosave'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -392,5 +394,35 @@ describe('image bullets fold to a chip (YAZ-1709)', () => {
     const second = await mount({ defaultValue: IMAGES, ...IMAGE_OPTS, folding: { seedCollapsedKeys: () => new Set([key]) } })
     expect(toggleFor(second.root, 'Shot').getAttribute('aria-expanded')).toBe('false')
     expect(chips(second.root)).toHaveLength(1)
+  })
+})
+
+describe('decoration reuse (YAZ-2131 4C)', () => {
+  /** The plugin's own `decorations` prop, called the way ProseMirror calls it on every view update. */
+  const decorationsOf = (view: EditorView) => {
+    const plugin = view.state.plugins.find((p) => (p as unknown as { key: string }).key.startsWith('mdapp-outline-folding'))!
+    return () => plugin.props.decorations!.call(plugin, view.state)
+  }
+
+  it('returns the identical set after a selection-only transaction, a new one after a fold toggle or a doc edit', async () => {
+    const { crepe, root } = await mount({ defaultValue: OUTLINE })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const decorations = decorationsOf(view)
+    // The first generic transaction lets Milkdown renumber the ordered list (a doc change); settle it.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 4)))
+    const initial = decorations()
+    expect(decorations()).toBe(initial)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 5)))
+    expect(decorations()).toBe(initial)
+
+    toggleFor(root, 'Parent').click()
+    const collapsed = decorations()
+    expect(collapsed).not.toBe(initial)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)))
+    expect(decorations()).toBe(collapsed)
+
+    view.dispatch(view.state.tr.insertText('!', 3))
+    expect(decorations()).not.toBe(collapsed)
+    expect(toggleFor(root, '!Parent').getAttribute('aria-expanded')).toBe('false')
   })
 })
