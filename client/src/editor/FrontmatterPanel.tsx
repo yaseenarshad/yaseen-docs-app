@@ -24,7 +24,7 @@ import { EditableCell } from '../views/view/EditableCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { cellContent } from '../views/view/GroupHeader'
 import { PropertiesIcon } from '../views/view/icons'
-import { writeProperty } from '../views/writeProperty'
+import { trackFileWrite, writeProperty } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import '../views/views.css'
 
@@ -153,7 +153,9 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
     setError(null)
   }
 
-  const save = async (): Promise<void> => {
+  /** Tracked like every `transformFile`, so the close/quit flush waits for a Save in flight (YAZ-2174). */
+  const save = (): Promise<void> => trackFileWrite(saveBlock())
+  const saveBlock = async (): Promise<void> => {
     setSaving(true)
     try {
       const fresh = await api.readFile(file.path)
