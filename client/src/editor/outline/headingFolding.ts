@@ -369,7 +369,7 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               decorations.push(
                 Decoration.widget(
                   entry.headingPos + 1,
-                  (view) => {
+                  (view, getPos) => {
                     const button = document.createElement('button')
                     button.type = 'button'
                     button.className = HEADING_TOGGLE_CLASS
@@ -377,7 +377,12 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     button.setAttribute('aria-expanded', String(!collapsed))
                     button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
                     button.replaceChildren(chevronSvg())
-                    const toggle = () => view.dispatch(foldTransaction(view.state, entry.headingPos))
+                    // The LIVE position, not `entry.headingPos`: ProseMirror keeps this DOM (same key) while edits above
+                    // shift the heading, and a stale position folded nothing.
+                    const toggle = () => {
+                      const widgetPos = getPos()
+                      if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
+                    }
                     // Keep the caret where it is: the toggle must not steal focus or move the selection.
                     button.addEventListener('mousedown', (event) => event.preventDefault())
                     button.addEventListener('click', (event) => {

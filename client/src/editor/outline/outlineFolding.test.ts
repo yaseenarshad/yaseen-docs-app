@@ -397,6 +397,19 @@ describe('image bullets fold to a chip (YAZ-1709)', () => {
   })
 })
 
+describe('chevron after an edit above it', () => {
+  it('still toggles its own bullet once typing above has moved it (the reused widget reads its live position)', async () => {
+    const { crepe, root } = await mount({ defaultValue: `Intro\n\n${OUTLINE}` })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const chevron = toggleFor(root, 'Parent')
+    view.dispatch(view.state.tr.insertText('XYZ', 2))
+    expect(toggleFor(root, 'Parent')).toBe(chevron)
+    chevron.click()
+    expect(toggleFor(root, 'Parent').getAttribute('aria-expanded')).toBe('false')
+    expect(folded(root)[0].textContent).toContain('Grandchild')
+  })
+})
+
 describe('decoration reuse (YAZ-2131 4C)', () => {
   /** The plugin's own `decorations` prop, called the way ProseMirror calls it on every view update. */
   const decorationsOf = (view: EditorView) => {

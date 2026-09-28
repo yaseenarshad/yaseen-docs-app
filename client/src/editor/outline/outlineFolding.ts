@@ -436,7 +436,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               decorations.push(
                 Decoration.widget(
                   entry.itemPos + 1,
-                  (view) => {
+                  (view, getPos) => {
                     const button = document.createElement('button')
                     button.type = 'button'
                     button.className = OUTLINE_TOGGLE_CLASS
@@ -444,7 +444,12 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     button.setAttribute('aria-expanded', String(!collapsed))
                     button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
                     button.replaceChildren(chevronSvg())
-                    const toggle = () => view.dispatch(foldTransaction(view.state, entry.itemPos))
+                    // The LIVE position, not `entry.itemPos`: ProseMirror keeps this DOM (same key) while edits above
+                    // shift the bullet, and a stale position folded nothing.
+                    const toggle = () => {
+                      const widgetPos = getPos()
+                      if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
+                    }
                     // Keep the caret where it is: the toggle must not steal focus or move the selection.
                     button.addEventListener('mousedown', (event) => event.preventDefault())
                     button.addEventListener('click', (event) => {
