@@ -2,6 +2,8 @@ import fs from "fs";
 
 // vitest.setup.ts
 import "vitest-canvas-mock";
+// the canvas mock lacks roundRect, which every browser the editor runs in has natively
+import "canvas-roundrect-polyfill";
 import "@testing-library/jest-dom";
 import { configure } from "@testing-library/react";
 import { vi } from "vitest";

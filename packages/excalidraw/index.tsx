@@ -173,13 +173,6 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     interaction.enabled?.navigation !== true;
 
   useEffect(() => {
-    const importPolyfill = async () => {
-      //@ts-ignore
-      await import("canvas-roundrect-polyfill");
-    };
-
-    importPolyfill();
-
     if (browserZoomAllowed) {
       return;
     }
