@@ -2,7 +2,7 @@
 
 The one list of everything Yaseen Docs does that a change must not lose (YAZ-2171, seeded from the YAZ-2131 scope inventory). Every row has a stable ID. A PR cites the IDs it touches, and each one is proved by the automated test named here, or by walking its hand steps.
 
-- **A** = a Playwright-Electron spec in `desktop/e2e/` (run with `npm run e2e`).
+- **A** = a Playwright-Electron spec in `desktop/e2e/` (61 specs; run with `npm run e2e`).
 - **U** = a unit or jsdom suite (run with `npm test`).
 - **M** = hand steps, listed under [Hand scenarios](#hand-scenarios). Only what automation cannot drive lives there.
 
@@ -42,7 +42,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E20 | Document magnification (YAZ-1410) | A `zoom` · U `editor/DocumentZoom.test.tsx`, `editor/zoomRequest.test.ts` |
 | E21 | Page title = rename | A `title` |
 | E22 | Properties panel (typed rows + raw) | A `properties`, `propertiesReorder` |
-| E23 | Content width, spacing, bullet threading settings | A `contentWidth`, `settings` · U `editor/outline/bulletThreading.test.ts` |
+| E23 | Content width, spacing (the first block hugs the title), bullet threading settings | A `contentWidth`, `settings`, `firstBlock` · U `editor/outline/bulletThreading.test.ts` |
 | E24 | Spelling squiggle + context menu | M [E24](#e24-spelling) (native menu) |
 | E25 | Conflict bar / dirty buffer vs external change | U `lib/autosave.test.ts` · A `foldExternalEdit` (in part) |
 | E26 | View-only viewers: text, PDF, image files | A `viewers` · U `viewers/TextViewer.test.tsx`, `viewers/PdfViewer.test.tsx`, `viewers/ImageViewer.test.tsx` |
