@@ -138,4 +138,32 @@ describe('watch IPC', () => {
     expect(activeWatcherRoots()).toEqual([])
     expect(s.once).not.toHaveBeenCalled()
   })
+
+  it('an unsubscribe that lands while the subscribe is still checking its root cancels it: no watcher, no events (YAZ-2178)', async () => {
+    const s = makeSender()
+    senders.push(s)
+    const pending = listener(CH.watchSubscribe)({ sender: s }, { id: 'switched-away', root }) // a quick vault switch
+    unsubscribeAs(s, 'switched-away')
+    await pending
+    await new Promise((r) => setTimeout(r, 100)) // room for a leaked watcher's `ready`
+    expect(activeWatcherRoots()).toEqual([])
+    expect(sent(s)).toEqual([])
+  })
+
+  it('a cancelled check of a bad root stays silent too', async () => {
+    const s = makeSender()
+    const pending = listener(CH.watchSubscribe)({ sender: s }, { id: 'gone', root: path.join(root, 'nope') })
+    unsubscribeAs(s, 'gone')
+    await pending
+    expect(sent(s)).toEqual([])
+  })
+
+  it('an unsubscribe for an id never subscribed does not stop a later subscribe', async () => {
+    const s = makeSender()
+    unsubscribeAs(s, 'later')
+    await subscribeAs(s, 'later', root)
+    await until(() => sent(s).length >= 1)
+    expect(sent(s)).toEqual([{ id: 'later', ev: { type: 'ready', root } }])
+    expect(activeWatcherRoots()).toEqual([root])
+  })
 })
