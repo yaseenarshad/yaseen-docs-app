@@ -13,6 +13,7 @@ package.json          npm workspaces: client, desktop. Root scripts:
                         test           vitest run  (FOUR projects: client=jsdom, desktop=node, tools=node, perf=jsdom — client/vitest.perf.config.ts, the budget tripwires kept off the main run's contended pool)
                         e2e            build, then playwright test --config desktop/e2e/playwright.config.ts (G1 — Playwright-Electron smoke suite)
                         e2e:only       the same Playwright suite on the existing desktop/out, no rebuild
+                        perf           tools/perf/run.mjs: the local CDP perf harness on the packaged app (A/B with --vs, ABBA order; see tools/perf/README.md). Never in CI
                         perf:budget    tools/perf/measureBudget.mjs: the size and integrity gate on desktop/out + the packaged .app and DMG (run after desktop:build; see "Packaging")
                         perf:budget:ci the same gate on desktop/out alone (--out-only; after build) — what CI runs
 client/               The renderer: React 19 + TS, @milkdown/crepe 7.22.x, plus ONE lazily-loaded dependency: `@excalidraw/excalidraw` PINNED to 0.18.1 (YAZ-878 — the module is imported only by `drawings/renderScene.ts`, and only through a dynamic `import()` on the first drawing preview or modal open, so it never enters the main chunk; its stylesheet is a second dynamic import, made by the modal's surface alone, YAZ-879). No scripts of its own — electron-vite (desktop/electron.vite.config.ts) builds it with ./index.html as the entry, and its renderer config `dedupe`s `react`/`react-dom` — 🔒 load-bearing since YAZ-879: npm hoists an OLDER react beside the Excalidraw tree at the repo root, and without the dedupe `<Excalidraw>` mounts against a second React and dies on a null dispatcher. Every entry below lives under client/src/:
@@ -64,7 +65,7 @@ shared/frontmatter.ts splitFrontmatter / frontmatterInterior (fences off, bytes 
 shared/links.ts       fileLink / parseFileLink — the ONE yaseendocs:// encoding (E1), shared by main's parser and its Finder Open With re-encode (E2)
 shared/comments.ts    `COMMENTS_KEY` (the ONE spelling of the reserved key) + the comment model (YAZ-1472, see "Comments"): readComments / commentsShape / threadsOf / addComment / editComment / deleteComment / newCommentId / nowIso + CommentsShapeError — pure, React-free, fs-free; the block writes through it, the index scan drops the key by it, the properties panel reserves the key by it
 tools/migrateFolderPages.mjs  THE one-shot `page_type` → folder-page migration (YAZ-853; see "The migration" below) + migrateFolderPages.test.mjs (41 tests, its own vitest project — tools/vitest.config.ts)
-tools/perf/           measureBudget.mjs (the gate) + budget.json (the ceilings) + baseline.json (FROZEN v0.9.27 numbers) + measureBudget.test.mjs (in the tools vitest project)
+tools/perf/           measureBudget.mjs (the gate) + budget.json (the ceilings) + baseline.json (FROZEN v0.9.27 numbers: size + perf) + run.mjs, scenarios/, lib/, genVault.mjs (the perf harness, README.md) + measureBudget.test.mjs, harness.test.mjs (in the tools vitest project)
 .github/workflows/ci.yml  every PR and push to main: npm ci → typecheck → npm test → build → perf:budget:ci (YAZ-2131 🔒 D8; e2e stays local, its result pasted into the PR)
 docs/CONTRACTS.md     this file
 ```
