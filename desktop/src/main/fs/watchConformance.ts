@@ -27,7 +27,8 @@ const QUIET_MS = 600
 const CASE_TIMEOUT_MS = 20_000
 const PATIENCE_MS = 10_000
 
-export function describeWatchConformance(engine: string): void {
+/** `quietMs`: how long a recording must be still to count as done — the polling fallback stats once a second. */
+export function describeWatchConformance(engine: string, { quietMs = QUIET_MS } = {}): void {
   let root: string
   let cleanup: () => Promise<void>
   let outside: string
@@ -57,7 +58,7 @@ export function describeWatchConformance(engine: string): void {
     const off = subscribe(r, (ev) => (ev.type === 'ready' ? (ready = true) : events.push(ev)))
     offs.push(off)
     await until(() => ready, PATIENCE_MS)
-    return { events, off, settled: () => settled(() => events.length, QUIET_MS).then(() => events) }
+    return { events, off, settled: () => settled(() => events.length, quietMs).then(() => events) }
   }
 
   const at = (...parts: string[]) => path.join(root, ...parts)
@@ -197,7 +198,7 @@ export function describeWatchConformance(engine: string): void {
       subscribe(root, (ev) => events.push(ev))()
       expect(activeWatcherRoots()).toEqual([])
       await writeFile(at('alpha', 'after-close.md'), 'x')
-      await sleep(QUIET_MS)
+      await sleep(quietMs)
       expect(events).toEqual([])
       await rm(at('alpha', 'after-close.md'))
     })
@@ -222,7 +223,7 @@ export function describeWatchConformance(engine: string): void {
       const changes: VaultConfigChange[] = []
       configOffs.push(subscribeConfig(r, (c) => changes.push(c)))
       await sleep(400)
-      return { changes, settled: () => settled(() => changes.length, QUIET_MS).then(() => changes) }
+      return { changes, settled: () => settled(() => changes.length, quietMs).then(() => changes) }
     }
 
     it('an outside atomic save of a config file is ONE notification naming it; its tmp file is silent', async () => {
