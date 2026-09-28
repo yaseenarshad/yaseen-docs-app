@@ -53,6 +53,7 @@ npm run typecheck
 npm run build     # electron-vite build → desktop/out
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)
 npm run perf:budget      # the same + the packaged .app and DMG (after desktop:build)
+npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf harness, A/B (tools/perf/README.md)
 ```
 
 - The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main; e2e stays local and its result goes in the PR.
