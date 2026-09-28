@@ -37,7 +37,7 @@ try {
   execFileSync('tar', ['-xzf', archive, '-C', temp])
   const packageRoot = join(temp, 'package')
   execFileSync('git', ['apply', join(vendor, `${name}.patch`)], { cwd: packageRoot })
-  await unlink(join(packageRoot, 'lib/table-block/index.js.map'))
+  for (const block of ['table-block', 'list-item-block']) await unlink(join(packageRoot, `lib/${block}/index.js.map`))
   const packed = JSON.parse(execFileSync('npm', [
     'pack', packageRoot, '--pack-destination', temp, '--ignore-scripts', '--json',
   ], { encoding: 'utf8' }))
