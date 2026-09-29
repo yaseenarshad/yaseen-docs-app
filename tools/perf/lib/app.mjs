@@ -10,7 +10,7 @@ import { realpathSync } from 'node:fs'
 import { createServer } from 'node:net'
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const now = () => performance.timeOrigin + performance.now()
+export const now = () => performance.timeOrigin + performance.now()
 
 const freePort = () =>
   new Promise((resolve, reject) => {
@@ -77,13 +77,16 @@ const running = new Set()
 
 /** SIGKILLs every app this process launched that is still running, and its helpers: for a harness interrupted mid-run. */
 export function killLaunched() {
-  for (const pid of running) {
-    for (const p of [...helpers(pid).map((h) => h.pid), pid]) {
-      try {
-        process.kill(p, 'SIGKILL')
-      } catch {
-        // already gone
-      }
+  for (const pid of running) killAll([...helpers(pid).map((h) => h.pid), pid])
+}
+
+/** SIGKILLs each pid; one already gone is fine. */
+function killAll(pids) {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // already gone
     }
   }
 }
@@ -195,13 +198,7 @@ export async function launch({ bin, profile }) {
       gone = null
     }
     // A main stopped early (or killed) can leave a helper behind, reparented to launchd.
-    for (const pid of kids) {
-      try {
-        process.kill(pid, 'SIGKILL')
-      } catch {
-        // already gone
-      }
-    }
+    killAll(kids)
     return gone
   }
   return { pid: child.pid, spawnedAt, main, windows, quit }

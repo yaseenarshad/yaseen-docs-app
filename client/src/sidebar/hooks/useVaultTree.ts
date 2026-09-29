@@ -9,15 +9,13 @@ import { api, BridgeRequestError } from '../../api'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../../hooks/useWatch'
 import type { NoticeKind } from '../../lib/notice'
-import { leadingTrailing } from '../../lib/leadingTrailing'
+import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, onTree } from '../../lib/treeFeed'
 import { allDirs, favoriteRoots, findDirNode, focusRoots, treeHasFile, treeReducer } from '../../lib/treeState'
 import { isFolderPage } from '../../links/folderPages'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
-/** The quiet spell that ends a watcher burst, before its trailing tree read (YAZ-2191, measured in main-process.md F1). */
-const STRUCTURAL_REFRESH_MS = 100
 
 export function useVaultTree(
   root: string,
@@ -94,7 +92,7 @@ export function useVaultTree(
   // Finder copy, bulk rename) is that read plus ONE more, 100 ms after its last event (YAZ-2191,
   // YAZ-2240): it used to be one full vault walk per event.
   useEffect(() => {
-    const burst = leadingTrailing(refresh, STRUCTURAL_REFRESH_MS)
+    const burst = leadingTrailing(refresh, WATCH_BURST_QUIET_MS)
     const off = watch.subscribe((ev) => {
       if (ev.type === 'error') return setError(ev.message)
       if (ev.type === 'change') return
@@ -114,8 +112,8 @@ export function useVaultTree(
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
-  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it — into this window's
-  // identity (YAZ-1628), not the vault bucket.
+  // Focus Mode's write-back (YAZ-1605), idempotent like `expanded`'s above and the Topics one
+  // below — into this window's identity (YAZ-1628), not the vault bucket.
   useEffect(() => {
     if (sameList(storage.getFocusDirs(), focusDirs)) return
     storage.setFocusDirs(focusDirs)
@@ -184,7 +182,7 @@ export function useVaultTree(
   // Focus Mode (YAZ-1605): a focus target that left the vault DROPS OUT — deleted, moved out, or a
   // topic that lost its flag — and the last one leaving ends the focus: never an empty tree under a
   // lit eye. The store repairs the FILE on delete; this component holds its own copy, so it prunes
-  // against the live tree / index itself, exactly as the selection does above.
+  // against the live tree / index itself, as `useSelection` (rowGestures.ts) does for the selection.
   useEffect(() => {
     if (tree === null || focusDirs.length === 0) return
     const kept = focusDirs.filter((dir) => findDirNode(tree.tree, dir) !== null)

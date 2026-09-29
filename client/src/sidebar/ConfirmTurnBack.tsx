@@ -32,10 +32,7 @@ interface ConfirmTurnBackProps {
  * it fires immediately (🔒 D1). Turning back is the direction that changes what a whole page
  * MEANS to everything pointing at it, and that earns one beat.
  *
- * The behaviour is `ConfirmSheet`'s, shared by every confirm sheet since YAZ-2201 (their copies
- * are gone; the DOM is pinned unchanged): our own sheet and never a native dialog, initial focus
- * on CANCEL so a stray Enter arriving from the tree changes nothing, Esc cancels, Enter confirms,
- * click-away cancels.
+ * The mechanics are `ConfirmSheet`'s (YAZ-2201).
  *
  * Two deliberate omissions:
  *  - NO "Don't ask me again" (🔒 D5). Delete earns one because it repeats and is unrecoverable;

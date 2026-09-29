@@ -17,7 +17,7 @@ import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** Bytes of a file or a directory tree (symlinks not followed: the framework is full of them); null when absent. */
-export function bytes(p) {
+function bytes(p) {
   const s = statSync(p, { throwIfNoEntry: false })
   if (!s) return null
   if (!s.isDirectory()) return s.size
@@ -27,7 +27,7 @@ export function bytes(p) {
 }
 
 /** Every file path in `app.asar`, read from its header `[u32 4][u32 pickle][u32 payload][u32 jsonLen][json]`. */
-export function asarFiles(file) {
+function asarFiles(file) {
   const fd = openSync(file, 'r')
   try {
     const head = Buffer.alloc(16)
@@ -54,7 +54,7 @@ export function asarFiles(file) {
  * a lazy path (a Mermaid diagram, a CodeMirror language) that would only fail when first used.
  * The quoted-`./` scan covers `from`, `import()` and Vite's `__vite__mapDeps` preload list alike.
  */
-export function rendererGraph(dir) {
+function rendererGraph(dir) {
   const html = readFileSync(join(dir, 'index.html'), 'utf8')
   const entries = [...html.matchAll(/<script[^>]+src="\.\/([^"]+)"/g)].map((m) => m[1])
   const css = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="\.\/([^"]+)"/g)].map((m) => m[1])
@@ -122,19 +122,19 @@ export function measure({ out, app, dmg }) {
 const REQUIRED_OUT = ['main/index.js', 'main/cli.js', 'preload/index.js', 'renderer/index.html']
 
 /** Integrity of `desktop/out`: what CI can check after `npm run build`. */
-export function checkOut(out) {
+function checkOut(out) {
   const fails = REQUIRED_OUT.filter((p) => !existsSync(join(out, p))).map((p) => `out: missing ${p}`)
   const r = join(out, 'renderer')
   if (!existsSync(join(r, 'index.html'))) return fails
   for (const f of rendererGraph(r).missing) fails.push(`renderer: ${f} is imported but not shipped`)
-  if (!readdirSync(join(r, 'assets')).some((f) => /^KaTeX_Main-Regular-.*\.woff2$/.test(f))) fails.push('renderer: KaTeX fonts missing (math renders in a fallback font)')
+  if (!readdirSync(join(r, 'assets')).some((f) => /^KaTeX_Main-Regular-.*\.woff2$/.test(f))) fails.push("renderer: KaTeX fonts missing (the drawing Mermaid dialog's $$ labels lose their font)")
   // Keep-working only (the drawing is out of scope): without them drawing text falls back to the esm.sh CDN.
   if (!existsSync(join(r, DRAWING_ASSETS, 'fonts')) || walk(join(r, DRAWING_ASSETS, 'fonts')).length === 0) fails.push(`renderer: ${DRAWING_ASSETS}/fonts is empty (drawing text falls back to a CDN)`)
   return fails
 }
 
 /** Integrity of the packaged `.app`: Info.plist, the ad-hoc seal, the CLI shim, the asar payload. macOS only. */
-export function checkApp(app) {
+function checkApp(app) {
   if (!existsSync(app)) return [`no app at ${app} (run npm run desktop:build, or use --out-only)`]
   const fails = []
   const plist = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', join(app, 'Contents/Info.plist')]).toString())
@@ -178,6 +178,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   const fails = [...checkOut(out), ...(app ? checkApp(app) : [])]
   const metrics = fails.some((f) => f.startsWith('no app')) ? {} : measure({ out, app, dmg })
+  // A packaged run gates the DMG too: an absent one would otherwise skip its row and still PASS.
+  if (metrics.appBytes != null && metrics.dmgBytes == null) fails.push(`no dmg at ${dmg} (run npm run desktop:build)`)
   const over = outOfBudget(metrics, budget.size, budget.sizeTolerance)
   if (argv.includes('--json')) console.log(JSON.stringify({ version, mode: outOnly ? 'out-only' : 'packaged', metrics, over, fails }, null, 2))
   else {

@@ -163,7 +163,7 @@
 
 .right-panel__editor-layer--hidden {
   visibility: hidden;
-  /* YAZ-2195: skip style, layout and paint while hidden, as `.tabstack__layer--hidden` does. */
+  /* YAZ-2195 (🔒 D5): skip style, layout and paint while hidden, as `.tabstack__layer--hidden` does. */
   content-visibility: hidden;
 }
 
