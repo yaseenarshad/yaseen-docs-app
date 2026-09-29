@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import type { AppState, PropertiesResponse } from '@shared/types'
-import { CH } from '../../channels'
+import { CONTRACT } from '@shared/ipc'
 import { getProperties, removeProperty, setProperty, subscribeProperties } from '../properties'
 import type { Store } from '../store'
 import { handle } from './envelope'
@@ -12,7 +12,7 @@ const subs = new Map<string, () => void>()
 function broadcast(properties: PropertiesResponse): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed() || win.webContents.isDestroyed()) continue
-    win.webContents.send(CH.propertiesChanged, { root: properties.root, properties })
+    win.webContents.send(CONTRACT.properties.onChange.channel, { root: properties.root, properties })
   }
 }
 
@@ -32,9 +32,9 @@ function syncSubscriptions(state: AppState): void {
 
 /** The `properties.*` half of `window.yaseenDocs` (YAZ-835). */
 export function registerPropertiesIpc(store: Store): void {
-  handle(CH.propertiesGet, getProperties)
-  handle(CH.propertiesSetProperty, setProperty)
-  handle(CH.propertiesRemoveProperty, removeProperty)
+  handle(CONTRACT.properties.get, getProperties)
+  handle(CONTRACT.properties.setProperty, setProperty)
+  handle(CONTRACT.properties.removeProperty, removeProperty)
   store.onChange(syncSubscriptions)
   syncSubscriptions(store.get())
 }

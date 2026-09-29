@@ -1,6 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { isSidebarLens, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
-import { CH } from '../../channels'
+import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { isRecord, normalizeRightPanel, normalizeTabs, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
@@ -78,12 +78,12 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     return entry
   }
 
-  handleWithEvent(CH.windowIdentity, async (e): Promise<WindowIdentity> => {
+  handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
     const { id, root, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusTopics, focusFavorites } = entryFor(e)
     return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusDirs: [...focusDirs], focusTopics: [...focusTopics], focusFavorites: [...focusFavorites] }
   })
 
-  handleWithEvent(CH.windowSetIdentity, async (e, patch: unknown) => {
+  handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
     if (!isRecord(patch)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
     const root = optionalPath(patch, 'root')
     const file = optionalPath(patch, 'file')
@@ -116,7 +116,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // `window:close-self` (GRO-2232): the REAL close on the caller's own window, so the
   // close/flush handshake in windows.ts runs — never a destroy. Resolved via the window lookup
   // only (no state lookup): a window mid-close can still ask.
-  handleWithEvent(CH.windowCloseSelf, async (e) => {
+  handleWithEvent(CONTRACT.window.closeSelf, async (e) => {
     const id = windows.idFor(e.sender)
     if (id === undefined) throw new BridgeFailure('BAD_REQUEST', 'sender is not a registered window')
     windows.closeWindow(id)
@@ -125,17 +125,17 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // `window:zoom` (YAZ-1710): the app-wide zoom the stock roles used to do, on the caller's own
   // window — level ± 0.5 per step, 0 for Actual Size. The renderer calls this only when no note
   // has focus; a focused note zooms itself.
-  handleWithEvent(CH.windowZoom, async (e, step: unknown) => {
+  handleWithEvent(CONTRACT.window.zoom, async (e, step: unknown) => {
     if (step !== -1 && step !== 0 && step !== 1) throw new BridgeFailure('BAD_REQUEST', 'step must be -1, 0 or 1')
     e.sender.setZoomLevel(step === 0 ? 0 : e.sender.getZoomLevel() + 0.5 * step)
   })
 
-  handle(CH.windowOpen, async (opts: unknown) => {
+  handle(CONTRACT.window.open, async (opts: unknown) => {
     if (!isRecord(opts)) throw new BridgeFailure('BAD_REQUEST', 'options must be an object')
     windows.openWindow({ root: optionalPath(opts, 'root') ?? null, file: optionalPath(opts, 'file') ?? null })
   })
 
-  handleWithEvent(CH.windowDuplicate, async (e) => {
+  handleWithEvent(CONTRACT.window.duplicate, async (e) => {
     windows.duplicateWindow(entryFor(e))
   })
 
@@ -143,14 +143,14 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // manager's verdict out: true = the vault is in front (its windows raised, D9, or a new one
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
   // window may ask; the caller is not consulted.
-  handle(CH.windowOpenRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+  handle(CONTRACT.window.openRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
 
   // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.
-  handleWithEvent(CH.menuPasteTextFallback, async (e, text: unknown) => {
+  handleWithEvent(SPECIAL.menuPasteTextFallback, async (e, text: unknown) => {
     if (windows.idFor(e.sender) === undefined || typeof text !== 'string') throw new BridgeFailure('BAD_REQUEST', 'invalid paste target or text')
     if (text !== '') await e.sender.insertText(text)
   })
 
   // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
-  ipcMain.on(CH.appFlushed, (e) => windows.handleFlushed(e.sender))
+  ipcMain.on(SPECIAL.appFlushed, (e) => windows.handleFlushed(e.sender))
 }

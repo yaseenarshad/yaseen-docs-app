@@ -1,5 +1,5 @@
 import type { AppState, GithubSyncStatus } from '@shared/types'
-import { CH } from '../../channels'
+import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { detectRepo } from '../git/detect'
@@ -52,14 +52,14 @@ export function registerGithubIpc(store: Store): GitSyncManager {
     subscribeVault: subscribe,
     subscribeConfig,
     // Every live window hears about every vault; renderers filter by `status.root` (the `state:changed` posture).
-    onStatus: (status) => broadcastAll(CH.githubStatusChanged, status),
+    onStatus: (status) => broadcastAll(CONTRACT.github.onStatus.channel, status),
     syncPass,
     inspect,
   })
 
-  handle(CH.githubStatus, async (root: unknown) => manager.status(requireAbsPath(root, 'root')))
-  handle(CH.githubSyncNow, async (root: unknown) => manager.syncNow(requireAbsPath(root, 'root')))
-  handle(CH.githubSetEnabled, async (root: unknown, enabled: unknown) => {
+  handle(CONTRACT.github.status, async (root: unknown) => manager.status(requireAbsPath(root, 'root')))
+  handle(CONTRACT.github.syncNow, async (root: unknown) => manager.syncNow(requireAbsPath(root, 'root')))
+  handle(CONTRACT.github.setEnabled, async (root: unknown, enabled: unknown) => {
     const dir = requireAbsPath(root, 'root')
     // Off-by-default fails closed everywhere else too (`manager.ts` reads `{ enabled: true }` exactly);
     // here the boolean is a hard requirement, because this call WRITES the switch.

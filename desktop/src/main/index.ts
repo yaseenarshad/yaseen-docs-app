@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
-import { CH } from '../channels'
+import { SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
@@ -96,8 +96,8 @@ const manager = createWindowManager(store, {
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
     win.webContents.on('context-menu', (_event, params) =>
       Menu.buildFromTemplate(buildContextMenuTemplate(params, {
-        copyAs: (mode) => win.webContents.send(CH.menuCopyAs, mode),
-        pasteAs: (mode) => win.webContents.send(CH.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
+        copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
+        pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
         // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal

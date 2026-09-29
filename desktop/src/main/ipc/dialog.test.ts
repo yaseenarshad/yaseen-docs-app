@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
-import { CH, type Envelope } from '../../channels'
+import { CONTRACT, type Envelope } from '@shared/ipc'
 import { registerDialogIpc } from './dialog'
 
 vi.mock('electron', () => ({
@@ -28,11 +28,11 @@ beforeEach(() => {
   registerDialogIpc()
 })
 
-const pick = () => registered(CH.dialogPickFolder)({ sender })
+const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
   it('registers exactly the pick-folder channel', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CH.dialogPickFolder])
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {

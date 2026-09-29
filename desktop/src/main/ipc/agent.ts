@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { agentPrompt } from '@shared/agentInstructions'
-import { CH } from '../../channels'
+import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, fsCall, requireAbsPath, requireMarkdownFile } from '../fs/fsUtils'
 import { handle } from './envelope'
 
@@ -26,7 +26,7 @@ export function agentCommand({ packaged, resourcesPath, mainDir }: AgentHost): s
  * not a page and rejects UNSUPPORTED_EXTENSION (the write guard's own code).
  */
 export function registerAgentIpc(host: AgentHost): void {
-  handle(CH.shellAgentPrompt, async (req: unknown) => {
+  handle(CONTRACT.shell.agentPrompt, async (req: unknown) => {
     if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
     const p = requireAbsPath((req as Record<string, unknown>).path, 'path')
     requireMarkdownFile(p)
