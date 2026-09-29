@@ -27,7 +27,7 @@ import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
-import { outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
+import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -56,7 +56,7 @@ type LastToggle =
 interface OutlineFoldingState {
   /**
    * Every foldable list_item — one that owns a nested list or holds an image — in document order
-   * (recomputed per transaction).
+   * (recomputed from the per-block cache only when the doc changes; its identity keys `decorationCache`).
    */
   entries: readonly OutlineEntry[]
   collapsedItemPositions: ReadonlySet<number>
@@ -321,7 +321,7 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
       const occurrence = labelOccurrences.get(entry.keyLabel) ?? 0
       labelOccurrences.set(entry.keyLabel, occurrence + 1)
       entries.push({
-        foldKey: `${entry.keyStem}:${occurrence}`,
+        foldKey: outlineFoldKeyFromStem(entry.keyStem, occurrence),
         itemPos: base + entry.itemPos,
         label: entry.label,
         nestedListRanges: entry.nestedListRanges.map(shift),

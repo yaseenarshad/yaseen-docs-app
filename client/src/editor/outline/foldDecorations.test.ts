@@ -11,6 +11,7 @@ import { EditorState, TextSelection, type Plugin } from '@milkdown/kit/prose/sta
 import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
+import { random } from '../testRandom'
 import { addHeadingFoldAllMeta, HEADING_TOGGLE_CLASS, undoLastHeadingFold } from './headingFolding'
 import { foldAllOutline, OUTLINE_TOGGLE_CLASS, undoLastFold, unfoldAllOutline } from './outlineFolding'
 
@@ -87,16 +88,6 @@ function normalise(set: DecorationSet, view: EditorView): string[] {
       return type.toDOM ? `${d.from} ${type.toDOM(view, () => d.from).outerHTML}` : `${d.from}-${d.to} ${JSON.stringify(type.attrs)}`
     })
     .sort()
-}
-
-/** Small deterministic PRNG (mulberry32), so a failure replays. */
-function random(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
 }
 
 const typeOf = (d: Decoration) => (d as unknown as { type: object }).type

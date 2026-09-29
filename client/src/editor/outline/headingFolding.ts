@@ -49,7 +49,7 @@ type LastToggle =
   | { kind: 'set'; previousCollapsed: ReadonlySet<number> }
 
 interface HeadingFoldingState {
-  /** Every H1-H3 that owns a non-empty section, in document order (recomputed per transaction). */
+  /** Every H1-H3 that owns a non-empty section, in document order (recomputed only when the doc changes; its identity keys `decorationCache`). */
   entries: readonly HeadingEntry[]
   collapsedHeadingPositions: ReadonlySet<number>
   /** Cleared by any document change: ⌘Z only reverts a fold that is the latest action. */
