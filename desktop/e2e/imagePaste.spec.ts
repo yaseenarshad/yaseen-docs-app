@@ -77,7 +77,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
 /** The YAZ-1656 node view, in its three states. */
 const imageViews = (w: Page) => editorOf(w).locator('.image-view')
 const readyImages = (w: Page) => editorOf(w).locator('.image-view--ready img')

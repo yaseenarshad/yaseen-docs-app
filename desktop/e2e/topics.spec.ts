@@ -50,7 +50,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DEFAULT_COLUMNS } from '../../shared/folderPageDefaults'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { activeTab, appWindow, contents, copyVault, editorOf, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
+import { activeTab, appWindow, contents, copyVault, editorOf, launchApp, lensTab, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -96,7 +96,6 @@ let win: Page
 
 // ---------- locators ----------
 
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 /** Every row the topic tree renders, in document order. */
 const topicRows = (w: Page) => w.locator('.sidebar__body .tree__row')
 const topicLabels = (w: Page) => w.locator('.sidebar__body .tree__row .tree__label')
@@ -105,12 +104,9 @@ const chevron = (w: Page, action: 'Expand' | 'Collapse', label: string) => w.loc
 /** The lens row's one fold-everything button (⚡ YAZ-873); its LABEL is the move it will make. */
 const foldAll = (w: Page, label: 'Expand all' | 'Collapse all') => w.locator(`.sidebar__expand-all[aria-label="${label}"]`)
 const uncategorizedRow = (w: Page) => w.locator('.sidebar__body .tree__row--muted')
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 /** The right-clicked row's menu, and the inline name input the create group opens (8G-/8H). */
 const menuItem = (w: Page, label: string) => w.locator('.ctx-menu [role="menuitem"]', { hasText: label })
 const inlineInput = (w: Page) => w.locator('.sidebar__body .create-inline__input')
-/** The folder page's contents block and its two skins — bible.spec.ts's own locators. */
-const viewTabs = (w: Page) => contents(w).locator('.view-tab__btn[role="tab"]')
 /** The outline is a DOCUMENT since YAZ-903: what it says is its bullet LINES, not row buttons. */
 const outlineLines = (w: Page) => contents(w).locator('.view-outline .editor-instance .content-dom > p')
 /** Every name as a LINK LINE — how a membership reads inside the document (⚡ YAZ-1152). */
@@ -464,7 +460,7 @@ test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tre
   // every member into it, the newborn among them, in one alphabetical run under the prose. The
   // page was opened for the first time here, so this is that write landing, with nobody typing.
   await expect.poll(() => outlineLines(win).allTextContents()).toEqual([...KPIS_BODY, ...asLinks(...WITH_NEW_KPI)])
-  await viewTabs(win).filter({ hasText: 'Table' }).click()
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(tableNames(win)).toHaveCount(WITH_NEW_KPI.length)
   await expect(tableNames(win).filter({ hasText: new RegExp(`^${NEW_KPI}$`) })).toHaveCount(1)
   await shoot(win, 'topics-05c-member-everywhere')

@@ -26,7 +26,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, bulletAfterLine, caretAtEndOfLine, contents, copyVault, launchApp, layer, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
+import { appWindow, bulletAfterLine, caretAtEndOfLine, contents, copyVault, launchApp, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 

@@ -48,7 +48,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
 /** The collapsed link span showing `text`, inside the VISIBLE editor only. */
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 

@@ -53,6 +53,7 @@ import {
   fileRow,
   launchApp,
   layer,
+  lensTab,
   md5,
   outlineLineIndex,
   outlineLines,
@@ -112,7 +113,6 @@ let win: Page
 
 // ---------- locators: the sidebar's Topics tree ----------
 
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 /** Every row the topic tree renders, in document order. */
 const topicLabels = (w: Page) => w.locator('.sidebar__body .tree__row .tree__label')
 const topicRow = (w: Page, label: string) =>
@@ -120,11 +120,9 @@ const topicRow = (w: Page, label: string) =>
 const treeChevron = (w: Page, action: 'Expand' | 'Collapse', label: string) =>
   w.locator(`.sidebar__body [aria-label="${action} ${label}"]`)
 const uncategorizedRow = (w: Page) => w.locator('.sidebar__body .tree__row--muted')
-/** The FILE tree's rows — the other lens, where the folder-page context menu lives. */
 
 // ---------- locators: the folder page's contents block ----------
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')

@@ -40,7 +40,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
+import { appWindow, contents, copyVault, fileRow, launchApp, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 

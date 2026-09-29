@@ -24,7 +24,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, quitApp, seededState, shoot } from './helpers'
 import { pngBytes } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -55,7 +55,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
 const readyViews = (w: Page) => editorOf(w).locator('.image-view--ready')
 const imgByAlt = (w: Page, alt: string) => editorOf(w).locator(`.image-view img[alt="${alt}"]`)
 

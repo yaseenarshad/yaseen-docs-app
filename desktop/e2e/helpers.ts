@@ -32,9 +32,11 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
     await writeFile(path.join(userData, 'yaseendocs.json'), JSON.stringify(seedState, null, 2))
   }
   // YASEEN_DOCS_E2E: the dev binary must not claim the machine's yaseendocs:// handler (YAZ-2168).
+  // YASEEN_DOCS_USER_DATA_DIR is pinned to the same temp profile: main applies it over
+  // --user-data-dir, so one inherited from the calling shell would point the app at another profile.
   return _electron.launch({
     args: [MAIN_ENTRY, `--user-data-dir=${userData}`],
-    env: { ...process.env, YASEEN_DOCS_E2E: '1' },
+    env: { ...process.env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_USER_DATA_DIR: userData },
   })
 }
 
@@ -49,7 +51,7 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
 export async function quitApp(app: ElectronApplication): Promise<void> {
   await Promise.race([
     app.close(),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('app did not exit within 15s of app.quit()')), 15_000)),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('app did not exit within 15s of app.close()')), 15_000)),
   ])
 }
 
@@ -79,8 +81,47 @@ export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** A file row of the sidebar tree by its exact label. */
 export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
+/** A folder row of the sidebar tree by its exact label. */
+export const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
+/** The DEPTH-0 row labels of whichever tree the sidebar body draws. */
+export const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
+export const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+/** An item of the sidebar's own row menu (overlay + menu) by its exact label. */
+export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 export const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 export const sheet = (w: Page) => w.locator('[role="dialog"]')
+/** The app's own confirm sheet (a plain `[role="dialog"]` also matches other dialogs). */
+export const confirmSheet = (w: Page) => w.locator('.confirm[role="dialog"]')
+
+/** The middle of a row, in window coordinates: where a pointer has to be to be ON it. */
+export async function centre(row: Locator): Promise<{ x: number; y: number }> {
+  const box = await row.boundingBox()
+  if (box === null) throw new Error('a row with no box cannot be dragged')
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+/** A point in the TOP quarter of `row`, squarely inside its `before` drop edge (Tree.tsx `edgeOf`). */
+export async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
+  const box = await row.boundingBox()
+  if (box === null) throw new Error('a row with no box cannot be a drop target')
+  return { x: box.x + box.width / 2, y: box.y + box.height / 4 }
+}
+
+/** One frame and one task in the page: a pending `selectionchange` has reached ProseMirror after it. */
+export const nextFrame = (w: Page): Promise<unknown> => w.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
+
+/**
+ * Types ` <prefix><timestamp>` at the end of the seed note's LAST bullet and returns the marker; the
+ * autosave is left pending. The caret goes to the line end with ⌘→: on macOS `End` does not move it,
+ * it starts an animated scroll (YAZ-2131, 3ccc0cc).
+ */
+export async function typeMarkerAtLastBullet(w: Page, prefix: string): Promise<string> {
+  await editorOf(w).getByText(LAST_BULLET).click()
+  await w.keyboard.press('Meta+ArrowRight')
+  const marker = `${prefix}${Date.now()}`
+  await w.keyboard.type(` ${marker}`, { delay: 5 })
+  return marker
+}
 
 // ---------- fixture vault ----------
 
@@ -407,7 +448,7 @@ export const outlineCaret = (w: Page): Promise<OutlineCaret | null> =>
  */
 export const settledCaret = async (w: Page): Promise<(OutlineCaret & { picking: boolean }) | null> => {
   const first = await outlineCaret(w)
-  await w.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
+  await nextFrame(w)
   const second = await outlineCaret(w)
   if (second === null || JSON.stringify(first) !== JSON.stringify(second)) return null
   return { ...second, picking: (await linkPicker(w).count()) > 0 }

@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, md5, multiWindowState, quitApp, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, md5, multiWindowState, quitApp, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -39,7 +39,6 @@ let app: ElectronApplication
 let winA: Page
 let winB: Page
 
-const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 const rowAt = (w: Page, file: string) => w.locator(`.tree__row--file[data-path="${file}"]`)
 const menu = (w: Page) => w.locator('.ctx-menu')
 /** An item by its label; the accessible name also carries the ⌘ hint (`Paste ⌘V`), so it is matched as an optional tail. */

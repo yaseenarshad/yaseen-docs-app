@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, extraWindow, launchApp, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
+import { appWindow, beforeEdge, buildFixtureVault, centre, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, launchApp, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -34,12 +34,6 @@ let win: Page
 
 // ---------- locators (client/src/sidebar/Sidebar.tsx, Tree.tsx, ContextMenu.tsx) ----------
 
-const fileRow = (w: Page, label: string) => w.locator('.sidebar__body .tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-const dirRow = (w: Page, label: string) => w.locator('.sidebar__body .tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
-/** The DEPTH-0 rows of whichever tree the body draws — the ♥ lens' stored order is read here. */
-const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
-/** The row menu's items — the sidebar's own `ContextMenu` (overlay + menu), labels only. */
-const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 /** The ♥ tab: a glyph, so its name lives in `aria-label` (YAZ-1766 D1). */
 const heartTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Favorites"]')
 /** App's one passive toast (`.link-notice`, YAZ-1341) — its text. */
@@ -60,20 +54,6 @@ async function pickFromRowMenu(row: Locator, label: string): Promise<void> {
   await row.click({ button: 'right' })
   await expect(menuItem(win, label)).toBeVisible()
   await menuItem(win, label).click()
-}
-
-/** The middle of a row, in window coordinates (topicsDrag's `centre`). */
-async function centre(row: Locator): Promise<{ x: number; y: number }> {
-  const box = await row.boundingBox()
-  if (box === null) throw new Error('a row with no box cannot be dragged')
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-}
-
-/** A point in the TOP quarter of `row` — squarely inside its `before` edge (Tree.tsx `edgeOf`). */
-async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
-  const box = await row.boundingBox()
-  if (box === null) throw new Error('a row with no box cannot be a drop target')
-  return { x: box.x + box.width / 2, y: box.y + box.height / 4 }
 }
 
 /**

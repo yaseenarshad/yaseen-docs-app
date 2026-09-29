@@ -20,7 +20,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, md5, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, layer, md5, quitApp, seededState, shoot, tabsOf } from './helpers'
 import { SMALL_HEIGHT, SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -65,7 +65,6 @@ let baseline: Record<string, string>
 let rootListing: string[]
 
 const fixture = (name: string) => path.join(vault, name)
-/** The VISIBLE tab layer — hidden per-tab layers stay mounted (tabs.spec.ts's idiom). */
 
 const snapshot = async (): Promise<Record<string, string>> => ({
   [TEXT_FILE]: await md5(fixture(TEXT_FILE)),
@@ -104,7 +103,7 @@ test('step 1 — a .txt opens as the read-only text viewer with its exact bytes'
   const content = viewer.locator('pre.text-viewer__content[role="textbox"][aria-readonly="true"]')
   await expect(content).toHaveText(TEXT_BODY) // `<pre>` keeps the double space and the tab
   await expect(viewer).toHaveAttribute('aria-busy', 'false')
-  await expect(layer(win).locator('.ProseMirror')).toHaveCount(0) // no editor was mounted for it
+  await expect(editorOf(win)).toHaveCount(0) // no editor was mounted for it
   await expect(tabsOf(win)).toHaveText([TEXT_FILE])
   await shoot(win, 'viewers-01-text')
 })

@@ -73,7 +73,6 @@ import {
   fileRow,
   indentOutlineLine,
   launchApp,
-  layer,
   outlineEditor,
   outlineLineIndex,
   outlineLines,
@@ -137,7 +136,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 /** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__link')
 /** TOMBSTONE (YAZ-1152): every selector the appended section wore. It is gone, so these match nothing. */

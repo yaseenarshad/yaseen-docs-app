@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
 import type { PageComment } from '../../shared/comments'
-import { appWindow, launchApp, seededState, sheet, shoot } from './helpers'
+import { appWindow, editorOf, launchApp, seededState, sheet, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -55,7 +55,7 @@ test.afterAll(async () => {
 test('step 1 — a page with no comments starts collapsed; a titled comment lands as #1 in the frontmatter', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, notePath) })
   win = await appWindow(app, 'w1')
-  await expect(win.locator('.ProseMirror')).toContainText('comments-e2e-body')
+  await expect(editorOf(win)).toContainText('comments-e2e-body')
   await expect(header(win)).toHaveAttribute('aria-expanded', 'false')
   await header(win).click()
 

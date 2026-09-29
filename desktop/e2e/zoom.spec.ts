@@ -13,7 +13,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, clickMenuItem, editorOf, launchApp, layer, readState, seededState, shoot } from './helpers'
+import { appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -101,6 +101,6 @@ test('step 4 — magnification is temporary: nothing persists, and reopening the
 
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')
   await expect(layer(win).locator('.document-zoom')).toHaveCount(0)
-  await win.locator('.tree__row--file', { hasText: 'Outline' }).click()
+  await fileRow(win, 'Outline').click()
   await expect(pill(win).locator('.document-zoom__trigger')).toHaveAttribute('aria-label', 'Document zoom: 100%')
 })

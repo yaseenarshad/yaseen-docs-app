@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, copyVault, editorOf, expandDirs, fileRow, launchApp, layer, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, copyVault, dirRow, editorOf, expandDirs, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -46,7 +46,6 @@ let win: Page
 // ---------- locators (the suite's shared idioms) ----------
 
 const treeRows = (w: Page) => w.locator('.tree__row')
-const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 
 const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
 const resultList = (w: Page) => w.locator('[aria-label="Search results"]')

@@ -16,7 +16,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, contents, copyVault, launchApp, layer, quitApp, seededState } from './helpers'
+import { appWindow, contents, copyVault, launchApp, layer, quitApp, seededState, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -112,7 +112,7 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
   win = await appWindow(app, 'w1')
 
   await expect(contents(win)).toBeVisible()
-  await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages'])
 
   // The vertical freeze is unconditional — before and after any column choice.
@@ -237,7 +237,7 @@ test('step 3 — the frozen prefix survives the real quit and relaunch path', as
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
   await expect(contents(win)).toBeVisible()
-  await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category'])
   await expect(table().locator('thead th.view-table__frozen')).toHaveCount(2)
@@ -258,7 +258,7 @@ test('step 4 — a grouped label stays left even when no data columns are frozen
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
   await expect(contents(win)).toBeVisible()
-  await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
   await expect(table().locator('.view-table__frozen')).toHaveCount(0)
   const groupCell = table().locator('.view-table__group-cell').first()

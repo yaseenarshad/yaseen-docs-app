@@ -14,7 +14,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, expandDirs, extraWindow, fileRow, launchApp, quitApp, readState, seededState, shoot, windowCount, winParam } from './helpers'
+import { activeTab, appWindow, clickMenuItem, closeWindow, dirRow, editorOf, expandDirs, extraWindow, fileRow, launchApp, lensTab, quitApp, readState, seededState, shoot, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -35,10 +35,8 @@ let win: Page
 
 // ---------- locators (the suite's own) ----------
 
-const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 /** Every dir the tree currently draws OPEN — the one number this whole file is about. */
 const openDirs = (w: Page) => w.locator('.sidebar__body li[role="treeitem"][aria-expanded="true"]')
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 const topicLabels = (w: Page) => w.locator('.sidebar__body .tree__row .tree__label')
 
 /**
@@ -126,7 +124,7 @@ test('step 2 — two dirs opened by hand are open in a second window on the same
       'true',
     )
   }
-  await expect(dup.locator('.tree__row--file').filter({ hasText: /^Alpha brief$/ })).toBeVisible()
+  await expect(fileRow(dup, 'Alpha brief')).toBeVisible()
   await shoot(dup, 'collapsed-02-second-window')
 
   // Back to one window, so the relaunch below restores exactly the one this file follows.

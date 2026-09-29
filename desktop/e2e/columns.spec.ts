@@ -34,7 +34,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DEFAULT_COLUMNS } from '../../shared/folderPageDefaults'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, REPO_ROOT, seededState, sheet, shoot, viewTabs } from './helpers'
+import { appWindow, contents, copyVault, fileRow, launchApp, quitApp, REPO_ROOT, seededState, sheet, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 

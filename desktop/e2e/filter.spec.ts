@@ -38,7 +38,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, seededState, shoot, viewTabs } from './helpers'
+import { activeTab, appWindow, contents, copyVault, fileRow, launchApp, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 

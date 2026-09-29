@@ -59,7 +59,6 @@ const panelRow = (w: Page, key: string) => panel(w).locator(`.frontmatter-panel_
 const modeToggle = (w: Page) => panel(w).locator('.frontmatter-panel__mode')
 const yaml = (w: Page) => panel(w).locator('.frontmatter-panel__text')
 const panelBtn = (w: Page, label: string) => panel(w).locator('.frontmatter-panel__btn', { hasText: label })
-/** The folder page's contents table (YAZ-819) — where a declared type has to show up too. */
 
 const NOTE = 'Deep Work.md'
 /** …as a folder page's name cell shows it: the TITLE, never `.md` (YAZ-1513). */
