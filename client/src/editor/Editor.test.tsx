@@ -38,10 +38,10 @@ vi.mock('../links/BacklinksSection', async (importOriginal) => {
   return { ...real, BacklinksSection: (props: Parameters<typeof real.BacklinksSection>[0]) => (renders.backlinks++, real.BacklinksSection(props)) }
 })
 
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
-}))
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>()
+  return { ...actual, api: { ...actual.api, readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() }, index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } } }
+})
 
 vi.mock('./createCrepe', () => {
   interface FakeCrepe {
@@ -96,7 +96,7 @@ const readFile = vi.mocked(api.readFile)
 const readPdf = vi.mocked(api.readPdf)
 const readImage = vi.mocked(api.readImage)
 const writeFile = vi.mocked(api.writeFile)
-const openLink = vi.mocked(api.openLink)
+const openLink = vi.mocked(api.shell.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
 const setMarkdownMock = vi.mocked(setMarkdown)
 const applyExternalMock = vi.mocked(applyExternalMarkdown)

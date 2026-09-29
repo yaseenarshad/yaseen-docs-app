@@ -22,13 +22,13 @@ vi.mock('../../api', async (importOriginal) => {
     ...original,
     api: {
       ...original.api,
-      reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }),
+      shell: { reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) },
       // Preview mode's fetch (YAZ-1244): a body for every path, so the hover card always has content.
       readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
     },
   }
 })
-const reveal = vi.mocked(api.reveal)
+const reveal = vi.mocked(api.shell.reveal)
 
 /** Preview mode's Crepe (YAZ-1244) is a stand-in here — the real render is PreviewCard.crepe.test.tsx's. */
 vi.mock('../../editor/createCrepe', () => ({

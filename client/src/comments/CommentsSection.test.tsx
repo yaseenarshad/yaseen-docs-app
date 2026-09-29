@@ -19,14 +19,14 @@ import commentsCss from './comments.css?inline'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), openLink: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() } },
 }))
 
 import { BridgeRequestError, api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
-const openLink = vi.mocked(api.openLink)
+const openLink = vi.mocked(api.shell.openLink)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
