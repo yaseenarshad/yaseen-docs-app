@@ -9,13 +9,14 @@ import { api, BridgeRequestError } from '../../api'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../../hooks/useWatch'
 import type { NoticeKind } from '../../lib/notice'
+import { leadingTrailing } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, onTree } from '../../lib/treeFeed'
 import { allDirs, favoriteRoots, findDirNode, focusRoots, treeHasFile, treeReducer } from '../../lib/treeState'
 import { isFolderPage } from '../../links/folderPages'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
-/** Quiet time before a watcher burst's one tree read (YAZ-2191, measured in main-process.md F1). */
+/** The quiet spell that ends a watcher burst, before its trailing tree read (YAZ-2191, measured in main-process.md F1). */
 const STRUCTURAL_REFRESH_MS = 100
 
 export function useVaultTree(
@@ -89,24 +90,20 @@ export function useVaultTree(
   useEffect(() => refresh(), [refresh])
 
   // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
-  // missed events, and refreshes at once. Any other burst (git pull, Finder copy, bulk rename) is
-  // ONE read, 100 ms after its last event (YAZ-2191): it used to be one full vault walk per event.
+  // missed events, and refreshes at once. A lone event refreshes at once too; a burst (git pull,
+  // Finder copy, bulk rename) is that read plus ONE more, 100 ms after its last event (YAZ-2191,
+  // YAZ-2240): it used to be one full vault walk per event.
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
+    const burst = leadingTrailing(refresh, STRUCTURAL_REFRESH_MS)
     const off = watch.subscribe((ev) => {
       if (ev.type === 'error') return setError(ev.message)
       if (ev.type === 'change') return
-      if (timer !== null) clearTimeout(timer)
-      timer = null
-      if (ev.type === 'ready') return refresh()
-      timer = setTimeout(() => {
-        timer = null
-        refresh()
-      }, STRUCTURAL_REFRESH_MS)
+      if (ev.type === 'ready') return burst.flush()
+      burst.call()
     })
     return () => {
       off()
-      if (timer !== null) clearTimeout(timer)
+      burst.cancel()
     }
   }, [watch, refresh])
 

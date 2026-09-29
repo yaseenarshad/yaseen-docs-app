@@ -489,19 +489,30 @@ describe('Sidebar tree refresh is coalesced (YAZ-2191)', () => {
   }
   const wait = (ms: number) => act(() => new Promise<void>((r) => setTimeout(r, ms)))
 
-  it('a burst of structural events is ONE tree read, 100 ms after the last of them', async () => {
+  it('a lone structural event reads the tree at once, and nothing follows it (YAZ-2240)', async () => {
+    const { watch, fire } = withWatcher()
+    const { bridge } = await mount({ watch })
+    const before = bridge.tree.mock.calls.length
+    act(() => fire({ type: 'add', path: '/v/new.md', mtime: 1 }))
+    expect(bridge.tree.mock.calls.length).toBe(before + 1)
+    await wait(150)
+    expect(bridge.tree.mock.calls.length).toBe(before + 1)
+  })
+
+  it('a burst of structural events is one read at once and ONE more, 100 ms after the last of them (YAZ-2240)', async () => {
     const { watch, fire } = withWatcher()
     const { bridge } = await mount({ watch })
     const before = bridge.tree.mock.calls.length
     act(() => {
       for (let i = 0; i < 50; i++) fire({ type: 'add', path: `/v/pulled-${i}.md`, mtime: 1 })
     })
+    expect(bridge.tree.mock.calls.length).toBe(before + 1) // the leading read
     await wait(60)
     act(() => fire({ type: 'unlinkDir', path: '/v/sub' }))
     await wait(60)
-    expect(bridge.tree.mock.calls.length).toBe(before) // still inside the quiet window
+    expect(bridge.tree.mock.calls.length).toBe(before + 1) // still inside the quiet window
     await wait(80)
-    expect(bridge.tree.mock.calls.length).toBe(before + 1)
+    expect(bridge.tree.mock.calls.length).toBe(before + 2) // the trailing read
   })
 
   it('`ready` refreshes at once, and a `change` never refreshes', async () => {
