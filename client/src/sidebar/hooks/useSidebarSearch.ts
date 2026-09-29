@@ -22,7 +22,8 @@ export function useSidebarSearch(
   const results = useSearchResults(root, watch, query, dirs)
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
-  // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
+  // expansion, pending create/rename, drag) lives in the Sidebar's other hooks (useVaultTree,
+  // rowGestures) and is waiting untouched when it clears.
   const searching = query.trim() !== ''
   // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
   // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
