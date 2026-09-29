@@ -30,3 +30,17 @@ Then in milkdown: delete the old tarballs, point the five `file:` entries in
 `client/package.json` at the new filenames, run `npm install`, build, run the e2e drawing
 specs, commit all of it together. The fork hash in the filenames is deliberate — it pins
 provenance and busts npm's `file:` tarball cache on every bump.
+
+## Also here: two patched Milkdown packages
+
+- `milkdown-components-7.22.1-yaz1410.*`: `@milkdown/components` 7.22.1 with the YAZ-1410 CSS
+  zoom fix and the YAZ-2131 list-item caret restore (🔒 D2). Provenance and rebuild:
+  `milkdown-components-7.22.1-yaz1410.md`.
+- `milkdown-plugin-tooltip-7.22.1-yaz2238.*`: `@milkdown/plugin-tooltip` 7.22.1 with the YAZ-2238
+  throttled-update fix. Provenance and rebuild: `milkdown-plugin-tooltip-7.22.1-yaz2238.md`.
+
+Each ships as a `.tgz`, the readable `.patch` it was built from, and an `.md`. Both are installed
+through the root `package.json` (`file:` devDependencies plus `overrides`, so every Milkdown package
+resolves the patched copy) and rebuilt by one script: `node tools/buildMilkdownPatch.mjs
+<components|plugin-tooltip>`. The upstream Milkdown PRs for both fixes are in
+`thoughts/yaz-2131-scope/upstream/`: prepared, not opened; Yasin's call.

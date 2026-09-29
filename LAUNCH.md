@@ -47,8 +47,8 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 ## Verify
 
 ```bash
-npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the migration CLI), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 61 specs; the 50 before YAZ-2171's additions ran in ~3.2 min; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the migration CLIs, the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 64 specs; the Playwright run takes ~3.8 min after the build; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)

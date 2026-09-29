@@ -2,7 +2,7 @@
 
 The one list of everything Yaseen Docs does that a change must not lose (YAZ-2171, seeded from the YAZ-2131 scope inventory). Every row has a stable ID. A PR cites the IDs it touches, and each one is proved by the automated test named here, or by walking its hand steps.
 
-- **A** = a Playwright-Electron spec in `desktop/e2e/` (61 specs; run with `npm run e2e`).
+- **A** = a Playwright-Electron spec in `desktop/e2e/` (64 specs; run with `npm run e2e`).
 - **U** = a unit or jsdom suite (run with `npm test`).
 - **M** = hand steps, listed under [Hand scenarios](#hand-scenarios). Only what automation cannot drive lives there.
 
@@ -12,7 +12,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 
 - [ ] `npm test` green
 - [ ] `npm run typecheck` green
-- [ ] the size/integrity budget gate green, with its numbers pasted (once YAZ-2131 1B lands)
+- [ ] the size/integrity budget gate green, with its numbers pasted
 - [ ] `npm run e2e` green once; three runs in a row for a release candidate
 - [ ] every REGRESSION row this change touches is re-proved (its spec ran, or its hand steps were walked) and listed in the PR body
 
@@ -24,7 +24,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E2 | Bullet fold persisted in app state, restored on relaunch | A `smoke` (steps 4–5), `bigNote` (step 3) |
 | E3 | Heading fold H1–H3 | A `headingFold`, `bigNote` (step 4) |
 | E4 | Image-bullet fold / thumbnail chip | A `imageFold` |
-| E5 | Folds survive external edits; external edits apply as diffs | A `foldExternalEdit`, `foldDiffApply` |
+| E5 | Folds survive external edits; external edits apply as diffs | A `foldExternalEdit`, `foldDiffApply` · U `desktop/src/main/fs/watchConformance.test.ts`, `watchConformance.polling.test.ts` (the watcher engine, 🔒 YAZ-2131 D3) |
 | E6 | Outliner keys: Tab / ⇧Tab / Enter / Backspace | U the Crepe outline suites (`editor/outline/*.test.ts`) · A `folderPageOutline` (in part) |
 | E7 | Task cycle ⌘Enter | A `tasks` |
 | E8 | Marks: ⌘U underline, ⌘⇧X strike, highlight | U `editor/marks/underline.test.ts`, `editor/marks/highlight.test.ts` |
@@ -44,7 +44,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | E22 | Properties panel (typed rows + raw) | A `properties`, `propertiesReorder` |
 | E23 | Content width, spacing (the first block hugs the title), bullet threading settings | A `contentWidth`, `settings`, `firstBlock` · U `editor/outline/bulletThreading.test.ts` |
 | E24 | Spelling squiggle + context menu | M [E24](#e24-spelling) (native menu) |
-| E25 | Conflict bar / dirty buffer vs external change | U `lib/autosave.test.ts` · A `foldExternalEdit` (in part) |
+| E25 | Conflict bar / dirty buffer vs external change | U `lib/autosave.test.ts` · A `foldExternalEdit` (in part), `frontmatterRace` (the app's own frontmatter write never raises the bar, YAZ-2175) |
 | E26 | View-only viewers: text, PDF, image files | A `viewers` · U `viewers/TextViewer.test.tsx`, `viewers/PdfViewer.test.tsx`, `viewers/ImageViewer.test.tsx` |
 | E27 | Big notes open correctly: caret at the start, every chevron, threading on the caret path, every wikilink decorated and resolved (5k mixed + 5k heading-dense) | A `bigNote` |
 
@@ -82,10 +82,10 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | W2 | Multi-window, ⌘⇧N, `yaseendocs://`, Open With | A `scenarios` · M [P6](#p6-finder-launchservices-dmg) for the OS side |
 | W3 | Right panel (⌥-open, resize, hide) | A `rightPanel` · U `right-panel/RightPanel.test.tsx` |
 | W4 | Welcome + recents | A `smoke` (step 1) · U `Welcome.test.tsx` |
-| W5 | ⌘Q flush + relaunch restore | A `smoke` (step 5) · U `desktop/src/main/windows.test.ts` |
+| W5 | ⌘Q flush + relaunch restore | A `smoke` (step 5), `quitFlush` · U `desktop/src/main/windows.test.ts` |
 | W6 | Theme live in every window | A `theme` |
 | W7 | Settings dialog, hotkeys list | A `settings` |
-| W8 | Per-tab state kept across tab switches: scroll, caret, undo history, unsaved buffer, find-in-page, zoom (🔒 YAZ-2132 D5) | A `tabLayers` (written on the YAZ-2131 tab-layers lane; it joins this list when that lane merges) |
+| W8 | Per-tab state kept across tab switches: scroll, caret, undo history, unsaved buffer, find-in-page, zoom (🔒 YAZ-2132 D5) | A `tabLayers` |
 
 ## Folder pages
 
@@ -100,12 +100,13 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | G1 | GitHub sync (chip, sync now, quit-time push) | A `sync`, `settings` · U `desktop/src/main/git/*.test.ts`, `desktop/src/main/ipc/github.test.ts` |
 | T1 | `migrateFolderPages` / `seedDefaultColumns` CLIs | U the `tools` vitest project · A `crossCutting` (step 6 runs the real migration) |
 | P1 | `app://` is a secure, standard, fetch-capable origin; no request leaves `app:` / `data:` / `blob:` | A `secureContext` |
-| P2 | Info.plist `yaseendocs` scheme + `.md` as Alternate Editor | M [P2–P4](#p2p4-packaging) (moves to the budget gate, YAZ-2131 1B) |
-| P3 | Ad-hoc signature valid | M [P2–P4](#p2p4-packaging) (moves to the budget gate) |
-| P4 | `Resources/bin/yaseendocs` + `out/main/cli.js` shipped | M [P2–P4](#p2p4-packaging) (moves to the budget gate) |
+| P2 | Info.plist `yaseendocs` scheme + `.md` as Alternate Editor | gate `npm run perf:budget` (packaged half) · M [P2–P4](#p2p4-packaging) when the gate isn't run |
+| P3 | Ad-hoc signature valid | gate `npm run perf:budget` (packaged half) · M [P2–P4](#p2p4-packaging) when the gate isn't run |
+| P4 | `Resources/bin/yaseendocs` + `out/main/cli.js` shipped | gate `npm run perf:budget` (packaged half) · M [P2–P4](#p2p4-packaging) when the gate isn't run |
 | P5 | Windows installer builds | the `v*` tag release workflow (`.github/workflows/release.yml`) |
 | P6 | Finder double-click, LaunchServices, DMG install | M [P6](#p6-finder-launchservices-dmg) |
 | P7 | An e2e run never claims the machine's `yaseendocs://` handler | U `desktop/src/main/deepLinkScheme.test.ts` · M: after `npm run e2e`, the check under [P6](#p6-finder-launchservices-dmg) still names `/Applications/Yaseen Docs.app` |
+| P8 | Open/Save panels keep the OS language; Chromium's paks trimmed to `en*` (🔒 YAZ-2131 D1) | U `tools/afterPack.test.mjs` · gate `npm run perf:budget` rows `chromiumLocaleCount`, `chromiumLocaleBytes`, `lprojCount` |
 
 ## Hand scenarios
 

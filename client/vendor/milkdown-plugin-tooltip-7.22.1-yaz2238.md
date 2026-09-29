@@ -11,13 +11,18 @@
   the row above and kept the block handle off it). The provider now also remembers the state its
   last EVALUATED update saw, and skips only when the state matches both. It can only ever evaluate
   more often than upstream, never less. Drop this patch once upstream Milkdown releases the fix.
+  The link tooltip also uses `TooltipProvider` but calls `update(view)` without `prevState`, which
+  both versions always evaluate: unchanged.
+
+Upstream PR: prepared, not opened; Yasin's call (the patch and PR text are in
+`thoughts/yaz-2131-scope/upstream/tooltip-throttle/`).
 
 The package name and version remain unchanged so every Milkdown package, `@milkdown/kit` and
 `@milkdown/components` included, resolves the same patched 7.22.1 through the root npm override.
 
 When updating an existing checkout, use `npm ci` to install the locked archive; `npm install` can
-keep an already installed upstream copy. `client/src/editor/tooltipThrottle.test.ts` runs against the
-installed runtime and fails on the upstream copy.
+keep an already installed upstream copy. `client/src/editor/tooltipThrottle.test.ts` runs against
+the installed runtime and fails on the upstream copy.
 
 The upstream package is MIT licensed and includes its original `LICENSE` file.
 Source: <https://registry.npmjs.org/@milkdown/plugin-tooltip/-/plugin-tooltip-7.22.1.tgz>
@@ -44,5 +49,5 @@ Only these files differ from upstream:
 - `src/tooltip-provider.ts`
 - `lib/index.js`
 
-The stale `lib/index.js.map` and its `sourceMappingURL` line are removed because the compiled runtime
-is patched directly. No exports or declarations change.
+The stale `lib/index.js.map` and its `sourceMappingURL` line are removed because the compiled
+runtime is patched directly. No exports or declarations change.
