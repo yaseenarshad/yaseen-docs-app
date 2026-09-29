@@ -82,8 +82,11 @@ try {
       for (const c of abba(i, contenders)) {
         const at = load1()
         const r = await scenario.run(c.app, c.fx)
-        if (i > 0) c.results.push(r) // run 0 warms the OS file cache and Chromium's caches
-        if (i > 0) load.push(at)
+        // Run 0 warms the OS file cache and Chromium's caches.
+        if (i > 0) {
+          c.results.push(r)
+          load.push(at)
+        }
         console.error(`${name} ${c === contenders[0] ? 'app' : 'vs'} run ${i}${i ? '' : ' (warm-up)'} load ${at}: ${JSON.stringify(r)}`)
       }
     }

@@ -8,7 +8,7 @@ const round = (n) => Math.round(n * 10) / 10
 export const abba = (i, contenders) => (i % 2 ? [...contenders].reverse() : contenders)
 
 /** One metric over the measured runs: median and p95 are the numbers; `cv` (stdev / mean) is the noise. */
-export function summarize(values) {
+function summarize(values) {
   const v = values.filter((x) => typeof x === 'number' && Number.isFinite(x))
   if (v.length === 0) return null
   const sorted = [...v].sort((a, b) => a - b)

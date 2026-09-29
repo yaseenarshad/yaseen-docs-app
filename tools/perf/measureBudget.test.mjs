@@ -4,14 +4,15 @@
  * metric crosses its ceiling or a shipped file goes missing.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { outOfBudget } from './measureBudget.mjs'
+import { measure, outOfBudget } from './measureBudget.mjs'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'measureBudget.mjs')
+const budget = JSON.parse(readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
 let out
 
 const put = (rel, body = '') => {
@@ -20,9 +21,22 @@ const put = (rel, body = '') => {
 }
 /** A file of `size` bytes without writing them (sparse): the gate reads sizes, never contents. */
 const grow = (rel, size) => truncateSync(join(out, rel), size)
-const gate = () => {
-  const r = spawnSync(process.execPath, [script, '--out-only', '--out', out], { encoding: 'utf8' })
+const gate = (args = ['--out-only']) => {
+  const r = spawnSync(process.execPath, [script, ...args, '--out', out], { encoding: 'utf8' })
   return { code: r.status, text: r.stdout + r.stderr }
+}
+/** A packaged-looking `.app` under `out`: every path `measure` reads, an empty asar and an Info.plist. */
+const fakeApp = () => {
+  const app = join(out, 'Fake.app')
+  const header = Buffer.alloc(16)
+  const json = Buffer.from('{"files":{}}')
+  header.writeUInt32LE(json.length, 12)
+  put('Fake.app/Contents/Resources/app.asar')
+  writeFileSync(join(app, 'Contents/Resources/app.asar'), Buffer.concat([header, json]))
+  put('Fake.app/Contents/Resources/en.lproj/.keep')
+  put('Fake.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/en.lproj/locale.pak', 'pak')
+  put('Fake.app/Contents/Info.plist', '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict></dict></plist>')
+  return app
 }
 
 beforeEach(() => {
@@ -49,9 +63,10 @@ describe('perf:budget:ci', () => {
   })
 
   it('fails when a metric is pushed over its ceiling in budget.json', () => {
-    grow('main/chunks/file.js', 2_000_000) // mainBundleBytes' ceiling is v0.9.27's 411,774
+    const ceiling = budget.size.mainBundleBytes.max
+    grow('main/chunks/file.js', ceiling * 2)
     const { code, text } = gate()
-    expect(text).toMatch(/OVER BUDGET: mainBundleBytes \d+ > ceiling 411774/)
+    expect(text).toMatch(new RegExp(`OVER BUDGET: mainBundleBytes \\d+ > ceiling ${ceiling}\\b`))
     expect(text).toContain('GATE: FAIL')
     expect(code).toBe(1)
   })
@@ -75,12 +90,29 @@ describe('perf:budget:ci', () => {
     expect(code).toBe(1)
   })
 
-  it('fails when the yaseendocs command or the math fonts are not built', () => {
+  it('fails when the yaseendocs command or the KaTeX fonts are not built', () => {
     rmSync(join(out, 'main/cli.js'))
     rmSync(join(out, 'renderer/assets/KaTeX_Main-Regular-abc.woff2'))
     const { code, text } = gate()
     expect(text).toContain('INTEGRITY FAIL: out: missing main/cli.js')
     expect(text).toContain('INTEGRITY FAIL: renderer: KaTeX fonts missing')
+    expect(code).toBe(1)
+  })
+})
+
+describe('the packaged rows', () => {
+  it('every budget row is a metric `measure` produces, so none is skipped as absent', () => {
+    const app = fakeApp()
+    put('Fake.dmg', 'dmg')
+    const metrics = measure({ out, app, dmg: join(out, 'Fake.dmg') })
+    const unmeasured = Object.keys(budget.size).filter((k) => metrics[k] == null)
+    expect(unmeasured).toEqual([])
+  })
+
+  it.skipIf(process.platform !== 'darwin')('a packaged run with no DMG fails instead of skipping its row', () => {
+    const app = fakeApp()
+    const { code, text } = gate(['--app', app, '--dmg', join(out, 'missing.dmg')])
+    expect(text).toContain(`INTEGRITY FAIL: no dmg at ${join(out, 'missing.dmg')}`)
     expect(code).toBe(1)
   })
 })

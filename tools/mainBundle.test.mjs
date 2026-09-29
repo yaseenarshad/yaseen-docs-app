@@ -56,6 +56,5 @@ describe('the main-process bundle', () => {
     expect(loaded.length).toBeGreaterThan(0)
     const bare = loaded.filter((s) => !s.startsWith('.') && !s.startsWith('node:') && !BUILTIN.has(s.split('/')[0]))
     expect(bare).toEqual([])
-    expect(loaded).not.toContain('chokidar')
   })
 })

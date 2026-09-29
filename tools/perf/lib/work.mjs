@@ -36,19 +36,19 @@ export function claimWorkDir(dir) {
 /**
  * Writes `<profile>/yaseendocs.json` the way desktop/e2e/helpers.ts `seededState` does: one entry per
  * window (a `windows[]` entry skips the native folder dialog), each on the Files lens.
- * `wins`: `[{ id, root, tabs, file? }]`; the active file defaults to the first tab.
+ * `wins`: `[{ id, root, tabs }]`; the active file is the first tab.
  */
-export function writeState(profile, wins, { sidebarWidth = 280 } = {}) {
+export function writeState(profile, wins) {
   fs.mkdirSync(profile, { recursive: true })
   const state = {
     version: 1,
     settings: {},
-    sidebarWidth,
+    sidebarWidth: 280,
     recents: [...new Set(wins.map((w) => w.root))].map((p) => ({ path: p, lastOpened: Date.now() })),
     windows: wins.map((w, i) => ({
       id: w.id,
       root: w.root,
-      file: w.file ?? w.tabs[0] ?? null,
+      file: w.tabs[0] ?? null,
       tabs: w.tabs,
       rightPanel: { open: false, width: 420, items: [], expanded: null },
       sidebarCollapsed: false,
@@ -58,7 +58,7 @@ export function writeState(profile, wins, { sidebarWidth = 280 } = {}) {
       focusFavorites: [],
       bounds: { x: 40 + i * 40, y: 40 + i * 30, width: 1280, height: 860 },
     })),
-    folders: Object.fromEntries(wins.map((w) => [w.root, { expanded: [], lastFile: w.file ?? w.tabs[0] ?? null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null }])),
+    folders: Object.fromEntries(wins.map((w) => [w.root, { expanded: [], lastFile: w.tabs[0] ?? null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null }])),
   }
   fs.writeFileSync(path.join(profile, 'yaseendocs.json'), JSON.stringify(state, null, 2))
 }

@@ -55,6 +55,10 @@ export function lzmaDmg(dmg, appName) {
     rmSync(`${dmg}.blockmap`, { force: true })
   } finally {
     rmSync(tmp, { force: true })
-    rmdirSync(mount) // empty once detached; never recursive, which would empty a volume still mounted there
+    // Empty once detached; never recursive, which would empty a volume still mounted there. A busy
+    // mount point must not hide the error that got us here.
+    try {
+      rmdirSync(mount)
+    } catch {}
   }
 }
