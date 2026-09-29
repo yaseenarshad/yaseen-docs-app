@@ -23,7 +23,6 @@ import { allDirs, ancestorDirs, favoriteRoots, findDirNode, focusRoots, treeHasF
 import { HOME_LINK } from './ensureHome'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
-import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
@@ -34,6 +33,7 @@ import type { NoticeKind } from '../lib/notice'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeReorder, type TreeSelection } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
+import { useSidebarSearch } from './hooks/useSidebarSearch'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 interface SidebarProps {
@@ -446,17 +446,10 @@ export function Sidebar({
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
-  // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
-  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted `key={root}`, so it resets
-  // on unmount and on a root switch without any clearing code.
-  const [query, setQuery] = useState('')
   const seenRevealId = useRef<number | null>(null)
   const handledFilesRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
-  const searchInput = useRef<HTMLInputElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
-  const [selected, setSelected] = useState(0)
 
   // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
   // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
@@ -473,15 +466,6 @@ export function Sidebar({
   const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
   // What the chevrons button unfolds on the two disk-reading lenses.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
-  const results = useSearchResults(root, watch, query, dirs)
-  // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
-  // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
-  // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
-  const searching = query.trim() !== ''
-  // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
-  // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
-  const sel = Math.min(selected, results.length - 1)
-
   // One activation rule for keyboard AND click (🔒 D3, YAZ-1491): a folder reveals, a note opens.
   // The tree rows' rule on the note half (YAZ-961): the first Enter PREVIEWS — focus stays in the
   // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
@@ -491,6 +475,7 @@ export function Sidebar({
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
+  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, pendingSearchFocus, onSearchFocusHandled, activate)
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -716,15 +701,6 @@ export function Sidebar({
     if (!filesRevealReady || pendingReveal === null || bodyRef.current === null) return
     return flashTreeRows(bodyRef.current, pendingReveal.path) ?? undefined
   }, [filesRevealReady, pendingReveal])
-
-  // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
-  // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
-  // already true (0- re-scope on YAZ-800). A plain remount with the flag false focuses nothing.
-  useEffect(() => {
-    if (!pendingSearchFocus) return
-    searchInput.current?.focus()
-    onSearchFocusHandled()
-  }, [pendingSearchFocus, onSearchFocusHandled])
 
   // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
   // EXTERNALLY while it is being edited stays open and is recreated by the next save — an
@@ -1456,35 +1432,8 @@ export function Sidebar({
           title="Search (⌘K)"
           aria-label="Search notes"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setSelected(0) // a new query is a new ranking: the top row is the selection again
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              e.stopPropagation()
-              // Esc empties a typed query first and only gives up focus on the second press.
-              if (query !== '') setQuery('')
-              else e.currentTarget.blur()
-              return
-            }
-            // The bar keeps focus while the list is driven from it (YAZ-803). Clamped at both
-            // ends, never wrapping — the `[[` picker's rule. Opening leaves the list up.
-            if (results.length === 0) return
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setSelected(Math.min(sel + 1, results.length - 1))
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setSelected(Math.max(sel - 1, 0))
-            } else if (e.key === 'Enter') {
-              e.preventDefault()
-              const hit = results[sel]
-              if (hit === undefined) return
-              activate(hit, e.metaKey)
-            }
-          }}
+          onChange={changeQuery}
+          onKeyDown={searchKeyDown}
         />
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
