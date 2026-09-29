@@ -1,40 +1,17 @@
-import { BrowserWindow } from 'electron'
-import type { AppState, PropertiesResponse } from '@shared/types'
+import type { PropertiesResponse } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { getProperties, removeProperty, setProperty, subscribeProperties } from '../properties'
 import type { Store } from '../store'
+import { broadcastAll, syncPerRoot } from './broadcast'
 import { handle } from './envelope'
 
-/** Main's own properties subscription per open-vault root; dropped when the last window on that root goes. */
-const subs = new Map<string, () => void>()
-
 /** Every live window gets the fresh declarations; renderers filter by their own root (the `state:changed` posture). */
-function broadcast(properties: PropertiesResponse): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) continue
-    win.webContents.send(CONTRACT.properties.onChange.channel, { root: properties.root, properties })
-  }
-}
-
-/** The open-vault roots are `AppState.windows` (null = Welcome); one `subscribeProperties` each, no more. */
-function syncSubscriptions(state: AppState): void {
-  const roots = new Set(state.windows.map((w) => w.root).filter((r): r is string => r !== null))
-  for (const [root, off] of subs) {
-    if (!roots.has(root)) {
-      off()
-      subs.delete(root)
-    }
-  }
-  for (const root of roots) {
-    if (!subs.has(root)) subs.set(root, subscribeProperties(root, broadcast))
-  }
-}
+const broadcast = (properties: PropertiesResponse): void => broadcastAll(CONTRACT.properties.onChange.channel, { root: properties.root, properties })
 
 /** The `properties.*` half of `window.yaseenDocs` (YAZ-835). */
 export function registerPropertiesIpc(store: Store): void {
   handle(CONTRACT.properties.get, getProperties)
   handle(CONTRACT.properties.setProperty, setProperty)
   handle(CONTRACT.properties.removeProperty, removeProperty)
-  store.onChange(syncSubscriptions)
-  syncSubscriptions(store.get())
+  syncPerRoot(store, (root) => subscribeProperties(root, broadcast))
 }
