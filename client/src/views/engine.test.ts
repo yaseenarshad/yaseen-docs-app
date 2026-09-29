@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
-import { type ViewResult, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
+import { type ViewResult, basenameKey, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { DateValue, ErrorValue, FileValue } from './expr'
 import { TEST_RECORDS } from './testRecords'
@@ -504,6 +504,39 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     // an already-capitalised or non-letter start is left alone
     expect(defaultLabel('note.KPIs')).toBe('KPIs')
     expect(defaultLabel('note.2024_goals')).toBe('2024 goals')
+  })
+})
+
+describe('targetBasename (YAZ-2241)', () => {
+  it('names the basename of EVERY note a target resolves to without aliases, whatever its spelling', () => {
+    // The rename detector skips a file whose basename no link names; that is only sound if every
+    // name, path and root-absolute match ends in the note's own basename. Fuzz the spellings.
+    const names = ['Note', 'note', 'Ünïcode Straße', 'ΟΔΟΣ', 'İstanbul', 'a.b', 'x.MD', 'Plan 2026', 'Deep']
+    const folders = ['', 'a', 'A/b', 'Σ/ç d', 'x.md']
+    const records: IndexRecord[] = []
+    for (const [i, name] of names.entries()) {
+      for (const [j, folder] of folders.entries()) {
+        const ext = (i + j) % 3 === 0 ? '.markdown' : (i + j) % 3 === 1 ? '.MD' : '.md'
+        const rel = folder === '' ? `${name}${ext}` : `${folder}/${name}${ext}`
+        records.push({ ...TEST_RECORDS[0], path: `/vault/${rel}`, name: `${name}${ext}`, basename: name, folder, aliases: ['Alias'] })
+      }
+    }
+    const resolve = makeResolver(records.map(r => new FileValue(r)), '/vault', { aliases: false })
+    const spellings = (r: IndexRecord): string[] => {
+      const rel = r.folder === '' ? r.basename : `${r.folder}/${r.basename}`
+      const forms = [r.basename, rel, `${rel}.md`, `/${rel}/`, r.path, r.path.toUpperCase(), `/vault/${rel}`, `${r.basename.toLowerCase()}.markdown`, 'Alias']
+      return forms.flatMap(f => [f, ` ${f} `, `[[${f}]]`, `${f}#Heading`, `${f}|shown`, `${f}#^block|x`, f.toUpperCase()])
+    }
+    let resolved = 0
+    for (const r of records) {
+      for (const target of spellings(r)) {
+        const hit = resolve(target)
+        if (hit === null) continue
+        resolved++
+        expect(targetBasename(target), `${target} → ${hit.record.path}`).toBe(basenameKey(hit.record.basename))
+      }
+    }
+    expect(resolved).toBeGreaterThan(1000)
   })
 })
 

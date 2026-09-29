@@ -49,7 +49,7 @@ import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@sha
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { resolverFor } from '../views/engine'
+import { resolverFor, targetBasename } from '../views/engine'
 import { folderPageSettingsLinks, mapFolderPageSettingsLinks } from '../views/folderPageSettings'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
@@ -189,14 +189,33 @@ export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTa
   return out === content ? null : out
 }
 
+/** Every target a note links to: index links and embeds, then the nested settings leaves (lazily). */
+function* referenceTargets(record: IndexRecord): Generator<string> {
+  yield* record.links
+  yield* record.embeds
+  for (const link of folderPageSettingsLinks(record.properties)) {
+    const target = exactLinkTarget(link)
+    if (target !== null) yield target
+  }
+}
+
 /** Does this note reference the renamed file AT ALL — index links/embeds, or a nested settings leaf? */
 function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boolean {
-  return (record) =>
-    [...record.links, ...record.embeds].some(resolves) ||
-    folderPageSettingsLinks(record.properties).some((link) => {
-      const target = exactLinkTarget(link)
-      return target !== null && resolves(target)
-    })
+  return (record) => {
+    for (const target of referenceTargets(record)) if (resolves(target)) return true
+    return false
+  }
+}
+
+/**
+ * The basenames (`basenameKey`) any note's links spell (YAZ-2241). `countLinkReferences` is 0 for a
+ * file whose basename is not in the set (`targetBasename`), so a caller counting many renames can skip
+ * those without building a resolver for each: 230 renames in one snapshot were one 0.4 s task.
+ */
+export function linkedBasenames(records: readonly IndexRecord[]): Set<string> {
+  const named = new Set<string>()
+  for (const record of records) for (const target of referenceTargets(record)) named.add(targetBasename(target))
+  return named
 }
 
 export interface RenameRewriteSummary {
