@@ -32,9 +32,19 @@ let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], right
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
-/** Issues one bridge call at once without awaiting it; a rejection is logged, never thrown (every `api` call rejects rather than throws). */
+/**
+ * Issues one bridge call at once without awaiting it; a rejection is logged, never thrown. The
+ * try/catch is load-bearing: with no bridge (views mounted without one, as the view tests do)
+ * building the call throws synchronously instead of rejecting (YAZ-2209: removing it broke
+ * FolderPageContents).
+ */
 function send(what: string, call: () => Promise<void>): void {
-  call().catch((err: unknown) => console.error(`[storage] ${what} failed:`, err))
+  const log = (err: unknown) => console.error(`[storage] ${what} failed:`, err)
+  try {
+    call().catch(log)
+  } catch (err) {
+    log(err)
+  }
 }
 
 function folderOf(root: string): FolderState {
