@@ -15,6 +15,10 @@
     "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
     "test": "vitest run",
     "e2e": "npm run build -w desktop && playwright test --config desktop/e2e/playwright.config.ts",
+    "e2e:only": "playwright test --config desktop/e2e/playwright.config.ts",
+    "perf": "node tools/perf/run.mjs",
+    "perf:budget": "node tools/perf/measureBudget.mjs",
+    "perf:budget:ci": "node tools/perf/measureBudget.mjs --out-only",
     "test:watch": "vitest"
   },
   "devDependencies": {
