@@ -13,11 +13,12 @@
 ## State
 - Done:
   - [x] YAZ-2243 scope + D1–D3 on YAZ-2242
-- Now: [→] YAZ-2244 menu item + tests + docs
-- Remaining:
-  - [ ] YAZ-2245 verify (full vitest + typecheck + hand check)
-  - [ ] YAZ-2247 audit → YAZ-2248 apply
-  - [ ] PR → merge → release → release notes
+- Done (cont.):
+  - [x] YAZ-2244 menu item + tests + docs — `883cf7b`
+  - [x] YAZ-2245 verify — full vitest 4679 passed, typecheck clean (no Playwright)
+  - [x] YAZ-2247 audit posted
+  - [x] YAZ-2248 stale ordering comments fixed; helper-dup declined (file idiom)
+- Now: [→] PR → merge → release → release notes → remove worktree + branch
 
 ## Open Questions
 - none

@@ -2260,8 +2260,8 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy for Agent',
       'New note',
       'New dated note',
-      // "New folder page" (🔒 D4, YAZ-817): second in the create group, directly after the
-      // note it is a kind of — it CREATES beside the right-clicked row, so it stays in the
+      // "New folder page" (🔒 D4, YAZ-817): right after the note (and its dated twin) it is a
+      // kind of — it CREATES beside the right-clicked row, so it stays in the
       // create group and never drifts down to the act-on-this-row toggle.
       'New folder page',
       'New folder',

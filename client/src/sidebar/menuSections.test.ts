@@ -166,10 +166,10 @@ describe('the six groups (🔒 D7, amended)', () => {
 })
 
 /**
- * The create group (🔒 D4, YAZ-817): "New folder page" is the SECOND item, directly after
- * "New note" — a folder page is a note born with one flag (🔒 D1), so it belongs beside the
- * note it is a kind of, not beside the act-on-this-row toggle further down. Pinned here
- * because the position IS the ruling, not an accident of ordering.
+ * The create group (🔒 D4, YAZ-817): "New folder page" comes right after "New note" and its
+ * dated twin (YAZ-2242 🔒 D2) — a folder page is a note born with one flag (🔒 D1), so it
+ * belongs beside the note it is a kind of, not beside the act-on-this-row toggle further down.
+ * Pinned here because the position IS the ruling, not an accident of ordering.
  */
 describe('create group (🔒 D4)', () => {
   it('offers each dated item right after its plain twin, and New folder page ahead of New folder (YAZ-2242 🔒 D2)', () => {
