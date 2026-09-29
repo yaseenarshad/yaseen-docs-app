@@ -87,6 +87,25 @@ export function toBridgeFailure(err: unknown, p: string): BridgeFailure {
   }
 }
 
+/**
+ * A per-root promise chain: `chained(root, fn)` runs `fn` after everything chained on that root
+ * before it, settled or not, so read-modify-writes on one root never interleave.
+ */
+export function createRootChain(): <T>(root: string, fn: () => Promise<T>) => Promise<T> {
+  const chains = new Map<string, Promise<unknown>>()
+  return <T>(root: string, fn: () => Promise<T>): Promise<T> => {
+    const run = (chains.get(root) ?? Promise.resolve()).then(fn, fn)
+    chains.set(
+      root,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    )
+    return run
+  }
+}
+
 /** Runs `fn`, converting any fs error into a BridgeFailure attributed to `p`. */
 export async function fsCall<T>(p: string, fn: () => Promise<T>): Promise<T> {
   try {
