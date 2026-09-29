@@ -18,7 +18,9 @@
   - [x] YAZ-2245 verify — full vitest 4679 passed, typecheck clean (no Playwright)
   - [x] YAZ-2247 audit posted
   - [x] YAZ-2248 stale ordering comments fixed; helper-dup declined (file idiom)
-- Now: [→] PR → merge → release → release notes → remove worktree + branch
+  - [x] Merged #83, released v0.9.29 (notes on the Releases page), installed on Yasin's Mac, worktree + branch removed
+  - [x] YAZ-2249 follow-up (🔒 E1/E2): dated items + folder page moved to their own menu section — `New note · New folder` │ `New dated note · New dated folder · New folder page`. No release (Yasin's call).
+- Now: closed
 
 ## Open Questions
 - none
