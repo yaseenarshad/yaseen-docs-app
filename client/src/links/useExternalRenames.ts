@@ -12,7 +12,7 @@
  * Queueing: hypotheses stack oldest-first, one banner at a time. Dismiss drops the hypothesis
  * for THIS SESSION (a keyed dismissed set — the next refetch will re-detect the same pair and
  * must not re-offer it). Update marks the pair handled the same way, then (1) repairs the app
- * over `api.repairRename` — main runs the E1 store repair and pushes `file:renamed`, so tabs
+ * over `api.file.repairRename` — main runs the E1 store repair and pushes `file:renamed`, so tabs
  * and editors follow through the EXISTING downstream — and (2) rewrites the referencing notes
  * through the E1/E1b engine against fresh index/tree snapshots re-pathed to the pre-rename
  * view, surfacing the usual summary notice.
@@ -176,7 +176,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
       // (1) Repair the app: main validates the hypothesis (new path exists, old does not),
       // runs the E1 store repair and pushes file:renamed — tabs/editors follow downstream.
       try {
-        await api.repairRename({ oldPath: item.oldPath, newPath: item.newPath })
+        await api.file.repairRename({ oldPath: item.oldPath, newPath: item.newPath })
       } catch (err) {
         // Stale hypothesis (the old path came back, the new one vanished, …): passive notice, never a dialog.
         notify(`Can't update links: ${err instanceof Error ? err.message : String(err)}`)

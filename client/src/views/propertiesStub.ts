@@ -1,7 +1,8 @@
-import type { PropertiesApi, PropertiesResponse } from '@shared/types'
+import type { PropertiesResponse } from '@shared/types'
+import type { YaseenDocsApi } from '@shared/ipc'
 
 /**
- * In-memory `PropertiesApi`: the tests' stand-in for `window.yaseenDocs.properties` (same
+ * In-memory `YaseenDocsApi['properties']`: the tests' stand-in for `window.yaseenDocs.properties` (same
  * interface, same semantics as the real `.yaseendocs/properties.json` bridge). `get` on an
  * untouched root resolves `{ properties: {} }` — empty, never an error, and never creates state
  * (lazy-creation is the bridge's rule too); the first mutation creates the per-root store and
@@ -28,7 +29,7 @@ function changed(s: PropertiesResponse): void {
   for (const listener of listeners) listener(snapshot)
 }
 
-export const propertiesStub: PropertiesApi = {
+export const propertiesStub: YaseenDocsApi['properties'] = {
   get: (root) => Promise.resolve(structuredClone(stores.get(root) ?? empty(root))),
   setProperty: (root, name, def) => {
     const s = store(root)

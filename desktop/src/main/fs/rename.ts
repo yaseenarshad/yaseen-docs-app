@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { RenameFileResponse } from '@shared/types'
 import { canRenameWithoutConversion } from '@shared/fileKind'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
+import { requireRequest } from './validate'
 
 export async function hasExactDirectoryEntry(
   filePath: string,
@@ -40,8 +41,7 @@ export async function hasExactDirectoryEntry(
  * inode is not a collision.
  */
 export async function renameFile(req: unknown): Promise<RenameFileResponse> {
-  if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
-  const { oldPath, newPath } = req as Record<string, unknown>
+  const { oldPath, newPath } = requireRequest(req)
   const oldP = requireAbsPath(oldPath, 'oldPath')
   const newP = requireAbsPath(newPath, 'newPath')
   if (oldP === newP) throw new BridgeFailure('BAD_REQUEST', 'the new path is the same as the old one', { path: newP })
@@ -86,8 +86,7 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
  * and a window rooted at an externally renamed folder is exactly what the store repair heals.
  */
 export async function repairRename(req: unknown): Promise<RenameFileResponse> {
-  if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
-  const { oldPath, newPath } = req as Record<string, unknown>
+  const { oldPath, newPath } = requireRequest(req)
   const oldP = requireAbsPath(oldPath, 'oldPath')
   const newP = requireAbsPath(newPath, 'newPath')
   if (oldP === newP) throw new BridgeFailure('BAD_REQUEST', 'the new path is the same as the old one', { path: newP })

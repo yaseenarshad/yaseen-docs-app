@@ -1,8 +1,9 @@
 import type { PropertiesResponse, PropertyDecl, PropertyKind } from '@shared/types'
 import { PROPERTY_KINDS, PROPERTY_NAME } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
-import { BridgeFailure, requireAbsPath, requireDir } from '../fs/fsUtils'
+import { BridgeFailure, createRootChain, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
+import { isRecord } from '@shared/guards'
 
 /**
  * Vault-wide property declarations (YAZ-835): `<root>/.yaseendocs/properties.json` read and
@@ -25,7 +26,6 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig
 
 export const PROPERTIES_FILE = 'properties.json'
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 // ---------- input validation (strict at the IPC boundary: a write is config, not content) ----------
 
@@ -116,21 +116,8 @@ export async function getProperties(root: string): Promise<PropertiesResponse> {
 
 // ---------- mutation (serialised read-modify-write per root; unknown fields preserved) ----------
 
-/** Per-root promise chain, the store's idiom: two mutations (or notify re-reads) can't interleave. */
-const chains = new Map<string, Promise<unknown>>()
-
-function chained<T>(root: string, fn: () => Promise<T>): Promise<T> {
-  const prev = chains.get(root) ?? Promise.resolve()
-  const run = prev.then(fn, fn)
-  chains.set(
-    root,
-    run.then(
-      () => undefined,
-      () => undefined,
-    ),
-  )
-  return run
-}
+/** Two mutations (or notify re-reads) on one root can't interleave, the store's idiom. */
+const chained = createRootChain()
 
 /** `fn` edits the raw document in place and says whether anything changed; unchanged skips the write. */
 async function mutate(root: string, fn: (raw: Record<string, unknown>) => boolean): Promise<void> {

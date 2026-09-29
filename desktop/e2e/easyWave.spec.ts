@@ -28,12 +28,12 @@
  * Same harness as bible.spec.ts / tabs.spec.ts (temp `--user-data-dir`, a COPY of the fixture,
  * `easy-` step screenshots, `quitApp` at the end).
  */
-import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_DEFAULT_W } from '../../shared/types'
-import { appWindow, copyVault, expandDirs, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -56,20 +56,13 @@ let win: Page
 
 // ---------- locators (the suite's shared idioms) ----------
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 const backBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Back"]')
 const forwardBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Forward"]')
 
 /** The folder page's contents block — the one place a views table still renders (YAZ-844). */
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 
 const sidebar = (w: Page) => w.locator('.sidebar')
 const resizeEdge = (w: Page) => w.locator('.sidebar-resize')

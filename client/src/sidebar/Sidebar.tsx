@@ -1,39 +1,36 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fileKind, isMarkdown } from '@shared/fileKind'
-import { SIDEBAR_LENSES, type FileClipState, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
+import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { copyForAgent } from '../lib/copyForAgent'
 import type { IndexRecord } from '@shared/types'
-import { folderPageSettings, newFolderPageProperties, turnIntoFolderPage } from '../views/folderPageSettings'
+import { turnIntoFolderPage } from '../views/folderPageSettings'
 import { restoreFolderBody } from '../views/migrateFolderBody'
-import { createNewNote } from '../views/newNote'
-import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import { transformFile } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { basename } from '../lib/paths'
-import { storage } from '../lib/storage'
-import { fetchTree, onTree } from '../lib/treeFeed'
-import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
+import { FOLDER_PAGE_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
-import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
-import { allDirs, ancestorDirs, favoriteRoots, findDirNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
+import { ancestorDirs, findDirNode, treeHasFile } from '../lib/treeState'
 import { HOME_LINK } from './ensureHome'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
-import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
-import { datedFolderSeed, entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
+import { datedFolderSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
-import { buildMenuSections, countItems } from './menuSections'
+import { buildMenuSections } from './menuSections'
 import type { NoticeKind } from '../lib/notice'
-import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
-import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeReorder, type TreeSelection } from './Tree'
+import { TopicsTree, allExpandableTopics } from './TopicsTree'
+import { Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
+import { useSidebarSearch } from './hooks/useSidebarSearch'
+import { useVaultTree } from './hooks/useVaultTree'
+import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 interface SidebarProps {
@@ -322,49 +319,14 @@ function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] |
   return null
 }
 
-/**
- * Birth from a FLAGGED folder-page row in Topics (8H, ⚡ YAZ-869 — Yasin's dogfooding ruling).
- *
- * THE RULING: a right-click that says "New note" ON a topic means "a note IN this topic". Anything
- * else is the file tree leaking through a lens that is not about files — the page would be born
- * beside the folder page and belong to NOTHING, and the user would have to go and tag it by hand
- * to see the thing they just made appear where they made it.
- *
- * So "New note" travels the folder page's OWN declaration path — the SAME `newPageFromFolderPage`
- * the contents block's New and the outline's create row use (scaffold ← template ← seed, with
- * `folder_pages` forced LAST) — and parks through the SAME `memberFolder`. One rule, three
- * doorways. "New folder page" is the SUB-TOPIC case and stays 🔒 D1 of YAZ-841's birth exactly:
- * the flag and nothing else, never a template and never a settings block, with the belonging
- * stamped beside it so the new topic shows up nested under the one it was made from.
- *
- * Leaf Topics rows and every Files row keep today's create-beside behaviour untouched: there is no
- * folder page to belong to, so there is nothing to declare.
- */
-async function createInTopic(root: string, folderPage: IndexRecord, kind: 'file' | 'folderPage', name: string): Promise<string> {
-  const settings = folderPageSettings(folderPage)
-  const target = entryPath(await memberFolder(root, folderPage.path, settings), name, kind)
-  // The belonging is spelled the way the click rule reads it back — exactly a wikilink on the
-  // basename — and both keys go through the ONE source of truth, never a local literal.
-  if (kind === 'folderPage') {
-    await createNewNote(target, { ...newFolderPageProperties(), [FOLDER_PAGES_KEY]: [`[[${folderPage.basename}]]`] })
-    return target
-  }
-  const parts = await newPageFromFolderPage(root, folderPage.basename, settings)
-  await createNewNote(target, parts.properties, parts.body)
-  return target
-}
-
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
 const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'Files', favorites: 'Favorites' }
 
 /** The Favorites tree's file move (YAZ-1766 D4): nothing on that tab drags to disk, so every callback is a no-op. */
 const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
-const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot (TopicsTree's twin). */
 const NEVER: ResolveLink = () => null
-/** Quiet time before a watcher burst's one tree read (YAZ-2191, measured in main-process.md F1). */
-const STRUCTURAL_REFRESH_MS = 100
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
 export function Sidebar({
@@ -400,88 +362,20 @@ export function Sidebar({
   clipboardRef,
   width,
 }: SidebarProps) {
-  const [tree, setTree] = useState<TreeResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  // The TOPICS tree's open pages (🔒 D4), lifted here by ⚡ YAZ-873 so the lens row's one button
-  // can read and replace them; the tree itself is controlled. PAGE PATHS, restored from the
-  // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
-  // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
-  const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
-  // Focus Mode (YAZ-1605): one path LIST per lens — dirs for Files, folder pages for Topics; empty
-  // is no focus. Per WINDOW since YAZ-1628 (`sidebarCollapsed`'s rule), unlike the two per-vault
-  // expansions above: restored from this window's identity and written back the same way, so it
-  // survives a lens switch and a restart and follows its own rename, ⌘⇧N inherits it, and another
-  // window on the same vault is never affected.
-  const [focusDirs, setFocusDirs] = useState<readonly string[]>(storage.getFocusDirs)
-  const [focusTopics, setFocusTopics] = useState<readonly string[]>(storage.getFocusTopics)
-  const [focusFavorites, setFocusFavorites] = useState<readonly string[]>(storage.getFocusFavorites)
-  // Favorites (YAZ-1766 D2, in the vault since 6A/D11): the vault's pinned files and folders in the
-  // user's order, read from `.yaseendocs/favorites.json` through main (absolute paths). Another
-  // window's — or another machine's, via sync — write lands here through `favorites:changed` (below).
-  const [favorites, setFavorites] = useState<readonly string[]>([])
-  const favoritesRef = useRef(favorites)
-  favoritesRef.current = favorites
-  // Favorites drag-to-reorder (D4): the dragged root row + the hovered row and edge.
-  const [reorderDragging, setReorderDragging] = useState<string | null>(null)
-  const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
-  // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
-  // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
-  // and nowhere else on purpose: this component is mounted `key={root}` and only while the
-  // sidebar is open, so a selection is honestly about rows currently on screen and cannot
-  // outlive them (a collapse ends it).
-  const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
+  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, topicsExpanded, setTopicsExpanded, focusDirs, setFocusDirs, focusTopics, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs, topicRecords } = useVaultTree(root, watch, activeFile, lens, indexSource, onRootMissing, onFileMissing, onNotice)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
-  // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
-  // tree, where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is
-  // that same row only WHEN it is a flagged PAGE (8H, YAZ-869) — a disk folder has no record and
-  // therefore keeps plain filesystem creation. Pinned when the menu opens (GRO-2296).
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; anchor: string | null; intoFolderPage: string | null } | null>(null)
-  const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
   // The turn-BACK sheet's target (🔒 D5, YAZ-817); null when closed. Only the reverse has one —
   // turning INTO a folder page never opens a sheet at all (🔒 D1).
   const [confirmingTurnBack, setConfirmingTurnBack] = useState<string | null>(null)
-  // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
-  const [dragging, setDragging] = useState<string | null>(null)
-  const [dropDir, setDropDir] = useState<string | null>(null)
-  // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
-  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted `key={root}`, so it resets
-  // on unmount and on a root switch without any clearing code.
-  const [query, setQuery] = useState('')
   const seenRevealId = useRef<number | null>(null)
   const handledFilesRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
-  const searchInput = useRef<HTMLInputElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
-  const [selected, setSelected] = useState(0)
 
-  // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
-  // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
-  // feed.
-  const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
-  // The focused top rows (YAZ-1605), resolved off the LIVE tree in tree order — a vanished dir yields
-  // no row, and the prune below drops it. `dirs` stays the WHOLE vault: reveal must still find what is hidden.
-  const focusNodes = useMemo(() => (tree === null || focusDirs.length === 0 ? [] : focusRoots(tree.tree, focusDirs)), [tree, focusDirs])
-  // The expand/collapse-all button acts on the dirs ON SCREEN: the focused subtrees, or all of them.
-  const shownDirs = useMemo(() => (focusNodes.length === 0 ? dirs : allDirs(focusNodes)), [dirs, focusNodes])
-  // The Favorites tab's rows (YAZ-1766 D4/D5): its own focus list when set, else the favorites — each
-  // in STORED order, off the live tree; nesting and redundancy are kept (`favoriteRoots`, not `focusRoots`).
-  const favoriteNodes = useMemo(() => (tree === null ? [] : favoriteRoots(tree.tree, focusFavorites.length > 0 ? focusFavorites : favorites)), [tree, favorites, focusFavorites])
-  const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
   // What the chevrons button unfolds on the two disk-reading lenses.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
-  const results = useSearchResults(root, watch, query, dirs)
-  // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
-  // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
-  // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
-  const searching = query.trim() !== ''
-  // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
-  // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
-  const sel = Math.min(selected, results.length - 1)
-
   // One activation rule for keyboard AND click (🔒 D3, YAZ-1491): a folder reveals, a note opens.
   // The tree rows' rule on the note half (YAZ-961): the first Enter PREVIEWS — focus stays in the
   // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
@@ -491,6 +385,7 @@ export function Sidebar({
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
+  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, pendingSearchFocus, onSearchFocusHandled, activate)
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -515,7 +410,6 @@ export function Sidebar({
   // tree reads, so the two can never disagree; `folderPagesLookup` is memoized per records
   // identity, so this shares the tree's lookup rather than building a second one. Before the
   // first index lands the snapshot is empty, the answer is nothing, and the button is gone.
-  const topicRecords = useSyncExternalStore(indexSource.subscribe, () => indexSource.records)
   const topics = useMemo(() => {
     const resolve = indexSource.resolve
     return allExpandableTopics(topicRecords, folderPagesLookup(topicRecords, resolve ?? NEVER), resolve, focusTopics)
@@ -525,172 +419,8 @@ export function Sidebar({
   const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : bodyDirs.some((d) => expanded.includes(d))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
-  // The window's one tree feed (YAZ-2191): every answer lands here, whoever asked — this panel,
-  // its active-file probe, the view-only catalog. A failure is only this panel's to report when it
-  // asked (`refresh`), exactly as before the feed.
-  useEffect(
-    () =>
-      onTree(root, (outcome) => {
-        if (outcome.status === 'rejected') return
-        setTree(outcome.value)
-        setError(null)
-      }),
-    [root],
-  )
 
-  const refresh = useCallback(() => {
-    fetchTree(root).catch((err: unknown) => {
-      if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
-      else setError(err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
-    })
-  }, [root, onRootMissing])
-
-  useEffect(() => refresh(), [refresh])
-
-  // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
-  // missed events, and refreshes at once. Any other burst (git pull, Finder copy, bulk rename) is
-  // ONE read, 100 ms after its last event (YAZ-2191): it used to be one full vault walk per event.
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const off = watch.subscribe((ev) => {
-      if (ev.type === 'error') return setError(ev.message)
-      if (ev.type === 'change') return
-      if (timer !== null) clearTimeout(timer)
-      timer = null
-      if (ev.type === 'ready') return refresh()
-      timer = setTimeout(() => {
-        timer = null
-        refresh()
-      }, STRUCTURAL_REFRESH_MS)
-    })
-    return () => {
-      off()
-      if (timer !== null) clearTimeout(timer)
-    }
-  }, [watch, refresh])
-
-  useEffect(() => {
-    // Idempotent like its Topics twin below (⚡ YAZ-874): the first render holds exactly what was
-    // just read, and re-sending it would make the main process commit, write and broadcast for nothing.
-    if (sameList(storage.getExpanded(root), expanded)) return
-    storage.setExpanded(root, expanded)
-  }, [root, expanded])
-
-  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it — into this window's
-  // identity (YAZ-1628), not the vault bucket.
-  useEffect(() => {
-    if (sameList(storage.getFocusDirs(), focusDirs)) return
-    storage.setFocusDirs(focusDirs)
-  }, [focusDirs])
-  useEffect(() => {
-    if (sameList(storage.getFocusTopics(), focusTopics)) return
-    storage.setFocusTopics(focusTopics)
-  }, [focusTopics])
-  useEffect(() => {
-    if (sameList(storage.getFocusFavorites(), focusFavorites)) return
-    storage.setFocusFavorites(focusFavorites)
-  }, [focusFavorites])
-
-  // Favorites (6A/6C): read once per root, then re-read on every `favorites:changed` for this root —
-  // an own write's echo, another window's, or a synced file. A stale root's answer is dropped.
-  useEffect(() => {
-    let cancelled = false
-    const load = () =>
-      void api.favorites.get(root).then((next) => {
-        if (!cancelled) setFavorites((prev) => (sameList(prev, next) ? prev : next))
-      })
-    load()
-    const off = api.favorites.onChanged((c) => {
-      if (c.root === root) load()
-    })
-    return () => {
-      cancelled = true
-      off()
-    }
-  }, [root])
-  /**
-   * The ONE writer (6C): optimistic, then main writes the file; a refusal (a malformed favorites.json
-   * → INVALID_CONFIG, D12) reverts the list and toasts. Main drops dead entries on the way (D14).
-   */
-  const saveFavorites = useCallback(
-    (next: readonly string[]) => {
-      const prev = favoritesRef.current
-      setFavorites(next)
-      api.favorites.set(root, next).catch((err: unknown) => {
-        setFavorites(prev)
-        onNotice(`Can't save favorites: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      })
-    },
-    [root, onNotice],
-  )
-
-  // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
-  // state in ⚡ YAZ-873, unchanged. Idempotent: the first render after a mount holds exactly what
-  // was just read, and re-sending it would make the main process commit, write and broadcast for
-  // nothing — including on every Files-lens mount, where the tree is not even on screen.
-  useEffect(() => {
-    const next = [...topicsExpanded]
-    if (sameList(storage.getTopicsExpanded(root), next)) return
-    storage.setTopicsExpanded(root, next)
-  }, [root, topicsExpanded])
-
-  // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
-  // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
-  const restoredFile = useRef(activeFile)
-  useEffect(() => {
-    if (activeFile === restoredFile.current) return
-    restoredFile.current = null
-    if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
-  }, [root, activeFile])
-
-  // Focus Mode (YAZ-1605): a focus target that left the vault DROPS OUT — deleted, moved out, or a
-  // topic that lost its flag — and the last one leaving ends the focus: never an empty tree under a
-  // lit eye. The store repairs the FILE on delete; this component holds its own copy, so it prunes
-  // against the live tree / index itself, exactly as the selection does above.
-  useEffect(() => {
-    if (tree === null || focusDirs.length === 0) return
-    const kept = focusDirs.filter((dir) => findDirNode(tree.tree, dir) !== null)
-    if (kept.length !== focusDirs.length) setFocusDirs(kept)
-  }, [tree, focusDirs])
-  useEffect(() => {
-    if (focusTopics.length === 0 || topicRecords.length === 0) return // the empty pre-index snapshot must not clear a restored focus
-    const kept = focusTopics.filter((page) => topicRecords.some((r) => r.path === page && isFolderPage(r)))
-    if (kept.length !== focusTopics.length) setFocusTopics(kept)
-  }, [topicRecords, focusTopics])
-  useEffect(() => {
-    if (tree === null || focusFavorites.length === 0) return
-    const kept = focusFavorites.filter((dir) => findDirNode(tree.tree, dir) !== null)
-    if (kept.length !== focusFavorites.length) setFocusFavorites(kept)
-  }, [tree, focusFavorites])
-  // Favorites are NOT pruned against the tree here (D14): a path missing on this machine may simply not
-  // have synced yet, so it draws no row (`favoriteRoots`) and main heals dead entries on the next write.
-
-  // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
-  // other lens is a different reading of the vault, and a typed query swaps the body for the flat
-  // list entirely (🔒 the flat-list ruling on YAZ-739). `clear` on an empty selection returns the
-  // same set, so the mount pass and every ordinary render below cost nothing.
-  useEffect(() => {
-    dispatchSelection({ type: 'clear' })
-  }, [lens, searching])
-
-  // The loaded tree is the canonical disk truth for BOTH lenses — Topics draws the same files —
-  // so a path it no longer has cannot stay selected. A selected path is a file OR a folder
-  // (YAZ-1578, 🔒 D1), hence `treeHasPath` here and nowhere else. Reference-stable when nothing
-  // was dropped, which is every refresh that changed something else.
-  useEffect(() => {
-    if (tree === null) return
-    dispatchSelection({ type: 'prune', exists: (path) => treeHasPath(tree.tree, path) })
-  }, [tree])
-
-  // ⌘⇧C's window onto the selection (🔒 D4, YAZ-1338): App holds the box, this panel keeps it
-  // current — and EMPTIES it on the way out, so a collapsed or root-switched sidebar can never
-  // hand the chord a selection nobody can see. A ref, so this costs no render on either side.
-  useEffect(() => {
-    selectionRef.current = selectedPaths
-    return () => {
-      selectionRef.current = EMPTY_SELECTION
-    }
-  }, [selectionRef, selectedPaths])
+  const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, searching, tree, selectionRef, bodyRef)
 
   // A Files reveal targets a file — or, since a folder search row (🔒 D3, YAZ-1491), a DIR of the
   // tree. Both questions are asked once here and read by the two steps below.
@@ -717,67 +447,9 @@ export function Sidebar({
     return flashTreeRows(bodyRef.current, pendingReveal.path) ?? undefined
   }, [filesRevealReady, pendingReveal])
 
-  // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
-  // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
-  // already true (0- re-scope on YAZ-800). A plain remount with the flag false focuses nothing.
-  useEffect(() => {
-    if (!pendingSearchFocus) return
-    searchInput.current?.focus()
-    onSearchFocusHandled()
-  }, [pendingSearchFocus, onSearchFocusHandled])
-
-  // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
-  // EXTERNALLY while it is being edited stays open and is recreated by the next save — an
-  // IN-APP delete never reaches here, it closes tabs through the `file:deleted` broadcast
-  // which retires the editor first (GRO-2272); do not unify the two. Files OUTSIDE the
-  // root (opened via a pasted `#/abs/path.md` URL, GRO-2069) are never in the tree — skip them.
-  const validated = useRef(false)
-  useEffect(() => {
-    if (tree === null || validated.current) return
-    validated.current = true
-    if (activeFile !== null && activeFile.startsWith(`${root.replace(/\/+$/, '')}/`) && !treeHasFile(tree.tree, activeFile))
-      onFileMissing()
-  }, [tree, activeFile, root, onFileMissing])
-
-  // A stale tab ACTIVATED after its file vanished on disk (I3, GRO-2235): when the activation
-  // CHANGES to an in-root file the cached tree does not show, confirm against a FRESH tree —
-  // the inline-create flow activates a just-created file before `refresh()` lands, so the
-  // cached tree can be behind — and close it through the same onFileMissing path. A file
-  // deleted EXTERNALLY while it is the active editor stays open (no activation change —
-  // recreated by the next save); an IN-APP delete never routes through here, it closes tabs
-  // via the `file:deleted` broadcast, which also retires the editor first (GRO-2272). Do not
-  // unify the two. Background tabs are never probed (out of scope, noted in GRO-2235).
-  const lastActive = useRef(activeFile)
-  const treeRef = useRef(tree)
-  treeRef.current = tree
-  useEffect(() => {
-    if (activeFile === lastActive.current) return
-    lastActive.current = activeFile
-    if (activeFile === null || !activeFile.startsWith(`${root.replace(/\/+$/, '')}/`)) return
-    if (treeRef.current !== null && treeHasFile(treeRef.current.tree, activeFile)) return
-    let cancelled = false // the activation moved on (or the sidebar unmounted): the probe's verdict is stale
-    fetchTree(root).then(
-      (res) => {
-        if (!cancelled && !treeHasFile(res.tree, activeFile)) onFileMissing()
-      },
-      () => undefined, // a root-level failure is refresh()'s problem, not this probe's
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [activeFile, root, onFileMissing])
 
   // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
 
-  /**
-   * The whole selection as a list, ordered by the PANEL (YAZ-1337, as ⚡ YAZ-1338 rules it): the
-   * rows on screen first, in the order the eye reads them — never click order, which is not an
-   * order the user can see — and every still-selected path with no row appended after them, so
-   * collapsing a folder over a selected note hides the row and keeps the note. The one rule lives
-   * in `orderedSelection`, which ⌘⇧C reads too: the menu and the chord cannot spell one selection
-   * two ways.
-   */
-  const orderedSelectedPaths = useCallback((): string[] => orderedSelection(selectedPaths, bodyRef.current), [selectedPaths])
 
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent, topicsAnchor: string | null = null) => {
@@ -858,151 +530,9 @@ export function Sidebar({
    */
   const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
 
-  // ---- Cut / Copy / Paste (YAZ-1674) ----
 
-  /**
-   * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op }` or null, pushed to every window on
-   * every change, so a menu opened here can label "Paste N items" for a copy made in another
-   * window on another vault. Session-only, never persisted. A window opened AFTER a clip reads the
-   * current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
-   */
-  const [clip, setClip] = useState<FileClipState>(null)
-  useEffect(() => {
-    // Subscribe FIRST, then read: a push that lands while the read is in flight is newer than the
-    // read and must win — the read only fills a window nothing has pushed to yet.
-    let live = true
-    let pushed = false
-    const unsubscribe = api.onClipChanged((state) => {
-      pushed = true
-      setClip(state)
-    })
-    api.clipState().then(
-      (state) => {
-        if (live && !pushed) setClip(state)
-      },
-      () => undefined, // an empty clipboard is the honest fallback; the next push corrects it
-    )
-    return () => {
-      live = false
-      unsubscribe()
-    }
-  }, [])
 
-  /**
-   * Cut / Copy: hand the ordered paths to main (🔒 D1) and SAY SO — every clipboard write confirms
-   * (YAZ-1341), and a refusal is reported, never swallowed. The selection stands: acting on it is
-   * not the same as ending it (YAZ-1337).
-   */
-  const clipTo = useCallback(
-    (paths: string[], op: 'copy' | 'cut') => {
-      const what = countItems(paths.length)
-      api.clip({ paths, op }).then(
-        () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
-        (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),
-      )
-    },
-    [onNotice],
-  )
-
-  /**
-   * Paste into `dir` (🔒 D2–D4): PER-ENTRY results, so one bad entry never hides the rest — the
-   * notice counts both halves and names the first failure. The target opens (the synthetic-child
-   * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
-   * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
-   * (`refresh` is idempotent).
-   */
-  const pasteInto = useCallback(
-    async (dir: string) => {
-      try {
-        const res = await api.paste({ targetDir: dir })
-        if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
-        refresh()
-        const first = res.failed[0]
-        if (first === undefined) {
-          // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
-          if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
-          else onNotice(`Pasted ${countItems(res.pasted.length)}`, 'paste')
-        } else if (res.pasted.length === 0) onNotice(`Couldn't paste: ${basename(first.from)} — ${first.message}`, 'error')
-        else onNotice(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${basename(first.from)} — ${first.message}`, 'paste')
-      } catch (err: unknown) {
-        onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      }
-    },
-    [root, refresh, onNotice],
-  )
-
-  /**
-   * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
-   * its parent (the "New note" rule, `targetDirFor`) — or the vault root with no selection at all.
-   */
-  const pasteTargetDir = useCallback((): string => {
-    const first = orderedSelectedPaths()[0]
-    if (first === undefined) return root
-    return targetDirFor({ type: dirs.includes(first) ? 'dir' : 'file', path: first }, root)
-  }, [orderedSelectedPaths, dirs, root])
-
-  /**
-   * The chords' handle (D6 amended, YAZ-1674): App's window listener asks these two verbs; the
-   * rules stay HERE. Cut / Copy need a selection ≥1 (since D9 a plain click is one); Paste needs
-   * a non-empty clipboard; an open context menu owns the verbs outright (its items ARE them).
-   * Rewritten whenever a rule input changes, emptied on unmount (`selectionRef`'s idiom) — a
-   * collapsed sidebar has no tree to paste into or read an order from.
-   */
-  useEffect(() => {
-    clipboardRef.current = {
-      cutOrCopy: (op) => {
-        if (menu !== null || selectedPaths.size === 0) return false
-        clipTo(orderedSelectedPaths(), op)
-        return true
-      },
-      paste: () => {
-        if (menu !== null || clip === null) return false
-        void pasteInto(pasteTargetDir())
-        return true
-      },
-    }
-    return () => {
-      clipboardRef.current = null
-    }
-  }, [clipboardRef, menu, selectedPaths, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir])
-
-  /**
-   * Focus Mode (YAZ-1605): narrow `inLens` — the menu's pinned lens, FILES for a search row (🔒 D1,
-   * YAZ-2050) — to these folders / topics, REPLACING any focus,
-   * one or many — and OPEN each row (the synthetic-child idiom `startCreate` uses), so the tree
-   * never lands on closed chevrons.
-   */
-  const focusOn = useCallback(
-    (paths: string[], inLens: SidebarLens) => {
-      if (inLens === 'topics') {
-        setFocusTopics(paths)
-        setTopicsExpanded((prev) => (paths.every((p) => prev.has(p)) ? prev : new Set([...prev, ...paths])))
-      } else {
-        // Favorites keeps its OWN list (YAZ-1766 D5); both disk lenses share the one expansion (D7).
-        if (inLens === 'favorites') setFocusFavorites(paths)
-        else setFocusDirs(paths)
-        for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
-      }
-    },
-    [root],
-  )
-  const focused = lens === 'topics' ? focusTopics.length > 0 : lens === 'favorites' ? focusFavorites.length > 0 : focusNodes.length > 0
-  const exitFocus = useCallback(() => (lens === 'topics' ? setFocusTopics([]) : lens === 'favorites' ? setFocusFavorites([]) : setFocusDirs([])), [lens])
-
-  /**
-   * The favorite toggle (YAZ-1766 D3/D6): remove every path, or append the ones not yet pinned —
-   * insertion order, no duplicates. `isOn` arrives with the paths (the folder-page toggle's idiom).
-   * The toast confirms with its own glyph; `saveFavorites` persists.
-   */
-  const toggleFavorite = useCallback(
-    (paths: string[], isOn: boolean) => {
-      const n = paths.length > 1 ? `${paths.length} ` : ''
-      const prev = favoritesRef.current
-      saveFavorites(isOn ? prev.filter((p) => !paths.includes(p)) : [...prev, ...paths.filter((p) => !prev.includes(p))])
-      onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite')
-    },
-    [onNotice, saveFavorites],
-  )
+  const { clip, clipTo, pasteInto } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1020,67 +550,13 @@ export function Sidebar({
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
     (path: string) => {
-      window.yaseenDocs.window.open({ root, file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
+      api.window.open({ root, file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
     },
     [root],
   )
 
-  const startCreate = useCallback(
-    (kind: EntryKind, seed = '') => {
-      if (menu === null) return
-      // The input renders inside the target dir's children, so that dir must be open;
-      // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
-      if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
-      // Favorites shows a SUBSET of the vault (YAZ-1766, 3B1): a target dir it does not hold would give
-      // the input nowhere to mount, so the create moves to Files — where the `expandTo` above has
-      // already opened that dir. The reveal hop's rule (D10), applied to the other gesture that needs a row.
-      if (menu.lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
-      setCreating({
-        kind,
-        seed,
-        parentDir: menu.targetDir,
-        anchor: menu.topicsAnchor,
-        // TOPICS only, and only on a row that IS a folder page (8H, YAZ-869): `topicsAnchor` is
-        // null for every Files row and for blank space, so that lens is untouched by construction,
-        // and a leaf topic has nothing to belong to. Both facts were read when the menu opened.
-        intoFolderPage: menu.topicsAnchor !== null && menu.folderPageIsOn ? menu.topicsAnchor : null,
-      })
-      setMenu(null)
-    },
-    [menu, root, favoriteNodes, onLensChange],
-  )
 
-  const submitCreate = useCallback(
-    async (name: string) => {
-      if (creating === null) return
-      // A folder is never a member — belonging is a page's word about itself — so "New folder"
-      // keeps the file tree's rule even here. The record is re-read off the window's snapshot: if
-      // it has vanished since the menu opened, this falls through to the plain create rather than
-      // failing, which is the standing report-don't-block rule.
-      const topic = creating.kind === 'dir' || creating.intoFolderPage === null ? undefined : indexSource.records.find((r) => r.path === creating.intoFolderPage)
-      if (topic !== undefined) {
-        const born = await createInTopic(root, topic, creating.kind === 'folderPage' ? 'folderPage' : 'file', name)
-        setCreating(null)
-        refresh()
-        onOpenFile(born)
-        return
-      }
-      const p = entryPath(creating.parentDir, name, creating.kind)
-      if (creating.kind === 'dir') await api.createDir(p)
-      // Born a folder page (🔒 D4 + D1, YAZ-841): the SAME atomic content-at-create call the 5D
-      // seed uses. Since YAZ-1513 the birth carries the flag AND the default `status` column
-      // declaration — spelled by `newFolderPageProperties`, so the settings key stays the settings
-      // module's own — with no body and no `folder_pages`.
-      else if (creating.kind === 'folderPage') await createNewNote(p, newFolderPageProperties())
-      else await api.createFile(p)
-      setCreating(null)
-      refresh()
-      if (creating.kind !== 'dir') onOpenFile(p)
-    },
-    [creating, refresh, onOpenFile, root, indexSource],
-  )
-
-  const cancelCreate = useCallback(() => setCreating(null), [])
+  const { setRenamingEntry, startCreate, renaming, pending, topicsPending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, indexSource, refresh, onOpenFile, onRenameFile, dispatch)
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
@@ -1090,7 +566,7 @@ export function Sidebar({
    */
   const reveal = useCallback(
     (path: string) => {
-      api.reveal({ path }).catch((err: unknown) => {
+      api.shell.reveal({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
@@ -1104,7 +580,7 @@ export function Sidebar({
    */
   const openVsCode = useCallback(
     (path: string) => {
-      api.openVsCode({ path }).catch((err: unknown) => {
+      api.shell.openVsCode({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
@@ -1118,7 +594,7 @@ export function Sidebar({
    */
   const openDefault = useCallback(
     (path: string) => {
-      api.openDefault({ path }).catch((err: unknown) => {
+      api.shell.openDefault({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
@@ -1216,130 +692,21 @@ export function Sidebar({
     if (path !== null) setFolderPageFlag(path, false)
   }, [confirmingTurnBack, setFolderPageFlag])
 
-  // ---- Rename (files E1 GRO-2194, folders E1b GRO-2241): context menu "Rename" → inline input over the row ----
 
-  const submitRename = useCallback(
-    async (name: string) => {
-      if (renamingEntry === null) return
-      const target = renamedPath(renamingEntry.path, name, renamingEntry.kind)
-      setRenamingEntry(null)
-      if (target === renamingEntry.path) return // same name = no-op
-      // App owns the whole flow (and routes failures to the passive notice — never a dialog);
-      // the tree row follows via the watcher's unlink+add refresh.
-      await onRenameFile(renamingEntry.path, target, renamingEntry.kind)
-    },
-    [renamingEntry, onRenameFile],
-  )
 
-  const renaming: PendingRename | null = useMemo(
-    () => (renamingEntry === null ? null : { path: renamingEntry.path, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }),
-    [renamingEntry, submitRename],
-  )
 
-  // ---- File drag-to-move (E1b, GRO-2241): drop a FILE row on a folder row or the root header ----
+  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, focusFavorites)
 
-  const dropOnDir = useCallback(
-    (dir: string) => {
-      const path = dragging
-      setDragging(null)
-      setDropDir(null)
-      if (path === null) return
-      const target = `${dir}/${basename(path)}`
-      if (target === path) return // dropped into its own folder: nothing to do
-      // The SAME rename flow as the context menu — never-overwrite and every failure as a
-      // passive notice come with it; link updates and the workspace remap ride the same pipeline.
-      void onRenameFile(path, target, 'file')
-    },
-    [dragging, onRenameFile],
-  )
-
-  const fileMove: TreeFileMove = useMemo(
-    () => ({
-      dragging,
-      dropDir,
-      start: setDragging,
-      end: () => {
-        setDragging(null)
-        setDropDir(null)
-      },
-      hover: setDropDir,
-      drop: dropOnDir,
-    }),
-    [dragging, dropDir, dropOnDir],
-  )
-
-  // ---- Favorites drag-to-reorder (YAZ-1766 D4): a root row dropped above/below another rewrites the list ----
-
-  const dropReorder = useCallback(() => {
-    const from = reorderDragging
-    const over = reorderOver
-    setReorderDragging(null)
-    setReorderOver(null)
-    if (from === null || over === null || over.path === from) return
-    const prev = favoritesRef.current
-    const without = prev.filter((p) => p !== from)
-    const i = without.indexOf(over.path)
-    if (i < 0) return
-    const at = over.edge === 'before' ? i : i + 1
-    saveFavorites([...without.slice(0, at), from, ...without.slice(at)])
-  }, [reorderDragging, reorderOver, saveFavorites])
-
-  /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
-  const reorderOff = focusFavorites.length > 0
-  const favoriteReorder: TreeReorder = useMemo(
-    () => ({
-      dragging: reorderDragging,
-      over: reorderOver,
-      start: reorderOff ? () => undefined : setReorderDragging,
-      hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
-      drop: dropReorder,
-      end: () => {
-        setReorderDragging(null)
-        setReorderOver(null)
-      },
-    }),
-    [reorderDragging, reorderOver, reorderOff, dropReorder],
-  )
-
-  /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures — toggle (shift) and set (any other click, D9). */
-  const toggleSelection = useCallback((path: string) => dispatchSelection({ type: 'toggle', path }), [])
-  const setSelection = useCallback((path: string) => dispatchSelection({ type: 'set', path }), [])
-  const selection: TreeSelection = useMemo(() => ({ paths: selectedPaths, toggle: toggleSelection, set: setSelection }), [selectedPaths, toggleSelection, setSelection])
-
-  const pending: PendingCreate | null = useMemo(
-    () =>
-      creating === null
-        ? null
-        : {
-            kind: creating.kind,
-            seed: creating.seed,
-            parentDir: creating.parentDir,
-            onSubmit: submitCreate,
-            onCancel: cancelCreate,
-          },
-    [creating, submitCreate, cancelCreate],
-  )
 
   /**
    * The Files and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
    * its identity across renders that change nothing for them. The context menu handler reads the
    * selection and the tree, so it changes on every click; the rows call it through this stable door.
    */
-  const expandedSet = useMemo(() => new Set(expanded), [expanded])
-  const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: TreeNode, e: React.MouseEvent) => openMenuRef.current(node, e), [])
 
-  /**
-   * The SAME pending create, addressed the way the Topics tree can draw it: by the anchor row
-   * (YAZ-865) — or by NO row (YAZ-948), which is what a blank-space create has. A null anchor
-   * used to drop the create on the floor here: the menu item ran, the input had nowhere to
-   * render, and the gesture silently did nothing. Null now travels through and means the ROOT,
-   * which is where `targetDirFor` was sending the file all along.
-   */
-  const topicsPending: PendingTopicCreate | null =
-    creating === null ? null : { kind: creating.kind, seed: creating.seed, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
 
   // ONE gate for both disk-folder births (YAZ-948 rule; YAZ-1604 adds the dated twin).
   const canNewFolder = menu !== null && !(menu.lens === 'topics' && menu.rowKind !== 'dir')
@@ -1456,35 +823,8 @@ export function Sidebar({
           title="Search (⌘K)"
           aria-label="Search notes"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setSelected(0) // a new query is a new ranking: the top row is the selection again
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              e.stopPropagation()
-              // Esc empties a typed query first and only gives up focus on the second press.
-              if (query !== '') setQuery('')
-              else e.currentTarget.blur()
-              return
-            }
-            // The bar keeps focus while the list is driven from it (YAZ-803). Clamped at both
-            // ends, never wrapping — the `[[` picker's rule. Opening leaves the list up.
-            if (results.length === 0) return
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setSelected(Math.min(sel + 1, results.length - 1))
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setSelected(Math.max(sel - 1, 0))
-            } else if (e.key === 'Enter') {
-              e.preventDefault()
-              const hit = results[sel]
-              if (hit === undefined) return
-              activate(hit, e.metaKey)
-            }
-          }}
+          onChange={changeQuery}
+          onKeyDown={searchKeyDown}
         />
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the

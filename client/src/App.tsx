@@ -106,7 +106,7 @@ export function App() {
   const watch = useWatch(root)
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
-  useEffect(() => window.yaseenDocs.window.onFlush(flushWindow), [])
+  useEffect(() => api.window.onFlush(flushWindow), [])
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
   // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
   // vault index, so index changes restyle links live without any editor remounting. The stable
@@ -311,7 +311,7 @@ export function App() {
       void openRoot(path)
       return
     }
-    void window.yaseenDocs.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
+    void api.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
   }, [root, openRoot])
 
   const { pick, picking } = usePickFolder({ onPicked: openVault })
@@ -319,7 +319,7 @@ export function App() {
   // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
   // the WINDOW through the real close path so the close/flush handshake runs.
   const closeTabOrWindow = useCallback(() => {
-    if (!closeActive()) void window.yaseenDocs.window.closeSelf()
+    if (!closeActive()) void api.window.closeSelf()
   }, [closeActive])
 
   // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, then ask
@@ -472,7 +472,7 @@ export function App() {
   // no identity write that could clobber the repaired file/tabs).
   useEffect(
     () =>
-      window.yaseenDocs.file.onRenamed(({ oldPath, newPath, kind }) => {
+      api.file.onRenamed(({ oldPath, newPath, kind }) => {
         // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
         // be re-offered as an "external rename" hypothesis.
         suppressRenameHypothesis(oldPath, newPath, kind)
@@ -512,7 +512,7 @@ export function App() {
       }
       let kind: 'file' | 'dir'
       try {
-        kind = (await api.rename({ oldPath, newPath })).kind
+        kind = (await api.file.rename({ oldPath, newPath })).kind
       } catch (err) {
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
         notify(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
@@ -630,7 +630,7 @@ export function App() {
    */
   useEffect(
     () =>
-      window.yaseenDocs.file.onDeleted(({ path, kind }) => {
+      api.file.onDeleted(({ path, kind }) => {
         if (kind === 'dir') {
           retireDeletedDir(path)
           deleteWorkspaceDir(path)
@@ -660,7 +660,7 @@ export function App() {
    */
   const deleteFile = useCallback(async (path: string): Promise<void> => {
     try {
-      await api.delete({ path })
+      await api.file.delete({ path })
     } catch (err) {
       const name = basename(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.

@@ -14,11 +14,11 @@ import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}), agentPrompt: vi.fn().mockResolvedValue('handshake') },
+  api: { shell: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}), agentPrompt: vi.fn().mockResolvedValue('handshake') } },
 }))
 import { api, BridgeRequestError } from '../api'
-const reveal = vi.mocked(api.reveal)
-const openVsCode = vi.mocked(api.openVsCode)
+const reveal = vi.mocked(api.shell.reveal)
+const openVsCode = vi.mocked(api.shell.openVsCode)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -293,7 +293,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     await act(async () => {
       items(el)[2]?.click()
     })
-    expect(vi.mocked(api.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
+    expect(vi.mocked(api.shell.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
     expect(writeText).toHaveBeenCalledWith('handshake')
     expect(menuOf(el)).toBeNull()
   })

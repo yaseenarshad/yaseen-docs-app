@@ -11,10 +11,10 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { Autosave } from '../lib/autosave'
 import { useAutosave, type AutosaveHandle } from './useAutosave'
 
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn() },
-}))
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>()
+  return { ...actual, api: { ...actual.api, readFile: vi.fn(), writeFile: vi.fn() } }
+})
 
 import { api, BridgeRequestError } from '../api'
 

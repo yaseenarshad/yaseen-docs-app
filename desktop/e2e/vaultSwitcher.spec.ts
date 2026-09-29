@@ -23,7 +23,7 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState } from '../../shared/types'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, extraWindow, launchApp, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -67,7 +67,6 @@ const vaultMenuItems = (w: Page) => w.locator('.ctx-overlay .ctx-menu [role="men
 const vaultMenuItem = (w: Page, label: string) => vaultMenuItems(w).filter({ hasText: new RegExp(`^${label}$`) })
 /** The inline display-name field, wherever it stands (YAZ-1974 D5). */
 const nameField = (w: Page) => w.locator('.vault-switcher__rename')
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 
 /** Opens the panel by the trigger's click and waits for the filter to hold focus (D7) — every keystroke below goes to it. */

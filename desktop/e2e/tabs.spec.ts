@@ -10,10 +10,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   buildFixtureVault,
   clickMenuItem,
   copyVault,
+  editorOf,
   expandDirs,
   extraWindow,
   launchApp,
@@ -23,6 +25,7 @@ import {
   SEED_FILE,
   seededState,
   shoot,
+  tabsOf,
   windowCount,
   winParam,
 } from './helpers'
@@ -40,10 +43,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted (rule 6). */
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'i3-userdata-'))

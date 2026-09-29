@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { ConfirmSheet } from '../../components/ConfirmSheet'
 
 /**
  * The remove-from-folder-page sheet's copy (YAZ-820) — PURE and separately tested, exactly like
@@ -36,10 +36,8 @@ interface ConfirmRemoveMemberProps {
 }
 
 /**
- * In-app confirm sheet for the outline's hover × (YAZ-820), MIRRORING `ConfirmTurnBack` — which
- * mirrors `ConfirmDelete` — rather than sharing a shell with either: our own sheet and never a
- * native dialog, initial focus on CANCEL so a stray Enter changes nothing, Esc cancels, Enter
- * confirms, click-away cancels, `role="dialog"` + `aria-modal` labelled by its own text.
+ * In-app confirm sheet for the outline's hover × (YAZ-820), on `ConfirmSheet` like its siblings:
+ * initial focus on CANCEL so a stray Enter changes nothing.
  *
  * Same two deliberate omissions as the turn-back sheet: no "Don't ask me again" (this neither
  * repeats blindly nor destroys anything), and the confirm button is NOT `--danger`, because
@@ -47,39 +45,5 @@ interface ConfirmRemoveMemberProps {
  * Buttons are Cancel / **Remove**.
  */
 export function ConfirmRemoveMember({ page, folderPage, others, onConfirm, onCancel }: ConfirmRemoveMemberProps) {
-  const cancelRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => cancelRef.current?.focus(), [])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        onConfirm()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onConfirm, onCancel])
-
-  return (
-    <div className="confirm-overlay" onMouseDown={onCancel}>
-      <div className="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-remove-member-text" onMouseDown={(e) => e.stopPropagation()}>
-        <p className="confirm__text" id="confirm-remove-member-text">
-          {removeMemberMessage(page, folderPage, others)}
-        </p>
-        <div className="confirm__actions">
-          <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className="confirm__btn" onClick={onConfirm}>
-            Remove
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  return <ConfirmSheet labelId="confirm-remove-member-text" text={removeMemberMessage(page, folderPage, others)} confirmLabel="Remove" onConfirm={onConfirm} onCancel={onCancel} />
 }

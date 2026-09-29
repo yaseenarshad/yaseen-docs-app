@@ -14,13 +14,16 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   buildFixtureVault,
   copyVault,
+  editorOf,
   launchApp,
   quitApp,
   seededState,
   shoot,
+  tabsOf,
   windowCount,
 } from './helpers'
 
@@ -45,10 +48,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 /** The collapsed link span showing `text`, inside the VISIBLE editor only. */
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 

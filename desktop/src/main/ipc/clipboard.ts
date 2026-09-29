@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import { CH } from '../../channels'
+import { SPECIAL } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { WindowManagerIpc } from '../windows'
 import { handleWithEvent } from './envelope'
@@ -26,7 +26,7 @@ function isRendererUrl(raw: string, expected: string): boolean {
 
 /** Private preload reply to Copy as; no arbitrary clipboard writer is exposed to the renderer. */
 export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, host: ClipboardHost): void {
-  handleWithEvent(CH.menuCopyText, async (event, text: unknown) => {
+  handleWithEvent(SPECIAL.menuCopyText, async (event, text: unknown) => {
     const { sender, senderFrame } = event
     if (sender.isDestroyed()
       || windows.idFor(sender) === undefined

@@ -15,7 +15,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, outlineLines, quitApp, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, launchApp, layer, outlineLines, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -40,8 +40,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const syncBtn = (w: Page) => contents(w).locator('[aria-label="Sync from folder"]')
 const sheet = (w: Page) => w.locator('.confirm[role="dialog"]')
 const sheetText = (w: Page) => sheet(w).locator('.confirm__text')

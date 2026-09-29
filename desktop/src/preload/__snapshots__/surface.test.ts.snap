@@ -1,0 +1,80 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`window.yaseenDocs is exactly this surface (YAZ-2200) 1`] = `
+"expose yaseenDocs
+on app:flush
+on menu:paste-as
+on menu:copy-as
+coldDiff/1: invoke fs:cold-diff ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+createDir/1: invoke fs:create-dir ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+createFile/1: invoke fs:create-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favorites.get/1: invoke favorites:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favorites.onChanged/1: on favorites:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off favorites:changed
+favorites.set/2: invoke favorites:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.clip/1: invoke fs:clip ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.clipState/0: invoke fs:clip-state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.delete/1: invoke fs:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.onClipChanged/1: on clip:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off clip:changed
+file.onDeleted/1: on file:deleted -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:deleted
+file.onRenamed/1: on file:renamed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:renamed
+file.paste/1: invoke fs:paste ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
+github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+index/1: invoke fs:index ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
+link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file
+menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
+menu.onCopyAs/1: (no IPC)
+menu.onNextTab/1: on menu:next-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:next-tab
+menu.onOpenFolder/1: on menu:open-folder -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:open-folder
+menu.onOpenRoot/1: on menu:open-root -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:open-root
+menu.onPasteAs/1: (no IPC)
+menu.onPrevTab/1: on menu:prev-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:prev-tab
+menu.onSearch/1: on menu:search -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:search
+menu.onSettings/1: on menu:settings -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:settings
+menu.onSwitchVault/1: on menu:switch-vault -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:switch-vault
+menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar
+menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
+pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+properties.get/1: invoke properties:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+properties.onChange/1: on properties:changed -> listener[["props"]]; off properties:changed
+properties.removeProperty/2: invoke properties:remove-property ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+properties.setProperty/3: invoke properties:set-property ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+readAsset/2: invoke fs:read-asset ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+readFile/1: invoke fs:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+readImage/1: invoke fs:read-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+shell.agentPrompt/1: invoke shell:agent-prompt ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+shell.reveal/1: invoke shell:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.get/0: invoke state:get []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off state:changed
+state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.removeRecent/1: invoke state:remove-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setBaseGroups/3: invoke state:set-base-groups ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setFolder/2: invoke state:set-folder ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setFolds/3: invoke state:set-folds ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
+vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultConfig.write/3: invoke vaultConfig:write ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]
+window.closeSelf/0: invoke window:close-self []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.duplicate/0: invoke window:duplicate []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.identity/0: invoke window:identity []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.onFlush/1: (no IPC)
+window.open/1: invoke window:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.setIdentity/1: invoke window:set-identity ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.zoom/1: invoke window:zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+writeAsset/1: invoke fs:write-asset ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+writeFile/1: invoke fs:write ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}"
+`;
