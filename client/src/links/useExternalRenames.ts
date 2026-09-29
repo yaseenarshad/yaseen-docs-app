@@ -25,7 +25,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DiffFileStat, IndexRecord, TreeNode } from '@shared/types'
 import { api } from '../api'
 import { detectRenames, diffRecords, preRenameRecords, type RenameHypothesis } from './renameDetector'
-import { countLinkReferences, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { countLinkReferences, linkedBasenames, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { basename, stripExt } from '../lib/paths'
+import { basenameKey } from '../views/engine'
 
 export interface RenameBannerItem {
   oldPath: string
@@ -93,8 +95,10 @@ export function useExternalRenames(root: string | null, notify: (message: string
     (hypotheses: RenameHypothesis[], records: IndexRecord[], r: string) => {
       if (hypotheses.length === 0) return
       const additions: RenameBannerItem[] = []
+      const linked = linkedBasenames(records)
       for (const h of hypotheses) {
         if (isSuppressed(h)) continue
+        if (!linked.has(basenameKey(stripExt(basename(h.oldPath))))) continue // no link names it: N is 0 (YAZ-2241)
         const count = countLinkReferences({ root: r, oldPath: h.oldPath, records: preRenameRecords(records, r, h.oldPath, h.newPath) })
         if (count === 0) continue // nothing to repair → no banner, nothing at all (locked)
         additions.push({ oldPath: h.oldPath, newPath: h.newPath, count })
