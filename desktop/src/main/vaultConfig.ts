@@ -133,8 +133,6 @@ export async function writeConfig(root: string, name: string, value: unknown): P
 
 function createEntry(root: string): Entry {
   const dir = path.join(root, VAULT_CONFIG_DIR)
-  // No `depth`: polling (the network-volume fallback) never descends into a folder that was
-  // missing at the start when told depth 0, and `schedule` below keeps direct `.json` files only.
   const watcher = watchTree(dir)
   const entry: Entry = { watcher, listeners: new Set(), ownMtimes: new Map(), pending: new Set(), timer: null, anchored: existsSync(dir) }
   const schedule = (p: string, stats?: Stats) => {

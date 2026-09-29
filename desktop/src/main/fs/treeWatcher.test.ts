@@ -8,9 +8,9 @@ import { settled, sleep, until } from './testFixture'
 
 /**
  * The engine's own rules (YAZ-2192). What consumers see through it is pinned by
- * `watchConformance.ts`; this file holds what only the engine knows about: depth, a folder that is
+ * `watchConformance.ts`; this file holds what only the engine knows about: a folder that is
  * not there yet, the watched folder itself going and coming back, a lingering tmp, the stream that
- * starts late (draw 5F1), the polling fallback, and reading `mount`.
+ * starts late, the polling fallback, and reading `mount`.
  *
  * `fail`: every `fs.watch` throws; `refuse`: only a watch of that one path does (EACCES).
  * `lateStream`: FSEvents as libuv serves it on macOS — opening a watch leaves the process's one
@@ -65,17 +65,6 @@ function record(dir: string, opts: Parameters<typeof watchTree>[1] = {}) {
 }
 
 describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
-  it("depth 0 announces the folder's own entries and nothing deeper", async () => {
-    const dir = await tempDir()
-    await mkdir(path.join(dir, 'sub'))
-    const r = record(dir, { depth: 0 })
-    await r.ready()
-    await writeFile(path.join(dir, 'top.json'), '{}')
-    await writeFile(path.join(dir, 'sub', 'deep.json'), '{}')
-    await mkdir(path.join(dir, 'new'))
-    expect(await r.quiet()).toEqual(['add top.json', 'addDir new'])
-  })
-
   it('a folder several levels from existing is waited for, and what it holds arrives when it does', async () => {
     const parent = await tempDir()
     const dir = path.join(parent, 'a', 'b', '.yaseendocs')
@@ -115,7 +104,7 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     expect(await r.quiet()).toEqual(['add big.md'])
   })
 
-  it.runIf(process.platform === 'darwin')('`ready` comes once the stream hears: the first write after it is never missed (draw 5F1)', async () => {
+  it.runIf(process.platform === 'darwin')('`ready` comes once the stream hears: the first write after it is never missed', async () => {
     nativeWatch.lateStream = true
     const dir = await tempDir()
     const r = record(dir)
@@ -124,7 +113,7 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     expect(await r.quiet()).toEqual(['add first.md'])
   })
 
-  it.runIf(process.platform === 'darwin')('an awaited folder that appears before the stream hears is still found, and watched (draw 5F1)', async () => {
+  it.runIf(process.platform === 'darwin')('an awaited folder that appears before the stream hears is still found, and watched', async () => {
     nativeWatch.lateStream = true
     const dir = path.join(await tempDir(), '.yaseendocs')
     const r = record(dir)
@@ -185,6 +174,21 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     await until(() => r.lines.length > 0, 10_000)
     expect(r.lines).toEqual(['add polled.md'])
   })
+
+  it('on the polling fallback too, the watched folder itself going is never announced — only what it held (as v0.9.27 filtered)', async () => {
+    nativeWatch.fail = true
+    const parent = await tempDir()
+    const dir = path.join(parent, 'vault')
+    await mkdir(path.join(dir, 'sub'), { recursive: true })
+    await writeFile(path.join(dir, 'sub', 'x.md'), 'x')
+    const r = record(dir)
+    await r.ready()
+    await rename(dir, path.join(parent, 'elsewhere'))
+    await until(() => r.lines.includes('unlink sub/x.md') && r.lines.includes('unlinkDir sub'), 10_000)
+    await sleep(1500) // a full poll past the last event: a late root event would have landed
+    expect(r.lines.filter((line) => line.endsWith(' '))).toEqual([]) // `unlinkDir ` = the root itself
+  })
+
 })
 
 describe('isNetworkMount (macOS `mount`)', () => {

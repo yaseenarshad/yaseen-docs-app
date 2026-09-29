@@ -5,13 +5,15 @@ import { lstat, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { isAtomicTmp } from '@shared/fileKind'
+import type { FSWatcher as PollingWatcher } from 'chokidar'
 
 /**
- * THE WATCHER ENGINE (YAZ-2192, 🔒 YAZ-2132 D3; adapted from draw 5F / 5F1): one recursive
- * `fs.watch` per watched folder — FSEvents on macOS — and a thin layer that turns its raw "something
- * happened at this path" into the events chokidar gave every consumer: `add` / `change` (with
- * stats), `unlink`, `addDir`, `unlinkDir`, `ready`, `error`. chokidar 4 held one fd per file (2,080
- * at 2k notes) and delayed every event ≥ 200 ms; this holds none and answers in about `SETTLE_MS`.
+ * THE WATCHER ENGINE (YAZ-2192, YAZ-2131 🔒 D3), adapted from the draw app's `treeWatcher.ts`
+ * (draw `df99b35`): one recursive `fs.watch` per watched folder — FSEvents on macOS — and a thin
+ * layer that turns its raw "something happened at this path" into the events chokidar gave every
+ * consumer: `add` / `change` (with stats), `unlink`, `addDir`, `unlinkDir`, `ready`, `error`.
+ * chokidar 4 held one fd per file (2,080 at 2k notes) and delayed every event ≥ 200 ms; this holds
+ * none and answers in about `SETTLE_MS`.
  * `watchConformance.ts` pins what consumers see, whichever engine runs underneath.
  *
  *  - CLASSIFY BY LOOKING. A path that went quiet is `lstat`ed and compared with what the engine
@@ -27,13 +29,13 @@ import { isAtomicTmp } from '@shared/fileKind'
  *    chokidar's initial scan did; on macOS the stream only hears a while later (`probeStream`), so
  *    once it does, the tree is walked again and whatever moved in between is announced — a note
  *    created a moment after the vault opened is an `add`, never silently "initial" (YAZ-986's
- *    create race; draw's engine walked only after the probe and took such a note as initial).
+ *    create race).
  *  - A FOLDER THAT DOES NOT EXIST YET (a vault's `.yaseendocs/`) is waited for from its nearest
  *    existing ancestor, and its contents arrive as `add`s when it appears.
  *  - FALLBACK. Where `fs.watch` cannot serve — it throws, at the start or on a folder that arrives
  *    later (EACCES) — or the folder is on a network volume (FSEvents never hears another machine's
  *    writes to a share), chokidar polling runs instead with chokidar's former options, loaded only
- *    then.
+ *    then. The watched folder itself is never announced, on either path.
  */
 
 /** How long a path must be quiet before it is looked at (🔒 D3: 100 ms). */
@@ -42,8 +44,6 @@ const SETTLE_MS = 100
 const POLL_INTERVAL_MS = 1000
 
 export interface TreeWatchOptions {
-  /** How many folder levels below the watched folder are watched: 0 = its own entries; omitted = all. */
-  depth?: number
   /** Paths that never produce an event (their subtree neither). */
   ignored?: (p: string) => boolean
 }
@@ -88,10 +88,10 @@ interface Probe {
 }
 
 /**
- * THE STREAM HEARS (draw 5F1). On macOS `fs.watch` returns before libuv's FSEvents thread has
+ * THE STREAM HEARS. On macOS `fs.watch` returns before libuv's FSEvents thread has
  * started the stream that serves it — 0–20 ms later when idle, 100 ms and more with `fseventsd`
- * busy — and a change in that gap is never reported, so a `ready` announced in it would be a lie
- * (draw lost 16 of 40 early events under load). libuv serves every FSEvents watch in the process
+ * busy — and a change in that gap is never reported, so a `ready` announced in it would be a lie.
+ * libuv serves every FSEvents watch in the process
  * from ONE stream, rebuilt whenever a watch opens or closes, so a probe — a watch of a fresh private
  * folder, opened after the real one — can only hear from a stream that serves the real one too. It
  * writes a file there every `PROBE_MS` until it hears one.
@@ -154,7 +154,7 @@ class Engine extends EventEmitter implements TreeWatcher {
   /** Every look runs after the one before it: two looks must never both announce one new folder. */
   private chain: Promise<void> = Promise.resolve()
   private native: FSWatcher | null = null
-  private polling: TreeWatcher | null = null
+  private polling: PollingWatcher | null = null
   /** macOS: a probe per watch this engine opened, all open until it closes — closing one would rebuild the stream, deaf again for a while. */
   private readonly probes: Promise<Probe>[] = []
   /** Resolves once the stream serving `native` hears — at once off macOS; renewed with `native`. */
@@ -222,7 +222,6 @@ class Engine extends EventEmitter implements TreeWatcher {
     const { watch } = await import('chokidar')
     if (this.closed) return
     const w = watch(this.dir, {
-      depth: this.opts.depth,
       ignored: (p: string) => p !== this.dir && this.skip(p),
       ignoreInitial: true,
       alwaysStat: true,
@@ -231,10 +230,13 @@ class Engine extends EventEmitter implements TreeWatcher {
       interval: POLL_INTERVAL_MS,
       binaryInterval: POLL_INTERVAL_MS,
     })
-    for (const event of ['add', 'change', 'unlink', 'addDir', 'unlinkDir', 'error'] as const) w.on(event, (...args: unknown[]) => this.emit(event, ...args))
+    for (const event of ['add', 'change', 'unlink', 'error'] as const) w.on(event, (...args: unknown[]) => this.emit(event, ...args))
+    // chokidar announces the watched folder itself going and coming back; the native engine never
+    // does, nor did v0.9.27's watcher, which filtered it out.
+    for (const event of ['addDir', 'unlinkDir'] as const) w.on(event, (p: string) => p !== this.dir && this.emit(event, p))
     // A fallback taken after the engine's own `ready` must not announce a second one.
     if (!this.started) w.on('ready', () => this.emit('ready'))
-    this.polling = w as unknown as TreeWatcher
+    this.polling = w
   }
 
   /** `w` is the watch now; a new probe must vouch for it, since one opened before it vouches for nothing. */
@@ -300,8 +302,7 @@ class Engine extends EventEmitter implements TreeWatcher {
 
   private skip(p: string): boolean {
     if (isAtomicTmp(path.basename(p))) return true
-    if (this.opts.ignored?.(p) === true) return true
-    return this.opts.depth !== undefined && path.relative(this.dir, p).split(path.sep).length - 1 > this.opts.depth
+    return this.opts.ignored?.(p) === true
   }
 
   private queue(p: string): void {
