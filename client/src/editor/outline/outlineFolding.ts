@@ -27,7 +27,7 @@ import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
-import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
+import { outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -263,24 +263,39 @@ const chevronSvg = (): SVGSVGElement => {
   return svg
 }
 
-const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
-  const entries: OutlineEntry[] = []
-  const labelOccurrences = new Map<string, number>()
+/** A foldable list_item as its top-level block alone decides it: positions relative to that block's content, no occurrence yet. */
+interface BlockEntry {
+  keyLabel: string
+  keyStem: string
+  label: string
+  itemPos: number
+  nestedListRanges: readonly { from: number; to: number }[]
+  imageRanges: readonly { from: number; to: number }[]
+}
 
-  doc.descendants((node, itemPos) => {
+/**
+ * Per top-level block, its foldable items (YAZ-2236). Nodes are immutable and an edit leaves every
+ * untouched block the SAME object, so a keystroke scans only the block it changed; the rest come
+ * from here. Only the occurrence numbering spans blocks, and `getOutlineEntries` redoes that.
+ */
+const blockEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
+
+const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
+  const cached = blockEntries.get(block)
+  if (cached !== undefined) return cached
+  const entries: BlockEntry[] = []
+  block.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
     const nestedLists = findNestedLists(node)
     const images = findOwnImages(node)
     if (nestedLists.length === 0 && images.length === 0) return true
 
     const label = itemLabelText(node)
-    const keyLabel = outlineFoldLabel(label)
-    const occurrence = labelOccurrences.get(keyLabel) ?? 0
-    labelOccurrences.set(keyLabel, occurrence + 1)
     entries.push({
-      foldKey: getOutlineFoldKey(label, occurrence),
-      itemPos,
+      keyLabel: outlineFoldLabel(label),
+      keyStem: outlineFoldKeyStem(label),
       label,
+      itemPos,
       nestedListRanges: nestedLists.map(({ list, offset }) => {
         const from = itemPos + 1 + offset
         return { from, to: from + list.nodeSize }
@@ -292,7 +307,28 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
     })
     return true
   })
+  blockEntries.set(block, entries)
+  return entries
+}
 
+const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
+  const entries: OutlineEntry[] = []
+  const labelOccurrences = new Map<string, number>()
+  doc.forEach((block, offset) => {
+    const base = offset + 1
+    const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
+    for (const entry of entriesOfBlock(block)) {
+      const occurrence = labelOccurrences.get(entry.keyLabel) ?? 0
+      labelOccurrences.set(entry.keyLabel, occurrence + 1)
+      entries.push({
+        foldKey: `${entry.keyStem}:${occurrence}`,
+        itemPos: base + entry.itemPos,
+        label: entry.label,
+        nestedListRanges: entry.nestedListRanges.map(shift),
+        imageRanges: entry.imageRanges.map(shift),
+      })
+    }
+  })
   return entries
 }
 
