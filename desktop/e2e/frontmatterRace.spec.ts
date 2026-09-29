@@ -1,7 +1,7 @@
 /**
  * THE APP'S OWN FRONTMATTER WRITE NEVER RAISES "File changed on disk" (YAZ-2175, reliability R2).
  * A property tick or a posted comment is `transformFile`: read, rewrite the frontmatter, write with
- * `expectedMtime`. Landing 450–650 ms after the last body keystroke, it can beat its own watcher echo
+ * `expectedMtime`. Landing 600–660 ms after the last body keystroke, it beats its own watcher echo
  * (the watcher's 100 ms settle, YAZ-2192) to the body's debounced autosave, whose `expectedMtime` is
  * then stale: CONFLICT. Before YAZ-2175 that showed the bar 7 of 12 times, and its "Reload" discarded
  * the typing. Now a CONFLICT whose disk BODY is still ours adopts the new frontmatter and retries
@@ -78,7 +78,12 @@ async function writeFromPage(win: Page, file: string, edit: 'frontmatter' | 'bod
   )
 }
 
-for (const delayMs of [450, 550, 650]) {
+// The window: the body's autosave fires ~700 ms after the last keystroke (Crepe's 200 ms listener +
+// the 500 ms debounce), and the write's own echo reaches the editor ~100 ms after it lands (the
+// watcher's settle). Only a write in between meets the stale mtime. Measured on the merged build
+// (5 runs each, the probe above): 570 ms 4/5, 600–660 ms 5/5, 690 ms and later 0/5 (the autosave
+// wins); the 450/550 ms of the 200 ms-settle days no longer reach the CONFLICT at all.
+for (const delayMs of [600, 630, 660]) {
   test(`a frontmatter write ${delayMs} ms after the last keystroke: no bar, and both edits on disk`, async () => {
     const { win, file, marker, conflicts } = await typeIntoNote()
     await win.waitForTimeout(delayMs)
