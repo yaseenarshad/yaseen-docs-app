@@ -2,8 +2,9 @@ import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { agentPrompt } from '@shared/agentInstructions'
 import { CONTRACT } from '@shared/ipc'
-import { BridgeFailure, fsCall, requireAbsPath, requireMarkdownFile } from '../fs/fsUtils'
+import { fsCall, requireAbsPath, requireMarkdownFile } from '../fs/fsUtils'
 import { handle } from './envelope'
+import { requireRequest } from '../fs/validate'
 
 /** What main knows and the renderer does not: where the `yaseendocs` command lives on this machine. */
 export interface AgentHost {
@@ -27,8 +28,7 @@ export function agentCommand({ packaged, resourcesPath, mainDir }: AgentHost): s
  */
 export function registerAgentIpc(host: AgentHost): void {
   handle(CONTRACT.shell.agentPrompt, async (req: unknown) => {
-    if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
-    const p = requireAbsPath((req as Record<string, unknown>).path, 'path')
+    const p = requireAbsPath(requireRequest(req).path, 'path')
     requireMarkdownFile(p)
     return fsCall(p, async () => {
       await stat(p)

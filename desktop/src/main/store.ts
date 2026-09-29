@@ -40,6 +40,7 @@ import {
   type WindowEntry,
 } from '@shared/types'
 import { atomicWrite } from './fs/fsUtils'
+import { isRecord, isStringArray } from '@shared/guards'
 
 /**
  * The app state store (D9, GRO-2159): one user-global JSON file owned by the main process.
@@ -92,9 +93,6 @@ export const WRITE_DEBOUNCE_MS = 150
 
 // ---------- validation (field by field; anything off falls back to its default) ----------
 
-/** Shared with the IPC boundary (`ipc/state.ts` / `ipc/window.ts`) — one guard, three call sites. */
-export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-export const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStringOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
 const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
