@@ -91,6 +91,25 @@ const NO_VALUE = 'No value'
 
 const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
 
+/** A link target as the resolver reads it: brackets, `#heading` and `|alias` off, trimmed, lowercased. */
+const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
+
+/**
+ * A basename as `targetBasename` spells it: lowercased, with the one context-dependent lowercase
+ * mapping (Greek final sigma: `ΟΔΟΣ.md` lowercases its Σ to σ, `ΟΔΟΣ` alone to ς) folded away.
+ */
+export const basenameKey = (basename: string): string => basename.toLowerCase().replace(/ς/g, 'σ')
+
+/**
+ * The `basenameKey` of every note `target` can resolve to without aliases: each path and name match
+ * in `makeResolver` ends in that basename. A note whose basename no link spells has no references
+ * (YAZ-2241: the rename detector skips those without building a resolver per rename).
+ */
+export function targetBasename(target: string): string {
+  const rel = normalise(targetKey(target))
+  return basenameKey(rel.slice(rel.lastIndexOf('/') + 1))
+}
+
 /** `makeResolver` / `resolverFor` knobs; every field is optional and defaults to today's behaviour. */
 export interface ResolverOptions {
   /**
@@ -132,7 +151,7 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
   return target => {
     const hit = cache.get(target)
     if (hit !== undefined) return hit
-    const key = stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
+    const key = targetKey(target)
     let found: FileValue | null = null
     if (key) {
       found = byPath.get(key) ?? null
