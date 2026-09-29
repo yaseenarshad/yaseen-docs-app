@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
-import { CH, type Envelope } from '../../channels'
+import { CONTRACT, type Envelope } from '@shared/ipc'
 import { makeFixture } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
@@ -64,30 +64,30 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsClip, CH.fsPaste, CH.fsClipState, CH.fsIndex, CH.fsRead, CH.fsReadPdf, CH.fsReadImage, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenDefault, CH.shellOpenLink].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
-    const ok = await registered(CH.fsTree)({ sender: {} }, root)
+    const ok = await registered(CONTRACT.tree.channel)({ sender: {} }, root)
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     expect((ok.value as { root: string }).root).toBe(root)
     const missing = path.join(root, 'missing.md')
-    expect(await registered(CH.fsRead)({ sender: {} }, missing)).toEqual({
+    expect(await registered(CONTRACT.readFile.channel)({ sender: {} }, missing)).toEqual({
       ok: false,
       error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
     })
   })
 
   it('fs:read-asset answers a local image as base64 + mime, errors as a BridgeError envelope (GRO-2139)', async () => {
-    const ok = await registered(CH.fsReadAsset)({ sender: {} }, root, 'img.png')
+    const ok = await registered(CONTRACT.readAsset.channel)({ sender: {} }, root, 'img.png')
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     const value = ok.value as { path: string; mime: string; data: string; size: number }
     expect(value.path).toBe(path.join(root, 'assets-only', 'img.png'))
     expect(value.mime).toBe('image/png')
     expect(Buffer.from(value.data, 'base64').toString('utf8')).toBe('png')
-    const missing = await registered(CH.fsReadAsset)({ sender: {} }, root, 'missing.png')
+    const missing = await registered(CONTRACT.readAsset.channel)({ sender: {} }, root, 'missing.png')
     expect(missing).toEqual({ ok: false, error: { code: 'NOT_FOUND', message: 'no asset with this name under the root', path: 'missing.png' } })
   })
 
@@ -96,13 +96,13 @@ describe('registerFsIpc', () => {
     const bytes = Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff])
     await writeFile(file, bytes)
 
-    const ok = await registered(CH.fsReadPdf)({ sender: {} }, file)
+    const ok = await registered(CONTRACT.readPdf.channel)({ sender: {} }, file)
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     expect((ok.value as { data: Uint8Array }).data).toBeInstanceOf(Uint8Array)
     expect(Buffer.isBuffer((ok.value as { data: Uint8Array }).data)).toBe(true)
     expect((ok.value as { data: Uint8Array }).data).toEqual(Buffer.from(bytes))
-    expect(await registered(CH.fsReadPdf)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
+    expect(await registered(CONTRACT.readPdf.channel)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
       ok: false,
       error: { code: 'UNSUPPORTED_EXTENSION', message: 'only PDF files can be read as PDF', path: path.join(root, 'A.md') },
     })
@@ -113,12 +113,12 @@ describe('registerFsIpc', () => {
     const bytes = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x00, 0xff])
     await writeFile(file, bytes)
 
-    const ok = await registered(CH.fsReadImage)({ sender: {} }, file)
+    const ok = await registered(CONTRACT.readImage.channel)({ sender: {} }, file)
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     expect(ok.value).toMatchObject({ path: file, mime: 'image/webp', size: bytes.byteLength })
     expect((ok.value as { data: Uint8Array }).data).toEqual(Buffer.from(bytes))
-    expect(await registered(CH.fsReadImage)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
+    expect(await registered(CONTRACT.readImage.channel)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
       ok: false,
       error: { code: 'UNSUPPORTED_EXTENSION', message: 'only supported raster images can be read as images', path: path.join(root, 'A.md') },
     })
@@ -126,13 +126,13 @@ describe('registerFsIpc', () => {
 
   it('fs:write-asset writes a drawing sidecar and envelopes its failures (YAZ-876)', async () => {
     const req = { root, path: 'assets/drawings/scene.excalidraw', content: '{"type":"excalidraw"}' }
-    const ok = await registered(CH.fsWriteAsset)({ sender: {} }, req)
+    const ok = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, req)
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     const file = path.join(root, 'assets', 'drawings', 'scene.excalidraw')
     expect((ok.value as { path: string }).path).toBe(file)
     expect(await readFile(file, 'utf8')).toBe(req.content)
-    const bad = await registered(CH.fsWriteAsset)({ sender: {} }, { ...req, path: 'assets/drawings/scene.png' })
+    const bad = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, { ...req, path: 'assets/drawings/scene.png' })
     expect(bad).toEqual({
       ok: false,
       error: { code: 'UNSUPPORTED_EXTENSION', message: 'a text body writes drawing files only', path: path.join(root, 'assets', 'drawings', 'scene.png') },
@@ -141,7 +141,7 @@ describe('registerFsIpc', () => {
 
   it('fs:write-asset takes image BYTES on an image path and passes them through untouched (YAZ-1661)', async () => {
     const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])
-    const ok = await registered(CH.fsWriteAsset)({ sender: {} }, { root, path: 'assets/pasted.png', content: bytes })
+    const ok = await registered(CONTRACT.writeAsset.channel)({ sender: {} }, { root, path: 'assets/pasted.png', content: bytes })
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     const file = path.join(root, 'assets', 'pasted.png')
@@ -150,7 +150,7 @@ describe('registerFsIpc', () => {
   })
 
   it('fs:index answers the vault index for the root: markdown records only (GRO-2129)', async () => {
-    const res = await registered(CH.fsIndex)({ sender: {} }, root)
+    const res = await registered(CONTRACT.index.channel)({ sender: {} }, root)
     expect(res.ok).toBe(true)
     if (!res.ok) throw new Error('expected ok')
     const value = res.value as IndexResponse
@@ -160,9 +160,9 @@ describe('registerFsIpc', () => {
   })
 
   it('fs:cold-diff answers null for an unbuilt root and the reconcile diff after fs:index built one (Links E1c, GRO-2242)', async () => {
-    expect(await registered(CH.fsColdDiff)({ sender: {} }, path.join(root, 'never-indexed'))).toEqual({ ok: true, value: null })
-    expect(await registered(CH.fsColdDiff)({ sender: {} }, 42)).toEqual({ ok: true, value: null }) // non-string root: null, never a throw
-    const res = await registered(CH.fsColdDiff)({ sender: {} }, root) // built by the fs:index test above
+    expect(await registered(CONTRACT.coldDiff.channel)({ sender: {} }, path.join(root, 'never-indexed'))).toEqual({ ok: true, value: null })
+    expect(await registered(CONTRACT.coldDiff.channel)({ sender: {} }, 42)).toEqual({ ok: true, value: null }) // non-string root: null, never a throw
+    const res = await registered(CONTRACT.coldDiff.channel)({ sender: {} }, root) // built by the fs:index test above
     expect(res.ok).toBe(true)
     if (!res.ok) throw new Error('expected ok')
     const value = res.value as { root: string; cacheStatus: string; added: unknown[]; removed: unknown[]; changed: unknown[] }
@@ -180,12 +180,12 @@ describe('registerFsIpc', () => {
     store.upsertWindow({ id: 'w-ext', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-    const res = await registered(CH.fileRepairRename)({ sender: {} }, { oldPath, newPath })
+    const res = await registered(CONTRACT.file.repairRename.channel)({ sender: {} }, { oldPath, newPath })
     expect(res).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
     expect(await readFile(newPath, 'utf8')).toBe('# ext\n') // repair never touches the disk
     // The SAME store repair and push as fs:rename — the E1 downstream is reused whole.
     expect(store.get().windows.find((win) => win.id === 'w-ext')).toMatchObject({ file: newPath, tabs: [newPath] })
-    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath, kind: 'file' })
+    expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath, newPath, kind: 'file' })
   })
 
   it('file:repair-rename with a live old path answers a BridgeError envelope, repairs nothing and broadcasts nothing', async () => {
@@ -194,7 +194,7 @@ describe('registerFsIpc', () => {
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const before = store.get()
-    expect(await registered(CH.fileRepairRename)({ sender: {} }, { oldPath, newPath })).toEqual({
+    expect(await registered(CONTRACT.file.repairRename.channel)({ sender: {} }, { oldPath, newPath })).toEqual({
       ok: false,
       error: { code: 'BAD_REQUEST', message: 'the old path still exists on disk', path: oldPath },
     })
@@ -209,14 +209,14 @@ describe('registerFsIpc', () => {
     store.setFolder(root, { lastFile: oldPath })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-    const res = await registered(CH.fsRename)({ sender: {} }, { oldPath, newPath })
+    const res = await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath, newPath })
     expect(res).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
     expect(await readFile(newPath, 'utf8')).toBe('# b\n')
     // Store repaired in the SAME handler: window file/tabs and the folder's lastFile follow.
     expect(store.get().windows.find((win) => win.id === 'w1')).toMatchObject({ file: newPath, tabs: [newPath] })
     expect(store.get().folders[root].lastFile).toBe(newPath)
     // Every live window got the push (kind included — a `dir` push remaps by prefix, E1b).
-    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath, kind: 'file' })
+    expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath, newPath, kind: 'file' })
   })
 
   it('fs:rename refuses the calling window\'s own vault root (E1b, GRO-2241) but allows another window\'s subfolder root', async () => {
@@ -226,7 +226,7 @@ describe('registerFsIpc', () => {
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     // The caller's OWN root: refused, nothing moves, nothing broadcast.
     senderWinId = 'w-sub'
-    expect(await registered(CH.fsRename)({ sender: {} }, { oldPath: sub, newPath: path.join(root, 'Zeta2') })).toEqual({
+    expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: sub, newPath: path.join(root, 'Zeta2') })).toEqual({
       ok: false,
       error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: sub },
     })
@@ -235,10 +235,10 @@ describe('registerFsIpc', () => {
     // window's `WindowEntry.root` is repaired by the same handler.
     senderWinId = 'w1'
     const newPath = path.join(root, 'Zeta2')
-    const res = await registered(CH.fsRename)({ sender: {} }, { oldPath: sub, newPath })
+    const res = await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: sub, newPath })
     expect(res).toEqual({ ok: true, value: { oldPath: sub, newPath, kind: 'dir' } })
     expect(store.get().windows.find((win) => win.id === 'w-sub')?.root).toBe(newPath)
-    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath: sub, newPath, kind: 'dir' })
+    expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: sub, newPath, kind: 'dir' })
   })
 
   it('fs:rename failure answers a BridgeError envelope, repairs nothing and broadcasts nothing', async () => {
@@ -247,7 +247,7 @@ describe('registerFsIpc', () => {
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const before = store.get()
-    expect(await registered(CH.fsRename)({ sender: {} }, { oldPath, newPath })).toEqual({
+    expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath, newPath })).toEqual({
       ok: false,
       error: { code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path: newPath },
     })
@@ -263,12 +263,12 @@ describe('registerFsIpc', () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
-      const res = await registered(CH.fsDelete)({ sender: {} }, { path: target })
+      const res = await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })
       expect(res).toEqual({ ok: true, value: { path: target, kind: 'file' } })
       // Store repaired in the SAME handler: the active file went, so the heir took over and
       // the SURVIVING tab is still there (the invariant removePath protects).
       expect(store.get().windows.find((win) => win.id === 'wd')).toMatchObject({ file: path.join(root, 'A.md'), tabs: [path.join(root, 'A.md')] })
-      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileDeleted, { path: target, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
     })
 
     it("refuses the calling window's own vault root: nothing trashed, nothing broadcast", async () => {
@@ -276,7 +276,7 @@ describe('registerFsIpc', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       store.upsertWindow({ id: 'w-own', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
       senderWinId = 'w-own'
-      expect(await registered(CH.fsDelete)({ sender: {} }, { path: root })).toEqual({
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: root })).toEqual({
         ok: false,
         error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be deleted', path: root },
       })
@@ -293,18 +293,18 @@ describe('registerFsIpc', () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
-      expect(await registered(CH.fsDelete)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir' } })
       const other = store.get().windows.find((win) => win.id === 'w-other')
       expect(other?.root).toBe(sub) // deliberately NOT nulled here
       expect(other?.file).toBeNull() // the file under it went
-      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileDeleted, { path: sub, kind: 'dir' })
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: sub, kind: 'dir' })
     })
 
     it('a refused delete (dot-folder) answers a BridgeError envelope and broadcasts nothing', async () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const dot = path.join(root, '.obsidian')
-      const res = await registered(CH.fsDelete)({ sender: {} }, { path: dot })
+      const res = await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: dot })
       expect(res).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'hidden entries cannot be deleted', path: dot } })
       expect(w.webContents.send).not.toHaveBeenCalled()
     })
@@ -321,14 +321,14 @@ describe('registerFsIpc', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       vi.mocked(favorites.renamePath).mockRejectedValueOnce(new Error('favorites.json is read-only'))
       senderWinId = undefined
-      expect(await registered(CH.fsRename)({ sender: {} }, { oldPath, newPath })).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
+      expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath, newPath })).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
       expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), oldPath, newPath)
-      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath, newPath, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('favorites.json is read-only'))
       // The already-moved repair path takes the same road.
       await rename(newPath, oldPath)
       vi.mocked(favorites.renamePath).mockClear()
-      expect(await registered(CH.fileRepairRename)({ sender: {} }, { oldPath: newPath, newPath: oldPath })).toEqual({ ok: true, value: { oldPath: newPath, newPath: oldPath, kind: 'file' } })
+      expect(await registered(CONTRACT.file.repairRename.channel)({ sender: {} }, { oldPath: newPath, newPath: oldPath })).toEqual({ ok: true, value: { oldPath: newPath, newPath: oldPath, kind: 'file' } })
       expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), newPath, oldPath)
       store.removeWindow('w-fav')
     })
@@ -342,9 +342,9 @@ describe('registerFsIpc', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       vi.mocked(favorites.removePath).mockRejectedValueOnce(new Error('boom'))
       senderWinId = undefined
-      expect(await registered(CH.fsDelete)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
       expect(vi.mocked(favorites.removePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), target)
-      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileDeleted, { path: target, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'))
       store.removeWindow('w-fav')
     })
@@ -360,35 +360,35 @@ describe('registerFsIpc', () => {
       const b = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a as never, b as never])
       const paths = [path.join(root, 'b.md'), path.join(root, 'Zeta')]
-      expect(await registered(CH.fsClip)({ sender: {} }, { op: 'copy', paths })).toEqual({ ok: true, value: undefined })
+      expect(await registered(CONTRACT.file.clip.channel)({ sender: {} }, { op: 'copy', paths })).toEqual({ ok: true, value: undefined })
       expect(fileClip.get()).toEqual({ op: 'copy', paths })
-      for (const w of [a, b]) expect(w.webContents.send).toHaveBeenCalledExactlyOnceWith(CH.clipChanged, { count: 2, op: 'copy' })
+      for (const w of [a, b]) expect(w.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.file.onClipChanged.channel, { count: 2, op: 'copy' })
     })
 
     it('fs:clip with bad input answers a BridgeError envelope, keeps the clipboard and pushes nothing', async () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const before = fileClip.get()
-      expect(await registered(CH.fsClip)({ sender: {} }, { op: 'cut', paths: ['relative.md'] })).toEqual({
+      expect(await registered(CONTRACT.file.clip.channel)({ sender: {} }, { op: 'cut', paths: ['relative.md'] })).toEqual({
         ok: false,
         error: { code: 'NOT_ABSOLUTE', message: "'paths' must be an absolute path", path: 'relative.md' },
       })
-      expect(await registered(CH.fsClip)({ sender: {} }, { op: 'cut', paths: [] })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+      expect(await registered(CONTRACT.file.clip.channel)({ sender: {} }, { op: 'cut', paths: [] })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
       expect(fileClip.get()).toBe(before)
       expect(w.webContents.send).not.toHaveBeenCalled()
     })
 
     it('fs:clip-state answers null when empty and { count, op } after a set — the catch-up read for a window that mounts after a clip', async () => {
       fileClip.clear()
-      expect(await registered(CH.fsClipState)({ sender: {} })).toEqual({ ok: true, value: null })
+      expect(await registered(CONTRACT.file.clipState.channel)({ sender: {} })).toEqual({ ok: true, value: null })
       fileClip.set({ op: 'cut', paths: [path.join(root, 'A.md'), path.join(root, 'b.md')] })
-      expect(await registered(CH.fsClipState)({ sender: {} })).toEqual({ ok: true, value: { count: 2, op: 'cut' } })
+      expect(await registered(CONTRACT.file.clipState.channel)({ sender: {} })).toEqual({ ok: true, value: { count: 2, op: 'cut' } })
       fileClip.clear()
     })
 
     it('fs:paste with an empty clipboard is BAD_REQUEST "nothing to paste"', async () => {
       fileClip.clear()
-      expect(await registered(CH.fsPaste)({ sender: {} }, { targetDir: root })).toEqual({
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })).toEqual({
         ok: false,
         error: { code: 'BAD_REQUEST', message: 'nothing to paste' },
       })
@@ -403,14 +403,14 @@ describe('registerFsIpc', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const before = store.get()
       // Into its own folder: Duplicate for free.
-      const res = await registered(CH.fsPaste)({ sender: {} }, { targetDir: root })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
       expect(res).toEqual({ ok: true, value: { pasted: [{ from: src, to: path.join(root, 'copy-src copy.md'), kind: 'file' }], failed: [] } })
       expect(await readFile(path.join(root, 'copy-src copy.md'), 'utf8')).toBe('copy me')
       expect(await readFile(src, 'utf8')).toBe('copy me')
       expect(store.get()).toBe(before) // nothing moved: no repair
       expect(w.webContents.send).not.toHaveBeenCalled() // no file:renamed, no clip:changed
       expect(fileClip.get()).toEqual({ op: 'copy', paths: [src] }) // a copy pastes again and again
-      const again = await registered(CH.fsPaste)({ sender: {} }, { targetDir: root })
+      const again = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
       expect(again).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(root, 'copy-src copy 2.md') }] } })
     })
 
@@ -426,7 +426,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'cut', paths: [a, b] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      const res = await registered(CH.fsPaste)({ sender: {} }, { targetDir: dir })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })
       const toA = path.join(dir, 'cut-a.md')
       const toB = path.join(dir, 'cut-b.md')
       expect(res).toEqual({ ok: true, value: { pasted: [{ from: a, to: toA, kind: 'file' }, { from: b, to: toB, kind: 'file' }], failed: [] } })
@@ -435,9 +435,9 @@ describe('registerFsIpc', () => {
       expect(store.get().windows.find((x) => x.id === 'w-cut')).toMatchObject({ file: toA, tabs: [toA] })
       expect(store.get().folders[root].lastFile).toBe(toB)
       // …and every window got file:renamed per entry, then clip:changed null (the cut pasted once).
-      expect(w.webContents.send).toHaveBeenNthCalledWith(1, CH.fileRenamed, { oldPath: a, newPath: toA, kind: 'file' })
-      expect(w.webContents.send).toHaveBeenNthCalledWith(2, CH.fileRenamed, { oldPath: b, newPath: toB, kind: 'file' })
-      expect(w.webContents.send).toHaveBeenNthCalledWith(3, CH.clipChanged, null)
+      expect(w.webContents.send).toHaveBeenNthCalledWith(1, CONTRACT.file.onRenamed.channel, { oldPath: a, newPath: toA, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenNthCalledWith(2, CONTRACT.file.onRenamed.channel, { oldPath: b, newPath: toB, kind: 'file' })
+      expect(w.webContents.send).toHaveBeenNthCalledWith(3, CONTRACT.file.onClipChanged.channel, null)
       expect(fileClip.get()).toBeNull()
     })
 
@@ -450,7 +450,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'cut', paths: [src] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      const res = await registered(CH.fsPaste)({ sender: {} }, { targetDir: dir })
+      const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })
       expect(res).toEqual({ ok: true, value: { pasted: [], failed: [{ from: src, code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }] } })
       expect(await readFile(path.join(dir, 'same.md'), 'utf8')).toBe('keep')
       expect(fileClip.get()).toEqual({ op: 'cut', paths: [src] })
@@ -460,7 +460,7 @@ describe('registerFsIpc', () => {
     it('a missing target folder is a whole-call BridgeError envelope: nothing pasted, clipboard kept', async () => {
       fileClip.set({ op: 'copy', paths: [path.join(root, 'A.md')] })
       const missing = path.join(root, 'no-such-dir')
-      expect(await registered(CH.fsPaste)({ sender: {} }, { targetDir: missing })).toEqual({
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: missing })).toEqual({
         ok: false,
         error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
       })

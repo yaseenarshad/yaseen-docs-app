@@ -3,13 +3,13 @@ import { ipcMain } from 'electron'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { CH, type Envelope } from '../../channels'
+import { CONTRACT, type Envelope } from '@shared/ipc'
 import { agentCommand, registerAgentIpc } from './agent'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
 
 const invoke = (req: unknown) => {
-  const handler = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === CH.shellAgentPrompt)?.[1]
+  const handler = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === CONTRACT.shell.agentPrompt.channel)?.[1]
   return (handler as unknown as (event: unknown, req: unknown) => Promise<Envelope<string>>)({}, req)
 }
 

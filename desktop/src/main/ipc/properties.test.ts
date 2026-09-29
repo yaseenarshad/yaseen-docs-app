@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { PropertiesResponse } from '@shared/types'
-import { CH, type Envelope } from '../../channels'
+import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { activeConfigWatcherRoots, VAULT_CONFIG_DIR } from '../vaultConfig'
 import { registerPropertiesIpc } from './properties'
@@ -64,22 +64,22 @@ afterEach(async () => {
 describe('registerPropertiesIpc', () => {
   it('registers exactly the properties channels the preload invokes', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.propertiesGet, CH.propertiesSetProperty, CH.propertiesRemoveProperty].sort())
+    expect(channels).toEqual([CONTRACT.properties.get.channel, CONTRACT.properties.setProperty.channel, CONTRACT.properties.removeProperty.channel].sort())
   })
 
   it('get and the mutators round-trip through the envelope; bad input answers error envelopes', async () => {
-    expect(await registered(CH.propertiesGet)({ sender }, vault)).toEqual(ok({ root: vault, version: 1, properties: {} }))
-    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(ok(undefined))
-    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'related', { kind: 'multi-link' })).toEqual(ok(undefined))
-    const got = (await registered(CH.propertiesGet)({ sender }, vault)) as { value: PropertiesResponse }
+    expect(await registered(CONTRACT.properties.get.channel)({ sender }, vault)).toEqual(ok({ root: vault, version: 1, properties: {} }))
+    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(ok(undefined))
+    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'related', { kind: 'multi-link' })).toEqual(ok(undefined))
+    const got = (await registered(CONTRACT.properties.get.channel)({ sender }, vault)) as { value: PropertiesResponse }
     expect(got.value.properties).toEqual({ unit: { kind: 'text' }, related: { kind: 'multi-link' } })
-    expect(await registered(CH.propertiesRemoveProperty)({ sender }, vault, 'related')).toEqual(ok(undefined))
+    expect(await registered(CONTRACT.properties.removeProperty.channel)({ sender }, vault, 'related')).toEqual(ok(undefined))
 
-    expect(await registered(CH.propertiesGet)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'Bad Name', { kind: 'text' })).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'unit', { kind: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.properties.get.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'Bad Name', { kind: 'text' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'unit', { kind: 'nope' })).toEqual(bad('BAD_REQUEST'))
     await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'properties.json'), '{broken')
-    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(bad('INVALID_CONFIG'))
+    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(bad('INVALID_CONFIG'))
   })
 
   it('subscribes one config watcher per open-vault root and drops it when the last window leaves', async () => {
@@ -104,9 +104,9 @@ describe('registerPropertiesIpc', () => {
     a.webContents.send.mockClear()
     b.webContents.send.mockClear()
 
-    await registered(CH.propertiesSetProperty)({ sender }, vault, 'related', { kind: 'multi-link' })
+    await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'related', { kind: 'multi-link' })
     const got = (win: ReturnType<typeof fakeWindow>) =>
-      win.webContents.send.mock.calls.find(([ch]) => ch === CH.propertiesChanged)?.[1] as { root: string; properties: PropertiesResponse } | undefined
+      win.webContents.send.mock.calls.find(([ch]) => ch === CONTRACT.properties.onChange.channel)?.[1] as { root: string; properties: PropertiesResponse } | undefined
     await until(() => got(a) !== undefined && got(b) !== undefined)
     expect(got(a)?.root).toBe(vault)
     expect(got(a)?.properties.properties).toEqual({ related: { kind: 'multi-link' } })

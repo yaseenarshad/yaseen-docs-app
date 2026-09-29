@@ -1,5 +1,5 @@
 import type { AppState, VaultConfigChange } from '@shared/types'
-import { CH } from '../../channels'
+import { CONTRACT } from '@shared/ipc'
 import type { Store } from '../store'
 import { readConfig, subscribeConfig, writeConfig } from '../vaultConfig'
 import { broadcastAll } from './broadcast'
@@ -9,7 +9,7 @@ import { handle } from './envelope'
 const subs = new Map<string, () => void>()
 
 /** Every live window gets the change; renderers filter by their own root (same posture as `state:changed`). */
-const broadcast = (change: VaultConfigChange): void => broadcastAll(CH.vaultConfigChanged, change)
+const broadcast = (change: VaultConfigChange): void => broadcastAll(CONTRACT.vaultConfig.onChange.channel, change)
 
 /** The open-vault roots are `AppState.windows` (null = Welcome); one `subscribeConfig` each, no more. */
 function syncSubscriptions(state: AppState): void {
@@ -27,8 +27,8 @@ function syncSubscriptions(state: AppState): void {
 
 /** The `vaultConfig.*` half of `window.yaseenDocs` (Desktop J, GRO-2188). */
 export function registerVaultConfigIpc(store: Store): void {
-  handle(CH.vaultConfigRead, readConfig)
-  handle(CH.vaultConfigWrite, writeConfig)
+  handle(CONTRACT.vaultConfig.read, readConfig)
+  handle(CONTRACT.vaultConfig.write, writeConfig)
   store.onChange(syncSubscriptions)
   syncSubscriptions(store.get())
 }
