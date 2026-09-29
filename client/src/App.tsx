@@ -85,6 +85,8 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
+  /** The sidebar's aside: a resize drag writes its live width here, not to state (YAZ-2239). */
+  const sidebarRef = useRef<HTMLElement>(null)
   // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and persisted because the Sidebar is
   // mounted `key={root}` and only while open; sidebar-local view state would reset on every
   // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
@@ -160,7 +162,11 @@ export function App() {
   }, [])
 
   const visibleSidebarWidth = root !== null && !sidebarCollapsed ? sidebarWidth : 0
-  const rightOverlay = rightPanel.open && windowWidth < visibleSidebarWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
+  /** Whether the right panel overlays the workspace beside a sidebar this wide; a resize drag asks it per move. */
+  const overlayAt = (sideWidth: number) => rightPanel.open && windowWidth < sideWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
+  const overlayAtRef = useRef(overlayAt)
+  overlayAtRef.current = overlayAt
+  const rightOverlay = overlayAt(visibleSidebarWidth)
 
   const toggleSidebar = useCallback(() => {
     const next = !sidebarCollapsedRef.current
@@ -189,10 +195,19 @@ export function App() {
       const x0 = e.clientX
       let raw = start
       let width = start
+      // The width in state, which the right panel's overlay decision reads.
+      let rendered = start
+      // Each move writes the width straight to the aside (YAZ-2239): state per move re-rendered the
+      // whole app on every mouse move. State follows at the move that flips the right panel between
+      // split and overlay, so that still happens live, and on mouseup.
       const move = (ev: MouseEvent) => {
         raw = start + ev.clientX - x0
         width = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, raw))
-        setSidebarWidth(width)
+        if (sidebarRef.current !== null) sidebarRef.current.style.width = `${width}px`
+        if (overlayAtRef.current(width) !== overlayAtRef.current(rendered)) {
+          rendered = width
+          setSidebarWidth(width)
+        }
       }
       const up = () => {
         window.removeEventListener('mousemove', move)
@@ -202,7 +217,10 @@ export function App() {
         if (raw < SIDEBAR_MIN_W * 0.6) {
           setSidebarWidth(start)
           toggleSidebar()
-        } else if (width !== start) storage.setSidebarWidth(width)
+          return
+        }
+        setSidebarWidth(width)
+        if (width !== start) storage.setSidebarWidth(width)
       }
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', up)
@@ -803,6 +821,7 @@ export function App() {
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
+          asideRef={sidebarRef}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}

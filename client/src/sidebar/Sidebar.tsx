@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { fileKind, isMarkdown } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
@@ -37,6 +37,8 @@ interface SidebarProps {
   root: string
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
+  /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
+  asideRef?: Ref<HTMLElement>
   activeFile: string | null
   watch: WatchSource
   onOpenFile: (path: string) => void
@@ -361,6 +363,7 @@ export function Sidebar({
   selectionRef,
   clipboardRef,
   width,
+  asideRef,
 }: SidebarProps) {
   const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, topicsExpanded, setTopicsExpanded, focusDirs, setFocusDirs, focusTopics, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs, topicRecords } = useVaultTree(root, watch, activeFile, lens, indexSource, onRootMissing, onFileMissing, onNotice)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
@@ -723,7 +726,7 @@ export function Sidebar({
     }
 
   return (
-    <aside className="sidebar" style={{ width }}>
+    <aside ref={asideRef} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b). */}
       <div
         className={`sidebar__header${dropDir === root ? ' sidebar__header--drop' : ''}`}

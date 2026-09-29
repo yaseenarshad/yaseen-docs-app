@@ -44,6 +44,8 @@ interface SidebarStubProps {
   onCreateHome: () => void
   /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
   width: number
+  /** The aside itself, which a resize drag writes its live width to (YAZ-2239). */
+  asideRef?: React.Ref<HTMLElement>
   viewOnlyLinks: ViewOnlyLinkSource
   /**
    * ⌘⇧C's read-only window into the sidebar's selection (YAZ-1338, 🔒 D4): App owns the
@@ -58,6 +60,8 @@ interface SidebarStubProps {
 
 const captured = vi.hoisted(() => ({
   sidebar: null as SidebarStubProps | null,
+  /** Sidebar stub renders — one per App render while the sidebar is open. */
+  sidebarRenders: 0,
   editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
 }))
@@ -77,7 +81,8 @@ vi.mock('./editor/Editor', () => ({
 vi.mock('./sidebar/Sidebar', () => ({
   Sidebar: (props: SidebarStubProps) => {
     captured.sidebar = props
-    return <aside data-sidebar data-root={props.root} />
+    captured.sidebarRenders++
+    return <aside ref={props.asideRef} data-sidebar data-root={props.root} />
   },
 }))
 
@@ -738,6 +743,8 @@ describe('App sidebar resize (YAZ-738)', () => {
     window.dispatchEvent(new MouseEvent('mouseup', { clientX: dx }))
   }
   const sideW = () => captured.sidebar?.width
+  /** One App render as the stub counts it: `mount` renders under StrictMode, which renders twice. */
+  const STRICT_RENDER = 2
   const toggle = (el: HTMLElement) => act(() => void el.querySelector('.app')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })))
 
   it('a drag widens the sidebar live and persists the new width once', async () => {
@@ -752,6 +759,38 @@ describe('App sidebar resize (YAZ-738)', () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 120))
     expect(el.querySelector<HTMLElement>('.app')?.style.getPropertyValue('--side-w')).toBe('')
+  })
+
+  it('a 20-move drag writes the width straight to the sidebar and renders App once, when it ends (YAZ-2239)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const aside = el.querySelector<HTMLElement>('[data-sidebar]')!
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+    const before = captured.sidebarRenders
+    for (let dx = 6; dx <= 120; dx += 6) act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx })))
+    expect(captured.sidebarRenders).toBe(before)
+    expect(aside.style.width).toBe('380px')
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120 })))
+    expect(captured.sidebarRenders).toBe(before + STRICT_RENDER)
+    expect(sideW()).toBe(380)
+    expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+  })
+
+  it('the right panel still flips to overlay live, at the move that crosses the threshold (YAZ-2239)', async () => {
+    // 1,100 px: sidebar 260 + panel 440 + workspace minimum 360 = 1,060 fits; 320 + 440 + 360 = 1,120 does not.
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1100 })
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' } })
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+    const before = captured.sidebarRenders
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 20 })))
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 60 })))
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 80 })))
+    expect(captured.sidebarRenders).toBe(before + STRICT_RENDER) // the flip, and nothing else
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 80 })))
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    expect(sideW()).toBe(340)
   })
 
   it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
