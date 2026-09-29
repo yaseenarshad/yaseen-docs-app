@@ -738,6 +738,13 @@ The same archive carries YAZ-2131 4B: Crepe's list-item node view restores the c
 mount once per editor view per frame (the latest capture of a still-mounted item wins, as the last
 of the old per-item dispatches did), never once per list item — N items were N whole-plugin
 transactions in one frame. `listItemCaretRestore.test.ts` pins it on the installed runtime.
+The same pipeline (`tools/buildMilkdownPatch.mjs`, one entry per package) carries a pinned
+`@milkdown/plugin-tooltip@7.22.1` for YAZ-2238: a throttled `TooltipProvider` update is skipped only
+when the state matches both the call's `prevState` AND the state its last evaluated update saw, so a
+no-op transaction can no longer swallow the update that hides Crepe's floating toolbar (a stale
+toolbar after ⌘Z covered the row above and kept the block handle off it). Provenance in
+`client/vendor/milkdown-plugin-tooltip-7.22.1-yaz2238.md`; `tooltipThrottle.test.ts` pins it on the
+installed runtime.
 
 ### Configured empty Board columns (YAZ-1417)
 
