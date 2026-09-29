@@ -14,9 +14,10 @@ import { useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
+import { leadingTrailing } from '../lib/leadingTrailing'
 import { folderCandidates, searchCandidates, searchTitles, type SearchCandidate } from './searchCandidates'
 
-/** Quiet time before a watcher burst's one index read (YAZ-2191; the sidebar's tree read waits the same). */
+/** The quiet spell that ends a watcher burst, before its trailing index read (YAZ-2191; the sidebar's tree read waits the same). */
 const STRUCTURAL_REFRESH_MS = 100
 
 export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[]): SearchCandidate[] {
@@ -46,23 +47,19 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
     }
     load()
     // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
-    // missed events, and reads at once. Any other burst is ONE read, 100 ms after its last event
-    // (YAZ-2191): it used to be one whole-index fetch per event.
-    let timer: ReturnType<typeof setTimeout> | null = null
+    // missed events, and reads at once. A lone event reads at once too; a burst is that read plus
+    // ONE more, 100 ms after its last event (YAZ-2191, YAZ-2240): it used to be one whole-index
+    // fetch per event.
+    const burst = leadingTrailing(load, STRUCTURAL_REFRESH_MS)
     const off = watch.subscribe((ev) => {
       if (ev.type === 'change' || ev.type === 'error') return
-      if (timer !== null) clearTimeout(timer)
-      timer = null
-      if (ev.type === 'ready') return load()
-      timer = setTimeout(() => {
-        timer = null
-        load()
-      }, STRUCTURAL_REFRESH_MS)
+      if (ev.type === 'ready') return burst.flush()
+      burst.call()
     })
     return () => {
       generation++
       off()
-      if (timer !== null) clearTimeout(timer)
+      burst.cancel()
     }
   }, [root, watch, activated])
 
