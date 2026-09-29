@@ -6,9 +6,10 @@ import type { MenuTargets } from './Sidebar'
  * conditional in `ContextMenu`'s JSX is one small function here returning an item or null, so the
  * component keeps only mechanics (overlay, clamp, Escape) and the rules test PURE — no DOM.
  *
- * SIX groups, in this order (🔒 D7, amended twice): Open/View · Clipboard · Create · This row ·
- * "Open in ▸" · Delete. The component draws a separator between NON-EMPTY groups only, so a
- * blank-space menu (no row to rename or delete) never ends in a stray rule. Labels are the bare
+ * SEVEN groups, in this order (🔒 D7, amended three times): Open/View · Clipboard · Create ·
+ * More create · This row · "Open in ▸" · Delete. The component draws a separator between
+ * NON-EMPTY groups only, so a blank-space menu (no row to rename or delete) never ends in a
+ * stray rule. Labels are the bare
  * text — a shortcut hint rides on `hint` and is drawn by CSS from `data-hint`, so `textContent`
  * and the accessible name stay what every test pins.
  *
@@ -215,26 +216,28 @@ const copyForAgent: Leaf = (t, h) => {
   return { id: 'copy-agent', label: 'Copy for Agent', onSelect: () => h.onCopyForAgent(path) }
 }
 
-// ---- (3) Create: births BESIDE the right-clicked row — the group targets a DIRECTORY, never the row ----
+// ---- (3) Create and (3b) More create: births BESIDE the right-clicked row — both target a DIRECTORY, never the row.
+// The everyday pair leads; the dated twins and the folder page get their own section under it, lined
+// up with the pair, so they never crowd it (YAZ-2249 🔒 E1/E2). ----
 
 const newNote: Leaf = (_t, h) => ({ id: 'new-note', label: 'New note', onSelect: h.onNewNote })
 
-const newDatedNote: Leaf = (_t, h) => ({ id: 'new-dated-note', label: 'New dated note', onSelect: h.onNewDatedNote })
-
-/**
- * Right after "New note" and its dated twin (🔒 D4, YAZ-817; YAZ-2242 🔒 D2): a folder page is a NOTE born with one flag (🔒 D1),
- * so it belongs beside the note it is a kind of. It creates beside the right-clicked row like
- * the rest of this group — the act-on-this-row toggle below is the other half of the gesture,
- * and the two must not drift together.
- */
-const newFolderPage: Leaf = (_t, h) => ({ id: 'new-folder-page', label: 'New folder page', onSelect: h.onNewFolderPage })
-
 const newFolder: Leaf = (_t, h) => (h.onNewFolder === null ? null : { id: 'new-folder', label: 'New folder', onSelect: h.onNewFolder })
+
+const newDatedNote: Leaf = (_t, h) => ({ id: 'new-dated-note', label: 'New dated note', onSelect: h.onNewDatedNote })
 
 const newDatedFolder: Leaf = (_t, h) =>
   h.onNewDatedFolder === null ? null : { id: 'new-dated-folder', label: 'New dated folder', onSelect: h.onNewDatedFolder }
 
-// ---- (4) This row: acts ON the right-clicked row, so it sits after the create group ----
+/**
+ * Last in the More create section (YAZ-2249 🔒 E2), above the toggle (🔒 D4, YAZ-817): a folder
+ * page is a NOTE born with one flag (🔒 D1). It creates beside the right-clicked row like the
+ * rest of the create items — the act-on-this-row toggle below is the other half of the gesture,
+ * and the two must not drift together.
+ */
+const newFolderPage: Leaf = (_t, h) => ({ id: 'new-folder-page', label: 'New folder page', onSelect: h.onNewFolderPage })
+
+// ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
 
 /**
  * The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions, MARKDOWN FILE
@@ -340,7 +343,8 @@ const del: Leaf = (t, h) => {
 
 const OPEN_GROUP: readonly Item[] = [openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath, copyForAgent]
-const CREATE_GROUP: readonly Item[] = [newNote, newDatedNote, newFolderPage, newFolder, newDatedFolder]
+const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
+const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder, newFolderPage]
 const ROW_GROUP: readonly Item[] = [toggleFolderPage, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, openIn]
 const DELETE_GROUP: readonly Item[] = [del]
@@ -349,7 +353,7 @@ const DELETE_GROUP: readonly Item[] = [del]
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>
   group.map((rule) => rule(t, h)).filter((item): item is T => item !== null)
 
-/** The six groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
+/** The seven groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
 export function buildMenuSections(targets: MenuSectionTargets, handlers: MenuHandlers): MenuSection[] {
-  return [OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
+  return [OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, CREATE_MORE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
 }

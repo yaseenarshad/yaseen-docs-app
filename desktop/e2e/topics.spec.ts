@@ -363,10 +363,10 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
     'Paste',
     'Copy path',
     'New note',
-    'New dated note',
-    'New folder page',
     'New folder',
+    'New dated note',
     'New dated folder',
+    'New folder page',
     'Rename',
     'Add to favorites',
     'Open in', // its own group after the this-row group (D7 amended)

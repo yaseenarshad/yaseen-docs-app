@@ -1,6 +1,6 @@
 /**
  * The sidebar menu's GATING rules (🔒 D8, YAZ-1674), tested pure: `buildMenuSections` takes the
- * pinned targets and the handlers and answers with six groups of items. Every rule that used to
+ * pinned targets and the handlers and answers with seven groups of items. Every rule that used to
  * be pinned against `ContextMenu`'s DOM lives here now — which item appears for which target,
  * what it is called, where it sits, what it hands its handler — while `ContextMenu.test.tsx`
  * keeps only the component's mechanics.
@@ -114,18 +114,19 @@ const FILE_ROW: Partial<MenuSectionTargets> = {
 /** Blank space: every row-only target null, the root fallbacks in place (GRO-2273, GRO-2274). */
 const BLANK: Partial<MenuSectionTargets> = { copyPath: '/v', revealPath: '/v', openVsCodePath: '/v', openDefaultPath: '/v' }
 
-describe('the six groups (🔒 D7, amended)', () => {
-  it('always answers six sections in order — Open, clipboard, create, this row, Open in, Delete — empties included', () => {
-    expect(build()).toHaveLength(6)
-    expect(build(FILE_ROW)).toHaveLength(6)
+describe('the seven groups (🔒 D7, amended)', () => {
+  it('always answers seven sections in order — Open, clipboard, create, more create, this row, Open in, Delete — empties included', () => {
+    expect(build()).toHaveLength(7)
+    expect(build(FILE_ROW)).toHaveLength(7)
   })
 
-  it('a Markdown FILE row fills five of the six (the Open group is empty), in the pinned order', () => {
+  it('a Markdown FILE row fills six of the seven (the Open group is empty), in the pinned order', () => {
     // The Open group is EMPTY on one file row (no plural open, nothing to focus), so the clipboard
     // group leads; the OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
     expect(groupsOf(build(FILE_ROW))).toEqual([
       ['Cut', 'Copy', 'Paste', 'Copy path', 'Copy for Agent'],
-      ['New note', 'New dated note', 'New folder page', 'New folder', 'New dated folder'],
+      ['New note', 'New folder'],
+      ['New dated note', 'New dated folder', 'New folder page'],
       ['Turn into folder page', 'Rename'],
       ['Open in'],
       ['Delete'],
@@ -135,7 +136,8 @@ describe('the six groups (🔒 D7, amended)', () => {
   it('BLANK SPACE has no row to rename or delete: the this-row and Delete groups are empty, so the menu ends on "Open in"', () => {
     expect(groupsOf(build(BLANK))).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New dated note', 'New folder page', 'New folder', 'New dated folder'],
+      ['New note', 'New folder'],
+      ['New dated note', 'New dated folder', 'New folder page'],
       ['Open in'], // the root's own OS verbs — the one this-row item blank space has
     ])
   })
@@ -159,21 +161,22 @@ describe('the six groups (🔒 D7, amended)', () => {
     const sections = build(FILE_ROW)
     const labels = labelsOf(sections)
     expect(labels[labels.length - 1]).toBe('Delete')
-    expect(sections[5]).toHaveLength(1)
+    expect(sections[6]).toHaveLength(1)
     expect(itemOf(sections, 'Delete')?.danger).toBe(true)
     expect(sections.flat().filter((i) => i.danger === true).map((i) => i.label)).toEqual(['Delete'])
   })
 })
 
 /**
- * The create group (🔒 D4, YAZ-817): "New folder page" comes right after "New note" and its
- * dated twin (YAZ-2242 🔒 D2) — a folder page is a note born with one flag (🔒 D1), so it
- * belongs beside the note it is a kind of, not beside the act-on-this-row toggle further down.
- * Pinned here because the position IS the ruling, not an accident of ordering.
+ * The create groups (YAZ-2249 🔒 E1/E2): the everyday pair first, then its own section for the
+ * dated twins and the folder page, lined up under the pair — so the extras never crowd the
+ * everyday items. Both stay above the act-on-this-row toggle (🔒 D4, YAZ-817). Pinned here
+ * because the position IS the ruling, not an accident of ordering.
  */
-describe('create group (🔒 D4)', () => {
-  it('offers each dated item right after its plain twin, and New folder page ahead of New folder (YAZ-2242 🔒 D2)', () => {
-    expect(build()[2].map((i) => i.label)).toEqual(['New note', 'New dated note', 'New folder page', 'New folder', 'New dated folder'])
+describe('create groups (YAZ-2249 🔒 E1/E2)', () => {
+  it('offers New note · New folder, then its own section: New dated note · New dated folder · New folder page', () => {
+    expect(build()[2].map((i) => i.label)).toEqual(['New note', 'New folder'])
+    expect(build()[3].map((i) => i.label)).toEqual(['New dated note', 'New dated folder', 'New folder page'])
   })
 
   it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {
@@ -231,9 +234,9 @@ describe('folder-page toggle item (🔒 D2)', () => {
     expect(onToggleFolderPage).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
   })
 
-  it('sits after the create group and directly above Rename — above the destructive pair, which keeps the bottom', () => {
+  it('sits after the create groups and directly above Rename — above the destructive pair, which keeps the bottom', () => {
     const sections = build(FILE_ROW)
-    expect(sections[3].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
   })
 })
 
@@ -252,8 +255,8 @@ describe('"Open in ▸" (D7 amended)', () => {
     const sections = build({ ...FILE_ROW, openTabPaths: ['/v/a.md', '/v/b.md'] })
     expect(itemOf(sections, 'Open in')?.onSelect).toBeUndefined()
     expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs'])
-    expect(sections[3].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
-    expect(sections[4].map((i) => i.label)).toEqual(['Open in'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    expect(sections[5].map((i) => i.label)).toEqual(['Open in'])
   })
 
   it('no child at all → no parent', () => {
@@ -479,7 +482,7 @@ describe('favorite toggle item (YAZ-1766 D3)', () => {
 
   it('leads the "Open in ▸" group — the this-row group ends on Rename, and the toggle sits directly above the flyout', () => {
     const sections = build({ ...FILE_ROW, favoritePaths: ['/v/Note.md'], favoriteIsOn: false })
-    expect(sections[3].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
-    expect(sections[4].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    expect(sections[5].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
   })
 })
