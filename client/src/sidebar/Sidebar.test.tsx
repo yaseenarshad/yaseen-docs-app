@@ -36,7 +36,7 @@ import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** Past the 100 ms quiet window a watcher burst waits out before its one tree read (YAZ-2191). */
+/** Past the 100 ms quiet window a watcher burst waits out before its trailing tree read (YAZ-2191, YAZ-2240). */
 const afterQuiet = () => act(() => new Promise<void>((r) => setTimeout(r, 150)))
 
 const TREE: TreeNode[] = [

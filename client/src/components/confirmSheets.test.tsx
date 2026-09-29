@@ -1,7 +1,6 @@
 /**
- * The 8 confirm sheets' markup, pinned (YAZ-2201) before they share one shell: the refactor must
- * leave every sheet's DOM byte-identical (the screenshot e2e checks the pixels), plus the one
- * mechanic every sheet shares — focus lands on Cancel.
+ * The 8 confirm sheets' markup, pinned (YAZ-2201): the shared shell must leave every sheet's DOM
+ * byte-identical, plus the one mechanic every sheet shares — focus lands on Cancel.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, type ReactElement } from 'react'

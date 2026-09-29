@@ -12,7 +12,7 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { basename } from '../lib/paths'
-import { FOLDER_PAGE_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
+import { folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { ancestorDirs, findDirNode, treeHasFile } from '../lib/treeState'
 import { HOME_LINK } from './ensureHome'
@@ -422,7 +422,6 @@ export function Sidebar({
   const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : bodyDirs.some((d) => expanded.includes(d))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
-
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, searching, tree, selectionRef, bodyRef)
 
   // A Files reveal targets a file — or, since a folder search row (🔒 D3, YAZ-1491), a DIR of the
@@ -450,9 +449,7 @@ export function Sidebar({
     return flashTreeRows(bodyRef.current, pendingReveal.path) ?? undefined
   }, [filesRevealReady, pendingReveal])
 
-
   // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
-
 
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent, topicsAnchor: string | null = null) => {
@@ -533,8 +530,6 @@ export function Sidebar({
    */
   const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
 
-
-
   const { clip, clipTo, pasteInto } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice)
 
   /**
@@ -557,7 +552,6 @@ export function Sidebar({
     },
     [root],
   )
-
 
   const { setRenamingEntry, startCreate, renaming, pending, topicsPending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, indexSource, refresh, onOpenFile, onRenameFile, dispatch)
 
@@ -695,11 +689,7 @@ export function Sidebar({
     if (path !== null) setFolderPageFlag(path, false)
   }, [confirmingTurnBack, setFolderPageFlag])
 
-
-
-
   const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, focusFavorites)
-
 
   /**
    * The Files and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
@@ -709,7 +699,6 @@ export function Sidebar({
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: TreeNode, e: React.MouseEvent) => openMenuRef.current(node, e), [])
-
 
   // ONE gate for both disk-folder births (YAZ-948 rule; YAZ-1604 adds the dated twin).
   const canNewFolder = menu !== null && !(menu.lens === 'topics' && menu.rowKind !== 'dir')
