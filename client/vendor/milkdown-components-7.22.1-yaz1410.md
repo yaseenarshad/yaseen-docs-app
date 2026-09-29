@@ -28,13 +28,13 @@ Upstream npm integrity:
 Rebuild from the pinned registry artifact:
 
 ```sh
-node tools/buildMilkdownComponentsPatch.mjs
+node tools/buildMilkdownPatch.mjs components
 ```
 
 For an offline rebuild, pass the unmodified upstream npm archive:
 
 ```sh
-node tools/buildMilkdownComponentsPatch.mjs --source /path/to/components-7.22.1.tgz
+node tools/buildMilkdownPatch.mjs components --source /path/to/components-7.22.1.tgz
 ```
 
 The build verifies the entire upstream archive against its pinned integrity, then
