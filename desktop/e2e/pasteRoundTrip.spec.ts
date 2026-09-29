@@ -14,17 +14,14 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SLACK_OUTLINE_SAMPLE } from '../../client/src/editor/outlinePaste.fixtures'
-import { appWindow, clickMenuItem, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, clickMenuItem, editorOf, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 let app: ElectronApplication
 let win: Page
 
-const editor = () =>
-  win
-    .locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-    .locator('.editor-mount .editor-instance .milkdown .ProseMirror')
+const editor = () => editorOf(win)
 
 test.beforeAll(async () => {
   const userData = await mkdtemp(path.join(tmpdir(), 'pastert-userdata-'))

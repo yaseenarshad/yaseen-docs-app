@@ -21,7 +21,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
+import { appWindow, contents, copyVault, fileRow, launchApp, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
 
 /** The committed encyclopedia. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
@@ -32,7 +32,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 /** The one tab the pane calls active — `aria-selected`, which is all a reader has to go on. */
 const activeViewTab = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"][aria-selected="true"]')
 const propsMenu = (scope: Locator) => scope.locator('.view-popover')

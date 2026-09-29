@@ -21,7 +21,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, confirmSheet, copyVault, editorOf, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -39,7 +39,6 @@ let win: Page
 /** Block ZERO of the open note's scroller: the heading, and the input a click swaps in. */
 const title = (w: Page) => layer(w).locator('.page-title__text')
 const titleInput = (w: Page) => layer(w).locator('.page-title__input')
-const sheet = (w: Page) => w.locator('.confirm[role="dialog"]')
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'title-userdata-'))
@@ -74,10 +73,10 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   await win.keyboard.press('Enter')
 
   // The name changed, so the one door asks first — with the count of notes the rewrite will touch.
-  await expect(sheet(win).locator('.confirm__text')).toHaveText(`Rename 'Guide' to '${RENAMED}'? Links in 1 note will be updated.`)
+  await expect(confirmSheet(win).locator('.confirm__text')).toHaveText(`Rename 'Guide' to '${RENAMED}'? Links in 1 note will be updated.`)
   await shoot(win, 'title-02-confirm-sheet')
-  await sheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
-  await expect(sheet(win)).toHaveCount(0)
+  await confirmSheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect(confirmSheet(win)).toHaveCount(0)
 
   // Disk: the file moved, body intact; nothing remains at the old path.
   await expect.poll(() => readWhenReady(path.join(vault, `${RENAMED}.md`))).toContain(GUIDE_BODY)
@@ -106,10 +105,10 @@ test('step 2 — leaving the title commits (YAZ-1553): click away with a changed
   await editorOf(win).click()
   // Only the NAMES are pinned: step 1 rewrote Index.md moments ago, and whether the count reads
   // 1 or 0 depends on how far the debounced reindex has caught up (rename.spec step 7's rule).
-  await expect(sheet(win).locator('.confirm__text')).toContainText(`Rename '${RENAMED}' to '${LEFT}'?`)
+  await expect(confirmSheet(win).locator('.confirm__text')).toContainText(`Rename '${RENAMED}' to '${LEFT}'?`)
   await shoot(win, 'title-04-clickaway-sheet')
-  await sheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
-  await expect(sheet(win)).toHaveCount(0)
+  await confirmSheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect(confirmSheet(win)).toHaveCount(0)
 
   await expect.poll(() => readWhenReady(path.join(vault, `${LEFT}.md`))).toContain(GUIDE_BODY)
   await expect(readFile(path.join(vault, `${RENAMED}.md`), 'utf8')).rejects.toThrow()
@@ -125,7 +124,7 @@ test('step 3 — Escape is the only discard: no sheet, nothing on disk moves', a
   await titleInput(win).fill('Discarded')
   await win.keyboard.press('Escape')
   await expect(titleInput(win)).toHaveCount(0)
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   await expect(title(win)).toHaveText(LEFT)
   expect(await readFile(path.join(vault, `${LEFT}.md`), 'utf8')).toContain(GUIDE_BODY)
 })
@@ -135,7 +134,7 @@ test('step 4 — leaving with the UNCHANGED name is silent: the field closes and
   await expect(titleInput(win)).toHaveValue(LEFT)
   await editorOf(win).click()
   await expect(titleInput(win)).toHaveCount(0)
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   await expect(title(win)).toHaveText(LEFT)
 })
 
@@ -145,7 +144,7 @@ test('step 5 — HOME\'s title is inert: no input, one passive notice, nothing r
 
   await title(win).click()
   await expect(titleInput(win)).toHaveCount(0)
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   await expect(win.locator('.link-notice')).toHaveText('Home anchors this vault — it keeps its name.')
   expect(await readFile(path.join(vault, 'Home.md'), 'utf8')).toContain('home-note-body')
   await shoot(win, 'title-06-home-guard')

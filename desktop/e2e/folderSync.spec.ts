@@ -15,7 +15,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, contents, copyVault, launchApp, layer, outlineLines, quitApp, seededState, shoot } from './helpers'
+import { appWindow, confirmSheet, contents, copyVault, launchApp, outlineLines, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -41,11 +41,10 @@ let app: ElectronApplication
 let win: Page
 
 const syncBtn = (w: Page) => contents(w).locator('[aria-label="Sync from folder"]')
-const sheet = (w: Page) => w.locator('.confirm[role="dialog"]')
-const sheetText = (w: Page) => sheet(w).locator('.confirm__text')
-const folderRow = (w: Page, label: string) => sheet(w).locator('.sync__folder').filter({ hasText: label })
-const previewNames = (w: Page) => sheet(w).locator('.sync__missing li')
-const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: new RegExp(`^${label}$`) })
+const sheetText = (w: Page) => confirmSheet(w).locator('.confirm__text')
+const folderRow = (w: Page, label: string) => confirmSheet(w).locator('.sync__folder').filter({ hasText: label })
+const previewNames = (w: Page) => confirmSheet(w).locator('.sync__missing li')
+const sheetBtn = (w: Page, label: string) => confirmSheet(w).locator('.confirm__btn', { hasText: new RegExp(`^${label}$`) })
 const said = async (scope: Locator): Promise<string[]> => (await outlineLines(scope).allTextContents()).filter((line) => line !== '')
 
 test.beforeAll(async () => {
@@ -84,7 +83,7 @@ test('step 1 — Cancel is a true no-op: the sheet reports, and writes nothing a
   await shoot(win, 'sync-02-preview')
 
   await sheetBtn(win, 'Cancel').click()
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   expect(await readFile(path.join(vault, FOLDER_PAGE), 'utf8')).toBe(before)
   expect(await said(contents(win))).toEqual(said0)
   // The MEMBERSHIP, not the word: `Pipeline Review Notes` says "folder_pages" in its own prose.
@@ -97,7 +96,7 @@ test('step 2 — approving appends the links AND writes each note’s own member
   await syncBtn(win).click()
   await folderRow(win, 'inbox').click()
   await sheetBtn(win, 'Add').click()
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
 
   // In the DOCUMENT: appended at the END, and every line that was already there is untouched.
   await expect
@@ -122,7 +121,7 @@ test('step 3 — re-running offers nothing, and never a button that would do not
   await expect(sheetBtn(win, 'Add')).toHaveCount(0) // the whole point: no no-op button
   await shoot(win, 'sync-04-nothing-to-add')
   await sheetBtn(win, 'Dismiss').click()
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
 })
 
 test('step 4 — it stops at the folder’s own notes, and never takes away what the page listed', async () => {

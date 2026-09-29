@@ -17,7 +17,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, readState, SEED_FILE, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -33,17 +33,11 @@ let win: Page
 
 // ---------- locators (client/src/sidebar/Sidebar.tsx, Tree.tsx, TopicsTree.tsx) ----------
 
-const fileRow = (w: Page, label: string) => w.locator('.sidebar__body .tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-const dirRow = (w: Page, label: string) => w.locator('.sidebar__body .tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
-/** The DEPTH-0 rows of the Files tree — a focus makes the focused folder the ONLY one. */
-const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
 /** Every row the Topics tree draws, in document order (topicsDrag.spec.ts's idiom). */
 const topicLabels = (w: Page) => w.locator('.sidebar__body .tree__row .tree__label')
 const topicRow = (w: Page, label: string) => w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
-const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 /** Focus Mode's eye: in the lens row, lit ONLY while the active lens is focused (YAZ-1605). */
 const eye = (w: Page) => w.locator('.sidebar__lenses .sidebar__focus-off')
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 const openDirs = (w: Page) => w.locator('.sidebar__body li[role="treeitem"][aria-expanded="true"]')
 
 /** Right-click `row` and take the menu's Focus item — the only way in (Sidebar.test.tsx's `focusRow`). */

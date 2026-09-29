@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, launchApp, seededState, shoot } from './helpers'
+import { appWindow, editorOf, launchApp, seededState, shoot } from './helpers'
 import { SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -44,7 +44,7 @@ test('step 1 — the window is a secure `app://yaseen` context with working cryp
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
   app.context().on('request', (request) => requested.push(request.url()))
   win = await appWindow(app, 'w1')
-  await expect(win.locator('.ProseMirror')).toContainText('secure-body')
+  await expect(editorOf(win)).toContainText('secure-body')
 
   const facts = await win.evaluate(async () => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('yaseen'))

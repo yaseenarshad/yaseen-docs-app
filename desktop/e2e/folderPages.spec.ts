@@ -71,6 +71,7 @@ import {
   fileRow,
   launchApp,
   layer,
+  lensTab,
   outlineEditor,
   outlineLineIndex,
   outlineLines,
@@ -115,18 +116,14 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** Row names, whichever body renders: the unknown-view placeholder list, or the real table — the page TITLE, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 /** Every member's name as a LINK LINE, which is how a membership is spelled inside the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
-/**
- * The sidebar's two lenses. This file navigates by the FILE tree (its seed says so) and steps over
- * to Topics for one thing: the folder-page glyph and the DIRECT-member count, which since
- * ⚡ YAZ-1152 are drawn there and nowhere else (step 6).
- */
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+// This file navigates by the FILE tree (its seed says so) and steps over to Topics (`lensTab`) for
+// one thing: the folder-page glyph and the DIRECT-member count, which since ⚡ YAZ-1152 are drawn
+// there and nowhere else (step 6).
 const topicRow = (w: Page, label: string) =>
   w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
 const treeChevron = (w: Page, action: 'Expand' | 'Collapse', label: string) =>

@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileLink } from '../../shared/links'
 import {
+  activeTab,
   appWindow,
   buildFixtureVault,
   clickMenuItem,
@@ -36,6 +37,7 @@ import {
   SEED_FILE,
   seededState,
   shoot,
+  tabsOf,
   windowCount,
   winParam,
 } from './helpers'
@@ -139,8 +141,8 @@ test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the con
   // The REAL gesture (Tree.tsx: metaKey click on a file row → openBackground — I3, GRO-2235).
   await winA.locator('.tree__row--file', { hasText: 'Ideas' }).click({ modifiers: ['Meta'] })
   // A background tab in THIS window: the strip gains a tab, activation unchanged, NO new window.
-  await expect(winA.locator('.tabbar [role="tab"]')).toHaveCount(2)
-  await expect(winA.locator('.tabbar [role="tab"][aria-selected="true"]')).toHaveText('Welcome note')
+  await expect(tabsOf(winA)).toHaveCount(2)
+  await expect(activeTab(winA)).toHaveText('Welcome note')
   await expect(winA.locator('.tree__row--active')).toContainText('Welcome note')
   expect(await windowCount(app)).toBe(2)
   await shoot(winA, 'g3-03a-cmd-click-background-tab')
@@ -155,7 +157,7 @@ test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the con
   await expect(winC.locator('.ProseMirror')).toContainText(IDEAS_BODY)
   await expect.poll(() => winC.title()).toBe(titleOf(vaultA, path.join(vaultA, 'Ideas.md')))
   // The origin window stayed put: same active file/tab, untouched.
-  await expect(winA.locator('.tabbar [role="tab"][aria-selected="true"]')).toHaveText('Welcome note')
+  await expect(activeTab(winA)).toHaveText('Welcome note')
   await shoot(winC, 'g3-03b-context-menu-new-window')
 })
 

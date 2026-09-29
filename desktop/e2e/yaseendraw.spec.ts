@@ -20,7 +20,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 

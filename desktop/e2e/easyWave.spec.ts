@@ -33,7 +33,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_DEFAULT_W } from '../../shared/types'
-import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
+import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -56,13 +56,11 @@ let win: Page
 
 // ---------- locators (the suite's shared idioms) ----------
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 
 const backBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Back"]')
 const forwardBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Forward"]')
 
-/** The folder page's contents block — the one place a views table still renders (YAZ-844). */
 
 const sidebar = (w: Page) => w.locator('.sidebar')
 const resizeEdge = (w: Page) => w.locator('.sidebar-resize')

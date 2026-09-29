@@ -11,7 +11,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -21,11 +21,9 @@ let app: ElectronApplication
 let win: Page
 let vault: string
 
-const contents = (): Locator =>
-  win.locator('.tabstack__layer:not(.tabstack__layer--hidden)').locator('.folder-page-contents')
-const headers = (): Locator => contents().locator('.view-table thead th')
+const headers = (): Locator => contents(win).locator('.view-table thead th')
 const rowOf = (label: string): Locator =>
-  contents().locator('.view-prop').filter({ has: win.locator(`[aria-label="Reorder ${label}"]`) })
+  contents(win).locator('.view-prop').filter({ has: win.locator(`[aria-label="Reorder ${label}"]`) })
 
 test.beforeAll(async () => {
   const userData = await mkdtemp(path.join(tmpdir(), 'propreorder-userdata-'))
@@ -39,18 +37,18 @@ test.afterAll(async () => {
 })
 
 test('step 1 — every shown row carries a grip, and the arrows are gone', async () => {
-  await contents().locator('.view-tab__btn', { hasText: 'Table' }).click()
+  await contents(win).locator('.view-tab__btn', { hasText: 'Table' }).click()
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages'])
-  await contents().locator('[aria-label="Properties"]').click()
-  await expect(contents().locator('[aria-label^="Reorder "]')).toHaveCount(4)
-  await expect(contents().locator('[aria-label="Reorder Name"]')).toBeVisible()
-  await expect(contents().locator('[aria-label="Move up"]')).toHaveCount(0)
-  await expect(contents().locator('[aria-label="Move down"]')).toHaveCount(0)
+  await contents(win).locator('[aria-label="Properties"]').click()
+  await expect(contents(win).locator('[aria-label^="Reorder "]')).toHaveCount(4)
+  await expect(contents(win).locator('[aria-label="Reorder Name"]')).toBeVisible()
+  await expect(contents(win).locator('[aria-label="Move up"]')).toHaveCount(0)
+  await expect(contents(win).locator('[aria-label="Move down"]')).toHaveCount(0)
   await shoot(win, 'propreorder-01-grips')
 })
 
 test("step 2 — dragging unit's grip onto kpi_category's top half reorders the durable order and the table follows", async () => {
-  await contents().locator('[aria-label="Reorder Unit"]').dragTo(rowOf('Kpi category'), {
+  await contents(win).locator('[aria-label="Reorder Unit"]').dragTo(rowOf('Kpi category'), {
     // The row's TOP edge: above the midpoint = the before-slot, TabBar's rule made vertical.
     targetPosition: { x: 10, y: 2 },
   })
@@ -67,7 +65,7 @@ test("step 2 — dragging unit's grip onto kpi_category's top half reorders the 
 test('step 3 — file.name itself can be dragged down, like the arrows always allowed', async () => {
   // Dropping on kpi_category's TOP half is the slot BETWEEN unit and kpi_category — one below
   // file.name's own slot, and reliably positioned however tall the rows are.
-  await contents().locator('[aria-label="Reorder Name"]').dragTo(rowOf('Kpi category'), {
+  await contents(win).locator('[aria-label="Reorder Name"]').dragTo(rowOf('Kpi category'), {
     targetPosition: { x: 10, y: 2 },
   })
   await expect(headers()).toHaveText(['#', 'Unit', 'Name', 'Kpi category', 'Funnel stages'])
