@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexCacheStatus, IndexRecord } from '@shared/types'
-import { atomicWrite } from '../fs/fsUtils'
 import { isStringArray } from '@shared/guards'
+import { atomicWrite } from '../fs/fsUtils'
 
 /**
  * Persistent vault-index cache (GRO-2223 D1-D4, write side GRO-2228, load side GRO-2229):

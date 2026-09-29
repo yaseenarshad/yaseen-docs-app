@@ -39,8 +39,8 @@ import {
   type WindowBounds,
   type WindowEntry,
 } from '@shared/types'
-import { atomicWrite } from './fs/fsUtils'
 import { isRecord, isStringArray } from '@shared/guards'
+import { atomicWrite } from './fs/fsUtils'
 
 /**
  * The app state store (D9, GRO-2159): one user-global JSON file owned by the main process.

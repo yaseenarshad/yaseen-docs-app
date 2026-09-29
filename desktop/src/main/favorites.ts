@@ -1,8 +1,8 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { MAX_FAVORITES, VAULT_CONFIG_DIR, type FavoritesConfig } from '@shared/types'
-import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { isRecord, isStringArray } from '@shared/guards'
+import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 
 /**
@@ -41,7 +41,7 @@ async function readRaw(root: string): Promise<Raw> {
   return { state: 'ok', rels: clean(v.favorites) }
 }
 
-/** Writes and repairs on one root never interleave (properties' idiom). */
+/** Writes and repairs on one root never interleave. */
 const chained = createRootChain()
 
 /** ABSOLUTE paths in stored order; absent or malformed → `[]`. Never creates anything. */

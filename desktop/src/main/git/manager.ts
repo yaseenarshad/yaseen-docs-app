@@ -87,7 +87,6 @@ interface Entry {
   dropped: boolean
 }
 
-
 /** Unref'd throughout: a sync timer must never hold the app open (the index cache's idiom). */
 function arm(ms: number, fn: () => void): ReturnType<typeof setTimeout> {
   const timer = setTimeout(fn, ms)

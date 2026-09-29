@@ -1,9 +1,9 @@
 import type { PropertiesResponse, PropertyDecl, PropertyKind } from '@shared/types'
 import { PROPERTY_KINDS, PROPERTY_NAME } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
+import { isRecord } from '@shared/guards'
 import { BridgeFailure, createRootChain, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
-import { isRecord } from '@shared/guards'
 
 /**
  * Vault-wide property declarations (YAZ-835): `<root>/.yaseendocs/properties.json` read and
@@ -25,7 +25,6 @@ import { isRecord } from '@shared/guards'
  */
 
 export const PROPERTIES_FILE = 'properties.json'
-
 
 // ---------- input validation (strict at the IPC boundary: a write is config, not content) ----------
 
@@ -116,7 +115,7 @@ export async function getProperties(root: string): Promise<PropertiesResponse> {
 
 // ---------- mutation (serialised read-modify-write per root; unknown fields preserved) ----------
 
-/** Two mutations (or notify re-reads) on one root can't interleave, the store's idiom. */
+/** Two mutations (or notify re-reads) on one root can't interleave. */
 const chained = createRootChain()
 
 /** `fn` edits the raw document in place and says whether anything changed; unchanged skips the write. */
