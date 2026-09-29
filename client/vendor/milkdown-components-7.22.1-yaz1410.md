@@ -11,6 +11,10 @@
   caret still lands where the last of those N restores put it. Drop this hunk
   once upstream Milkdown releases the same fix.
 
+Upstream PR: prepared, awaiting Yasin's go (the patch and PR text are in
+`thoughts/yaz-2131-scope/upstream/list-item-restore/`); drop this hunk under
+YAZ-2213 once released.
+
 The package name and version remain unchanged so every Milkdown package uses
 the same 7.22.1 dependency graph.
 
@@ -39,7 +43,8 @@ node tools/buildMilkdownPatch.mjs components --source /path/to/components-7.22.1
 
 The build verifies the entire upstream archive against its pinned integrity, then
 applies the adjacent readable `.patch` with Git. It fails if the source has drifted.
-Use `--output /path/to/rebuilt.tgz` to compare a rebuild without replacing the vendor archive.
+Use `--output /path/to/rebuilt.tgz` to compare a rebuild without replacing the
+vendor archive.
 Only these files differ from upstream:
 
 - `src/table-block/dnd/preview.ts`
@@ -49,5 +54,6 @@ Only these files differ from upstream:
 - `src/list-item-block/view.ts`
 - `lib/list-item-block/index.js`
 
-The stale table-block and list-item-block source maps and their `sourceMappingURL`
-lines are removed because the compiled runtime is patched directly. No exports or declarations change.
+The stale table-block and list-item-block source maps and their
+`sourceMappingURL` lines are removed because the compiled runtime is patched
+directly. No exports or declarations change.

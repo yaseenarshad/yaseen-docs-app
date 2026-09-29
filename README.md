@@ -19,7 +19,7 @@ See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, ag
 npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
 npm run typecheck
 npm run build    # electron-vite build into desktop/out
-npm run e2e      # 44 Playwright-Electron specs driving the real app
+npm run e2e      # 64 Playwright-Electron specs driving the real app
 ```
 
 ## Build the app
