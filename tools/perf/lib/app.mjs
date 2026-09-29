@@ -215,6 +215,12 @@ export const INSTALLED_APP = '/Applications/Yaseen Docs.app'
  * anything but the installed app means the user's deep links are pointing at a test copy.
  */
 export function releaseLaunchServices(bundles) {
-  for (const b of bundles) execFileSync(LSREGISTER, ['-u', b])
+  for (const b of bundles) {
+    try {
+      execFileSync(LSREGISTER, ['-u', b], { stdio: 'ignore' })
+    } catch {
+      // -10814: not registered (never launched, or already released); the handler check below still runs
+    }
+  }
   return execFileSync('osascript', ['-l', 'JavaScript', '-e', HANDLER_OF_YASEENDOCS]).toString().trim()
 }
