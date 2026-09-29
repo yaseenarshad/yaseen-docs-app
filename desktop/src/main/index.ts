@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
+import { APP_SCHEME } from './appScheme'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { registerAgentIpc } from './ipc/agent'
@@ -16,6 +17,7 @@ import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMe
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
+import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { applyUserDataOverride } from './userData'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
@@ -70,9 +72,7 @@ app.on('open-file', (event, path) => {
   links.push(fileLink(path))
 })
 
-// Privileged scheme: `standard` gives a real origin (history API, relative URLs), `secure` treats it
-// like https. VS Code (vscode-file://) and Obsidian (app://obsidian.md) do the same.
-protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
 
@@ -199,19 +199,20 @@ app.whenReady().then(() => {
   links.flush()
 })
 
-// Quit: flush every renderer sequentially (5s cap each, `windows[]` kept so relaunch restores them),
-// write the pending state, then exit for real — `app.exit` re-runs no quit events.
-// The ORDER is load-bearing for YAZ-1081 D2: the renderers flush FIRST, so the last sync commit
-// contains the edit the user made a second before quitting rather than leaving it for next launch.
+// Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept so
+// relaunch restores them; then exit for real — `app.exit` re-runs no quit events.
 let quitting = false
 app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitting) return
   quitting = true
-  void manager
-    .flushAllForQuit()
-    .then(() => Promise.all([store.flush(), flushIndexCache(), gitSync?.flushForQuit()]))
-    .finally(() => app.exit(0))
+  void runQuitSequence({
+    flushWindows: () => manager.flushAllForQuit(),
+    flushStore: () => store.flush(),
+    flushIndex: flushIndexCache,
+    flushSync: () => gitSync?.flushForQuit(),
+    exit: () => app.exit(0),
+  })
 })
 
 // Obsidian quits when its last window closes (its main.js `window-all-closed` handler); so do we.

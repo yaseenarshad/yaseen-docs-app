@@ -122,6 +122,15 @@ export type TreeNode =
       kind: FileKind | null
     }
 
+/**
+ * Liveness for the coalesced tree reads (YAZ-2191): main's one-walk-per-root and the renderer's
+ * one tree feed both queue a caller behind the read in flight. A read that hangs (a network volume
+ * gone away) must not hold every later caller forever, so one in flight longer than this is
+ * bypassed: the caller reads on its own, exactly as every read did before coalescing, and a
+ * volume that recovers answers again. Far above any real walk (42 ms at 10k notes).
+ */
+export const STALE_FLIGHT_MS = 10_000
+
 export interface TreeResponse {
   root: string
   /** Recursive tree of the root. Supported markdown/text/PDF/image files are included; every directory shows, supported files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */

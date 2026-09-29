@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -76,6 +76,30 @@ describe('syncPass', () => {
     expect(status.repo).toEqual({ remoteUrl: remote.url, branch: 'main' })
     expect(await repo.run(['log', '-1', '--format=%s'])).toBe('sync: a.md, b.md')
     expect(await remoteHead(repo, remote)).toBe(await repo.run(['rev-parse', 'HEAD']))
+  })
+
+  it('never stages a crash-left atomic-write tmp, and leaves it on disk (YAZ-2179)', async () => {
+    const { repo, remote } = await pushedRepo()
+    await repo.write('a.md', '# a\n')
+    await repo.write('a.md.tmp-0123456789ab', '# a (torn)\n')
+    await repo.write('sub/b.md.tmp-abcdef012345', '# b (torn)\n')
+    await repo.write('keep.tmp-draft.md', 'mine\n')
+
+    expect((await syncPass(repo.root)).state).toBe('synced')
+    expect(await repo.run(['log', '-1', '--format=%s'])).not.toMatch(/\.tmp-[0-9a-f]{12}/)
+    expect((await repo.run(['ls-tree', '-r', '--name-only', 'HEAD'])).split('\n').sort()).toEqual(['a.md', 'keep.tmp-draft.md', 'note.md'])
+    expect(await remoteHead(repo, remote)).toBe(await repo.run(['rev-parse', 'HEAD']))
+    expect(await readFile(path.join(repo.root, 'a.md.tmp-0123456789ab'), 'utf8')).toBe('# a (torn)\n')
+  })
+
+  it('a pass whose only dirt is a leftover tmp is synced, not an error, and commits nothing', async () => {
+    const { repo } = await pushedRepo()
+    const head = await repo.run(['rev-parse', 'HEAD'])
+    await repo.write('a.md.tmp-0123456789ab', 'torn\n')
+    await repo.write('fresh/b.md.tmp-abcdef012345', 'torn\n') // an untracked dir porcelain lists only as `fresh/`
+
+    expect((await syncPass(repo.root)).state).toBe('synced')
+    expect(await repo.run(['rev-parse', 'HEAD'])).toBe(head)
   })
 
   it('summarises past three files in the subject', async () => {

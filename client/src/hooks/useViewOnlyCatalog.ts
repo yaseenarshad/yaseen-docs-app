@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isViewOnly } from '@shared/fileKind'
 import type { WatchEvent } from '@shared/types'
-import { api } from '../api'
+import { currentTurn, fetchTree, onTree, treeSentSince } from '../lib/treeFeed'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from '../links/viewOnlyCatalog'
 import type { WatchSource } from './useWatch'
 
@@ -27,41 +27,37 @@ function touchesCatalog(event: WatchEvent): boolean {
   }
 }
 
-/** Lightweight tree-derived view-only snapshot; no content or semantic index is read. */
+/**
+ * Lightweight tree-derived view-only snapshot; no content or semantic index is read. It rides the
+ * window's one tree feed (YAZ-2191): every tree anyone in the window reads lands here, and after a
+ * touching event it reads one itself only when nobody else has since (the sidebar is collapsed).
+ */
 export function useViewOnlyCatalog(root: string, watch: WatchSource): ViewOnlyCatalogState {
   const [state, setState] = useState<ViewOnlyCatalogState>(() => ({ status: 'pending', catalog: buildViewOnlyCatalog(root, []), error: null }))
-  const generation = useRef(0)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const refresh = useCallback(() => {
-    const current = ++generation.current
-    api.tree(root).then(
-      (response) => {
-        if (current !== generation.current) return
-        setState({ status: 'ready', catalog: buildViewOnlyCatalog(root, response.tree), error: null })
-      },
-      (error: unknown) => {
-        if (current !== generation.current) return
-        setState((previous) => ({ ...previous, status: 'error', error: error instanceof Error ? error.message : String(error) }))
-      },
-    )
-  }, [root])
   useEffect(() => {
     setState({ status: 'pending', catalog: buildViewOnlyCatalog(root, []), error: null })
-    refresh()
+    const offTree = onTree(root, (outcome) => {
+      if (outcome.status === 'fulfilled') setState({ status: 'ready', catalog: buildViewOnlyCatalog(root, outcome.value.tree), error: null })
+      else setState((previous) => ({ ...previous, status: 'error', error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason) }))
+    })
+    const read = () => void fetchTree(root).catch(() => undefined) // the outcome arrives through `onTree`
+    read()
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let seenIn = 0
     const unsubscribe = watch.subscribe((event) => {
       if (!touchesCatalog(event)) return
-      if (timer.current !== null) clearTimeout(timer.current)
-      timer.current = setTimeout(() => {
-        timer.current = null
-        refresh()
+      seenIn = currentTurn()
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        if (!treeSentSince(root, seenIn)) read()
       }, REFRESH_DEBOUNCE_MS)
     })
     return () => {
-      generation.current++
+      offTree()
       unsubscribe()
-      if (timer.current !== null) clearTimeout(timer.current)
-      timer.current = null
+      if (timer !== null) clearTimeout(timer)
     }
-  }, [root, watch, refresh])
+  }, [root, watch])
   return state
 }

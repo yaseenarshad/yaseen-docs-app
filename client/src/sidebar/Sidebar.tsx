@@ -15,6 +15,7 @@ import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
+import { fetchTree, onTree } from '../lib/treeFeed'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
@@ -360,6 +361,8 @@ const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot (TopicsTree's twin). */
 const NEVER: ResolveLink = () => null
+/** Quiet time before a watcher burst's one tree read (YAZ-2191, measured in main-process.md F1). */
+const STRUCTURAL_REFRESH_MS = 100
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
 export function Sidebar({
@@ -519,30 +522,49 @@ export function Sidebar({
   const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : bodyDirs.some((d) => expanded.includes(d))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
-  const refresh = useCallback(() => {
-    api.tree(root).then(
-      (res) => {
-        setTree(res)
+  // The window's one tree feed (YAZ-2191): every answer lands here, whoever asked — this panel,
+  // its active-file probe, the view-only catalog. A failure is only this panel's to report when it
+  // asked (`refresh`), exactly as before the feed.
+  useEffect(
+    () =>
+      onTree(root, (outcome) => {
+        if (outcome.status === 'rejected') return
+        setTree(outcome.value)
         setError(null)
-      },
-      (err: unknown) => {
-        if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
-        else setError(err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
-      },
-    )
+      }),
+    [root],
+  )
+
+  const refresh = useCallback(() => {
+    fetchTree(root).catch((err: unknown) => {
+      if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
+      else setError(err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
+    })
   }, [root, onRootMissing])
 
   useEffect(() => refresh(), [refresh])
 
-  // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering missed events.
-  useEffect(
-    () =>
-      watch.subscribe((ev) => {
-        if (ev.type === 'error') setError(ev.message)
-        else if (ev.type !== 'change') refresh()
-      }),
-    [watch, refresh],
-  )
+  // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
+  // missed events, and refreshes at once. Any other burst (git pull, Finder copy, bulk rename) is
+  // ONE read, 100 ms after its last event (YAZ-2191): it used to be one full vault walk per event.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const off = watch.subscribe((ev) => {
+      if (ev.type === 'error') return setError(ev.message)
+      if (ev.type === 'change') return
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      if (ev.type === 'ready') return refresh()
+      timer = setTimeout(() => {
+        timer = null
+        refresh()
+      }, STRUCTURAL_REFRESH_MS)
+    })
+    return () => {
+      off()
+      if (timer !== null) clearTimeout(timer)
+    }
+  }, [watch, refresh])
 
   useEffect(() => {
     // Idempotent like its Topics twin below (⚡ YAZ-874): the first render holds exactly what was
@@ -731,7 +753,7 @@ export function Sidebar({
     if (activeFile === null || !activeFile.startsWith(`${root.replace(/\/+$/, '')}/`)) return
     if (treeRef.current !== null && treeHasFile(treeRef.current.tree, activeFile)) return
     let cancelled = false // the activation moved on (or the sidebar unmounted): the probe's verdict is stale
-    api.tree(root).then(
+    fetchTree(root).then(
       (res) => {
         if (!cancelled && !treeHasFile(res.tree, activeFile)) onFileMissing()
       },

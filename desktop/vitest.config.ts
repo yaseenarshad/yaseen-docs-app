@@ -11,7 +11,5 @@ export default defineConfig({
     name: 'desktop',
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    // chokidar tests write right after `ready`; stat polling makes that deterministic (macOS FSEvents start asynchronously).
-    env: { CHOKIDAR_USEPOLLING: '1' },
   },
 })

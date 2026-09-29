@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canRenameWithoutConversion, fileKind, isViewOnly } from '@shared/fileKind'
+import { canRenameWithoutConversion, fileKind, isAtomicTmp, isViewOnly } from '@shared/fileKind'
 import { TEXT_VIEW_EXTENSIONS } from '@shared/types'
 
 describe('fileKind', () => {
@@ -65,5 +65,15 @@ describe('canRenameWithoutConversion', () => {
     expect(canRenameWithoutConversion('book.epub', 'book')).toBe(false)
     expect(canRenameWithoutConversion('book', 'book.epub')).toBe(false)
     expect(canRenameWithoutConversion('book.epub', 'book.md')).toBe(false)
+  })
+})
+
+describe('isAtomicTmp (YAZ-2179)', () => {
+  it('matches only the `<name>.tmp-<12 lowercase hex>` shape an atomic write leaves', () => {
+    expect(isAtomicTmp('a.md.tmp-0123456789ab')).toBe(true)
+    expect(isAtomicTmp('/vault/assets/images/p.png.tmp-abcdef012345')).toBe(true)
+    for (const name of ['notes.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'a.md.tmp-0123456789AB', 'a.md.tmp-0123456789a', 'a.md.tmp-0123456789abc', 'a.md.tmp-']) {
+      expect(isAtomicTmp(name), name).toBe(false)
+    }
   })
 })
