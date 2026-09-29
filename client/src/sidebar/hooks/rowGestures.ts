@@ -24,9 +24,9 @@ import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelec
 export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeResponse | null, selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
-  // and nowhere else on purpose: this component is mounted `key={root}` and only while the
-  // sidebar is open, so a selection is honestly about rows currently on screen and cannot
-  // outlive them (a collapse ends it).
+  // and nowhere else on purpose: the Sidebar (which calls this hook) is mounted `key={root}` and
+  // only while the sidebar is open, so a selection is honestly about rows currently on screen and
+  // cannot outlive them (a collapse ends it).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
 
   // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
@@ -87,8 +87,6 @@ export function useTreeDrag(
   const [reorderDragging, setReorderDragging] = useState<string | null>(null)
   const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
 
-  // ---- File drag-to-move (E1b, GRO-2241): drop a FILE row on a folder row or the root header ----
-
   const dropOnDir = useCallback(
     (dir: string) => {
       const path = dragging
@@ -118,8 +116,6 @@ export function useTreeDrag(
     }),
     [dragging, dropDir, dropOnDir],
   )
-
-  // ---- Favorites drag-to-reorder (YAZ-1766 D4): a root row dropped above/below another rewrites the list ----
 
   const dropReorder = useCallback(() => {
     const from = reorderDragging
@@ -166,8 +162,6 @@ export function useFileClipboard(
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
 ) {
-  // ---- Cut / Copy / Paste (YAZ-1674) ----
-
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op }` or null, pushed to every window on
    * every change, so a menu opened here can label "Paste N items" for a copy made in another
@@ -384,8 +378,6 @@ export function useInlineEdits(
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
-
-  // ---- Rename (files E1 GRO-2194, folders E1b GRO-2241): context menu "Rename" → inline input over the row ----
 
   const submitRename = useCallback(
     async (name: string) => {

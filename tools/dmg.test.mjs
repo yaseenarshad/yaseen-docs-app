@@ -42,8 +42,10 @@ describe('detach', () => {
  * THE REAL TOOLS on a tiny image (YAZ-2181): one-binary apps, ad-hoc signed like ours, in a zlib dmg
  * the way electron-builder writes it — `Tiny.app` sealed, `Broken.app` changed after signing. Made
  * once; every test converts its own copy. macOS only — `hdiutil` and `codesign` are the point.
+ * Opt-in (`YASEEN_DOCS_DMG_TEST=1`), so `npm test` never runs real hdiutil: it takes 15 s idle and
+ * minutes under load, and every `desktop:build` already runs this path and checks the new image's seal.
  */
-describe.skipIf(process.platform !== 'darwin')('lzmaDmg', { timeout: 180_000, retry: 1 }, () => {
+describe.runIf(process.platform === 'darwin' && process.env.YASEEN_DOCS_DMG_TEST === '1')('lzmaDmg', { timeout: 180_000, retry: 1 }, () => {
   let dir = ''
   let fixture = ''
   beforeAll(() => {

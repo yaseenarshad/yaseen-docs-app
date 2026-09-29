@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { requireRequest, strArray } from './validate'
+import { requireRequest, requireStringArray } from './validate'
 import { failure } from './testFixture'
 
 const refusal = async (fn: () => unknown) => {
@@ -16,8 +16,8 @@ describe('request shape checks (YAZ-2201)', () => {
     expect(Array.isArray(requireRequest([]))).toBe(true)
   })
 
-  it('strArray refuses anything but an array of strings, naming the field', async () => {
-    expect(strArray(['a', ''], 'paths')).toEqual(['a', ''])
-    for (const bad of [undefined, 'a', [1], ['a', null]]) expect(await refusal(() => strArray(bad, 'keys'))).toEqual(['BAD_REQUEST', "'keys' must be a string array"])
+  it('requireStringArray refuses anything but an array of strings, naming the field', async () => {
+    expect(requireStringArray(['a', ''], 'paths')).toEqual(['a', ''])
+    for (const bad of [undefined, 'a', [1], ['a', null]]) expect(await refusal(() => requireStringArray(bad, 'keys'))).toEqual(['BAD_REQUEST', "'keys' must be a string array"])
   })
 })

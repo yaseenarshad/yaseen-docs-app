@@ -119,7 +119,7 @@ describe('shared watchers', () => {
     const a = openWatch(root)
     await a.next()
     await writeFile(path.join(root, 'alpha', 'a.md.tmp-0123456789ab'), 'torn')
-    await new Promise((r) => setTimeout(r, 500)) // past `awaitWriteFinish`: a reported tmp would arrive first
+    await new Promise((r) => setTimeout(r, 500)) // past the engine's settle (SETTLE_MS): a reported tmp would arrive first
     const mine = path.join(root, 'alpha', 'notes.tmp-draft.md')
     await writeFile(mine, 'mine')
     expect(await a.next()).toMatchObject({ type: 'add', path: mine })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GithubSyncStatus, VaultConfigChange, WatchEvent } from '@shared/types'
+import { isRecord } from '@shared/guards'
 import { createGitSync, GITHUB_SYNC_FILE, type GitSyncHost } from './manager'
 
 /**
@@ -24,8 +25,6 @@ async function until(cond: () => boolean, ms = 2000): Promise<void> {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 interface Harness {
   host: GitSyncHost

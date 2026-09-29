@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ClipboardPasteRequest, PropertiesResponse, WatchEvent } from '@shared/types'
-import { CONTRACT, type Envelope, isLeaf, SPECIAL, type YaseenDocsApi } from '@shared/ipc'
+import { type Bridge, CONTRACT, type Envelope, isLeaf, SPECIAL, type YaseenDocsApi } from '@shared/ipc'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -9,7 +9,10 @@ async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   throw env.error
 }
 
-/** One invoke door as a function of its declared arity, forwarding exactly that many arguments. */
+/**
+ * One invoke door as a function of its declared arity, forwarding exactly that many arguments, and
+ * reporting it as `length`, as the hand-written functions did (surface.test.ts pins `/N`).
+ */
 function invoker(channel: string, arity: number): (...args: unknown[]) => Promise<unknown> {
   const fn = (...args: unknown[]) => call(channel, ...Array.from({ length: arity }, (_, i) => args[i]))
   return Object.defineProperty(fn, 'length', { value: arity })
@@ -23,7 +26,7 @@ const subscriber = (channel: string) => (listener: (payload: unknown) => void) =
 }
 
 /** The table's shape with each leaf turned into its function (YAZ-2131 🔒 D9): only its channels exist. */
-export function buildBridge(table: object): Record<string, unknown> {
+function buildBridge(table: object): Record<string, unknown> {
   return Object.fromEntries(Object.entries(table).map(([key, v]) => [key, isLeaf(v) ? (v.kind === 'invoke' ? invoker(v.channel, v.arity) : subscriber(v.channel)) : buildBridge(v as object)]))
 }
 
@@ -83,9 +86,10 @@ const listen = <L>(set: Set<L>, listener: L) => {
   }
 }
 
-const generated = buildBridge(CONTRACT) as Omit<YaseenDocsApi, 'watch'>
-// The compiler cannot see through `buildBridge`, so the cast is unchecked here; surface.test.ts
-// pins the result byte for byte.
+// The compiler cannot see through `buildBridge`, so this cast is unchecked; surface.test.ts pins the
+// result byte for byte. Only the table's doors are claimed, so the literal below must supply every
+// special or it does not compile.
+const generated = buildBridge(CONTRACT) as Bridge<typeof CONTRACT>
 const api: YaseenDocsApi = {
   ...generated,
   watch: (root, listener) => {

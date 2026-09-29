@@ -7,7 +7,8 @@ import { defaultAppState, defaultRightPanelIdentity, VAULT_CONFIG_DIR, type AppS
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { activeConfigWatcherRoots } from '../vaultConfig'
-import { registerGithubIpc, rootsOf } from './github'
+import { rootsOf } from './broadcast'
+import { registerGithubIpc } from './github'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },

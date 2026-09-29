@@ -75,7 +75,7 @@ export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
   }
 }
 
-/** Kept per shipped version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in), gitignored. */
+/** The last local build's maps, per version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in; rebuilding a release tag reproduces them), gitignored. */
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
 const mapsDir = resolve(here, '.maps', version)
 

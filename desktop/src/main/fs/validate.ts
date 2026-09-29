@@ -14,7 +14,7 @@ export function requireRequest(raw: unknown): Record<string, unknown> {
 }
 
 /** An array of strings, any strings. */
-export function strArray(v: unknown, name: string): string[] {
+export function requireStringArray(v: unknown, name: string): string[] {
   if (!isStringArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${name}' must be a string array`)
   return v
 }

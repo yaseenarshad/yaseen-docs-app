@@ -32,14 +32,9 @@ let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], right
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
-/** Issues one bridge call at once without awaiting it; a rejection (or a missing bridge) is logged, never thrown. */
+/** Issues one bridge call at once without awaiting it; a rejection is logged, never thrown (every `api` call rejects rather than throws). */
 function send(what: string, call: () => Promise<void>): void {
-  const log = (err: unknown) => console.error(`[storage] ${what} failed:`, err)
-  try {
-    call().catch(log)
-  } catch (err) {
-    log(err)
-  }
+  call().catch((err: unknown) => console.error(`[storage] ${what} failed:`, err))
 }
 
 function folderOf(root: string): FolderState {

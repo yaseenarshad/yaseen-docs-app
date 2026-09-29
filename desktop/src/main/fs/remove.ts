@@ -28,10 +28,10 @@ import { requireRequest } from './validate'
  *    only layer that knows who is calling — same split as rename.
  *
  * `shell.trashItem` is a MOVE at the filesystem layer, so the shared watcher emits a normal
- * `unlink` (files) or `unlinkDir` + one `unlink` per descendant (folders) — verified against
- * the app's then-chokidar options in the GRO-2275 scope pass, and pinned for every engine by
- * `watchConformance.ts` (YAZ-2192). The tree and the vault index
- * therefore heal themselves and need no push, exactly as rename relies on.
+ * `unlink` (files) or `unlinkDir` + one `unlink` per descendant (folders) — verified against the
+ * app's then-chokidar options in the GRO-2275 scope pass, and pinned for every engine by
+ * `watchConformance.ts` (YAZ-2192). The tree and the vault index therefore heal themselves and
+ * need no push, exactly as rename relies on.
  */
 export async function removeEntry(req: unknown): Promise<DeleteResponse> {
   const p = requireAbsPath(requireRequest(req).path, 'path')

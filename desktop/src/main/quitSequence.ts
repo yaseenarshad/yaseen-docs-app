@@ -4,6 +4,7 @@ export interface QuitDeps {
   flushWindows(): Promise<void>
   /** The state file's pending debounced write. */
   flushStore(): Promise<void>
+  /** The vault-index cache's pending persist. */
   flushIndex(): Promise<void>
   /** The last sync pass; undefined when quitting before `ready` created the manager. */
   flushSync(): Promise<void> | undefined
@@ -11,7 +12,7 @@ export interface QuitDeps {
 }
 
 /**
- * Quit, in the one order that loses nothing (YAZ-2174, draw D11): every renderer flushes FIRST, so
+ * Quit, in the one order that loses nothing (YAZ-2174): every renderer flushes FIRST, so
  * its last save lands; THEN the state file, the index cache and the last sync pass, whose commit
  * therefore holds the edit made a second before quitting (YAZ-1081 D2; its push capped by
  * YAZ-1111). `allSettled` because no step failing may skip another, and `exit` runs whatever

@@ -1,7 +1,7 @@
 import { CONTRACT } from '@shared/ipc'
 import { getFavorites, setFavorites, subscribeFavorites } from '../favorites'
 import { requireAbsPath } from '../fs/fsUtils'
-import { strArray } from '../fs/validate'
+import { requireStringArray } from '../fs/validate'
 import type { Store } from '../store'
 import { broadcastAll, syncPerRoot } from './broadcast'
 import { handle } from './envelope'
@@ -14,7 +14,7 @@ export function registerFavoritesIpc(store: Store): void {
   handle(CONTRACT.favorites.get, async (root: unknown) => getFavorites(requireAbsPath(root, 'root')))
   handle(CONTRACT.favorites.set, async (root: unknown, paths: unknown) => {
     const r = requireAbsPath(root, 'root')
-    await setFavorites(r, strArray(paths, 'paths'))
+    await setFavorites(r, requireStringArray(paths, 'paths'))
   })
   syncPerRoot(store, (root) => subscribeFavorites(root, broadcast))
 }

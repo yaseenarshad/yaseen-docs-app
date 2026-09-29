@@ -24,10 +24,14 @@ import * as folderMigration from '../views/migrateFolderBody'
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
  * through a counting wrapper, so every other test sees it render exactly as before.
  */
-const renders = vi.hoisted(() => ({ frontmatter: 0, comments: 0, backlinks: 0 }))
+const renders = vi.hoisted(() => ({ frontmatter: 0, folderContents: 0, comments: 0, backlinks: 0 }))
 vi.mock('./FrontmatterPanel', async (importOriginal) => {
   const real = await importOriginal<typeof import('./FrontmatterPanel')>()
   return { ...real, FrontmatterPanel: (props: Parameters<typeof real.FrontmatterPanel>[0]) => (renders.frontmatter++, real.FrontmatterPanel(props)) }
+})
+vi.mock('../views/FolderPageContents', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../views/FolderPageContents')>()
+  return { ...real, FolderPageContents: (props: Parameters<typeof real.FolderPageContents>[0]) => (renders.folderContents++, real.FolderPageContents(props)) }
 })
 vi.mock('../comments/CommentsSection', async (importOriginal) => {
   const real = await importOriginal<typeof import('../comments/CommentsSection')>()
@@ -813,13 +817,14 @@ describe('document magnification (YAZ-1410)', () => {
 })
 
 describe('a save repaints only the chips (YAZ-2196 P6)', () => {
-  it('the properties panel, comments and backlinks do not re-render through a whole unsaved → saving → saved cycle', async () => {
+  it('the properties panel, folder contents, comments and backlinks do not re-render through a whole unsaved → saving → saved cycle', async () => {
     const source = createWikilinkResolveSource()
     const el = await mount(FM + BODY, 1, { wikilinks: source })
     expect(renders.frontmatter).toBeGreaterThan(0)
+    expect(renders.folderContents).toBeGreaterThan(0)
     expect(renders.comments).toBeGreaterThan(0)
     expect(renders.backlinks).toBeGreaterThan(0)
-    renders.frontmatter = renders.comments = renders.backlinks = 0
+    renders.frontmatter = renders.folderContents = renders.comments = renders.backlinks = 0
 
     type('# Hello\n\nedited\n')
     expect(el.querySelector('.save-indicator--unsaved')).not.toBeNull()
@@ -827,6 +832,6 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
     await settle()
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
-    expect(renders).toEqual({ frontmatter: 0, comments: 0, backlinks: 0 })
+    expect(renders).toEqual({ frontmatter: 0, folderContents: 0, comments: 0, backlinks: 0 })
   })
 })

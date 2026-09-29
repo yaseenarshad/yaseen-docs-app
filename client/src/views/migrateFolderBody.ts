@@ -16,12 +16,12 @@
  * so the outline module stays the only reader of that grammar (🔒 D2, YAZ-900).
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { isRecord } from '@shared/guards'
 import { stringify } from 'yaml'
 import { FOLDER_PAGE_KEY } from '../links/folderPages'
 import { DEFAULT_VIEWS, SETTINGS_KEY } from './folderPageSettings'
 import { parseOutline, serializeOutline, type OutlineLine } from './outlineDoc'
 import { parseViews, updateViews, type ViewDef } from './viewSchema'
-import { isRecord } from '@shared/guards'
 
 export interface FolderBodyMigration {
   /** The file's new content — the input verbatim when nothing moved. */
@@ -29,7 +29,6 @@ export interface FolderBodyMigration {
   /** True only when the caller must write `content` back. */
   changed: boolean
 }
-
 
 /**
  * The body as outline lines. Each line is offered to `parseOutline` ALONE first — a one-line
