@@ -1,15 +1,24 @@
-# Milkdown components CSS zoom patch
+# Milkdown components patch (CSS zoom, list-item caret restore)
 
 `milkdown-components-7.22.1-yaz1410.tgz` is a version-pinned build of
-`@milkdown/components@7.22.1`. It corrects table drag preview, drag-over, and
-boundary indicator geometry when the editor is inside a CSS `zoom` context.
+`@milkdown/components@7.22.1` with two fixes:
+
+- YAZ-1410: table drag preview, drag-over, and boundary indicator geometry are
+  correct when the editor is inside a CSS `zoom` context.
+- YAZ-2131 4B: the list-item node view restores the caret once per editor view
+  per frame instead of once per list item. Opening a note with N bullets used to
+  run N whole-plugin transactions in one frame (22.6 s for a 5k-line note). The
+  caret still lands where the last of those N restores put it. Drop this hunk
+  once upstream Milkdown releases the same fix.
+
 The package name and version remain unchanged so every Milkdown package uses
 the same 7.22.1 dependency graph.
 
 When updating an existing checkout, use `npm ci` to install the locked archive.
 Because the package version is unchanged, `npm install` can retain an already
 installed upstream copy. `client/src/editor/tableZoom.test.ts` checks the actual
-installed runtime and catches that stale installation.
+installed runtime and catches that stale installation, as does
+`client/src/editor/listItemCaretRestore.test.ts`.
 
 The upstream package is MIT licensed and includes its original `LICENSE` file.
 Source: <https://registry.npmjs.org/@milkdown/components/-/components-7.22.1.tgz>
@@ -37,6 +46,8 @@ Only these files differ from upstream:
 - `src/table-block/dnd/drag-over-handler.ts`
 - `src/table-block/view/pointer.ts`
 - `lib/table-block/index.js`
+- `src/list-item-block/view.ts`
+- `lib/list-item-block/index.js`
 
-The stale table-block source map and its `sourceMappingURL` are removed because
-the compiled runtime is patched directly. No exports or declarations change.
+The stale table-block and list-item-block source maps and their `sourceMappingURL`
+lines are removed because the compiled runtime is patched directly. No exports or declarations change.

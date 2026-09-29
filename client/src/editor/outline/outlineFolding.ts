@@ -23,10 +23,12 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
-import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
+import { outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
+import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 interface OutlineEntry {
@@ -82,6 +84,13 @@ export const OUTLINE_FOLDED_IMAGE_ATTR = 'data-outline-folded-image'
  * button only then (YAZ-1709).
  */
 export const OUTLINE_FOLDABLE_IMAGE_ATTR = 'data-outline-foldable-image'
+
+/**
+ * ProseMirror asks for `decorations` on EVERY view update, caret moves included. `entries` keeps its
+ * identity until the doc changes, so the set built for it and the same folded positions is exactly
+ * what a rebuild would produce (YAZ-2131 4C).
+ */
+const decorationCache = new WeakMap<readonly OutlineEntry[], { collapsedKey: string; set: DecorationSet }>()
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
@@ -254,24 +263,39 @@ const chevronSvg = (): SVGSVGElement => {
   return svg
 }
 
-const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
-  const entries: OutlineEntry[] = []
-  const labelOccurrences = new Map<string, number>()
+/** A foldable list_item as its top-level block alone decides it: positions relative to that block's content, no occurrence yet. */
+interface BlockEntry {
+  keyLabel: string
+  keyStem: string
+  label: string
+  itemPos: number
+  nestedListRanges: readonly { from: number; to: number }[]
+  imageRanges: readonly { from: number; to: number }[]
+}
 
-  doc.descendants((node, itemPos) => {
+/**
+ * Per top-level block, its foldable items (YAZ-2236). Nodes are immutable and an edit leaves every
+ * untouched block the SAME object, so a keystroke scans only the block it changed; the rest come
+ * from here. Only the occurrence numbering spans blocks, and `getOutlineEntries` redoes that.
+ */
+const blockEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
+
+const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
+  const cached = blockEntries.get(block)
+  if (cached !== undefined) return cached
+  const entries: BlockEntry[] = []
+  block.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
     const nestedLists = findNestedLists(node)
     const images = findOwnImages(node)
     if (nestedLists.length === 0 && images.length === 0) return true
 
     const label = itemLabelText(node)
-    const keyLabel = outlineFoldLabel(label)
-    const occurrence = labelOccurrences.get(keyLabel) ?? 0
-    labelOccurrences.set(keyLabel, occurrence + 1)
     entries.push({
-      foldKey: getOutlineFoldKey(label, occurrence),
-      itemPos,
+      keyLabel: outlineFoldLabel(label),
+      keyStem: outlineFoldKeyStem(label),
       label,
+      itemPos,
       nestedListRanges: nestedLists.map(({ list, offset }) => {
         const from = itemPos + 1 + offset
         return { from, to: from + list.nodeSize }
@@ -283,7 +307,28 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
     })
     return true
   })
+  blockEntries.set(block, entries)
+  return entries
+}
 
+const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
+  const entries: OutlineEntry[] = []
+  const labelOccurrences = new Map<string, number>()
+  doc.forEach((block, offset) => {
+    const base = offset + 1
+    const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
+    for (const entry of entriesOfBlock(block)) {
+      const occurrence = labelOccurrences.get(entry.keyLabel) ?? 0
+      labelOccurrences.set(entry.keyLabel, occurrence + 1)
+      entries.push({
+        foldKey: `${entry.keyStem}:${occurrence}`,
+        itemPos: base + entry.itemPos,
+        label: entry.label,
+        nestedListRanges: entry.nestedListRanges.map(shift),
+        imageRanges: entry.imageRanges.map(shift),
+      })
+    }
+  })
   return entries
 }
 
@@ -292,6 +337,30 @@ const getCollapsedKeys = ({ entries, collapsedItemPositions }: OutlineFoldingSta
     .filter(({ itemPos }) => collapsedItemPositions.has(itemPos))
     .map(({ foldKey }) => foldKey)
     .sort()
+
+/**
+ * An edit that leaves every foldable item where the mapping puts it, with the same key, label and
+ * fold, needs no new decorations: the previous set, mapped, is exactly what `decorations` builds
+ * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a bullet is that case, so a keystroke skips
+ * the rebuild. A carried chevron reads its live position at click time, so it acts like a new one.
+ */
+const carryDecorations = (previous: OutlineFoldingState, entries: readonly OutlineEntry[], collapsed: ReadonlySet<number>, mapping: Mapping, doc: ProseNode): void => {
+  const cached = decorationCache.get(previous.entries)
+  if (cached === undefined || cached.collapsedKey !== collapsedKey(previous.collapsedItemPositions) || entries.length !== previous.entries.length) return
+  const unchanged = entries.every((entry, i) => {
+    const before = previous.entries[i]
+    const folded = collapsed.has(entry.itemPos)
+    return (
+      entry.foldKey === before.foldKey &&
+      entry.label === before.label &&
+      folded === previous.collapsedItemPositions.has(before.itemPos) &&
+      widgetLands(mapping, before.itemPos + 1, entry.itemPos + 1) &&
+      nodeRangesLand(mapping, before.imageRanges, entry.imageRanges) &&
+      (!folded || nodeRangesLand(mapping, before.nestedListRanges, entry.nestedListRanges))
+    )
+  })
+  if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
+}
 
 export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) =>
   $prose(
@@ -311,6 +380,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             }
           },
           apply: (transaction, previousState, _oldState, newState) => {
+            // A caret move changes no entry, fold or ⌘Z eligibility: keep the SAME state object (YAZ-2131 4C).
+            if (!transaction.docChanged && transaction.getMeta(pluginKey) === undefined && transaction.getMeta(VIEW_ACTION_META) === undefined)
+              return previousState
             const entries = transaction.docChanged ? getOutlineEntries(newState.doc) : previousState.entries
             const foldablePositions = new Set(entries.map(({ itemPos }) => itemPos))
             const collapsedItemPositions = new Set<number>()
@@ -375,7 +447,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
-            }
+            } else if (transaction.docChanged) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
             return { entries, collapsedItemPositions, lastToggle }
           },
         },
@@ -416,6 +488,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
             if (!foldingState) return DecorationSet.empty
+            const key = collapsedKey(foldingState.collapsedItemPositions)
+            const cached = decorationCache.get(foldingState.entries)
+            if (cached?.collapsedKey === key) return cached.set
 
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
@@ -423,7 +498,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               decorations.push(
                 Decoration.widget(
                   entry.itemPos + 1,
-                  (view) => {
+                  (view, getPos) => {
                     const button = document.createElement('button')
                     button.type = 'button'
                     button.className = OUTLINE_TOGGLE_CLASS
@@ -431,7 +506,12 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     button.setAttribute('aria-expanded', String(!collapsed))
                     button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
                     button.replaceChildren(chevronSvg())
-                    const toggle = () => view.dispatch(foldTransaction(view.state, entry.itemPos))
+                    // The LIVE position, not `entry.itemPos`: ProseMirror keeps this DOM (same key) while edits above
+                    // shift the bullet, and a stale position folded nothing.
+                    const toggle = () => {
+                      const widgetPos = getPos()
+                      if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
+                    }
                     // Keep the caret where it is: the toggle must not steal focus or move the selection.
                     button.addEventListener('mousedown', (event) => event.preventDefault())
                     button.addEventListener('click', (event) => {
@@ -468,7 +548,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 })
               }
             })
-            return DecorationSet.create(state.doc, decorations)
+            const set = DecorationSet.create(state.doc, decorations)
+            decorationCache.set(foldingState.entries, { collapsedKey: key, set })
+            return set
           },
         },
         view: (view) => {

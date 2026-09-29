@@ -731,6 +731,10 @@ by the root npm override. The narrow patch converts viewport sizes/offsets to lo
 it preserves row/column drop targeting and the existing 100% behavior. Rebuild/provenance
 instructions live in `client/vendor/milkdown-components-7.22.1-yaz1410.md`. The shipped runtime
 has geometry regression coverage at 50%, 100%, 125% and 200%; upgrades must preserve those tests.
+The same archive carries YAZ-2131 4B: Crepe's list-item node view restores the caret it saw at
+mount once per editor view per frame (the latest capture of a still-mounted item wins, as the last
+of the old per-item dispatches did), never once per list item — N items were N whole-plugin
+transactions in one frame. `listItemCaretRestore.test.ts` pins it on the installed runtime.
 
 ### Configured empty Board columns (YAZ-1417)
 
