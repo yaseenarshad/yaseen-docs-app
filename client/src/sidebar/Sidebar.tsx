@@ -21,7 +21,7 @@ import type { SearchCandidate } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
-import { datedFolderSeed, targetDirFor, type MenuRow } from './createEntry'
+import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { buildMenuSections } from './menuSections'
 import type { NoticeKind } from '../lib/notice'
@@ -965,11 +965,12 @@ export function Sidebar({
               onNotice,
               onCopyForAgent: (path) => void copyForAgent(path, onNotice),
               onNewNote: viaTree(() => startCreate('file')),
+              onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),
               onNewFolderPage: viaTree(() => startCreate('folderPage')),
               // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
               // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
               onNewFolder: canNewFolder ? viaTree(() => startCreate('dir')) : null,
-              onNewDatedFolder: canNewFolder ? viaTree(() => startCreate('dir', datedFolderSeed())) : null,
+              onNewDatedFolder: canNewFolder ? viaTree(() => startCreate('dir', datedSeed())) : null,
               onToggleFolderPage: toggleFolderPage,
               onToggleFavorite: toggleFavorite,
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })),

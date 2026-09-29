@@ -1536,7 +1536,7 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     const { el } = await mount({ lens: 'topics' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).not.toBeNull()
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Copy path', 'New note', 'New folder page', 'Open in'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Copy path', 'New note', 'New dated note', 'New folder page', 'Open in'])
   })
 
   it('a typed query still offers nothing on either lens — a result list has no root to target (YAZ-803)', async () => {
@@ -2259,8 +2259,9 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy path',
       'Copy for Agent',
       'New note',
-      // "New folder page" (🔒 D4, YAZ-817): second in the create group, directly after the
-      // note it is a kind of — it CREATES beside the right-clicked row, so it stays in the
+      'New dated note',
+      // "New folder page" (🔒 D4, YAZ-817): right after the note (and its dated twin) it is a
+      // kind of — it CREATES beside the right-clicked row, so it stays in the
       // create group and never drifts down to the act-on-this-row toggle.
       'New folder page',
       'New folder',
@@ -2371,6 +2372,38 @@ describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
     expect(errorText(page.el)).toBe(shared)
     expect(page.bridge.createFile).not.toHaveBeenCalled()
     expect(input(page.el)).not.toBeNull() // the input stays open to fix the name
+  })
+})
+
+/**
+ * New dated note (YAZ-2242): "New note" with the dated folder's seed (🔒 D3 — one `datedSeed`).
+ * The caret and the no-op Enter on a bare seed are CreateInline.test's; this pins only the wiring.
+ */
+describe('New dated note (YAZ-2242)', () => {
+  const openOn = async (selector: string) => {
+    const m = await mount()
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+  const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+
+  it('opens the New note box pre-filled with today\'s `MM_DD- ` and creates the dated note in that folder', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }) // only Date: the seed is read when the item is clicked
+    vi.setSystemTime(new Date(2026, 8, 29))
+    try {
+      const { el, bridge, props } = await openOn('.tree__row--dir')
+      act(() => itemByLabel(el, 'New dated note')?.click())
+      expect(input(el)?.value).toBe('09_29- ')
+      expect(input(el)?.placeholder).toBe('New note')
+      await act(async () => {
+        input(el)!.value = '09_29- Launch'
+        input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/sub/09_29- Launch.md')
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/09_29- Launch.md')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -2595,6 +2628,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Copy path',
       'Copy for Agent',
       'New note',
+      'New dated note',
       'New folder page',
       // …and NOT 'New folder' (YAZ-948, ruled by Yasin): this lens browses by MEANING, so a disk
       // folder made from it would land where the lens cannot show it. The Files lens keeps it.
@@ -2759,6 +2793,23 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/KPIs/Growth.md')
   })
 
+  it('"New dated note" on a FLAGGED row births the same MEMBER, named with today\'s date (YAZ-2242 🔒 D1)', async () => {
+    const { el, bridge } = await topicsWithMetrics()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 29))
+    try {
+      await rightClick(rowFor(el, 'Metrics'))
+      act(() => itemByLabel(el, 'New dated note')?.click())
+      expect(inlineInput(el)?.value).toBe('09_29- ')
+      await commit(el, '09_29- Growth')
+    } finally {
+      vi.useRealTimers()
+    }
+    const page = born(bridge)
+    expect(page.path).toBe('/v/KPIs/09_29- Growth.md')
+    expect(page.properties).toEqual({ owner: null, funnels: [], folder_pages: ['[[Metrics]]'] })
+  })
+
   it("…and the folder page's TEMPLATE rides along, without ever displacing the birth key", async () => {
     const { el, bridge } = await topicsWithMetrics({}, (b) => {
       b.readFile = vi.fn(async (path: string) => {
@@ -2802,6 +2853,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(itemByLabel(el, 'New folder')).toBeUndefined()
     expect(itemByLabel(el, 'New dated folder')).toBeUndefined()
     expect(itemByLabel(el, 'New note')).toBeDefined()
+    expect(itemByLabel(el, 'New dated note')).toBeDefined() // a note, not a disk folder (YAZ-2242 🔒 D1)
     expect(itemByLabel(el, 'New folder page')).toBeDefined()
     expect(bridge.createDir).not.toHaveBeenCalled()
   })
@@ -2840,6 +2892,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Paste',
       'Copy path',
       'New note',
+      'New dated note',
       'New folder page',
       'New folder',
       'New dated folder',
@@ -2932,7 +2985,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   it('the Uncategorized HEADER has no page behind it, so it opens the ROOT menu, not a page menu', async () => {
     const { el } = await topics()
     await rightClick(el.querySelector('.tree__row--muted'))
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Copy path', 'New note', 'New folder page', 'Open in'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Copy path', 'New note', 'New dated note', 'New folder page', 'Open in'])
     // No page target anywhere in it: the row-only items stay absent.
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
     expect(itemByLabel(el, 'Delete')).toBeUndefined()
