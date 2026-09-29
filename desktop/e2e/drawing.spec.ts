@@ -30,6 +30,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { isAtomicTmp } from '../../shared/fileKind'
 import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -135,7 +136,10 @@ const saveButton = (w: Page) => modal(w).locator('.drawing-modal__bar .drawing-m
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
 const readScene = async (name: string) => JSON.parse(await readSidecar(name)) as { type: string; source: string; elements: Array<{ type: string }>; files: unknown }
-const listDrawings = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).sort()
+/** Everything in the drawings home, an in-flight atomic write's `.tmp-<hex>` sibling included. */
+const drawingsDir = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).sort()
+/** The drawings a user has: a new file is born `tmp → fsync → link` (YAZ-2177), and its tmp name is never a drawing (YAZ-2179). */
+const listDrawings = async () => (await drawingsDir()).filter((name) => !isAtomicTmp(name))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'drawing-userdata-'))
@@ -202,6 +206,8 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   // The first scene is still exactly where it was; the second is its own file.
   await expect.poll(readNote).toBe(`${NOTE_BODY}\n![[${first}]]\n\n![[${second}]]\n`)
   expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(await readFile(path.join(vault, DRAWINGS_DIR, second), 'utf8'))
+  // Every write finished: no tmp sibling outlives it.
+  await expect.poll(drawingsDir).toEqual([first, second].sort())
   await shoot(win, 'drawing-03-second-drawing')
 
   await quitApp(app)
