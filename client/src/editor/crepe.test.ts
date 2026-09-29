@@ -124,7 +124,7 @@ describe('editor/crepe (YAZ-2184)', () => {
     expect(imported).toEqual(packageFiles.filter((f) => !['latex', 'top-bar', 'diff', 'ai'].includes(f)))
   })
 
-  it("keeps the KaTeX stylesheet latex.css carried, on the drawing surface that opens Excalidraw's Mermaid dialog", () => {
+  it("the KaTeX stylesheet latex.css used to carry now loads with the drawing surface (Excalidraw's Mermaid dialog)", () => {
     const latex = createRequire(import.meta.url).resolve('@milkdown/crepe/theme/common/latex.css')
     expect(readFileSync(latex, 'utf8')).toContain("@import 'katex/dist/katex.min.css';")
     expect(readFileSync(join(SRC, 'drawings', 'ExcalidrawSurface.tsx'), 'utf8')).toContain("import('katex/dist/katex.min.css')")

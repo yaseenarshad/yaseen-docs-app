@@ -239,7 +239,7 @@ function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: Vie
  * the old and the new selection (the reveal rule). The rest of the set is mapped; only those blocks
  * are decorated again. A randomized test pins the result to `build`.
  */
-function update(
+function updateDecorations(
   set: DecorationSet,
   tr: Transaction,
   oldState: EditorState,
@@ -289,7 +289,7 @@ export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnl
           init: (_, state) => build(state, source, viewOnly),
           apply: (tr, set, oldState, state) => {
             if (tr.getMeta(wikilinkKey) !== undefined) return build(state, source, viewOnly) // the resolver changed
-            return tr.docChanged || tr.selectionSet ? update(set, tr, oldState, state, source, viewOnly) : set
+            return tr.docChanged || tr.selectionSet ? updateDecorations(set, tr, oldState, state, source, viewOnly) : set
           },
         },
         props: {

@@ -32,4 +32,7 @@ export const outlineFoldLabel = (label: string): string => label.replace(ENUMERA
 /** The occurrence-free half of a fold key, so a caller that re-counts occurrences need not hash again (YAZ-2236). */
 export const outlineFoldKeyStem = (label: string): string => hashLabel(outlineFoldLabel(label))
 
-export const getOutlineFoldKey = (label: string, occurrence: number): string => `${outlineFoldKeyStem(label)}:${occurrence}`
+/** The persisted key format, written in this one place: a saved fold matches only if this never drifts. */
+export const outlineFoldKeyFromStem = (stem: string, occurrence: number): string => `${stem}:${occurrence}`
+
+export const getOutlineFoldKey = (label: string, occurrence: number): string => outlineFoldKeyFromStem(outlineFoldKeyStem(label), occurrence)

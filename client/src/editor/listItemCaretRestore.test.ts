@@ -91,7 +91,7 @@ describe('list-item caret restore (YAZ-2131 4B)', () => {
     view.dispatch(view.state.tr.split(second, 2))
     const lastCaptured = view.state.selection.head
     // Something moves the caret before the frame; the restore still puts it back where the last
-    // mount saw it, as today.
+    // mount saw it, as the last per-item dispatch did upstream.
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, first)))
     selectionOnly.length = 0
     runFrame()
