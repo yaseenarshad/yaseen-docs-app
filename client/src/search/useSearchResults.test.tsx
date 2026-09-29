@@ -66,8 +66,13 @@ async function mount(records: IndexRecord[], query: string, tweak?: (bridge: Ret
   reactRoot = createRoot(container)
   await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} dirs={dirs} /></StrictMode>))
   const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} dirs={dirs} /></StrictMode>))
-  const fire = async (ev: WatchEvent) => act(async () => [...listeners].forEach((l) => l(ev)))
-  return { bridge, rerender, fire, subscribe }
+  const emit = (ev: WatchEvent) => [...listeners].forEach((l) => l(ev))
+  /** An event, then past the 100 ms quiet window a structural burst waits out (YAZ-2191). */
+  const fire = async (ev: WatchEvent) => {
+    await act(async () => emit(ev))
+    await act(() => new Promise<void>((r) => setTimeout(r, 150)))
+  }
+  return { bridge, rerender, fire, emit, subscribe }
 }
 
 afterEach(() => {
@@ -115,6 +120,42 @@ describe('useSearchResults (YAZ-803)', () => {
     const { bridge, fire } = await mount([rec('Alpha')], 'a')
     bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], generatedAt: 2 })
     await fire({ type: 'add', path: '/v/Anchor.md', mtime: 1 })
+    expect(labels()).toEqual(['Alpha', 'Anchor'])
+  })
+
+  it('a structural burst is one index read at once and ONE more, 100 ms after its last event; `ready` reads at once (YAZ-2240)', async () => {
+    const { bridge, emit } = await mount([rec('Alpha')], 'a')
+    bridge.index.mockClear()
+    act(() => {
+      for (let i = 0; i < 40; i++) emit({ type: 'add', path: `/v/pulled-${i}.md`, mtime: 1 })
+    })
+    expect(bridge.index).toHaveBeenCalledTimes(1) // the leading read
+    await act(() => new Promise<void>((r) => setTimeout(r, 60)))
+    expect(bridge.index).toHaveBeenCalledTimes(1)
+    await act(() => new Promise<void>((r) => setTimeout(r, 90)))
+    expect(bridge.index).toHaveBeenCalledTimes(2) // the trailing read
+    act(() => emit({ type: 'ready', root: '/v' }))
+    expect(bridge.index).toHaveBeenCalledTimes(3)
+  })
+
+  it('a lone structural event reads the index at once, and nothing follows it (YAZ-2240)', async () => {
+    const { bridge, emit } = await mount([rec('Alpha')], 'a')
+    bridge.index.mockClear()
+    act(() => emit({ type: 'add', path: '/v/Anchor.md', mtime: 1 }))
+    expect(bridge.index).toHaveBeenCalledTimes(1)
+    await act(() => new Promise<void>((r) => setTimeout(r, 150)))
+    expect(bridge.index).toHaveBeenCalledTimes(1)
+  })
+
+  it('a stale answer is never applied over a newer one (YAZ-2191)', async () => {
+    const { bridge, emit } = await mount([rec('Alpha')], 'a')
+    let answerOld!: () => void
+    bridge.index.mockImplementationOnce((root: string) => new Promise((r) => (answerOld = () => r({ root, records: [rec('Alpha')], generatedAt: 2 }))))
+    bridge.index.mockResolvedValueOnce({ root: '/v', records: [rec('Alpha'), rec('Anchor')], generatedAt: 3 })
+    act(() => emit({ type: 'ready', root: '/v' }))
+    await act(async () => emit({ type: 'ready', root: '/v' }))
+    expect(labels()).toEqual(['Alpha', 'Anchor'])
+    await act(async () => answerOld())
     expect(labels()).toEqual(['Alpha', 'Anchor'])
   })
 

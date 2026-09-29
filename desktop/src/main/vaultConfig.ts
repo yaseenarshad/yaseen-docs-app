@@ -1,9 +1,9 @@
-import { watch, type FSWatcher } from 'chokidar'
 import { existsSync, type Stats } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
 import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
 /**
  * Vault-local config store (Desktop J, GRO-2188): JSON files in `<root>/.yaseendocs/`, the
@@ -13,14 +13,15 @@ import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, toBridgeFailure } f
  * (`mkdir -p` + the `atomicWrite` tmp+rename idiom, pretty-printed JSON).
  *
  * Watching: the shared vault watcher (`fs/watchers.ts`) ignores every dot-entry by design, so
- * this module runs its own chokidar per root, scoped to the dotfolder path. Chokidar tracks a
- * not-yet-existing path (verified for v4, FSEvents and polling), so the watcher is attached at
- * first subscribe whether or not the folder exists — it creates nothing, and an external
- * `mkdir .yaseendocs` + write by a sync tool is still picked up live. One caveat (verified): a
- * polling watcher loses the path for good when the folder appears DURING its initialisation, so
- * the first `writeConfig` that creates the folder re-`add()`s it once — the debounce absorbs the
- * duplicate events FSEvents emits after a re-add. Same lifecycle idioms as `fs/watchers.ts`:
- * one watcher per root, shared listener set, closed on the last unsubscribe.
+ * this module runs its own watch per root on the dotfolder (`fs/treeWatcher.ts`, YAZ-2192). The
+ * engine waits for a not-yet-existing folder from its nearest ancestor, so the watcher is attached
+ * at first subscribe whether or not the folder exists — it creates nothing, and an external
+ * `mkdir .yaseendocs` + write by a sync tool is still picked up live. One caveat, for the engine's
+ * chokidar polling fallback (network volumes): polling loses the path for good when the folder
+ * appears DURING its initialisation, so the first `writeConfig` that creates the folder
+ * re-`add()`s it once — the debounce absorbs any duplicate events after a re-add. Same lifecycle
+ * idioms as `fs/watchers.ts`: one watcher per root, shared listener set, closed on the last
+ * unsubscribe.
  *
  * Echo policy: `writeConfig` notifies this process's subscribers synchronously (so every window
  * of the vault hears about a write from any of them), and the watcher's later echo of that same
@@ -40,7 +41,7 @@ const NOTIFY_DEBOUNCE_MS = 50
 type Listener = (change: VaultConfigChange) => void
 
 interface Entry {
-  watcher: FSWatcher
+  watcher: TreeWatcher
   listeners: Set<Listener>
   /** name → mtime of this process's last write, so the watcher echo of an own write is dropped. */
   ownMtimes: Map<string, number>
@@ -51,7 +52,7 @@ interface Entry {
   anchored: boolean
 }
 
-/** One chokidar per root's dotfolder, shared by every subscriber; closed when the last one leaves. */
+/** One watch per root's dotfolder, shared by every subscriber; closed when the last one leaves. */
 const entries = new Map<string, Entry>()
 
 export function activeConfigWatcherRoots(): string[] {
@@ -132,11 +133,7 @@ export async function writeConfig(root: string, name: string, value: unknown): P
 
 function createEntry(root: string): Entry {
   const dir = path.join(root, VAULT_CONFIG_DIR)
-  const watcher = watch(dir, {
-    ignoreInitial: true,
-    alwaysStat: true,
-    awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-  })
+  const watcher = watchTree(dir)
   const entry: Entry = { watcher, listeners: new Set(), ownMtimes: new Map(), pending: new Set(), timer: null, anchored: existsSync(dir) }
   const schedule = (p: string, stats?: Stats) => {
     // Only config files directly in the dotfolder count — atomicWrite tmp files and subdirs don't.

@@ -1,4 +1,5 @@
 import type { ZoomStep } from '@shared/types'
+import { api } from '../api'
 
 /**
  * ⌘+ / ⌘− / ⌘0 (YAZ-1710): the menu sends a step; the renderer decides where it lands. A
@@ -11,5 +12,5 @@ export const ZOOM_EVENT = 'yaseendocs:zoom'
 export function requestZoom(step: ZoomStep): void {
   const event = new CustomEvent<ZoomStep>(ZOOM_EVENT, { detail: step, bubbles: true, cancelable: true })
   ;(document.activeElement ?? document.body).dispatchEvent(event)
-  if (!event.defaultPrevented) void window.yaseenDocs.window.zoom(step)
+  if (!event.defaultPrevented) void api.window.zoom(step)
 }

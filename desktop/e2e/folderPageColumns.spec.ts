@@ -30,7 +30,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, copyVault, expandDirs, launchApp, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, contents, copyVault, expandDirs, fileRow, launchApp, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -60,11 +60,6 @@ let memberBytes: Record<string, string>
 /** Every member file after missing-only backfill — step 2's no-migration baseline. */
 let backfilledMemberBytes: Record<string, string>
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__link')
@@ -73,7 +68,6 @@ const headers = (scope: Locator) => scope.locator('.view-table thead th')
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /** The Properties popover — the ONE door to the declarations (YAZ-895). */
 const propsMenu = (scope: Locator) => scope.locator('.view-popover')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 const memberPath = (name: string) => path.join(vault, KPIS, `${name}.md`)
 const folderPagePath = () => path.join(vault, FOLDER_PAGE)

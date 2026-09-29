@@ -82,7 +82,12 @@ function ViewOnlyCatalogBridge({ root, watch, semanticRecords, candidates, viewO
   useEffect(() => {
     if (state.status !== 'ready' || state.catalog.root !== root) return
     viewOnly.update(state.catalog)
+  }, [state.status, state.catalog, root, viewOnly])
+  // The picker rows follow BOTH feeds; the catalog wake-up above follows only the catalog. Tied to
+  // the semantic records too, it re-decorated every open editor a second time per save (YAZ-2196).
+  useEffect(() => {
+    if (state.status !== 'ready' || state.catalog.root !== root) return
     candidates?.update(mergeLinkCandidates(linkCandidates(semanticRecords), state.catalog.candidates))
-  }, [state.status, state.catalog, root, semanticRecords, candidates, viewOnly])
+  }, [state.status, state.catalog, root, semanticRecords, candidates])
   return null
 }

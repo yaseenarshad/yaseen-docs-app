@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { ATOMIC_TMP_HEX_LEN, isAtomicTmp } from '@shared/fileKind'
 import type { GithubSyncStatus } from '@shared/types'
 import { detectRepo } from './detect'
 import { git, GIT_TIMEOUT_CODE, installGitHint, resolveGit, type GitResult } from './exec'
@@ -64,8 +65,14 @@ const OFFLINE_PATTERNS = [/could not resolve host/i, /unable to access/i, /could
 /** git's own way of saying "I don't know who you are" — the hint block names `user.name`. */
 const IDENTITY_PATTERNS = [/tell me who you are/i, /empty ident/i, /user\.name/i]
 
-/** A commit that had nothing staged after `add -A` (e.g. every dirty path was ignored) is not a failure. */
-const NOTHING_TO_COMMIT = /nothing to commit|no changes added/i
+/**
+ * A commit that had nothing staged after `add -A` (e.g. every dirty path was ignored, or was a
+ * leftover tmp that `NO_ATOMIC_TMP` kept out) is not a failure.
+ */
+const NOTHING_TO_COMMIT = /nothing to commit|nothing added to commit|no changes added/i
+
+/** `add -A` never stages a crash-left atomic-write tmp (`isAtomicTmp`, YAZ-2179), so sync never commits or pushes one. */
+const NO_ATOMIC_TMP = `:(exclude,glob)**/*.tmp-${'[0-9a-f]'.repeat(ATOMIC_TMP_HEX_LEN)}`
 
 /**
  * Which of the three failure kinds a non-zero git run is. Pure and exported so the classification
@@ -131,9 +138,9 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
 
   // ---------- 1. local edits become one commit ----------
   if (facts.dirty) {
-    const staged = await git(bin, root, ['add', '-A'])
+    const staged = await git(bin, root, ['add', '-A', '--', '.', NO_ATOMIC_TMP])
     if (staged.code !== 0) return fromFailure(root, repo, staged)
-    const committed = await git(bin, root, ['commit', '-m', commitMessage(facts.dirtyFiles)])
+    const committed = await git(bin, root, ['commit', '-m', commitMessage(facts.dirtyFiles.filter((f) => !isAtomicTmp(f)))])
     if (committed.code !== 0 && !NOTHING_TO_COMMIT.test(`${committed.stdout}\n${committed.stderr}`)) {
       // A machine with no `user.name`/`user.email` cannot commit at all, and no amount of retrying
       // changes that — it is a one-time setup step, so it gets its own attention state.

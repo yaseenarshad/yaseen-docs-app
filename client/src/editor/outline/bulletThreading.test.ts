@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { THREAD_NODE_CLASS, THREAD_SEG_CLASS, THREAD_STOP_CLASS } from './bulletThreading'
 
@@ -92,5 +93,31 @@ describe('bullet threading (GRO-2094)', () => {
     await new Promise((r) => setTimeout(r, 300))
     expect(getMarkdownForSave(crepe)).toBe(before)
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
+  })
+})
+
+describe('bullet threading: decoration reuse (YAZ-2131 4C)', () => {
+  /** The plugin's own `decorations` prop, called the way ProseMirror calls it on every view update. */
+  const decorationsOf = (view: EditorView) => {
+    const plugin = view.state.plugins.find((p) => (p as unknown as { key: string }).key.startsWith('mdapp-bullet-threading'))!
+    return () => plugin.props.decorations!.call(plugin, view.state)
+  }
+
+  it('returns the identical set while the caret stays on the same bullet path, a new one when the path or the doc changes', async () => {
+    const { crepe } = await mount()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const decorations = decorationsOf(view)
+    caretIn(crepe, 'L3 b')
+    const onL3b = decorations()
+    expect(decorations()).toBe(onL3b)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.head - 1))) // same bullet
+    expect(decorations()).toBe(onL3b)
+
+    caretIn(crepe, 'L2 b')
+    expect(decorations()).not.toBe(onL3b)
+
+    const onL2b = decorations()
+    view.dispatch(view.state.tr.insertText('!'))
+    expect(decorations()).not.toBe(onL2b)
   })
 })

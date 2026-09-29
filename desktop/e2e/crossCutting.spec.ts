@@ -42,13 +42,18 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   bulletAfterLine,
   caretAtEndOfLine,
   clearOutlineLine,
+  contents,
   copyVault,
   expandDirs,
+  fileRow,
   launchApp,
+  layer,
+  lensTab,
   md5,
   outlineLineIndex,
   outlineLines,
@@ -57,7 +62,9 @@ import {
   quitApp,
   REPO_ROOT,
   seededState,
+  sheet,
   shoot,
+  viewTabs,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -106,7 +113,6 @@ let win: Page
 
 // ---------- locators: the sidebar's Topics tree ----------
 
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 /** Every row the topic tree renders, in document order. */
 const topicLabels = (w: Page) => w.locator('.sidebar__body .tree__row .tree__label')
 const topicRow = (w: Page, label: string) =>
@@ -114,22 +120,14 @@ const topicRow = (w: Page, label: string) =>
 const treeChevron = (w: Page, action: 'Expand' | 'Collapse', label: string) =>
   w.locator(`.sidebar__body [aria-label="${action} ${label}"]`)
 const uncategorizedRow = (w: Page) => w.locator('.sidebar__body .tree__row--muted')
-/** The FILE tree's rows — the other lens, where the folder-page context menu lives. */
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 // ---------- locators: the folder page's contents block ----------
 
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 /** Every name as a LINK LINE, which is how a membership is spelled inside the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
-const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 /** The blocks inside the open note's scroller, in order — 🔒 D1's placement, read straight off the DOM. */
 const scrollerBlocks = (w: Page) =>

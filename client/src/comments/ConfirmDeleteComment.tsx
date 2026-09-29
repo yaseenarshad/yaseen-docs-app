@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 
 /**
  * The delete-comment sheet's copy (YAZ-1472) — PURE and separately tested, like every other
@@ -20,46 +20,11 @@ interface ConfirmDeleteCommentProps {
 }
 
 /**
- * Deliberately a MIRROR of `sidebar/ConfirmDelete` — the app's own sheet, never a native dialog:
- * initial focus on CANCEL so a stray Enter destroys nothing, Esc cancels, Enter confirms,
- * click-away cancels, `role="dialog"` + `aria-modal` labelled by its own text, the confirm
- * button `--danger` because something IS destroyed. No "Don't ask me again": there is no Trash
- * to recover a comment from, so the sheet is the only undo there is.
+ * The comment's delete sheet, on `ConfirmSheet` like `sidebar/ConfirmDelete`: initial focus on
+ * CANCEL so a stray Enter destroys nothing, the confirm button `--danger` because something IS
+ * destroyed. No "Don't ask me again": there is no Trash to recover a comment from, so the sheet
+ * is the only undo there is.
  */
 export function ConfirmDeleteComment({ label, replies, onConfirm, onCancel }: ConfirmDeleteCommentProps) {
-  const cancelRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => cancelRef.current?.focus(), [])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        onConfirm()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onConfirm, onCancel])
-
-  return (
-    <div className="confirm-overlay" onMouseDown={onCancel}>
-      <div className="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-comment-text" onMouseDown={(e) => e.stopPropagation()}>
-        <p className="confirm__text" id="confirm-delete-comment-text">
-          {deleteCommentMessage(label, replies)}
-        </p>
-        <div className="confirm__actions">
-          <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className="confirm__btn confirm__btn--danger" onClick={onConfirm}>
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  return <ConfirmSheet labelId="confirm-delete-comment-text" text={deleteCommentMessage(label, replies)} confirmLabel="Delete" danger onConfirm={onConfirm} onCancel={onCancel} />
 }

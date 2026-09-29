@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexCacheStatus, IndexRecord } from '@shared/types'
+import { isStringArray } from '@shared/guards'
 import { atomicWrite } from '../fs/fsUtils'
 
 /**
@@ -89,7 +90,6 @@ function cacheFile(dir: string, root: string): string {
   return path.join(dir, `${createHash('sha256').update(root).digest('hex').slice(0, 16)}.json`)
 }
 
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 const isFinite_ = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 /**

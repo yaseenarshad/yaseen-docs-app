@@ -4,17 +4,20 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
-import { CH } from '../channels'
+import { SPECIAL } from '@shared/ipc'
+import { APP_SCHEME } from './appScheme'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { registerAgentIpc } from './ipc/agent'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { claimDeepLinkScheme } from './deepLinkScheme'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
+import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { applyUserDataOverride } from './userData'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
@@ -41,8 +44,7 @@ app.on('second-instance', (_event, argv) => {
   win.focus()
 })
 
-// Deep links (E1, GRO-2171): the packaged bundle's `protocols` Info.plist entry is F1's job.
-app.setAsDefaultProtocolClient('yaseendocs')
+claimDeepLinkScheme(app, process.env)
 
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
@@ -70,9 +72,7 @@ app.on('open-file', (event, path) => {
   links.push(fileLink(path))
 })
 
-// Privileged scheme: `standard` gives a real origin (history API, relative URLs), `secure` treats it
-// like https. VS Code (vscode-file://) and Obsidian (app://obsidian.md) do the same.
-protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+protocol.registerSchemesAsPrivileged([APP_SCHEME])
 
 const RENDERER_DIR = join(__dirname, '../renderer')
 
@@ -96,8 +96,8 @@ const manager = createWindowManager(store, {
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
     win.webContents.on('context-menu', (_event, params) =>
       Menu.buildFromTemplate(buildContextMenuTemplate(params, {
-        copyAs: (mode) => win.webContents.send(CH.menuCopyAs, mode),
-        pasteAs: (mode) => win.webContents.send(CH.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
+        copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
+        pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
         // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal
@@ -199,19 +199,20 @@ app.whenReady().then(() => {
   links.flush()
 })
 
-// Quit: flush every renderer sequentially (5s cap each, `windows[]` kept so relaunch restores them),
-// write the pending state, then exit for real — `app.exit` re-runs no quit events.
-// The ORDER is load-bearing for YAZ-1081 D2: the renderers flush FIRST, so the last sync commit
-// contains the edit the user made a second before quitting rather than leaving it for next launch.
+// Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept so
+// relaunch restores them; then exit for real — `app.exit` re-runs no quit events.
 let quitting = false
 app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitting) return
   quitting = true
-  void manager
-    .flushAllForQuit()
-    .then(() => Promise.all([store.flush(), flushIndexCache(), gitSync?.flushForQuit()]))
-    .finally(() => app.exit(0))
+  void runQuitSequence({
+    flushWindows: () => manager.flushAllForQuit(),
+    flushStore: () => store.flush(),
+    flushIndex: flushIndexCache,
+    flushSync: () => gitSync?.flushForQuit(),
+    exit: () => app.exit(0),
+  })
 })
 
 // Obsidian quits when its last window closes (its main.js `window-all-closed` handler); so do we.

@@ -16,6 +16,7 @@
  * so the outline module stays the only reader of that grammar (🔒 D2, YAZ-900).
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { isRecord } from '@shared/guards'
 import { stringify } from 'yaml'
 import { FOLDER_PAGE_KEY } from '../links/folderPages'
 import { DEFAULT_VIEWS, SETTINGS_KEY } from './folderPageSettings'
@@ -28,8 +29,6 @@ export interface FolderBodyMigration {
   /** True only when the caller must write `content` back. */
   changed: boolean
 }
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /**
  * The body as outline lines. Each line is offered to `parseOutline` ALONE first — a one-line

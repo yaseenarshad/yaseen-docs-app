@@ -24,7 +24,7 @@
  *     whose doc stops being bullets — a hard backstop that also catches an inline image and
  *     whatever a future Crepe upgrade adds.
  */
-import { CrepeFeature, type Crepe } from '@milkdown/crepe'
+import { CrepeFeature, type Crepe } from '../crepe'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { trailingConfig } from '@milkdown/kit/plugin/trailing'
 import { bulletListSchema, listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'

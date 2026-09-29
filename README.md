@@ -19,7 +19,7 @@ See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, ag
 npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
 npm run typecheck
 npm run build    # electron-vite build into desktop/out
-npm run e2e      # 44 Playwright-Electron specs driving the real app
+npm run e2e      # 64 Playwright-Electron specs driving the real app
 ```
 
 ## Build the app
@@ -76,7 +76,7 @@ comments:
 
 ## Sidebar and windows
 
-- **Three lenses**: the sidebar shows your vault three ways, switched by the tabs at the top. **Topics** (the default) browses by MEANING — the folder-page tree, Home first, everything else nested under the pages it belongs to, with an Uncategorized section at the bottom for notes that belong nowhere yet. **Files** is the ordinary folder tree on disk — every file, not just the ones the app can open: a file with no in-app viewer (an EPUB, a ZIP, …) is listed muted and a click hands it to the OS default app, as does right-click → Open in ▸ "Default app" on any row. The **♥** tab is your favorites (below). Same vault, three readings; all offer the same right-click menu.
+- **Three lenses**: the sidebar shows your vault three ways, switched by the tabs at the top. **Topics** browses by MEANING — the folder-page tree, Home first, everything else nested under the pages it belongs to, with an Uncategorized section at the bottom for notes that belong nowhere yet. **Files** (the default, YAZ-1846) is the ordinary folder tree on disk — every file, not just the ones the app can open: a file with no in-app viewer (an EPUB, a ZIP, …) is listed muted and a click hands it to the OS default app, as does right-click → Open in ▸ "Default app" on any row. The **♥** tab is your favorites (below). Same vault, three readings; all offer the same right-click menu.
 - **Create**: right-click a folder, a file, a topic row, or the blank space under the tree → "New note" / "New folder page" / "New folder" / "New dated folder" (a folder pre-named with today's `MM_DD- `, cursor ready for the title); name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; "New folder page" is a note born with `folder_page: true` (any note can be turned into one — or back — from the same menu, and turning back deletes only that key); nothing is ever overwritten.
 - **Rename and delete**: both are in the same right-click menu, in both lenses. Renaming edits the name inline and rewrites every `[[wikilink]]` pointing at the note across the vault (a summary notice says how many); deleting moves the file to the system Trash — never a permanent delete — and closes its tabs. A rename or move done OUTSIDE the app (Finder, sync) is detected too and offers to repair the links, always confirm-first.
 - **Cut, copy, paste**: right-click a row (or a selection) → **Cut** / **Copy**, then right-click a folder → **Paste** (`⌘X` / `⌘C` / `⌘V` do the same on the selected rows; `⌘V` pastes into the selected folder, beside the selected file, or into the vault root when nothing is selected). One clipboard for the whole app, so you can copy in one window and paste into another vault's window. A copy that lands on an existing name becomes "Note copy.md", then "Note copy 2.md" — pasting into the same folder is how you duplicate; a cut never overwrites, moves tabs and links along like drag-drop, and pastes once. Folders copy whole. The menu itself is six groups: open, clipboard, new, this row, favorites + **Open in ▸** (new window, VS Code, default app, Finder), delete.

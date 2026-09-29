@@ -10,10 +10,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   buildFixtureVault,
   clickMenuItem,
   copyVault,
+  editorOf,
   expandDirs,
   extraWindow,
   launchApp,
@@ -23,6 +25,7 @@ import {
   SEED_FILE,
   seededState,
   shoot,
+  tabsOf,
   windowCount,
   winParam,
 } from './helpers'
@@ -40,10 +43,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted (rule 6). */
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'i3-userdata-'))
@@ -140,14 +139,14 @@ test('step 5 — the ⌘W ladder: tabs → empty state with the window ALIVE →
   const dup = await extraWindow(app, ['w1'])
   const dupId = winParam(dup)!
   expect(await windowCount(app)).toBe(2)
-  await expect(dup.locator('.tabbar [role="tab"]')).toHaveCount(2)
+  await expect(tabsOf(dup)).toHaveCount(2)
 
   // ⌘W closes the active tab (Roadmap → Ideas takes over), then the last tab.
   await clickMenuItem(app, 'menu.file.close-tab', dupId)
-  await expect(dup.locator('.tabbar [role="tab"]')).toHaveText(['Ideas'])
+  await expect(tabsOf(dup)).toHaveText(['Ideas'])
   await clickMenuItem(app, 'menu.file.close-tab', dupId)
   // Zero tabs: the empty state renders and the window is still ALIVE (rule 7).
-  await expect(dup.locator('.tabbar [role="tab"]')).toHaveCount(0)
+  await expect(tabsOf(dup)).toHaveCount(0)
   await expect(dup.locator('.editor-msg')).toHaveText('Select a file from the sidebar.')
   expect(await windowCount(app)).toBe(2)
   await shoot(dup, 'i3-05a-empty-state-window-alive')

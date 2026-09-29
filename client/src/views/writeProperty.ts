@@ -9,12 +9,39 @@ export interface PropertyWrite {
 }
 
 /**
+ * Whole-file writes still in flight: every `transformFile`, and the properties panel's raw-YAML
+ * Save. Most callers fire and forget (a property tick, a comment, a column width), and one is two
+ * IPC round trips, so the close/quit handshake awaits these (YAZ-2174): a window destroyed between
+ * the read and the write would never issue the write.
+ */
+const inflight = new Set<Promise<unknown>>()
+
+/** Resolves once no transform is in flight, including ones started while it waits. Never rejects. */
+export async function settleFileWrites(): Promise<void> {
+  while (inflight.size > 0) await Promise.allSettled([...inflight])
+}
+
+/**
  * Apply one pure whole-file transformation with the shared no-op and optimistic-concurrency
  * contract: write against the bytes just read, then re-read and recompute once on conflict.
  * Resolves with the bytes that are on disk afterwards — the transformed content, or the fresh
  * read when the transform was a no-op — so a caller can adopt exactly what landed (YAZ-1472).
  */
-export async function transformFile(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
+export function transformFile(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
+  return trackFileWrite(runTransform(path, transform))
+}
+
+/** Puts `write` in the set `settleFileWrites` awaits until it settles; returns it unchanged. */
+export function trackFileWrite<T>(write: Promise<T>): Promise<T> {
+  inflight.add(write)
+  void write.then(
+    () => inflight.delete(write),
+    () => inflight.delete(write),
+  )
+  return write
+}
+
+async function runTransform(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
   let file = await api.readFile(path)
   let retried = false
 

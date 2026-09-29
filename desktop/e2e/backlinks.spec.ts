@@ -12,7 +12,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -37,11 +37,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** Everything below is scoped to the VISIBLE tab layer — hidden layers keep their own DOM. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 const backlinks = (w: Page) => layer(w).locator('.backlinks')
 const header = (w: Page) => backlinks(w).locator('.backlinks__header')
 const entries = (w: Page) => backlinks(w).locator('.backlinks__note')

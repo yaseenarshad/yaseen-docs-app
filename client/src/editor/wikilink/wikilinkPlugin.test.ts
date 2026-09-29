@@ -8,9 +8,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { TextSelection } from '@milkdown/kit/prose/state'
-import type { EditorView } from '@milkdown/kit/prose/view'
+import { EditorState, TextSelection } from '@milkdown/kit/prose/state'
+import { canSplit } from '@milkdown/kit/prose/transform'
+import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { random } from '../testRandom'
 import {
   WIKILINK_CLASS,
   WIKILINK_SUB_CLASS,
@@ -263,5 +265,109 @@ describe('wikilink decorations: live restyle on index change (no remount, no doc
     await crepe.destroy()
     root.remove()
     expect(() => source.update(() => null)).not.toThrow()
+  })
+})
+
+describe('wikilink decorations: incremental update (YAZ-2131 5C)', () => {
+  const DOC = `# Heading [[Head link]]
+
+Intro [[Note]] and [[a|alias]] and [[x#y#z]] and ![[embed]] and [[Missing]].
+
+* Bullet [[One]]
+  * Nested [[Two|shown]] and \`[[code span]]\`
+    * Deeper [[Three#part]]
+* Plain bullet
+
+> Quote with [[Quoted]]
+
+\`\`\`
+[[in code]]
+\`\`\`
+
+| a | [[Cell]] |
+| --- | --- |
+| [[Row]] | b |
+
+Tail [[Last]] [[|]] [[Note|]]
+`
+  const SNIPPETS = ['a', ' ', '[', ']', '[[', ']]', '|', '#', '!', '[[Note]]', '[[a|b]]', '[[x#y]]', '![[img]]', '[[Missing]]', '[[', 'x]]']
+
+  /** The live plugin and a normalised view of any DecorationSet it produced. */
+  function wikilinkPluginOf(view: EditorView) {
+    const plugin = view.state.plugins.find((p) => /^mdapp-wikilink\$\d*$/.test((p as unknown as { key: string }).key))!
+    const normalise = (set: DecorationSet) =>
+      set
+        .find()
+        .map((d) => `${d.from}-${d.to} ${JSON.stringify((d as unknown as { type: { attrs: unknown } }).type.attrs)}`)
+        .sort()
+    const live = () => normalise(plugin.getState(view.state) as DecorationSet)
+    /** What a from-scratch build gives for the same doc + selection (the plugin's `init`). */
+    const rebuilt = () =>
+      normalise(plugin.getState(EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [plugin] })) as DecorationSet)
+    return { plugin, live, rebuilt }
+  }
+
+  it('a keystroke keeps the decorations of every block it did not touch (no whole-document rebuild)', async () => {
+    const { crepe } = await mount(DOC)
+    const view = viewOf(crepe)
+    const { plugin } = wikilinkPluginOf(view)
+    const tailFrom = view.state.doc.content.size - 30
+    const before = (plugin.getState(view.state) as DecorationSet).find(tailFrom, view.state.doc.content.size)
+    expect(before.length).toBeGreaterThan(0)
+    caret(crepe, 3)
+    view.dispatch(view.state.tr.insertText('!'))
+    const after = (plugin.getState(view.state) as DecorationSet).find(tailFrom + 1, view.state.doc.content.size)
+    expect(after).toHaveLength(before.length)
+    // Same decoration TYPE objects (mapped), not look-alikes built again from scratch.
+    const typeOf = (d: Decoration) => (d as unknown as { type: object }).type
+    after.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(before[i])))
+  })
+
+  it('equals a full rebuild after every one of 300 random edits, caret moves, marks and resolver swaps', async () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target.startsWith('M') ? null : `/v/${target}.md`))
+    const { crepe } = await mount(DOC, source)
+    const view = viewOf(crepe)
+    const { live, rebuilt } = wikilinkPluginOf(view)
+    const next = random(2131)
+    const int = (n: number) => Math.floor(next() * n)
+    const code = view.state.schema.marks.inlineCode
+    for (let step = 0; step < 300; step++) {
+      const { state } = view
+      const size = state.doc.content.size
+      const a = int(size + 1)
+      const b = Math.min(size, a + int(8))
+      const tr = state.tr
+      const op = int(12)
+      try {
+        if (op === 0) tr.setSelection(TextSelection.near(state.doc.resolve(a)))
+        else if (op === 1) tr.setSelection(TextSelection.between(state.doc.resolve(a), state.doc.resolve(b)))
+        else if (op <= 4) tr.setSelection(TextSelection.near(state.doc.resolve(a))).insertText(SNIPPETS[int(SNIPPETS.length)])
+        else if (op === 5) tr.delete(a, b)
+        else if (op === 6) {
+          const $pos = state.doc.resolve(a)
+          if ($pos.parent.isTextblock && canSplit(state.doc, a)) tr.split(a)
+        } else if (op === 7) tr.addMark(a, b, code.create())
+        else if (op === 8) tr.removeMark(a, b, code)
+        else if (op === 9) tr.insertText('[[', int(size + 1)).insertText(']]', tr.mapping.map(int(size + 1))) // two edits, one transaction
+        else if (op === 10) {
+          // A few top-level blocks replaced by their own content: the mapping drops their decorations.
+          const first = int(state.doc.childCount)
+          let from = 0
+          for (let i = 0; i < first; i++) from += state.doc.child(i).nodeSize
+          let to = from
+          for (let i = first; i < Math.min(state.doc.childCount, first + 1 + int(3)); i++) to += state.doc.child(i).nodeSize
+          tr.replaceWith(from, to, state.doc.slice(from, to).content)
+        }
+        else source.update(next() < 0.5 ? () => null : (target) => (target.length % 2 === 0 ? null : `/v/${target}.md`))
+      } catch {
+        continue // an edit this position cannot take (e.g. a split inside a table): skip it
+      }
+      if (op !== 11) {
+        if (!tr.docChanged && !tr.selectionSet) continue
+        view.dispatch(tr)
+      }
+      expect(live(), `step ${step}, op ${op}`).toEqual(rebuilt())
+    }
   })
 })

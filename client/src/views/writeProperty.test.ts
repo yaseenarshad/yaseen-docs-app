@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FrontmatterWriteError } from '@shared/frontmatter'
-import { transformFile, writeProperties, writeProperty, writePropertyIfMissing } from './writeProperty'
+import { settleFileWrites, transformFile, writeProperties, writeProperty, writePropertyIfMissing } from './writeProperty'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -190,5 +190,33 @@ describe('transformFile', () => {
     await expect(transformFile(PATH, (content) => (content === 'before' ? 'after' : content))).resolves.toEqual({ mtime: 150, content: 'after' })
 
     expect(writeFile).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('settleFileWrites (YAZ-2174)', () => {
+  it('waits for every transform in flight, including one started while it waits, and never rejects', async () => {
+    let releaseRead!: () => void
+    readFile.mockImplementationOnce(() => new Promise((r) => (releaseRead = () => r(file('a', 100)))))
+    writeFile.mockImplementation(async ({ content }) => {
+      if (content === 'x') throw new BridgeRequestError('IO_ERROR', 'disk full')
+      return { path: PATH, mtime: 300, size: 1 }
+    })
+    readFile.mockResolvedValue(file('b', 150))
+    const first = transformFile(PATH, () => 'x').catch(() => 'rejected')
+    let settled = false
+    const settle = settleFileWrites().then(() => (settled = true))
+    const second = transformFile(PATH, () => 'y') // a write the first one's caller starts mid-flush
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(settled).toBe(false)
+    releaseRead()
+    await settle
+    expect(await first).toBe('rejected')
+    await expect(second).resolves.toEqual({ mtime: 300, content: 'y' })
+    expect(writeFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves at once when nothing is in flight', async () => {
+    await expect(settleFileWrites()).resolves.toBeUndefined()
   })
 })

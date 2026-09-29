@@ -372,3 +372,181 @@
  
  export { TableNodeView, tableBlock, tableBlockConfig, tableBlockView };
 -//# sourceMappingURL=index.js.map
+--- a/lib/list-item-block/index.js
++++ b/lib/list-item-block/index.js
+@@ -182,6 +182,32 @@
+   }
+ });
+ 
++const pendingRestores = /* @__PURE__ */ new WeakMap();
++function scheduleRestore(view, item, capture) {
++  let captures = pendingRestores.get(view);
++  if (!captures) {
++    const frameCaptures = /* @__PURE__ */ new Map();
++    captures = frameCaptures;
++    pendingRestores.set(view, frameCaptures);
++    requestAnimationFrame(() => {
++      pendingRestores.delete(view);
++      if (view.isDestroyed) return;
++      const { state } = view;
++      const docSize = state.doc.content.size;
++      let last;
++      for (const capture2 of frameCaptures.values()) {
++        if (capture2.anchor <= docSize && capture2.head <= docSize) last = capture2;
++      }
++      if (!last) return;
++      const anchorPos = state.doc.resolve(last.anchor);
++      const headPos = state.doc.resolve(last.head);
++      const selection = TextSelection.between(anchorPos, headPos);
++      view.dispatch(state.tr.setSelection(selection));
++    });
++  }
++  captures.delete(item);
++  captures.set(item, capture);
++}
+ const listItemBlockView = $view(
+   listItemSchema.node,
+   (ctx) => {
+@@ -212,24 +238,13 @@
+           dom.classList.remove("selected");
+         }
+       });
+-      let raf = 0;
+       let mountedDiv = null;
+       const onMount = (div) => {
+         if (div === mountedDiv) return;
+         mountedDiv = div;
+         const { anchor, head } = view.state.selection;
+         div.appendChild(contentDOM);
+-        raf = requestAnimationFrame(() => {
+-          raf = 0;
+-          if (view.isDestroyed) return;
+-          const { state } = view;
+-          const docSize = state.doc.content.size;
+-          if (anchor > docSize || head > docSize) return;
+-          const anchorPos = state.doc.resolve(anchor);
+-          const headPos = state.doc.resolve(head);
+-          const selection = TextSelection.between(anchorPos, headPos);
+-          view.dispatch(state.tr.setSelection(selection));
+-        });
++        scheduleRestore(view, dom, { anchor, head });
+       };
+       const app = createApp(ListItem, {
+         label,
+@@ -276,7 +291,7 @@
+           selected.value = false;
+         },
+         destroy: () => {
+-          cancelAnimationFrame(raf);
++          pendingRestores.get(view)?.delete(dom);
+           disposeSelectedWatcher();
+           app.unmount();
+           dom.remove();
+@@ -297,4 +312,3 @@
+ ];
+ 
+ export { ListItem, defaultListItemBlockConfig, listItemBlockComponent, listItemBlockConfig, listItemBlockView };
+-//# sourceMappingURL=index.js.map
+--- a/src/list-item-block/view.ts
++++ b/src/list-item-block/view.ts
+@@ -1,5 +1,5 @@
+ import type { Node } from '@milkdown/prose/model'
+-import type { NodeViewConstructor } from '@milkdown/prose/view'
++import type { EditorView, NodeViewConstructor } from '@milkdown/prose/view'
+ 
+ import { listItemSchema } from '@milkdown/preset-commonmark'
+ import { TextSelection } from '@milkdown/prose/state'
+@@ -10,6 +10,55 @@
+ import { ListItem } from './component'
+ import { listItemBlockConfig } from './config'
+ 
++interface CapturedSelection {
++  anchor: number
++  head: number
++}
++
++// Each list item puts the caret back where it was when the item mounted, one
++// frame later. One dispatch per item made a note with N items run N full
++// plugin passes in one frame, which is quadratic in the note's size. Only the
++// last of those dispatches decided where the caret ended, so each view keeps
++// the captures of its mounted items, in mount order, and dispatches once with
++// the latest one that still fits the document.
++const pendingRestores = new WeakMap<
++  EditorView,
++  Map<HTMLElement, CapturedSelection>
++>()
++
++function scheduleRestore(
++  view: EditorView,
++  item: HTMLElement,
++  capture: CapturedSelection
++) {
++  let captures = pendingRestores.get(view)
++  if (!captures) {
++    const frameCaptures = new Map<HTMLElement, CapturedSelection>()
++    captures = frameCaptures
++    pendingRestores.set(view, frameCaptures)
++    requestAnimationFrame(() => {
++      pendingRestores.delete(view)
++      if (view.isDestroyed) return
++      const { state } = view
++      const docSize = state.doc.content.size
++      let last: CapturedSelection | undefined
++      for (const capture of frameCaptures.values()) {
++        if (capture.anchor <= docSize && capture.head <= docSize) last = capture
++      }
++      if (!last) return
++      const anchorPos = state.doc.resolve(last.anchor)
++      const headPos = state.doc.resolve(last.head)
++      // Use `between` so we fall back to the nearest valid selection when
++      // the resolved positions no longer sit inside a textblock.
++      const selection = TextSelection.between(anchorPos, headPos)
++      view.dispatch(state.tr.setSelection(selection))
++    })
++  }
++  // A re-mount moves the item to the end: its newer capture is the later one.
++  captures.delete(item)
++  captures.set(item, capture)
++}
++
+ export const listItemBlockView = $view(
+   listItemSchema.node,
+   (ctx): NodeViewConstructor => {
+@@ -44,7 +93,6 @@
+           dom.classList.remove('selected')
+         }
+       })
+-      let raf = 0
+       let mountedDiv: HTMLElement | null = null
+       const onMount = (div: HTMLElement) => {
+         // Vue invokes function refs on every patch, not only on mount.
+@@ -57,19 +105,7 @@
+         const { anchor, head } = view.state.selection
+         div.appendChild(contentDOM)
+         // put the cursor to the new created list item
+-        raf = requestAnimationFrame(() => {
+-          raf = 0
+-          if (view.isDestroyed) return
+-          const { state } = view
+-          const docSize = state.doc.content.size
+-          if (anchor > docSize || head > docSize) return
+-          const anchorPos = state.doc.resolve(anchor)
+-          const headPos = state.doc.resolve(head)
+-          // Use `between` so we fall back to the nearest valid selection when
+-          // the resolved positions no longer sit inside a textblock.
+-          const selection = TextSelection.between(anchorPos, headPos)
+-          view.dispatch(state.tr.setSelection(selection))
+-        })
++        scheduleRestore(view, dom, { anchor, head })
+       }
+ 
+       const app = createApp(ListItem, {
+@@ -127,7 +163,7 @@
+           selected.value = false
+         },
+         destroy: () => {
+-          cancelAnimationFrame(raf)
++          pendingRestores.get(view)?.delete(dom)
+           disposeSelectedWatcher()
+           app.unmount()
+           dom.remove()

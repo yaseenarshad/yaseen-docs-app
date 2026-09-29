@@ -145,9 +145,9 @@
 /* One layer per VISITED tab, all mounted, only the active one visible (GRO-2234 rule 6).
    Hidden layers use visibility:hidden, NEVER display:none: Chromium resets a scroller's
    scrollTop once it sits in a display:none subtree, so switching back would lose each tab's
-   scroll position. visibility keeps layout alive — scroll offset, selection and undo history
-   all survive a switch — while still making the hidden layer unfocusable and hit-test
-   invisible. Layers stack absolutely so every editor owns the same box. */
+   scroll position. visibility (plus content-visibility, below) keeps each layer's rendering
+   state — scroll offset, selection and undo history all survive a switch — while still making
+   the hidden layer unfocusable and hit-test invisible. Layers stack absolutely so every editor owns the same box. */
 .tabstack {
   position: relative;
   flex: 1;
@@ -165,4 +165,8 @@
 
 .tabstack__layer--hidden {
   visibility: hidden;
+  /* YAZ-2195 (🔒 D5: every visited tab stays mounted): a hidden layer also skips style, layout and
+     paint, so tab switches, resizes and theme changes stop paying for every mounted tab. Unlike
+     display:none it keeps each scroller's offset, so rule 6 still holds. */
+  content-visibility: hidden;
 }

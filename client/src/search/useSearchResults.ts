@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
+import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import { folderCandidates, searchCandidates, searchTitles, type SearchCandidate } from './searchCandidates'
 
 export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[]): SearchCandidate[] {
@@ -28,25 +29,34 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
 
   useEffect(() => {
     if (!activated) return
-    let cancelled = false
+    /** Bumped per read and on teardown: only the newest read's answer is ever applied (YAZ-2191). */
+    let generation = 0
     const load = () => {
+      const mine = ++generation
       // An unreadable index leaves search with no rows — quietly. Search is an accelerator, not a
       // view: a banner here would shout about something the tree below is already showing fine.
       api.index(root).then(
         (res) => {
-          if (!cancelled) setRecords(res.records)
+          if (mine === generation) setRecords(res.records)
         },
         () => undefined,
       )
     }
     load()
-    // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering missed events.
+    // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering
+    // missed events, and reads at once. A lone event reads at once too; a burst is that read plus
+    // ONE more, 100 ms after its last event (YAZ-2191, YAZ-2240): it used to be one whole-index
+    // fetch per event.
+    const burst = leadingTrailing(load, WATCH_BURST_QUIET_MS)
     const off = watch.subscribe((ev) => {
-      if (ev.type !== 'change' && ev.type !== 'error') load()
+      if (ev.type === 'change' || ev.type === 'error') return
+      if (ev.type === 'ready') return burst.flush()
+      burst.call()
     })
     return () => {
-      cancelled = true
+      generation++
       off()
+      burst.cancel()
     }
   }, [root, watch, activated])
 

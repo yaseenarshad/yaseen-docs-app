@@ -12,7 +12,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -22,10 +22,8 @@ let app: ElectronApplication
 let win: Page
 let vault: string
 
-const contents = (): Locator =>
-  win.locator('.tabstack__layer:not(.tabstack__layer--hidden)').locator('.folder-page-contents')
 const colOf = (label: string): Locator =>
-  contents().locator('.view-board__col').filter({ has: win.locator(`.view-group__value:text-is("${label}")`) })
+  contents(win).locator('.view-board__col').filter({ has: win.locator(`.view-group__value:text-is("${label}")`) })
 
 test.beforeAll(async () => {
   const userData = await mkdtemp(path.join(tmpdir(), 'board-userdata-'))
@@ -39,19 +37,19 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the Board tab is just THERE, declared on the card alongside the outline and the table', async () => {
-  await expect(contents().locator('.view-tab__btn')).toHaveText(['Outline', 'Table', 'Board'])
+  await expect(contents(win).locator('.view-tab__btn')).toHaveText(['Outline', 'Table', 'Board'])
   await shoot(win, 'board-01-injected-tab')
 })
 
 test('step 2 — no group-by yet shows the hint; the Sort menu turns it into columns', async () => {
-  await contents().locator('.view-tab__btn', { hasText: 'Board' }).click()
-  await expect(contents().locator('.view-board__hint')).toBeVisible()
+  await contents(win).locator('.view-tab__btn', { hasText: 'Board' }).click()
+  await expect(contents(win).locator('.view-board__hint')).toBeVisible()
   await shoot(win, 'board-02-hint')
-  await contents().locator('[aria-label="Sort"]').click()
-  await contents().locator('[aria-label="Group by"]').click()
-  await contents().locator('[role="option"][data-value="note.kpi_category"]').click()
+  await contents(win).locator('[aria-label="Sort"]').click()
+  await contents(win).locator('[aria-label="Group by"]').click()
+  await contents(win).locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
-  await expect(contents().locator('.view-board__col')).toHaveCount(2)
+  await expect(contents(win).locator('.view-board__col')).toHaveCount(2)
   await expect(colOf('lagging').locator('.view-board__card')).toHaveCount(4)
   await expect(colOf('leading').locator('.view-board__card')).toHaveCount(1)
   await shoot(win, 'board-03-columns')
@@ -85,6 +83,6 @@ test('step 4 — the inline add births a NAMED page into the column it was typed
   await expect(colOf('leading').locator('.view-board__card', { hasText: 'Churn Rate' })).toBeVisible()
   await expect(input).toBeVisible()
   // Still on the folder page — the inline add never navigated.
-  await expect(contents().locator('.view-board')).toBeVisible()
+  await expect(contents(win).locator('.view-board')).toBeVisible()
   await shoot(win, 'board-05-inline-add')
 })

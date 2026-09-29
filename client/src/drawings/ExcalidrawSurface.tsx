@@ -102,6 +102,10 @@ export function ExcalidrawSurface({ scene, theme, onSnapshot, onFailed }: Drawin
     // The stylesheet is the surface's, not the preview renderer's — a page that only PREVIEWS
     // drawings never pays for the editor's CSS.
     void import('@excalidraw/excalidraw/index.css')
+    // KaTeX's stylesheet was global while Crepe's whole theme was imported; since the editor stopped
+    // shipping it (YAZ-2184) it loads here, because the one thing left that renders `.katex` is this
+    // surface's Mermaid dialog (`$$…$$` labels), which must keep exactly its old font and metrics.
+    void import('katex/dist/katex.min.css')
     loadExcalidraw().then(
       (mod) => {
         if (!live) return

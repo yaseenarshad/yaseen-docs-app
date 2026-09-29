@@ -33,6 +33,7 @@ import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
+import { flushWindow } from './lib/windowFlush'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
 import { SettingsDialog } from './settings/SettingsDialog'
@@ -84,6 +85,8 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
+  /** The sidebar's aside: a resize drag writes its live width here, not to state (YAZ-2239). */
+  const sidebarRef = useRef<HTMLElement>(null)
   // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and persisted because the Sidebar is
   // mounted `key={root}` and only while open; sidebar-local view state would reset on every
   // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
@@ -103,6 +106,9 @@ export function App() {
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
+  // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
+  // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
+  useEffect(() => api.window.onFlush(flushWindow), [])
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
   // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
   // vault index, so index changes restyle links live without any editor remounting. The stable
@@ -156,7 +162,11 @@ export function App() {
   }, [])
 
   const visibleSidebarWidth = root !== null && !sidebarCollapsed ? sidebarWidth : 0
-  const rightOverlay = rightPanel.open && windowWidth < visibleSidebarWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
+  /** Whether the right panel overlays the workspace beside a sidebar this wide; a resize drag asks it per move. */
+  const overlayAt = (sideWidth: number) => rightPanel.open && windowWidth < sideWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
+  const overlayAtRef = useRef(overlayAt)
+  overlayAtRef.current = overlayAt
+  const rightOverlay = overlayAt(visibleSidebarWidth)
 
   const toggleSidebar = useCallback(() => {
     const next = !sidebarCollapsedRef.current
@@ -185,10 +195,19 @@ export function App() {
       const x0 = e.clientX
       let raw = start
       let width = start
+      // The width in state, which the right panel's overlay decision reads.
+      let rendered = start
+      // Each move writes the width straight to the aside (YAZ-2239): state per move re-rendered the
+      // whole app on every mouse move. State follows at the move that flips the right panel between
+      // split and overlay, so that still happens live, and on mouseup.
       const move = (ev: MouseEvent) => {
         raw = start + ev.clientX - x0
         width = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, raw))
-        setSidebarWidth(width)
+        if (sidebarRef.current !== null) sidebarRef.current.style.width = `${width}px`
+        if (overlayAtRef.current(width) !== overlayAtRef.current(rendered)) {
+          rendered = width
+          setSidebarWidth(width)
+        }
       }
       const up = () => {
         window.removeEventListener('mousemove', move)
@@ -198,7 +217,10 @@ export function App() {
         if (raw < SIDEBAR_MIN_W * 0.6) {
           setSidebarWidth(start)
           toggleSidebar()
-        } else if (width !== start) storage.setSidebarWidth(width)
+          return
+        }
+        setSidebarWidth(width)
+        if (width !== start) storage.setSidebarWidth(width)
       }
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', up)
@@ -257,7 +279,6 @@ export function App() {
     '--thread-width': `${settings.threadWidth}px`,
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
-    '--side-w': `${sidebarWidth}px`,
   } as CSSProperties
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
@@ -308,7 +329,7 @@ export function App() {
       void openRoot(path)
       return
     }
-    void window.yaseenDocs.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
+    void api.window.openRecent(path).catch((err: unknown) => console.error('[open-vault] openRecent failed:', err))
   }, [root, openRoot])
 
   const { pick, picking } = usePickFolder({ onPicked: openVault })
@@ -316,7 +337,7 @@ export function App() {
   // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
   // the WINDOW through the real close path so the close/flush handshake runs.
   const closeTabOrWindow = useCallback(() => {
-    if (!closeActive()) void window.yaseenDocs.window.closeSelf()
+    if (!closeActive()) void api.window.closeSelf()
   }, [closeActive])
 
   // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, then ask
@@ -469,7 +490,7 @@ export function App() {
   // no identity write that could clobber the repaired file/tabs).
   useEffect(
     () =>
-      window.yaseenDocs.file.onRenamed(({ oldPath, newPath, kind }) => {
+      api.file.onRenamed(({ oldPath, newPath, kind }) => {
         // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
         // be re-offered as an "external rename" hypothesis.
         suppressRenameHypothesis(oldPath, newPath, kind)
@@ -509,7 +530,7 @@ export function App() {
       }
       let kind: 'file' | 'dir'
       try {
-        kind = (await api.rename({ oldPath, newPath })).kind
+        kind = (await api.file.rename({ oldPath, newPath })).kind
       } catch (err) {
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
         notify(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
@@ -627,7 +648,7 @@ export function App() {
    */
   useEffect(
     () =>
-      window.yaseenDocs.file.onDeleted(({ path, kind }) => {
+      api.file.onDeleted(({ path, kind }) => {
         if (kind === 'dir') {
           retireDeletedDir(path)
           deleteWorkspaceDir(path)
@@ -657,7 +678,7 @@ export function App() {
    */
   const deleteFile = useCallback(async (path: string): Promise<void> => {
     try {
-      await api.delete({ path })
+      await api.file.delete({ path })
     } catch (err) {
       const name = basename(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
@@ -797,6 +818,10 @@ export function App() {
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}
+          // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
+          // move restyled the whole window, every mounted tab included.
+          width={sidebarWidth}
+          asideRef={sidebarRef}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -829,7 +854,7 @@ export function App() {
             {mounted.length === 0 && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
-              // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
+              // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}

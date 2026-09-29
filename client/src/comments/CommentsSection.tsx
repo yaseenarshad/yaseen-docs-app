@@ -211,7 +211,7 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
     e.preventDefault()
     const href = a.getAttribute('href') ?? ''
     if (href === '' || href.startsWith('#')) return
-    void api.openLink({ href, sourcePath: file.path }).catch((err: unknown) => setError(`Could not open the link: ${messageOf(err)}`))
+    void api.shell.openLink({ href, sourcePath: file.path }).catch((err: unknown) => setError(`Could not open the link: ${messageOf(err)}`))
   }
 
   return (

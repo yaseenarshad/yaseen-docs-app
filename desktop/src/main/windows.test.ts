@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultRightPanelIdentity, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
-import { CH } from '../channels'
+import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
 import {
   BOUNDS_DEBOUNCE_MS,
@@ -102,7 +102,7 @@ class FakeWindow {
     for (const l of this.listeners.get('closed') ?? []) l()
   }
   flushCount(): number {
-    return this.webContents.send.mock.calls.filter(([ch]) => ch === CH.appFlush).length
+    return this.webContents.send.mock.calls.filter(([ch]) => ch === SPECIAL.appFlush).length
   }
 }
 
@@ -272,36 +272,36 @@ describe('createWindowManager: close', () => {
 })
 
 describe('createWindowManager: quit', () => {
-  it('flushes every window sequentially, keeps all entries, saves final bounds, then resolves', async () => {
+  it('flushes every window at once (YAZ-2198), keeps all entries, saves final bounds, and resolves once the last has flushed', async () => {
     const { manager, w1, w2 } = seedTwo()
     w1.bounds = { x: 111, y: 11, width: 800, height: 600 }
     const done = vi.fn()
     void manager.flushAllForQuit().then(done)
     await vi.advanceTimersByTimeAsync(0)
-    expect(w1.flushCount()).toBe(1)
-    expect(w2.flushCount()).toBe(0) // sequential: w2 is not asked until w1 acked
-    manager.handleFlushed(w1.webContents)
-    await vi.advanceTimersByTimeAsync(0)
-    expect(w1.isDestroyed()).toBe(true)
-    expect(w2.flushCount()).toBe(1)
-    expect(done).not.toHaveBeenCalled()
+    expect([w1.flushCount(), w2.flushCount()]).toEqual([1, 1]) // both asked together, not one after the other
     manager.handleFlushed(w2.webContents)
     await vi.advanceTimersByTimeAsync(0)
     expect(w2.isDestroyed()).toBe(true)
+    expect(w1.isDestroyed()).toBe(false)
+    expect(done).not.toHaveBeenCalled()
+    manager.handleFlushed(w1.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w1.isDestroyed()).toBe(true)
     expect(done).toHaveBeenCalled()
     expect(store.get().windows.map((w) => w.id)).toEqual(['w1', 'w2'])
     expect(store.get().windows[0].bounds).toEqual({ x: 111, y: 11, width: 800, height: 600 })
   })
 
-  it('hung renderers cannot block quit: each handshake times out on its own', async () => {
+  it('a hung renderer cannot delay the others past the one 5 s cap: quit takes one cap in total, not one per window', async () => {
     const { manager, w1, w2 } = seedTwo()
     const done = vi.fn()
     void manager.flushAllForQuit().then(done)
+    await vi.advanceTimersByTimeAsync(0)
+    manager.handleFlushed(w2.webContents) // w2 answers; w1 hangs
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w2.isDestroyed()).toBe(true)
     await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
     expect(w1.isDestroyed()).toBe(true)
-    expect(done).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
-    expect(w2.isDestroyed()).toBe(true)
     expect(done).toHaveBeenCalled()
     expect(store.get().windows).toHaveLength(2)
   })
@@ -579,20 +579,20 @@ describe('createWindowManager: routeToFile (E1)', () => {
     manager.routeToFile('/v/sub/a.md')
     expect(w1.isMinimized()).toBe(false)
     expect(w1.focusCount).toBe(1)
-    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/sub/a.md')
+    expect(w1.webContents.send).toHaveBeenCalledWith(CONTRACT.link.onOpenFile.channel, '/v/sub/a.md')
     expect(created).toHaveLength(2) // no new window
   })
 
   it('.markdown and upper-case extensions route too', () => {
     const { manager, w1 } = seedRouting()
     manager.routeToFile('/v/A.MARKDOWN')
-    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/A.MARKDOWN')
+    expect(w1.webContents.send).toHaveBeenCalledWith(CONTRACT.link.onOpenFile.channel, '/v/A.MARKDOWN')
   })
 
   it.each(['/v/data.json', '/v/tool.PY', '/v/report.pdf'])('routes supported view-only file %s through the existing window', (file) => {
     const { manager, created, w1 } = seedRouting()
     manager.routeToFile(file)
-    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, file)
+    expect(w1.webContents.send).toHaveBeenCalledWith(CONTRACT.link.onOpenFile.channel, file)
     expect(created).toHaveLength(2)
   })
 
@@ -618,7 +618,7 @@ describe('createWindowManager: routeToFile (E1)', () => {
   it('a rootOverride routes into the open window on exactly that root', () => {
     const { manager, created, w1 } = seedRouting()
     manager.routeToFile('/v/sub/a.md', '/v')
-    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/sub/a.md')
+    expect(w1.webContents.send).toHaveBeenCalledWith(CONTRACT.link.onOpenFile.channel, '/v/sub/a.md')
     expect(created).toHaveLength(2)
   })
 
@@ -638,17 +638,17 @@ describe('createWindowManager: routeToFile (E1)', () => {
     manager.routeToFile('/v/archive.zip')
     expect(created).toHaveLength(2)
     expect(w1.focusCount).toBe(1)
-    const notices = sentOn(w1, CH.linkNotice)
-    expect(notices).toEqual([[CH.linkNotice, "Can't open /v/archive.zip: unsupported file type"]])
-    expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
+    const notices = sentOn(w1, CONTRACT.link.onNotice.channel)
+    expect(notices).toEqual([[CONTRACT.link.onNotice.channel, "Can't open /v/archive.zip: unsupported file type"]])
+    expect(sentOn(w1, CONTRACT.link.onOpenFile.channel)).toHaveLength(0)
   })
 
   it('a missing file (host.exists false) gets the same notice: no window, no dialog', () => {
     const { manager, created, w1 } = seedRouting(() => false)
     manager.routeToFile('/v/gone.md')
     expect(created).toHaveLength(2)
-    expect(sentOn(w1, CH.linkNotice)).toHaveLength(1)
-    expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
+    expect(sentOn(w1, CONTRACT.link.onNotice.channel)).toHaveLength(1)
+    expect(sentOn(w1, CONTRACT.link.onOpenFile.channel)).toHaveLength(0)
   })
 
   it('a directory with a supported-looking suffix is refused passively by the regular-file probe', () => {
@@ -656,8 +656,8 @@ describe('createWindowManager: routeToFile (E1)', () => {
     const { manager, created, w1 } = seedRouting((candidate) => candidate !== directory)
     manager.routeToFile(directory)
     expect(created).toHaveLength(2)
-    expect(sentOn(w1, CH.linkNotice)).toEqual([[CH.linkNotice, `Can't open ${directory}: file not found`]])
-    expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
+    expect(sentOn(w1, CONTRACT.link.onNotice.channel)).toEqual([[CONTRACT.link.onNotice.channel, `Can't open ${directory}: file not found`]])
+    expect(sentOn(w1, CONTRACT.link.onOpenFile.channel)).toHaveLength(0)
   })
 
   it('linkNotice (the parse-failure path) restores + focuses a live window and delivers the message', () => {
@@ -666,6 +666,6 @@ describe('createWindowManager: routeToFile (E1)', () => {
     manager.linkNotice("Can't open link")
     expect(w1.isMinimized()).toBe(false)
     expect(w1.focusCount).toBe(1)
-    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkNotice, "Can't open link")
+    expect(w1.webContents.send).toHaveBeenCalledWith(CONTRACT.link.onNotice.channel, "Can't open link")
   })
 })

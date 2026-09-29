@@ -26,13 +26,19 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   buildFixtureVault,
+  confirmSheet,
   copyVault,
+  dirRow,
+  editorOf,
+  fileRow,
   launchApp,
   quitApp,
   seededState,
   shoot,
+  tabsOf,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -52,12 +58,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 
 /** Right-click `label`'s row and drive the context menu's Rename into the inline input. */
 async function startRename(w: Page, label: string): Promise<void> {
@@ -73,7 +73,6 @@ async function startRenameDir(w: Page, label: string): Promise<void> {
   await expect(w.locator('.create-inline__input')).toHaveValue(label)
 }
 
-const sheet = (w: Page) => w.locator('.confirm[role="dialog"]')
 
 /**
  * The name-change confirm (⚡ YAZ-888, amending decision E / GRO-2096): since the one door in App
@@ -81,10 +80,10 @@ const sheet = (w: Page) => w.locator('.confirm[role="dialog"]')
  * and only a drag-MOVE still runs silently (step 6 pins that).
  */
 async function confirmRename(w: Page, message?: string): Promise<void> {
-  if (message !== undefined) await expect(sheet(w).locator('.confirm__text')).toHaveText(message)
-  await expect(sheet(w)).toBeVisible()
-  await sheet(w).locator('.confirm__btn', { hasText: 'Rename' }).click()
-  await expect(sheet(w)).toHaveCount(0)
+  if (message !== undefined) await expect(confirmSheet(w).locator('.confirm__text')).toHaveText(message)
+  await expect(confirmSheet(w)).toBeVisible()
+  await confirmSheet(w).locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect(confirmSheet(w)).toHaveCount(0)
 }
 
 test.beforeAll(async () => {
@@ -131,7 +130,7 @@ test('step 1 — rename B via the context menu: disk file renamed, tab and title
   await win.keyboard.press('Enter')
   // ⚡ YAZ-888: the name changed, so the sheet asks first — with the honest count (A is the one
   // note that links to B, however many times it does).
-  await expect(sheet(win)).toBeVisible()
+  await expect(confirmSheet(win)).toBeVisible()
   await shoot(win, 'rename-01b-confirm-sheet')
   await confirmRename(win, "Rename 'B' to 'B2'? Links in 1 note will be updated.")
 
@@ -172,7 +171,7 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   // No Enter: clicking row A is the leave. Its mousedown lands BEFORE the sheet exists, so the
   // sheet's own click-away-cancels does not fire — and A's click lands on the body, not the row.
   await fileRow(win, 'A').click()
-  await expect(sheet(win)).toBeVisible()
+  await expect(confirmSheet(win)).toBeVisible()
   await shoot(win, 'rename-03b-clickaway-sheet')
   await expect(activeTab(win)).toHaveText('B2')
   await confirmRename(win, "Rename 'D' to 'D2'? No other notes link to it.")
@@ -185,7 +184,7 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   await win.locator('.create-inline__input').fill('Discarded')
   await win.keyboard.press('Escape')
   await expect(win.locator('.create-inline__input')).toHaveCount(0)
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   await expect(fileRow(win, 'D2')).toBeVisible()
   expect(await readFile(path.join(vault, 'D2.md'), 'utf8')).toContain(D_BODY)
 
@@ -193,7 +192,7 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   await startRename(win, 'D2')
   await fileRow(win, 'A').click()
   await expect(win.locator('.create-inline__input')).toHaveCount(0)
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   await expect(fileRow(win, 'D2')).toBeVisible()
 })
 
@@ -249,7 +248,7 @@ test('step 6 — drag a file row onto a folder row: the file moves there, bare l
   await fileRow(win, 'M').dragTo(dirRow(win, 'Notes'))
 
   // A MOVE keeps the name, so it stays SILENT (⚡ YAZ-888): no sheet, ever, on a drag.
-  await expect(sheet(win)).toHaveCount(0)
+  await expect(confirmSheet(win)).toHaveCount(0)
   await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'M.md'))).toContain(M_BODY)
   await expect(readFile(path.join(vault, 'Target', 'M.md'), 'utf8')).rejects.toThrow()
   // S.md pinned WHOLE: [[Target/M]] → [[Notes/M]]; the bare [[M]] still resolves — unchanged.
@@ -265,7 +264,7 @@ test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a pa
   // The sheet stands in the way of this one too. Only the NAMES are pinned here: N is read off
   // whatever index snapshot the window holds at that instant, and step 6 moved a file moments
   // ago — the counted set depends on how far the 300ms-debounced refetch has caught up.
-  await expect(sheet(win).locator('.confirm__text')).toContainText("Rename 'Target' to 'Notes'?")
+  await expect(confirmSheet(win).locator('.confirm__text')).toContainText("Rename 'Target' to 'Notes'?")
   await confirmRename(win)
   await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "Notes" already exists')
   // Both folders untouched.

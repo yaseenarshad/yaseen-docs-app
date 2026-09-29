@@ -12,7 +12,7 @@
  * Queueing: hypotheses stack oldest-first, one banner at a time. Dismiss drops the hypothesis
  * for THIS SESSION (a keyed dismissed set — the next refetch will re-detect the same pair and
  * must not re-offer it). Update marks the pair handled the same way, then (1) repairs the app
- * over `api.repairRename` — main runs the E1 store repair and pushes `file:renamed`, so tabs
+ * over `api.file.repairRename` — main runs the E1 store repair and pushes `file:renamed`, so tabs
  * and editors follow through the EXISTING downstream — and (2) rewrites the referencing notes
  * through the E1/E1b engine against fresh index/tree snapshots re-pathed to the pre-rename
  * view, surfacing the usual summary notice.
@@ -25,7 +25,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DiffFileStat, IndexRecord, TreeNode } from '@shared/types'
 import { api } from '../api'
 import { detectRenames, diffRecords, preRenameRecords, type RenameHypothesis } from './renameDetector'
-import { countLinkReferences, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { countLinkReferences, linkedBasenames, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { basename, stripExt } from '../lib/paths'
+import { basenameKey } from '../views/engine'
 
 export interface RenameBannerItem {
   oldPath: string
@@ -93,8 +95,10 @@ export function useExternalRenames(root: string | null, notify: (message: string
     (hypotheses: RenameHypothesis[], records: IndexRecord[], r: string) => {
       if (hypotheses.length === 0) return
       const additions: RenameBannerItem[] = []
+      const linked = linkedBasenames(records)
       for (const h of hypotheses) {
         if (isSuppressed(h)) continue
+        if (!linked.has(basenameKey(stripExt(basename(h.oldPath))))) continue // no link names it: N is 0 (YAZ-2241)
         const count = countLinkReferences({ root: r, oldPath: h.oldPath, records: preRenameRecords(records, r, h.oldPath, h.newPath) })
         if (count === 0) continue // nothing to repair → no banner, nothing at all (locked)
         additions.push({ oldPath: h.oldPath, newPath: h.newPath, count })
@@ -176,7 +180,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
       // (1) Repair the app: main validates the hypothesis (new path exists, old does not),
       // runs the E1 store repair and pushes file:renamed — tabs/editors follow downstream.
       try {
-        await api.repairRename({ oldPath: item.oldPath, newPath: item.newPath })
+        await api.file.repairRename({ oldPath: item.oldPath, newPath: item.newPath })
       } catch (err) {
         // Stale hypothesis (the old path came back, the new one vanished, …): passive notice, never a dialog.
         notify(`Can't update links: ${err instanceof Error ? err.message : String(err)}`)

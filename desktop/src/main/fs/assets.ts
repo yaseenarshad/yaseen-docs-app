@@ -1,9 +1,10 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AssetResponse, AssetWriteRequest, AssetWriteResponse } from '@shared/types'
 import { DRAWING_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_BYTES } from '@shared/types'
 import { linkTarget } from '../vaultIndex/scan'
-import { atomicWrite, BridgeFailure, byNameCi, fsCall, isSkipped, requireAbsPath, requireDir } from './fsUtils'
+import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir } from './fsUtils'
+import { requireRequest } from './validate'
 
 /**
  * `window.yaseenDocs.readAsset(root, ref)` / `.writeAsset(req)` (Bases 4E, GRO-2139 — Desktop
@@ -138,9 +139,7 @@ function resolveUnderRoot(dir: string, rel: string): string {
  * not trusted from the type.
  */
 export async function writeAsset(req: AssetWriteRequest): Promise<AssetWriteResponse> {
-  const raw: unknown = req
-  if (typeof raw !== 'object' || raw === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
-  const { root, path: rel, content, expectedMtime, create } = raw as Record<string, unknown>
+  const { root, path: rel, content, expectedMtime, create } = requireRequest(req)
   const dir = requireAbsPath(root, 'root')
   if (typeof rel !== 'string' || rel.trim() === '' || rel.includes('\0')) throw new BridgeFailure('BAD_REQUEST', "missing 'path'")
   const file = resolveUnderRoot(dir, rel)
@@ -182,7 +181,7 @@ export async function writeAsset(req: AssetWriteRequest): Promise<AssetWriteResp
     // has no folder to write into.
     await mkdir(path.dirname(file), { recursive: true })
     if (create === true) {
-      await writeFile(file, body, { flag: 'wx' }) // EEXIST → ALREADY_EXISTS, exactly like createFile
+      await createDurable(file, body) // EEXIST → ALREADY_EXISTS, exactly like createFile
       const st = await stat(file)
       return { path: file, mtime: st.mtimeMs, size: st.size }
     }

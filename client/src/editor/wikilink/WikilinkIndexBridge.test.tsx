@@ -131,6 +131,21 @@ describe('WikilinkIndexBridge', () => {
     expect(source.resolve?.('New')).toBe('/vault/New.md')
   })
 
+  it('a save wakes the semantic source once and never the unchanged view-only catalog, while the picker still takes the new records (YAZ-2196 P8)', async () => {
+    mount()
+    await flush()
+    const semanticWake = vi.fn()
+    const viewOnlyWake = vi.fn()
+    source.subscribe(semanticWake)
+    viewOnly.subscribe(viewOnlyWake)
+    indexFn.mockResolvedValue({ ...response('/vault/Note.md', '/vault/deep/Other.md'), records: [rec('/vault/Note.md', ['Saved alias']), rec('/vault/deep/Other.md')] })
+    await emitPastDebounce({ type: 'change', path: '/vault/Note.md', mtime: 2 })
+    expect(semanticWake).toHaveBeenCalledTimes(1)
+    expect(viewOnlyWake).not.toHaveBeenCalled()
+    expect(candidates.candidates.map((c) => c.label)).toContain('Saved alias — Note')
+    expect(candidates.candidates.map((c) => c.insert)).toContain('data.json')
+  })
+
   it('a failed refetch keeps the previous resolver (never downgrades to unresolved)', async () => {
     mount()
     await flush()

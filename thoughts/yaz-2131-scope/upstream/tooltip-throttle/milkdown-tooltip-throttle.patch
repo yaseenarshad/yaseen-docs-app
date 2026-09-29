@@ -1,0 +1,116 @@
+diff --git a/packages/plugins/plugin-tooltip/src/__test__/tooltip-provider.spec.ts b/packages/plugins/plugin-tooltip/src/__test__/tooltip-provider.spec.ts
+new file mode 100644
+index 0000000..590bd43
+--- /dev/null
++++ b/packages/plugins/plugin-tooltip/src/__test__/tooltip-provider.spec.ts
+@@ -0,0 +1,73 @@
++import { Schema } from '@milkdown/prose/model'
++import { EditorState, TextSelection } from '@milkdown/prose/state'
++import type { EditorView } from '@milkdown/prose/view'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++
++import { TooltipProvider } from '../tooltip-provider'
++
++const schema = new Schema({
++  nodes: {
++    doc: { content: 'paragraph+' },
++    paragraph: { content: 'text*', toDOM: () => ['p', 0] },
++    text: {},
++  },
++})
++
++function fakeView(state: EditorState, parent: HTMLElement) {
++  const dom = document.createElement('div')
++  parent.appendChild(dom)
++  const view = {
++    state,
++    dom,
++    composing: false,
++    editable: true,
++    hasFocus: () => true,
++    coordsAtPos: () => ({ left: 0, right: 0, top: 0, bottom: 0 }),
++  }
++  return view as typeof view & EditorView
++}
++
++let root: HTMLElement
++beforeEach(() => {
++  vi.useFakeTimers()
++  root = document.createElement('div')
++  document.body.appendChild(root)
++})
++afterEach(() => {
++  vi.useRealTimers()
++  root.remove()
++})
++
++describe('TooltipProvider', () => {
++  it('hides when a hiding update is followed within the throttle window by a no-op transaction', () => {
++    const content = document.createElement('div')
++    const provider = new TooltipProvider({ content, debounce: 20, root })
++    const empty = EditorState.create({
++      schema,
++      doc: schema.node('doc', null, [schema.node('paragraph', null, [schema.text('hello world')])]),
++    })
++    const selected = empty.apply(empty.tr.setSelection(TextSelection.create(empty.doc, 1, 6)))
++    const view = fakeView(selected, root)
++
++    provider.update(view, empty)
++    expect(content.dataset.show).toBe('true')
++
++    vi.advanceTimersByTime(100)
++    const touched = selected.apply(selected.tr.setMeta('touch', true))
++    view.state = touched
++    provider.update(view, selected)
++
++    vi.advanceTimersByTime(5)
++    const cleared = touched.apply(touched.tr.setSelection(TextSelection.create(touched.doc, 1)))
++    view.state = cleared
++    provider.update(view, touched)
++
++    vi.advanceTimersByTime(5)
++    const noop = cleared.apply(cleared.tr.setMeta('noop', true))
++    view.state = noop
++    provider.update(view, cleared)
++
++    vi.advanceTimersByTime(50)
++    expect(content.dataset.show).toBe('false')
++  })
++})
+diff --git a/packages/plugins/plugin-tooltip/src/tooltip-provider.ts b/packages/plugins/plugin-tooltip/src/tooltip-provider.ts
+index b7f849e..dd25b54 100644
+--- a/packages/plugins/plugin-tooltip/src/tooltip-provider.ts
++++ b/packages/plugins/plugin-tooltip/src/tooltip-provider.ts
+@@ -64,6 +64,12 @@ export class TooltipProvider {
+   /// @internal
+   #cleanupAutoUpdate?: () => void
+ 
++  /// @internal
++  /// The state the last evaluated update saw. Updates are throttled, so a trailing call carries
++  /// only the LAST call's `prevState`; comparing against it alone let a no-op transaction hide the
++  /// real change before it (the tooltip stayed shown for a selection that was gone).
++  #lastState?: EditorState
++
+   /// @internal
+   readonly #offset?: OffsetOptions
+ 
+@@ -131,8 +137,9 @@ export class TooltipProvider {
+     const { ranges } = selection
+     const from = Math.min(...ranges.map((range) => range.$from.pos))
+     const to = Math.max(...ranges.map((range) => range.$to.pos))
+-    const isSame =
+-      prevState && prevState.doc.eq(doc) && prevState.selection.eq(selection)
++    const unchanged = (other?: EditorState) =>
++      !!other && other.doc.eq(doc) && other.selection.eq(selection)
++    const isSame = unchanged(prevState) && unchanged(this.#lastState)
+ 
+     if (!this.#initialized) {
+       const root = this.#root ?? view.dom.parentElement ?? document.body
+@@ -141,6 +148,7 @@ export class TooltipProvider {
+     }
+ 
+     if (composing || isSame) return
++    this.#lastState = state
+ 
+     this.#cleanupAutoUpdate?.()
+     this.#cleanupAutoUpdate = void 0

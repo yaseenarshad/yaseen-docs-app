@@ -16,6 +16,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import { flushWindow } from './lib/windowFlush'
 import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
 interface SidebarStubProps {
@@ -41,6 +42,10 @@ interface SidebarStubProps {
   /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
   unadopted: boolean
   onCreateHome: () => void
+  /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
+  width: number
+  /** The aside itself, which a resize drag writes its live width to (YAZ-2239). */
+  asideRef?: React.Ref<HTMLElement>
   viewOnlyLinks: ViewOnlyLinkSource
   /**
    * ⌘⇧C's read-only window into the sidebar's selection (YAZ-1338, 🔒 D4): App owns the
@@ -55,6 +60,8 @@ interface SidebarStubProps {
 
 const captured = vi.hoisted(() => ({
   sidebar: null as SidebarStubProps | null,
+  /** Sidebar stub renders — one per App render while the sidebar is open. */
+  sidebarRenders: 0,
   editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
 }))
@@ -74,7 +81,8 @@ vi.mock('./editor/Editor', () => ({
 vi.mock('./sidebar/Sidebar', () => ({
   Sidebar: (props: SidebarStubProps) => {
     captured.sidebar = props
-    return <aside data-sidebar data-root={props.root} />
+    captured.sidebarRenders++
+    return <aside ref={props.asideRef} data-sidebar data-root={props.root} />
   },
 }))
 
@@ -306,6 +314,13 @@ describe('App per-window sidebar visibility (YAZ-1280)', () => {
     document.body.dispatchEvent(afterUnmount)
     expect(afterUnmount.defaultPrevented).toBe(false)
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('App close/quit handshake (YAZ-2174)', () => {
+  it('hands the window flush to the bridge, so the writers below App join the handshake', async () => {
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    expect(bridge.window.onFlush).toHaveBeenCalledWith(flushWindow)
   })
 })
 
@@ -727,23 +742,66 @@ describe('App sidebar resize (YAZ-738)', () => {
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx }))
     window.dispatchEvent(new MouseEvent('mouseup', { clientX: dx }))
   }
-  const sideW = (el: HTMLElement) => el.querySelector<HTMLElement>('.app')?.style.getPropertyValue('--side-w')
+  const sideW = () => captured.sidebar?.width
+  /** One App render as the stub counts it: `mount` renders under StrictMode, which renders twice. */
+  const STRICT_RENDER = 2
+  const toggle = (el: HTMLElement) => act(() => void el.querySelector('.app')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })))
 
   it('a drag widens the sidebar live and persists the new width once', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
-    expect(sideW(el)).toBe('260px')
+    expect(sideW()).toBe(260)
     act(() => drag(el, 120))
-    expect(sideW(el)).toBe('380px')
+    expect(sideW()).toBe(380)
     expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+  })
+
+  it('the width goes to the sidebar alone, never to the whole window as an inherited variable (YAZ-2194)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => drag(el, 120))
+    expect(el.querySelector<HTMLElement>('.app')?.style.getPropertyValue('--side-w')).toBe('')
+  })
+
+  it('a 20-move drag writes the width straight to the sidebar and renders App once, when it ends (YAZ-2239)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const aside = el.querySelector<HTMLElement>('[data-sidebar]')!
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+    const before = captured.sidebarRenders
+    for (let dx = 6; dx <= 120; dx += 6) act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx })))
+    expect(captured.sidebarRenders).toBe(before)
+    expect(aside.style.width).toBe('380px')
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120 })))
+    expect(captured.sidebarRenders).toBe(before + STRICT_RENDER)
+    expect(sideW()).toBe(380)
+    expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+  })
+
+  it('the right panel still flips to overlay live, at the move that crosses the threshold (YAZ-2239)', async () => {
+    // 1,100 px: sidebar 260 + panel 440 + workspace minimum 360 = 1,060 fits; 320 + 440 + 360 = 1,120 does not.
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1100 })
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' } })
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+    const before = captured.sidebarRenders
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 20 })))
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 60 })))
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 80 })))
+    expect(captured.sidebarRenders).toBe(before + STRICT_RENDER) // the flip, and nothing else
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 80 })))
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    expect(sideW()).toBe(340)
   })
 
   it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 50 - 260))
     expect(el.querySelector('[data-sidebar]')).toBeNull()
-    expect(sideW(el)).toBe('260px')
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+    toggle(el)
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(sideW()).toBe(260)
   })
 })
 
@@ -1444,13 +1502,16 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const semanticRecords = [record('/v/A.md', { links: ['data.json'] })]
     const files = { '/v/A.md': { content: '[[data.json]]\n', mtime: 1 } }
     let rootReads = 0
-    const pending = new Promise<TreeResponse>(() => undefined)
+    // The window's ONE boot read (sidebar + catalog share it since YAZ-2191) is still on the wire;
+    // released at the end so the per-window tree feed is not left waiting on it.
+    let release!: () => void
+    const pending = new Promise<TreeResponse>((r) => (release = () => r({ root: '/v', tree: [], generatedAt: 0 })))
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
       b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
         if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
         rootReads++
-        if (rootReads <= 2) return pending
+        if (rootReads <= 1) return pending
         return {
           root: '/v',
           tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }],
@@ -1460,25 +1521,29 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
-    expect(rootReads).toBe(3)
+    expect(rootReads).toBe(2)
     expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
     expect(bridge.file.rename).not.toHaveBeenCalled()
 
     await act(async () => sheetBtn(el, 'Rename')?.click())
     expect(files['/v/A.md'].content).toBe('[[data-v2.json]]\n')
+    await act(async () => release())
   })
 
   it('fresh-snapshots directory descendants and rewrites their explicit links after confirmation', async () => {
     const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
     const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
     let rootReads = 0
-    const pending = new Promise<TreeResponse>(() => undefined)
+    // The window's ONE boot read (sidebar + catalog share it since YAZ-2191) is still on the wire;
+    // released at the end so the per-window tree feed is not left waiting on it.
+    let release!: () => void
+    const pending = new Promise<TreeResponse>((r) => (release = () => r({ root: '/v', tree: [], generatedAt: 0 })))
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
       b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
         if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
         rootReads++
-        if (rootReads <= 2) return pending
+        if (rootReads <= 1) return pending
         return {
           root: '/v',
           tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [
@@ -1491,11 +1556,12 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
-    expect(rootReads).toBe(3)
+    expect(rootReads).toBe(2)
     expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
     await act(async () => sheetBtn(el, 'Rename')?.click())
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/Old', newPath: '/v/New' })
     expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
+    await act(async () => release())
   })
 
   it('always refreshes a ready directory catalog so newly visible descendants count and rewrite', async () => {
@@ -1536,7 +1602,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
-    expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(3)
+    expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(2) // one shared boot read (YAZ-2191) + the rename's own
     expect(bridge.file.rename).not.toHaveBeenCalled()
     expect(el.querySelector('.confirm')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")

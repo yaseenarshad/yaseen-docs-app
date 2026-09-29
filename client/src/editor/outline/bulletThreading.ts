@@ -13,7 +13,7 @@
  *    make one continuous line that ends at the active bullet.
  * Drawing is pure CSS (bulletThreading.css), gated by `data-threading` on `.app` (settings cog).
  */
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
@@ -24,6 +24,19 @@ export const THREAD_SEG_CLASS = 'outline-thread-seg'
 export const THREAD_STOP_CLASS = 'outline-thread-stop'
 
 const pluginKey = new PluginKey('mdapp-bullet-threading')
+
+/**
+ * The set depends only on the doc and the list_items holding the caret, so a caret move within the
+ * same bullet (every arrow key along a line) reuses it instead of rebuilding it (YAZ-2131 4C).
+ */
+const decorationCache = new WeakMap<ProseNode, { path: string; set: DecorationSet }>()
+
+/** Positions of the list_items holding the caret: all `buildDecorations` reads besides the doc itself. */
+const caretPath = ($from: ResolvedPos): string => {
+  let path = ''
+  for (let depth = 1; depth <= $from.depth; depth++) if (isListItem($from.node(depth))) path += `${$from.before(depth)} `
+  return path
+}
 
 /** One decoration per block with the merged class list (several per range would work too; one keeps tests plain). */
 const buildDecorations = (state: EditorState): Decoration[] => {
@@ -61,8 +74,13 @@ export const bulletThreading = $prose(
       key: pluginKey,
       props: {
         decorations: (state) => {
+          const path = caretPath(state.selection.$from)
+          const cached = decorationCache.get(state.doc)
+          if (cached?.path === path) return cached.set
           const decorations = buildDecorations(state)
-          return decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
+          const set = decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
+          decorationCache.set(state.doc, { path, set })
+          return set
         },
       },
     }),
