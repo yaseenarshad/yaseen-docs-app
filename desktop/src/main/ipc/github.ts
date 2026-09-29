@@ -1,4 +1,4 @@
-import type { AppState, GithubSyncStatus } from '@shared/types'
+import type { GithubSyncStatus } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
@@ -8,7 +8,7 @@ import { createGitSync, type GitSyncManager } from '../git/manager'
 import { syncPass } from '../git/sync'
 import type { Store } from '../store'
 import { readConfig, subscribeConfig, writeConfig } from '../vaultConfig'
-import { broadcastAll } from './broadcast'
+import { broadcastAll, rootsOf } from './broadcast'
 import { handle } from './envelope'
 
 /**
@@ -17,15 +17,10 @@ import { handle } from './envelope'
  * injected function, so this module is the whole seam: the vault-local config store, the shared
  * vault watcher, the status broadcast, and the pass itself.
  *
- * Which roots exist is `AppState.windows` (null = Welcome), exactly the per-open-root idiom
- * `ipc/vaultConfig.ts` and `ipc/properties.ts` already use — the manager subscribes, times and
- * drops per root off that one list, so a closed vault goes completely silent.
+ * Which roots exist is `rootsOf(AppState)` (`broadcast.ts`, the list `syncPerRoot` also reads) —
+ * the manager subscribes, times and drops per root off that one list, so a closed vault goes
+ * completely silent.
  */
-
-/** The open-vault roots, unique and non-null. Exported for its own test; the manager owns the rest. */
-export function rootsOf(state: AppState): string[] {
-  return [...new Set(state.windows.map((w) => w.root).filter((r): r is string => r !== null))]
-}
 
 /**
  * Read-only facts for a root the manager is NOT managing (sync off): the settings panel still

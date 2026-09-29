@@ -1,7 +1,7 @@
 import type { FolderPatch } from '@shared/types'
+import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { isRecord } from '@shared/guards'
 import { requireStringArray } from '../fs/validate'
 import { isSettings, type Store } from '../store'
 import { broadcastAll } from './broadcast'

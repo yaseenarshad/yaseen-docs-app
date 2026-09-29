@@ -1,5 +1,5 @@
 /**
- * THE CONTRACT IS COMPLETE (YAZ-2172, YAZ-2200): every door in `CONTRACT` and `SPECIAL` has exactly
+ * THE CONTRACT IS COMPLETE (YAZ-2172, YAZ-2200; YAZ-2131 🔒 D9): every door in `CONTRACT` and `SPECIAL` has exactly
  * one main-side handler and exactly one preload exposure, of the right kind, and nothing outside
  * the table is wired. A refactor that drops a `register*` call or a preload line fails here instead
  * of as a renderer that waits forever. `preload/surface.test.ts` pins what each exposure does.

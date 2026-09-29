@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { agentPrompt } from '@shared/agentInstructions'
 import { CONTRACT } from '@shared/ipc'
 import { fsCall, requireAbsPath, requireMarkdownFile } from '../fs/fsUtils'
-import { handle } from './envelope'
 import { requireRequest } from '../fs/validate'
+import { handle } from './envelope'
 
 /** What main knows and the renderer does not: where the `yaseendocs` command lives on this machine. */
 export interface AgentHost {
