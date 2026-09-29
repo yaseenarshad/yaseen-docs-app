@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, expandDirs, launchApp, SEED_FILE, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, expandDirs, launchApp, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -20,8 +20,6 @@ let app: ElectronApplication
 let win: Page
 
 const selectedRows = (w: Page) => w.locator('.tree__row--selected')
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
 
 test.beforeAll(async () => {

@@ -24,7 +24,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, editorOf, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -91,8 +91,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 const listItems = (w: Page) => editorOf(w).locator('.milkdown-list-item-block')
 /** A line by its leading text — a RegExp, because `hasText` trims and `Parent 1 ` would match `Parent 13`. */
 const lineOf = (w: Page, start: RegExp) => editorOf(w).locator('p', { hasText: start })

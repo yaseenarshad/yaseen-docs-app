@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
 import type { PageComment } from '../../shared/comments'
-import { appWindow, launchApp, seededState, shoot } from './helpers'
+import { appWindow, launchApp, seededState, sheet, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -33,7 +33,6 @@ const header = (w: Page) => block(w).locator('.comments__header')
 const thread = (w: Page, mark: string) => block(w).locator('.comments__thread').filter({ has: w.locator('.comments__mark', { hasText: mark }) })
 const itemByMark = (w: Page, mark: string) => block(w).locator('.comments__item').filter({ has: w.locator(`.comments__mark:text-is("${mark}")`) })
 const composer = (w: Page, placeholder: string) => block(w).locator(`.comments__composer:has(textarea[aria-label="${placeholder}"])`)
-const sheet = (w: Page) => w.locator('[role="dialog"]')
 
 /** The `comments` list on disk, and the body beside it. */
 async function onDisk(): Promise<{ comments: PageComment[] | undefined; body: string }> {

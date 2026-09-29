@@ -17,7 +17,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, launchApp, quitApp, readState, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -28,7 +28,6 @@ let beta: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 const panel = (w: Page) => w.locator('aside.right-panel[aria-label="Right panel"]')
 const handle = (w: Page) => panel(w).locator('.right-panel__resize[role="separator"]')
 const header = (w: Page, label: string) => panel(w).locator('.right-panel__header', { hasText: label })

@@ -27,14 +27,14 @@
  * step screenshots). The CLI step drives the script the way a human does — as a child process,
  * with `process.execPath` — so the git preflight and Node's own type stripping are under test.
  */
-import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DEFAULT_COLUMNS } from '../../shared/folderPageDefaults'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, copyVault, launchApp, quitApp, REPO_ROOT, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, REPO_ROOT, seededState, sheet, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -56,9 +56,6 @@ let win: Page
 
 // ---------- locators (the folderPages / freezeColumns idiom) ----------
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const table = () => contents(win).locator('.view-table')
 const headers = () => table().locator('thead th')
 /** A property header by its LABEL — the `#` gutter excluded; the resize grip carries no text. */
@@ -68,8 +65,6 @@ const dataRows = () => table().locator('tbody tr:not(.view-table__group):not(.vi
 const groupNames = () => table().locator('.view-table__group .view-group__value')
 const menuItem = (w: Page, label: string) => w.locator('.ctx-menu [role="menuitem"]', { hasText: label })
 const propsMenu = () => contents(win).locator('.view-popover')
-const sheet = (w: Page) => w.locator('[role="dialog"]')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 /** Every data row as `[name, #]` — the name cell's text and the gutter's, in display order. */
 async function rowsWithNumbers(): Promise<[string, string][]> {

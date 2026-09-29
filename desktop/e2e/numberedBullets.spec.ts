@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,7 +26,6 @@ let notePath: string
 let app: ElectronApplication
 let win: Page
 
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 /** Direct-child path from a `li.list-item` to its own paragraph (nested rows have their own). */
 const PARA = 'xpath=./div[contains(@class,"children")]/div[contains(@class,"content-dom")]/p'
 /** The `li.list-item` whose OWN paragraph is `text` — "Fundamentals" does not match its children. */

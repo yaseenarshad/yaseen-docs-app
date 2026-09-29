@@ -67,6 +67,21 @@ export async function appWindow(app: ElectronApplication, winId: string, timeout
   }
 }
 
+// ---------- the locators every spec shares (YAZ-2201: each was redefined in up to 29 specs) ----------
+
+/** The visible tab's layer: every other open tab stays mounted underneath, hidden. */
+export const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
+/** The visible tab's note editor. */
+export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
+/** The visible tab's folder-page contents block. */
+export const contents = (w: Page) => layer(w).locator('.folder-page-contents')
+export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
+export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
+/** A file row of the sidebar tree by its exact label. */
+export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
+export const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
+export const sheet = (w: Page) => w.locator('[role="dialog"]')
+
 // ---------- fixture vault ----------
 
 /** The file the smoke suite seeds open; has nested bullets so outline folding is exercisable. */
