@@ -128,7 +128,7 @@ test('step 4 — Delete asks first; a parent takes its reply; the last delete re
   await sheet(win).locator('.confirm__btn--danger').click()
   await expect(header(win).locator('.comments__count')).toHaveCount(0)
   // 🔒 D7: the key goes, never a `comments: []` (the emptied block stays, GRO-2216); the body is as written.
-  await expect.poll(async () => (await readFile(notePath, 'utf8')).includes('comments')).toBe(false)
+  await expect.poll(async () => /^comments:/m.test(splitFrontmatter(await readFile(notePath, 'utf8')).frontmatter)).toBe(false)
   expect((await onDisk()).body).toBe(BODY)
   await shoot(win, 'comments-03-all-deleted')
 })
