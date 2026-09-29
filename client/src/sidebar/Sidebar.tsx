@@ -38,6 +38,8 @@ import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from '
 
 interface SidebarProps {
   root: string
+  /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
+  width: number
   activeFile: string | null
   watch: WatchSource
   onOpenFile: (path: string) => void
@@ -396,6 +398,7 @@ export function Sidebar({
   onCreateHome,
   selectionRef,
   clipboardRef,
+  width,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1228,8 +1231,10 @@ export function Sidebar({
     [renamingEntry, onRenameFile],
   )
 
-  const renaming: PendingRename | null =
-    renamingEntry === null ? null : { path: renamingEntry.path, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }
+  const renaming: PendingRename | null = useMemo(
+    () => (renamingEntry === null ? null : { path: renamingEntry.path, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }),
+    [renamingEntry, submitRename],
+  )
 
   // ---- File drag-to-move (E1b, GRO-2241): drop a FILE row on a folder row or the root header ----
 
@@ -1248,17 +1253,20 @@ export function Sidebar({
     [dragging, onRenameFile],
   )
 
-  const fileMove: TreeFileMove = {
-    dragging,
-    dropDir,
-    start: setDragging,
-    end: () => {
-      setDragging(null)
-      setDropDir(null)
-    },
-    hover: setDropDir,
-    drop: dropOnDir,
-  }
+  const fileMove: TreeFileMove = useMemo(
+    () => ({
+      dragging,
+      dropDir,
+      start: setDragging,
+      end: () => {
+        setDragging(null)
+        setDropDir(null)
+      },
+      hover: setDropDir,
+      drop: dropOnDir,
+    }),
+    [dragging, dropDir, dropOnDir],
+  )
 
   // ---- Favorites drag-to-reorder (YAZ-1766 D4): a root row dropped above/below another rewrites the list ----
 
@@ -1277,35 +1285,51 @@ export function Sidebar({
   }, [reorderDragging, reorderOver, saveFavorites])
 
   /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
-  const favoriteReorder: TreeReorder = {
-    dragging: reorderDragging,
-    over: reorderOver,
-    start: focusFavorites.length > 0 ? () => undefined : setReorderDragging,
-    hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
-    drop: dropReorder,
-    end: () => {
-      setReorderDragging(null)
-      setReorderOver(null)
-    },
-  }
+  const reorderOff = focusFavorites.length > 0
+  const favoriteReorder: TreeReorder = useMemo(
+    () => ({
+      dragging: reorderDragging,
+      over: reorderOver,
+      start: reorderOff ? () => undefined : setReorderDragging,
+      hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
+      drop: dropReorder,
+      end: () => {
+        setReorderDragging(null)
+        setReorderOver(null)
+      },
+    }),
+    [reorderDragging, reorderOver, reorderOff, dropReorder],
+  )
 
   /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures — toggle (shift) and set (any other click, D9). */
-  const selection: TreeSelection = {
-    paths: selectedPaths,
-    toggle: (path) => dispatchSelection({ type: 'toggle', path }),
-    set: (path) => dispatchSelection({ type: 'set', path }),
-  }
+  const toggleSelection = useCallback((path: string) => dispatchSelection({ type: 'toggle', path }), [])
+  const setSelection = useCallback((path: string) => dispatchSelection({ type: 'set', path }), [])
+  const selection: TreeSelection = useMemo(() => ({ paths: selectedPaths, toggle: toggleSelection, set: setSelection }), [selectedPaths, toggleSelection, setSelection])
 
-  const pending: PendingCreate | null =
-    creating === null
-      ? null
-      : {
-          kind: creating.kind,
-          seed: creating.seed,
-          parentDir: creating.parentDir,
-          onSubmit: submitCreate,
-          onCancel: cancelCreate,
-        }
+  const pending: PendingCreate | null = useMemo(
+    () =>
+      creating === null
+        ? null
+        : {
+            kind: creating.kind,
+            seed: creating.seed,
+            parentDir: creating.parentDir,
+            onSubmit: submitCreate,
+            onCancel: cancelCreate,
+          },
+    [creating, submitCreate, cancelCreate],
+  )
+
+  /**
+   * The Files and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
+   * its identity across renders that change nothing for them. The context menu handler reads the
+   * selection and the tree, so it changes on every click; the rows call it through this stable door.
+   */
+  const expandedSet = useMemo(() => new Set(expanded), [expanded])
+  const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
+  const openMenuRef = useRef(openMenu)
+  openMenuRef.current = openMenu
+  const openRowMenu = useCallback((node: TreeNode, e: React.MouseEvent) => openMenuRef.current(node, e), [])
 
   /**
    * The SAME pending create, addressed the way the Topics tree can draw it: by the anchor row
@@ -1332,7 +1356,7 @@ export function Sidebar({
     }
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b). */}
       <div
         className={`sidebar__header${dropDir === root ? ' sidebar__header--drop' : ''}`}
@@ -1540,13 +1564,13 @@ export function Sidebar({
               <Tree
                 nodes={favoriteNodes}
                 dirPath={root}
-                expanded={new Set(expanded)}
+                expanded={expandedSet}
                 activeFile={activeFile}
-                onToggle={(dir) => dispatch({ type: 'toggle', dir })}
+                onToggle={toggleDir}
                 onOpenFile={onOpenFile}
                 onOpenFileBackground={onOpenFileBackground}
                 onOpenDefault={openDefault}
-                onNodeContextMenu={openMenu}
+                onNodeContextMenu={openRowMenu}
                 pending={pending}
                 renaming={renaming}
                 move={INERT_MOVE}
@@ -1566,13 +1590,13 @@ export function Sidebar({
               <Tree
                 nodes={focusNodes.length > 0 ? focusNodes : tree.tree}
                 dirPath={root}
-                expanded={new Set(expanded)}
+                expanded={expandedSet}
                 activeFile={activeFile}
-                onToggle={(dir) => dispatch({ type: 'toggle', dir })}
+                onToggle={toggleDir}
                 onOpenFile={onOpenFile}
                 onOpenFileBackground={onOpenFileBackground}
                 onOpenDefault={openDefault}
-                onNodeContextMenu={openMenu}
+                onNodeContextMenu={openRowMenu}
                 pending={pending}
                 renaming={renaming}
                 move={fileMove}

@@ -10,6 +10,6 @@ export default defineConfig({
   test: {
     name: 'desktop',
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', '*.test.ts'],
   },
 })

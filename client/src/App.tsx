@@ -261,7 +261,6 @@ export function App() {
     '--thread-width': `${settings.threadWidth}px`,
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
-    '--side-w': `${sidebarWidth}px`,
   } as CSSProperties
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
@@ -801,6 +800,9 @@ export function App() {
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}
+          // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
+          // move restyled the whole window, every mounted tab included.
+          width={sidebarWidth}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -833,7 +835,7 @@ export function App() {
             {mounted.length === 0 && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
-              // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
+              // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}

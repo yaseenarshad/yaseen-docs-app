@@ -1,10 +1,10 @@
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
-import { createReadStream, existsSync } from 'node:fs'
-import { cp } from 'node:fs/promises'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { cp, mkdir, rename, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = resolve(here, '../shared')
@@ -54,21 +54,49 @@ function excalidrawAssets(): Plugin {
   }
 }
 
+/**
+ * The renderer's sourcemaps, OUT of the app (YAZ-2183): the build is minified and writes
+ * `sourcemap: 'hidden'` maps (no `sourceMappingURL` comment), and this moves every `.map` of the
+ * bundle from `outDir` to `mapsDir` the moment it is written — so electron-builder's `out/**` never
+ * packs them, and a minified stack trace can still be symbolicated locally. `mapsDir` is replaced
+ * whole per build.
+ */
+export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
+  return {
+    name: 'yaseen-sourcemaps-aside',
+    apply: 'build',
+    async writeBundle(_options, bundle) {
+      await rm(mapsDir, { recursive: true, force: true })
+      for (const file of Object.keys(bundle).filter((f) => f.endsWith('.map'))) {
+        await mkdir(dirname(resolve(mapsDir, file)), { recursive: true })
+        await rename(resolve(outDir, file), resolve(mapsDir, file))
+      }
+    },
+  }
+}
+
+/** Kept per shipped version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in), gitignored. */
+const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
+const mapsDir = resolve(here, '.maps', version)
+
 export default defineConfig({
   main: {
-    // No externalizeDepsPlugin: chokidar 4 is pure JS and gets bundled, so the packaged app
-    // needs no node_modules at all (spike decision, see GRO-2151 findings).
+    // Every dependency is bundled into `out/main` (chokidar 4 is pure JS), so the packaged app ships
+    // no node_modules at all (GRO-2151). electron-vite 5 externalizes `desktop/package.json`'s
+    // `dependencies` by default, so chokidar is a devDependency and `externalizeDeps` is off;
+    // `tools/mainBundle.test.mjs` fails if the bundle requires anything but Node built-ins and
+    // electron (YAZ-2185).
     resolve: { alias: { '@shared': shared } },
     // Two entries (YAZ-1617): the app, and the `yaseendocs` command the packaged shim runs as plain Node.
-    build: { rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
+    build: { externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
   },
   preload: {
     resolve: { alias: { '@shared': shared } },
-    build: { rollupOptions: { input: resolve(here, 'src/preload/index.ts') } },
+    build: { externalizeDeps: false, rollupOptions: { input: resolve(here, 'src/preload/index.ts') } },
   },
   renderer: {
     root: client,
-    plugins: [react(), excalidrawAssets()],
+    plugins: [react(), excalidrawAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
     resolve: {
       alias: { '@shared': shared },
       /**
@@ -81,6 +109,9 @@ export default defineConfig({
        */
       dedupe: ['react', 'react-dom'],
     },
-    build: { outDir: rendererOut, rollupOptions: { input: resolve(client, 'index.html') } },
+    // electron-vite 5 leaves the renderer unminified; Vite's esbuild minifier cuts its JS 19.1 → 11.8 MB
+    // and the entry chunk every window parses 4.85 → 2.3 MB. Main, preload and the cli stay unminified,
+    // so their crash stacks read as written (YAZ-2183).
+    build: { outDir: rendererOut, minify: 'esbuild', sourcemap: 'hidden', rollupOptions: { input: resolve(client, 'index.html') } },
   },
 })

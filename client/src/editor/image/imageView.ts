@@ -117,6 +117,9 @@ class ImageNodeView implements NodeView {
     this.dom.replaceChildren()
     const img = document.createElement('img')
     img.draggable = false
+    // Decode off the frame (YAZ-2197): a 6 MP photo scrolling in no longer holds the frame while it
+    // decodes. The box is sized as before, so nothing moves; `loading="lazy"` stays off for that reason.
+    img.decoding = 'async'
     img.addEventListener('load', () => this.setStatus('ready'))
     img.addEventListener('error', () => this.broken(src))
     img.addEventListener('dblclick', () => this.openGallery())
