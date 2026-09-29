@@ -1,6 +1,3 @@
-import { STALE_FLIGHT_MS, type TreeResponse } from '@shared/types'
-import { api } from '../api'
-
 /**
  * The window's ONE tree feed per root (YAZ-2191). The sidebar, its active-file probe and the
  * view-only catalog all read `fs:tree`; each used to fetch its own copy, four walks in the first
@@ -14,6 +11,9 @@ import { api } from '../api'
  *   - a request on the wire longer than `STALE_FLIGHT_MS` is bypassed: the call sends its own, and
  *     should the hung one ever answer, that older answer is dropped.
  */
+import { STALE_FLIGHT_MS, type TreeResponse } from '@shared/types'
+import { api } from '../api'
+
 type Outcome = PromiseSettledResult<TreeResponse>
 
 interface Feed {

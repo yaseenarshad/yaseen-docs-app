@@ -14,11 +14,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
-import { leadingTrailing } from '../lib/leadingTrailing'
+import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import { folderCandidates, searchCandidates, searchTitles, type SearchCandidate } from './searchCandidates'
-
-/** The quiet spell that ends a watcher burst, before its trailing index read (YAZ-2191; the sidebar's tree read waits the same). */
-const STRUCTURAL_REFRESH_MS = 100
 
 export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[]): SearchCandidate[] {
   const [records, setRecords] = useState<readonly IndexRecord[]>([])
@@ -50,7 +47,7 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
     // missed events, and reads at once. A lone event reads at once too; a burst is that read plus
     // ONE more, 100 ms after its last event (YAZ-2191, YAZ-2240): it used to be one whole-index
     // fetch per event.
-    const burst = leadingTrailing(load, STRUCTURAL_REFRESH_MS)
+    const burst = leadingTrailing(load, WATCH_BURST_QUIET_MS)
     const off = watch.subscribe((ev) => {
       if (ev.type === 'change' || ev.type === 'error') return
       if (ev.type === 'ready') return burst.flush()
