@@ -289,32 +289,5 @@ export function useVaultTree(
   const expandedSet = useMemo(() => new Set(expanded), [expanded])
   const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
 
-  return {
-    tree,
-    error,
-    refresh,
-    expanded,
-    dispatch,
-    expandedSet,
-    toggleDir,
-    topicsExpanded,
-    setTopicsExpanded,
-    focusDirs,
-    setFocusDirs,
-    focusTopics,
-    focusFavorites,
-    focusNodes,
-    focused,
-    focusOn,
-    exitFocus,
-    favorites,
-    favoritesRef,
-    saveFavorites,
-    toggleFavorite,
-    dirs,
-    shownDirs,
-    favoriteNodes,
-    favoriteDirs,
-    topicRecords,
-  }
+  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, topicsExpanded, setTopicsExpanded, focusDirs, setFocusDirs, focusTopics, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs, topicRecords }
 }
