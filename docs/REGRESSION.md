@@ -61,7 +61,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 |---|---|---|
 | S1 | Lens tabs Topics / Files / ♥; default Files (YAZ-1846) | A `lenses` |
 | S2 | Topics tree, Uncategorized, drag to re-parent | A `topics`, `topicsDrag`, `createUnderFolder` |
-| S3 | Create note / folder page / folder / dated folder | A `topics`, `createUnderFolder` |
+| S3 | Create note / dated note / folder page / folder / dated folder | A `topics`, `createUnderFolder` |
 | S4 | Rename + vault-wide link rewrite | A `rename` |
 | S5 | External rename detection + repair | A `externalRename` |
 | S6 | Delete to Trash; tabs close | A `delete` |

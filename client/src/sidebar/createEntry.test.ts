@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { datedFolderSeed, entryPath, renamedPath, renameInputName, targetDirFor, validateEntryName } from './createEntry'
+import { datedSeed, entryPath, renamedPath, renameInputName, targetDirFor, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -41,14 +41,14 @@ describe('entryPath', () => {
   })
 })
 
-describe('datedFolderSeed (YAZ-1604)', () => {
+describe('datedSeed (YAZ-1604; notes too since YAZ-2242)', () => {
   it('is MM_DD of the given day, zero-padded, then "- " so the title lands one space after the dash', () => {
-    expect(datedFolderSeed(new Date(2026, 5, 22))).toBe('06_22- ')
-    expect(datedFolderSeed(new Date(2026, 11, 3))).toBe('12_03- ')
+    expect(datedSeed(new Date(2026, 5, 22))).toBe('06_22- ')
+    expect(datedSeed(new Date(2026, 11, 3))).toBe('12_03- ')
   })
 
   it('defaults to today', () => {
-    expect(datedFolderSeed()).toMatch(/^\d{2}_\d{2}- $/)
+    expect(datedSeed()).toMatch(/^\d{2}_\d{2}- $/)
   })
 })
 
