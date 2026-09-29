@@ -92,7 +92,6 @@ export interface ParsedViews {
   doc: Document
 }
 
-
 export function parseViews(text: string): ParsedViews {
   const doc = parseDocument(text, { keepSourceTokens: true })
   const err = doc.errors[0]

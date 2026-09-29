@@ -14,12 +14,12 @@ import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitF
 import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { DEFAULT_COLUMNS } from '@shared/folderPageDefaults'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
+import { isRecord } from '@shared/guards'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { FOLDER_PAGE_KEY, isExactWikilink } from '../links/folderPages'
 import { mapOutlineLinks, parseOutline } from './outlineDoc'
 import type { ViewDef } from './viewSchema'
 import { transformFile, writeProperty } from './writeProperty'
-import { isRecord } from '@shared/guards'
 
 /**
  * The one reserved key this module owns; nothing else may name it — exported (⚡ YAZ-884) only so
@@ -106,7 +106,6 @@ export function turnIntoFolderPage(content: string): string {
 }
 
 const KINDS = new Set<string>(PROPERTY_KINDS)
-
 
 /** A fresh copy per read: the defaults are handed out to be edited and written back. */
 const defaultViews = (): ViewDef[] => DEFAULT_VIEWS.map((view) => ({ ...view }))
