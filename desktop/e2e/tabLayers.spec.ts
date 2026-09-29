@@ -5,8 +5,9 @@
  * nothing a tab owns across a round trip: its scroll offset, caret, undo history, unsaved buffer,
  * open find session and document zoom.
  *
- * Tab A carries the caret, the typing (unsaved — checked straight after the switch back), undo and
- * zoom; tab B carries an open find session, because closing find moves the caret by design (the
+ * Tab A carries the caret, the typing, undo and zoom. Its editor node is tagged in step 1, so step 3
+ * proves the typing came back in the SAME mounted editor, not a remount that reloaded the autosaved
+ * file. Tab B carries an open find session, because closing find moves the caret by design (the
  * landing rule in findInPage.spec.ts). Both carry a scroll offset. Same harness as tabs.spec.ts:
  * temp `--user-data-dir`, a COPY of the fixture vault, nothing sleeps.
  */
@@ -14,7 +15,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, launchApp, layer, nextFrame, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,16 +27,19 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tab = (w: Page, name: string) => w.locator('.tabbar [role="tab"]', { hasText: name })
-const activeLayer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
+const tab = (w: Page, name: string) => tabsOf(w).filter({ hasText: name })
 const hiddenLayers = (w: Page) => w.locator('.tabstack__layer--hidden')
-const editorOf = (layer: Locator) => layer.locator('.ProseMirror')
-const scrollerOf = (layer: Locator) => layer.locator('.editor-host')
-const zoomOf = (layer: Locator) => layer.locator('.document-zoom__value')
+/** The editor inside one tab layer (a hidden layer's included), unlike helpers' `editorIn(page)`. */
+const editorIn = (tabLayer: Locator) => tabLayer.locator('.ProseMirror')
+const scrollerOf = (tabLayer: Locator) => tabLayer.locator('.editor-host')
+const zoomOf = (tabLayer: Locator) => tabLayer.locator('.document-zoom__value')
 /** The paragraph starting with `text` and no further digit (`b-line-3`, never `b-line-30`). */
-const line = (layer: Locator, text: string) => editorOf(layer).locator('p', { hasText: new RegExp(`^${text}(?!\\d)`) })
-const scrollTop = (layer: Locator) => scrollerOf(layer).evaluate((el) => el.scrollTop)
-const scrollTo = (layer: Locator, top: number) => scrollerOf(layer).evaluate((el, y) => void (el.scrollTop = y), top)
+const line = (tabLayer: Locator, text: string) => editorIn(tabLayer).locator('p', { hasText: new RegExp(`^${text}(?!\\d)`) })
+const scrollTop = (tabLayer: Locator) => scrollerOf(tabLayer).evaluate((el) => el.scrollTop)
+const scrollTo = (tabLayer: Locator, top: number) => scrollerOf(tabLayer).evaluate((el, y) => void (el.scrollTop = y), top)
+/** A mark on one editor DOM node: it survives only if that very node stays mounted. */
+const tagEditor = (tabLayer: Locator) => editorIn(tabLayer).evaluate((el) => void ((el as HTMLElement & { d5?: number }).d5 = 1))
+const editorTagged = (tabLayer: Locator) => editorIn(tabLayer).evaluate((el) => (el as HTMLElement & { d5?: number }).d5 === 1)
 
 const recorded: { aTop?: number; aZoom?: string; bTop?: number; bCount?: string } = {}
 
@@ -56,8 +60,8 @@ test('step 1 — tab A: scroll, caret, unsaved typing and zoom', async () => {
   state.windows[0].tabs = [path.join(vault, 'Long A.md'), path.join(vault, 'Long B.md')]
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
-  const a = activeLayer(win)
-  await expect(editorOf(a)).toContainText('a-line-0')
+  const a = layer(win)
+  await expect(editorIn(a)).toContainText('a-line-0')
 
   await a.locator('.document-zoom__step[aria-label="Zoom in"]').click()
   await expect(zoomOf(a)).not.toHaveText('100%')
@@ -70,6 +74,7 @@ test('step 1 — tab A: scroll, caret, unsaved typing and zoom', async () => {
   await line(a, 'a-line-60').click()
   await win.keyboard.type(' unsaved-A', { delay: 10 })
   await expect(line(a, 'a-line-60')).toHaveText('a-line-60 unsaved-A')
+  await tagEditor(a)
   await scrollTo(a, 1500)
   recorded.aTop = await scrollTop(a)
   expect(recorded.aTop).toBeGreaterThan(1000)
@@ -77,8 +82,8 @@ test('step 1 — tab A: scroll, caret, unsaved typing and zoom', async () => {
 
 test('step 2 — tab B: the hidden layer skips rendering; B gets its own scroll and an open find session', async () => {
   await tab(win, 'Long B').click()
-  const b = activeLayer(win)
-  await expect(editorOf(b)).toContainText('b-line-0')
+  const b = layer(win)
+  await expect(editorIn(b)).toContainText('b-line-0')
   const hidden = await hiddenLayers(win).first().evaluate((el) => {
     const s = getComputedStyle(el)
     return { visibility: s.visibility, contentVisibility: s.getPropertyValue('content-visibility') }
@@ -86,8 +91,7 @@ test('step 2 — tab B: the hidden layer skips rendering; B gets its own scroll 
   expect(hidden).toEqual({ visibility: 'hidden', contentVisibility: 'hidden' })
 
   await line(b, 'b-line-3').click()
-  // Let the click's selectionchange reach ProseMirror before ⌘F reads the caret (helpers' `settledCaret` barrier).
-  await win.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
+  await nextFrame(win) // the click's selectionchange reaches ProseMirror before ⌘F reads the caret
   await win.keyboard.press('Meta+f')
   const bar = b.locator('.find-bar')
   await expect(bar).toBeVisible()
@@ -104,14 +108,15 @@ test('step 2 — tab B: the hidden layer skips rendering; B gets its own scroll 
 
 test('step 3 — back to A: scroll, zoom and the unsaved buffer are as left; the caret and undo history resume', async () => {
   await tab(win, 'Long A').click()
-  const a = activeLayer(win)
+  const a = layer(win)
   await expect(line(a, 'a-line-60')).toHaveText('a-line-60 unsaved-A')
+  expect(await editorTagged(a), 'the same editor node: kept mounted, not reloaded from disk').toBe(true)
   await expect(zoomOf(a)).toHaveText(recorded.aZoom!)
   expect(Math.abs((await scrollTop(a)) - recorded.aTop!)).toBeLessThanOrEqual(1)
 
   // The caret: focusing the editor (no click, which would move it) restores ProseMirror's own
   // selection, so a typed key lands right after the unsaved text.
-  await editorOf(a).focus()
+  await editorIn(a).focus()
   // ProseMirror puts its selection back into the DOM a moment after focus.
   await expect.poll(() => win.evaluate(() => document.getSelection()?.anchorNode?.textContent ?? '')).toContain('unsaved-A')
   // Undo steps: prosemirror-history closes a group only after `newGroupDelay` (500 ms, Milkdown's
@@ -132,7 +137,7 @@ test('step 3 — back to A: scroll, zoom and the unsaved buffer are as left; the
 
 test('step 4 — back to B: its find session and scroll are as left', async () => {
   await tab(win, 'Long B').click()
-  const b = activeLayer(win)
+  const b = layer(win)
   const bar = b.locator('.find-bar')
   await expect(bar).toBeVisible()
   await expect(bar.locator('.find-bar__input')).toHaveValue('b-line-2')

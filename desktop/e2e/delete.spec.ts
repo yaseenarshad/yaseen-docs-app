@@ -4,7 +4,7 @@
  *
  * The step that justifies this whole spec is the **resurrection guard** (step 4): a note with
  * a DIRTY, unsaved buffer is deleted, and after both the autosave debounce and the watcher's
- * awaitWriteFinish window have elapsed it must still be gone. Unit tests prove each seam in
+ * settle have elapsed it must still be gone. Unit tests prove each seam in
  * isolation; only the real app proves the seams together, with the real timers.
  *
  * `shell.trashItem` moves entries to the user's REAL Trash. Assertions therefore only ever
@@ -19,7 +19,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -34,7 +34,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 const sheet = (w: Page) => w.locator('.confirm')
 
 /** True when the path is gone from the vault. Where it went (the Trash) is not our business. */
@@ -115,7 +114,7 @@ test('step 3 — confirming trashes the file and closes its tab; a neighbour tak
 })
 
 test('step 4 — RESURRECTION GUARD: the dirty buffer never writes the file back', async () => {
-  // Past BOTH the autosave debounce (500ms) and the watcher awaitWriteFinish window (200ms),
+  // Past BOTH the autosave debounce (500ms) and the watcher's settle (100 ms),
   // with a wide margin. If retireDeletedPath were removed, the unmount flush would have
   // recreated Doomed.md by now — this is the assertion that proves it does not.
   await win.waitForTimeout(3000)
