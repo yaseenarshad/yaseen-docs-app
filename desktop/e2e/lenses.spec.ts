@@ -4,10 +4,11 @@
  *
  * Files is the DEFAULT lens since YAZ-1846 (Topics was before it) and is today's file explorer,
  * unchanged; Topics holds the folder-page tree (YAZ-848, driven in full by `topics.spec.ts` over
- * the encyclopedia fixture) behind a tab. This spec is about the TABS — which body each one swaps in, and that the choice
- * is WINDOW identity (`WindowEntry.sidebarLens`, per window since YAZ-1628) surviving quit →
- * relaunch the way `sidebarWidth` does (easyWave step 2's shape). The g1 fixture declares no folder page at all, so Topics here
- * is the honest minimum: no roots, and every page under the Uncategorized row.
+ * the encyclopedia fixture) behind a tab. This spec is about the TABS — which body each one swaps
+ * in, and that the choice is WINDOW identity (`WindowEntry.sidebarLens`, per window since
+ * YAZ-1628) surviving quit → relaunch the way `sidebarWidth` does (easyWave step 2's shape). The
+ * g1 fixture declares no folder page at all, so Topics here is the honest minimum: no roots, and
+ * every page under the Uncategorized row.
  *
  * The seed here is deliberately NOT `seededState`'s: that helper pre-selects Files for the rest
  * of the suite (every other spec is about the tree), so this one seeds a PRE-847 state file —
@@ -26,7 +27,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState, WindowEntry } from '../../shared/types'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, readState, SEED_FILE, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, lensTab, quitApp, readState, SEED_FILE, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -38,7 +39,6 @@ let win: Page
 
 // ---------- locators ----------
 
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 /** FILE rows — the Files lens' own; the Topics tree wears `.tree__row` too but never this one. */
 const fileRows = (w: Page) => w.locator('.tree__row--file')
 /** The Topics lens' Uncategorized row (YAZ-848) — the only row this fixture's topic tree has. */
@@ -85,7 +85,7 @@ test('step 1 — a state file with no lens boots on FILES (YAZ-1846 D1): the fil
   await expect(lensTab(win, 'Topics')).toBeVisible()
   await expect(lensTab(win, 'Files')).toBeVisible()
   await expectLens(win, 'Files')
-  await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
+  await expect(fileRow(win, 'Ideas')).toBeVisible()
   await expect(uncategorized(win)).toHaveCount(0)
   await expect(bodyMsg(win)).toHaveCount(0)
   await expect(searchBar(win)).toBeVisible() // ALWAYS visible — on this lens too (the locked YAZ-739 rule)
@@ -115,7 +115,7 @@ test('step 2 — clicking Topics shows the folder-page tree, clicking Files toda
 
   await lensTab(win, 'Files').click()
   await expectLens(win, 'Files')
-  await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
+  await expect(fileRow(win, 'Ideas')).toBeVisible()
   await expect(win.locator('.tree__row--dir', { hasText: 'Projects' })).toBeVisible()
   await expect(bodyMsg(win)).toHaveCount(0)
   await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('files')

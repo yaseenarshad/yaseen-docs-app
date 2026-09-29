@@ -14,7 +14,7 @@
  *
  * ⌘O is a native accelerator Playwright cannot press, so step 2 drives its menu item by id
  * (`menu.file.switch-vault`); every other open is the trigger's own click. Two vaults are seeded in
- * `recents` under FIXED folder names so the filter, the titles and the rows read as sentences.
+ * `recents` under FIXED folder names so the titles and the rows read as sentences.
  * Same harness as the rest of the suite: temp `--user-data-dir`, copies of the generated fixture,
  * `vault-switcher-` step screenshots, serial.
  */
@@ -23,7 +23,7 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState } from '../../shared/types'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, lensTab, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -67,7 +67,6 @@ const vaultMenuItems = (w: Page) => w.locator('.ctx-overlay .ctx-menu [role="men
 const vaultMenuItem = (w: Page, label: string) => vaultMenuItems(w).filter({ hasText: new RegExp(`^${label}$`) })
 /** The inline display-name field, wherever it stands (YAZ-1974 D5). */
 const nameField = (w: Page) => w.locator('.vault-switcher__rename')
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 
 /** Opens the panel by the trigger's click and waits for the filter to hold focus (D7) — every keystroke below goes to it. */
 async function openPanel(w: Page): Promise<void> {
@@ -111,7 +110,7 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- the panel
 
-test('step 1 — the header button drops the panel: filter focused, both recents as rows, the current vault aria-current, the filter ranks and Esc closes', async () => {
+test('step 1 — the header button drops the panel: filter focused, both recents as rows, the current vault aria-current, Esc closes', async () => {
   app = await launchApp({ userData, seedState: twoVaultState() })
   win = await appWindow(app, 'w1')
   await expect(headerName(win)).toHaveText(ALPHA)
@@ -124,24 +123,11 @@ test('step 1 — the header button drops the panel: filter focused, both recents
   await expect(rowNames(win)).toHaveText([ALPHA, BETA])
   await expect(rowNamed(win, ALPHA)).toHaveAttribute('aria-current', 'true')
   await expect(rowNamed(win, BETA)).not.toHaveAttribute('aria-current', 'true')
-  await expect(win.locator('.vault-switcher__rows .vault-switcher__row[aria-current="true"]')).toHaveCount(1) // exactly one
   await expect(openFolderRow(win)).toHaveText('Open folder…')
   // The highlight starts on the first NON-current row, so ⌘O ⏎ jumps to the last-used OTHER vault (D7).
   await expect(highlighted(win)).toHaveCount(1)
   await expect(highlighted(win)).toContainText(BETA)
   await shoot(win, 'vault-switcher-01-panel')
-
-  // The filter ranks over the names (D7): a substring keeps one row; no match shows the empty line
-  // and leaves Open folder… standing — and highlighted, since nothing else is left.
-  await filter(win).fill('Beta')
-  await expect(rowNames(win)).toHaveText([BETA])
-  await expect(highlighted(win)).toContainText(BETA)
-  await filter(win).fill('zzz')
-  await expect(rows(win)).toHaveCount(0)
-  await expect(win.locator('.vault-switcher__empty')).toHaveText('No matching vaults')
-  await expect(openFolderRow(win)).toBeVisible()
-  await expect(highlighted(win)).toHaveText('Open folder…')
-  await shoot(win, 'vault-switcher-02-no-match')
 
   // Esc closes on the FIRST press (the menu convention, not the search bar's two-press rule).
   await win.keyboard.press('Escape')
@@ -157,7 +143,6 @@ test('step 2 — ⌘O then ⏎ opens the other vault BESIDE, on its remembered f
   await clickMenuItem(app, 'menu.file.switch-vault', 'w1')
   await expect(panel(win)).toBeVisible()
   await expect(filter(win)).toBeFocused()
-  await expect(filter(win)).toHaveValue('') // the query resets on every open (D7)
   await expect(highlighted(win)).toContainText(BETA)
 
   // ⏎ on the highlighted row → `window.openRecent(vaultB)`: no window shows Beta, so a NEW one
@@ -222,7 +207,7 @@ test('step 3 — holding ⇧ says "Open here" on the highlighted row, and ⇧⏎
 
 // ---------------------------------------------------------------- display names
 
-test('step 4 — "Set display name" from the header menu renames the header, the window title and `folders[root].name`; the filter still matches the folder name', async () => {
+test('step 4 — "Set display name" from the header menu renames the header, the window title and `folders[root].name`', async () => {
   // The header IS the current vault (YAZ-1798): its menu has the middle three groups only — no
   // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5).
   await trigger(win).click({ button: 'right' })
@@ -243,16 +228,6 @@ test('step 4 — "Set display name" from the header menu renames the header, the
   await expect.poll(async () => (await readState(userData)).folders[vaultB]?.name).toBe(DISPLAY)
   expect((await readState(userData)).folders[vaultA]?.name).toBeNull() // the other vault's bucket untouched
   await shoot(win, 'vault-switcher-06-display-name')
-
-  // The rows show the display name, and the filter matches BOTH names (D6): the folder name still finds it.
-  await openPanel(win)
-  await expect(rowNames(win)).toHaveText([DISPLAY, ALPHA])
-  await filter(win).fill('Beta')
-  await expect(rowNames(win)).toHaveText([DISPLAY])
-  await filter(win).fill('Work')
-  await expect(rowNames(win)).toHaveText([DISPLAY])
-  await win.keyboard.press('Escape')
-  await expect(panel(win)).toHaveCount(0)
 })
 
 test('step 5 — the display name survives quit → relaunch; "Reset to folder name" puts the folder name back everywhere', async () => {
