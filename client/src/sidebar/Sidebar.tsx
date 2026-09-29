@@ -362,34 +362,7 @@ export function Sidebar({
   clipboardRef,
   width,
 }: SidebarProps) {
-  const {
-    tree,
-    error,
-    refresh,
-    expanded,
-    dispatch,
-    expandedSet,
-    toggleDir,
-    topicsExpanded,
-    setTopicsExpanded,
-    focusDirs,
-    setFocusDirs,
-    focusTopics,
-    focusFavorites,
-    focusNodes,
-    focused,
-    focusOn,
-    exitFocus,
-    favorites,
-    favoritesRef,
-    saveFavorites,
-    toggleFavorite,
-    dirs,
-    shownDirs,
-    favoriteNodes,
-    favoriteDirs,
-    topicRecords,
-  } = useVaultTree(root, watch, activeFile, lens, indexSource, onRootMissing, onFileMissing, onNotice)
+  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, topicsExpanded, setTopicsExpanded, focusDirs, setFocusDirs, focusTopics, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs, topicRecords } = useVaultTree(root, watch, activeFile, lens, indexSource, onRootMissing, onFileMissing, onNotice)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
