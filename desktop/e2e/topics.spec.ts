@@ -363,6 +363,7 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
     'Paste',
     'Copy path',
     'New note',
+    'New dated note',
     'New folder page',
     'New folder',
     'New dated folder',

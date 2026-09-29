@@ -83,6 +83,8 @@ export interface MenuHandlers {
   onNotice: (message: string) => void
   onCopyForAgent: (path: string) => void
   onNewNote: () => void
+  /** "New dated note" (YAZ-2242): a note born with today's `MM_DD- ` seed. Never hidden, same as `onNewNote`. */
+  onNewDatedNote: () => void
   /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
   onNewFolderPage: () => void
   /**
@@ -217,8 +219,10 @@ const copyForAgent: Leaf = (t, h) => {
 
 const newNote: Leaf = (_t, h) => ({ id: 'new-note', label: 'New note', onSelect: h.onNewNote })
 
+const newDatedNote: Leaf = (_t, h) => ({ id: 'new-dated-note', label: 'New dated note', onSelect: h.onNewDatedNote })
+
 /**
- * Directly after "New note" (🔒 D4, YAZ-817): a folder page is a NOTE born with one flag (🔒 D1),
+ * Right after "New note" and its dated twin (🔒 D4, YAZ-817; YAZ-2242 🔒 D2): a folder page is a NOTE born with one flag (🔒 D1),
  * so it belongs beside the note it is a kind of. It creates beside the right-clicked row like
  * the rest of this group — the act-on-this-row toggle below is the other half of the gesture,
  * and the two must not drift together.
@@ -336,7 +340,7 @@ const del: Leaf = (t, h) => {
 
 const OPEN_GROUP: readonly Item[] = [openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath, copyForAgent]
-const CREATE_GROUP: readonly Item[] = [newNote, newFolderPage, newFolder, newDatedFolder]
+const CREATE_GROUP: readonly Item[] = [newNote, newDatedNote, newFolderPage, newFolder, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [toggleFolderPage, rename]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, openIn]
 const DELETE_GROUP: readonly Item[] = [del]
