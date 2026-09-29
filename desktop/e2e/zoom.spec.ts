@@ -17,7 +17,7 @@ import { appWindow, clickMenuItem, launchApp, readState, seededState, shoot } fr
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Zoomed.md'
+const NOTE = 'Outline.md'
 const BODY = '* Alpha parent\n  * Alpha child\n    * Alpha grandchild\n* Beta parent\n'
 
 let userData: string
@@ -97,11 +97,12 @@ test('step 3 — the magnification pill steps presets and takes a custom value, 
 })
 
 test('step 4 — magnification is temporary: nothing persists, and reopening the note starts at 100%', async () => {
-  expect(JSON.stringify(await readState(userData))).not.toMatch(/zoom/i)
+  // Nothing zoom-shaped in the state file (the vault's own temp name, `zoom-vault-…`, aside; the note is `Outline.md`).
+  expect(JSON.stringify(await readState(userData)).replaceAll(vault, '')).not.toMatch(/zoom/i)
   expect(await readFile(notePath, 'utf8')).toBe(BODY)
 
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')
   await expect(layer(win).locator('.document-zoom')).toHaveCount(0)
-  await win.locator('.tree__row--file', { hasText: 'Zoomed' }).click()
+  await win.locator('.tree__row--file', { hasText: 'Outline' }).click()
   await expect(pill(win).locator('.document-zoom__trigger')).toHaveAttribute('aria-label', 'Document zoom: 100%')
 })
