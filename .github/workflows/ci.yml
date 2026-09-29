@@ -1,0 +1,27 @@
+# CI (YAZ-2131 🔒 D8): every pull request and every push to main gets a typecheck, the unit-test
+# suite, a build and the size and integrity gate on it (`perf:budget:ci`, YAZ-2131 1B). The
+# Playwright suite (`npm run e2e`) is local, not run here: it drives the app's real windows, so its
+# result is pasted into each PR instead. Release packaging is release.yml.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # desktop/out against tools/perf/budget.json: renderer + main bytes, chunk closure, fonts, the CLI entry.
+      # The packaged half (.app, DMG, Info.plist, seal) is `npm run perf:budget`, run locally after desktop:build.
+      - run: npm run perf:budget:ci
