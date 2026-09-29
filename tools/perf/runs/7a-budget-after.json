@@ -1,0 +1,24 @@
+{
+  "version": "0.9.27",
+  "mode": "packaged",
+  "metrics": {
+    "appBytes": 269219356,
+    "frameworksBytes": 240920247,
+    "asarBytes": 27220223,
+    "dmgBytes": 99449036,
+    "chromiumLocaleCount": 8,
+    "chromiumLocaleBytes": 1121390,
+    "lprojCount": 55,
+    "asarNodeModulesFiles": 0,
+    "rendererEagerJsBytes": 1940301,
+    "rendererEagerCssBytes": 137574,
+    "rendererTotalBytes": 13007695,
+    "rendererMapBytes": 0,
+    "mainBundleBytes": 482730,
+    "drawingAssetBytes": 13556480
+  },
+  "over": [
+    "mainBundleBytes 482730 > ceiling 411774"
+  ],
+  "fails": []
+}
