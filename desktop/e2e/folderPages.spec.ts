@@ -61,12 +61,16 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   bulletAfterLine,
   clearOutlineLine,
+  contents,
   copyVault,
   expandDirs,
+  fileRow,
   launchApp,
+  layer,
   outlineEditor,
   outlineLineIndex,
   outlineLines,
@@ -75,7 +79,9 @@ import {
   quitApp,
   readState,
   seededState,
+  sheet,
   shoot,
+  viewTabs,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -110,10 +116,6 @@ let app: ElectronApplication
 let win: Page
 
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** Row names, whichever body renders: the unknown-view placeholder list, or the real table — the page TITLE, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
@@ -129,13 +131,11 @@ const topicRow = (w: Page, label: string) =>
   w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
 const treeChevron = (w: Page, action: 'Expand' | 'Collapse', label: string) =>
   w.locator(`.sidebar__body [aria-label="${action} ${label}"]`)
-const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 /** `data-cell="row:col"` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none. */
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /** The grouped table's section headers (4C), in document order. */
 const groupNames = (scope: Locator) => scope.locator('.view-table__group .view-group__value')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'folderpages-userdata-'))

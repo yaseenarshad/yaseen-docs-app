@@ -20,7 +20,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, md5, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, md5, quitApp, seededState, shoot, tabsOf } from './helpers'
 import { SMALL_HEIGHT, SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -65,10 +65,7 @@ let baseline: Record<string, string>
 let rootListing: string[]
 
 const fixture = (name: string) => path.join(vault, name)
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 /** The VISIBLE tab layer — hidden per-tab layers stay mounted (tabs.spec.ts's idiom). */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 
 const snapshot = async (): Promise<Record<string, string>> => ({
   [TEXT_FILE]: await md5(fixture(TEXT_FILE)),

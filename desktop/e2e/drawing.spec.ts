@@ -30,7 +30,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -113,10 +113,6 @@ let second: string
 /** Step 5's saved rectangle exactly as the preview drew it — steps 6 and 7 both redraw it again. */
 let savedSvg: string
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** Crepe's OWN slash menu (YAZ-877 rides it — there is no second popup to find). */
 const slashMenu = (w: Page) => layer(w).locator('.milkdown-slash-menu')
 const slashItem = (w: Page, label: string) => slashMenu(w).locator('li').filter({ hasText: label })

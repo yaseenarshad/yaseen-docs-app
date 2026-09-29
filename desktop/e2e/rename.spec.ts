@@ -26,13 +26,17 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  activeTab,
   appWindow,
   buildFixtureVault,
   copyVault,
+  editorOf,
+  fileRow,
   launchApp,
   quitApp,
   seededState,
   shoot,
+  tabsOf,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -52,11 +56,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 
 /** Right-click `label`'s row and drive the context menu's Rename into the inline input. */

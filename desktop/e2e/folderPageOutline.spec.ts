@@ -68,9 +68,12 @@ import {
   appWindow,
   bulletAfterLine,
   clearOutlineLine,
+  contents,
   copyVault,
+  fileRow,
   indentOutlineLine,
   launchApp,
+  layer,
   outlineEditor,
   outlineLineIndex,
   outlineLines,
@@ -79,8 +82,10 @@ import {
   pickOutlineLink,
   quitApp,
   seededState,
+  sheet,
   shoot,
   typeOutlineLine,
+  viewTabs,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -133,17 +138,12 @@ let app: ElectronApplication
 let win: Page
 
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 /** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__link')
 /** TOMBSTONE (YAZ-1152): every selector the appended section wore. It is gone, so these match nothing. */
 const appendedRows = (w: Page) =>
   w.locator('.view-outline__list, .view-outline__row, .view-outline__link, .view-outline__glyph, .view-outline__count, .view-outline__x, [data-outline-row]')
-const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 
