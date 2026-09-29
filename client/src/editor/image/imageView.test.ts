@@ -72,6 +72,11 @@ describe('rendering', () => {
     expect(root.querySelector(`.${IMAGE_HANDLE_CLASS}`)).not.toBeNull()
   })
 
+  it('decodes off the frame (YAZ-2197): a large photo scrolling in never holds the frame for its decode', async () => {
+    const { root } = await mount('![alt](images/a.png)\n')
+    expect(imgOf(root)?.decoding).toBe('async')
+  })
+
   it('no width → no `--image-width` property at all (the stylesheet falls back to `auto`); a schemed src passes through', async () => {
     const { root } = await mount('![alt](https://x/y.png)\n')
     const img = imgOf(root)

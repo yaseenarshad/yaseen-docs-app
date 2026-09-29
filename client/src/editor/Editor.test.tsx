@@ -20,6 +20,24 @@ import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/vi
 import * as frontmatter from '@shared/frontmatter'
 import * as folderMigration from '../views/migrateFolderBody'
 
+/**
+ * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
+ * through a counting wrapper, so every other test sees it render exactly as before.
+ */
+const renders = vi.hoisted(() => ({ frontmatter: 0, comments: 0, backlinks: 0 }))
+vi.mock('./FrontmatterPanel', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./FrontmatterPanel')>()
+  return { ...real, FrontmatterPanel: (props: Parameters<typeof real.FrontmatterPanel>[0]) => (renders.frontmatter++, real.FrontmatterPanel(props)) }
+})
+vi.mock('../comments/CommentsSection', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../comments/CommentsSection')>()
+  return { ...real, CommentsSection: (props: Parameters<typeof real.CommentsSection>[0]) => (renders.comments++, real.CommentsSection(props)) }
+})
+vi.mock('../links/BacklinksSection', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../links/BacklinksSection')>()
+  return { ...real, BacklinksSection: (props: Parameters<typeof real.BacklinksSection>[0]) => (renders.backlinks++, real.BacklinksSection(props)) }
+})
+
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
@@ -746,6 +764,30 @@ describe('document magnification (YAZ-1410)', () => {
     expect(scroller.style.getPropertyValue('--zoom-slack')).toBe('0px')
   })
 
+  it('skips the per-bullet walk at 100%, where the slack is 0 by definition (YAZ-2196 P9)', async () => {
+    const el = await mount(BODY)
+    const scroller = el.querySelector<HTMLElement>('.editor-host')!
+    const body = document.createElement('div')
+    body.className = 'ProseMirror'
+    body.getBoundingClientRect = () => ({ left: 0 } as DOMRect)
+    const item = document.createElement('li')
+    item.className = 'list-item'
+    const children = document.createElement('div')
+    children.className = 'children'
+    const rect = vi.fn(() => ({ left: 34 * Number(scroller.style.getPropertyValue('--document-zoom') || 1) } as DOMRect))
+    children.getBoundingClientRect = rect
+    item.append(children)
+    body.append(item)
+    el.querySelector('.editor-mount')!.append(body)
+
+    enterZoom(el, '200')
+    expect(rect).toHaveBeenCalled()
+    rect.mockClear()
+    enterZoom(el, '100')
+    expect(scroller.style.getPropertyValue('--zoom-slack')).toBe('0px')
+    expect(rect).not.toHaveBeenCalled()
+  })
+
   it('keeps retained editors independent and resets a closed/reopened instance', async () => {
     await mount(BODY)
     readFile.mockImplementation(async (path) => ({ path, content: BODY, mtime: 1, size: BODY.length }))
@@ -767,5 +809,24 @@ describe('document magnification (YAZ-1410)', () => {
     render(PATH); await settle(); await settle()
     expect(container!.querySelector('[data-pane="first"] .document-zoom__value')!.textContent).toBe('100%')
     expect(container!.querySelector('[data-pane="second"] .document-zoom__value')!.textContent).toBe('75%')
+  })
+})
+
+describe('a save repaints only the chips (YAZ-2196 P6)', () => {
+  it('the properties panel, comments and backlinks do not re-render through a whole unsaved → saving → saved cycle', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(FM + BODY, 1, { wikilinks: source })
+    expect(renders.frontmatter).toBeGreaterThan(0)
+    expect(renders.comments).toBeGreaterThan(0)
+    expect(renders.backlinks).toBeGreaterThan(0)
+    renders.frontmatter = renders.comments = renders.backlinks = 0
+
+    type('# Hello\n\nedited\n')
+    expect(el.querySelector('.save-indicator--unsaved')).not.toBeNull()
+    await pastDebounce()
+    await settle()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
+    expect(renders).toEqual({ frontmatter: 0, comments: 0, backlinks: 0 })
   })
 })

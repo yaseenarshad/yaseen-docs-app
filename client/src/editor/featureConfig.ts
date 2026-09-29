@@ -7,7 +7,7 @@
  * makes a Crepe upgrade that adds a feature fail `typecheck` until it is put on a list, so
  * Crepe's own `defaultFeatures` can never leak in silently.
  */
-import { CrepeFeature } from '@milkdown/crepe'
+import { CrepeFeature } from './crepe'
 
 export const ENABLED_FEATURES = [
   CrepeFeature.BlockEdit,
