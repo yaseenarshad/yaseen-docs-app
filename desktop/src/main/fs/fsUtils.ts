@@ -187,9 +187,10 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
 /**
  * Creates `file` durably and never over anything (YAZ-2177): a fsynced tmp sibling is `link`ed to
  * the name, and `link` refuses an existing one with EEXIST exactly like the `wx` write it replaces,
- * so callers still answer ALREADY_EXISTS (and `writeImage` still picks the next suffix). A volume
- * without hard links (exFAT/FAT) gets a fsynced `wx` write straight onto the name instead: still
- * never over anything — a rename could replace a file created in between. Parent dir must exist.
+ * so callers still answer ALREADY_EXISTS (and `writeImage` still picks the next suffix). Any other
+ * `link` failure (exFAT/FAT have no hard links) gets a fsynced `wx` write straight onto the name
+ * instead: still never over anything — a rename could replace a file created in between. Parent
+ * dir must exist.
  */
 export async function createDurable(file: string, content: string | Uint8Array): Promise<void> {
   const tmp = tmpSibling(file)

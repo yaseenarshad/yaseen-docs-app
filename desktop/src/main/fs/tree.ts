@@ -2,7 +2,7 @@ import { STALE_FLIGHT_MS, type TreeResponse } from '@shared/types'
 import { buildTree, fsCall, requireAbsPath, requireDir } from './fsUtils'
 
 /**
- * ONE walk per root at a time (YAZ-2191, draw 5E). A caller arriving mid-walk joins the single
+ * ONE walk per root at a time (YAZ-2191). A caller arriving mid-walk joins the single
  * trailing walk that starts when the current one ends — never the running one, whose snapshot may
  * predate the change behind the call — so every answer still post-dates its request, while a storm
  * of N watcher events (git pull, Finder copy, bulk rename) costs two walks instead of N concurrent

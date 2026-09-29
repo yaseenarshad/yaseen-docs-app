@@ -100,6 +100,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   Object.assign(h.s, { order: [], on: new Map(), windows: [] })
   vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', '/tmp/isolated-profile')
+  vi.stubEnv('YASEEN_DOCS_E2E', '')
   vi.resetModules()
   await import('./index')
 })
@@ -108,6 +109,15 @@ describe('main startup order (YAZ-2172)', () => {
   it('applies the isolated profile before the single-instance lock, so a test profile runs beside the real app', () => {
     expect(h.app.setPath).toHaveBeenCalledWith('userData', '/tmp/isolated-profile')
     expect(h.s.order.indexOf('setPath:userData')).toBeLessThan(h.s.order.indexOf('singleInstanceLock'))
+  })
+
+  it('claims the yaseendocs:// handler once, and never under the e2e harness (YAZ-2131 🔒 D8)', async () => {
+    expect(h.app.setAsDefaultProtocolClient).toHaveBeenCalledExactlyOnceWith('yaseendocs')
+    vi.clearAllMocks()
+    vi.stubEnv('YASEEN_DOCS_E2E', '1')
+    vi.resetModules()
+    await import('./index')
+    expect(h.app.setAsDefaultProtocolClient).not.toHaveBeenCalled()
   })
 
   it('registers app:// with exactly standard + secure + fetch + code cache, before ready', () => {
@@ -124,7 +134,11 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.manager.routeToFile).not.toHaveBeenCalled()
     h.s.ready()
     await settle()
-    expect(h.s.order.slice(h.s.order.indexOf('ready'))).toEqual(['ready', 'registerClipboardIpc', 'registerAgentIpc', 'registerIpc', 'restoreAll', `route:${NOTE}`])
+    // Every door registered before the windows restore; the cold-start link routes only after them.
+    const at = (entry: string) => h.s.order.indexOf(entry)
+    for (const door of ['registerClipboardIpc', 'registerAgentIpc', 'registerIpc']) expect(at(door)).toBeGreaterThan(at('ready'))
+    for (const door of ['registerClipboardIpc', 'registerAgentIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at('restoreAll'))
+    expect(at(`route:${NOTE}`)).toBeGreaterThan(at('restoreAll'))
   })
 
   it('after ready a link routes at once, and a bad one gets the notice instead of a route', async () => {
