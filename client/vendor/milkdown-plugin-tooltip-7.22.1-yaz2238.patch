@@ -1,0 +1,68 @@
+--- a/src/tooltip-provider.ts
++++ b/src/tooltip-provider.ts
+@@ -63,6 +63,12 @@
+   #cleanupAutoUpdate?: () => void
+ 
+   /// @internal
++  /// The state the last evaluated update saw. Updates are throttled, so a trailing call carries
++  /// only the LAST call's `prevState`; comparing against it alone let a no-op transaction hide the
++  /// real change before it (the tooltip stayed shown for a selection that was gone).
++  #lastState?: EditorState
++
++  /// @internal
+   readonly #offset?: OffsetOptions
+ 
+   /// @internal
+@@ -129,8 +135,9 @@
+     const { ranges } = selection
+     const from = Math.min(...ranges.map((range) => range.$from.pos))
+     const to = Math.max(...ranges.map((range) => range.$to.pos))
+-    const isSame =
+-      prevState && prevState.doc.eq(doc) && prevState.selection.eq(selection)
++    const unchanged = (other?: EditorState) =>
++      !!other && other.doc.eq(doc) && other.selection.eq(selection)
++    const isSame = unchanged(prevState) && unchanged(this.#lastState)
+ 
+     if (!this.#initialized) {
+       const root = this.#root ?? view.dom.parentElement ?? document.body
+@@ -139,6 +146,7 @@
+     }
+ 
+     if (composing || isSame) return
++    this.#lastState = state
+ 
+     this.#cleanupAutoUpdate?.()
+     this.#cleanupAutoUpdate = void 0
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -12,6 +12,7 @@
+ 	#root;
+ 	#initialized;
+ 	#cleanupAutoUpdate;
++	#lastState;
+ 	#offset;
+ 	#shift;
+ 	#updater;
+@@ -45,12 +46,14 @@
+ 			const { ranges } = selection;
+ 			const from = Math.min(...ranges.map((range) => range.$from.pos));
+ 			const to = Math.max(...ranges.map((range) => range.$to.pos));
+-			const isSame = prevState && prevState.doc.eq(doc) && prevState.selection.eq(selection);
++			const unchanged = (other) => !!other && other.doc.eq(doc) && other.selection.eq(selection);
++			const isSame = unchanged(prevState) && unchanged(this.#lastState);
+ 			if (!this.#initialized) {
+ 				(this.#root ?? view.dom.parentElement ?? document.body).appendChild(this.element);
+ 				this.#initialized = true;
+ 			}
+ 			if (composing || isSame) return;
++			this.#lastState = state;
+ 			this.#cleanupAutoUpdate?.();
+ 			this.#cleanupAutoUpdate = void 0;
+ 			if (!this.#shouldShow(view, prevState)) {
+@@ -143,5 +146,3 @@
+ }
+ //#endregion
+ export { TooltipProvider, tooltipFactory };
+-
+-//# sourceMappingURL=index.js.map
+\ No newline at end of file
