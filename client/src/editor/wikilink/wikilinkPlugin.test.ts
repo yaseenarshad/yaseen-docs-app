@@ -12,6 +12,7 @@ import { EditorState, TextSelection } from '@milkdown/kit/prose/state'
 import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { random } from '../testRandom'
 import {
   WIKILINK_CLASS,
   WIKILINK_SUB_CLASS,
@@ -304,16 +305,6 @@ Tail [[Last]] [[|]] [[Note|]]
     const rebuilt = () =>
       normalise(plugin.getState(EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [plugin] })) as DecorationSet)
     return { plugin, live, rebuilt }
-  }
-
-  /** Small deterministic PRNG (mulberry32), so a failure replays. */
-  function random(seed: number) {
-    return () => {
-      seed = (seed + 0x6d2b79f5) | 0
-      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-    }
   }
 
   it('a keystroke keeps the decorations of every block it did not touch (no whole-document rebuild)', async () => {
