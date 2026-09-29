@@ -18,34 +18,24 @@
 - D1 locale trim · D2 vendored Milkdown hunk + app-side memo + upstream PR (opening the PR needs Yasin's go) · D3 recursive fs.watch + conformance + chokidar polling fallback, 100 ms settle · D4 keep full snapshots · D5 tabs stay mounted + content-visibility · D6 keep serialization · D7 Windows as-is (Future) · D8 CI gates unit/typecheck/build/budget, e2e local · D9 IPC CONTRACT table · D10 Sidebar split last.
 
 ## State
-- **Lanes:** each lane is its own worktree `../ydocs-2131-<lane>` on branch `yaz-2131-lane-<lane>`, off `776a528`. They merge into `yaz-2131-speed` after 1A.
 - Done:
-  - [x] 0- Deep scope (YAZ-2132): findings, decisions, tree
-- **Built and reviewed, not yet merged:**
-  - **glue lane:** 1E (2172) and 1E1 flake fix (2233).
-  - **rel lane:** 2A–2F (2174–2179) and 5A (2191, with the 10 s liveness escape). It also has glue merged in.
-  - **pack lane:** 3A, 3B, 3C, 3D, 3E. DMG 99.6 MB, installed 269.5 MB, entry JS 1.94 MB.
-  - **edit lane:** 4B (2188) and 4C (2189).
-  - **perf lane:** 1B committed, and the 1C harness committed. The baseline run waits for a quiet window.
-- Now: [→]
-  - 1A e2e acceptance runs (quiet window, main worktree)
-  - rel lane on 5B, then 5H
-  - edit lane on the chevron fix, then 5C
-  - pack lane on 5E, 5G, 5F, then 5D
-- **Quiet-window queue:**
-  1. 1A e2e
-  2. perf baseline
-  3. merge all lanes
-  4. full `npm test` plus e2e, including the new specs `quitFlush`, `frontmatterRace`, `quitDuringStorm` and big-note
-  5. benches per lane
+  - [x] 0- Deep scope (YAZ-2132)
+  - [x] 1- Safety net: 1A–1E, 1E1. e2e 281 → 295 green 3 in a row; perf baseline frozen.
+  - [x] 2- Reliability: 2A–2F.
+  - [x] 3- Smaller: 3A–3E. DMG 140.9 → 99.6 MB; .app 324.7 → 269.5 MB.
+  - [x] 4- Launch/open: 4A–4C. 5k note 22.4 s → 1.25 s; 20k about 24 min → 5.4 s.
+  - [x] 5- Smoother: 5A–5H, 5C1. Storm 35× less CPU; watcher 2.3×, fds 10k → 1.
+  - All lanes are merged into `yaz-2131-speed` (517f778 plus spec fixes). npm test 4,666, e2e 295/295 ×3.
+- Now: [→] 6- Refactor. 6A (IPC CONTRACT, −281 prod) → 6B (−209 prod) → 6C (Sidebar split, running). These are stacked lanes: `yaz-2131-lane-6a` → `-6b` → `-6c`.
+- Next: merge 6C into `yaz-2131-speed`, then a full test and e2e window.
 - Remaining:
-  - [ ] 1D e2e gaps + REGRESSION.md (2171), after the 1A merge
-  - [ ] 4A code cache (2187). Small; the lead does it on the integration branch (`appScheme.ts` + pin).
-  - [ ] 6A–6C (2200–2202), after phases 1–5 are green
-  - [ ] 7A–7C, then 8A–8B
+  - [ ] 7A: before/after, packaged A/B with the harness, and the budget ratchet
+  - [ ] 7B: packaged-app pass
+  - [ ] 7C: demo vault plus the dev app
+  - [ ] 8A audit, 8B apply
 
 ## Open Questions
-- (none yet)
+- Future YAZ-2237: undo grouping across a tab switch predates this project. Out of scope.
 
 ## Working Set
 - Worktree `/Users/yasinarshad/Documents/GitHub/yaseen-docs-app-yaz-2131`, branch `yaz-2131-speed`, off main `63aeeea`.
