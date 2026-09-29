@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { basename } from '../lib/paths'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 
 /** What the sheet is about to delete; counts come from the caller (C3) so this stays pure. */
 export interface DeleteTarget {
@@ -55,44 +56,14 @@ interface ConfirmDeleteProps {
  * arriving from the tree must not destroy anything.
  */
 export function ConfirmDelete({ target, onConfirm, onCancel }: ConfirmDeleteProps) {
-  const cancelRef = useRef<HTMLButtonElement>(null)
   const dontAskRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => cancelRef.current?.focus(), [])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        onConfirm(dontAskRef.current?.checked === true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onConfirm, onCancel])
-
+  const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])
   return (
-    <div className="confirm-overlay" onMouseDown={onCancel}>
-      <div className="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-text" onMouseDown={(e) => e.stopPropagation()}>
-        <p className="confirm__text" id="confirm-delete-text">
-          {deleteConfirmMessage(target)}
-        </p>
-        <label className="confirm__ask">
-          <input ref={dontAskRef} type="checkbox" />
-          Don&apos;t ask me again
-        </label>
-        <div className="confirm__actions">
-          <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className="confirm__btn confirm__btn--danger" onClick={() => onConfirm(dontAskRef.current?.checked === true)}>
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmSheet labelId="confirm-delete-text" text={deleteConfirmMessage(target)} confirmLabel="Delete" danger onConfirm={confirm} onCancel={onCancel}>
+      <label className="confirm__ask">
+        <input ref={dontAskRef} type="checkbox" />
+        Don&apos;t ask me again
+      </label>
+    </ConfirmSheet>
   )
 }
