@@ -110,8 +110,8 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.s.order.indexOf('setPath:userData')).toBeLessThan(h.s.order.indexOf('singleInstanceLock'))
   })
 
-  it('registers app:// with exactly standard + secure + fetch, before ready', () => {
-    expect(h.protocol.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+  it('registers app:// with exactly standard + secure + fetch + code cache, before ready', () => {
+    expect(h.protocol.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }])
     expect(h.s.order).not.toContain('ready')
   })
 
