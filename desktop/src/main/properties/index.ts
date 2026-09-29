@@ -3,6 +3,7 @@ import { PROPERTY_KINDS, PROPERTY_NAME } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { BridgeFailure, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
+import { isRecord } from '@shared/guards'
 
 /**
  * Vault-wide property declarations (YAZ-835): `<root>/.yaseendocs/properties.json` read and
@@ -25,7 +26,6 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig
 
 export const PROPERTIES_FILE = 'properties.json'
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 // ---------- input validation (strict at the IPC boundary: a write is config, not content) ----------
 

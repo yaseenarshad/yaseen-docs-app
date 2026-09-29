@@ -1,7 +1,8 @@
 import { shell } from 'electron'
 import { stat } from 'node:fs/promises'
 import type { RevealResponse } from '@shared/types'
-import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
+import { fsCall, requireAbsPath } from './fsUtils'
+import { requireRequest } from './validate'
 
 /**
  * Reveal in Finder (GRO-2274 — LOCKED: VS Code parity for this issue).
@@ -23,8 +24,7 @@ import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
  * `docs/CONTRACTS.md`. The asymmetry is deliberate; do not "restore" it for consistency.
  */
 export async function revealItem(req: unknown): Promise<RevealResponse> {
-  if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
-  const p = requireAbsPath((req as Record<string, unknown>).path, 'path')
+  const p = requireAbsPath(requireRequest(req).path, 'path')
   return fsCall(p, async () => {
     await stat(p) // missing → ENOENT → NOT_FOUND, so a stale row can be reported
     shell.showItemInFolder(p)

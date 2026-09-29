@@ -21,6 +21,7 @@ import { FOLDER_PAGE_KEY } from '../links/folderPages'
 import { DEFAULT_VIEWS, SETTINGS_KEY } from './folderPageSettings'
 import { parseOutline, serializeOutline, type OutlineLine } from './outlineDoc'
 import { parseViews, updateViews, type ViewDef } from './viewSchema'
+import { isRecord } from '@shared/guards'
 
 export interface FolderBodyMigration {
   /** The file's new content — the input verbatim when nothing moved. */
@@ -29,7 +30,6 @@ export interface FolderBodyMigration {
   changed: boolean
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /**
  * The body as outline lines. Each line is offered to `parseOutline` ALONE first — a one-line

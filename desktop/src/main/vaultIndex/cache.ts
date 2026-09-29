@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexCacheStatus, IndexRecord } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
+import { isStringArray } from '@shared/guards'
 
 /**
  * Persistent vault-index cache (GRO-2223 D1-D4, write side GRO-2228, load side GRO-2229):
@@ -89,7 +90,6 @@ function cacheFile(dir: string, root: string): string {
   return path.join(dir, `${createHash('sha256').update(root).digest('hex').slice(0, 16)}.json`)
 }
 
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 const isFinite_ = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 /**

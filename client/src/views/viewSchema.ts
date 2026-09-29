@@ -1,4 +1,5 @@
 import { type Document, isMap, parseDocument } from 'yaml'
+import { isRecord } from '@shared/guards'
 
 /**
  * The Obsidian Bases view-schema model — the shape a folder page's `views` block round-trips
@@ -91,7 +92,6 @@ export interface ParsedViews {
   doc: Document
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 export function parseViews(text: string): ParsedViews {
   const doc = parseDocument(text, { keepSourceTokens: true })

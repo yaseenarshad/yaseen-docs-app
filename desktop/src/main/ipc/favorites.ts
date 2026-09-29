@@ -1,8 +1,9 @@
 import type { AppState } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { getFavorites, setFavorites, subscribeFavorites } from '../favorites'
-import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { isStringArray, type Store } from '../store'
+import { requireAbsPath } from '../fs/fsUtils'
+import { strArray } from '../fs/validate'
+import type { Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
@@ -31,8 +32,7 @@ export function registerFavoritesIpc(store: Store): void {
   handle(CONTRACT.favorites.get, async (root: unknown) => getFavorites(requireAbsPath(root, 'root')))
   handle(CONTRACT.favorites.set, async (root: unknown, paths: unknown) => {
     const r = requireAbsPath(root, 'root')
-    if (!isStringArray(paths)) throw new BridgeFailure('BAD_REQUEST', "'paths' must be a string array")
-    await setFavorites(r, paths)
+    await setFavorites(r, strArray(paths, 'paths'))
   })
   store.onChange(syncSubscriptions)
   syncSubscriptions(store.get())

@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { MAX_FAVORITES, VAULT_CONFIG_DIR, type FavoritesConfig } from '@shared/types'
 import { BridgeFailure, requireAbsPath } from './fs/fsUtils'
-import { isRecord, isStringArray } from './store'
+import { isRecord, isStringArray } from '@shared/guards'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 
 /**

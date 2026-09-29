@@ -1,7 +1,9 @@
 import type { FolderPatch } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { isRecord, isSettings, isStringArray, type Store } from '../store'
+import { isRecord } from '@shared/guards'
+import { strArray } from '../fs/validate'
+import { isSettings, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
@@ -9,16 +11,10 @@ import { handle } from './envelope'
 function requireFolderPatch(raw: unknown): FolderPatch {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
   const patch: FolderPatch = {}
-  if (raw.expanded !== undefined) {
-    if (!isStringArray(raw.expanded)) throw new BridgeFailure('BAD_REQUEST', "'expanded' must be a string array")
-    patch.expanded = raw.expanded
-  }
+  if (raw.expanded !== undefined) patch.expanded = strArray(raw.expanded, 'expanded')
   // The Topics tree's open pages (YAZ-848) ride the SAME patch as the file tree's open dirs —
   // one per-root bucket of paths, one channel, capped by the store on the way in.
-  if (raw.topicsExpanded !== undefined) {
-    if (!isStringArray(raw.topicsExpanded)) throw new BridgeFailure('BAD_REQUEST', "'topicsExpanded' must be a string array")
-    patch.topicsExpanded = raw.topicsExpanded
-  }
+  if (raw.topicsExpanded !== undefined) patch.topicsExpanded = strArray(raw.topicsExpanded, 'topicsExpanded')
   if (raw.lastFile !== undefined) {
     if (raw.lastFile !== null && typeof raw.lastFile !== 'string') throw new BridgeFailure('BAD_REQUEST', "'lastFile' must be a string or null")
     patch.lastFile = raw.lastFile
@@ -54,14 +50,12 @@ export function registerStateIpc(store: Store): void {
   handle(CONTRACT.state.setFolds, async (root: unknown, file: unknown, keys: unknown) => {
     const r = requireAbsPath(root, 'root')
     const f = requireAbsPath(file, 'file')
-    if (!isStringArray(keys)) throw new BridgeFailure('BAD_REQUEST', "'keys' must be a string array")
-    store.setFolds(r, f, keys)
+    store.setFolds(r, f, strArray(keys, 'keys'))
   })
   handle(CONTRACT.state.setBaseGroups, async (root: unknown, key: unknown, collapsed: unknown) => {
     const r = requireAbsPath(root, 'root')
     if (typeof key !== 'string' || key === '') throw new BridgeFailure('BAD_REQUEST', "'key' must be a non-empty string")
-    if (!isStringArray(collapsed)) throw new BridgeFailure('BAD_REQUEST', "'collapsed' must be a string array")
-    store.setBaseGroups(r, key, collapsed)
+    store.setBaseGroups(r, key, strArray(collapsed, 'collapsed'))
   })
   // Every live window gets the new state (`state.onChange` in the renderer), whichever window changed it.
   store.onChange((state) => broadcastAll(CONTRACT.state.onChange.channel, state))
