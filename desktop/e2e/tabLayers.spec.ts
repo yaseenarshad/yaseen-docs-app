@@ -84,11 +84,15 @@ test('step 2 — tab B: the hidden layer skips rendering; B gets its own scroll 
   expect(hidden).toEqual({ visibility: 'hidden', contentVisibility: 'hidden' })
 
   await line(b, 'b-line-3').click()
+  // Let the click's selectionchange reach ProseMirror before ⌘F reads the caret (helpers' `settledCaret` barrier).
+  await win.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
   await win.keyboard.press('Meta+f')
   const bar = b.locator('.find-bar')
   await expect(bar).toBeVisible()
   await bar.locator('.find-bar__input').fill('b-line-2')
-  await expect(bar.locator('.find-bar__count')).toHaveText(/^1 of \d+$/)
+  // A new query lands on the first match AT OR AFTER the caret (findInPage.ts `nextActive`): with the
+  // caret in b-line-3 that is b-line-20, the second match — b-line-2 itself sits above the caret.
+  await expect(bar.locator('.find-bar__count')).toHaveText(/^2 of \d+$/)
   recorded.bCount = (await bar.locator('.find-bar__count').textContent()) ?? undefined
   await scrollTo(b, 800)
   recorded.bTop = await scrollTop(b)
