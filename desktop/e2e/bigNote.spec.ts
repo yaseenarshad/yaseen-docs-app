@@ -15,8 +15,8 @@
  * and the middle child each own a chevron), task pairs, and a code block now and then. Every link
  * target exists, so every link must end up resolved.
  *
- * Today a 5k open freezes the renderer for ~20 s (F1), so the steps carry long timeouts. They pin
- * correctness, never time: the budgets live in the perf harness, not here.
+ * Before YAZ-2131 D2 a 5k open froze the renderer for ~20 s; the long timeouts stay as headroom.
+ * The steps pin correctness, never time: the budgets live in the perf harness, not here.
  *
  * Serial (the suite's idiom): each step continues the last.
  */
@@ -24,7 +24,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, editorOf, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, editorOf, launchApp, nextFrame, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -151,7 +151,7 @@ test('step 1 — the 5k mixed note opens with every heading, bullet, chevron and
   await shoot(win, 'bignote-01-mixed-open')
 })
 
-test('step 2 — a caret in a grandchild threads its three-bullet path; folding a parent hides its branch and persists the key', async () => {
+test('step 2 — a caret in a grandchild threads its three-bullet path; Enter there types into the new bullet; folding a parent hides its branch and persists the key', async () => {
   test.setTimeout(120_000)
   await lineOf(win, /^Grandchild 1 /).click()
   const thread = editorOf(win).locator('.outline-thread-node')
@@ -160,6 +160,17 @@ test('step 2 — a caret in a grandchild threads its three-bullet path; folding 
   await expect(thread.nth(0).locator('p').first()).toHaveText(/^Parent 1 /)
   await expect(thread.nth(1).locator('p').first()).toHaveText(/^Child 1a /)
   await expect(thread.nth(2).locator('p').first()).toHaveText(/^Grandchild 1 /)
+
+  // D2's own promise: every list-item mount restores the caret, and it lands where the user put it.
+  // Enter at the end of a bullet mounts a new item: the typing goes into it, and nothing else moves.
+  const before = await editorOf(win).locator('p').allTextContents()
+  const at = before.findIndex((t) => /^Grandchild 1 /.test(t))
+  await win.keyboard.press('Meta+ArrowRight')
+  await nextFrame(win) // ProseMirror has taken the caret before Enter reads it
+  await win.keyboard.press('Enter')
+  await win.keyboard.type('X')
+  await expect(lineOf(win, /^X$/)).toBeVisible()
+  expect(await editorOf(win).locator('p').allTextContents()).toEqual([...before.slice(0, at + 1), 'X', ...before.slice(at + 1)])
 
   await editorOf(win).locator('button.outline-toggle[aria-label^="Collapse Parent 1 "]').click()
   await expect(editorOf(win).locator('button.outline-toggle[aria-label^="Expand Parent 1 "]')).toHaveAttribute('aria-expanded', 'false')
@@ -171,7 +182,7 @@ test('step 2 — a caret in a grandchild threads its three-bullet path; folding 
   await shoot(win, 'bignote-02-threaded-and-folded')
 })
 
-test('step 3 — quit → relaunch: the fold comes back on the same 5k note, and the rest renders exactly as before', async () => {
+test('step 3 — quit → relaunch: the fold comes back on the same 5k note, with every chevron and link', async () => {
   test.setTimeout(300_000)
   await quitApp(app)
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
