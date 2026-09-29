@@ -19,18 +19,13 @@
 
 ## State
 - Done:
-  - [x] 0- Scope · 1- Safety net (1A–1E, 1E1, 1D1) · 2- Reliability · 3- Smaller · 4- Launch/open · 5- Smoother (incl. 5C1, 5A1, 5D1) · 6- Refactor (6A–6C)
-  - [x] 7A first pass: the table is posted. Yasin approved the `mainBundleBytes` raise (482,730).
-  - [x] 8A audit (19 must / 52 should / 57 nit), then 8B across 4 code lanes plus the docs pass.
-  - Gates at `72e468c`: `npm test` 4,674 green, typecheck clean, e2e 295/295 ×3 (at `1ec0b02`).
-- Now: [→]
-  - 7B: packaged-app pass on the final package
-  - 7A re-measure: the 5D1/5A1 rows, needing a quiet machine
-- Next:
-  - 7C: rebuild `desktop/out` at the final HEAD, then launch the demo
-  - the closing comments on YAZ-2131, 7A, 8B
-  - leave the worktrees in place for Yasin's testing
-  - **no merge to main**
+  - [x] Phases 0–8 and every child. Added along the way: 1E1, 1D1, 5C1, 5A1, 5D1, 7B1.
+  - Final gates on `1895f0a`: `npm test` 4,676 green (+2 opt-in), typecheck clean, e2e 295/295 ×3, `perf:budget` green.
+  - The final 7A table is on YAZ-2204; the handoff is on YAZ-2131.
+- CLOSED 2026-09-28 (build side). YAZ-2131, 8 and 8B are **In Review**, awaiting Yasin's test.
+- **Nothing is merged to main, and no release is cut.**
+- The demo rig is `~/Desktop/Speed & Optimization/` (the dev app is running).
+- Remove the lane worktrees and the demo after the merge Yasin confirms. The lane worktrees are `../ydocs-2131-{glue,rel,perf,pack,edit,merge}`.
 
 ## Open Questions
 - 🔔 Needs Yasin (posted on YAZ-2131): N1 open the upstream Milkdown PRs? N2 keep the YAZ-2238 tooltip patch?
