@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TreeNode, TreeResponse, WatchEvent } from '@shared/types'
 import { api } from '../api'
 import type { WatchListener, WatchSource } from './useWatch'
+import { fetchTree } from '../lib/treeFeed'
 import { useViewOnlyCatalog, type ViewOnlyCatalogState } from './useViewOnlyCatalog'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -118,5 +119,31 @@ describe('useViewOnlyCatalog (YAZ-1310)', () => {
     expect(state.status).toBe('error')
     expect(state.error).toBe('offline')
     expect(state.catalog.resolve('data.json')).toBe('/vault/data.json')
+  })
+
+  describe('one tree feed per window (YAZ-2191)', () => {
+    it('mounting in the same turn as the sidebar\'s first read shares that one request', async () => {
+      act(() => {
+        void fetchTree('/vault') // the sidebar's mount read, same commit
+        mount()
+      })
+      await flush()
+      expect(treeApi).toHaveBeenCalledTimes(1)
+      expect(state.status).toBe('ready')
+    })
+
+    it('a read another consumer sent after the event covers it: the catalog takes that answer and sends none', async () => {
+      mount()
+      await flush()
+      treeApi.mockResolvedValueOnce(response(node('/vault/data.json', 'text'), node('/vault/cover.WEBP', 'image')))
+      await act(async () => {
+        listeners.forEach((listener) => listener({ type: 'add', path: '/vault/cover.WEBP', mtime: 2 }))
+        await vi.advanceTimersByTimeAsync(100)
+        void fetchTree('/vault') // the sidebar's debounced read of the same burst
+        await vi.advanceTimersByTimeAsync(300)
+      })
+      expect(treeApi).toHaveBeenCalledTimes(2)
+      expect(state.catalog.resolve('cover.webp')).toBe('/vault/cover.WEBP')
+    })
   })
 })

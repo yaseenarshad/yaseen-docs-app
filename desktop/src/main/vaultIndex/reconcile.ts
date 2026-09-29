@@ -65,7 +65,7 @@ export async function reconcile(
   const added: FileStat[] = []
   const changed: string[] = []
   // The validation stats run as a SYNC loop, not through the async 32-cap worker pool: build()
-  // subscribes the (fresh) chokidar watcher just before reconciling, and its initial scan floods
+  // subscribes the (fresh) watcher just before reconciling, and its initial walk floods
   // the 4-thread libuv pool — async stats queue FIFO behind it and drain at the watcher's pace
   // (~660 ms at 10k notes vs ~27 ms sync, GRO-2229 bench). statSync bypasses the pool entirely;
   // the one-time ~27 ms loop block at vault open matches the main process's existing sync fs use

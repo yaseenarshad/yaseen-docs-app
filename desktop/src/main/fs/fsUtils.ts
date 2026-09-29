@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { link, open, readdir, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { BridgeError, FileKind, TreeNode } from '@shared/types'
-import { fileKind, isMarkdown, isSupportedFile } from '@shared/fileKind'
+import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
 
@@ -106,8 +106,9 @@ export async function requireDir(dir: string): Promise<void> {
 /**
  * Recursive tree of every regular file under `dir`, each carrying its preview `kind` (`null` = no
  * in-app viewer, YAZ-1577 D1). Dirs first, then files, each sorted case-insensitively; every dir
- * shows even when empty, so freshly created folders are visible (GRO-2022 D1). Dot-entries and
- * `node_modules` are skipped; unreadable subdirs are skipped.
+ * shows even when empty, so freshly created folders are visible (GRO-2022 D1). Dot-entries,
+ * `node_modules` and crash-left atomic-write tmps (`isAtomicTmp`, YAZ-2179) are skipped;
+ * unreadable subdirs are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -115,7 +116,7 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
   const files: TreeNode[] = []
   await Promise.all(
     entries.map(async (e) => {
-      if (isSkipped(e.name)) return
+      if (isSkipped(e.name) || isAtomicTmp(e.name)) return
       const full = path.join(dir, e.name)
       if (e.isDirectory()) {
         const children = await buildTree(full).catch(() => null)
@@ -130,14 +131,31 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
 }
 
 /**
- * Writes `content` to `<file>.tmp-<rand>` then renames over `file`. Parent dir must exist.
- * A string lands as UTF-8; bytes (an image through `writeAsset`, YAZ-1661) land verbatim —
- * `writeFile` ignores the encoding for a view, so one call serves both.
+ * Opens, writes and fsyncs before closing (YAZ-2177; libuv issues F_FULLFSYNC on macOS): the bytes
+ * are on disk before a rename or link gives them a real name, so a crash or power loss can't
+ * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
+ * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
  */
-export async function atomicWrite(file: string, content: string | Uint8Array): Promise<{ mtime: number; size: number }> {
-  const tmp = `${file}.tmp-${randomBytes(6).toString('hex')}`
+async function writeDurable(file: string, content: string | Uint8Array, flag: 'w' | 'wx'): Promise<void> {
+  const fh = await open(file, flag)
   try {
-    await writeFile(tmp, content, 'utf8')
+    await fh.writeFile(content, 'utf8')
+    await fh.sync()
+  } finally {
+    await fh.close()
+  }
+}
+
+/** The sibling a write lands in before it takes `file`'s name: same dir, so the rename or link is atomic. */
+function tmpSibling(file: string): string {
+  return `${file}.tmp-${randomBytes(ATOMIC_TMP_HEX_LEN / 2).toString('hex')}`
+}
+
+/** Writes `content` durably to a tmp sibling then renames it over `file`. Parent dir must exist. */
+export async function atomicWrite(file: string, content: string | Uint8Array): Promise<{ mtime: number; size: number }> {
+  const tmp = tmpSibling(file)
+  try {
+    await writeDurable(tmp, content, 'w')
     await rename(tmp, file)
   } catch (err) {
     await unlink(tmp).catch(() => undefined)
@@ -145,4 +163,26 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
   }
   const st = await stat(file)
   return { mtime: st.mtimeMs, size: st.size }
+}
+
+/**
+ * Creates `file` durably and never over anything (YAZ-2177): a fsynced tmp sibling is `link`ed to
+ * the name, and `link` refuses an existing one with EEXIST exactly like the `wx` write it replaces,
+ * so callers still answer ALREADY_EXISTS (and `writeImage` still picks the next suffix). A volume
+ * without hard links (exFAT/FAT) gets a fsynced `wx` write straight onto the name instead: still
+ * never over anything — a rename could replace a file created in between. Parent dir must exist.
+ */
+export async function createDurable(file: string, content: string | Uint8Array): Promise<void> {
+  const tmp = tmpSibling(file)
+  try {
+    await writeDurable(tmp, content, 'wx')
+    try {
+      await link(tmp, file)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') throw err
+      await writeDurable(file, content, 'wx')
+    }
+  } finally {
+    await unlink(tmp).catch(() => undefined)
+  }
 }

@@ -51,3 +51,14 @@ export function canRenameWithoutConversion(oldName: string, newName: string): bo
   if (oldExtension === newExtension) return true
   return ['.jpg', '.jpeg'].includes(oldExtension) && ['.jpg', '.jpeg'].includes(newExtension)
 }
+
+/** How many hex digits end an atomic write's tmp name, `<file>.tmp-<hex>` (`tmpSibling` in main's `fs/fsUtils.ts`). */
+export const ATOMIC_TMP_HEX_LEN = 12
+const ATOMIC_TMP = new RegExp(`\\.tmp-[0-9a-f]{${ATOMIC_TMP_HEX_LEN}}$`)
+
+/**
+ * Whether `name` (or a path) is an atomic write's own tmp file. One that outlives its write is a
+ * crash's leftover and may be the only copy of a torn save, so it is never deleted; it is just
+ * never listed, never watched and never synced (YAZ-2179).
+ */
+export const isAtomicTmp = (name: string): boolean => ATOMIC_TMP.test(name)

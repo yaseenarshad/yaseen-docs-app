@@ -115,6 +115,16 @@ describe('shared watchers', () => {
     expect(await a.next()).toEqual({ type: 'addDir', path: path.join(root, 'control-dir') })
   })
 
+  it("a crash-left atomic-write tmp emits NOTHING; a user file with `.tmp` in its name is reported (YAZ-2179)", async () => {
+    const a = openWatch(root)
+    await a.next()
+    await writeFile(path.join(root, 'alpha', 'a.md.tmp-0123456789ab'), 'torn')
+    await new Promise((r) => setTimeout(r, 500)) // past `awaitWriteFinish`: a reported tmp would arrive first
+    const mine = path.join(root, 'alpha', 'notes.tmp-draft.md')
+    await writeFile(mine, 'mine')
+    expect(await a.next()).toMatchObject({ type: 'add', path: mine })
+  })
+
   it('closes the watcher only when the last subscriber leaves', async () => {
     const a = openWatch(root)
     const b = openWatch(root)

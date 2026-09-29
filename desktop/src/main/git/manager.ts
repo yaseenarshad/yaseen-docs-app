@@ -67,6 +67,8 @@ export interface GitSyncManager {
 interface Follow {
   promise: Promise<GithubSyncStatus>
   resolve: (status: GithubSyncStatus) => void
+  /** Any joiner asked for the quit variant, so the follow-up runs as the flush pass (YAZ-2176). */
+  flush: boolean
 }
 
 /** One managed (enabled) root. Roots that are merely open have no entry — that is guarantee 3. */
@@ -140,8 +142,9 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
       const promise = new Promise<GithubSyncStatus>((r) => {
         resolve = r
       })
-      entry.follow = { promise, resolve }
+      entry.follow = { promise, resolve, flush: false }
     }
+    if (flush) entry.follow.flush = true
     return entry.follow.promise
   }
 
@@ -189,7 +192,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     entry.busy = false
     if (follow === null) return status
     if (entry.dropped) follow.resolve(status)
-    else void runPass(root, entry).then(follow.resolve, () => follow.resolve(status))
+    else void runPass(root, entry, follow.flush).then(follow.resolve, () => follow.resolve(status))
     return status
   }
 
