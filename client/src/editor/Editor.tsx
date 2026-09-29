@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
@@ -42,6 +42,16 @@ import { HOME_LINK } from '../sidebar/ensureHome'
 import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
+
+/**
+ * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
+ * depend on none of it, yet each pass re-parsed the YAML and re-ran marked + DOMPurify per comment
+ * (YAZ-2196). Memoised, they re-render only when their own inputs or subscriptions change.
+ */
+const MemoFrontmatterPanel = memo(FrontmatterPanel)
+const MemoFolderPageContents = memo(FolderPageContents)
+const MemoCommentsSection = memo(CommentsSection)
+const MemoBacklinksSection = memo(BacklinksSection)
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
@@ -234,6 +244,12 @@ function CrepeHost({
     if (!scroller || !body) return
     const sync = () => {
       const zoom = documentZoomRef.current / 100
+      // At 100% the slack is 0 by definition (deepest − deepest / 1): skip the per-bullet rect walk,
+      // 5.7 ms per Enter on a 5k-line note (YAZ-2196).
+      if (zoom === 1) {
+        scroller.style.setProperty('--zoom-slack', '0px')
+        return
+      }
       const left = body.getBoundingClientRect().left
       let deepest = 0
       for (const el of body.querySelectorAll('.list-item > .children')) deepest = Math.max(deepest, el.getBoundingClientRect().left - left)
@@ -271,6 +287,8 @@ function CrepeHost({
    * follows it, exactly the "reloaded under us" case its snapshot was built for.
    */
   const [disk, setDisk] = useState(file.content)
+  /** The disk-truth file both panels read: one identity per `disk`, so the memoised panels skip a save. */
+  const diskFile = useMemo(() => ({ ...file, content: disk }), [file, disk])
   /**
    * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
    * modal's save pokes it, so a scene written back re-renders every preview of it in this editor
@@ -342,7 +360,7 @@ function CrepeHost({
       // note path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
       markdownLinkNav: {
-        open: (href) => api.openLink({ href, sourcePath: file.path }),
+        open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
         onNotice: onNotice ?? (() => undefined),
       },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
@@ -480,17 +498,17 @@ function CrepeHost({
           {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App already threads here for
               the contents block below — ONE registry, so a type declared in a row types the same
               column in every folder page's views. */}
-          <FrontmatterPanel file={{ ...file, content: disk }} root={root} properties={properties} wikilinks={wikilinks} />
+          <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} />
         </div>
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
-          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} fileContent={file.content} />
+          <MemoFolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} fileContent={file.content} />
         )}
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
             writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
-        <CommentsSection file={{ ...file, content: disk }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
+        <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
         {wikilinks !== undefined && (
-          <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
+          <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}
       </div>
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the

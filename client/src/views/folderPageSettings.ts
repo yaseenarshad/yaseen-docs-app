@@ -14,6 +14,7 @@ import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitF
 import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { DEFAULT_COLUMNS } from '@shared/folderPageDefaults'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
+import { isRecord } from '@shared/guards'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { FOLDER_PAGE_KEY, isExactWikilink } from '../links/folderPages'
 import { mapOutlineLinks, parseOutline } from './outlineDoc'
@@ -105,8 +106,6 @@ export function turnIntoFolderPage(content: string): string {
 }
 
 const KINDS = new Set<string>(PROPERTY_KINDS)
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /** A fresh copy per read: the defaults are handed out to be edited and written back. */
 const defaultViews = (): ViewDef[] => DEFAULT_VIEWS.map((view) => ({ ...view }))

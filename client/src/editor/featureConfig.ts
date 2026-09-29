@@ -1,13 +1,15 @@
 /**
  * Crepe feature allowlist (GRO-2014, GRO-1805 D17). The ONE place that says which Crepe
  * features this editor loads; `createCrepe()` passes `features` through untouched and
- * `featureConfig.test.ts` checks the running editor against `ENABLED_FEATURES`.
+ * `featureConfig.test.ts` checks the running editor against `ENABLED_FEATURES`. Enabling one also
+ * means adding its loader to `crepe.ts` `LOADERS` and its theme CSS to `main.tsx` (YAZ-2184);
+ * `crepe.test.ts` pins both.
  *
  * Every `CrepeFeature` must be classified here — the `Record<CrepeFeature, boolean>` type
  * makes a Crepe upgrade that adds a feature fail `typecheck` until it is put on a list, so
  * Crepe's own `defaultFeatures` can never leak in silently.
  */
-import { CrepeFeature } from '@milkdown/crepe'
+import { CrepeFeature } from './crepe'
 
 export const ENABLED_FEATURES = [
   CrepeFeature.BlockEdit,

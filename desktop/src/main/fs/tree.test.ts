@@ -1,9 +1,17 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { rm, writeFile } from 'node:fs/promises'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { writeFileSync } from 'node:fs'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { TreeNode } from '@shared/types'
+import { STALE_FLIGHT_MS, type TreeNode } from '@shared/types'
+import { buildTree } from './fsUtils'
 import { tree } from './tree'
 import { failure, makeFixture } from './testFixture'
+
+// A pass-through spy: the single-flight tests count real walks.
+vi.mock('./fsUtils', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./fsUtils')>()
+  return { ...m, buildTree: vi.fn(m.buildTree) }
+})
 
 let root: string
 let cleanup: () => Promise<void>
@@ -67,6 +75,21 @@ describe('tree', () => {
     }
   })
 
+  it("hides a crash-left atomic-write tmp (never deletes it), while names that merely contain `.tmp` still show (YAZ-2179)", async () => {
+    const leftover = path.join(root, 'alpha', 'a.md.tmp-0123456789ab')
+    const lookalikes = ['notes.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'y.md.tmp-0123456789AB', 'z.md.tmp-0123456789a']
+    try {
+      await writeFile(leftover, '# a (the only copy of a torn save)')
+      await Promise.all(lookalikes.map((name) => writeFile(path.join(root, name), 'mine')))
+      const all = files(await tree(root)).map((node) => node.name)
+      expect(all).not.toContain('a.md.tmp-0123456789ab')
+      expect(all).toEqual(expect.arrayContaining(lookalikes))
+      expect(await readFile(leftover, 'utf8')).toBe('# a (the only copy of a torn save)')
+    } finally {
+      await Promise.all([leftover, ...lookalikes.map((name) => path.join(root, name))].map((file) => rm(file, { force: true })))
+    }
+  })
+
   it('file nodes carry size, mtime and kind', async () => {
     const body = await tree(root)
     const a = body.tree.find((n) => n.name === 'A.md')
@@ -94,3 +117,63 @@ const files = (body: Awaited<ReturnType<typeof tree>>): FileNode[] => {
   const collect = (nodes: TreeNode[]): FileNode[] => nodes.flatMap((node) => (node.type === 'dir' ? collect(node.children) : [node]))
   return collect(body.tree)
 }
+
+describe('tree: one walk per root at a time (YAZ-2191)', () => {
+  const walks = () => vi.mocked(buildTree).mock.calls.filter(([dir]) => dir === root).length
+
+  it('N callers during a walk share ONE trailing walk, whose answer post-dates their request', async () => {
+    vi.mocked(buildTree).mockClear()
+    const first = tree(root)
+    const late = path.join(root, 'arrived-mid-walk.md')
+    writeFileSync(late, 'x') // the change behind the calls below, landing after the first walk began
+    try {
+      const joiners = Array.from({ length: 10 }, () => tree(root))
+      const answers = await Promise.all([first, ...joiners])
+      expect(walks()).toBe(2)
+      expect(answers[1]).not.toBe(answers[0]) // never the running walk's answer
+      for (const a of answers.slice(1)) expect(a).toBe(answers[1]) // one shared answer
+      expect(flatten(answers[1].tree)).toContain(late)
+    } finally {
+      await rm(late)
+    }
+  })
+
+  it('a call after the flight settles walks again: nothing is cached', async () => {
+    await tree(root)
+    vi.mocked(buildTree).mockClear()
+    await tree(root)
+    expect(walks()).toBe(1)
+  })
+
+  it('a failed walk rejects its callers and leaves the next call free to walk', async () => {
+    const missing = path.join(root, 'gone')
+    const [a, b] = await Promise.allSettled([tree(missing), tree(missing)])
+    expect([a.status, b.status]).toEqual(['rejected', 'rejected'])
+    expect((await failure(tree(missing))).code).toBe('NOT_FOUND')
+    expect((await tree(root)).root).toBe(root)
+  })
+
+  it('liveness: a caller arriving after a walk has hung STALE_FLIGHT_MS walks on its own; the hung one, recovering, clobbers nothing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      let recover!: () => void
+      vi.mocked(buildTree).mockImplementationOnce(() => new Promise((r) => (recover = () => r([])))) // a hung volume
+      const hung = tree(root)
+      const queued = tree(root) // arrived in time: waits behind the hung walk, as designed
+      vi.setSystemTime(Date.now() + STALE_FLIGHT_MS + 1)
+      const fresh = tree(root)
+      const joiner = tree(root) // mid the fresh walk: joins ITS trailing walk
+      expect((await fresh).root).toBe(root)
+      expect((await joiner).root).toBe(root)
+      recover()
+      expect((await hung).tree).toEqual([])
+      expect((await queued).tree.length).toBeGreaterThan(0) // its trailing walk still ran, on its own
+      vi.mocked(buildTree).mockClear()
+      await Promise.all([tree(root), tree(root)])
+      expect(walks()).toBe(2) // back to one flight per root
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+})

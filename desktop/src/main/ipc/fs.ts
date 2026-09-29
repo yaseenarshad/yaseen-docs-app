@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { CH } from '../../channels'
+import { CONTRACT } from '@shared/ipc'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import { readAsset, writeAsset } from '../fs/assets'
@@ -19,11 +19,8 @@ import { tree } from '../fs/tree'
 import type { Store } from '../store'
 import { getColdStartDiff, getIndex } from '../vaultIndex'
 import type { WindowLookup } from '../windows'
-import { broadcastAll } from './broadcast'
+import { broadcastAll, rootsOf } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
-
-/** The open-vault roots (`AppState.windows`, null = Welcome) — where a favorites.json may need repair (YAZ-1766 D13). */
-const openRoots = (store: Store): string[] => store.get().windows.map((w) => w.root).filter((r): r is string => r !== null)
 
 /**
  * The favorites.json repair (YAZ-1766 6A, D13) rides the SAME handlers as the store repair below,
@@ -34,42 +31,42 @@ const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unkno
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
 export function registerFsIpc(store: Store, windows: WindowLookup): void {
-  handle(CH.fsTree, tree)
-  handle(CH.fsRead, readFile)
-  handle(CH.fsReadPdf, readPdf)
-  handle(CH.fsReadImage, readImage)
-  handle(CH.fsWrite, writeFile)
-  handle(CH.fsCreateDir, createDir)
-  handle(CH.fsCreateFile, createFile)
-  handle(CH.fsIndex, getIndex)
+  handle(CONTRACT.tree, tree)
+  handle(CONTRACT.readFile, readFile)
+  handle(CONTRACT.readPdf, readPdf)
+  handle(CONTRACT.readImage, readImage)
+  handle(CONTRACT.writeFile, writeFile)
+  handle(CONTRACT.createDir, createDir)
+  handle(CONTRACT.createFile, createFile)
+  handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle
   // eviction drops the entry); the index cache's honest-miss semantics ride through untouched —
   // consumers gate on cacheStatus === 'hit'.
-  handle(CH.fsColdDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
-  handle(CH.fsReadAsset, readAsset)
+  handle(CONTRACT.coldDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
+  handle(CONTRACT.readAsset, readAsset)
   // The asset write (YAZ-876 drawings, YAZ-1661 image bytes): no store repair and no broadcast
   // — repair and the pushes exist for paths that MOVE or GO, and a write does neither. A
   // `.excalidraw` is not a vault file, so nothing points at it; a pasted image is a NEW file
   // the tree learns of from the watcher, like any add made outside the app.
-  handle(CH.fsWriteAsset, writeAsset)
+  handle(CONTRACT.writeAsset, writeAsset)
   // Reveal in Finder (GRO-2274): read-only, so no store repair and no broadcast — but still
   // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a
   // passive notice instead of vanishing (showItemInFolder is silent on a missing path).
-  handle(CH.shellReveal, revealItem)
+  handle(CONTRACT.shell.reveal, revealItem)
   // Open in VS Code (YAZ-963): reveal's twin in every respect — read-only, nothing to repair,
   // nothing to broadcast, and enveloped for the same NOT_FOUND notice.
-  handle(CH.shellOpenVsCode, openInVsCode)
+  handle(CONTRACT.shell.openVsCode, openInVsCode)
   // Open in default app (YAZ-1577): third of the read-only OS verbs — same envelope, same NOT_FOUND notice.
-  handle(CH.shellOpenDefault, openInDefaultApp)
+  handle(CONTRACT.shell.openDefault, openInDefaultApp)
   // Standard Markdown links: main owns protocol/path validation and the Electron shell boundary.
-  handle(CH.shellOpenLink, openLink)
+  handle(CONTRACT.shell.openLink, openLink)
   // In-app rename/move (Links E1 GRO-2194, E1b GRO-2241). The SAME handler repairs the
   // store — every stored path at or under the renamed entry follows (window roots/files/
   // tabs, recents, folder state) — and then pushes `file:renamed` to EVERY window so open
   // tabs remap in place (a `dir` event remaps by prefix). The vault index needs no push:
   // the shared watcher's unlink+add echo already heals it (no double-processing).
-  handleWithEvent(CH.fsRename, async (e, req: unknown) => {
+  handleWithEvent(CONTRACT.file.rename, async (e, req: unknown) => {
     // E1b: the calling window's own vault ROOT cannot be renamed — root identity is a
     // recents/vault-management question (which recents entry follows, what this window's
     // identity then means), out of E1b's scope. ANOTHER window rooted at a subfolder of
@@ -82,8 +79,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     }
     const res = await renameFile(req)
     store.renamePath(res.oldPath, res.newPath)
-    await repairFavorites(favorites.renamePath(openRoots(store), res.oldPath, res.newPath))
-    broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   })
   // In-app delete (GRO-2272). Deliberately the SAME shape as the rename handler above —
@@ -95,8 +92,9 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   //    the deleted page stay byte-identical and their [[links]] simply go unresolved.
   // Like rename, the vault index needs no push: the watcher's unlink / unlinkDir echo heals
   // it (verified empirically in the GRO-2275 scope pass — trashItem is a MOVE at the fs
-  // layer, so chokidar reports it exactly like any other move out of the root).
-  handleWithEvent(CH.fsDelete, async (e, req: unknown) => {
+  // layer, so the watcher reports it exactly like any other move out of the root; pinned by
+  // watchConformance.ts, YAZ-2192).
+  handleWithEvent(CONTRACT.file.delete, async (e, req: unknown) => {
     // The calling window's own vault ROOT cannot be deleted — same reasoning and the same
     // sender lookup as rename: root identity is a recents/vault-management question. ANOTHER
     // window rooted inside the deleted folder IS allowed; it falls through to that window's
@@ -109,8 +107,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     }
     const res = await removeEntry(req)
     store.removePath(res.path)
-    await repairFavorites(favorites.removePath(openRoots(store), res.path))
-    broadcastAll(CH.fileDeleted, { path: res.path, kind: res.kind })
+    await repairFavorites(favorites.removePath(rootsOf(store.get()), res.path))
+    broadcastAll(CONTRACT.file.onDeleted.channel, { path: res.path, kind: res.kind })
     return res
   })
   // External-rename repair (Links E1c, GRO-2242): the entry ALREADY moved on disk (an external
@@ -119,11 +117,11 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // the same store repair and the same file:renamed push (tab remap, editor continuity,
   // title/hash). No vault-root guard here — nothing moves, and a window rooted at a repaired
   // folder is exactly what store.renamePath heals.
-  handle(CH.fileRepairRename, async (req: unknown) => {
+  handle(CONTRACT.file.repairRename, async (req: unknown) => {
     const res = await repairRename(req)
     store.renamePath(res.oldPath, res.newPath)
-    await repairFavorites(favorites.renamePath(openRoots(store), res.oldPath, res.newPath))
-    broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   })
   // File clipboard (YAZ-1674, D1): the ONE app-wide clipboard lives in main (`fileClip`), so a
@@ -131,17 +129,17 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // Every change is pushed to EVERY window as `clip:changed` (the github status posture):
   // that is how a menu on vault B learns "Paste 3 items" after a cut on vault A.
   // Subscribed once for the process's life — `registerFsIpc` runs once, so there is nothing to unsubscribe.
-  fileClip.onChange((state) => broadcastAll(CH.clipChanged, state))
+  fileClip.onChange((state) => broadcastAll(CONTRACT.file.onClipChanged.channel, state))
   // Cut / Copy is a pure clipboard write: nothing on disk is touched or even stat'ed, so there
   // is no store repair and no file push here — a path that goes stale before the paste is
   // reported per entry BY the paste. No vault-root guard either: Cut/Copy is offered on ROWS
   // only, never on blank space, and a window's own root is never a row of its tree (D5/D6; see CONTRACTS).
-  handle(CH.fsClip, async (req: unknown) => {
+  handle(CONTRACT.file.clip, async (req: unknown) => {
     fileClip.set(req)
   })
   // A window opened AFTER a clip missed the push: it reads the current state once on mount,
   // then `clip:changed` carries the rest (the same catch-up read `github.status` offers).
-  handle(CH.fsClipState, async () => fileClip.state())
+  handle(CONTRACT.file.clipState, async () => fileClip.state())
   // Paste (D2–D4). Per entry, in clipboard order, and one bad entry never stops the rest:
   //  - a COPY is `copyEntry` (fs.cp under Finder's next free name, D3/D4) with deliberately NO
   //    store repair and NO broadcast — nothing moved and nothing went, so there is nothing to
@@ -154,7 +152,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // A cut pastes ONCE: the clipboard clears when at least one entry landed (a cut whose every
   // entry failed stays, so the user can fix the cause and paste again); a copy is kept and
   // pastes again and again (D2).
-  handle(CH.fsPaste, async (req: unknown) => {
+  handle(CONTRACT.file.paste, async (req: unknown) => {
     const clip = fileClip.get()
     if (clip === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
     const res = await pasteEntries(clip, req, {
@@ -162,8 +160,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
       move: async (from, to) => {
         const r = await renameFile({ oldPath: from, newPath: to })
         store.renamePath(r.oldPath, r.newPath)
-        await repairFavorites(favorites.renamePath(openRoots(store), r.oldPath, r.newPath))
-        broadcastAll(CH.fileRenamed, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
+        await repairFavorites(favorites.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
+        broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
         return r
       },
     })

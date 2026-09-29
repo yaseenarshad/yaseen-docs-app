@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GithubSyncStatus, VaultConfigChange, WatchEvent } from '@shared/types'
+import { isRecord } from '@shared/guards'
 import { createGitSync, GITHUB_SYNC_FILE, type GitSyncHost } from './manager'
 
 /**
@@ -24,8 +25,6 @@ async function until(cond: () => boolean, ms = 2000): Promise<void> {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 interface Harness {
   host: GitSyncHost
@@ -370,5 +369,29 @@ describe('flushForQuit', () => {
     expect(h.flushes).toEqual([ROOT])
     await sleep(60)
     expect(h.passes).toHaveLength(2)
+  })
+
+  it('a quit that joins an in-flight pass runs the follow-up as the flush variant (YAZ-2176)', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    const h = harness({
+      pass: async (root, n) => {
+        if (n === 1) await held // a focus/adoption pull still fetching when ⌘Q lands
+        return { root, state: 'synced' }
+      },
+    })
+    h.enabled.set(ROOT, true)
+    const manager = createGitSync(h.host)
+    manager.setOpenRoots([ROOT])
+    await until(() => h.passes.length === 1)
+
+    const quit = manager.flushForQuit()
+    await sleep(20)
+    release()
+    await quit
+
+    expect(h.passes).toEqual([ROOT, ROOT])
+    // The follow-up is the quit pass: no fetch/rebase, and the push carries the 5 s cap (sync.ts).
+    expect(h.flushes).toEqual([ROOT])
   })
 })

@@ -31,21 +31,27 @@ export async function launchApp({ userData, seedState }: LaunchOptions): Promise
   if (seedState !== undefined) {
     await writeFile(path.join(userData, 'yaseendocs.json'), JSON.stringify(seedState, null, 2))
   }
-  return _electron.launch({ args: [MAIN_ENTRY, `--user-data-dir=${userData}`] })
+  // YASEEN_DOCS_E2E: the dev binary must not claim the machine's yaseendocs:// handler (YAZ-2168).
+  // YASEEN_DOCS_USER_DATA_DIR is pinned to the same temp profile: main applies it over
+  // --user-data-dir, so one inherited from the calling shell would point the app at another profile.
+  return _electron.launch({
+    args: [MAIN_ENTRY, `--user-data-dir=${userData}`],
+    env: { ...process.env, YASEEN_DOCS_E2E: '1', YASEEN_DOCS_USER_DATA_DIR: userData },
+  })
 }
 
 /**
- * The REAL quit path (what ⌘Q runs): `app.quit()` fires `before-quit`, which flushes every
- * renderer's autosave and the pending state write before `app.exit(0)`. Resolves once the
- * process is actually gone, so the state file on disk is final when this returns.
+ * The REAL quit path (what ⌘Q runs): Playwright's `app.close()` calls `app.quit()`, which fires
+ * `before-quit` — every renderer's autosave and the pending state write flush before `app.exit(0)`.
+ * It also drops Playwright's Node inspector session itself. A bare `app.quit()` left that to
+ * Playwright spotting "Waiting for the debugger to disconnect..." on stderr, and now and then the
+ * exited app sat parked on that line past the 15s below (YAZ-2168). Resolves once the process is
+ * actually gone, so the state file on disk is final when this returns.
  */
 export async function quitApp(app: ElectronApplication): Promise<void> {
-  const closed = new Promise<void>((resolve) => app.on('close', () => resolve()))
-  // The evaluate connection can drop mid-call while the app exits — that is success, not failure.
-  await app.evaluate(({ app: electronApp }) => electronApp.quit()).catch(() => undefined)
   await Promise.race([
-    closed,
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('app did not exit within 15s of app.quit()')), 15_000)),
+    app.close(),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('app did not exit within 15s of app.close()')), 15_000)),
   ])
 }
 
@@ -61,6 +67,60 @@ export async function appWindow(app: ElectronApplication, winId: string, timeout
     if (Date.now() - t0 > timeout) throw new Error(`no window with ?win=${winId} appeared within ${timeout}ms`)
     await new Promise((r) => setTimeout(r, 100))
   }
+}
+
+// ---------- the locators every spec shares (YAZ-2201: each was redefined in up to 29 specs) ----------
+
+/** The visible tab's layer: every other open tab stays mounted underneath, hidden. */
+export const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
+/** The visible tab's note editor. */
+export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
+/** The visible tab's folder-page contents block. */
+export const contents = (w: Page) => layer(w).locator('.folder-page-contents')
+export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
+export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
+/** A file row of the sidebar tree by its exact label. */
+export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
+/** A folder row of the sidebar tree by its exact label. */
+export const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
+/** The DEPTH-0 row labels of whichever tree the sidebar body draws. */
+export const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
+export const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+/** An item of the sidebar's own row menu (overlay + menu) by its exact label. */
+export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
+export const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
+export const sheet = (w: Page) => w.locator('[role="dialog"]')
+/** The app's own confirm sheet (a plain `[role="dialog"]` also matches other dialogs). */
+export const confirmSheet = (w: Page) => w.locator('.confirm[role="dialog"]')
+
+/** The middle of a row, in window coordinates: where a pointer has to be to be ON it. */
+export async function centre(row: Locator): Promise<{ x: number; y: number }> {
+  const box = await row.boundingBox()
+  if (box === null) throw new Error('a row with no box cannot be dragged')
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+/** A point in the TOP quarter of `row`, squarely inside its `before` drop edge (Tree.tsx `edgeOf`). */
+export async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
+  const box = await row.boundingBox()
+  if (box === null) throw new Error('a row with no box cannot be a drop target')
+  return { x: box.x + box.width / 2, y: box.y + box.height / 4 }
+}
+
+/** One frame and one task in the page: a pending `selectionchange` has reached ProseMirror after it. */
+export const nextFrame = (w: Page): Promise<unknown> => w.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
+
+/**
+ * Types ` <prefix><timestamp>` at the end of the seed note's LAST bullet and returns the marker; the
+ * autosave is left pending. The caret goes to the line end with ⌘→: on macOS `End` does not move it,
+ * it starts an animated scroll (YAZ-2131, 3ccc0cc).
+ */
+export async function typeMarkerAtLastBullet(w: Page, prefix: string): Promise<string> {
+  await editorOf(w).getByText(LAST_BULLET).click()
+  await w.keyboard.press('Meta+ArrowRight')
+  const marker = `${prefix}${Date.now()}`
+  await w.keyboard.type(` ${marker}`, { delay: 5 })
+  return marker
 }
 
 // ---------- fixture vault ----------
@@ -380,9 +440,15 @@ export const outlineCaret = (w: Page): Promise<OutlineCaret | null> =>
  * the DOM cannot be trusted on, because the picker's session is computed from `state.selection`:
  * an OPEN picker means PM's caret is inside an unclosed `[[…`, which on a link line means it has
  * not got past the hidden `]]` yet, however the DOM measures it.
+ *
+ * Between the reads the page runs a frame and a task, so a pending `selectionchange` reaches
+ * ProseMirror first: it either adopts the DOM caret or puts the DOM back on its own, and the
+ * second read sees which. Without that, a keystroke could land on a caret PM never read, and an
+ * Enter at a link line's end split it before the hidden `]]` (YAZ-2168).
  */
 export const settledCaret = async (w: Page): Promise<(OutlineCaret & { picking: boolean }) | null> => {
   const first = await outlineCaret(w)
+  await nextFrame(w)
   const second = await outlineCaret(w)
   if (second === null || JSON.stringify(first) !== JSON.stringify(second)) return null
   return { ...second, picking: (await linkPicker(w).count()) > 0 }
@@ -395,9 +461,14 @@ const at = (text: string, offset: number) => ({ text, offset, live: true, pickin
 export async function caretAtEndOfLine(w: Page, scope: Locator, i: number): Promise<void> {
   const line = outlineLines(scope).nth(i)
   const text = (await line.textContent()) ?? ''
+  const caretInLine = () =>
+    line.evaluate((el) => el.closest('.ProseMirror') === document.activeElement && el.contains(document.getSelection()?.anchorNode ?? null))
   await expect
     .poll(async () => {
-      await line.click() // free to repeat: a click never changes the document
+      // Click only while the caret is elsewhere. ProseMirror counts clicks itself (same spot, 500ms),
+      // so a retry's re-click reads as a double or triple click: PM selects the word or the whole
+      // line while the DOM caret sits at its end, and the next Enter or Backspace deletes it (YAZ-2168).
+      if (!(await caretInLine())) await line.click()
       await w.keyboard.press('Meta+ArrowRight')
       return settledCaret(w)
     })

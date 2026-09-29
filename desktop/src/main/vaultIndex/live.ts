@@ -82,7 +82,7 @@ async function build(root: string): Promise<Entry> {
   const files: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
-  // reading it early keeps the multi-MB read ahead of the chokidar initial scan that floods the
+  // reading it early keeps the multi-MB read ahead of the watcher's initial walk that floods the
   // fs threadpool on subscribe.
   const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files))])
   // A corrupt cache is an anomaly worth one line (vaultConfig idiom); `miss` and

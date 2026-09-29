@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ipcRenderer } from 'electron'
-import { CH } from '../channels'
+import { SPECIAL } from '@shared/ipc'
 import { bridge } from './index'
 
 vi.mock('electron', () => ({
@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
 }))
 
 const emit = (mode: unknown) => {
-  const handler = vi.mocked(ipcRenderer.on).mock.calls.find(([ch]) => ch === CH.menuCopyAs)?.[1]
+  const handler = vi.mocked(ipcRenderer.on).mock.calls.find(([ch]) => ch === SPECIAL.menuCopyAs)?.[1]
   expect(handler).toBeDefined()
   ;(handler as unknown as (event: unknown, mode: unknown) => void)(undefined, mode)
 }
@@ -44,12 +44,12 @@ describe('Copy as preload selection routing', () => {
     expect(unfocused).toHaveBeenCalledWith('markdown')
     expect(focused).toHaveBeenCalledWith('markdown')
     expect(later).not.toHaveBeenCalled()
-    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(CH.menuCopyText, '**selected**')
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(SPECIAL.menuCopyText.channel, '**selected**')
     off()
     vi.mocked(ipcRenderer.invoke).mockClear()
     emit('plain')
     expect(focused).toHaveBeenCalledTimes(1)
-    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(CH.menuCopyText, 'later')
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(SPECIAL.menuCopyText.channel, 'later')
   })
 
   it('an empty editor selection claims without overwriting the clipboard or falling through', () => {
@@ -64,10 +64,10 @@ describe('Copy as preload selection routing', () => {
   it.each(['plain', 'markdown'])('%s keeps ordinary input and textarea selections literal', (mode) => {
     selectedInput('input', 'before **literal** after', 7, 18)
     emit(mode)
-    expect(ipcRenderer.invoke).toHaveBeenLastCalledWith(CH.menuCopyText, '**literal**')
+    expect(ipcRenderer.invoke).toHaveBeenLastCalledWith(SPECIAL.menuCopyText.channel, '**literal**')
     const area = selectedInput('textarea', '# Heading\nnext line', 2, 14)
     emit(mode)
-    expect(ipcRenderer.invoke).toHaveBeenLastCalledWith(CH.menuCopyText, 'Heading\nnext')
+    expect(ipcRenderer.invoke).toHaveBeenLastCalledWith(SPECIAL.menuCopyText.channel, 'Heading\nnext')
     vi.mocked(ipcRenderer.invoke).mockClear()
     area.setSelectionRange(4, 4)
     emit(mode)
@@ -93,7 +93,7 @@ describe('Copy as preload selection routing', () => {
     window.getSelection()!.removeAllRanges()
     window.getSelection()!.addRange(range)
     emit('markdown')
-    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(CH.menuCopyText, '**literal**')
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(SPECIAL.menuCopyText.channel, '**literal**')
     vi.mocked(ipcRenderer.invoke).mockClear()
     document.querySelector('button')!.focus()
     emit('plain')

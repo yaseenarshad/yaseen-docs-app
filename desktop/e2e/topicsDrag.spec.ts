@@ -40,7 +40,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, centre, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -118,13 +118,6 @@ async function openTopics(vaultPath: string): Promise<void> {
   state.windows[0].sidebarLens = 'topics'
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
-}
-
-/** The middle of a row, in window coordinates — where a pointer has to be to be ON it. */
-async function centre(row: Locator): Promise<{ x: number; y: number }> {
-  const box = await row.boundingBox()
-  if (box === null) throw new Error('a row with no box cannot be dragged')
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PropertiesApi, PropertiesResponse } from '@shared/types'
+import type { PropertiesResponse } from '@shared/types'
+import type { YaseenDocsApi } from '@shared/ipc'
 import { api } from '../api'
 
 /**
@@ -15,7 +16,7 @@ import { api } from '../api'
  * installing `propertiesStub` as `window.yaseenDocs.properties` — the stub implements this same
  * interface.
  */
-export const properties: PropertiesApi = api.properties
+export const properties: YaseenDocsApi['properties'] = api.properties
 
 export type PropertiesStatus = 'pending' | 'ready' | 'error'
 

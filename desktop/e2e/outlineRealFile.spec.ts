@@ -21,12 +21,12 @@
  * left that loses a line, so the read-only path is pinned by fault injection in
  * `client/src/views/view/outlineSeedGuard.test.tsx` instead of by shipping a hole to trip on.
  */
-import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, bulletAfterLine, caretAtEndOfLine, copyVault, launchApp, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
+import { appWindow, bulletAfterLine, caretAtEndOfLine, contents, copyVault, launchApp, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -53,9 +53,6 @@ let win: Page
 /** The fixture's outline lines as shipped — read once, the yardstick every step measures against. */
 let originalOutline: string
 let originalTexts: string[]
-
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 
 const outlineOnDisk = async (): Promise<string> => {
   const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FILE), 'utf8'))

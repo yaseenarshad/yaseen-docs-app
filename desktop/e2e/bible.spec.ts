@@ -49,7 +49,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, copyVault, expandDirs, launchApp, outlineLines, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, layer, lensTab, outlineLines, quitApp, seededState, shoot, tabsOf, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -124,11 +124,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 const backlinksHeader = (w: Page) => layer(w).locator('.backlinks__header')
 const backlinkNotes = (w: Page) => layer(w).locator('.backlinks__note')
@@ -138,18 +133,13 @@ const expandBacklinks = async (w: Page): Promise<void> => {
   await expect(backlinksHeader(w)).toHaveAttribute('aria-expanded', 'true')
 }
 
-/** The folder page's contents block, and the rows/cells of whichever view it is showing. */
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
+/** The rows/cells of whichever view the contents block is showing. */
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** Every name as a LINK LINE, which is how a membership is spelled into the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
-/**
- * The sidebar's two lenses. This file lives on the FILE tree (its seed says so), and steps down to
- * the Topics tree for one thing only: the DIRECT-member counts, which since ⚡ YAZ-1152 live there
- * and nowhere else — the outline's appended rows, which used to print them, are gone.
- */
-const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+// This file lives on the FILE tree (its seed says so) and steps down to the Topics tree (`lensTab`)
+// for one thing only: the DIRECT-member counts, which since ⚡ YAZ-1152 live there and nowhere else —
+// the outline's appended rows, which used to print them, are gone.
 const topicRow = (w: Page, label: string) =>
   w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
 
@@ -162,8 +152,6 @@ const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 /** `data-cell="row:col"` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none. */
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
-
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
 /** The name-change confirm (⚡ YAZ-888): every rename below passes it, and its count is the rewrite's own. */
 async function confirmRename(w: Page, message: string): Promise<void> {

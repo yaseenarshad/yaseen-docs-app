@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, launchApp, quitApp, seededState } from './helpers'
+import { appWindow, editorOf, launchApp, quitApp, seededState } from './helpers'
 
 test('a heading-first body carries no lead-in; a mid-document heading keeps its own', async () => {
   const userData = await mkdtemp(path.join(tmpdir(), 'firstblock-userdata-'))
@@ -20,9 +20,7 @@ test('a heading-first body carries no lead-in; a mid-document heading keeps its 
   await writeFile(note, '# First\n\nwords\n\n## Later\n\nmore\n')
   const app = await launchApp({ userData, seedState: seededState(vault, note) })
   const win = await appWindow(app, 'w1')
-  const pm = win
-    .locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-    .locator('.editor-mount .editor-instance .milkdown .ProseMirror')
+  const pm = editorOf(win)
   await expect(pm.locator('h1')).toHaveText('First')
   await expect
     .poll(() =>

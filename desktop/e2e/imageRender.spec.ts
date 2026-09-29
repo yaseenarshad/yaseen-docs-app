@@ -34,7 +34,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 import { SMALL_HEIGHT, SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -84,9 +84,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 /** The YAZ-1656 node view: every one of them, the loaded ones, and the broken chips. */
 const imageViews = (w: Page) => editorOf(w).locator('.image-view')
 const readyViews = (w: Page) => editorOf(w).locator('.image-view--ready')
@@ -146,6 +143,9 @@ test('step 1 — every reference shape resolves the way Obsidian would, or break
   expect(await brokenChips(win).allTextContents()).toEqual(BROKEN_SRCS.map((src) => `Broken image: ${src}`))
 
   // --- code is code: the fenced image line is TEXT, and CodeMirror holds it ---
+  // Milkdown mounts a code block's CodeMirror only within 200px of the viewport (a plain `<pre>`
+  // stands in until then), and this block sits below the images: bring it on screen first.
+  await layer(win).locator('.milkdown-code-block').scrollIntoViewIfNeeded()
   await expect(layer(win).locator('.cm-content')).toContainText('![fenced](images/a.png)')
   await expect(layer(win).locator('.cm-content .image-view')).toHaveCount(0)
 

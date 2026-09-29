@@ -19,6 +19,7 @@ vi.mock('../outlineDoc', async (importOriginal) => ({
   escapeBlockStart: (text: string) => text,
 }))
 
+import { flushWindow } from '../../lib/windowFlush'
 import { OutlineEditor } from './OutlineEditor'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -62,6 +63,9 @@ describe('the seed guard: a lossy load can never write (YAZ-974)', () => {
     await tick(900)
     expect(onSeedLoss).toHaveBeenCalledTimes(1)
     expect(container?.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false')
+    expect(onChange).not.toHaveBeenCalled()
+    // The close/quit handshake pulls the live document (YAZ-2174): a lossy one is still never written.
+    await act(() => flushWindow())
     expect(onChange).not.toHaveBeenCalled()
   })
 

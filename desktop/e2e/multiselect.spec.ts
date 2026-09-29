@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, expandDirs, launchApp, SEED_FILE, seededState, shoot } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, expandDirs, launchApp, SEED_FILE, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -20,8 +20,6 @@ let app: ElectronApplication
 let win: Page
 
 const selectedRows = (w: Page) => w.locator('.tree__row--selected')
-const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
 
 test.beforeAll(async () => {
@@ -43,6 +41,10 @@ test('shift+click selects, the menu copies and opens the selection, ⌘⇧C copi
   await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
   // The nested half of the selection lives under `Projects`; a launch is collapsed since YAZ-1642.
   await expandDirs(win, [path.join(vault, 'Projects')])
+  // That plain click also SELECTED `Projects` (YAZ-1674 D9, the Finder rule); Esc ends it.
+  await expect(selectedRows(win)).toHaveCount(1)
+  await win.keyboard.press('Escape')
+  await expect(selectedRows(win)).toHaveCount(0)
 
   // Shift+click two files (one nested): both mark selected, nothing opens, the tab stays put.
   await win.locator('.tree__row--file', { hasText: 'Ideas' }).click({ modifiers: ['Shift'] })
@@ -79,9 +81,11 @@ test('shift+click selects, the menu copies and opens the selection, ⌘⇧C copi
     [path.join(vault, 'Ideas.md'), path.join(vault, 'Projects', 'Roadmap.md')].sort(),
   )
 
-  // A plain click ends the selection and opens; ⌘⇧C now answers with the ACTIVE file.
+  // A plain click ends the multi-selection and opens; since YAZ-1674 D9 it selects exactly that
+  // row, the ACTIVE file, so ⌘⇧C answers with it.
   await win.locator('.tree__row--file', { hasText: 'Ideas' }).click()
-  await expect(selectedRows(win)).toHaveCount(0)
+  await expect(selectedRows(win)).toHaveCount(1)
+  await expect(win.locator('.tree__row--file.tree__row--selected', { hasText: 'Ideas' })).toHaveCount(1)
   await app.evaluate(({ clipboard }) => clipboard.writeText(''))
   await win.keyboard.press('Meta+Shift+C')
   await expect.poll(readClipboard).toBe(path.join(vault, 'Ideas.md'))

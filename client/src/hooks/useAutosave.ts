@@ -54,13 +54,24 @@ export function useAutosave(path: string): AutosaveHandle {
         mtime,
         delayMs: 500,
         save: async (content, expectedMtime) => {
-          try {
-            const res = await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime })
-            diskBodyRef.current = content
-            return res
-          } catch (err) {
-            if (err instanceof BridgeRequestError && err.mtime !== undefined) throw new SaveConflict(err.mtime)
-            throw err
+          let expected = expectedMtime
+          for (let retried = false; ; retried = true) {
+            try {
+              const res = await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime: expected })
+              diskBodyRef.current = content
+              return res
+            } catch (err) {
+              if (!(err instanceof BridgeRequestError) || err.mtime === undefined) throw err
+              // The app's own property/comment write (`transformFile`) can land while this save is
+              // pending and before its watcher echo is absorbed (YAZ-2175). A disk body still equal
+              // to ours means only the frontmatter moved: adopt the new block and retry once, the
+              // rule `transformFile` follows. A body that moved is a real conflict: the bar.
+              const fresh = retried ? null : await api.readFile(path).catch(() => null)
+              const split = fresh === null ? null : splitFrontmatter(fresh.content)
+              if (fresh === null || split?.body !== diskBodyRef.current) throw new SaveConflict(err.mtime)
+              frontmatterRef.current = split.frontmatter
+              expected = fresh.mtime
+            }
           }
         },
         onStatus: setStatus,
@@ -84,7 +95,7 @@ export function useAutosave(path: string): AutosaveHandle {
 
   useEffect(() => {
     // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-    const offFlush = window.yaseenDocs.window.onFlush(async () => {
+    const offFlush = api.window.onFlush(async () => {
       const s = ref.current
       if (s === null || retiredRef.current) return
       s.autosave.update(s.getContent())

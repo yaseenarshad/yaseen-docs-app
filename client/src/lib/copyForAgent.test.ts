@@ -4,11 +4,11 @@ import { copyForAgent } from './copyForAgent'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { agentPrompt: vi.fn() },
+  api: { shell: { agentPrompt: vi.fn() } },
 }))
 
 const { api } = await import('../api')
-const agentPrompt = vi.mocked(api.agentPrompt)
+const agentPrompt = vi.mocked(api.shell.agentPrompt)
 
 let writeText: ReturnType<typeof vi.fn>
 const hadClipboard = 'clipboard' in navigator

@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,7 +26,6 @@ let notePath: string
 let app: ElectronApplication
 let win: Page
 
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 /** Direct-child path from a `li.list-item` to its own paragraph (nested rows have their own). */
 const PARA = 'xpath=./div[contains(@class,"children")]/div[contains(@class,"content-dom")]/p'
 /** The `li.list-item` whose OWN paragraph is `text` — "Fundamentals" does not match its children. */
@@ -51,7 +50,7 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
   // rather than per test so it covers every caller, present and future; healthy runs spend none.
   test.setTimeout(60_000)
   const para = paraOf(rowOf(w, text))
-  const handle = w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .milkdown-block-handle')
+  const handle = layer(w).locator('.milkdown-block-handle')
   await expect(async () => {
     // A SWEEP, not discrete hops (the YAZ-861 rework, after the two-hop version flaked across
     // three waves): the handle's mousemove listener is throttled ~200ms, and any finite set of

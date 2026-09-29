@@ -29,4 +29,10 @@ const ENUMERATION_PREFIX = /^\s*(?:\d+|[Xx])[.)]\s+/
 /** The label as the key sees it. Occurrence counting MUST use this too, or `1) foo` / `2) foo` siblings collide at occurrence 0. */
 export const outlineFoldLabel = (label: string): string => label.replace(ENUMERATION_PREFIX, '')
 
-export const getOutlineFoldKey = (label: string, occurrence: number): string => `${hashLabel(outlineFoldLabel(label))}:${occurrence}`
+/** The occurrence-free half of a fold key, so a caller that re-counts occurrences need not hash again (YAZ-2236). */
+export const outlineFoldKeyStem = (label: string): string => hashLabel(outlineFoldLabel(label))
+
+/** The persisted key format, written in this one place: a saved fold matches only if this never drifts. */
+export const outlineFoldKeyFromStem = (stem: string, occurrence: number): string => `${stem}:${occurrence}`
+
+export const getOutlineFoldKey = (label: string, occurrence: number): string => outlineFoldKeyFromStem(outlineFoldKeyStem(label), occurrence)

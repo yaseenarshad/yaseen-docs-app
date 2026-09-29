@@ -10,8 +10,9 @@ export default defineConfig({
   test: {
     name: 'desktop',
     environment: 'node',
-    include: ['src/**/*.test.ts'],
-    // chokidar tests write right after `ready`; stat polling makes that deterministic (macOS FSEvents start asynchronously).
-    env: { CHOKIDAR_USEPOLLING: '1' },
+    include: ['src/**/*.test.ts', '*.test.ts'],
+    // Real git and file-watcher suites: the CI macOS runner is ~5x slower than a dev Mac, and a
+    // cold git spawn there overran the 5s default, as client/tools already allow for.
+    testTimeout: 30_000,
   },
 })

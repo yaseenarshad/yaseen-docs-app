@@ -31,7 +31,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, outlineLinkLines, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, contents, copyVault, launchApp, outlineLinkLines, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -81,10 +81,6 @@ const chevron = (w: Page, action: 'Expand' | 'Collapse', label: string) => w.loc
 /** The right-clicked row's menu, and the inline name input the create group opens (8G-/8H). */
 const menuItem = (w: Page, label: string) => w.locator('.ctx-menu [role="menuitem"]', { hasText: label })
 const inlineInput = (w: Page) => w.locator('.sidebar__body .create-inline__input')
-/** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTab = (w: Page, label: string) => contents(w).locator('.view-tab__btn', { hasText: label })
 /** Every name as a LINK LINE — how a membership reads inside the outline document (⚡ YAZ-1152). */
 const asLinks = (...names: readonly string[]) => names.map((n) => `[[${n}]]`)

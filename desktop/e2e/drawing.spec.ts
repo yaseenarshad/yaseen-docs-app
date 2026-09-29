@@ -30,7 +30,8 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { isAtomicTmp } from '../../shared/fileKind'
+import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -113,10 +114,6 @@ let second: string
 /** Step 5's saved rectangle exactly as the preview drew it — steps 6 and 7 both redraw it again. */
 let savedSvg: string
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** Crepe's OWN slash menu (YAZ-877 rides it — there is no second popup to find). */
 const slashMenu = (w: Page) => layer(w).locator('.milkdown-slash-menu')
 const slashItem = (w: Page, label: string) => slashMenu(w).locator('li').filter({ hasText: label })
@@ -135,7 +132,10 @@ const saveButton = (w: Page) => modal(w).locator('.drawing-modal__bar .drawing-m
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
 const readScene = async (name: string) => JSON.parse(await readSidecar(name)) as { type: string; source: string; elements: Array<{ type: string }>; files: unknown }
-const listDrawings = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).sort()
+/** Everything in the drawings home, an in-flight atomic write's `.tmp-<hex>` sibling included. */
+const drawingsDir = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).sort()
+/** The drawings a user has: a new file is born `tmp → fsync → link` (YAZ-2177), and its tmp name is never a drawing (YAZ-2179). */
+const listDrawings = async () => (await drawingsDir()).filter((name) => !isAtomicTmp(name))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'drawing-userdata-'))
@@ -202,6 +202,8 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   // The first scene is still exactly where it was; the second is its own file.
   await expect.poll(readNote).toBe(`${NOTE_BODY}\n![[${first}]]\n\n![[${second}]]\n`)
   expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(await readFile(path.join(vault, DRAWINGS_DIR, second), 'utf8'))
+  // Every write finished: no tmp sibling outlives it.
+  await expect.poll(drawingsDir).toEqual([first, second].sort())
   await shoot(win, 'drawing-03-second-drawing')
 
   await quitApp(app)

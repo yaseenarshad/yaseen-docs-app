@@ -20,7 +20,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -85,8 +85,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 const rendered = (w: Page) => editorOf(w).locator('.drawing-preview--ready svg')
 const previewOf = (w: Page, target: string) => editorOf(w).locator(`.drawing-preview[data-drawing-target="${target}"]`)
 const modal = (w: Page) => w.locator('.drawing-modal')

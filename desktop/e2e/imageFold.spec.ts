@@ -30,7 +30,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, quitApp, readState, seededState, shoot } from './helpers'
 import { pngBytes } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -64,9 +64,6 @@ let mtimeBefore: number
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 /**
  * The four bullets in document order — Crepe's `div.milkdown-list-item-block > li.list-item` is
  * one ROW each (bullets.css).

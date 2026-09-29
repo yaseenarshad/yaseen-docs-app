@@ -41,7 +41,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, expandDirs, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, expandDirs, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 import { NARROW_HEIGHT, NARROW_PNG, NARROW_WIDTH, WIDE_HEIGHT, WIDE_PNG, WIDE_WIDTH, isPng, pngSize } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
@@ -77,9 +77,6 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 /** The YAZ-1656 node view, in its three states. */
 const imageViews = (w: Page) => editorOf(w).locator('.image-view')
 const readyImages = (w: Page) => editorOf(w).locator('.image-view--ready img')

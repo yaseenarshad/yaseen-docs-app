@@ -6,20 +6,38 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const vendor = fileURLToPath(new URL('../client/vendor/', import.meta.url))
-const name = 'milkdown-components-7.22.1-yaz1410'
-const url = 'https://registry.npmjs.org/@milkdown/components/-/components-7.22.1.tgz'
-const integrity = '6IA8fcFcBTm/x1X1typz73yUoT1JuN4srmifGAIeWEtCnayEwRjFxpQOoQrfvMgBYx4DSHcPVLhJUlR/xbBtxg=='
+/**
+ * The pinned Milkdown packages we carry a patch for (one pipeline for all of them): the upstream npm
+ * archive and its integrity, the readable `.patch` next to the tgz, and the stale source maps the
+ * patch invalidates (the compiled runtime is patched directly).
+ */
+const packages = {
+  components: {
+    name: 'milkdown-components-7.22.1-yaz1410',
+    url: 'https://registry.npmjs.org/@milkdown/components/-/components-7.22.1.tgz',
+    integrity: '6IA8fcFcBTm/x1X1typz73yUoT1JuN4srmifGAIeWEtCnayEwRjFxpQOoQrfvMgBYx4DSHcPVLhJUlR/xbBtxg==',
+    maps: ['lib/table-block/index.js.map', 'lib/list-item-block/index.js.map'],
+  },
+  'plugin-tooltip': {
+    name: 'milkdown-plugin-tooltip-7.22.1-yaz2238',
+    url: 'https://registry.npmjs.org/@milkdown/plugin-tooltip/-/plugin-tooltip-7.22.1.tgz',
+    integrity: 'drdWA/7WlrDr2B+ABYf4tY9xTiwg/CJMUCydfD05dR2d8wOkaF6oOHZwJbWnkWLMtAJWdieOYgfXGPhQRwXxCg==',
+    maps: ['lib/index.js.map'],
+  },
+}
+const usage = `Usage: node tools/buildMilkdownPatch.mjs <${Object.keys(packages).join('|')}> [--source upstream.tgz] [--output patched.tgz]`
+const pkg = packages[process.argv[2]]
+if (!pkg) throw new Error(usage)
+const { name, url, integrity, maps } = pkg
 const options = {}
-for (let i = 2; i < process.argv.length; i += 2) {
+for (let i = 3; i < process.argv.length; i += 2) {
   const key = process.argv[i]
   const value = process.argv[i + 1]
-  if (!['--source', '--output'].includes(key) || !value || value.startsWith('--') || options[key]) {
-    throw new Error('Usage: node tools/buildMilkdownComponentsPatch.mjs [--source upstream.tgz] [--output patched.tgz]')
-  }
+  if (!['--source', '--output'].includes(key) || !value || value.startsWith('--') || options[key]) throw new Error(usage)
   options[key] = resolve(value)
 }
 const output = options['--output'] ?? join(vendor, `${name}.tgz`)
-const temp = await mkdtemp(join(tmpdir(), 'milkdown-zoom-patch-'))
+const temp = await mkdtemp(join(tmpdir(), 'milkdown-patch-'))
 try {
   let upstream
   if (options['--source']) {
@@ -37,7 +55,7 @@ try {
   execFileSync('tar', ['-xzf', archive, '-C', temp])
   const packageRoot = join(temp, 'package')
   execFileSync('git', ['apply', join(vendor, `${name}.patch`)], { cwd: packageRoot })
-  await unlink(join(packageRoot, 'lib/table-block/index.js.map'))
+  for (const map of maps) await unlink(join(packageRoot, map))
   const packed = JSON.parse(execFileSync('npm', [
     'pack', packageRoot, '--pack-destination', temp, '--ignore-scripts', '--json',
   ], { encoding: 'utf8' }))

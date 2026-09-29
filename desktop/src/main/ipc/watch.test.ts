@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { ipcMain } from 'electron'
 import type { WatchEvent } from '@shared/types'
-import { CH } from '../../channels'
+import { SPECIAL } from '@shared/ipc'
 import { makeFixture, until } from '../fs/testFixture'
 import { activeWatcherRoots } from '../fs/watchers'
 import { registerWatchIpc } from './watch'
@@ -26,7 +26,7 @@ function makeSender() {
 type Sender = ReturnType<typeof makeSender>
 
 const sent = (s: Sender): Array<{ id: string; ev: WatchEvent }> =>
-  s.send.mock.calls.filter(([ch]) => ch === CH.watchEvent).map(([, msg]) => msg as { id: string; ev: WatchEvent })
+  s.send.mock.calls.filter(([ch]) => ch === SPECIAL.watchEvent).map(([, msg]) => msg as { id: string; ev: WatchEvent })
 const destroy = (s: Sender) => {
   const hook = s.once.mock.calls.find(([name]) => name === 'destroyed')
   if (hook === undefined) throw new Error('no destroyed hook registered')
@@ -48,17 +48,17 @@ afterEach(async () => {
 
 const subscribeAs = async (s: Sender, id: string, r: string) => {
   senders.includes(s) || senders.push(s)
-  await listener(CH.watchSubscribe)({ sender: s }, { id, root: r })
+  await listener(SPECIAL.watchSubscribe)({ sender: s }, { id, root: r })
 }
-const unsubscribeAs = (s: Sender, id: string) => listener(CH.watchUnsubscribe)({ sender: s }, id)
+const unsubscribeAs = (s: Sender, id: string) => listener(SPECIAL.watchUnsubscribe)({ sender: s }, id)
 
 describe('watch IPC', () => {
   it('registers subscribe + unsubscribe listeners', () => {
     const channels = vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.watchSubscribe, CH.watchUnsubscribe].sort())
+    expect(channels).toEqual([SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe].sort())
   })
 
-  it('two subscriptions on one root share one chokidar instance; each gets `ready` addressed to its id', async () => {
+  it('two subscriptions on one root share one watcher; each gets `ready` addressed to its id', async () => {
     const s = makeSender()
     await subscribeAs(s, 'sub-1', root)
     await until(() => sent(s).length >= 1)
@@ -96,7 +96,7 @@ describe('watch IPC', () => {
     await until(() => activeWatcherRoots().length === 0)
   })
 
-  it('two windows on one root (GRO-2169): one chokidar, a save reaches both as `change`; one window closing leaves the other live, the last closing disposes the watcher', async () => {
+  it('two windows on one root (GRO-2169): one watcher, a save reaches both as `change`; one window closing leaves the other live, the last closing disposes the watcher', async () => {
     const a = makeSender()
     const b = makeSender()
     await subscribeAs(a, 'win-a', root)
@@ -137,5 +137,33 @@ describe('watch IPC', () => {
     ])
     expect(activeWatcherRoots()).toEqual([])
     expect(s.once).not.toHaveBeenCalled()
+  })
+
+  it('an unsubscribe that lands while the subscribe is still checking its root cancels it: no watcher, no events (YAZ-2178)', async () => {
+    const s = makeSender()
+    senders.push(s)
+    const pending = listener(SPECIAL.watchSubscribe)({ sender: s }, { id: 'switched-away', root }) // a quick vault switch
+    unsubscribeAs(s, 'switched-away')
+    await pending
+    await new Promise((r) => setTimeout(r, 100)) // room for a leaked watcher's `ready`
+    expect(activeWatcherRoots()).toEqual([])
+    expect(sent(s)).toEqual([])
+  })
+
+  it('a cancelled check of a bad root stays silent too', async () => {
+    const s = makeSender()
+    const pending = listener(SPECIAL.watchSubscribe)({ sender: s }, { id: 'gone', root: path.join(root, 'nope') })
+    unsubscribeAs(s, 'gone')
+    await pending
+    expect(sent(s)).toEqual([])
+  })
+
+  it('an unsubscribe for an id never subscribed does not stop a later subscribe', async () => {
+    const s = makeSender()
+    unsubscribeAs(s, 'later')
+    await subscribeAs(s, 'later', root)
+    await until(() => sent(s).length >= 1)
+    expect(sent(s)).toEqual([{ id: 'later', ev: { type: 'ready', root } }])
+    expect(activeWatcherRoots()).toEqual([root])
   })
 })

@@ -19,7 +19,7 @@ npm run dev
 npm run desktop:build
 ```
 
-- Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg` (arm64 only; the filenames contain spaces, so quote them). `mac.identity: null` makes electron-builder skip signing, so `desktop/build/adhocSign.cjs` (`afterPack`) deep ad-hoc signs the bundle itself — without that seal Gatekeeper reports a downloaded copy as "damaged" instead of offering **Open Anyway**.
+- Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg` (arm64 only; the filenames contain spaces, so quote them). `mac.identity: null` makes electron-builder skip signing, so `desktop/build/adhocSign.cjs` (`afterPack`) trims Chromium's non-English locale paks and then deep ad-hoc signs the bundle itself — without that seal Gatekeeper reports a downloaded copy as "damaged" instead of offering **Open Anyway**.
 - The first packaging run on a clean machine needs network: electron-builder downloads its Electron dist zip and dmgbuild once, then caches them.
 - Install: drag `Yaseen Docs.app` into `/Applications` in Finder — either straight from `desktop/dist-app/mac-arm64/`, or from the mounted dmg:
 
@@ -47,11 +47,16 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 ## Verify
 
 ```bash
-npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the migration CLI), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 17 specs, ~1.5 min): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the migration CLIs, the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 64 specs; the Playwright run takes ~3.8 min after the build; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out
+npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)
+npm run perf:budget      # the same + the packaged .app and DMG (after desktop:build)
+npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf harness, A/B (tools/perf/README.md)
 ```
+
+- The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main; e2e stays local and its result goes in the PR.
 
 - If `npm` isn't in the shell's PATH (agent shells often lack it), use its install location directly — e.g. `/opt/homebrew/bin/npm` (ARM mac), `/usr/local/bin/npm` (Intel mac), or the Volta/nvm/fnm install under `$HOME`.
 

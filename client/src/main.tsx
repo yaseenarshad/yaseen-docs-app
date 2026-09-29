@@ -2,7 +2,20 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { storage } from './lib/storage'
-import '@milkdown/crepe/theme/common/style.css'
+// Crepe's common theme file by file, in its own order, minus latex (KaTeX's stylesheet and its 59
+// fonts), top-bar, ai and diff (AI diff review): features that never load (YAZ-2184).
+// image-block.css stays, as it did through style.css.
+import '@milkdown/crepe/theme/common/prosemirror.css'
+import '@milkdown/crepe/theme/common/reset.css'
+import '@milkdown/crepe/theme/common/block-edit.css'
+import '@milkdown/crepe/theme/common/code-mirror.css'
+import '@milkdown/crepe/theme/common/cursor.css'
+import '@milkdown/crepe/theme/common/image-block.css'
+import '@milkdown/crepe/theme/common/link-tooltip.css'
+import '@milkdown/crepe/theme/common/list-item.css'
+import '@milkdown/crepe/theme/common/placeholder.css'
+import '@milkdown/crepe/theme/common/toolbar.css'
+import '@milkdown/crepe/theme/common/table.css'
 // The frame theme vars are NOT imported statically: App injects frame / frame-dark per the
 // Appearance setting (editor/crepeTheme.ts, Desktop K — GRO-2218).
 import './app.css'

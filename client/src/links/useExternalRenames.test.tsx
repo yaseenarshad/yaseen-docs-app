@@ -8,6 +8,13 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ColdStartDiffResponse, IndexRecord } from '@shared/types'
 import { useExternalRenames, type ExternalRenames } from './useExternalRenames'
+import { countLinkReferences } from './renameLinks'
+
+// The real engine, observed: YAZ-2241 pins WHICH hypotheses reach the per-hypothesis count.
+vi.mock('./renameLinks', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./renameLinks')>()
+  return { ...real, countLinkReferences: vi.fn(real.countLinkReferences) }
+})
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -135,6 +142,18 @@ describe('useExternalRenames — the while-running feed', () => {
     expect(banner()).toBeNull()
     await snapshot(postRename)
     expect(banner()).toBe('/v/B.md|/v/B2.md|1')
+  })
+
+  it('a burst of renames nobody links to never builds a count per rename; the one that IS linked still banners (YAZ-2241)', async () => {
+    const pulled = Array.from({ length: 230 }, (_, k) => rec(`/v/Storm/pulled-${k}.md`, { size: 30 + k, mtime: 1000 + k, links: ['Small'] }))
+    const linker = rec('/v/Linker.md', { links: ['Storm/Pulled-7|seven', 'small'], size: 3, mtime: 3 })
+    const base = [rec('/v/Small.md', { size: 4, mtime: 4 }), linker]
+    await mount()
+    await snapshot([...base, ...pulled])
+    vi.mocked(countLinkReferences).mockClear()
+    await snapshot([...base, ...pulled.map((r) => rec(r.path.replace('pulled-', 'renamed-'), { size: r.size, mtime: r.mtime, links: r.links }))])
+    expect(banner()).toBe('/v/Storm/pulled-7.md|/v/Storm/renamed-7.md|1')
+    expect(countLinkReferences).toHaveBeenCalledTimes(1)
   })
 
   it('a plain delete + an unrelated create never pair (stats differ)', async () => {
