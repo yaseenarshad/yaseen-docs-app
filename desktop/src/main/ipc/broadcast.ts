@@ -14,15 +14,19 @@ export function broadcastAll(channel: string, ...args: unknown[]): void {
   }
 }
 
+/** The open-vault roots of `AppState.windows` (null = Welcome), unique. */
+export function rootsOf(state: AppState): string[] {
+  return [...new Set(state.windows.map((w) => w.root).filter((r): r is string => r !== null))]
+}
+
 /**
- * Main's own `subscribe(root)` per open-vault root — the roots of `AppState.windows` (null =
- * Welcome), one subscription each — dropped when the last window on that root goes (YAZ-2201:
- * config, favorites and properties each kept their own copy of this).
+ * Main's own `subscribe(root)` per open-vault root, one each, dropped when the last window on that
+ * root goes (YAZ-2201 6B; vaultConfig, favorites and properties).
  */
 export function syncPerRoot(store: Store, subscribe: (root: string) => () => void): void {
   const subs = new Map<string, () => void>()
   const sync = (state: AppState): void => {
-    const roots = new Set(state.windows.map((w) => w.root).filter((r): r is string => r !== null))
+    const roots = new Set(rootsOf(state))
     for (const [root, off] of subs) {
       if (!roots.has(root)) {
         off()

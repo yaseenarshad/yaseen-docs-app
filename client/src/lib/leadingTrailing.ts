@@ -4,6 +4,9 @@
  * add refreshes immediately, while a sync pull's storm still costs two reads, not one per event.
  * (Trailing-only, as YAZ-2191 had it, made even a lone add wait out the whole quiet spell.)
  */
+/** The quiet spell that ends a watcher burst, before its trailing read — the sidebar's tree and search's index alike (YAZ-2191, measured in thoughts/yaz-2131-scope/main-process.md F1). */
+export const WATCH_BURST_QUIET_MS = 100
+
 export function leadingTrailing(run: () => void, quietMs: number) {
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending = false

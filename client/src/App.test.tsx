@@ -317,12 +317,6 @@ describe('App per-window sidebar visibility (YAZ-1280)', () => {
   })
 })
 
-/**
- * ⌘⇧C copies paths (YAZ-1334 → YAZ-1338, 🔒 D4): the sidebar's multi-selection when one is
- * standing, else the active file — so the chord works with the sidebar collapsed too. App owns
- * the listener and reads the selection through the `selectionRef` window the (here mocked)
- * Sidebar maintains; with no rows in the DOM the copy falls back to the set's own order.
- */
 describe('App close/quit handshake (YAZ-2174)', () => {
   it('hands the window flush to the bridge, so the writers below App join the handshake', async () => {
     const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
@@ -330,6 +324,12 @@ describe('App close/quit handshake (YAZ-2174)', () => {
   })
 })
 
+/**
+ * ⌘⇧C copies paths (YAZ-1334 → YAZ-1338, 🔒 D4): the sidebar's multi-selection when one is
+ * standing, else the active file — so the chord works with the sidebar collapsed too. App owns
+ * the listener and reads the selection through the `selectionRef` window the (here mocked)
+ * Sidebar maintains; with no rows in the DOM the copy falls back to the set's own order.
+ */
 describe('App ⌘⇧C copy path (YAZ-1338)', () => {
   function installClipboard() {
     const writeText = vi.fn(async () => undefined)

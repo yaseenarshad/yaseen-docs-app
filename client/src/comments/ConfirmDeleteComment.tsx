@@ -22,8 +22,8 @@ interface ConfirmDeleteCommentProps {
 /**
  * The comment's delete sheet, on `ConfirmSheet` like `sidebar/ConfirmDelete`: initial focus on
  * CANCEL so a stray Enter destroys nothing, the confirm button `--danger` because something IS
- * destroyed. No "Don't ask me again": there is no Trash
- * to recover a comment from, so the sheet is the only undo there is.
+ * destroyed. No "Don't ask me again": there is no Trash to recover a comment from, so the sheet
+ * is the only undo there is.
  */
 export function ConfirmDeleteComment({ label, replies, onConfirm, onCancel }: ConfirmDeleteCommentProps) {
   return <ConfirmSheet labelId="confirm-delete-comment-text" text={deleteCommentMessage(label, replies)} confirmLabel="Delete" danger onConfirm={onConfirm} onCancel={onCancel} />

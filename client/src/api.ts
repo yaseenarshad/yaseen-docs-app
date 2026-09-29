@@ -48,7 +48,12 @@ function wrap(table: object, at: string[]): Record<string, unknown> {
 
 const bridge = wrap(CONTRACT, []) as Bridge<typeof CONTRACT>
 
-/** The renderer's one door to main: every call to `window.yaseenDocs` goes through here, the specials passed through as they are. */
+/**
+ * The renderer's one door to main: every call to `window.yaseenDocs` goes through here, the specials
+ * passed through as they are — except the editors' Copy as / Paste as subscriptions, which reach
+ * `window.yaseenDocs` with `?.`; `menu.onCopyAs/onPasteAs` stay here because `YaseenDocsApi`
+ * requires them.
+ */
 export const api: YaseenDocsApi = {
   ...bridge,
   watch: (root, listener) => window.yaseenDocs.watch(root, listener),

@@ -5,7 +5,9 @@
  * preload builds the bridge from this table, main registers its handlers against it, the renderer's
  * `api` wraps it, and `YaseenDocsApi` is derived from it, so the allowlist stays fixed at build time
  * and a missing or mistyped door fails to compile. The hand-written specials are `SPECIAL`: watch
- * (multiplexed), the close/quit flush handshake, and menu Copy as / Paste as. Long form:
+ * (multiplexed), the close/quit flush handshake, and menu Copy as / Paste as; the preload also
+ * overrides three table doors to keep their wire behaviour: `state.setFolds` / `state.setBaseGroups`
+ * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
@@ -219,7 +221,7 @@ export type Bridge<C> = {
  * rejects with a plain `BridgeError`; `client/src/api.ts` wraps it in `BridgeRequestError`.
  */
 export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
-  /** One chokidar watcher per root in main, shared by every window; late joiners get `ready` at once. */
+  /** One watcher per root in main (`fs/treeWatcher.ts`), shared by every window; late joiners get `ready` at once. */
   watch(root: string, listener: (ev: WatchEvent) => void): () => void
   window: {
     /** The close/quit flush handshake (GRO-2160): main holds the window until every listener settled (hard 5s cap in main). */

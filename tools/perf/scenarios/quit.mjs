@@ -1,7 +1,7 @@
 /** quit: ⌘Q (`app.quit()`, what the menu item calls) → the main process is gone, with 2 tabs open. Null when it had to be killed. */
 import path from 'node:path'
 import { writeNote } from '../genVault.mjs'
-import { launch, sleep } from '../lib/app.mjs'
+import { launch, now, sleep } from '../lib/app.mjs'
 import { painted } from '../lib/session.mjs'
 import { writeState } from '../lib/work.mjs'
 
@@ -21,7 +21,7 @@ export async function run(app, { profile, vault, tabs }) {
     await proc.quit()
     throw e
   }
-  const t = performance.timeOrigin + performance.now()
+  const t = now()
   const gone = await proc.quit()
   return { quitMs: gone === null ? null : gone - t }
 }

@@ -2,9 +2,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { storage } from './lib/storage'
-// Crepe's common theme file by file, in its own order, minus the CSS of the features
-// featureConfig.ts disables — latex.css alone pulled KaTeX's stylesheet and its 59 font files;
-// top-bar, ai and diff (AI diff review) style features that never load (YAZ-2184).
+// Crepe's common theme file by file, in its own order, minus latex (KaTeX's stylesheet and its 59
+// fonts), top-bar, ai and diff (AI diff review): features that never load (YAZ-2184).
+// image-block.css stays, as it did through style.css.
 import '@milkdown/crepe/theme/common/prosemirror.css'
 import '@milkdown/crepe/theme/common/reset.css'
 import '@milkdown/crepe/theme/common/block-edit.css'
