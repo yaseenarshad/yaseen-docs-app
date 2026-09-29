@@ -32,7 +32,7 @@
  * Crepe instance is never recreated and the document never changes.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, type EditorState, type Selection } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import type { IndexRecord } from '@shared/types'
@@ -209,24 +209,75 @@ function touches(sel: Selection, from: number, to: number): boolean {
   return sel.from <= to && sel.to >= from
 }
 
+/** One textblock's link decorations: the unit of both the full build and the incremental update. */
+function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): void {
+  eachPlainRun(block, pos + 1, (text, runPos) => {
+    for (const m of text.matchAll(WIKILINK_RE)) {
+      if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
+      const from = runPos + m.index
+      const to = from + m[0].length
+      if (touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
+      decorate(out, from, m[2], source, viewOnly)
+    }
+  })
+}
+
 function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): DecorationSet {
   const decorations: Decoration[] = []
-  const sel = state.selection
   state.doc.descendants((node, pos) => {
     if (node.type.name === 'code_block') return false
     if (!node.isTextblock) return true
-    eachPlainRun(node, pos + 1, (text, runPos) => {
-      for (const m of text.matchAll(WIKILINK_RE)) {
-        if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
-        const from = runPos + m.index
-        const to = from + m[0].length
-        if (touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
-        decorate(decorations, from, m[2], source, viewOnly)
-      }
-    })
+    decorateBlock(decorations, node, pos, state.selection, source, viewOnly)
     return false
   })
   return decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
+}
+
+/**
+ * A keystroke or a caret move can only change the links of the textblocks it touched (YAZ-2131 5C):
+ * the ranges its steps replaced, the doc diff (mark steps map no positions), and the blocks under
+ * the old and the new selection (the reveal rule). The rest of the set is mapped; only those blocks
+ * are decorated again. A randomized test pins the result to `build`.
+ */
+function update(
+  set: DecorationSet,
+  tr: Transaction,
+  oldState: EditorState,
+  state: EditorState,
+  source: WikilinkResolveSource,
+  viewOnly?: ViewOnlyLinkSource,
+): DecorationSet {
+  const { doc } = state
+  const ranges: [number, number][] = [
+    [tr.mapping.map(oldState.selection.from, -1), tr.mapping.map(oldState.selection.to, 1)],
+    [state.selection.from, state.selection.to],
+  ]
+  if (tr.docChanged) {
+    set = set.map(tr.mapping, doc)
+    tr.mapping.maps.forEach((map, i) => {
+      const later = tr.mapping.slice(i + 1)
+      map.forEach((_oldFrom, _oldTo, from, to) => ranges.push([later.map(from, -1), later.map(to, 1)]))
+    })
+    const diffStart = oldState.doc.content.findDiffStart(doc.content)
+    if (diffStart !== null) ranges.push([diffStart, oldState.doc.content.findDiffEnd(doc.content)!.b])
+  }
+  const blocks = new Map<number, ProseNode>()
+  for (const [a, b] of ranges) {
+    // One position beyond each end, so an edit at a block boundary reaches the blocks on both sides.
+    doc.nodesBetween(Math.max(0, Math.min(a, b) - 1), Math.min(doc.content.size, Math.max(a, b) + 1), (node, pos) => {
+      if (!node.isTextblock) return true
+      blocks.set(pos, node)
+      return false
+    })
+  }
+  // One remove and one add for all of them: a select-all edit touches every block in one tree pass.
+  const stale: Decoration[] = []
+  const fresh: Decoration[] = []
+  for (const [pos, block] of blocks) {
+    stale.push(...set.find(pos, pos + block.nodeSize))
+    if (block.type.name !== 'code_block') decorateBlock(fresh, block, pos, state.selection, source, viewOnly)
+  }
+  return set.remove(stale).add(doc, fresh)
 }
 
 export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource) {
@@ -236,8 +287,10 @@ export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnl
         key: wikilinkKey,
         state: {
           init: (_, state) => build(state, source, viewOnly),
-          apply: (tr, set, _old, state) =>
-            tr.docChanged || tr.selectionSet || tr.getMeta(wikilinkKey) !== undefined ? build(state, source, viewOnly) : set,
+          apply: (tr, set, oldState, state) => {
+            if (tr.getMeta(wikilinkKey) !== undefined) return build(state, source, viewOnly) // the resolver changed
+            return tr.docChanged || tr.selectionSet ? update(set, tr, oldState, state, source, viewOnly) : set
+          },
         },
         props: {
           decorations: (state) => wikilinkKey.getState(state),
