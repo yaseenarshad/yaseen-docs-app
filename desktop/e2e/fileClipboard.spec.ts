@@ -43,8 +43,8 @@ const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter
 const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 const rowAt = (w: Page, file: string) => w.locator(`.tree__row--file[data-path="${file}"]`)
 const menu = (w: Page) => w.locator('.ctx-menu')
-/** Labels are the bare verb — the ⌘ hint rides on `data-hint`, outside the accessible name (menuSections.ts). */
-const menuItem = (w: Page, name: string) => menu(w).getByRole('menuitem', { name, exact: true })
+/** An item by its label; the accessible name also carries the ⌘ hint (`Paste ⌘V`), so it is matched as an optional tail. */
+const menuItem = (w: Page, label: string) => menu(w).getByRole('menuitem', { name: new RegExp(`^${label}(?: ⌘\\S*)?$`) })
 /** App's one passive notice (`.link-notice`, YAZ-1341): every clipboard verb confirms through it. */
 const notice = (w: Page) => w.locator('.link-notice')
 
