@@ -2259,13 +2259,13 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy path',
       'Copy for Agent',
       'New note',
-      'New dated note',
-      // "New folder page" (🔒 D4, YAZ-817): right after the note (and its dated twin) it is a
-      // kind of — it CREATES beside the right-clicked row, so it stays in the
-      // create group and never drifts down to the act-on-this-row toggle.
-      'New folder page',
       'New folder',
+      // Their own section (YAZ-2249 🔒 E1/E2): the dated twins lined up under the everyday pair,
+      // then "New folder page" — it CREATES beside the right-clicked row, so it stays with the
+      // create items and never drifts down to the act-on-this-row toggle (🔒 D4, YAZ-817).
+      'New dated note',
       'New dated folder',
+      'New folder page',
       // The folder-page toggle joins the row between the create group and Rename (🔒 D2,
       // YAZ-817): it acts on the right-clicked page, so it belongs with the other
       // act-on-this-row items — and above the destructive pair, which stays last.
@@ -2892,10 +2892,10 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Paste',
       'Copy path',
       'New note',
-      'New dated note',
-      'New folder page',
       'New folder',
+      'New dated note',
       'New dated folder',
+      'New folder page',
       'Rename',
       'Add to favorites',
       'Open in',
@@ -3567,9 +3567,9 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const paste = itemByLabel(el, 'Paste')
     expect(paste?.disabled).toBe(true)
     expect(paste?.getAttribute('data-hint')).toBe('⌘V')
-    // Five groups drawn on one Markdown file row: clipboard, create, this-row, "Open in" alone, Delete —
-    // the Open group is empty here (no plural open, nothing to focus) and the renderer skips it.
-    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(5)
+    // Six groups drawn on one Markdown file row: clipboard, create, more create, this-row, "Open in"
+    // alone, Delete — the Open group is empty here (no plural open, nothing to focus) and the renderer skips it.
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(6)
   })
 
   it('blank space offers no Cut / Copy (nothing to clip) but keeps the disabled Paste — the root is a paste target', async () => {
@@ -3578,8 +3578,8 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     expect(itemByLabel(el, 'Cut')).toBeUndefined()
     expect(itemByLabel(el, 'Copy')).toBeUndefined()
     expect(itemByLabel(el, 'Paste')?.disabled).toBe(true)
-    // No row to rename or delete: clipboard, create, and the root's own "Open in" — three groups.
-    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(3)
+    // No row to rename or delete: clipboard, create, more create, and the root's own "Open in" — four groups.
+    expect(el.querySelectorAll('.ctx-menu__group')).toHaveLength(4)
   })
 
   it('Cut on a single row clips that one path and SAYS SO (YAZ-1341); the menu closes', async () => {
