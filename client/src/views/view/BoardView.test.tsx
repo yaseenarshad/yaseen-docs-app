@@ -34,12 +34,12 @@ vi.mock('../../api', async (importOriginal) => {
     ...original,
     api: {
       ...original.api,
-      reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }),
+      shell: { reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) },
       readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
     },
   }
 })
-const reveal = vi.mocked(api.reveal)
+const reveal = vi.mocked(api.shell.reveal)
 vi.mock('../../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
     opts.root.textContent = opts.defaultValue ?? ''

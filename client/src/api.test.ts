@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { YaseenDocsApi } from '@shared/types'
+import type { YaseenDocsApi } from '@shared/ipc'
 import { api, BridgeRequestError } from './api'
 
 /** A minimal `window.yaseenDocs` stub: only the methods the client `api` delegates to. */
@@ -76,27 +76,27 @@ describe('api', () => {
     expect(bridge.writeAsset).toHaveBeenCalledWith(draw)
   })
 
-  it('rename delegates to file.rename and wraps ALREADY_EXISTS like every other code (Links E1, GRO-2194)', async () => {
+  it('file.rename delegates to the bridge and wraps ALREADY_EXISTS like every other code (Links E1, GRO-2194)', async () => {
     const file = { rename: vi.fn(), onRenamed: vi.fn() }
     Object.defineProperty(window.yaseenDocs, 'file', { value: file, configurable: true })
     file.rename.mockResolvedValue({ oldPath: '/v/a.md', newPath: '/v/b.md' })
-    await expect(api.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md' })
+    await expect(api.file.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md' })
     expect(file.rename).toHaveBeenCalledWith({ oldPath: '/v/a.md', newPath: '/v/b.md' })
     file.rename.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path: '/v/b.md' })
-    const err = (await api.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' }).catch((e: unknown) => e)) as BridgeRequestError
+    const err = (await api.file.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' }).catch((e: unknown) => e)) as BridgeRequestError
     expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('ALREADY_EXISTS')
     expect(err.path).toBe('/v/b.md')
   })
 
-  it('repairRename delegates to file.repairRename and coldDiff to the top-level bridge method (Links E1c, GRO-2242)', async () => {
+  it('file.repairRename delegates to the bridge and coldDiff to the top-level bridge method (Links E1c, GRO-2242)', async () => {
     const file = { rename: vi.fn(), repairRename: vi.fn(), onRenamed: vi.fn() }
     Object.defineProperty(window.yaseenDocs, 'file', { value: file, configurable: true })
     file.repairRename.mockResolvedValue({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
-    await expect(api.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
+    await expect(api.file.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
     expect(file.repairRename).toHaveBeenCalledWith({ oldPath: '/v/a.md', newPath: '/v/b.md' })
     file.repairRename.mockRejectedValue({ code: 'BAD_REQUEST', message: 'the old path still exists on disk', path: '/v/a.md' })
-    const err = (await api.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' }).catch((e: unknown) => e)) as BridgeRequestError
+    const err = (await api.file.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' }).catch((e: unknown) => e)) as BridgeRequestError
     expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('BAD_REQUEST')
     bridge.coldDiff.mockResolvedValue(null)

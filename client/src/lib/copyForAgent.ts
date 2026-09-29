@@ -9,7 +9,7 @@ import { basename } from './paths'
  */
 export async function copyForAgent(path: string, notice?: (message: string) => void): Promise<void> {
   try {
-    await navigator.clipboard.writeText(await api.agentPrompt({ path }))
+    await navigator.clipboard.writeText(await api.shell.agentPrompt({ path }))
     notice?.('Copied for agent')
   } catch (err) {
     notice?.(

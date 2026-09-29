@@ -360,7 +360,7 @@ function CrepeHost({
       // note path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
       markdownLinkNav: {
-        open: (href) => api.openLink({ href, sourcePath: file.path }),
+        open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
         onNotice: onNotice ?? (() => undefined),
       },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator

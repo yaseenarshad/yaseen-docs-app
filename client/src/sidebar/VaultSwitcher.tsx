@@ -48,6 +48,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
 import { basename } from '../lib/paths'
@@ -225,7 +226,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
         inputRef.current?.focus()
       })
   }
-  const choose = (path: string): void => settle(path, window.yaseenDocs.window.openRecent(path), 'openRecent')
+  const choose = (path: string): void => settle(path, api.window.openRecent(path), 'openRecent')
 
   /** Remove from recent vaults (D3): forgets the MRU entry only — the folder is untouched — and the row leaves at once. */
   const removeRow = (path: string): void => {

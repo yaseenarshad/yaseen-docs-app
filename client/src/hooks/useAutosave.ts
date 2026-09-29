@@ -95,7 +95,7 @@ export function useAutosave(path: string): AutosaveHandle {
 
   useEffect(() => {
     // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-    const offFlush = window.yaseenDocs.window.onFlush(async () => {
+    const offFlush = api.window.onFlush(async () => {
       const s = ref.current
       if (s === null || retiredRef.current) return
       s.autosave.update(s.getContent())

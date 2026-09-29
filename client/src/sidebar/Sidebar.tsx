@@ -872,11 +872,11 @@ export function Sidebar({
     // read and must win — the read only fills a window nothing has pushed to yet.
     let live = true
     let pushed = false
-    const unsubscribe = api.onClipChanged((state) => {
+    const unsubscribe = api.file.onClipChanged((state) => {
       pushed = true
       setClip(state)
     })
-    api.clipState().then(
+    api.file.clipState().then(
       (state) => {
         if (live && !pushed) setClip(state)
       },
@@ -896,7 +896,7 @@ export function Sidebar({
   const clipTo = useCallback(
     (paths: string[], op: 'copy' | 'cut') => {
       const what = countItems(paths.length)
-      api.clip({ paths, op }).then(
+      api.file.clip({ paths, op }).then(
         () => onNotice(op === 'cut' ? `Cut ${what}` : `Copied ${what}`, op),
         (err: unknown) => onNotice(`Can't ${op}: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
@@ -914,7 +914,7 @@ export function Sidebar({
   const pasteInto = useCallback(
     async (dir: string) => {
       try {
-        const res = await api.paste({ targetDir: dir })
+        const res = await api.file.paste({ targetDir: dir })
         if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
         refresh()
         const first = res.failed[0]
@@ -1020,7 +1020,7 @@ export function Sidebar({
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
     (path: string) => {
-      window.yaseenDocs.window.open({ root, file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
+      api.window.open({ root, file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
     },
     [root],
   )
@@ -1090,7 +1090,7 @@ export function Sidebar({
    */
   const reveal = useCallback(
     (path: string) => {
-      api.reveal({ path }).catch((err: unknown) => {
+      api.shell.reveal({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
@@ -1104,7 +1104,7 @@ export function Sidebar({
    */
   const openVsCode = useCallback(
     (path: string) => {
-      api.openVsCode({ path }).catch((err: unknown) => {
+      api.shell.openVsCode({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
@@ -1118,7 +1118,7 @@ export function Sidebar({
    */
   const openDefault = useCallback(
     (path: string) => {
-      api.openDefault({ path }).catch((err: unknown) => {
+      api.shell.openDefault({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { ZoomStep } from '@shared/types'
+import { api } from '../api'
 
 interface UseMenuEventsOptions {
   /** File › Open Folder… (⌘⇧O) targeted this window: run the pick-folder flow. */
@@ -27,7 +28,7 @@ interface UseMenuEventsOptions {
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
 export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onZoom }: UseMenuEventsOptions): void {
   useEffect(() => {
-    const menu = window.yaseenDocs.menu
+    const menu = api.menu
     const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSwitchVault(onSwitchVault), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab), menu.onZoom(onZoom)]
     return () => offs.forEach((off) => off())
   }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onZoom])
