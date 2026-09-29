@@ -11,7 +11,7 @@
  * temp `--user-data-dir`, a COPY of the fixture vault, nothing sleeps.
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { appWindow, buildFixtureVault, copyVault, launchApp, seededState, shoot } from './helpers'
@@ -64,8 +64,10 @@ test('step 1 — tab A: scroll, caret, unsaved typing and zoom', async () => {
   recorded.aZoom = (await zoomOf(a).textContent()) ?? undefined
 
   await line(a, 'a-line-60').scrollIntoViewIfNeeded()
+  // The click lands past the short line's end, so the caret is already there. No `End`: on macOS it
+  // does not move the caret, it starts an ANIMATED scroll that was still running when the offset
+  // below was recorded (the ~60–90 px "drift", identical on the 1D base; YAZ-2131 merge triage).
   await line(a, 'a-line-60').click()
-  await win.keyboard.press('End')
   await win.keyboard.type(' unsaved-A', { delay: 10 })
   await expect(line(a, 'a-line-60')).toHaveText('a-line-60 unsaved-A')
   await scrollTo(a, 1500)
@@ -112,6 +114,12 @@ test('step 3 — back to A: scroll, zoom and the unsaved buffer are as left; the
   await editorOf(a).focus()
   // ProseMirror puts its selection back into the DOM a moment after focus.
   await expect.poll(() => win.evaluate(() => document.getSelection()?.anchorNode?.textContent ?? '')).toContain('unsaved-A')
+  // Undo steps: prosemirror-history closes a group only after `newGroupDelay` (500 ms, Milkdown's
+  // default, not overridden here). Typing that was still unsaved at the switch folds into the step
+  // of the first edit made before its autosave lands — the same on the 1D base (10/10), so existing
+  // behaviour, not a D5 loss (YAZ-2131 merge triage). The buffer was proved above; now let the save
+  // land, so the Q below starts its own step.
+  await expect.poll(() => readFile(path.join(vault, 'Long A.md'), 'utf8')).toContain('unsaved-A')
   await win.keyboard.type('Q')
   await expect(line(a, 'a-line-60')).toHaveText('a-line-60 unsaved-AQ')
   // Undo history survived the round trip: the Q, then the typing from step 1.
