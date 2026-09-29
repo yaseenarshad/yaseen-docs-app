@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, type IpcMainInvokeEvent } from 'electron'
 import type { PickFolderResponse } from '@shared/types'
-import { CH } from '../../channels'
+import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
 import { handleWithEvent } from './envelope'
 
@@ -31,5 +31,5 @@ export async function pickFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWin
 
 export function registerDialogIpc(): void {
   const inFlight = new Set<BrowserWindow | null>()
-  handleWithEvent(CH.dialogPickFolder, (e) => pickFolder(e, inFlight))
+  handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
 }

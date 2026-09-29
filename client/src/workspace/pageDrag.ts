@@ -1,12 +1,11 @@
+import { isRecord } from '@shared/guards'
+
 export const WORKSPACE_PAGE_MIME = 'application/x-yaseen-workspace-page'
 
 export interface PageDrag {
   path: string
   owner: 'main' | 'right'
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
 
 export function writePageDrag(data: DataTransfer, value: PageDrag): void {
   data.setData(WORKSPACE_PAGE_MIME, JSON.stringify(value))

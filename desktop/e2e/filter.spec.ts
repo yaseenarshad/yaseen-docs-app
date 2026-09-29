@@ -34,11 +34,11 @@
  * Same harness as nestedGroups.spec.ts (temp `--user-data-dir`, a COPY of the committed fixture,
  * `filter-` step screenshots).
  */
-import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { activeTab, appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -64,13 +64,8 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const rowNames = (w: Page) => contents(w).locator('.view-table__link')
 const count = (w: Page) => contents(w).locator('.view-toolbar__count')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** The toolbar's Filter button and its badge — the popover it opens carries the same label, hence `button`. */
 const filterBtn = (w: Page) => contents(w).locator('button[aria-label="Filter"]')
 const badge = (w: Page) => filterBtn(w).locator('.view-toolbar__badge')

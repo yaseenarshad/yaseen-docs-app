@@ -13,7 +13,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, launchApp, seededState, shoot } from './helpers'
+import { appWindow, editorOf, launchApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,7 +26,6 @@ let notePath: string
 let app: ElectronApplication
 let win: Page
 
-const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 /** The item whose OWN line reads `text`, and its box (`bullet` / `unchecked` / `checked`). */
 const item = (w: Page, text: string) => editorOf(w).locator(`li.list-item:has(> .children > .content-dom > p:text-is("${text}"))`)
 const box = (w: Page, text: string) => item(w, text).locator(':scope > .label-wrapper > .label')

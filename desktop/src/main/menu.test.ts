@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
 import { defaultRightPanelIdentity, type RecentRoots, type WindowEntry } from '@shared/types'
-import { CH } from '../channels'
+import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
 import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild, type ContextMenuActions, type MenuHandlers, type MenuHost } from './menu'
 
@@ -401,7 +401,7 @@ describe('createMenuHandlers', () => {
     const { handlers, host } = makeHandlers(wc)
     handlers.copyAs('plain')
     handlers.copyAs('markdown')
-    expect(wc.send.mock.calls).toEqual([[CH.menuCopyAs, 'plain'], [CH.menuCopyAs, 'markdown']])
+    expect(wc.send.mock.calls).toEqual([[SPECIAL.menuCopyAs, 'plain'], [SPECIAL.menuCopyAs, 'markdown']])
     expect(host.readClipboardText).not.toHaveBeenCalled()
     expect(() => makeHandlers(undefined).handlers.copyAs('plain')).not.toThrow()
   })
@@ -411,8 +411,8 @@ describe('createMenuHandlers', () => {
     handlers.pasteAs('plain')
     handlers.pasteAs('markdown')
     expect(wc.send.mock.calls).toEqual([
-      [CH.menuPasteAs, { mode: 'plain', text: '# Clipboard\n\nText' }],
-      [CH.menuPasteAs, { mode: 'markdown', text: '# Clipboard\n\nText' }],
+      [SPECIAL.menuPasteAs, { mode: 'plain', text: '# Clipboard\n\nText' }],
+      [SPECIAL.menuPasteAs, { mode: 'markdown', text: '# Clipboard\n\nText' }],
     ])
     expect(host.readClipboardText).toHaveBeenCalledTimes(2)
     const absent = makeHandlers(undefined)
@@ -438,14 +438,14 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.openFolder()
-    expect(wc.send).toHaveBeenCalledWith(CH.menuOpenFolder)
+    expect(wc.send).toHaveBeenCalledWith(CONTRACT.menu.onOpenFolder.channel)
   })
 
   it('settings tells the focused renderer to open its settings dialog (YAZ-1679)', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.settings()
-    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuSettings)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onSettings.channel)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.settings()).not.toThrow()
@@ -455,7 +455,7 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.search()
-    expect(wc.send).toHaveBeenCalledWith(CH.menuSearch)
+    expect(wc.send).toHaveBeenCalledWith(CONTRACT.menu.onSearch.channel)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.search()).not.toThrow()
@@ -465,7 +465,7 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.switchVault()
-    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuSwitchVault)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onSwitchVault.channel)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.switchVault()).not.toThrow()
@@ -475,18 +475,18 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.openRecent('/vaults/work')
-    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuOpenRoot, '/vaults/work')
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onOpenRoot.channel, '/vaults/work')
   })
 
   it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.closeTab()
-    expect(wc.send).toHaveBeenLastCalledWith(CH.menuCloseTab)
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onCloseTab.channel)
     handlers.nextTab()
-    expect(wc.send).toHaveBeenLastCalledWith(CH.menuNextTab)
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNextTab.channel)
     handlers.prevTab()
-    expect(wc.send).toHaveBeenLastCalledWith(CH.menuPrevTab)
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onPrevTab.channel)
     expect(wc.send).toHaveBeenCalledTimes(3)
 
     const { handlers: unfocused } = makeHandlers(undefined)
@@ -501,7 +501,7 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.toggleSidebar()
-    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuToggleSidebar)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onToggleSidebar.channel)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.toggleSidebar()).not.toThrow()
@@ -511,7 +511,7 @@ describe('createMenuHandlers', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
     handlers.zoom(1)
-    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuZoom, 1)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onZoom.channel, 1)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.zoom(-1)).not.toThrow()

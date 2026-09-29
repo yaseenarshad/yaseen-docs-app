@@ -13,7 +13,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, clickMenuItem, launchApp, readState, seededState, shoot } from './helpers'
+import { appWindow, clickMenuItem, editorOf, launchApp, layer, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,8 +26,6 @@ let notePath: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 const line = (w: Page, text: string) => editorOf(w).locator(`p:text-is("${text}")`)
 const glyph = (w: Page, text: string) => editorOf(w).locator(`li.list-item:has(> .children > .content-dom > p:text-is("${text}")) > .label-wrapper`)
 const crumbs = (w: Page) => editorOf(w).locator('nav[aria-label="Zoom breadcrumbs"] .outline-zoom-crumb')

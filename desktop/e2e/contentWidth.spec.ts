@@ -7,7 +7,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, copyVault, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(60_000)
@@ -15,8 +15,6 @@ test.setTimeout(60_000)
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const NOTE = path.join('funnel-stages', 'Lead Gen.md')
 const FOLDER_PAGE = 'KPIs'
-
-const layer = (win: Page) => win.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 
 async function pickContentWidth(win: Page, label: 'Narrow' | 'Medium' | 'Full'): Promise<void> {
   await win.getByRole('button', { name: 'Settings', exact: true }).click()

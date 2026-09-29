@@ -40,7 +40,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -66,11 +66,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const wrap = (w: Page) => contents(w).locator('.view-table-wrap')
-const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** One section header row, addressed by the value it SHOWS (which for a link is its target, bare). */
 const groupRow = (w: Page, name: string) =>
   contents(w)

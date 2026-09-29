@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ipcMain } from 'electron'
-import { CH, type Envelope } from '../../channels'
+import { SPECIAL, type Envelope } from '@shared/ipc'
 import { registerClipboardIpc, MAX_COPY_TEXT_LENGTH } from './clipboard'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
@@ -12,7 +12,7 @@ let target: { id: number } | undefined
 let formats: Record<string, string>
 const writeText = vi.fn((text: string) => { formats = { 'text/plain': text } })
 const invoke = (event: unknown, ...args: unknown[]) => {
-  const handler = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === CH.menuCopyText)?.[1]
+  const handler = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === SPECIAL.menuCopyText.channel)?.[1]
   return (handler as unknown as (event: unknown, ...args: unknown[]) => Promise<Envelope<void>>)(event, ...args)
 }
 const bad = { ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST' }) }

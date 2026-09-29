@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { CH, type Envelope } from '../../channels'
+import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { activeConfigWatcherRoots, VAULT_CONFIG_DIR } from '../vaultConfig'
 import { registerVaultConfigIpc } from './vaultConfig'
@@ -63,16 +63,16 @@ afterEach(async () => {
 describe('registerVaultConfigIpc', () => {
   it('registers exactly the vaultConfig channels the preload invokes', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.vaultConfigRead, CH.vaultConfigWrite].sort())
+    expect(channels).toEqual([CONTRACT.vaultConfig.read.channel, CONTRACT.vaultConfig.write.channel].sort())
   })
 
   it('read and write round-trip through the envelope; bad arguments answer error envelopes', async () => {
-    expect(await registered(CH.vaultConfigRead)({ sender }, vault, 'types.json')).toEqual(ok(null))
-    expect(await registered(CH.vaultConfigWrite)({ sender }, vault, 'types.json', { a: 1 })).toEqual(ok(undefined))
-    expect(await registered(CH.vaultConfigRead)({ sender }, vault, 'types.json')).toEqual(ok({ a: 1 }))
-    expect(await registered(CH.vaultConfigRead)({ sender }, 'rel', 'types.json')).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CH.vaultConfigRead)({ sender }, vault, '../up.json')).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CH.vaultConfigWrite)({ sender }, vault, 'a.txt', {})).toEqual(bad('UNSUPPORTED_EXTENSION'))
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'types.json')).toEqual(ok(null))
+    expect(await registered(CONTRACT.vaultConfig.write.channel)({ sender }, vault, 'types.json', { a: 1 })).toEqual(ok(undefined))
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'types.json')).toEqual(ok({ a: 1 }))
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, 'rel', 'types.json')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, '../up.json')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.vaultConfig.write.channel)({ sender }, vault, 'a.txt', {})).toEqual(bad('UNSUPPORTED_EXTENSION'))
   })
 
   it('subscribes one config watcher per open-vault root and drops it when the last window leaves', async () => {
@@ -97,14 +97,14 @@ describe('registerVaultConfigIpc', () => {
     a.webContents.send.mockClear()
     b.webContents.send.mockClear()
 
-    await registered(CH.vaultConfigWrite)({ sender }, vault, 'types.json', { a: 1 })
+    await registered(CONTRACT.vaultConfig.write.channel)({ sender }, vault, 'types.json', { a: 1 })
     const change = { root: vault, name: 'types.json' }
-    expect(a.webContents.send).toHaveBeenCalledWith(CH.vaultConfigChanged, change)
-    expect(b.webContents.send).toHaveBeenCalledWith(CH.vaultConfigChanged, change)
+    expect(a.webContents.send).toHaveBeenCalledWith(CONTRACT.vaultConfig.onChange.channel, change)
+    expect(b.webContents.send).toHaveBeenCalledWith(CONTRACT.vaultConfig.onChange.channel, change)
 
     a.webContents.send.mockClear()
     await new Promise((r) => setTimeout(r, 300)) // let the watcher settle on the just-created dotfolder
     await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'types.json'), '{"a":2}')
-    await until(() => a.webContents.send.mock.calls.some(([ch, c]) => ch === CH.vaultConfigChanged && (c as { name: string }).name === 'types.json'))
+    await until(() => a.webContents.send.mock.calls.some(([ch, c]) => ch === CONTRACT.vaultConfig.onChange.channel && (c as { name: string }).name === 'types.json'))
   })
 })

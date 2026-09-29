@@ -16,7 +16,7 @@ interface PageContextMenuProps {
 export function PageContextMenu({ x, y, path, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
-    api.reveal({ path }).catch((error: unknown) => {
+    api.shell.reveal({ path }).catch((error: unknown) => {
       onNotice?.(
         error instanceof BridgeRequestError && error.code === 'NOT_FOUND'
           ? `Can't reveal "${basename(path)}" — it is no longer there`

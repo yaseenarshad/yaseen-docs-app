@@ -16,7 +16,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, copyVault, launchApp, quitApp, seededState } from './helpers'
+import { appWindow, contents, copyVault, launchApp, layer, quitApp, seededState } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -31,9 +31,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const layer = (page: Page) => page.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const editorHost = () => layer(win).locator('.editor-host')
-const contents = (page: Page) => layer(page).locator('.folder-page-contents')
 const table = () => contents(win).locator('.view-table')
 const wrap = () => contents(win).locator('.view-table-wrap')
 const headers = () => table().locator('thead th')

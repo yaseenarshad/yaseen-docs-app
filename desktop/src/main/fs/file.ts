@@ -3,6 +3,7 @@ import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/
 import { MAX_FILE_BYTES } from '@shared/types'
 import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile, requireTextReadableFile } from './fsUtils'
 import { readBoundedRegularFile } from './boundedRead'
+import { requireRequest } from './validate'
 
 const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
@@ -33,9 +34,7 @@ export async function readFile(path: string): Promise<FileResponse> {
  * so its shape is checked like a request body, not trusted from the type.
  */
 export async function writeFile(req: FileWriteRequest): Promise<FileWriteResponse> {
-  const raw: unknown = req
-  if (typeof raw !== 'object' || raw === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
-  const { path, content, expectedMtime } = raw as Record<string, unknown>
+  const { path, content, expectedMtime } = requireRequest(req)
   const p = requireAbsPath(path, 'path')
   requireMarkdownFile(p)
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
