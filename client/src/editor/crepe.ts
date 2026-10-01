@@ -5,8 +5,9 @@
  * switch, so no bundler can drop the disabled ones — and `katex` (+ `remark-math`, the AI and
  * top-bar code) rode into the main chunk although `featureConfig.ts` turns Latex off. Here the same
  * class is rebuilt from Crepe's own public parts: `CrepeBuilder` plus the per-feature entry points,
- * loaded in Crepe's own order with Crepe's own CodeMirror defaults. `crepe.test.ts` holds it to the
- * package's `Crepe`: same loaded features, schema, plugins and rendered DOM.
+ * loaded in Crepe's own order with Crepe's own code language list. `crepe.test.ts` holds it to the
+ * package's `Crepe`: same loaded features, schema, plugins and rendered DOM. Crepe's One Dark code
+ * theme is NOT a default here: `createCrepe()` always passes the app's own (`codeTheme.ts`, YAZ-2270).
  *
  * 🔒 No production module may import a VALUE from '@milkdown/crepe' (types are fine): the bundler
  * must treat the root module as side-effectful, so a single value import brings katex back.
@@ -22,7 +23,6 @@ import { table } from '@milkdown/crepe/feature/table'
 import { toolbar } from '@milkdown/crepe/feature/toolbar'
 import type { CrepeConfig, CrepeFeature as PackageCrepeFeature } from '@milkdown/crepe'
 import { languages } from '@codemirror/language-data'
-import { oneDark } from '@codemirror/theme-one-dark'
 
 /** The package enum's values, without importing the module that declares it (`crepe.test.ts` pins equality). */
 export const CrepeFeature = {
@@ -79,9 +79,9 @@ export class Crepe extends CrepeBuilder {
       if (!enabled[feature]) continue
       const load = LOADERS[feature]
       if (load === undefined) throw new Error(`Crepe feature "${feature}" is not bundled (editor/crepe.ts)`)
-      // Crepe's own `defaultConfig` sets only these two that the feature does not already default:
-      // the One Dark theme and the language list (its icons and labels equal the feature's defaults).
-      const config = feature === CrepeFeature.CodeMirror ? { theme: oneDark, languages, ...featureConfigs[feature] } : featureConfigs[feature]
+      // Of Crepe's own `defaultConfig`, only the language list is not already the feature's default
+      // (its icons and labels are; its One Dark theme is replaced, see above).
+      const config = feature === CrepeFeature.CodeMirror ? { languages, ...featureConfigs[feature] } : featureConfigs[feature]
       load(this.editor, config as never)
     }
   }
