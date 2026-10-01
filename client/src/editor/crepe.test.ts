@@ -101,7 +101,7 @@ describe('editor/crepe (YAZ-2184)', () => {
           // The link editor's input carries a random id per mount.
           html: root.innerHTML.replace(/id="milkdown-link-edit-\w+"/g, 'id="milkdown-link-edit"'),
           markdown: crepe.getMarkdown(),
-          // Crepe's CodeMirror defaults: the language picker's list (the One Dark theme shows in `html`).
+          // The Crepe CodeMirror default this app keeps: the language picker's list.
           languages: ctx.get(codeBlockConfig.key).languages.map((l) => l.name),
         }
       })

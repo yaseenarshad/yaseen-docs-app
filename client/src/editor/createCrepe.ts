@@ -101,6 +101,8 @@
  *    hover preview card (no root in reach) say so where they mount.
  */
 import { Crepe, CrepeFeature } from './crepe'
+import { EditorView as CodeMirrorView } from '@codemirror/view'
+import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -290,6 +292,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       [CrepeFeature.Toolbar]: { buildToolbar },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
+      // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
+      // app.css `--code-*` so they follow Appearance (codeTheme.ts replaces Crepe's One Dark).
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping] },
     },
   })
   crepe.editor.use(
