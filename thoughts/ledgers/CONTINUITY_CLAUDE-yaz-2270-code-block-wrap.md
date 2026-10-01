@@ -14,6 +14,7 @@
 - D2: per-language "normal text" look DROPPED (YAGNI).
 - D3: `overflow-x: auto` rule in `app.css` stays.
 - D4: app-owned code theme (`codeTheme.ts`) on `app.css` variables replaces One Dark.
+- Active-line tint only in the focused block (found in the demo: every block at rest showed a band on line 1).
 - Polish: One Dark default removed from `crepe.ts` (dead once D4 landed); app tokens reused where they fit.
 
 ## State
@@ -22,11 +23,11 @@
   - [x] 2 Wrap (YAZ-2272)
   - [x] 3 Colours (YAZ-2273)
   - [x] 4 Polish and anti-slop (YAZ-2274, 4A YAZ-2275, 4B YAZ-2276)
-- Now: [→] 5 Verify in the real app (YAZ-2277): Desktop demo, Yasin's sign-off
-- Next: merge PR to main, release, release notes backfill
+  - [x] 5 Verify in the real app (YAZ-2277): Yasin approved the Desktop demo on 2026-09-30
+- Now: closed. Merged to main; release and notes follow as their own step.
 
 ## Open Questions
-- UNCONFIRMED: Yasin's OK to raise `rendererEagerCssBytes` 137,574 → 137,913 (+339 B).
+- None. Yasin OK'd raising `rendererEagerCssBytes` 137,574 → 137,913 (+339 B) on 2026-09-30.
 
 ## Working Set
 - Worktree: `../yaseen-docs-app-yaz-2270`, branch `yaz-2270-code-block-wrap`
