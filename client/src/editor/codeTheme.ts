@@ -15,7 +15,9 @@ const chrome = EditorView.theme({
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': {
     backgroundColor: 'var(--code-selection)',
   },
-  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--bg-hover)' },
+  // Only the block being edited marks its line; at rest a block is plain.
+  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'transparent' },
+  '&.cm-focused .cm-activeLine, &.cm-focused .cm-activeLineGutter': { backgroundColor: 'var(--bg-hover)' },
   '.cm-tooltip': { backgroundColor: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--border)' },
 })
 
