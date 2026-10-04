@@ -30,6 +30,8 @@
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
  *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one.
+ *  - Marks on line breaks (YAZ-2280, `breakMarks.ts`): replaces Milkdown's `hardbreakClearMarkPlugin`;
+ *    a mark runs through a soft break, never starts or ends on one, and never sits on a hard break.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
@@ -107,6 +109,7 @@ import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
+  hardbreakClearMarkPlugin,
   orderedListKeymap,
   remarkPreserveEmptyLinePlugin,
   turnIntoTextCommand,
@@ -118,6 +121,7 @@ import { Selection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
+import { breakMarks } from './breakMarks'
 import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
@@ -311,6 +315,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // serialise as `<br />`.
   void crepe.editor.remove(remarkPreserveEmptyLinePlugin)
   crepe.editor.use(inlineBreaks).use(remarkPreserveEmptyLinePlugin)
+  // Milkdown's break plugin turns soft breaks hard under any new mark (YAZ-2280); ours replaces it.
+  void crepe.editor.remove(hardbreakClearMarkPlugin)
+  crepe.editor.use(breakMarks)
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
