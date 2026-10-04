@@ -26,7 +26,7 @@ export function agentCommand({ packaged, resourcesPath, mainDir }: AgentHost): s
  * clipboard itself, the way Copy path does. Read-only and enveloped like `reveal`: a page that is
  * no longer there rejects NOT_FOUND so the row can show a passive notice; a non-Markdown file is
  * not a page and rejects UNSUPPORTED_EXTENSION (the write guard's own code). A folder's settings
- * file exists only after its first change (YAZ-2290 D1), so there the FOLDER is what must exist.
+ * file may not exist yet (an un-adopted vault, YAZ-2290 D1), so there the FOLDER is what must exist.
  */
 export function registerAgentIpc(host: AgentHost): void {
   handle(CONTRACT.shell.agentPrompt, async (req: unknown) => {

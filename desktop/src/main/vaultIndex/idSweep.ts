@@ -3,8 +3,9 @@ import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdFrom } from '@shared/noteId'
-import { VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
+import { BridgeFailure, createDurable } from '../fs/fsUtils'
 
 /**
  * The id sweep (YAZ-2293 D3, D4): a note the app did not create arrives with no id, and a copied
@@ -13,25 +14,31 @@ import { readFile, writeFile } from '../fs/file'
  * knew to hold it (`knew`), else the first in path order, which is the same answer on every
  * device — and any other in `among` is given a fresh one.
  *
+ * A FOLDER's id is the `id` of its `.folder.md`, so each of `dirs` — folders the tree shows,
+ * never the vault root — that has no such file is given one holding only its id (D13).
+ *
  * 🔒 Only in an ADOPTED vault (`.yaseendocs/` exists): the app never writes behind the user's
  * back into a folder it has merely been pointed at (the standing rule of YAZ-797). Creating a
- * note in the folder adopts it (`adoptVault`).
+ * note or a folder in the folder adopts it (`adoptVault`).
  *
  * The id is DERIVED from the note (its place in the vault and its bytes), not drawn at random:
  * two devices that both meet the same note before syncing then make the same edit, which merges.
  * A different id on each would be a conflict, and the built-in sync stops on one (`git/sync.ts`).
+ * A folder's is derived the same way, from its settings file's place and no bytes.
  *
  * Safe to run any number of times and never throws: the write is a compare-and-set against the
  * file's bytes as they are NOW and its mtime, so a note that cannot take an id (unparsable
  * frontmatter, a hand-written `id` of another shape, an oversize file) or that changed under the
- * sweep is simply left for its next index event. The write's own watch event rescans the note,
- * which then needs nothing.
+ * sweep is simply left for its next index event. A settings file is created only where there is
+ * none at the moment of the write. The write's own watch event rescans the note, which then
+ * needs nothing.
  */
 export async function sweepIds(
   root: string,
   records: ReadonlyMap<string, IndexRecord>,
   among: readonly IndexRecord[],
   knew: (path: string) => string | undefined,
+  dirs: readonly string[] = [],
 ): Promise<void> {
   const holders = new Map<string, IndexRecord[]>()
   for (const r of records.values()) if (r.id !== undefined) holders.set(r.id, [...(holders.get(r.id) ?? []), r])
@@ -43,9 +50,13 @@ export async function sweepIds(
     }
     stale.push(r)
   }
-  if (stale.length === 0 || !(await isAdopted(root))) return
+  // A settings file the index holds is a record like any note, swept above.
+  const bare = dirs.map((dir) => path.join(dir, FOLDER_SETTINGS_FILE)).filter((file) => !records.has(file))
+  if ((stale.length === 0 && bare.length === 0) || !(await isAdopted(root))) return
   // An id some indexed note holds is never written (YAZ-2378): the same next one on every device.
-  for (const r of stale) await giveId(root, r.path, r.id, (id) => holders.has(id)).catch(() => undefined)
+  const taken = (id: string): boolean => holders.has(id)
+  for (const r of stale) await giveId(root, r.path, r.id, taken).catch(() => undefined)
+  for (const file of bare) await giveId(root, file, undefined, taken).catch(() => undefined)
 }
 
 /**
@@ -67,8 +78,8 @@ async function otherFiles(r: IndexRecord, holders: readonly IndexRecord[]): Prom
 }
 
 /**
- * Makes `root` an adopted vault — the user created a note in it, which is what says the
- * folder is theirs to manage (🔒 YAZ-2293). True when this call is what adopted it. A folder
+ * Makes `root` an adopted vault — the user created a note or a folder in it, which is what says
+ * the folder is theirs to manage (🔒 YAZ-2293). True when this call is what adopted it. A folder
  * that cannot be written to simply stays as it is.
  */
 export const adoptVault = (root: string): Promise<boolean> =>
@@ -88,13 +99,21 @@ export const isAdopted = (root: string): Promise<boolean> =>
  * and never one that is `taken`. Resolves to the id written, undefined when nothing was. The
  * `yaseendocs id` command calls this too, so the command and the sweep give a note the same
  * id — it has no index to ask what is taken, and the sweep's keeper rule covers that.
+ *
+ * A folder's settings file that is not there reads as empty and is CREATED, never written over:
+ * one that appears before the write stays as it is (D13).
  */
 export async function giveId(root: string, file: string, held: string | undefined, taken?: (id: string) => boolean): Promise<string | undefined> {
-  const { content, mtime } = await readFile(file)
+  const { content, mtime } = await readFile(file).catch((err: unknown) => {
+    if (isFolderSettingsPath(file) && err instanceof BridgeFailure && err.code === 'NOT_FOUND') return { content: '', mtime: undefined }
+    throw err
+  })
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error !== undefined || properties[NOTE_ID_KEY] !== held) return
   const place = path.relative(root, file).split(path.sep).join('/')
   const id = noteIdFrom((bytes) => createHash('sha256').update(bytes ?? `${place}\0${content}`).digest(), taken)
-  await writeFile({ path: file, content: setFrontmatterProperty(content, NOTE_ID_KEY, id), expectedMtime: mtime })
+  const given = setFrontmatterProperty(content, NOTE_ID_KEY, id)
+  if (mtime === undefined) await createDurable(file, given)
+  else await writeFile({ path: file, content: given, expectedMtime: mtime })
   return id
 }

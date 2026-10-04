@@ -4,8 +4,9 @@
  *
  *  - ROWS (D4): the notes under the folder, at any depth — never a subfolder itself — plus its
  *    SHORTCUTS (D2, `links/shortcuts.ts`). Their links resolve through the whole vault.
- *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`, created by the first change; until then
- *    the defaults (`folderSettings`), and opening writes NOTHING.
+ *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`. Born holding only the folder's id (D13),
+ *    or missing where the vault is not adopted: either way the defaults (`folderSettings`) until
+ *    the first change, and opening writes NOTHING.
  *  - THE ADAPTER (🔒 D3, YAZ-819): ViewsPane stays ONE component. This host builds a def in memory
  *    from the settings' views and turns every def change back into ONE settings write
  *    (`writeFolderSettings`). Which view is active is session state, never written. A cell edit
@@ -129,7 +130,7 @@ export function FolderView({
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
    * do its `diskFile`: re-read whenever the index record moves — the watcher's word that the file
    * changed, our own writes included. A folder the index knows no settings file for is '' with
-   * nothing read, and nothing is written until the first change creates it (`writeProperty.ts`).
+   * nothing read, and this page writes nothing until its first change creates it (`writeProperty.ts`).
    * null until the bytes are known: the comment stream decides its fold once, at mount.
    */
   const [disk, setDisk] = useState<Pick<FileResponse, 'path' | 'content' | 'mtime'> | null>(null)

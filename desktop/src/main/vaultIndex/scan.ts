@@ -9,16 +9,18 @@ import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
 
 /**
  * Markdown files under `dir`, skipping dot-entries / node_modules; unreadable subdirs are skipped like `buildTree`.
- * A folder's settings file is the one dot-entry it keeps (YAZ-2290 D8).
+ * A folder's settings file is the one dot-entry it keeps (YAZ-2290 D8). `dirs` takes every folder walked into: the ones the tree shows.
  */
-export async function walk(dir: string, out: string[]): Promise<void> {
+export async function walk(dir: string, out: string[], dirs?: string[]): Promise<void> {
   const dirents = await readdir(dir, { withFileTypes: true })
   await Promise.all(
     dirents.map(async (e) => {
       if (isSkipped(e.name) && !(e.isFile() && e.name === FOLDER_SETTINGS_FILE)) return
       const full = path.join(dir, e.name)
-      if (e.isDirectory()) await walk(full, out).catch(() => undefined)
-      else if (e.isFile() && isMarkdown(e.name)) out.push(full)
+      if (e.isDirectory()) {
+        dirs?.push(full)
+        await walk(full, out, dirs).catch(() => undefined)
+      } else if (e.isFile() && isMarkdown(e.name)) out.push(full)
     }),
   )
 }

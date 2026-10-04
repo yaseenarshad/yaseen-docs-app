@@ -1,5 +1,5 @@
 import { mkdir, stat } from 'node:fs/promises'
-import type { CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@shared/types'
+import { folderSettingsPath, type CreateDirResponse, type CreateFileRequest, type CreateFileResponse } from '@shared/types'
 import { isMarkdown } from '@shared/fileKind'
 import { FrontmatterWriteError, setFrontmatterProperty } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
@@ -17,10 +17,14 @@ import { BridgeFailure, createDurable, fsCall, requireAbsPath } from './fsUtils'
  * id before the file existed) or a fresh one. An `id` already in the seed is a template's and is
  * replaced. A seed whose frontmatter will not parse is created as given, without one: the id
  * never blocks a creation, and the index gives the note one once the YAML is fixed.
+ *
+ * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding only a fresh `id`. A
+ * folder whose file could not be written stands without one, and the id sweep gives it one.
  */
 export async function createDir(path: string): Promise<CreateDirResponse> {
   const p = requireAbsPath(path, 'path')
   await fsCall(p, () => mkdir(p))
+  await createDurable(folderSettingsPath(p), setFrontmatterProperty('', NOTE_ID_KEY, mintNoteId())).catch(() => undefined)
   return { path: p }
 }
 

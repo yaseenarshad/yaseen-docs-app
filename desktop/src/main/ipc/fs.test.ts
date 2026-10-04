@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { VAULT_CONFIG_DIR, type IndexResponse } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { makeFixture } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
@@ -290,6 +290,71 @@ describe('registerFsIpc', () => {
         expect(await adopted(mine)).toBe(false)
       } finally {
         await Promise.all([mine, other].map((d) => rm(d, { recursive: true, force: true })))
+      }
+    })
+  })
+
+  describe('fs:create-dir adopts the folder, as fs:create-file does (D13)', () => {
+    const windowOn = (id: string, at: string) => {
+      store.upsertWindow({ id, root: at, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = id
+    }
+    const adopted = (at: string) => stat(path.join(at, VAULT_CONFIG_DIR)).then((st) => st.isDirectory(), () => false)
+    const create = (p: string) => registered(CONTRACT.createDir.channel)({ sender: {} }, p)
+    const settingsIn = (dir: string) => readFile(path.join(dir, FOLDER_SETTINGS_FILE), 'utf8')
+    const ONLY_ID = /^---\nid: [0-9a-z]{12}\n---\n$/
+
+    it("the first folder created in a window's not-yet-adopted folder makes it a vault, and the sweep then runs: the folders and notes already there are given their ids", async () => {
+      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-dir-'))
+      try {
+        await mkdir(path.join(plain, 'Made in Finder', 'Deeper'), { recursive: true })
+        await writeFile(path.join(plain, 'from an agent.md'), 'body\n')
+        await registered(CONTRACT.index.channel)({ sender: {} }, plain) // the window has opened: indexed, un-adopted, untouched
+        expect(await adopted(plain)).toBe(false)
+        expect(await readdir(path.join(plain, 'Made in Finder'))).toEqual(['Deeper'])
+        windowOn('w-adopt-dir', plain)
+        expect(await create(path.join(plain, 'First'))).toEqual({ ok: true, value: { path: path.join(plain, 'First') } })
+        expect(await adopted(plain)).toBe(true)
+        const born = await settingsIn(path.join(plain, 'First'))
+        expect(born).toMatch(ONLY_ID)
+        await vi.waitFor(async () => {
+          expect(await settingsIn(path.join(plain, 'Made in Finder'))).toMatch(ONLY_ID)
+          expect(await settingsIn(path.join(plain, 'Made in Finder', 'Deeper'))).toMatch(ONLY_ID)
+          expect(await readFile(path.join(plain, 'from an agent.md'), 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\n---\nbody\n$/)
+        })
+        expect(await settingsIn(path.join(plain, 'First'))).toBe(born)
+        expect((await readdir(plain)).sort()).toEqual([VAULT_CONFIG_DIR, 'First', 'Made in Finder', 'from an agent.md']) // nothing at the top level
+      } finally {
+        senderWinId = undefined
+        await rm(plain, { recursive: true, force: true })
+      }
+    })
+
+    it("a folder created outside the window's own folder, or from a window with none, adopts nothing", async () => {
+      const [mine, other] = await Promise.all([mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-mine-')), mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))])
+      try {
+        windowOn('w-mine-dir', mine)
+        expect(await create(path.join(other, 'Elsewhere'))).toMatchObject({ ok: true })
+        senderWinId = undefined
+        expect(await create(path.join(other, 'No window'))).toMatchObject({ ok: true })
+        expect(await adopted(other)).toBe(false)
+        expect(await adopted(mine)).toBe(false)
+      } finally {
+        await Promise.all([mine, other].map((d) => rm(d, { recursive: true, force: true })))
+      }
+    })
+
+    it('a create that fails adopts nothing', async () => {
+      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-dir-'))
+      try {
+        await mkdir(path.join(plain, 'There'))
+        windowOn('w-adopt-fail', plain)
+        expect(await create(path.join(plain, 'There'))).toMatchObject({ ok: false, error: { code: 'ALREADY_EXISTS' } })
+        expect(await adopted(plain)).toBe(false)
+        expect(await readdir(path.join(plain, 'There'))).toEqual([])
+      } finally {
+        senderWinId = undefined
+        await rm(plain, { recursive: true, force: true })
       }
     })
   })

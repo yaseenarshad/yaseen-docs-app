@@ -47,6 +47,10 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       entry.inFlight.add(scan)
       return
     }
+    case 'addDir':
+      // A folder that appears is given its settings file, and so its id (D13).
+      void sweepIds(root, entry.records, [], (p) => entry.records.get(p)?.id, [ev.path])
+      return
     case 'unlink':
       entry.records.delete(ev.path)
       schedulePersist(root, entry.records)
@@ -72,11 +76,12 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
 async function build(root: string): Promise<Entry> {
   const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set() }
   const files: string[] = []
+  const dirs: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
   // reading it early keeps the multi-MB read ahead of the watcher's initial walk that floods the
   // fs threadpool on subscribe.
-  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files))])
+  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files, dirs))])
   // A corrupt cache is an anomaly worth one line (vaultConfig idiom); `miss` and
   // `version-mismatch` are expected states (first open / semantics bump) and stay silent.
   if (cached.status === 'corrupt') console.warn(`[index-cache] cache for ${root} is corrupt; ignoring it and rescanning`)
@@ -89,7 +94,7 @@ async function build(root: string): Promise<Entry> {
     entry.records = records
     entry.coldDiff = diff
     // Not awaited: a vault of id-less notes must not hold up its first index (YAZ-2293 D3).
-    void sweepIds(root, records, [...records.values()], (p) => cached.records?.get(p)?.id)
+    void sweepIds(root, records, [...records.values()], (p) => cached.records?.get(p)?.id, dirs)
   } catch (err) {
     entry.unsubscribe()
     throw err
@@ -142,10 +147,13 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   return { root, records, folders, generatedAt: Date.now() }
 }
 
-/** Sweeps every note the live index holds for `root` — for a vault adopted after its index was built (YAZ-2293). */
+/** Sweeps every note the live index holds for `root`, and every folder there now — for a vault adopted after its index was built (YAZ-2293). */
 export function sweepIndexed(root: string): void {
   const records = entries.get(root)?.records
-  if (records !== undefined) void sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
+  if (records === undefined) return
+  const dirs: string[] = []
+  const sweep = (): Promise<void> => sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id, dirs)
+  void walk(root, [], dirs).then(sweep, sweep)
 }
 
 /**

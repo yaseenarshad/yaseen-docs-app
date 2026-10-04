@@ -1,4 +1,5 @@
 import path from 'node:path'
+import type { IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
@@ -37,16 +38,16 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
   handle(CONTRACT.writeFile, writeFile)
-  handle(CONTRACT.createDir, createDir)
-  // Creating a note in a window's folder is what makes that folder a vault (🔒 YAZ-2293):
-  // from then on the app may give an id to a note it did not create, starting with those there.
-  handleWithEvent(CONTRACT.createFile, async (e, req) => {
-    const created = await createFile(req)
+  // Creating a note or a folder in a window's folder is what makes that folder a vault (🔒 YAZ-2293):
+  // from then on the app may give an id to a note or a folder it did not create, starting with those there.
+  const adopting = async <T extends { path: string }>(e: IpcMainInvokeEvent, created: T): Promise<T> => {
     const senderId = windows.idFor(e.sender)
     const root = store.get().windows.find((w) => w.id === senderId)?.root
     if (root != null && created.path.startsWith(`${root}${path.sep}`) && (await adoptVault(root))) sweepIndexed(root)
     return created
-  })
+  }
+  handleWithEvent(CONTRACT.createDir, async (e, p) => adopting(e, await createDir(p)))
+  handleWithEvent(CONTRACT.createFile, async (e, req) => adopting(e, await createFile(req)))
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle
