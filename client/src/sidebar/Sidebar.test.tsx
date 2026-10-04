@@ -103,7 +103,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     watch: { subscribe: () => () => undefined },
     onOpenFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
-    // A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues the reveal request.
+    // A search row's tree-drawing menu items (🔒 D2, YAZ-2050): App flips to Files and issues the reveal request.
     onRevealInFiles: vi.fn(),
     onPickFolder: vi.fn(),
     pickDisabled: false,
@@ -1282,8 +1282,8 @@ describe('search results (YAZ-803)', () => {
 /**
  * A search row's right-click (YAZ-2050): the SAME menu its tree row gets. 🔒 D1: it follows the
  * FILES rules on every tab — a search row is a disk row. 🔒 D2: the items that draw INTO the tree
- * (Rename, the New group, Focus) leave the search through the folder-row door (`onRevealInFiles`,
- * YAZ-1491 D3) and then act; everything else acts in place and the query stays.
+ * (Rename, the New group, Focus) leave the search through `onRevealInFiles` and then act;
+ * everything else acts in place and the query stays.
  */
 describe('search-row context menu (YAZ-2050)', () => {
   /** `a` is the tree's own `/v/a.md`, so its row exists once the search is left. */
@@ -1391,16 +1391,17 @@ describe('search-row context menu (YAZ-2050)', () => {
 /**
  * Folders in the search list (YAZ-1491). 🔒 D1: the rows come from the tree the Sidebar already
  * holds (`dirs`), not from the index feed. 🔒 D2: one flat list, the same matcher — a folder is
- * one row, a note still never matches on its folder. 🔒 D3: choosing a folder row REVEALS it in
- * Files — `onRevealInFiles`, never `onOpenFile` — from EITHER lens and by keyboard OR click, and
- * the Files reveal path accepts a DIR: ancestors AND the dir itself open, the dir row flashes.
- * 🔒 D4: the row looks like a folder.
+ * one row, a note still never matches on its folder. Choosing a folder row OPENS its page as a
+ * tab, exactly as a note row opens the note — `onOpenFile`, ⌘ for a background tab — from EITHER
+ * lens and by keyboard OR click. The Files reveal path still accepts a DIR (the row menu's door):
+ * ancestors AND the dir itself open, the dir row flashes. 🔒 D4: the row looks like a folder.
  */
 describe('folder rows in search (YAZ-1491)', () => {
   const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
   const dirResult = (el: HTMLElement) => el.querySelector<HTMLLIElement>('.search-results__row--dir')
   const press = (input: HTMLInputElement, key: string, metaKey = false) =>
     act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey, bubbles: true })))
+  const clickRow = (row: Element | null, metaKey = false) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey })))
   const dirRow = (el: HTMLElement, label: string) =>
     [...el.querySelectorAll<HTMLButtonElement>('.tree__row--dir')].find((row) => row.querySelector('.tree__label')?.textContent === label)
   const expandedState = (el: HTMLElement, label: string) => dirRow(el, label)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
@@ -1424,27 +1425,47 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(note.classList.contains('search-results__row--dir')).toBe(false)
   })
 
-  it('Enter on a folder row asks App to reveal it in Files and opens nothing (🔒 D3)', async () => {
+  it('Enter on a folder in the search results opens the folder\'s page as a tab, exactly as a note hit opens the note — nothing is revealed', async () => {
     const { el, input, props } = await search('sub')
     expect(dirResult(el)?.classList.contains('search-results__row--active')).toBe(true)
     await press(input, 'Enter')
-    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
-    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
   })
 
-  it('⌘-Enter on a folder row reveals too — there is no background tab for a folder', async () => {
+  it('⌘-Enter on a folder row opens it in a background tab, as a note does', async () => {
     const { input, props } = await search('sub')
     await press(input, 'Enter', true)
-    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
-    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
-  it('a click on a folder row goes through the SAME rule as Enter', async () => {
+  it('a click on a folder row goes through the SAME rule as Enter: click opens the page, ⌘-click a background tab', async () => {
     const { el, props } = await search('sub')
-    act(() => dirResult(el)?.click())
-    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    clickRow(dirResult(el))
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    clickRow(dirResult(el), true)
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
+  })
+
+  it('Enter on the folder whose page is already open hands focus to it, as on an open note — no second open', async () => {
+    const { input, props } = await search('sub', { activeFile: '/v/sub' })
+    await press(input, 'Enter')
     expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
+  })
+
+  it('the folder result\'s right-click menu is unchanged: the folder row\'s own menu, "Reveal in Finder" included', async () => {
+    const { el, props } = await search('sub')
+    act(() => void dirResult(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Open', 'Focus on folder', 'Rename']))
+    expect(subItemByLabel(el, 'Reveal in Finder')).toBeDefined()
+    // The tree-drawing items still leave the search through the reveal door.
+    await act(async () => itemByLabel(el, 'Focus on folder')?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
   })
 
   it('the note row beneath still OPENS — the rule is per row, not per list', async () => {
@@ -1455,17 +1476,17 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
-  it('from the FAVORITES lens a folder row still reveals in Files (🔒 D3: whichever tab was showing)', async () => {
+  it('from the FAVORITES lens a folder row opens its page too (whichever tab was showing)', async () => {
     const { el, input, props } = await search('sub', { lens: 'favorites' })
     expect(dirResult(el)).not.toBeNull()
     await press(input, 'Enter')
-    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
-  it('App\'s reply — the Files reveal request — clears the query and flashes the folder row', async () => {
+  it('a Files reveal request for a folder, as its row menu issues, clears the query and flashes the folder row', async () => {
     const { el, input, props, rerender } = await search('sub')
-    await press(input, 'Enter')
-    // What `revealInFiles` in App does next: the lens is already Files here, so only the request lands.
+    // What `revealInFiles` in App does: the lens is already Files here, so only the request lands.
     await rerender({ revealRequest: { id: 1, path: '/v/sub' } })
     expect(input.value).toBe('')
     expect(el.querySelector('.search-results')).toBeNull()

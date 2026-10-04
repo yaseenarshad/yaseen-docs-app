@@ -18,7 +18,7 @@ import { matchLinkCandidates } from '../links/completion'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {
-  /** What activating the row does (🔒 D3, YAZ-1491): a `dir` row REVEALS itself in Files; a `file` row OPENS. */
+  /** What the row is: a note (`file`) or a folder (`dir`). Activating either OPENS its page. */
   kind: 'file' | 'dir'
   /** The text the query matches: the note's basename, one of its aliases, or the folder's name. */
   name: string
