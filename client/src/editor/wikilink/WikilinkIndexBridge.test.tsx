@@ -409,10 +409,11 @@ describe('WikilinkIndexBridge', () => {
       expect(idLinkTitle(FOLDER_ID, source.resolve)).toBe('Projects')
     })
 
-    it('the picker offers the folders after the notes: by name, by path when the name is taken, not at all when the path is', async () => {
+    it('the picker offers the folders after the notes, each "(folder)": by id when it has one, else by name — not at all when a note holds its path', async () => {
       mount('/trees')
       await flush()
-      expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'Plan', 'Projects', 'Work', 'Work/Projects'])
+      expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'Plan', 'Projects', 'Work', FOLDER_ID])
+      expect(candidates.candidates.map((c) => c.label)).toEqual(['Note', 'Plan', 'Projects (folder)', 'Work (folder)', 'Work/Projects (folder)'])
     })
 
     it('a new folder wakes the editors once and resolves; a tree that moved no folder wakes nobody (YAZ-2196)', async () => {

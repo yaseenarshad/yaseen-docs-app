@@ -38,9 +38,9 @@ export const MAX_SUGGESTIONS = 8
 export interface LinkCandidate {
   /** The text the typed fragment matches: the note's link name, or one of its aliases. */
   name: string
-  /** Placed between `[[` and `]]` — the note's `id`; for a note without one the name, or the piped `Note|Alias` of an alias row. */
+  /** Placed between `[[` and `]]` — the note's or folder's `id`; without one the name, or the piped `Note|Alias` of an alias row. */
   insert: string
-  /** Row text: the name alone, or `Alias — Note` (the alias row's disambiguation). Equal to `name` on a name row ONLY — how `linkNames` tells the two apart. */
+  /** Row text: the name alone, `Alias — Note` (the alias row's disambiguation) or a folder's `Name (folder)`. Equal to `name` on a name row ONLY — how `linkNames` tells them apart. */
   label: string
   /**
    * `name.toLowerCase()`, precomputed by the constructors so the ranking scan (GRO-2197 —

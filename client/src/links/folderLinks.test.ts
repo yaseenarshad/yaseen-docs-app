@@ -135,6 +135,66 @@ describe('folderLinkCandidates: the `[[` picker offers folders', () => {
   })
 })
 
+describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)" (scenario K)', () => {
+  const WORK_ID = 'w4k8d2mn6pqr'
+  /** Adopted: the two folders named Projects carry ids; Archive, Old and Work have no `.folder.md`. */
+  const FOLDERS = [rec('/vault/Projects/.folder.md', { id: FOLDER_ID }), rec('/vault/Work/Projects/.folder.md', { id: WORK_ID })]
+  const rows = (records: IndexRecord[], folders: IndexRecord[] = FOLDERS) => {
+    const resolve = linkResolver(records, '/vault', DIRS, folders)
+    return { resolve, rows: [...linkCandidates(records), ...folderLinkCandidates('/vault', DIRS, resolve, folders)] }
+  }
+  const row = (c: { label: string; insert: string }) => [c.label, c.insert]
+
+  it('K1 — type `[[` and part of a folder\'s name: the folder is offered as "<name> (folder)"', () => {
+    expect(matchLinkCandidates(rows([]).rows, 'arch').map((c) => c.label)).toEqual(['Archive (folder)'])
+    expect(matchLinkCandidates(rows([]).rows, 'proj').map((c) => c.label)).toEqual(['Projects (folder)', 'Work/Projects (folder)'])
+    // "(folder)" is read, never typed: it matches nothing.
+    expect(matchLinkCandidates(rows([]).rows, 'folder')).toEqual([])
+  })
+
+  it('K2 — pick the folder row: it inserts `[[<folder id>]]`, which resolves to that folder', () => {
+    const { resolve, rows: all } = rows([])
+    const picked = matchLinkCandidates(all, 'proj')
+    expect(picked.map((c) => c.insert)).toEqual([FOLDER_ID, WORK_ID])
+    expect(picked.map((c) => resolve(c.insert))).toEqual(['/vault/Projects', '/vault/Work/Projects'])
+  })
+
+  it('K3 — a folder and a note share a name: two rows, "<name>" and "<name> (folder)", each inserting its own id', () => {
+    const { resolve, rows: all } = rows([rec('/vault/Projects.md', { id: NOTE_ID })])
+    const picked = matchLinkCandidates(all, 'projects').slice(0, 2) // the two exact matches
+    expect(picked.map(row)).toEqual([['Projects', NOTE_ID], ['Projects (folder)', FOLDER_ID]])
+    expect(picked.map((c) => resolve(c.insert))).toEqual(['/vault/Projects.md', '/vault/Projects'])
+    // Deeper, a note of the name takes nothing from the folder's row either: it links by id.
+    const deep = rows([rec('/vault/Old.md'), rec('/vault/Archive/Old.md')], [rec('/vault/Archive/Old/.folder.md', { id: WORK_ID })])
+    expect(matchLinkCandidates(deep.rows, 'old').map(row)).toEqual([['Old', 'Old'], ['Old (folder)', WORK_ID], ['Archive/Old', 'Archive/Old']])
+  })
+
+  it('K4 — a folder that has no id: the NAME form is inserted, as before, and the row still reads "<name> (folder)"', () => {
+    // No `.folder.md` at all (a vault that is not adopted), and one that holds no id.
+    for (const folders of [[], [rec('/vault/Projects/.folder.md')]]) {
+      const { resolve, rows: all } = rows([], folders)
+      expect(all.map(row)).toEqual([['Archive (folder)', 'Archive'], ['Old (folder)', 'Old'], ['Projects (folder)', 'Projects'], ['Work (folder)', 'Work'], ['Work/Projects (folder)', 'Work/Projects']])
+      expect(all.map((c) => resolve(c.insert))).toEqual(DIRS)
+    }
+    // Without an id nothing reaches a folder whose name a note holds: still no row.
+    expect(rows([rec('/vault/Projects.md')], []).rows.map((c) => c.label)).not.toContain('Projects (folder)')
+  })
+
+  it('K6 — `[[Name]]` typed by hand is unchanged: a note of that name, then an alias, then the folder', () => {
+    const resolve = (records: IndexRecord[]) => linkResolver(records, '/vault', DIRS, FOLDERS)('[[Projects]]')
+    expect(resolve([rec('/vault/Archive/Projects.md'), rec('/vault/Roadmap.md', { aliases: ['Projects'] })])).toBe('/vault/Archive/Projects.md')
+    expect(resolve([rec('/vault/Roadmap.md', { aliases: ['Projects'] })])).toBe('/vault/Roadmap.md')
+    expect(resolve([rec('/vault/Roadmap.md')])).toBe('/vault/Projects')
+  })
+
+  it('two folders still sharing an id: only the one the id names is linked by it', () => {
+    const copy = [rec('/vault/Projects/.folder.md', { id: FOLDER_ID }), rec('/vault/Work/Projects/.folder.md', { id: FOLDER_ID })]
+    const { resolve, rows: all } = rows([], copy)
+    expect(matchLinkCandidates(all, 'proj').map(row)).toEqual([['Projects (folder)', FOLDER_ID], ['Work/Projects (folder)', 'Work/Projects']])
+    expect(matchLinkCandidates(all, 'proj').map((c) => resolve(c.insert))).toEqual(['/vault/Projects', '/vault/Work/Projects'])
+  })
+})
+
 describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', () => {
   const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 

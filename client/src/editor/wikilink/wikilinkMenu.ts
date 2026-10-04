@@ -1,6 +1,7 @@
 /**
  * Right-click on an id link (YAZ-2293): a `[[<id>]]` link shows a title and hides the id, so
- * this menu is where the id can be SEEN and copied — the note's name, its id, "Copy ID".
+ * this menu is where the id can be SEEN and copied — the note's name, its id, "Copy ID". A link to
+ * a folder names it `<name> (folder)`.
  * An id no note has (and any id before the index loads) has no name row; the id and the copy
  * are still offered. A NAME link, a view-only link and plain text keep Electron's native menu:
  * nothing here prevents or draws for them.
@@ -18,6 +19,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { isNoteId } from '@shared/noteId'
 import { copyNoteId } from '../../lib/copyNoteId'
+import { dirname } from '../../lib/paths'
 import { renderMenu, type MenuRow } from '../blockHandleMenu'
 import { wikilinkInnerAt, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -86,7 +88,11 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
             if (id === null || parent === null) return false
             event.preventDefault()
             close()
-            close = openIdMenu(parent, event.clientX, event.clientY, idLinkTitle(id, source.resolve), id, nav.onNotice)
+            const title = idLinkTitle(id, source.resolve)
+            // A folder's name row says so: the id is its settings file's, and resolves to its directory.
+            const dir = source.resolve?.(id)
+            const isFolder = source.folders.some((folder) => folder.id === id && dirname(folder.path) === dir)
+            close = openIdMenu(parent, event.clientX, event.clientY, title !== undefined && isFolder ? `${title} (folder)` : title, id, nav.onNotice)
             return true
           },
         },
