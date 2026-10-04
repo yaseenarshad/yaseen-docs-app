@@ -177,6 +177,34 @@ describe('a folder with no `.folder.md`', () => {
   })
 })
 
+describe('a folder whose `.folder.md` holds only its `id` — every folder from the moment it exists (D13)', () => {
+  const BORN = '---\nid: k3m9x2pq7abc\n---\n'
+  beforeEach(() => void disk.set(SETTINGS_FILE, { content: BORN, mtime: 50 }))
+
+  it('is the default page — the default views, no comments, `id` the one Reserved row — and opening it as a page writes NOTHING', async () => {
+    const el = await mount()
+    expect([...el.querySelectorAll('.view-tab__btn')].map((t) => t.textContent)).toEqual(['Table', 'Board'])
+    expect(comments(el)).toEqual([])
+    expandPanel(el)
+    expect(rowKeys(el)).toEqual(['id'])
+    expect(q(el, '.frontmatter-panel__row[data-key="id"] .frontmatter-panel__chip').textContent).toBe('Reserved')
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(onDisk()).toBe(BORN)
+  })
+
+  it('its first settings write is an ordinary edit of that file: the `id` stays, the key lands beside it', async () => {
+    const el = await mount()
+    expandPanel(el)
+    click(button(el, 'Add property'))
+    setValue(q(el, '[aria-label="New property name"]'), 'owner')
+    setValue(q(el, '[aria-label="New property value"]'), 'Yasin')
+    click(button(el, 'Add'))
+    await flush()
+    expect(onDisk()).toBe('---\nid: k3m9x2pq7abc\nowner: Yasin\n---\n')
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: SETTINGS_FILE, content: onDisk(), expectedMtime: 50 })
+  })
+})
+
 describe('a folder whose `.folder.md` holds view settings, a property and a comment', () => {
   beforeEach(() => void disk.set(SETTINGS_FILE, { content: FULL, mtime: 50 }))
 

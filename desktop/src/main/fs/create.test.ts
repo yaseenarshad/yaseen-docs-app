@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { isNoteId } from '@shared/noteId'
+import { setFrontmatterProperty } from '@shared/frontmatter'
+import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { createDir, createFile } from './create'
 import { readFile as readText, writeFile as writeText } from './file'
@@ -16,15 +17,32 @@ afterAll(() => cleanup())
 const code = async (p: Promise<unknown>) => (await failure(p)).code
 
 describe('createDir', () => {
-  it('creates a directory and returns its path', async () => {
+  const settingsIn = (dir: string) => readFile(path.join(dir, FOLDER_SETTINGS_FILE), 'utf8')
+
+  it('"New folder" / "New dated folder": creates a directory born with a `.folder.md` holding only a fresh `id`, and returns its path (D13)', async () => {
     const p = path.join(root, 'NewFolder')
     expect(await createDir(p)).toEqual({ path: p })
     expect((await stat(p)).isDirectory()).toBe(true)
+    expect(await readdir(p)).toEqual([FOLDER_SETTINGS_FILE])
+    const id = /^---\nid: (.+)\n---\n$/.exec(await settingsIn(p))?.[1]
+    expect(isNoteId(id)).toBe(true)
+    // The bytes the frontmatter writer gives an empty file: a later settings write is a normal edit.
+    expect(await settingsIn(p)).toBe(setFrontmatterProperty('', NOTE_ID_KEY, id))
   })
 
-  it('ALREADY_EXISTS when the path exists (dir or file)', async () => {
+  it('the id is fresh, like a note born in the app: the same folder name twice is two ids', async () => {
+    const [a, b] = [path.join(root, 'Zeta', 'Twin'), path.join(root, 'alpha', 'Twin')]
+    await createDir(a)
+    await createDir(b)
+    expect(await settingsIn(a)).not.toBe(await settingsIn(b))
+  })
+
+  it('ALREADY_EXISTS when the path exists (dir or file), and nothing is written into the folder that was there', async () => {
     expect(await code(createDir(path.join(root, 'alpha')))).toBe('ALREADY_EXISTS')
     expect(await code(createDir(path.join(root, 'b.md')))).toBe('ALREADY_EXISTS')
+    expect(await readdir(path.join(root, 'Empty'))).toEqual([])
+    expect(await code(createDir(path.join(root, 'Empty')))).toBe('ALREADY_EXISTS')
+    expect(await readdir(path.join(root, 'Empty'))).toEqual([])
   })
 
   it('NOT_FOUND when the parent does not exist, BAD_REQUEST / NOT_ABSOLUTE on bad input', async () => {
@@ -47,7 +65,7 @@ describe('createFile', () => {
   })
 
   it("a folder's hidden settings file is markdown to every door: created, written and read back (YAZ-2290 D1)", async () => {
-    const p = path.join(root, 'NewFolder', FOLDER_SETTINGS_FILE)
+    const p = path.join(root, 'Empty', FOLDER_SETTINGS_FILE) // a folder made outside the app: it has no file yet
     const created = await createFile(p)
     expect(isNoteId(created.id)).toBe(true) // born with its id like any note: the folder's id (YAZ-2293 D7)
     await writeText({ path: p, content: '---\nfolder_settings: {}\n---\n', expectedMtime: created.mtime })

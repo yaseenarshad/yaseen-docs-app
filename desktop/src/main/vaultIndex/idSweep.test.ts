@@ -2,28 +2,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { isNoteId } from '@shared/noteId'
+import { setFrontmatterProperty } from '@shared/frontmatter'
+import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { copyEntry } from '../fs/copy'
-import { createFile } from '../fs/create'
+import { createDir, createFile } from '../fs/create'
 import { renameFile } from '../fs/rename'
+import { tree } from '../fs/tree'
 import { subscribe } from '../fs/watchers'
 import { _resetIndexCache } from './cache'
 import { sweepIds } from './idSweep'
 import { _evictAll, flushIndexCache, getColdStartDiff, getIndex, initIndexCache } from './index'
-import { scanFile } from './scan'
+import { scanFile, walk } from './scan'
 
-// Passthrough, with one seam: what ANOTHER WRITER does between the sweep's read of a file and its
-// write (scenario A9). Unset, the sweep reads exactly as it does in the app.
+// Passthrough, with one seam: what ANOTHER WRITER does between the sweep's read of a file — found
+// or not — and its write (scenario A9). Unset, the sweep reads exactly as it does in the app.
 const race = vi.hoisted(() => ({ afterRead: undefined as ((file: string) => Promise<void>) | undefined }))
 vi.mock('../fs/file', async (importOriginal) => {
   const real = await importOriginal<typeof import('../fs/file')>()
   return {
     ...real,
     readFile: async (file: string) => {
-      const read = await real.readFile(file)
-      await race.afterRead?.(file)
-      return read
+      try {
+        return await real.readFile(file)
+      } finally {
+        await race.afterRead?.(file)
+      }
     },
   }
 })
@@ -179,6 +183,161 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
   })
 })
 
+describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
+  /** A vault's visible folders, as the index walk lists them. */
+  const dirsOf = async (vaultRoot = root): Promise<string[]> => {
+    const dirs: string[] = []
+    await walk(vaultRoot, [], dirs)
+    return dirs.sort()
+  }
+  /** The cold-start call over a vault's folders; `records` is what the index holds of it. */
+  const sweepFolders = async (records = new Map<string, IndexRecord>(), vaultRoot = root) =>
+    sweepIds(vaultRoot, records, [...records.values()], (p) => records.get(p)?.id, await dirsOf(vaultRoot))
+  const settingsOf = (...dir: string[]) => read(...dir, FOLDER_SETTINGS_FILE)
+  const folderIdOf = (...dir: string[]) => idIn(...dir, FOLDER_SETTINGS_FILE)
+  const names = (...dir: string[]) => readdir(at(...dir)).then((all) => all.sort())
+  /** Another device's copy of the vault: adopted, holding `dirs`. */
+  const otherDevice = async (dirs: readonly string[]): Promise<string> => {
+    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
+    await mkdir(path.join(other, VAULT_CONFIG_DIR))
+    for (const dir of dirs) await mkdir(path.join(other, dir), { recursive: true })
+    return other
+  }
+
+  it('a folder made in Finder, by an agent, or arriving by sync is given a `.folder.md` holding only its `id`: no `folder_settings`, no body, ended as the frontmatter writer ends a new file', async () => {
+    await mkdir(at('Projects', 'Alpha'), { recursive: true })
+    await sweepFolders()
+    const [outer, inner] = [await folderIdOf('Projects'), await folderIdOf('Projects', 'Alpha')]
+    expect(isNoteId(outer)).toBe(true)
+    expect(isNoteId(inner)).toBe(true)
+    expect(outer).not.toBe(inner)
+    expect(await settingsOf('Projects')).toBe(`---\nid: ${outer}\n---\n`)
+    // What the first shortcut writes into a folder with no file (`folderId`): a later settings write is a normal edit.
+    expect(await settingsOf('Projects', 'Alpha')).toBe(setFrontmatterProperty('', NOTE_ID_KEY, inner))
+  })
+
+  it('an adopted vault with 100 folders and no `.folder.md` gets exactly 100 files, each holding only its `id`; a second run writes nothing; the same folder path is given the same id on another run', async () => {
+    const dirs = Array.from({ length: 100 }, (_, i) => (i % 10 === 0 ? `Area ${i / 10}` : `Area ${Math.floor(i / 10)}/Topic ${i % 10}`))
+    for (const dir of dirs) await mkdir(at(dir), { recursive: true })
+    await sweepFolders()
+    const written = await Promise.all(dirs.map((dir) => settingsOf(dir)))
+    const ids = written.map((content) => /^---\nid: (.+)\n---\n$/.exec(content)?.[1])
+    expect(ids.every(isNoteId)).toBe(true)
+    expect(new Set(ids).size).toBe(100)
+    const files: string[] = []
+    await walk(root, files)
+    expect(files.sort()).toEqual(dirs.map((dir) => at(dir, FOLDER_SETTINGS_FILE)).sort()) // exactly 100, none at the root
+
+    const mtimes = () => Promise.all(files.map(async (file) => (await stat(file)).mtimeMs))
+    const before = await mtimes()
+    const records = new Map<string, IndexRecord>()
+    for (const file of files) records.set(file, await scanFile(root, file))
+    await sweepFolders(records) // the index holds them…
+    await sweepFolders() // …or has not seen them yet
+    expect(await mtimes()).toEqual(before)
+    expect(await Promise.all(dirs.map((dir) => settingsOf(dir)))).toEqual(written)
+
+    const other = await otherDevice(dirs)
+    try {
+      await sweepFolders(new Map(), other)
+      expect(await Promise.all(dirs.map((dir) => readFile(path.join(other, dir, FOLDER_SETTINGS_FILE), 'utf8')))).toEqual(written)
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
+  })
+
+  it('two devices that see the same new folder before syncing write byte-identical files: the id is derived from the folder path, so there is no conflict', async () => {
+    await mkdir(at('Inbox', 'From sync'), { recursive: true })
+    await sweepFolders()
+    const other = await otherDevice(['Inbox/From sync', 'Inbox/Another'])
+    try {
+      await sweepFolders(new Map(), other)
+      const there = (dir: string) => readFile(path.join(other, dir, FOLDER_SETTINGS_FILE))
+      expect(await there('Inbox')).toEqual(await readFile(at('Inbox', FOLDER_SETTINGS_FILE)))
+      expect(await there('Inbox/From sync')).toEqual(await readFile(at('Inbox', 'From sync', FOLDER_SETTINGS_FILE)))
+      expect(await there('Inbox/Another')).not.toEqual(await there('Inbox/From sync')) // another path, another id
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
+  })
+
+  it('a folder that already has a `.folder.md` without an `id` is given one, whether or not the index has seen the file', async () => {
+    const records = await vault({ [`Seen/${FOLDER_SETTINGS_FILE}`]: '---\nlabel: S\n---\n' })
+    await mkdir(at('Unseen'))
+    await writeFile(at('Unseen', FOLDER_SETTINGS_FILE), '---\nlabel: U\n---\n')
+    await sweepFolders(records)
+    expect(isNoteId(await folderIdOf('Seen'))).toBe(true)
+    expect(isNoteId(await folderIdOf('Unseen'))).toBe(true)
+    expect(await settingsOf('Seen')).toBe(`---\nlabel: S\nid: ${await folderIdOf('Seen')}\n---\n`)
+    expect(await settingsOf('Unseen')).toBe(`---\nlabel: U\nid: ${await folderIdOf('Unseen')}\n---\n`)
+  })
+
+  it('a folder that already has a `.folder.md` with an `id` is untouched, whether or not the index has seen the file', async () => {
+    const SETTINGS = '---\nid: k3m9x2pq7abc\nfolder_settings:\n  views: []\n---\n'
+    const records = await vault({ [`Seen/${FOLDER_SETTINGS_FILE}`]: SETTINGS, [`Unseen/${FOLDER_SETTINGS_FILE}`]: SETTINGS.replace('k3m9x2pq7abc', '1aaaaaaaaaaa') })
+    const mtimes = () => Promise.all(['Seen', 'Unseen'].map(async (dir) => (await stat(at(dir, FOLDER_SETTINGS_FILE))).mtimeMs))
+    const before = await mtimes()
+    records.delete(at('Unseen', FOLDER_SETTINGS_FILE))
+    await sweepFolders(records)
+    expect(await settingsOf('Seen')).toBe(SETTINGS)
+    expect(await folderIdOf('Unseen')).toBe('1aaaaaaaaaaa')
+    expect(await mtimes()).toEqual(before)
+  })
+
+  it('a folder that is empty, or holds only images, is given the file too', async () => {
+    await mkdir(at('Empty'))
+    await mkdir(at('Pictures'))
+    await writeFile(at('Pictures', 'shot.png'), 'png')
+    await sweepFolders()
+    expect(await names('Empty')).toEqual([FOLDER_SETTINGS_FILE])
+    expect(await names('Pictures')).toEqual([FOLDER_SETTINGS_FILE, 'shot.png'])
+  })
+
+  it('a hidden or skipped folder is given nothing — `.yaseendocs`, `.git`, `.trash`, `node_modules`, and every folder inside one — and neither is the vault root itself', async () => {
+    const skipped = [VAULT_CONFIG_DIR, '.git', '.trash', 'node_modules']
+    for (const dir of skipped) await mkdir(at(dir, 'inner'), { recursive: true })
+    await mkdir(at('Shown', '.cache', 'deep'), { recursive: true })
+    await sweepFolders()
+    for (const dir of skipped) {
+      expect(await names(dir)).toEqual(['inner'])
+      expect(await names(dir, 'inner')).toEqual([])
+    }
+    expect(await names('Shown')).toEqual(['.cache', FOLDER_SETTINGS_FILE])
+    expect(await names('Shown', '.cache')).toEqual(['deep'])
+    expect(await names('Shown', '.cache', 'deep')).toEqual([])
+    expect(await names()).toEqual([...skipped, 'Shown'].sort()) // no `.folder.md` at the top level
+  })
+
+  it('writes no `.folder.md` in a folder the app has not adopted: its folders have no id', async () => {
+    await rm(at(VAULT_CONFIG_DIR), { recursive: true })
+    await mkdir(at('Projects', 'Alpha'), { recursive: true })
+    await sweepFolders()
+    expect(await names()).toEqual(['Projects'])
+    expect(await names('Projects')).toEqual(['Alpha'])
+    expect(await names('Projects', 'Alpha')).toEqual([])
+  })
+
+  it('never writes over a `.folder.md` that appears between its look and its write, and a folder gone by then is passed over: nothing is thrown', async () => {
+    await mkdir(at('Projects'))
+    writesAfterTheRead('---\nid: k3m9x2pq7abc\nlabel: theirs\n---\n')
+    await sweepFolders()
+    expect(await settingsOf('Projects')).toBe('---\nid: k3m9x2pq7abc\nlabel: theirs\n---\n')
+    await expect(sweepIds(root, new Map(), [], () => undefined, [at('Gone'), at('Projects')])).resolves.toBeUndefined()
+    expect(await names()).toEqual([VAULT_CONFIG_DIR, 'Projects'])
+  })
+
+  it('never the id another indexed file holds: the folder is given the next one', async () => {
+    await mkdir(at('Projects'))
+    await sweepFolders()
+    const first = (await folderIdOf('Projects'))!
+    await rm(at('Projects', FOLDER_SETTINGS_FILE))
+    await sweepFolders(await vault({ 'holder.md': `---\nid: ${first}\n---\n` }))
+    const next = await folderIdOf('Projects')
+    expect(isNoteId(next)).toBe(true)
+    expect(next).not.toBe(first)
+  })
+})
+
 describe('sweepIds: two notes, one id (D4)', () => {
   const SHARED = '---\nid: k3m9x2pq7abc\n---\nbody\n'
 
@@ -269,9 +428,9 @@ describe('sweepIds, wired into the live index', () => {
   // ---- the scenario record's thin rows (YAZ-2293 test audit), each through the real index and watcher ----
 
   const NOTE = '---\nid: k3m9x2pq7abc\n---\nbody\n'
-  /** A folder of notes, a nested one and its settings file, each holding its own id. */
-  const FOLDER = ['A.md', 'B.md', 'C.md', 'D.md', 'sub/E.md', FOLDER_SETTINGS_FILE]
-  const HELD = ['1aaaaaaaaaaa', '2bbbbbbbbbbb', '3ccccccccccc', '4ddddddddddd', '5eeeeeeeeeee', '6fffffffffff']
+  /** A folder of notes, a nested one and the settings file of each folder, each holding its own id: the sweep has nothing to write. */
+  const FOLDER = ['A.md', 'B.md', 'C.md', 'D.md', 'sub/E.md', FOLDER_SETTINGS_FILE, `sub/${FOLDER_SETTINGS_FILE}`]
+  const HELD = ['1aaaaaaaaaaa', '2bbbbbbbbbbb', '3ccccccccccc', '4ddddddddddd', '5eeeeeeeeeee', '6fffffffffff', '7ggggggggggg']
   const folderOfNotes = () => vault(Object.fromEntries(FOLDER.map((name, i) => [`Notes/${name}`, `---\nid: ${HELD[i]}\n---\n`])))
   const idsUnder = (dir: string) => Promise.all(FOLDER.map((name) => idIn(dir, name)))
 
@@ -337,16 +496,64 @@ describe('sweepIds, wired into the live index', () => {
     await until(async () => (await indexed('a.md'))?.id === id)
   })
 
-  it('a folder with no `.folder.md` is given nothing: the sweep only writes into files that exist (A12)', async () => {
+  it('a folder made while the app was closed is given its `.folder.md` on the next launch — the first index build — an empty one and one holding only images too; the vault root and a hidden folder get nothing (A12, D13)', async () => {
     await vault({ 'Projects/a.md': 'body\n' })
     await mkdir(at('Empty'))
+    await mkdir(at('Pictures', '.thumbs'), { recursive: true })
+    await writeFile(at('Pictures', 'shot.png'), 'png')
     await getIndex(root)
-    // The sweep's own write has been rescanned, so nothing of it is still in flight.
-    await until(async () => isNoteId((await indexed('Projects/a.md'))?.id))
-    expect((await readdir(root)).sort()).toEqual([VAULT_CONFIG_DIR, 'Empty', 'Projects'])
-    expect(await readdir(at('Empty'))).toEqual([])
-    expect(await readdir(at('Projects'))).toEqual(['a.md'])
-    expect((await getIndex(root)).folders).toEqual([])
+    const folders = async () => (await getIndex(root)).folders
+    // The sweep's own writes have been rescanned, so nothing of it is still in flight.
+    await until(async () => isNoteId((await indexed('Projects/a.md'))?.id) && (await folders()).filter((r) => isNoteId(r.id)).length === 3)
+    expect((await folders()).map((r) => r.folder)).toEqual(['Empty', 'Pictures', 'Projects'])
+    for (const r of await folders()) expect(await readFile(r.path, 'utf8')).toBe(`---\nid: ${r.id}\n---\n`)
+    expect((await readdir(root)).sort()).toEqual([VAULT_CONFIG_DIR, 'Empty', 'Pictures', 'Projects'])
+    expect(await readdir(at(VAULT_CONFIG_DIR))).toEqual([])
+    expect(await readdir(at('Pictures', '.thumbs'))).toEqual([])
+    expect((await readdir(at('Projects'))).sort()).toEqual([FOLDER_SETTINGS_FILE, 'a.md'])
+  })
+
+  it('a folder made outside the app while it runs is given its `.folder.md` when the app first sees it; the file is listed under `folders`, never a record, and never in the tree', async () => {
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await mkdir(at('Dropped', 'Deeper'), { recursive: true })
+    await mkdir(at('Dropped', '.hidden'))
+    const folders = async () => (await getIndex(root)).folders
+    await until(async () => (await folders()).filter((r) => isNoteId(r.id)).length === 2)
+    expect((await folders()).map((r) => r.folder)).toEqual(['Dropped', 'Dropped/Deeper'])
+    for (const r of await folders()) expect(await readFile(r.path, 'utf8')).toBe(`---\nid: ${r.id}\n---\n`)
+    expect((await getIndex(root)).records).toEqual([])
+    expect(JSON.stringify((await tree(root)).tree)).not.toContain(FOLDER_SETTINGS_FILE)
+    expect(await readdir(at('Dropped', '.hidden'))).toEqual([])
+    expect((await readdir(root)).sort()).toEqual([VAULT_CONFIG_DIR, 'Dropped'])
+  })
+
+  it('a folder made through the app keeps the id it was born with: the sweep writes nothing into it', async () => {
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await createDir(at('Made here'))
+    const born = await read('Made here', FOLDER_SETTINGS_FILE)
+    await until(async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here'))
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
+    expect(await read('Made here', FOLDER_SETTINGS_FILE)).toBe(born)
+  })
+
+  it('a folder renamed outside the app takes its `.folder.md` with it: the id it was given is not derived again from the new path', async () => {
+    await mkdir(at('Before'))
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await until(async () => isNoteId((await getIndex(root)).folders.find((r) => r.folder === 'Before')?.id))
+    const given = await read('Before', FOLDER_SETTINGS_FILE)
+    await rename(at('Before'), at('After'))
+    await until(async () => {
+      const folders = (await getIndex(root)).folders.map((r) => r.folder)
+      return folders.includes('After') && !folders.includes('Before')
+    })
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
+    expect(await read('After', FOLDER_SETTINGS_FILE)).toBe(given)
   })
 
   it("the app's own duplicate (`copyEntry`) is given a fresh id on its index event; the original keeps its bytes (B1)", async () => {
@@ -401,7 +608,7 @@ describe('sweepIds, wired into the live index', () => {
     await move(at('Notes'), at('Moved'))
     await until(async () => {
       const paths = (await getIndex(root)).records.map((r) => r.path)
-      return paths.filter((p) => p.startsWith(at('Moved') + path.sep)).length === FOLDER.length - 1 && !paths.some((p) => p.startsWith(at('Notes') + path.sep))
+      return paths.filter((p) => p.startsWith(at('Moved') + path.sep)).length === FOLDER.length - 2 && !paths.some((p) => p.startsWith(at('Notes') + path.sep))
     })
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
     expect(await idsUnder('Moved')).toEqual(HELD)

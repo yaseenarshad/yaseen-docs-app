@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
@@ -77,6 +77,19 @@ describe('folder settings in the index', () => {
 
     await rm(file)
     await until(async () => (await has()) === undefined)
+  })
+
+  it('a folder the app was only pointed at — no `.yaseendocs` — is given no `.folder.md`: nothing is written, its folders have no id (D13)', async () => {
+    await getIndex(root) // the first build has run over every folder of the fixture
+    await watcherReady(root)
+    const dir = path.join(root, 'Made in Finder')
+    await mkdir(dir)
+    await writeFile(path.join(dir, 'note.md'), '# note\n')
+    await until(async () => (await getIndex(root)).records.some((r) => r.folder === 'Made in Finder'))
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
+    expect(await readdir(dir)).toEqual(['note.md'])
+    expect((await readdir(path.join(root, 'Content Pillars'))).filter((name) => name.startsWith('.'))).toEqual([])
+    expect((await getIndex(root)).folders.map((r) => r.path)).toEqual([path.join(root, 'Projects', FOLDER_SETTINGS_FILE)])
   })
 
   it('removing a folder drops its settings record', async () => {

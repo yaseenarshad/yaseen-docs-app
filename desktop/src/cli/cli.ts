@@ -113,7 +113,7 @@ function parse(argv: readonly string[]): { verb: string; args: string[]; flags: 
  * The renderer's `transformFile` on disk: read, transform, write against the mtime just read;
  * on CONFLICT read again and recompute ONCE. A second conflict throws. A no-op transform
  * writes nothing and returns the bytes as read. `create`: a file that is not there yet reads as
- * empty and the write creates it — a folder's settings file, born on its first change (YAZ-2290 D1).
+ * empty and the write creates it — a folder's settings file the app has not written yet (YAZ-2290 D1).
  */
 export async function transformOnDisk(path: string, transform: (content: string) => string, create = false): Promise<string> {
   let file: { content: string; mtime: number } = await readFile(path).catch((err: unknown) => {
