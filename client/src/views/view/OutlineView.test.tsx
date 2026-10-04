@@ -10,7 +10,7 @@
  *
  * Pinned here: the document is `view.outline` and nothing is put into it; one edit is ONE settings
  * write; and it is a PLAIN document — a link line that appears, vanishes or starts resolving
- * writes no notecard and asks nothing.
+ * writes no note and asks nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -50,7 +50,7 @@ const TABLE = { type: 'table', name: 'Table', order: ['file.name'] }
 const SETTINGS = { views: [OUTLINE, TABLE] }
 const withOutline = (outline: string) => ({ views: [{ ...OUTLINE, outline }, TABLE] })
 
-/** The folder's three notecards, and one page elsewhere in the vault. */
+/** The folder's three notes, and one page elsewhere in the vault. */
 const vault = (): IndexRecord[] => [rec('/vault/Other.md'), rec('/vault/stages/Lead Gen.md'), rec('/vault/stages/Nurture.md'), rec('/vault/stages/Sales.md')]
 
 // ---------- harness (FolderView.test.tsx's) ----------
@@ -139,11 +139,11 @@ describe('the document comes from the settings, and only from there', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('no `outline` is an EMPTY document: the folder’s notecards are not written into it', async () => {
+  it('no `outline` is an EMPTY document: the folder’s notes are not written into it', async () => {
     const el = await mount()
     await flush()
     expect(doc(el)).toBe('')
-    feed(SETTINGS, [...vault(), rec('/vault/stages/Expansion.md')]) // a notecard arriving adds no line either
+    feed(SETTINGS, [...vault(), rec('/vault/stages/Expansion.md')]) // a note arriving adds no line either
     await flush()
     expect(doc(el)).toBe('')
     expect(write).not.toHaveBeenCalled()
@@ -186,7 +186,7 @@ describe('an edit stores the document', () => {
     expect(el.querySelector('.views-pane__error')).toBeNull()
   })
 
-  it('a link is just a link (D5): a link line appearing, vanishing or starting to resolve writes no notecard and asks nothing', async () => {
+  it('a link is just a link (D5): a link line appearing, vanishing or starting to resolve writes no note and asks nothing', async () => {
     await mount(withOutline('- [[Sales]]\n- [[Not yet]]'))
     edit('- [[Other]]\n- [[Not yet]]') // Other appears, Sales vanishes
     await flush()

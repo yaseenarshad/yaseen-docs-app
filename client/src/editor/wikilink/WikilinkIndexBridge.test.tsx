@@ -393,7 +393,7 @@ describe('WikilinkIndexBridge', () => {
       treeFn.mockResolvedValue(tree())
     })
 
-    it('a link no notecard answers resolves to the FOLDER of that name — its directory path — and a notecard of the name still wins', async () => {
+    it('a link no note answers resolves to the FOLDER of that name — its directory path — and a note of the name still wins', async () => {
       mount('/trees')
       await flush()
       expect(source.resolve?.('Projects')).toBe('/trees/Projects') // the shallowest of the two
@@ -409,7 +409,7 @@ describe('WikilinkIndexBridge', () => {
       expect(idLinkTitle(FOLDER_ID, source.resolve)).toBe('Projects')
     })
 
-    it('the picker offers the folders after the notecards: by name, by path when the name is taken, not at all when the path is', async () => {
+    it('the picker offers the folders after the notes: by name, by path when the name is taken, not at all when the path is', async () => {
       mount('/trees')
       await flush()
       expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'Plan', 'Projects', 'Work', 'Work/Projects'])

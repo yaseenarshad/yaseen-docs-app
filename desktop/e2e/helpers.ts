@@ -75,7 +75,7 @@ export async function appWindow(app: ElectronApplication, winId: string, timeout
 export const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 /** The visible tab's note editor. */
 export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
-/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its notecards (`section.folder-view`, FolderView.tsx). */
+/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its notes (`section.folder-view`, FolderView.tsx). */
 export const contents = (w: Page) => layer(w).locator('.folder-view')
 export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
@@ -83,12 +83,12 @@ export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selec
 export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /**
  * A folder row of the sidebar tree by its exact label. Matched on the LABEL span, never on the
- * row's whole text: a folder row also carries the count of the notecards in it (`.tree__count`,
- * YAZ-2290 E6), so `Projects` with one notecard reads `Projects1`.
+ * row's whole text: a folder row also carries the count of the notes in it (`.tree__count`,
+ * YAZ-2290 E6), so `Projects` with one note reads `Projects1`.
  */
 export const dirRow = (w: Page, label: string) =>
   w.locator('.tree__row--dir').filter({ has: w.locator('.tree__label').filter({ hasText: new RegExp(`^${label}$`) }) })
-/** The notecard count a folder row shows; no element at all for a folder holding none. */
+/** The note count a folder row shows; no element at all for a folder holding none. */
 export const dirCount = (w: Page, label: string) => dirRow(w, label).locator('.tree__count')
 /** The DEPTH-0 row labels of whichever tree the sidebar body draws. */
 export const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')

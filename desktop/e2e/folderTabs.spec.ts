@@ -3,18 +3,18 @@
  * show is the whole arc from a row in the Files tree to a file on disk — and, just as much, the
  * files that are NOT written along the way.
  *
- * The folder is `Projects` in the generated fixture vault: one notecard of its own (`Roadmap`), one
- * subfolder (`archive`, with a notecard that is NOT a row here), and no `.folder.md` — so it starts
+ * The folder is `Projects` in the generated fixture vault: one note of its own (`Roadmap`), one
+ * subfolder (`archive`, with a note that is NOT a row here), and no `.folder.md` — so it starts
  * on the defaults, and every byte this spec finds in it afterwards was put there by a gesture below.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 a single click on the folder's row FOLDS it and opens nothing; a double click opens the
- *     folder as a tab named after it — and the row shows the count of the notecards in it
+ *     folder as a tab named after it — and the row shows the count of the notes in it
  *   2 a folder with no `.folder.md` shows the default views (Table, then Board) and the default
- *     Status column over the notecards directly in it — and opening it left no `.folder.md` on
- *     disk and no byte of its notecard changed
+ *     Status column over the notes directly in it — and opening it left no `.folder.md` on
+ *     disk and no byte of its note changed
  *   3 the FIRST view change creates `.folder.md`, stating the defaults it had been showing
- *   4 "New" births the notecard IN the folder with no empty Status key in its frontmatter, and
+ *   4 "New" births the note IN the folder with no empty Status key in its frontmatter, and
  *     the row's count follows
  *   5 renaming through the title renames the folder on disk, and the tab follows it
  *
@@ -56,8 +56,8 @@ test.describe.configure({ mode: 'serial' })
 
 const FOLDER = 'Projects'
 const RENAMED = 'Work'
-/** The one notecard that lives directly in the folder (helpers.buildFixtureVault). */
-const NOTECARD = 'Roadmap'
+/** The one note that lives directly in the folder (helpers.buildFixtureVault). */
+const NOTE = 'Roadmap'
 /** The default column's options, in the order a folder with no settings shows them (`DEFAULT_COLUMNS`, client/src/views/folderSettings.ts). */
 const STATUS_OPTIONS = ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done']
 
@@ -109,13 +109,13 @@ test('step 1 — a single click folds the folder and opens nothing; a double cli
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(SEED_BODY)
   await expect(tabsOf(win)).toHaveText(['Welcome note'])
-  // The row counts the notecards DIRECTLY in the folder (🔒 E6): `Roadmap`, and not the one in `archive`.
+  // The row counts the notes DIRECTLY in the folder (🔒 E6): `Roadmap`, and not the one in `archive`.
   await expect(dirCount(win, FOLDER)).toHaveText('1')
 
   // ONE click unfolds the row — and that is all it does: the tab strip and the open note stay put.
   await dirRow(win, FOLDER).click()
   await expect(folderItem(win)).toHaveAttribute('aria-expanded', 'true')
-  await expect(fileRow(win, NOTECARD)).toBeVisible()
+  await expect(fileRow(win, NOTE)).toBeVisible()
   await expect(tabsOf(win)).toHaveText(['Welcome note'])
   await expect(editorOf(win)).toContainText(SEED_BODY)
   await expect(contents(win)).toHaveCount(0)
@@ -136,18 +136,18 @@ test('step 1 — a single click folds the folder and opens nothing; a double cli
   await shoot(win, 'foldertab-02-double-click-opens')
 })
 
-test('step 2 — a folder with no `.folder.md` shows Table and Board over its own notecards, and opening it wrote nothing', async () => {
+test('step 2 — a folder with no `.folder.md` shows Table and Board over its own notes, and opening it wrote nothing', async () => {
   // The defaults (D5a, E2): Table then Board, and ONE column of the folder's own — Status.
   await expect(viewTabs(contents(win))).toHaveText(['Table', 'Board'])
   await expect(headers(contents(win))).toHaveText(['#', 'Name', 'Status'])
-  // Its rows are the notecards that live DIRECTLY in it (D4): `archive/Old plan` is not one.
-  await expect(rowNames(contents(win))).toHaveText([NOTECARD])
+  // Its rows are the notes that live DIRECTLY in it (D4): `archive/Old plan` is not one.
+  await expect(rowNames(contents(win))).toHaveText([NOTE])
   await shoot(win, 'foldertab-03-default-views')
 
   // Opening a folder writes NOTHING: no settings file was made for the defaults it is showing,
-  // and its notecard is byte for byte the one the fixture generated — no Status key stamped in.
+  // and its note is byte for byte the one the fixture generated — no Status key stamped in.
   expect(await exists(settingsFile())).toBe(false)
-  expect(await md5(path.join(folderPath(), `${NOTECARD}.md`))).toBe(await md5(path.join(vaultSrc, FOLDER, `${NOTECARD}.md`)))
+  expect(await md5(path.join(folderPath(), `${NOTE}.md`))).toBe(await md5(path.join(vaultSrc, FOLDER, `${NOTE}.md`)))
 })
 
 test('step 3 — the first view change creates `.folder.md`, stating the defaults it had been showing', async () => {
@@ -158,7 +158,7 @@ test('step 3 — the first view change creates `.folder.md`, stating the default
   await win.locator('.view-popover [aria-label="Group by"]').click()
   await win.locator('.view-popover [role="option"][data-value="note.status"]').click()
   await win.keyboard.press('Escape')
-  // The one notecard has no status, so the grouped table is the single trailing "No value" group.
+  // The one note has no status, so the grouped table is the single trailing "No value" group.
   await expect(groupNames(contents(win))).toHaveText(['No value'])
 
   await expect.poll(async () => (await settingsOnDisk())?.views?.[0]?.groupBy !== undefined, { timeout: 10_000 }).toBe(true)
@@ -171,7 +171,7 @@ test('step 3 — the first view change creates `.folder.md`, stating the default
   await shoot(win, 'foldertab-04-first-change-writes-settings')
 })
 
-test('step 4 — "New" births the notecard in the folder with no empty Status key, and the row counts it', async () => {
+test('step 4 — "New" births the note in the folder with no empty Status key, and the row counts it', async () => {
   await contents(win).locator('[aria-label="New note"]').click()
 
   // Born IN the folder being viewed (D4) — and although Status is a column of this folder, it is
@@ -181,11 +181,11 @@ test('step 4 — "New" births the notecard in the folder with no empty Status ke
     Object.keys(parseFrontmatter(splitFrontmatter(await readFile(created, 'utf8').catch(() => '')).frontmatter).properties)
   await expect.poll(keys, { timeout: 10_000 }).toEqual(['id'])
   expect(await readFile(created, 'utf8')).not.toContain('status')
-  // The create opens the new notecard in the current tab, as a row link would.
+  // The create opens the new note in the current tab, as a row link would.
   await expect(activeTab(win)).toHaveText('Untitled')
-  // The folder's row follows the index: two notecards live in it now.
+  // The folder's row follows the index: two notes live in it now.
   await expect(dirCount(win, FOLDER)).toHaveText('2')
-  await shoot(win, 'foldertab-05-new-notecard')
+  await shoot(win, 'foldertab-05-new-note')
 })
 
 test('step 5 — renaming through the title renames the folder on disk, and the tab follows', async () => {
@@ -204,22 +204,22 @@ test('step 5 — renaming through the title renames the folder on disk, and the 
   await confirmSheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
   await expect(confirmSheet(win)).toHaveCount(0)
 
-  // Disk: the directory moved whole — its notecards, its subfolder and its settings file with it —
+  // Disk: the directory moved whole — its notes, its subfolder and its settings file with it —
   // and nothing remains at the old path.
   const renamed = path.join(vault, RENAMED)
-  await expect.poll(() => exists(path.join(renamed, `${NOTECARD}.md`))).toBe(true)
+  await expect.poll(() => exists(path.join(renamed, `${NOTE}.md`))).toBe(true)
   expect(await exists(path.join(renamed, 'Untitled.md'))).toBe(true)
   expect(await exists(path.join(renamed, 'archive', 'Old plan.md'))).toBe(true)
   expect((await settingsOnDisk(renamed))?.views?.map((v) => v.name)).toEqual(['Table', 'Board'])
   expect(await exists(folderPath())).toBe(false)
 
   // The tab follows in place: the same tab, under the new name, still showing the folder's views
-  // over the same two notecards — and so do the title and the row, count and all.
+  // over the same two notes — and so do the title and the row, count and all.
   await expect(tabsOf(win)).toHaveText([RENAMED])
   await expect(activeTab(win)).toHaveText(RENAMED)
   await expect(title(win)).toHaveText(RENAMED)
   await expect(contents(win)).toBeVisible()
-  await expect(rowNames(contents(win))).toHaveText([NOTECARD, 'Untitled'])
+  await expect(rowNames(contents(win))).toHaveText([NOTE, 'Untitled'])
   await expect(dirRow(win, RENAMED)).toBeVisible()
   await expect(dirRow(win, FOLDER)).toHaveCount(0)
   await expect(dirCount(win, RENAMED)).toHaveText('2')

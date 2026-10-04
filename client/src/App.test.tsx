@@ -1600,7 +1600,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     await act(async () => release())
   })
 
-  it('a FOLDER rename counts the name links to the folder itself — a notecard\u2019s and another folder\u2019s Outline line — and confirming rewrites both (YAZ-2290 D10)', async () => {
+  it('a FOLDER rename counts the name links to the folder itself — a note\u2019s and another folder\u2019s Outline line — and confirming rewrites both (YAZ-2290 D10)', async () => {
     const TEAM = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n---\n'
     const files = { '/v/A.md': { content: 'See [[Projects]].\n', mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 } }
     const outline = { views: [{ type: 'outline', name: 'Outline', outline: '- [[Projects]]' }] }
@@ -1805,11 +1805,11 @@ describe('opening a vault creates no file (YAZ-2290)', () => {
 
 /**
  * An upkeep review (YAZ-2322) REPLACES the main pane and is not a tab: the strip gives way to the
- * review bar, the session's notecard is the one visible page, and nothing about the workspace —
- * tabs, active tab, right panel — moves until the user moves it. One editor per notecard, always.
+ * review bar, the session's note is the one visible page, and nothing about the workspace —
+ * tabs, active tab, right panel — moves until the user moves it. One editor per note, always.
  */
 describe('App upkeep review (YAZ-2322)', () => {
-  /** A notecard last changed in 1970: in review by default, and long overdue. */
+  /** A note last changed in 1970: in review by default, and long overdue. */
   const due = (name: string, folder = ''): IndexRecord => ({
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
     properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
@@ -1861,7 +1861,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(el.querySelector('.review-answers')).toBeNull()
   })
 
-  it('with a session open the tab strip gives way to the review bar, and the notecard\'s editor is the only visible layer', async () => {
+  it('with a session open the tab strip gives way to the review bar, and the note\'s editor is the only visible layer', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
     openInbox()
     expect(el.querySelector('.tabbar')).toBeNull()
@@ -1874,7 +1874,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(button(el, 'Still relevant⌘⇧⏎')).toBeDefined()
   })
 
-  it('Skip shows the next notecard in a layer of its own; the one before is gone', async () => {
+  it('Skip shows the next note in a layer of its own; the one before is gone', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
     openInbox()
     act(() => button(el, 'Skip⌘⇧S')?.click())
@@ -1884,7 +1884,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     ])
   })
 
-  it('a notecard that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
+  it('a note that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
     const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, withIndex(due('a')))
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
     expect(layers(el)).toEqual([
@@ -1904,7 +1904,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     ])
   })
 
-  it('a notecard open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {
+  it('a note open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
     const { el } = await mount(
       defaultAppState(),
@@ -1913,7 +1913,7 @@ describe('App upkeep review (YAZ-2322)', () => {
       withIndex(due('r')),
     )
     openInbox()
-    expect(el.querySelector('.tabstack .review-message')?.textContent).toBe('This notecard is open in the side panel.')
+    expect(el.querySelector('.tabstack .review-message')?.textContent).toBe('This note is open in the side panel.')
     expect(layers(el)).toEqual([['/v/b.md', true]])
     expect(editorsOn(el, '/v/r.md')).toBe(1)
     expect(el.querySelector('.review-answers')).not.toBeNull() // the answers still work
@@ -1929,7 +1929,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b'])
   })
 
-  it('a link clicked in the notecard opens in a background tab; the review stays', async () => {
+  it('a link clicked in the note opens in a background tab; the review stays', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
     openInbox()
     act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/x.md"] [data-open-right-current]')?.click())
@@ -1947,7 +1947,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(el.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) [data-editor]')?.getAttribute('data-path')).toBe('/v/Work/Projects/p.md')
   })
 
-  it('the sidebar and the tab menu get the SAME review lookup and write: a notecard answers, anything else is null', async () => {
+  it('the sidebar and the tab menu get the SAME review lookup and write: a note answers, anything else is null', async () => {
     const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), TABS, files, withIndex(due('a')))
     expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
@@ -1957,7 +1957,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/v/a.md', content: '---\nreview: false\n---\nBody.\n' }))
   })
 
-  it('the same holds for a notecard shown through its own tab: its link does not navigate the active tab under the review', async () => {
+  it('the same holds for a note shown through its own tab: its link does not navigate the active tab under the review', async () => {
     const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, withIndex(due('a')))
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
     openInbox()

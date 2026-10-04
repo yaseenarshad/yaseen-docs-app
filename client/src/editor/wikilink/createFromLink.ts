@@ -18,7 +18,7 @@
  */
 import type { SettingsState } from '@shared/types'
 import { BridgeRequestError } from '../../api'
-import { createNotecard, ensureFolder } from '../../views/scaffold'
+import { createNote, ensureFolder } from '../../views/scaffold'
 import { validateEntryName } from '../../sidebar/createEntry'
 import { linkPageName } from './wikilinkPlugin'
 
@@ -71,7 +71,7 @@ export function planLinkCreation(root: string, target: string, base = ''): { fol
 
 /**
  * Create the page behind raw `[[inner]]` under `root` — bare targets under `base` — and resolve where to open (see module doc).
- * It is born like every notecard in that folder (`createNotecard`): with the folder's `.template.md`.
+ * It is born like every note in that folder (`createNote`): with the folder's `.template.md`.
  * `id` is for the picker's Create row (YAZ-2293), which has already written `[[id]]` and needs the
  * page born with it; a click on a name link passes none and main mints one.
  */
@@ -82,7 +82,7 @@ export async function createFromLink(root: string, inner: string, base = '', id?
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
     if (planned.folder !== '') await ensureFolder(root, planned.folder)
-    await createNotecard(planned.path, {}, id)
+    await createNote(planned.path, {}, id)
     return { status: 'created', path: planned.path }
   } catch (err) {
     if (err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS') return { status: 'exists', path: planned.path }

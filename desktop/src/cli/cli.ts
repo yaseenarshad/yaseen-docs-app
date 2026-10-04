@@ -219,8 +219,8 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   const settings = await reviewSettings(target)
   const files: string[] = []
   await walk(target, files)
-  const notecards = files.filter((file) => !isFolderSettingsPath(file))
-  const queue = reviewQueue([...(await scanAll(target, notecards)).values()], settings, Date.now()).map((r) => ({ path: r.path, due: dueAt(r, settings) }))
+  const notes = files.filter((file) => !isFolderSettingsPath(file))
+  const queue = reviewQueue([...(await scanAll(target, notes)).values()], settings, Date.now()).map((r) => ({ path: r.path, due: dueAt(r, settings) }))
   if (json) io.stdout(`${JSON.stringify(queue.map((q) => ({ ...q, due: iso(q.due) })), null, 2)}\n`)
   else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.path}\n`).join(''))
 }

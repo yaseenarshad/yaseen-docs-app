@@ -1,7 +1,7 @@
 /**
  * Right-click on an id link (YAZ-2293): real editor (`createCrepe({ wikilinkNav })`), real
  * mousedown / contextmenu events on the rendered `.wikilink` spans. Pinned here: the menu names
- * the notecard and its id and "Copy ID" copies exactly the id; a dead id still offers its id; a
+ * the note and its id and "Copy ID" copies exactly the id; a dead id still offers its id; a
  * NAME link keeps the native menu (nothing prevented, nothing drawn); a right-button mousedown on
  * an id link is swallowed so the link is still rendered when `contextmenu` arrives; and the menu
  * closes the way every `.ctx-menu--editor` popup does. `openIdMenu` is also driven on a bare
@@ -67,7 +67,7 @@ afterEach(async () => {
 })
 
 describe('right-click on a rendered id link', () => {
-  it('replaces the native menu with the notecard\'s name, its id and Copy ID — the two labels are not actions', async () => {
+  it('replaces the native menu with the note\'s name, its id and Copy ID — the two labels are not actions', async () => {
     const { root, view } = await mount(`pad [[${ID}]] tail\n`)
     expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
     const rows = rowsOf(popupOf(view)!)

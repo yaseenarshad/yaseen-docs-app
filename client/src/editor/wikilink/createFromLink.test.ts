@@ -110,7 +110,7 @@ describe('createFromLink (bridge flow)', () => {
     expect(createDir).not.toHaveBeenCalled()
   })
 
-  it('the page is born like any notecard in that folder: with its `.template.md` (YAZ-2290 E3)', async () => {
+  it('the page is born like any note in that folder: with its `.template.md` (YAZ-2290 E3)', async () => {
     readFile.mockResolvedValueOnce({ path: '/vault/Notes/.template.md', content: '---\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
     await createFromLink('/vault', 'Page', 'Notes')
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/Notes/.template.md')

@@ -10,7 +10,7 @@ import type { NoticeKind } from '../../lib/notice'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
-import { createNotecard } from '../../views/scaffold'
+import { createNote } from '../../views/scaffold'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard } from '../Sidebar'
@@ -301,7 +301,7 @@ export function useInlineEdits(
       if (creating === null) return
       const p = entryPath(creating.parentDir, name, creating.kind)
       if (creating.kind === 'dir') await api.createDir(p)
-      else await createNotecard(p)
+      else await createNote(p)
       setCreating(null)
       refresh()
       if (creating.kind !== 'dir') onOpenFile(p)

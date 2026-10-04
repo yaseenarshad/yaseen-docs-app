@@ -57,9 +57,9 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
   { keys: '⌘⇧] / ⌘⇧[', label: 'Next / previous tab' },
-  // An upkeep review (YAZ-2322): live only while one is open, and they answer with the caret in the notecard.
-  { keys: '⌘⇧⏎', label: 'In a review: still relevant — on to the next notecard' },
-  { keys: '⌘⇧S', label: 'In a review: skip — the notecard comes back after the others' },
+  // An upkeep review (YAZ-2322): live only while one is open, and they answer with the caret in the note.
+  { keys: '⌘⇧⏎', label: 'In a review: still relevant — on to the next note' },
+  { keys: '⌘⇧S', label: 'In a review: skip — the note comes back after the others' },
   { keys: 'Esc', label: 'Close the review and return to the tabs' },
 ]
 

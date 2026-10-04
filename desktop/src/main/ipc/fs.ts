@@ -38,7 +38,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.readImage, readImage)
   handle(CONTRACT.writeFile, writeFile)
   handle(CONTRACT.createDir, createDir)
-  // Creating a notecard in a window's folder is what makes that folder a vault (🔒 YAZ-2293):
+  // Creating a note in a window's folder is what makes that folder a vault (🔒 YAZ-2293):
   // from then on the app may give an id to a note it did not create, starting with those there.
   handleWithEvent(CONTRACT.createFile, async (e, req) => {
     const created = await createFile(req)

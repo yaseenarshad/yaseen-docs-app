@@ -49,7 +49,7 @@ export interface TabBarProps {
   noteId?: (path: string) => string | undefined
   /**
    * The review toggle (YAZ-2322), the sidebar row's item on a tab: whether a path is in review —
-   * null for anything that is not a notecard in the index — and the write. App's, like the row's.
+   * null for anything that is not a note in the index — and the write. App's, like the row's.
    */
   reviewState?: (path: string) => boolean | null
   onSetReview?: (path: string, on: boolean) => void
@@ -328,7 +328,7 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
               Copy for Agent
             </button>
           )}
-          {/* The review toggle (YAZ-2322), under the copy items: a tab that is not a notecard has no state and no item. */}
+          {/* The review toggle (YAZ-2322), under the copy items: a tab that is not a note has no state and no item. */}
           {menu.review !== null && (
             <button
               type="button"

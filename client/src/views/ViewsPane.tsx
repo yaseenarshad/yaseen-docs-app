@@ -31,14 +31,14 @@ import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 export interface FolderHost {
   /** The folder's own declaration: the typing ladder's TOP rung (🔒 Q8, YAZ-815). */
   settings: FolderSettings
-  /** The WHOLE index snapshot — `records` here carries only the folder's notecards (YAZ-2290 D4), and link resolution plus the link pickers must still see the vault. */
+  /** The WHOLE index snapshot — `records` here carries only the folder's notes (YAZ-2290 D4), and link resolution plus the link pickers must still see the vault. */
   vaultRecords: readonly IndexRecord[]
   /** The same snapshot's folder settings records: a link column narrowed to a folder asks what that folder holds, shortcuts included. */
   vaultFolders: readonly IndexRecord[]
-  /** The window's link resolver (`linkResolver`): a notecard first, then a folder. A link cell reads a folder's name through it, and a link column finds the folder its target names. */
+  /** The window's link resolver (`linkResolver`): a note first, then a folder. A link cell reads a folder's name through it, and a link column finds the folder its target names. */
   resolveLink: ResolveLink
   /**
-   * Birth in the folder (YAZ-2290 D4): create a notecard from `seed` and resolve its path.
+   * Birth in the folder (YAZ-2290 D4): create a note from `seed` and resolve its path.
    * The `Untitled` scheme is the DEFAULT name; the board's inline add (YAZ-943) already knows what
    * the card is called, and that typed name rides the optional argument.
    */
@@ -55,7 +55,7 @@ export interface FolderHost {
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[], labels?: { properties: ViewSet['properties'] }) => void
   /**
    * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the key on
-   * every notecard that lives in the folder — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
+   * every note that lives in the folder — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
    * the host reports failures in its own banner.
    */
   deleteColumn: (key: string) => Promise<void>
@@ -89,7 +89,7 @@ export interface ViewsPaneProps {
   root: string
   /** Absolute path of the folder the views belong to: it keys the collapse state. */
   folderPath: string
-  /** The notecards the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault. */
+  /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault. */
   records: IndexRecord[]
   /**
    * The vault-wide property declarations (5E, GRO-2217; `useProperties`) — typing rung 2, fed
@@ -164,10 +164,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
   }, [records])
 
   const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
-  // YAZ-2290 D4: a folder's rows are the notecards IN it, so the engine's own rows-are-the-vault
+  // YAZ-2290 D4: a folder's rows are the notes IN it, so the engine's own rows-are-the-vault
   // resolver would miss every link pointing outside them — inject the whole-vault one, WITH the
   // root (YAZ-846), so an absolute-path link target resolves, and with the folders behind the
-  // notecards (D10), so a link to a folder reads, sorts and groups as that folder's name.
+  // notes (D10), so a link to a folder reads, sorts and groups as that folder's name.
   const vaultRecords = folder.vaultRecords
   const vaultFolders = folder.vaultFolders
   const resolve = useMemo(() => pageResolver(vaultRecords, root, folder.resolveLink), [vaultRecords, root, folder.resolveLink])

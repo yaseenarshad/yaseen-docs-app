@@ -7,7 +7,7 @@
  *      `summaries`, `columnSize`, `cardStyle`, a cards `image`, and every filter leaf that names
  *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows
  *      the shortened order through the one order writer, `withOrder`),
- *  (c) the key from the frontmatter of every notecard that LIVES in the folder and carries it
+ *  (c) the key from the frontmatter of every note that LIVES in the folder and carries it
  *      (YAZ-2290 E4) — the host hands that list in, so a row that merely shows there is not touched.
  *
  * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder
@@ -37,7 +37,7 @@ export function undeletableReason(key: string): string | null {
   return !c.startsWith('note.') || RESERVED_KEYS.has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
 }
 
-/** The notecards whose frontmatter currently carries the key — the confirm sheet's count, the strip's list. */
+/** The notes whose frontmatter currently carries the key — the confirm sheet's count, the strip's list. */
 export function residentsCarrying(residents: readonly IndexRecord[], key: string): IndexRecord[] {
   const bare = bareOf(key)
   return residents.filter((resident) => Object.prototype.hasOwnProperty.call(resident.properties, bare))
@@ -139,7 +139,7 @@ export interface DeleteColumnHost {
   columns: Readonly<Record<string, ColumnDecl>>
   /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
   def: ViewSet
-  /** The notecards that live in the folder (YAZ-2290 E4) — the only ones the key is stripped from. */
+  /** The notes that live in the folder (YAZ-2290 E4) — the only ones the key is stripped from. */
   residents: readonly IndexRecord[]
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>

@@ -1,5 +1,5 @@
 /**
- * A notecard's permanent identity (YAZ-2293): the frontmatter `id`, minted once and never
+ * A note's permanent identity (YAZ-2293): the frontmatter `id`, minted once and never
  * derived from the file's name or place, so a rename or move by anything keeps every `[[id]]`
  * link and every `also_in` entry pointing at it.
  *

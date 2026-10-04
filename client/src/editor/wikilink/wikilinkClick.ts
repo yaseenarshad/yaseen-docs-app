@@ -23,7 +23,7 @@
  * says the index is still loading, and a ⌘-click that CREATES a note names it — the new page
  * opened in a background tab, so nothing else on screen moves. An ID link (YAZ-2293) is the one
  * unresolved link that is NEVER created: an id names a note that existed, so a page called
- * `<id>.md` would be a different note wearing its name — the click says the notecard is gone
+ * `<id>.md` would be a different note wearing its name — the click says the note is gone
  * and does nothing else. A resolving one opens from its title widget, which carries `.wikilink`
  * and sits inside the match, so the hit-test below finds it like any segment. `[[#h]]`
  * (same-file, empty target) is a no-op — the heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified
@@ -128,7 +128,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               }
               const path = resolve(page)
               if (path !== null) open(path)
-              else if (isNoteId(page)) nav.onNotice('That notecard no longer exists')
+              else if (isNoteId(page)) nav.onNotice('That note no longer exists')
               else
                 void createFromLink(nav.root, inner, nav.createFolder()).then((result) => {
                   if (result.status === 'error') nav.onNotice(result.message)

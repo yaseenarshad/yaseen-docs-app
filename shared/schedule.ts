@@ -2,8 +2,8 @@ import { REVIEW_KEY, type ReviewEntry, type ReviewSettings } from './reviews'
 import type { IndexRecord } from './types'
 
 /**
- * The upkeep schedule (YAZ-2322): when a notecard is next due, and what is due now. The ONLY place
- * a due date is computed (🔒 D2) — a smarter rule later changes `dueAt` and no notecard.
+ * The upkeep schedule (YAZ-2322): when a note is next due, and what is due now. The ONLY place
+ * a due date is computed (🔒 D2) — a smarter rule later changes `dueAt` and no note.
  */
 
 const DAY = 86_400_000
@@ -17,7 +17,7 @@ function waitDays(s: ReviewSettings, streak: number): number {
 }
 
 /**
- * The rule: a notecard never reviewed, or whose body changed since its last review, is due
+ * The rule: a note never reviewed, or whose body changed since its last review, is due
  * `baseDays` after the file last changed. Otherwise it is due after its last review by
  * `baseDays × growth^n`, capped at `maxDays`, where n is the reviews in a row that saw the body as
  * it is now — so an edit starts the wait over, and each "Still relevant" lengthens it.
@@ -42,7 +42,7 @@ export function scheduleInWords(s: ReviewSettings): string {
   return `${dayCount(first)}, then ${rest.join(', ')}${waits[waits.length - 1] < s.maxDays ? `, … up to ${s.maxDays}` : ''}.`
 }
 
-/** Due now (🔒 D9): due before local midnight tonight — the one test the Inbox and a notecard's own page share. */
+/** Due now (🔒 D9): due before local midnight tonight — the one test the Inbox and a note's own page share. */
 export const isDue = (due: number, now: number): boolean => due < new Date(now).setHours(24, 0, 0, 0)
 
 /** The date review `index` set when it was written: the log up to it, read against the text it saw. */
@@ -51,7 +51,7 @@ export function dueAfter(reviews: readonly ReviewEntry[], index: number, s: Revi
 }
 
 /**
- * In review (🔒 D6): the notecard's own `review: true | false`, else the vault default. A notecard
+ * In review (🔒 D6): the note's own `review: true | false`, else the vault default. A note
  * a review could not be written into — broken frontmatter, or too large to be read (no `text`) — never is.
  */
 export function isInReview(record: IndexRecord, s: ReviewSettings): boolean {
@@ -61,7 +61,7 @@ export function isInReview(record: IndexRecord, s: ReviewSettings): boolean {
 }
 
 /**
- * The notecards due now, most overdue first (🔒 D9): in review, and due before local midnight
+ * The notes due now, most overdue first (🔒 D9): in review, and due before local midnight
  * tonight. `folder` (root-relative, '' = the vault) keeps that folder and its subfolders.
  */
 export function reviewQueue(records: readonly IndexRecord[], s: ReviewSettings, now: number, folder = ''): IndexRecord[] {

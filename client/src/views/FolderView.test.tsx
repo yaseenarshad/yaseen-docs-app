@@ -4,11 +4,11 @@
  * mocked (the ONE frontmatter writer, shared by the settings door and every cell) and `api` mocked
  * for the create path.
  *
- * Pinned here: its rows are the notecards that live IN the folder and nobody else; a folder with no
+ * Pinned here: its rows are the notes that live IN the folder and nobody else; a folder with no
  * `.folder.md` shows the defaults and opening it writes nothing; link resolution and the link
  * pickers read the WHOLE vault even though the rows are a subset; a config edit is ONE
  * `folder_page_settings` write on the folder's `.folder.md` while a cell edit still writes the
- * NOTECARD's own frontmatter; switching view writes nothing at all; and "New" births a notecard in
+ * NOTE's own frontmatter; switching view writes nothing at all; and "New" births a note in
  * the folder from its template and the seed alone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,12 +48,12 @@ import type { FolderHost, ViewsPaneProps } from './ViewsPane'
 import { transformFile, writeProperty } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
-/** The one-file transform behind a declaration write (`writeFolderColumn`) and a column delete's notecard strips. */
+/** The one-file transform behind a declaration write (`writeFolderColumn`) and a column delete's note strips. */
 const transform = vi.mocked(transformFile)
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
 const createFile = vi.mocked(api.createFile)
-/** The atomic content-at-create form is the only one this path uses (`createNotecard`). */
+/** The atomic content-at-create form is the only one this path uses (`createNote`). */
 const created = (call: number): CreateFileRequest => createFile.mock.calls[call][0] as CreateFileRequest
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -64,7 +64,7 @@ const created = (call: number): CreateFileRequest => createFile.mock.calls[call]
 const STAGES = '/vault/stages'
 /** Where its settings live once anything is saved (D1). */
 const SETTINGS_FILE = '/vault/stages/.folder.md'
-/** The folder's id (YAZ-2293): the `id` of that file, which a notecard's `also_in` names (D2). */
+/** The folder's id (YAZ-2293): the `id` of that file, which a note's `also_in` names (D2). */
 const STAGES_ID = 'k3m9x2pq7abc'
 const LEAD ='/vault/stages/Lead Gen.md'
 const SALES = '/vault/stages/Sales.md'
@@ -81,7 +81,7 @@ const SETTINGS = {
   views: [{ type: 'outline', name: 'Outline' }, TABLE],
 }
 
-/** The whole snapshot, in the index's path order: the folder's two notecards, one in a SUBFOLDER, and notes elsewhere. */
+/** The whole snapshot, in the index's path order: the folder's two notes, one in a SUBFOLDER, and notes elsewhere. */
 function vault(): IndexRecord[] {
   return [
     rec(OTHER, { title: 'in another folder', order: 7 }),
@@ -100,7 +100,7 @@ let source: MutableWikilinkResolveSource
 const onOpenFile = vi.fn()
 
 /**
- * WikilinkIndexBridge's own wrapping: THE link resolver — a notecard, else a folder of the Files
+ * WikilinkIndexBridge's own wrapping: THE link resolver — a note, else a folder of the Files
  * tree — the notes, and the folder settings records riding beside them. `settings: null` = the
  * folder has no `.folder.md`.
  */
@@ -186,7 +186,7 @@ const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<
 // ---------- the folder itself (D1/D4/E2) ----------
 
 describe('a folder with no settings file', () => {
-  it('shows its notecards under the default views — Table, then Board, no Outline — and opening writes NOTHING', async () => {
+  it('shows its notes under the default views — Table, then Board, no Outline — and opening writes NOTHING', async () => {
     const el = await mount(null)
     await flush()
     expect(q(el, 'h1').textContent).toBe('stages')
@@ -242,12 +242,12 @@ describe('a folder whose `.folder.md` declares columns', () => {
     expect(captured.folder!.settings.columns).toEqual({})
   })
 
-  it('opening it, and adding a column, write nothing into the notecards (E1)', async () => {
+  it('opening it, and adding a column, write nothing into the notes (E1)', async () => {
     await mount()
     await flush()
     act(() => captured.folder!.setColumns({ ...SETTINGS.columns, owner: { kind: 'link' } }))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', expect.anything()) // the settings, and no notecard
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', expect.anything()) // the settings, and no note
     expect(transform).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
@@ -256,8 +256,8 @@ describe('a folder whose `.folder.md` declares columns', () => {
 
 // ---------- the rows (D4) ----------
 
-describe('rows are the notecards IN the folder, and only those', () => {
-  it('a notecard in another folder, or in a subfolder, is not a row', async () => {
+describe('rows are the notes IN the folder, and only those', () => {
+  it('a note in another folder, or in a subfolder, is not a row', async () => {
     const el = await mount()
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
@@ -266,7 +266,7 @@ describe('rows are the notecards IN the folder, and only those', () => {
     expect(el.textContent).not.toContain('CAC')
   })
 
-  it('a notecard that lands in the folder on the next snapshot is a row with no user action', async () => {
+  it('a note that lands in the folder on the next snapshot is a row with no user action', async () => {
     const el = await mount()
     selectView(el, 'Table')
     feed(SETTINGS, [...vault(), rec('/vault/stages/Expansion.md')])
@@ -285,13 +285,13 @@ describe('a shortcut is a row too (D2/D4)', () => {
   /** Other.md lives at the vault root and ALSO appears in the folder: its `also_in` names the folder's id. */
   const shortcut = (): IndexRecord[] => vault().map((r) => (r.path === OTHER ? { ...r, properties: { ...r.properties, also_in: [STAGES_ID] } } : r))
 
-  it('a notecard whose `also_in` holds the folder’s id shows among its rows, in the snapshot’s order', async () => {
+  it('a note whose `also_in` holds the folder’s id shows among its rows, in the snapshot’s order', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Other', 'Lead Gen', 'Sales'])
   })
 
-  it('the shortcut row wears the mark beside its name in every view; a notecard that lives here wears none', async () => {
+  it('the shortcut row wears the mark beside its name in every view; a note that lives here wears none', async () => {
     /** Of the three titles a view draws, the ones wearing the mark — by the name they read as, which the mark adds nothing to. */
     const marked = (el: ParentNode, title: string): string[] => {
       const titles = [...el.querySelectorAll(title)]
@@ -309,12 +309,12 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(marked(el, '.view-list__title')).toEqual(['Other'])
   })
 
-  it('a folder with no `.folder.md` has no id, so the same notecard is no row there', async () => {
+  it('a folder with no `.folder.md` has no id, so the same note is no row there', async () => {
     const el = await mount(null, shortcut())
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
   })
 
-  it('editing a cell on the shortcut row writes the ORIGINAL file — it is the same notecard', async () => {
+  it('editing a cell on the shortcut row writes the ORIGINAL file — it is the same note', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
     openCell(el, 0, 1) // Other's `order`: a number by the folder's own declaration
@@ -324,14 +324,14 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'order', 9)
   })
 
-  it('a column delete strips the key from the notecards that LIVE in the folder; the shortcut keeps its value (E4)', async () => {
+  it('a column delete strips the key from the notes that LIVE in the folder; the shortcut keeps its value (E4)', async () => {
     await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn('order'))
     // Other.md carries `order` and is a row here — but it lives elsewhere.
     expect(transform.mock.calls.map(([path]) => path)).toEqual([LEAD, SALES])
   })
 
-  it('the delete sheet counts those same notecards, not the shortcut row', async () => {
+  it('the delete sheet counts those same notes, not the shortcut row', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
     rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][1]) // `order`: Other, Lead Gen and Sales all carry it
@@ -339,7 +339,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(q(el, '.confirm__text').textContent).toContain('the "order" value from 2 notes')
   })
 
-  it('New steps past the names of the notecards that live here, never a shortcut’s', async () => {
+  it('New steps past the names of the notes that live here, never a shortcut’s', async () => {
     const records = vault().map((r) => (r.path === OTHER ? { ...r, path: '/vault/Untitled.md', name: 'Untitled.md', basename: 'Untitled', properties: { also_in: [STAGES_ID] } } : r))
     const el = await mount(SETTINGS, records)
     click(byLabel(el, 'New note'))
@@ -353,7 +353,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
 describe('the outline is a plain document (D5)', () => {
   const card = (outline: string) => ({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline }, TABLE] })
 
-  it('it shows what the settings hold and names no notecard of its own accord', async () => {
+  it('it shows what the settings hold and names no note of its own accord', async () => {
     expect(doc(await mount())).toBe('') // Lead Gen and Sales live here; the document does not say so
     expect(write).not.toHaveBeenCalled()
   })
@@ -545,7 +545,7 @@ describe('config edits are ONE settings write on the folder', () => {
 
     expect(write).toHaveBeenCalledTimes(1)
     const [path, key, value] = write.mock.calls[0]
-    expect(path).toBe(SETTINGS_FILE) // the FOLDER's settings file, not a notecard
+    expect(path).toBe(SETTINGS_FILE) // the FOLDER's settings file, not a note
     expect(key).toBe('folder_page_settings')
     expect(value).toEqual({
       ...SETTINGS,
@@ -748,7 +748,7 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
     expect(columnsOf()).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
   })
 
-  it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one notecard is touched', async () => {
+  it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one note is touched', async () => {
     write.mockRejectedValueOnce(new Error('disk full'))
     const el = await mount()
     await act(async () => captured.folder!.deleteColumn('order'))
@@ -811,19 +811,19 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
   })
 })
 
-describe('cell editing still writes the NOTECARD, typed by the folder (🔒 Q8)', () => {
-  it('the picker narrows to the notecards in the FOLDER the column targets — from the WHOLE vault (🔒 D2, YAZ-2290 D10)', async () => {
+describe('cell editing still writes the NOTE, typed by the folder (🔒 Q8)', () => {
+  it('the picker narrows to the notes in the FOLDER the column targets — from the WHOLE vault (🔒 D2, YAZ-2290 D10)', async () => {
     const el = await mount()
     selectView(el, 'Table')
     openCell(el, 0, 2) // Lead Gen's empty `related` cell: multi-link by the folder's own declaration
     const input = byLabel<HTMLInputElement>(el, 'Edit related')
     setValue(input, '[[')
-    // The folder [[KPIs]] names is not this one and its notecards are no rows here — a picker fed
-    // the rows alone would have fallen back to the two notecards instead.
+    // The folder [[KPIs]] names is not this one and its notes are no rows here — a picker fed
+    // the rows alone would have fallen back to the two notes instead.
     expect(options(el)).toEqual(['CAC', 'LTV'])
   })
 
-  it('a new folder narrows the picker as soon as the tree has it — no notecard has to change', async () => {
+  it('a new folder narrows the picker as soon as the tree has it — no note has to change', async () => {
     const settings = { ...SETTINGS, columns: { ...SETTINGS.columns, related: { kind: 'multi-link', target: '[[Fresh]]' } } }
     const el = await mount(settings)
     selectView(el, 'Table')
@@ -834,9 +834,9 @@ describe('cell editing still writes the NOTECARD, typed by the folder (🔒 Q8)'
       press(byLabel(el, 'Edit related'), 'Escape')
       return offered
     }
-    expect(typed()).toHaveLength(7) // no folder named Fresh: every notecard
+    expect(typed()).toHaveLength(7) // no folder named Fresh: every note
     const records = [...vault(), rec('/vault/Fresh/One.md')].sort((a, b) => (a.path < b.path ? -1 : 1))
-    feed(settings, records) // the notecard is indexed before the tree shows its folder
+    feed(settings, records) // the note is indexed before the tree shows its folder
     expect(typed()).toHaveLength(8)
     vi.mocked(api.tree).mockResolvedValue({ root: '/vault', tree: [...DIRS, { type: 'dir', name: 'Fresh', path: '/vault/Fresh', children: [] }], generatedAt: 2 })
     await fetchTree('/vault')
@@ -850,7 +850,7 @@ describe('cell editing still writes the NOTECARD, typed by the folder (🔒 Q8)'
     expect(q(el, '[data-cell="0:2"]').textContent).toBe('stages')
   })
 
-  it('committing writes the notecard’s own frontmatter, one key, through the shared writer', async () => {
+  it('committing writes the note’s own frontmatter, one key, through the shared writer', async () => {
     const el = await mount()
     selectView(el, 'Table')
     openCell(el, 0, 2)
@@ -862,7 +862,7 @@ describe('cell editing still writes the NOTECARD, typed by the folder (🔒 Q8)'
   })
 })
 
-describe('New births a notecard in the folder (D4/E1/E3)', () => {
+describe('New births a note in the folder (D4/E1/E3)', () => {
   it('creates it IN the folder with no frontmatter at all — no `folder_pages`, no empty column keys — and opens it', async () => {
     const el = await mount()
     click(byLabel(el, 'New note'))
@@ -874,7 +874,7 @@ describe('New births a notecard in the folder (D4/E1/E3)', () => {
     expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/Untitled.md')
   })
 
-  it("with a `.template.md` in the folder, its frontmatter and body are the notecard's", async () => {
+  it("with a `.template.md` in the folder, its frontmatter and body are the note's", async () => {
     readFile.mockResolvedValue({ path: '/vault/stages/.template.md', content: '---\nowner: me\n---\n## Notes\n', mtime: 1, size: 0 })
     const el = await mount()
     click(byLabel(el, 'New note'))
@@ -892,7 +892,7 @@ describe('New births a notecard in the folder (D4/E1/E3)', () => {
   it('a TYPED name (YAZ-943) lands in the folder under that name and dedups like Untitled', async () => {
     await mount()
     await expect(captured.folder!.create({ properties: {} }, 'Ship it')).resolves.toBe('/vault/stages/Ship it.md')
-    // A notecard's basename is taken → the typed base steps to " 2", same scheme as Untitled.
+    // A note's basename is taken → the typed base steps to " 2", same scheme as Untitled.
     await expect(captured.folder!.create({ properties: {} }, 'Lead Gen')).resolves.toBe('/vault/stages/Lead Gen 2.md')
   })
 

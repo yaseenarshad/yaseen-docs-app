@@ -3,8 +3,8 @@
  * committed encyclopedia. The Board view is DECLARED in the folder's settings (`KPIs/.folder.md`;
  * the YAZ-935 read-time injection was retired by YAZ-1471 D3), so the tab this spec clicks is one
  * the file itself lists. The arc: the third tab is just there → the group-by set through the Sort
- * menu turns the hint into columns → dragging a card across columns rewrites the NOTECARD's own
- * file on disk → the YAZ-943 inline add births a NAMED notecard in the folder, into the column it
+ * menu turns the hint into columns → dragging a card across columns rewrites the NOTE's own
+ * file on disk → the YAZ-943 inline add births a NAMED note in the folder, into the column it
  * was typed in, without leaving the board. Same harness as its siblings (temp `--user-data-dir`,
  * COPY of the fixture, `board-` step screenshots); serial by design — each step continues the
  * previous state.
@@ -59,10 +59,10 @@ test('step 2 — no group-by yet shows the hint; the Sort menu turns it into col
   await shoot(win, 'board-03-columns')
 })
 
-test("step 3 — dragging a card to another column rewrites the notecard's own file on disk", async () => {
+test("step 3 — dragging a card to another column rewrites the note's own file on disk", async () => {
   const card = colOf('lagging').locator('.view-board__card', { hasText: 'CAC' })
   await card.dragTo(colOf('leading'))
-  // Optimistic move shows immediately; the durable truth is the notecard's file.
+  // Optimistic move shows immediately; the durable truth is the note's file.
   await expect(colOf('leading').locator('.view-board__card', { hasText: 'CAC' })).toBeVisible()
   await expect
     .poll(async () => (await readFile(path.join(vault, 'KPIs', 'CAC.md'), 'utf8')).includes('kpi_category: leading'))
@@ -71,12 +71,12 @@ test("step 3 — dragging a card to another column rewrites the notecard's own f
   await shoot(win, 'board-04-dragged')
 })
 
-test('step 4 — the inline add births a NAMED notecard into the column it was typed in, and stays on the board', async () => {
+test('step 4 — the inline add births a NAMED note into the column it was typed in, and stays on the board', async () => {
   await colOf('leading').locator('[aria-label="New card"]').click()
   const input = colOf('leading').locator('[aria-label="New card name"]')
   await input.fill('Churn Rate')
   await input.press('Enter')
-  // The notecard exists on disk, named, IN the folder (YAZ-2290 D4), carrying the column's group.
+  // The note exists on disk, named, IN the folder (YAZ-2290 D4), carrying the column's group.
   await expect
     .poll(async () => {
       const text = await readFile(path.join(vault, 'KPIs', 'Churn Rate.md'), 'utf8').catch(() => null)

@@ -333,10 +333,10 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
 
   it('its four rows show the current values, each number beside its unit', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14, growth: 1.5, maxDays: 90, reviewByDefault: false })
-    expect(['baseDays', 'growth', 'maxDays', 'reviewByDefault'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Check a notecard after', 'Each time it is still relevant, wait', 'Longest wait', 'New notecards are in review'])
+    expect(['baseDays', 'growth', 'maxDays', 'reviewByDefault'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Check a note after', 'Each time it is still relevant, wait', 'Longest wait', 'New notes are in review'])
     expect(['baseDays', 'growth', 'maxDays'].map((id) => number(el, id).value)).toEqual(['14', '1.5', '90'])
     expect(['baseDays', 'growth', 'maxDays'].map((id) => row(el, id)?.querySelector('.setting__control')?.textContent)).toEqual(['days', '× longer', 'days'])
-    expect(number(el, 'baseDays').getAttribute('aria-label')).toBe('Check a notecard after')
+    expect(number(el, 'baseDays').getAttribute('aria-label')).toBe('Check a note after')
     expect(rowButtons(el, 'reviewByDefault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
   })
 
@@ -386,7 +386,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('New notecards are in review: On · Off, and Off saves the whole object with reviewByDefault flipped', () => {
+  it('New notes are in review: On · Off, and Off saves the whole object with reviewByDefault flipped', () => {
     const { el, save, onChange } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
     const buttons = rowButtons(el, 'reviewByDefault')
     expect(buttons.map((b) => b.textContent)).toEqual(['On', 'Off'])

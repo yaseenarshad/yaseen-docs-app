@@ -16,7 +16,7 @@ const at = (day: number): string => new Date(Date.parse('2026-03-01T12:00:00Z') 
 const card = (reviews: ReviewEntry[], text = 'aaaaaaaa') => ({ mtime: CHANGED, reviews, text })
 
 describe('dueAt (30 / 2 / 365)', () => {
-  it('a notecard never reviewed is due 30 days after it last changed', () => {
+  it('a note never reviewed is due 30 days after it last changed', () => {
     expect(days(CHANGED, dueAt(card([]), S))).toBe(30)
   })
 
@@ -83,7 +83,7 @@ function record(over: Partial<IndexRecord> & { path: string }): IndexRecord {
 describe('isInReview', () => {
   const off = { ...S, reviewByDefault: false }
 
-  it('follows the vault default unless the notecard says true or false', () => {
+  it('follows the vault default unless the note says true or false', () => {
     expect(isInReview(record({ path: '/v/a.md' }), S)).toBe(true)
     expect(isInReview(record({ path: '/v/a.md' }), off)).toBe(false)
     expect(isInReview(record({ path: '/v/a.md', properties: { review: false } }), S)).toBe(false)
@@ -91,7 +91,7 @@ describe('isInReview', () => {
     expect(isInReview(record({ path: '/v/a.md', properties: { review: 'no' } }), S)).toBe(true)
   })
 
-  it('leaves out a notecard a review could not be written into', () => {
+  it('leaves out a note a review could not be written into', () => {
     expect(isInReview(record({ path: '/v/a.md', frontmatterError: 'bad yaml' }), S)).toBe(false)
     expect(isInReview(record({ path: '/v/a.md', text: undefined }), S)).toBe(false)
   })
@@ -117,12 +117,12 @@ describe('reviewQueue', () => {
     expect(reviewQueue([dueOn('/v/b.md', when), dueOn('/v/a.md', when)], S, NOW).map((r) => r.basename)).toEqual(['a', 'b'])
   })
 
-  it('leaves out a notecard that is not in review', () => {
+  it('leaves out a note that is not in review', () => {
     const when = new Date(2026, 5, 1)
     expect(reviewQueue([dueOn('/v/off.md', when, { properties: { review: false } }), dueOn('/v/broken.md', when, { frontmatterError: 'x' })], S, NOW)).toEqual([])
   })
 
-  it('a folder takes its own notecards and its subfolders, not a sibling that starts the same', () => {
+  it('a folder takes its own notes and its subfolders, not a sibling that starts the same', () => {
     const when = new Date(2026, 5, 1)
     const records = [
       dueOn('/v/root.md', when),

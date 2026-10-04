@@ -40,7 +40,7 @@ export function datedSeed(now: Date = new Date()): string {
 export interface MenuRow {
   type: 'file' | 'dir'
   path: string
-  /** A SHORTCUT row only (YAZ-2290 D2): the folder the row stands in — `path` is the notecard where it lives. */
+  /** A SHORTCUT row only (YAZ-2290 D2): the folder the row stands in — `path` is the note where it lives. */
   shortcutIn?: string
 }
 

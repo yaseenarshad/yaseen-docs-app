@@ -1,6 +1,6 @@
 /**
  * The review surface's chrome (YAZ-2322): the top bar that stands in the tab strip's place, the
- * answer bar under the notecard, the message the main pane shows when it has no page of its own —
+ * answer bar under the note, the message the main pane shows when it has no page of its own —
  * and the session's keys, which the top bar owns because it is mounted exactly while one is open.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -35,7 +35,7 @@ const handlers = () => ({ onKeep: vi.fn(), onSkip: vi.fn(), onUndo: vi.fn(), onC
 const button = (el: HTMLElement, name: string) => [...el.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)
 
 describe('ReviewBar', () => {
-  it('shows the session label and the notecard\'s place among the total', () => {
+  it('shows the session label and the note\'s place among the total', () => {
     const el = mount(<ReviewBar session={session({ label: 'Projects' })} {...handlers()} />)
     expect(el.querySelector('.review-bar__label')?.textContent).toBe('Projects')
     expect(el.querySelector('.review-bar__count')?.textContent).toBe('2 of 5')
@@ -92,9 +92,9 @@ describe('ReviewMessage', () => {
     expect(el.querySelector('p')?.textContent).toBe('Nothing due in Projects.')
   })
 
-  it('a notecard that is showing means it is open in the side panel: one line, no button', () => {
+  it('a note that is showing means it is open in the side panel: one line, no button', () => {
     const el = mount(<ReviewMessage session={session()} onClose={vi.fn()} />)
-    expect(el.textContent).toBe('This notecard is open in the side panel.')
+    expect(el.textContent).toBe('This note is open in the side panel.')
     expect(el.querySelector('button')).toBeNull()
   })
 })

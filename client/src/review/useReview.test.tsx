@@ -110,7 +110,7 @@ afterEach(() => {
 })
 
 describe('the Inbox count', () => {
-  it('is how many notecards are due now', async () => {
+  it('is how many notes are due now', async () => {
     await mount()
     expect(review.dueCount).toBe(3)
     expect(review.session).toBeNull()
@@ -135,13 +135,13 @@ describe('the Inbox count', () => {
 })
 
 describe('a session', () => {
-  it('starts on the most overdue notecard and names itself', async () => {
+  it('starts on the most overdue note and names itself', async () => {
     await mount()
     act(() => review.start())
     expect(review.session).toEqual({ label: 'Inbox', path: `${ROOT}/older.md`, position: 1, total: 3, canUndo: false })
   })
 
-  it('"Still relevant" writes one review and shows the next notecard', async () => {
+  it('"Still relevant" writes one review and shows the next note', async () => {
     await mount()
     act(() => review.start())
     await answer(() => review.keep())
@@ -151,7 +151,7 @@ describe('a session', () => {
     expect(review.dueCount).toBe(2)
   })
 
-  it('Skip writes nothing and brings the notecard back after the others', async () => {
+  it('Skip writes nothing and brings the note back after the others', async () => {
     await mount()
     act(() => review.start())
     act(() => review.skip())
@@ -164,7 +164,7 @@ describe('a session', () => {
     expect(review.session?.position).toBe(3)
   })
 
-  it('Undo removes the review just written and shows that notecard again', async () => {
+  it('Undo removes the review just written and shows that note again', async () => {
     await mount()
     act(() => review.start())
     await answer(() => review.keep())
@@ -201,7 +201,7 @@ describe('a session', () => {
     expect(review.session).toMatchObject({ label: 'notes', total: 2 })
   })
 
-  it('keeps the notecard showing while it is edited, though the edit makes it no longer due', async () => {
+  it('keeps the note showing while it is edited, though the edit makes it no longer due', async () => {
     await mount()
     act(() => review.start())
     vault.set(`${ROOT}/older.md`, { content: 'Rewritten.\n', mtime: NOW })
@@ -211,7 +211,7 @@ describe('a session', () => {
     expect(reviewsOf(vault.get(`${ROOT}/older.md`)?.content ?? '')[0].text).toBe(textFingerprint('Rewritten.\n'))
   })
 
-  it('passes over a notecard that was deleted, turned off or reviewed elsewhere before its turn', async () => {
+  it('passes over a note that was deleted, turned off or reviewed elsewhere before its turn', async () => {
     put('third.md', 80)
     await mount()
     act(() => review.start()) // older, old, third, notes/deep
@@ -223,7 +223,7 @@ describe('a session', () => {
     expect(review.session?.position).toBe(4)
   })
 
-  it('a write that fails says why and passes over the notecard', async () => {
+  it('a write that fails says why and passes over the note', async () => {
     await mount()
     act(() => review.start())
     failWrites = true
@@ -234,7 +234,7 @@ describe('a session', () => {
     expect(review.session?.canUndo).toBe(false)
   })
 
-  it('does not take in a notecard that falls due while it is open', async () => {
+  it('does not take in a note that falls due while it is open', async () => {
     await mount()
     act(() => review.start())
     put('fresh.md', 31)
@@ -245,14 +245,14 @@ describe('a session', () => {
 })
 
 describe('turning review on or off', () => {
-  it('reports a notecard\'s state, and null for a path that is not a notecard', async () => {
+  it('reports a note\'s state, and null for a path that is not a note', async () => {
     await mount()
     expect(review.inReview(`${ROOT}/old.md`)).toBe(true)
     expect(review.inReview(`${ROOT}/off.md`)).toBe(false)
     expect(review.inReview(`${ROOT}/notes`)).toBeNull()
   })
 
-  it('off takes the notecard out of the count; on puts it back in review', async () => {
+  it('off takes the note out of the count; on puts it back in review', async () => {
     await mount()
     await answer(() => review.setInReview(`${ROOT}/old.md`, false))
     expect(vault.get(`${ROOT}/old.md`)?.content).toContain('review: false')

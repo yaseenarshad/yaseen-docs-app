@@ -469,7 +469,7 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.id'] }, withIds)).toEqual(['file.name', 'note.id'])
   })
 
-  it("propertyKeys: a notecard's shortcuts, `also_in`, are never a DEFAULT column either (YAZ-2290 D2)", () => {
+  it("propertyKeys: a note's shortcuts, `also_in`, are never a DEFAULT column either (YAZ-2290 D2)", () => {
     const withShortcuts = TEST_RECORDS.map((r) => ({ ...r, properties: { ...r.properties, also_in: ['f7n2w8rt4xyz'] } }))
     expect(propertyKeys(yasin, yasin.views[1], withShortcuts)).toEqual(propertyKeys(yasin, yasin.views[1], TEST_RECORDS))
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.also_in'] }, withShortcuts)).toEqual(['file.name', 'note.also_in'])

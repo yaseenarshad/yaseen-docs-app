@@ -1,7 +1,7 @@
 # YAZ-2293 — MD files get IDs
 
 ## Goal
-Every notecard carries a permanent frontmatter `id`; links are `[[<id>]]` on disk and read as the
+Every note carries a permanent frontmatter `id`; links are `[[<id>]]` on disk and read as the
 target's current title in the app; "Copy ID" and two CLI verbs expose the ID. Done = every Linear
 sub-issue YAZ-2323..YAZ-2343 is Done, the scenario record on YAZ-2293 holds, `npm run typecheck`,
 `npm test` and `npm run build` pass, and the branch is merged to `main`.
@@ -35,7 +35,7 @@ sub-issue YAZ-2323..YAZ-2343 is Done, the scenario record on YAZ-2293 holds, `np
   - [x] 6A scenario audit: found and fixed "notes moved outside the app into a new folder lose
         their ids" (the sweep now counts only holders that are another file on disk)
   - [x] 6C docs (CONTRACTS "Note ids" section, REGRESSION N1–N12)
-- [x] Creating a notecard in a folder adopts it (`adoptVault` in `idSweep.ts`, the `fs:create-file`
+- [x] Creating a note in a folder adopts it (`adoptVault` in `idSweep.ts`, the `fs:create-file`
   handler, `sweepIndexed` in `live.ts`) — Yaseen's choice, locked as D10
 - [x] `mainBundleBytes` ceiling raised to 490,469 with Yaseen's OK (D9)
 - [x] MERGED TO `main` at 9a251e6 (fast-forward), 2026-10-04

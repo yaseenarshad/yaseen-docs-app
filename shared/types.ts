@@ -821,7 +821,7 @@ export interface PropertyDecl {
   options?: string[]
   /** Display order; omitted means manual. The options array retains its manual order. */
   optionSort?: 'manual' | 'ascending' | 'descending'
-  /** link/multi-link only: the picker constraint — a wikilink to a FOLDER ("the notecards in [[X]]", resolved by belongsToBasenames; YAZ-2290 D10). */
+  /** link/multi-link only: the picker constraint — a wikilink to a FOLDER ("the notes in [[X]]", resolved by belongsToBasenames; YAZ-2290 D10). */
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean

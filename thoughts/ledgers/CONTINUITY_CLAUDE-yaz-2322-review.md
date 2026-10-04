@@ -1,7 +1,7 @@
 # YAZ-2322 — Upkeep review
 
 ## Goal
-Every notecard is checked for upkeep on a schedule: untouched and unchecked long enough, it comes
+Every note is checked for upkeep on a schedule: untouched and unchecked long enough, it comes
 up in an Inbox; "Still relevant" pushes the next check out, an edit starts the wait over. Done =
 every Linear sub-issue YAZ-2345..YAZ-2369 is Done, the scenario record on YAZ-2322 holds,
 `npm run typecheck`, `npm test` and `npm run build` pass, and the branch is merged to `main`.
@@ -24,7 +24,7 @@ every Linear sub-issue YAZ-2345..YAZ-2369 is Done, the scenario record on YAZ-23
 - `ReviewSettings` lives in `shared/reviews.ts`; settings go through the existing generic
   `vaultConfig` door (no new IPC, nothing added to the main bundle).
 - A session checks a card against the live index only when its turn comes, never while it shows.
-- For a never-reviewed (or edited-since) notecard the clock is the file's modified time, so ANY
+- For a never-reviewed (or edited-since) note the clock is the file's modified time, so ANY
   write to it restarts the base wait. Recorded on YAZ-2322 as a correction to scenario table B.
 
 ## State
@@ -36,7 +36,7 @@ every Linear sub-issue YAZ-2345..YAZ-2369 is Done, the scenario record on YAZ-23
   - [x] 3A/3B: `shared/schedule.ts` (`dueAt`, `dueAfter`, `isDue`, `isInReview`, `reviewQueue`)
   - [x] 4A–4D: Inbox row, review surface (`ReviewBar`), "Review this folder", the on/off toggle
   - [x] 4E–4F: Reviews section, Settings › Review
-  - [x] 4G: `yaseennotecards due`
+  - [x] 4G: `yaseendocs due`
   - [x] 5A/5B: polish scoped and applied
   - [x] 6A: scenario rows mapped to tests; 6B: walk-through in the built app; 6C: docs
   - [x] Size ceiling: `mainBundleBytes` raised to the measured 495,868 with Yaseen's OK
@@ -46,7 +46,7 @@ every Linear sub-issue YAZ-2345..YAZ-2369 is Done, the scenario record on YAZ-23
 
 ## Open Questions
 - None blocking. Recorded on YAZ-2322 for Yaseen: the ID sweep resets every never-reviewed
-  notecard's clock once per vault, and undoing a notecard's only review leaves it not due.
+  note's clock once per vault, and undoing a note's only review leaves it not due.
 
 ## Working Set
 - Branch `yaz-2322-review`, worktree `.claude/worktrees/yaz-2322-review`

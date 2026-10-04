@@ -38,7 +38,7 @@ export interface CardsViewProps {
   vaultRecords: readonly IndexRecord[]
   /** The snapshot's folder settings records, for a link column narrowed to a folder. */
   vaultFolders: readonly IndexRecord[]
-  /** ViewsPane's resolver: a cell reads an id link as the title of the notecard, or folder, it names (YAZ-2293 D8). */
+  /** ViewsPane's resolver: a cell reads an id link as the title of the note, or folder, it names (YAZ-2293 D8). */
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
@@ -144,7 +144,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
   const basenames = useMemo(() => basenameCandidates(vaultRecords), [vaultRecords])
-  // Relation columns narrow the link picker to the notecards in the FOLDER the target names
+  // Relation columns narrow the link picker to the notes in the FOLDER the target names
   // (YAZ-2290 D10: `belongsToBasenames`); a target naming no folder falls back to all basenames.
   const linkNames = useMemo(() => {
     const m = new Map<string, LinkCandidate[]>()

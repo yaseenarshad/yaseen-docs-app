@@ -452,7 +452,7 @@ describe('Rename / Delete', () => {
 
 /**
  * The review items (YAZ-2322) act ON the right-clicked row, so they lead the this-row group, above
- * Rename: a FOLDER row starts a review of what is due inside it, and a NOTECARD row carries ONE
+ * Rename: a FOLDER row starts a review of what is due inside it, and a NOTE row carries ONE
  * state-aware item that takes it out of review or puts it back (the favorite toggle's idiom).
  */
 describe('review items (YAZ-2322)', () => {
@@ -466,7 +466,7 @@ describe('review items (YAZ-2322)', () => {
     expect(onReviewFolder).toHaveBeenCalledExactlyOnceWith('/v/sub')
   })
 
-  it('a notecard in review reads "Turn review off", one out of it "Turn review on" — above Rename', () => {
+  it('a note in review reads "Turn review off", one out of it "Turn review on" — above Rename', () => {
     const on = build({ ...FILE_ROW, reviewPath: '/v/Note.md', reviewIsOn: true })
     expect(on[4].map((i) => i.label)).toEqual(['Turn review off', 'Rename'])
     const off = build({ ...FILE_ROW, reviewPath: '/v/Note.md', reviewIsOn: false })
@@ -482,7 +482,7 @@ describe('review items (YAZ-2322)', () => {
     expect(turnOn).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
   })
 
-  it('is absent with no target — a folder, blank space, a file that is not a notecard', () => {
+  it('is absent with no target — a folder, blank space, a file that is not a note', () => {
     expect(labelsOf(build(FILE_ROW)).some((l) => l.startsWith('Turn review'))).toBe(false)
     expect(labelsOf(build(BLANK)).some((l) => l.startsWith('Turn review'))).toBe(false)
   })
@@ -527,29 +527,29 @@ describe('favorite toggle item (YAZ-1766 D3)', () => {
 })
 
 /**
- * "Add notecard shortcut" (YAZ-2290 D2): a FOLDER row's item and nobody else's — the Sidebar hands
+ * "Add note shortcut" (YAZ-2290 D2): a FOLDER row's item and nobody else's — the Sidebar hands
  * a target only for one folder row outside a plural selection. It sits under the favorite toggle.
  */
-describe('Add notecard shortcut item (YAZ-2290 D2)', () => {
+describe('Add note shortcut item (YAZ-2290 D2)', () => {
   it('is absent without a target — a file row, blank space, a 2+ selection', () => {
-    expect(itemOf(build(FILE_ROW), 'Add notecard shortcut')).toBeUndefined()
-    expect(itemOf(build(BLANK), 'Add notecard shortcut')).toBeUndefined()
-    expect(itemOf(build({ copyPaths: ['/v/a', '/v/b'], openTabPaths: ['/v/a', '/v/b'], favoritePaths: ['/v/a', '/v/b'] }), 'Add notecard shortcut')).toBeUndefined()
+    expect(itemOf(build(FILE_ROW), 'Add note shortcut')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Add note shortcut')).toBeUndefined()
+    expect(itemOf(build({ copyPaths: ['/v/a', '/v/b'], openTabPaths: ['/v/a', '/v/b'], favoritePaths: ['/v/a', '/v/b'] }), 'Add note shortcut')).toBeUndefined()
   })
 
   it('a folder row: directly under the favorite toggle, above the flyout, and it hands the caller the folder', () => {
     const onAddShortcut = vi.fn()
     const sections = build({ shortcutDir: '/v/Projects', favoritePaths: ['/v/Projects'], revealPath: '/v/Projects' }, { onAddShortcut })
-    expect(sections[5].map((i) => i.label)).toEqual(['Add to favorites', 'Add notecard shortcut', 'Open in'])
-    select(sections, 'Add notecard shortcut')
+    expect(sections[5].map((i) => i.label)).toEqual(['Add to favorites', 'Add note shortcut', 'Open in'])
+    select(sections, 'Add note shortcut')
     expect(onAddShortcut).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })
 
 /**
- * A SHORTCUT row (YAZ-2290 E5): the notecard shown in a folder it does not live in. "Remove
+ * A SHORTCUT row (YAZ-2290 E5): the note shown in a folder it does not live in. "Remove
  * shortcut" stands where Delete would, and the file clipboard is withheld — the row is not a file
- * in this folder. Everything that acts on the notecard in its real place stays.
+ * in this folder. Everything that acts on the note in its real place stays.
  */
 describe('a shortcut row (YAZ-2290 E5)', () => {
   /** What the Sidebar pins for one: the file row's targets, minus Delete, Rename and the clip. */
@@ -562,7 +562,7 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
     expect(sections.flat().some((i) => i.danger === true)).toBe(false)
   })
 
-  it('hands the caller the notecard and the folder it leaves', () => {
+  it('hands the caller the note and the folder it leaves', () => {
     const onRemoveShortcut = vi.fn()
     select(build(SHORTCUT_ROW, { onRemoveShortcut }), 'Remove shortcut')
     expect(onRemoveShortcut).toHaveBeenCalledExactlyOnceWith('/v/Note.md', '/v/Projects')

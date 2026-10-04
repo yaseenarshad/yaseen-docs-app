@@ -1,9 +1,9 @@
 /**
- * A notecard is born from its folder's template and the seed alone (YAZ-2290 E1/E3), in one
+ * A note is born from its folder's template and the seed alone (YAZ-2290 E1/E3), in one
  * atomic content-at-create call (GRO-2202). `api` mocked like writeProperty.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createNotecard, ensureFolder } from './scaffold'
+import { createNote, ensureFolder } from './scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -28,12 +28,12 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('createNotecard (YAZ-2290 E1/E3)', () => {
+describe('createNote (YAZ-2290 E1/E3)', () => {
   it('no template: the seed alone — no column is stamped, no `folder_pages` — and an empty seed is an empty file', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await createNotecard('/v/Projects/A.md', { status: '2-Todo' })
-    await createNotecard('/v/Projects/B.md')
+    await createNote('/v/Projects/A.md', { status: '2-Todo' })
+    await createNote('/v/Projects/B.md')
 
     expect(readFile).toHaveBeenCalledWith('/v/Projects/.template.md') // hidden, in the folder itself
     expect(createFile.mock.calls).toEqual([[{ path: '/v/Projects/A.md', content: '---\nstatus: 2-Todo\n---\n' }], [{ path: '/v/Projects/B.md', content: '' }]])
@@ -43,19 +43,19 @@ describe('createNotecard (YAZ-2290 E1/E3)', () => {
   it('the template gives its frontmatter and body; the seed wins a key they share', async () => {
     readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
 
-    await createNotecard('/v/Projects/A.md', { status: '2-Todo' })
+    await createNote('/v/Projects/A.md', { status: '2-Todo' })
 
     expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Projects/A.md', content: '---\nowner: me\nstatus: 2-Todo\n---\n## Notes\n' })
   })
 
   it('a read failure other than a missing template, and a create failure, propagate', async () => {
     readFile.mockRejectedValueOnce(new BridgeRequestError('FORBIDDEN', 'permission denied'))
-    await expect(createNotecard('/v/Projects/A.md')).rejects.toThrow('permission denied')
+    await expect(createNote('/v/Projects/A.md')).rejects.toThrow('permission denied')
     expect(createFile).not.toHaveBeenCalled()
 
     readFile.mockRejectedValue(notFound())
     createFile.mockRejectedValue(new Error('parent folder does not exist'))
-    await expect(createNotecard('/v/Projects/A.md')).rejects.toThrow('parent folder does not exist')
+    await expect(createNote('/v/Projects/A.md')).rejects.toThrow('parent folder does not exist')
   })
 })
 

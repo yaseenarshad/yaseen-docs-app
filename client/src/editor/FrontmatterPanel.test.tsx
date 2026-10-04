@@ -616,7 +616,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
 
   it('a link value naming a FOLDER by its id reads as the folder’s name, as a note’s reads as its title (YAZ-2290 D10)', () => {
     const source = createWikilinkResolveSource()
-    source.update((target) => (target === AREAS_ID ? '/vault/Areas' : null), [], []) // the window's link resolver: a notecard, else a folder
+    source.update((target) => (target === AREAS_ID ? '/vault/Areas' : null), [], []) // the window's link resolver: a note, else a folder
     const el = mount(`---\narea: "[[${AREAS_ID}]]"\n---\nBody\n`, { root: ROOT, wikilinks: source })
     expand(el)
     expect(rowOf(el, 'area').querySelector('.view-table__chip')?.textContent).toBe('Areas')

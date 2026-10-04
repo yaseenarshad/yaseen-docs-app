@@ -105,7 +105,7 @@ interface SidebarProps {
   /** A note's id off the window's index (YAZ-2293), for the row menu's "Copy ID"; the same lookup the tab bar is handed. */
   noteId?: (path: string) => string | undefined
   /**
-   * The window's index snapshot, for the folder rows' notecard counts (🔒 E6, YAZ-2290): the SAME
+   * The window's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME
    * object `WikilinkIndexBridge` already feeds — App's one per-window index source — read, never
    * written, and no second feed. `records` is `[]` until the first index lands, so no row shows a
    * number before then.
@@ -137,7 +137,7 @@ interface SidebarProps {
    */
   clipboardRef: { current: SidebarClipboard | null }
   /**
-   * The Inbox row (YAZ-2322): how many notecards are due, and whether a review is open. App counts
+   * The Inbox row (YAZ-2322): how many notes are due, and whether a review is open. App counts
    * and owns the session — this component is unmounted while collapsed, and the count has to be
    * right the moment it comes back.
    */
@@ -147,8 +147,8 @@ interface SidebarProps {
   /** The folder row's "Review this folder" (YAZ-2322): App starts a review of what is due inside it. */
   onReviewFolder: (dirPath: string) => void
   /**
-   * The notecard row's review toggle (YAZ-2322): whether a path is in review — null for anything
-   * that is not a notecard in the index — and the write. Both App's: the sidebar has no index.
+   * The note row's review toggle (YAZ-2322): whether a path is in review — null for anything
+   * that is not a note in the index — and the write. Both App's: the sidebar has no index.
    */
   reviewState: (path: string) => boolean | null
   onSetReview: (path: string, on: boolean) => void
@@ -249,20 +249,20 @@ export interface MenuTargets {
   favoritePaths: string[] | null
   /** True only when EVERY `favoritePaths` entry is already a favorite — a mixed selection reads as Add. */
   favoriteIsOn: boolean
-  /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the notecards inside one. */
+  /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the notes inside one. */
   reviewDir: string | null
-  /** "Turn review off" / "Turn review on" (YAZ-2322) — a NOTECARD row only; null for every other row and blank space. */
+  /** "Turn review off" / "Turn review on" (YAZ-2322) — a NOTE row only; null for every other row and blank space. */
   reviewPath: string | null
-  /** That notecard's state when the menu opened; picks the label. */
+  /** That note's state when the menu opened; picks the label. */
   reviewIsOn: boolean
   /**
-   * "Add notecard shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
-   * picked notecard will also appear in. Null on a file row, on blank space and inside a 2+
+   * "Add note shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
+   * picked note will also appear in. Null on a file row, on blank space and inside a 2+
    * selection. Equal to `openPath` today; its OWN field, per this split's doctrine.
    */
   shortcutDir: string | null
   /**
-   * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the notecard and the folder it stands in.
+   * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the note and the folder it stands in.
    * Such a row has no `deletePath` (it is deleted from where it lives), no `renamePath` (the inline
    * input is the real row's) and no `clipPaths` (it is not a file in this folder), whatever the
    * selection holds.
@@ -320,7 +320,7 @@ function focusLabel(count: number): string {
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
 const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', favorites: 'Favorites' }
 
-/** Which notecard is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
+/** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
 /** The Favorites tree's file move (YAZ-1766 D4): nothing on that tab drags to disk, so every callback is a no-op. */
@@ -370,7 +370,7 @@ export function Sidebar({
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
-  // The folder "Add notecard shortcut" is picking a notecard for (YAZ-2290 D2); null when the picker is closed.
+  // The folder "Add note shortcut" is picking a note for (YAZ-2290 D2); null when the picker is closed.
   const [pickingShortcut, setPickingShortcut] = useState<string | null>(null)
   const seenRevealId = useRef<number | null>(null)
   const handledFilesRevealId = useRef<number | null>(null)
@@ -477,7 +477,7 @@ export function Sidebar({
       const inReview = filePath === null ? null : reviewState(filePath)
       // Only a search ROW opens a menu while searching (blank space there offers none), so `searching` names the origin.
       const menuLens: SidebarLens = searching ? 'files' : lens
-      // A shortcut row (YAZ-2290 E5): `node.path` is the notecard where it LIVES, this the folder the row stands in.
+      // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       setMenu({
         x: e.clientX,

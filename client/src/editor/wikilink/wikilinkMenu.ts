@@ -1,6 +1,6 @@
 /**
  * Right-click on an id link (YAZ-2293): a `[[<id>]]` link shows a title and hides the id, so
- * this menu is where the id can be SEEN and copied — the notecard's name, its id, "Copy ID".
+ * this menu is where the id can be SEEN and copied — the note's name, its id, "Copy ID".
  * An id no note has (and any id before the index loads) has no name row; the id and the copy
  * are still offered. A NAME link, a view-only link and plain text keep Electron's native menu:
  * nothing here prevents or draws for them.

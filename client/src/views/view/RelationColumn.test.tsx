@@ -1,7 +1,7 @@
 /**
  * Relation definitions now save to the current folder page with the shared Save/Cancel editor.
  * Legacy vault declarations remain read fallbacks. Link values still write through the normal
- * cell editors; their pickers constrain suggestions to the notecards in the declared target FOLDER
+ * cell editors; their pickers constrain suggestions to the notes in the declared target FOLDER
  * (YAZ-2290 D10), which the Files tree names — `tree` is stubbed on the bridge beside `properties`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -47,7 +47,7 @@ const REVENUE = '/vault/KPIs/Revenue.md'
 const CHURN = '/vault/KPIs/Churn.md'
 
 /**
- * Two folders (`People`, `Funnels`) and the notecards that live in them, plus the two KPI rows the
+ * Two folders (`People`, `Funnels`) and the notes that live in them, plus the two KPI rows the
  * table shows. `page_type` rides along as ORDINARY frontmatter — it is what `KPI_BASE` filters
  * on, and nothing in the client reads it as an identity any more (YAZ-836). `Topics` is a LEGACY
  * folder page — flagged, and named in a member's `folder_pages` — which is an ordinary note now.
@@ -280,12 +280,12 @@ describe('column menu relation flow', () => {
 })
 
 describe('constrained picker', () => {
-  it('the link editor offers the notecards in the target FOLDER and commits the wiki-link through writeProperty', () => {
+  it('the link editor offers the notes in the target FOLDER and commits the wiki-link through writeProperty', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
     open(el, 1, 1) // Churn's empty owner cell — typed link by the declaration alone
     const input = byLabel<HTMLInputElement>(el, 'Edit owner')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Alice', 'Bob']) // the notecards in the folder People
+    expect(options(el)).toEqual(['Alice', 'Bob']) // the notes in the folder People
     click(q(el, '[role="option"]'))
     press(byLabel(el, 'Edit owner'), 'Enter')
     expect(write).toHaveBeenCalledExactlyOnceWith(CHURN, 'owner', '[[Alice]]')
@@ -310,7 +310,7 @@ describe('multi-link cells', () => {
     open(el, 0, 2) // Revenue's empty funnels cell — multi-link vault-wide
     const input = byLabel<HTMLInputElement>(el, 'Edit funnels')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Retention', 'Signup']) // the notecards in the folder Funnels, in the index's path order
+    expect(options(el)).toEqual(['Retention', 'Signup']) // the notes in the folder Funnels, in the index's path order
     setValue(byLabel<HTMLInputElement>(el, 'Edit funnels'), '[[Sig')
     press(byLabel(el, 'Edit funnels'), 'Enter') // completes to [[Signup]]
     expect(byLabel<HTMLInputElement>(el, 'Edit funnels').value).toBe('[[Signup]]')

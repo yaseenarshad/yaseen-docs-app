@@ -93,7 +93,7 @@ const propRow = (menu: Locator, label: string): Locator => menu.locator('.view-p
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'freeze-columns-userdata-'))
   vault = await copyVault(FIXTURE)
-  // Thirty more notecards IN the folder: living there is what makes them its rows (YAZ-2290 D4).
+  // Thirty more notes IN the folder: living there is what makes them its rows (YAZ-2290 D4).
   await Promise.all(
     Array.from({ length: 30 }, (_, index) =>
       writeFile(

@@ -53,7 +53,7 @@ describe('targetDirFor', () => {
     expect(targetDirFor(null, '/r')).toBe('/r')
   })
 
-  it('a shortcut row → the folder it stands in, not the folder its notecard lives in (YAZ-2290 D2)', () => {
+  it('a shortcut row → the folder it stands in, not the folder its note lives in (YAZ-2290 D2)', () => {
     expect(targetDirFor({ type: 'file', path: '/r/areas/a.md', shortcutIn: '/r/sub' }, '/r')).toBe('/r/sub')
   })
 })

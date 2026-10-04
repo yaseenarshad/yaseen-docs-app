@@ -140,7 +140,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     reviewing: false,
     onOpenInbox: vi.fn(),
     onReviewFolder: vi.fn(),
-    // No row is a notecard the index knows unless a test says so: null hides the review toggle.
+    // No row is a note the index knows unless a test says so: null hides the review toggle.
     reviewState: () => null,
     onSetReview: vi.fn(),
     ...over,
@@ -153,7 +153,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
 }
 
 const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file')
-/** An index record for a notecard of the `/v` vault — only `folder` matters to the folder rows' counts (YAZ-2290 E6). */
+/** An index record for a note of the `/v` vault — only `folder` matters to the folder rows' counts (YAZ-2290 E6). */
 const indexRecord = (path: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
   return { path, name, basename: name.replace(/\.md$/, ''), folder: path.slice('/v/'.length, Math.max('/v/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
@@ -3001,7 +3001,7 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
 })
 
 /**
- * The Inbox row (YAZ-2322): the notecards due for review, counted by App — the sidebar only shows
+ * The Inbox row (YAZ-2322): the notes due for review, counted by App — the sidebar only shows
  * the number and reports the click. It sits above the lens tabs, so no lens and no search hides it.
  */
 describe('Inbox row (YAZ-2322)', () => {
@@ -3072,7 +3072,7 @@ describe('review menu items (YAZ-2322)', () => {
   it.each([
     [true, 'Turn review off'],
     [false, 'Turn review on'],
-  ])('a notecard whose review state is %s reads "%s", above Rename, and asks App for the opposite', async (state, label) => {
+  ])('a note whose review state is %s reads "%s", above Rename, and asks App for the opposite', async (state, label) => {
     const reviewState = vi.fn(() => state)
     const { el, props } = await mount({ reviewState })
     rightClick(el, '.tree__row--file')
@@ -3399,10 +3399,10 @@ describe('the tree re-renders only the rows a change touches (YAZ-2194)', () => 
 })
 
 /**
- * Every folder row shows how many notecards it holds (🔒 E6, YAZ-2290): the index records that live
+ * Every folder row shows how many notes it holds (🔒 E6, YAZ-2290): the index records that live
  * directly in it, off the window's one index source, live.
  */
-describe('folder row notecard counts (🔒 E6, YAZ-2290)', () => {
+describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
   const COUNTED: TreeNode[] = [
     { type: 'dir', name: 'Empty', path: '/v/Empty', children: [] },
     {
@@ -3429,7 +3429,7 @@ describe('folder row notecard counts (🔒 E6, YAZ-2290)', () => {
     return { ...mounted, indexSource }
   }
 
-  it('a folder row shows its DIRECT notecards — not its subfolder\'s, not other files — and a folder holding none shows no number', async () => {
+  it('a folder row shows its DIRECT notes — not its subfolder\'s, not other files — and a folder holding none shows no number', async () => {
     const { el } = await mountCounted()
     expect(countOf(el, '/v/Projects')).toBe('2')
     expect(countOf(el, '/v/Projects/Alpha')).toBe('1')
@@ -3437,7 +3437,7 @@ describe('folder row notecard counts (🔒 E6, YAZ-2290)', () => {
     expect(el.querySelectorAll('.tree__row--file .tree__count')).toHaveLength(0)
   })
 
-  it('follows the live index: a notecard born in a folder moves that row\'s number', async () => {
+  it('follows the live index: a note born in a folder moves that row\'s number', async () => {
     const { el, indexSource } = await mountCounted()
     act(() => indexSource.update(() => null, [...RECORDS, indexRecord('/v/Empty/new.md')]))
     expect(countOf(el, '/v/Empty')).toBe('1')
@@ -3457,11 +3457,11 @@ describe('folder row notecard counts (🔒 E6, YAZ-2290)', () => {
 })
 
 /**
- * Shortcuts (YAZ-2290 D2): a notecard lives in one folder and also appears in another — its
+ * Shortcuts (YAZ-2290 D2): a note lives in one folder and also appears in another — its
  * `also_in` names that folder's id, the `id` of the folder's `.folder.md`. The folder row's menu
  * adds one through the picker; the writes run for real over an in-memory disk behind the bridge.
  */
-describe('notecard shortcuts (YAZ-2290 D2)', () => {
+describe('note shortcuts (YAZ-2290 D2)', () => {
   const PROJECTS_ID = 'k3m9x2pq7abc'
   const HEALTH = '/v/Areas/Health.md'
   const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
@@ -3480,7 +3480,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
   const FOLDERS: IndexRecord[] = [{ ...indexRecord('/v/Projects/.folder.md'), id: PROJECTS_ID }]
   const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
   const rightClick = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-  const picker = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a notecard"]')
+  const picker = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a note"]')
 
   const mountLinked = async (alsoIn?: unknown, over: Partial<SidebarProps> = {}, tweak?: (bridge: ReturnType<typeof installBridge>) => unknown) => {
     vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects'])
@@ -3519,13 +3519,13 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('3')
     })
 
-    it('a click opens the REAL notecard, exactly as a file row does', async () => {
+    it('a click opens the REAL note, exactly as a file row does', async () => {
       const { el, props } = await mountLinked([PROJECTS_ID])
       act(() => shortcutRow(el)?.click())
       expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(HEALTH)
     })
 
-    it('is not draggable — a drag would move the notecard out of the folder it lives in — while its real row still is', async () => {
+    it('is not draggable — a drag would move the note out of the folder it lives in — while its real row still is', async () => {
       const { el, props } = await mountLinked([PROJECTS_ID])
       expect(shortcutRow(el)?.draggable).toBe(false)
       expect(row(el, HEALTH)?.draggable).toBe(true)
@@ -3534,7 +3534,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       expect(props.onRenameFile).not.toHaveBeenCalled()
     })
 
-    it('is the same notecard as its real row: the open file and the selection light BOTH (🔒 D3)', async () => {
+    it('is the same note as its real row: the open file and the selection light BOTH (🔒 D3)', async () => {
       const { el, rerender } = await mountLinked([PROJECTS_ID])
       await rerender({ activeFile: HEALTH })
       expect(row(el, HEALTH)?.classList.contains('tree__row--active')).toBe(true)
@@ -3546,7 +3546,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       expect(shortcutRow(el)?.classList.contains('tree__row--active')).toBe(false)
     })
 
-    it('a click, a shift-click or a right-click on it selects nothing, so ⌘C / ⌘X never reach the real notecard from here', async () => {
+    it('a click, a shift-click or a right-click on it selects nothing, so ⌘C / ⌘X never reach the real note from here', async () => {
       const clipboardRef: SidebarProps['clipboardRef'] = { current: null }
       const { el, bridge } = await mountLinked([PROJECTS_ID], { clipboardRef })
       act(() => shortcutRow(el)?.click())
@@ -3562,7 +3562,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
     it.each([
       ['the level that draws its shortcut row re-renders too', [PROJECTS_ID], ['Alpha.md', 'Health.md', 'Zeta.md', 'top.md']],
       ['with no shortcut there, that level does not', undefined, ['Health.md', 'top.md']],
-    ])('a tab switch to the notecard: %s (YAZ-2194)', async (_name, alsoIn, rows) => {
+    ])('a tab switch to the note: %s (YAZ-2194)', async (_name, alsoIn, rows) => {
       const { rerender } = await mountLinked(alsoIn, { activeFile: '/v/top.md' })
       labelRenders.names = []
       await rerender({ activeFile: HEALTH })
@@ -3574,7 +3574,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       rightClick(shortcutRow(el))
       const labels = menuItems(el).map((item) => item.textContent)
       expect(labels[labels.length - 1]).toBe('Remove shortcut')
-      for (const absent of ['Delete', 'Rename', 'Cut', 'Copy', 'Paste', 'Add notecard shortcut']) expect(labels).not.toContain(absent)
+      for (const absent of ['Delete', 'Rename', 'Cut', 'Copy', 'Paste', 'Add note shortcut']) expect(labels).not.toContain(absent)
       for (const kept of ['Copy path', 'Copy for Agent', 'Add to favorites', 'Open in']) expect(labels).toContain(kept)
       // The real row's menu is a file row's, as ever.
       rightClick(row(el, HEALTH))
@@ -3582,7 +3582,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       expect(itemByLabel(el, 'Remove shortcut')).toBeUndefined()
     })
 
-    it('renaming the notecard from its real row puts ONE input there; the shortcut row stays a row', async () => {
+    it('renaming the note from its real row puts ONE input there; the shortcut row stays a row', async () => {
       const { el } = await mountLinked([PROJECTS_ID])
       rightClick(row(el, HEALTH))
       act(() => itemByLabel(el, 'Rename')?.click())
@@ -3599,7 +3599,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       expect(row(el, '/v/Areas')?.closest('li')?.querySelector('.create-inline')).toBeNull()
     })
 
-    it('"Remove shortcut" takes the folder\'s id out of the notecard — the key with its last entry — and the row goes with the index', async () => {
+    it('"Remove shortcut" takes the folder\'s id out of the note — the key with its last entry — and the row goes with the index', async () => {
       const { el, disk, indexSource, props } = await mountLinked([PROJECTS_ID])
       rightClick(shortcutRow(el))
       await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
@@ -3607,7 +3607,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       expect(props.onDeleteFile).not.toHaveBeenCalled()
       act(() => indexSource.update(() => null, records(), FOLDERS))
       expect(shortcutRow(el)).toBeNull()
-      expect(row(el, HEALTH)).not.toBeNull() // the notecard is where it lives
+      expect(row(el, HEALTH)).not.toBeNull() // the note is where it lives
       expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('2')
     })
 
@@ -3626,28 +3626,28 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
     })
   })
 
-  describe('"Add notecard shortcut"', () => {
+  describe('"Add note shortcut"', () => {
     it('is a FOLDER row\'s item — not a file row\'s, not blank space\'s, not a 2+ selection\'s', async () => {
       const { el } = await mountLinked()
       rightClick(row(el, '/v/Projects'))
-      expect(itemByLabel(el, 'Add notecard shortcut')).toBeDefined()
+      expect(itemByLabel(el, 'Add note shortcut')).toBeDefined()
       rightClick(row(el, HEALTH))
-      expect(itemByLabel(el, 'Add notecard shortcut')).toBeUndefined()
+      expect(itemByLabel(el, 'Add note shortcut')).toBeUndefined()
       rightClick(el.querySelector('.sidebar__body'))
-      expect(itemByLabel(el, 'Add notecard shortcut')).toBeUndefined()
+      expect(itemByLabel(el, 'Add note shortcut')).toBeUndefined()
       act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
       // The right-click on Health selected it (D9); shift adds the folder: a selection of two.
       act(() => void row(el, '/v/Projects')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
       rightClick(row(el, '/v/Projects'))
       expect(itemByLabel(el, 'Open 2 in new tabs')).toBeDefined()
-      expect(itemByLabel(el, 'Add notecard shortcut')).toBeUndefined()
+      expect(itemByLabel(el, 'Add note shortcut')).toBeUndefined()
     })
 
-    it('opens the picker for that folder; ⏎ writes the folder\'s id into the picked notecard\'s `also_in` and closes it', async () => {
+    it('opens the picker for that folder; ⏎ writes the folder\'s id into the picked note\'s `also_in` and closes it', async () => {
       const { el, disk, writeFile, props } = await mountLinked()
       rightClick(row(el, '/v/Projects'))
-      act(() => itemByLabel(el, 'Add notecard shortcut')?.click())
-      // Alpha and Zeta live in Projects: only the notecards it does not already show are offered.
+      act(() => itemByLabel(el, 'Add note shortcut')?.click())
+      // Alpha and Zeta live in Projects: only the notes it does not already show are offered.
       expect([...el.querySelectorAll('.search-results__label')].map((label) => label.textContent)).toEqual(['Health', 'top'])
       await type(picker(el)!, 'hea')
       await act(async () => void picker(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
@@ -3660,7 +3660,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
     it('Esc closes the picker and writes nothing', async () => {
       const { el, writeFile } = await mountLinked()
       rightClick(row(el, '/v/Projects'))
-      act(() => itemByLabel(el, 'Add notecard shortcut')?.click())
+      act(() => itemByLabel(el, 'Add note shortcut')?.click())
       await act(async () => void picker(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
       expect(picker(el)).toBeNull()
       expect(writeFile).not.toHaveBeenCalled()
@@ -3670,7 +3670,7 @@ describe('notecard shortcuts (YAZ-2290 D2)', () => {
       const { el, writeFile, props } = await mountLinked()
       writeFile.mockRejectedValue({ code: 'IO_ERROR', message: 'disk full' })
       rightClick(row(el, '/v/Projects'))
-      act(() => itemByLabel(el, 'Add notecard shortcut')?.click())
+      act(() => itemByLabel(el, 'Add note shortcut')?.click())
       await act(async () => void el.querySelector<HTMLElement>('.search-results__row')?.click())
       expect(props.onNotice).toHaveBeenCalledExactlyOnceWith("Can't add the shortcut: disk full", 'error')
     })

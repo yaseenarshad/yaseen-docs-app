@@ -7,11 +7,11 @@ import type { NoticeKind } from '../lib/notice'
 import { transformFile } from '../views/writeProperty'
 
 /**
- * Upkeep review as App sees it (YAZ-2322): how many notecards are due, and the one review session
+ * Upkeep review as App sees it (YAZ-2322): how many notes are due, and the one review session
  * a window can have open. Everything is derived from the index snapshot and the vault's settings;
- * the only thing a review writes is one line in the notecard's own `reviews` (🔒 D1/D2).
+ * the only thing a review writes is one line in the note's own `reviews` (🔒 D1/D2).
  *
- * A session takes its queue ONCE, at start (🔒 D8). A notecard is checked against the live index
+ * A session takes its queue ONCE, at start (🔒 D8). A note is checked against the live index
  * only when its turn comes — gone, turned off or no longer due, it is passed over — and never
  * while it is showing, because editing the page it shows is exactly what makes it no longer due.
  */
@@ -19,9 +19,9 @@ import { transformFile } from '../views/writeProperty'
 export interface ReviewSession {
   /** "Inbox", or the folder's name. */
   label: string
-  /** The notecard showing; null once nothing is left. */
+  /** The note showing; null once nothing is left. */
   path: string | null
-  /** The showing notecard's place among the `total` the session started with. */
+  /** The showing note's place among the `total` the session started with. */
   position: number
   total: number
   canUndo: boolean
@@ -32,14 +32,14 @@ export interface ReviewApi {
   session: ReviewSession | null
   /** `folder` is root-relative; none is the whole vault. */
   start: (folder?: string) => void
-  /** "Still relevant": one line in the notecard's log, then the next notecard. */
+  /** "Still relevant": one line in the note's log, then the next note. */
   keep: () => Promise<void>
-  /** Nothing written; the notecard comes back after the others. */
+  /** Nothing written; the note comes back after the others. */
   skip: () => void
-  /** Removes the line `keep` just wrote and shows that notecard again. */
+  /** Removes the line `keep` just wrote and shows that note again. */
   undo: () => Promise<void>
   close: () => void
-  /** Whether a notecard is in review; null for a path that is not a notecard. */
+  /** Whether a note is in review; null for a path that is not a note. */
   inReview: (path: string) => boolean | null
   setInReview: (path: string, on: boolean) => Promise<void>
 }
@@ -77,7 +77,7 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
   live.current = { records, settings, session }
   const busy = useRef(false)
 
-  /** Drops the notecards at the head of the queue that are no longer due: their turn came. */
+  /** Drops the notes at the head of the queue that are no longer due: their turn came. */
   const settle = useCallback((queue: string[]): string[] => {
     const due = new Set(reviewQueue(live.current.records, live.current.settings, Date.now()).map((r) => r.path))
     const first = queue.findIndex((path) => due.has(path))

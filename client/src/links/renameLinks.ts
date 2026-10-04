@@ -278,7 +278,7 @@ function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog
   // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
   // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
   const resolver = resolverFor(records, root, { aliases: false, ids: false })
-  // A FOLDER holds a name only when no notecard, path or ALIAS does (YAZ-2290 D10) — asked of the
+  // A FOLDER holds a name only when no note, path or ALIAS does (YAZ-2290 D10) — asked of the
   // full resolver, so a link an alias answers is never read as the folder's. No folder ids either.
   const anyNote = resolverFor(records, root)
   const folder = folderResolver(root, dirs)
