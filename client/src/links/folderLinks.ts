@@ -66,16 +66,23 @@ export function linkResolver(records: readonly IndexRecord[], root: string, dirs
 }
 
 /**
- * The `[[` picker's folder rows. A folder has an id only once its `.folder.md` does, so like a
- * view-only file (`viewOnlyCatalog.ts`) it is inserted by NAME — or by its root-relative path when
- * `resolve` gives the bare name to something else (a note or alias of that name, a shallower
- * folder). A folder neither spelling reaches (a note holds its very path) gets no row: nothing
- * inserted would link to it.
+ * The `[[` picker's folder rows, each reading `<name> (folder)` — display text, never typed and
+ * never written. A folder whose `.folder.md` holds an id (`folders`) is inserted by that ID, under
+ * the folders' own shortest name: no note takes a name from a row that links by id. A folder with
+ * no id is inserted by NAME, like a view-only file (`viewOnlyCatalog.ts`) — or by its root-relative
+ * path when `resolve` gives the bare name to something else (a note or alias of that name, a
+ * shallower folder) — and gets no row when neither spelling reaches it: nothing inserted would
+ * link to it.
  */
-export function folderLinkCandidates(root: string, dirs: readonly string[], resolve: ResolveLink): LinkCandidate[] {
+export function folderLinkCandidates(root: string, dirs: readonly string[], resolve: ResolveLink, folders: readonly IndexRecord[] = []): LinkCandidate[] {
+  const ids = new Map(folders.map((settings) => [dirname(settings.path), settings.id]))
+  const folder = folderResolver(root, dirs)
   return dirs.flatMap((dir) => {
-    const name = [basename(dir), relTo(root, dir)].find((spelling) => resolve(spelling) === dir)
-    return name === undefined ? [] : [nameCandidate(name)]
+    const held = ids.get(dir)
+    // Of two folders still sharing an id, only the one it names is linked by it.
+    const id = held !== undefined && resolve(held) === dir ? held : undefined
+    const name = [basename(dir), relTo(root, dir)].find((spelling) => (id === undefined ? resolve : folder)(spelling) === dir)
+    return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: `${name} (folder)` }]
   })
 }
 

@@ -24,6 +24,7 @@ vi.mock('../../api', async (importOriginal) => ({
 }))
 const createFile = vi.mocked(api.createFile)
 import { linkCandidates, nameCandidate } from '../../links/completion'
+import { folderLinkCandidates, linkResolver } from '../../links/folderLinks'
 import { resolverFor } from '../../views/engine'
 import { WIKILINK_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
 import {
@@ -487,6 +488,53 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     press(crepe, 'ArrowDown')
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[CAC Model|CAC]]\n')
+  })
+})
+
+describe('wikilink picker: folders, by id (scenario K)', () => {
+  const NOTE_ID = 'k3m9x2pq7abc'
+  const FOLDER_ID = 'f7n2w8rt4xyz'
+  const record = (path: string, id: string): IndexRecord => ({
+    path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
+    folder: path.slice('/vault/'.length, Math.max('/vault/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1,
+    properties: {}, aliases: [], tags: [], links: [], embeds: [],
+  })
+
+  /** The bridge's own composition: a note and a folder both named Projects, each with its id. */
+  async function mountVault() {
+    const records = [record('/vault/Projects.md', NOTE_ID)]
+    const folders = [record('/vault/Projects/.folder.md', FOLDER_ID)]
+    const resolve = linkResolver(records, '/vault', ['/vault/Projects'], folders)
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(resolve, records, folders)
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([...linkCandidates(records), ...folderLinkCandidates('/vault', ['/vault/Projects'], resolve, folders)])
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: 'X\n', wikilinkCandidates: candidates, wikilinks })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    caret(crepe, posOf(crepe, 'X', 1))
+    return { crepe, shown: () => Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.textContent) }
+  }
+
+  it('K3 — a folder and a note share a name: the rows read "<name>" and "<name> (folder)", the note first', async () => {
+    const { crepe } = await mountVault()
+    type(crepe, '[[proj')
+    expect(rows()).toEqual(['Projects', 'Projects (folder)'])
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe(`X[[${NOTE_ID}]]\n`)
+  })
+
+  it('K2 — pick the folder row: `[[<folder id>]]` is inserted and shows the folder\'s name, never "(folder)"', async () => {
+    const { crepe, shown } = await mountVault()
+    type(crepe, '[[proj')
+    press(crepe, 'ArrowDown')
+    expect(selectedRow()).toBe('Projects (folder)')
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe(`X[[${FOLDER_ID}]]\n`)
+    caret(crepe, posOf(crepe, 'X'))
+    expect(shown()).toEqual(['Projects'])
   })
 })
 

@@ -11,9 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import type { IndexRecord } from '@shared/types'
+import { linkResolver } from '../../links/folderLinks'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { openIdMenu } from './wikilinkMenu'
-import { WIKILINK_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilinkPlugin'
 
 const ID = 'k3m9x2pq7abc'
 const DEAD = 'zzzzzzzzzzz9'
@@ -21,9 +23,9 @@ const resolve = (target: string) => (target === ID ? '/vault/Projects/Road Map.m
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, withNav = true) {
+async function mount(markdown: string, withNav = true, feed: (source: MutableWikilinkResolveSource) => void = (source) => source.update(resolve)) {
   const source = createWikilinkResolveSource()
-  source.update(resolve)
+  feed(source)
   const nav = { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -110,6 +112,28 @@ describe('right-click on a rendered id link', () => {
     expect(rows.map((row) => row.textContent)).toEqual([DEAD, 'Copy ID'])
     rows[1]!.click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(DEAD)
+  })
+
+  it('K5 — right-click a rendered link to a FOLDER: the folder\'s name with "(folder)", its id and Copy ID', async () => {
+    const FOLDER_ID = 'f7n2w8rt4xyz'
+    const record = (path: string, id: string): IndexRecord => ({
+      path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', folder: 'Projects', ext: 'md', size: 1, ctime: 1, mtime: 1,
+      properties: {}, aliases: [], tags: [], links: [], embeds: [],
+    })
+    // The bridge's feed: a folder with its settings file's id, and a note INSIDE it — which is no folder.
+    const records = [record('/vault/Projects/Road Map.md', ID)]
+    const folders = [record('/vault/Projects/.folder.md', FOLDER_ID)]
+    const { root, view } = await mount(`pad [[${FOLDER_ID}]] and [[${ID}]] tail\n`, true, (source) =>
+      source.update(linkResolver(records, '/vault', ['/vault/Projects'], folders), records, folders),
+    )
+    mouse(linkSpan(root, 'Projects'), 'contextmenu') // the link itself shows the bare name
+    const rows = rowsOf(popupOf(view)!)
+    expect(rows.map((row) => row.textContent)).toEqual(['Projects (folder)', FOLDER_ID, 'Copy ID'])
+    expect(rows.map((row) => row.disabled)).toEqual([true, true, false])
+    rows[2]!.click()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(FOLDER_ID)
+    mouse(linkSpan(root, 'Road Map'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Road Map', ID, 'Copy ID'])
   })
 
   it('the reveal trap: a right-button mousedown is swallowed, so the link is still rendered when contextmenu arrives', async () => {

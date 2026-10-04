@@ -67,7 +67,7 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
     if (!ready) return null
     const dirs = dirList === '' ? [] : dirList.split('\n')
     const resolve = linkResolver(records, root, dirs, folders)
-    return { resolve, rows: [...linkCandidates(records), ...folderLinkCandidates(root, dirs, resolve)] }
+    return { resolve, rows: [...linkCandidates(records), ...folderLinkCandidates(root, dirs, resolve, folders)] }
   }, [ready, records, folders, root, dirList])
   useEffect(() => {
     if (semantic === null) return
