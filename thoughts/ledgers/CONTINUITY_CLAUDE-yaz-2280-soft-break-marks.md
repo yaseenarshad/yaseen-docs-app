@@ -20,9 +20,8 @@
   - [x] 2 Marks keep soft line breaks soft (YAZ-2282)
   - [x] 3 Repair the damaged transcript (YAZ-2283): 37 lines, verified byte-identical through the fixed editor
   - [x] 4 Polish and anti-slop (YAZ-2284, 4A YAZ-2286, 4B YAZ-2287)
-- Now: [→] 5 Verify in the real app (YAZ-2285): Desktop demo, waiting on Yasin's sign-off
-- Remaining:
-  - [ ] Merge to main, release (smallest bump), install, release notes
+  - [x] 5 Verify in the real app (YAZ-2285): Yasin approved the Desktop demo on 2026-10-04
+- Now: closed. Merged to main; release 0.9.32 and its notes follow as their own step.
 
 ## Open Questions
 - None.
