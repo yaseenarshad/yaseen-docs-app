@@ -4,7 +4,7 @@
  * the view settings and shown with the components a note uses. Mounted like `FolderView.test.tsx`,
  * but with the `api` mock sitting UNDER the real `writeProperty` over a tiny in-memory disk, so a
  * write on a folder with no settings file is seen creating it. Last on the page come its linked
- * mentions (D10): the notes whose links resolve to the folder itself.
+ * mentions (D10): the notes and the folders whose links resolve to the folder itself.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -284,6 +284,24 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     expect([...el.querySelectorAll('.backlinks__note')].map((n) => n.textContent)).toEqual(['Plan'])
     expect(q(el, '.backlinks__snippet').textContent).toBe('Move it to Stages next.')
     expect(q(el, '.backlinks__match').textContent).toBe('Stages')
+  })
+
+  it('Linked mentions on a folder\'s page lists the notes AND the folders that link to it; a folder that links to itself is not listed', async () => {
+    const TEAM = '/vault/Team'
+    const settings = (dir: string) => rec(`${dir}/.folder.md`, { folder_settings: { views: [{ type: 'outline', name: 'Outline', outline: '- [[Stages]]\n- then on through [[Stages]]' }] } })
+    const el = await mount()
+    const records = [{ ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
+    const folders = [settings(TEAM), settings(STAGES)]
+    act(() => source.update(linkResolver(records, '/vault', [STAGES, TEAM], folders), records, folders))
+    await flush()
+    expect(q(el, '.backlinks__title').textContent).toBe('Linked mentions (2)')
+    click(q(el, '.backlinks__header'))
+    await flush()
+    expect([...el.querySelectorAll('.backlinks__note')].map((n) => n.textContent)).toEqual(['Plan', 'Team'])
+    expect([...el.querySelectorAll('.backlinks__snippet')].slice(-2).map((n) => n.textContent)).toEqual(['Stages', 'then on through Stages'])
+    // Clicking the folder opens the folder's page.
+    click([...el.querySelectorAll('.backlinks__note')][1])
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(TEAM)
   })
 
   it('an entry opens its note: a click in the current tab, a ⌘-click in a background tab', async () => {

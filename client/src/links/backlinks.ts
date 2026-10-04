@@ -1,28 +1,43 @@
 /**
  * Backlinks — "Linked mentions" (Links D, GRO-2193; decision D of GRO-2096, LOCKED): the notes
- * that link to the open one, computed CLIENT-SIDE in ONE pass over the index snapshot this
+ * and folders that link to the open page, computed CLIENT-SIDE in ONE pass over the index snapshot this
  * window already holds, through THE shared resolver (`views/engine.ts` `resolverFor`, the one
  * behind views, wikilink decorations and clicks). No reverse map in the main process, no
  * new IPC, no new index field — and alias-awareness comes free: a note linking `[[CAC]]` IS a
  * linked mention of the page whose frontmatter aliases it (E2, GRO-2214).
  *
  * A mention is a `links` OR an `embeds` entry that resolves to the open path — an `![[embed]]`
- * mentions its target exactly like a `[[link]]` does (locked). The open note never lists itself.
+ * mentions its target exactly like a `[[link]]` does (locked). The open page never lists itself.
  * One entry per referencing NOTE (however many mentions it holds), path-sorted, so the section
  * renders the same order for the same snapshot.
  *
+ * A FOLDER's page mentions what its settings link — a view's `order` entry or a link column's
+ * `target` (`folderSettingsLinks`, by the rename engine's exact-link rule), and any link in an
+ * outline line, prose included. Its entry is its settings file's record, sorted by that file's path.
+ *
  * Context snippets are read ON DEMAND (`fs:read` per shown entry, `mentionSnippets` below) —
- * the index stores no positions, and nothing is read until the section is expanded.
+ * the index stores no positions, and nothing is read until the section is expanded. A folder's
+ * are the lines of its outlines, which the index already holds (`folderMentionSnippets`).
  */
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { maskCode } from './renameLinks'
+import { dirname } from '../lib/paths'
+import { folderSettings, folderSettingsLinks } from '../views/folderSettings'
+import { parseOutline } from '../views/outlineDoc'
+import { exactLinkTarget, maskCode } from './renameLinks'
 
-/** Records whose links/embeds resolve to `path`, path-sorted; `path` itself never counts. */
-function referencing(path: string, records: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
-  return records
-    .filter((r) => r.path !== path && [...r.links, ...r.embeds].some((target) => resolve(target) === path))
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+/**
+ * Records whose links/embeds resolve to `path`, then the settings records of the folders whose
+ * settings link it, path-sorted; `path` itself — a note, or a folder's own page — never counts.
+ */
+function referencing(path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
+  const mentions = (target: string | null): boolean => target !== null && resolve(target) === path
+  return [
+    ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
+    ...folders.filter(
+      (f) => dirname(f.path) !== path && (folderSettingsLinks(f.properties).some((link) => mentions(exactLinkTarget(link))) || folderMentionSnippets(f, path, resolve).length > 0),
+    ),
+  ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
 }
 
 /**
@@ -35,12 +50,12 @@ function referencing(path: string, records: readonly IndexRecord[], resolve: Res
  */
 const backlinkCache = new WeakMap<ResolveLink, Map<string, IndexRecord[]>>()
 
-/** The notes mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
-export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
+/** The notes — and the folders, as their settings records (`folders`) — mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
+export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[] = []): IndexRecord[] {
   let byPath = backlinkCache.get(resolve)
   if (byPath === undefined) backlinkCache.set(resolve, (byPath = new Map()))
   let hit = byPath.get(path)
-  if (hit === undefined) byPath.set(path, (hit = referencing(path, records, resolve)))
+  if (hit === undefined) byPath.set(path, (hit = referencing(path, records, folders, resolve)))
   return hit
 }
 
@@ -169,4 +184,14 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
   }
   return out
+}
+
+/**
+ * A folder entry's snippets, off its settings record: the bullets of its outlines that hold a
+ * link to `target`, each as the page shows it — `mentionSnippets` over the bullets' text, in view
+ * order. None when it links only by a view's `order` or a column's `target`.
+ */
+export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink): MentionSnippet[] {
+  const bullets = folderSettings(settings).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
+  return mentionSnippets(bullets.join('\n'), target, resolve)
 }
