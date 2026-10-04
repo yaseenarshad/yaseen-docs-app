@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, FilterNode, Mutate } from '../viewSchema'
 import { type ColumnTyping, columnTyping } from '../editorType'
-import type { FolderPageMode } from '../ViewsPane'
+import type { FolderHost } from '../ViewsPane'
 import type { EngineError } from '../engine'
 import { stripBrackets } from '../expr'
 import {
@@ -23,8 +23,8 @@ export interface FilterMenuProps {
   errors: readonly EngineError[]
   /** The vault-wide declarations, for the typing ladder behind the operator list (D4). */
   properties: PropertiesResponse | null
-  /** The folder page's own declarations — that ladder's TOP rung (🔒 Q8, YAZ-895). */
-  folderPage: FolderPageMode
+  /** The folder's own declarations — that ladder's TOP rung (🔒 Q8, YAZ-895). */
+  folder: FolderHost
   onUpdate: Mutate
 }
 
@@ -58,20 +58,20 @@ function groupNode(item: FilterNode): FilterGroup | null {
 /**
  * Filter menu (GRO-2135), back from the YAZ-846 amputation (YAZ-1218 / YAZ-1227): conjunction
  * (All / Any / None → and / or / not), builder rows, Advanced raw expressions, and the engine's
- * own `filters` errors at the top (YAZ-1229). PER-VIEW only (D1, 🔒 Q3 amended): a folder page's
- * set IS the lookup, so `def.filters` has no editor here and the scope segment did not come back.
+ * own `filters` errors at the top (YAZ-1229). PER-VIEW only (D1, 🔒 Q3 amended): a folder's set IS
+ * what lives in it, so `def.filters` has no editor here and the scope segment did not come back.
  * ONE level of nesting is editable (YAZ-1231) — a top-level conjunction is a group block with its
  * own conjunction, rows and Add rule, while anything deeper stays the read-only raw row — and a
  * text value offers the values the vault already holds for its property (YAZ-1232).
  */
-export function FilterMenu({ def, view, viewIndex, records, errors, properties, folderPage, onUpdate }: FilterMenuProps) {
+export function FilterMenu({ def, view, viewIndex, records, errors, properties, folder, onUpdate }: FilterMenuProps) {
   const [advanced, setAdvanced] = useState(false)
   const [pendingConj, setPendingConj] = useState<Conjunction>('and')
   const group = toGroup(view.filters)
   const conj = group.items.length ? group.conj : pendingConj
-  const keys = [...allPropertyKeys(def, view, records, folderPage.settings.columns), ...FILE_EXTRAS]
+  const keys = [...allPropertyKeys(def, view, records, folder.settings.columns), ...FILE_EXTRAS]
   /** The column's rung of the typing ladder (D4), the same one the table's cell editors read. */
-  const typingOf = (property: string): ColumnTyping => columnTyping(property, records, properties, folderPage.settings)
+  const typingOf = (property: string): ColumnTyping => columnTyping(property, records, properties, folder.settings)
 
   const write = (next: FilterGroup) =>
     onUpdate((d) => {

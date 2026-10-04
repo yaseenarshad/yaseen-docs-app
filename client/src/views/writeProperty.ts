@@ -1,4 +1,5 @@
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { setFrontmatterProperty } from '@shared/frontmatter'
+import { isFolderSettingsPath, type FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 
 export type ContentTransform = (content: string) => string
@@ -41,8 +42,22 @@ export function trackFileWrite<T>(write: Promise<T>): Promise<T> {
   return write
 }
 
+/**
+ * A folder's settings file is created by its first change (YAZ-2290 D1) — here, so every writer
+ * gets it: a missing one reads as empty and the write creates it, so a change that comes to nothing
+ * or is refused leaves no file. Another writer creating it first is a CONFLICT (`expectedMtime: 0`).
+ */
+export async function readForWrite(path: string): Promise<Pick<FileResponse, 'content' | 'mtime'>> {
+  try {
+    return await api.readFile(path)
+  } catch (err) {
+    if (!(err instanceof BridgeRequestError) || err.code !== 'NOT_FOUND' || !isFolderSettingsPath(path)) throw err
+    return { content: '', mtime: 0 }
+  }
+}
+
 async function runTransform(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
-  let file = await api.readFile(path)
+  let file = await readForWrite(path)
   let retried = false
 
   for (;;) {
@@ -66,20 +81,4 @@ export async function writeProperties(path: string, writes: readonly PropertyWri
 /** Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). */
 export async function writeProperty(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
   return writeProperties(path, [{ key, value }])
-}
-
-/**
- * Add one frontmatter key only when it is absent from the LATEST file bytes (YAZ-999). Index
- * records may lag the disk, so presence is checked again after the read and after a conflict.
- * Every present value wins — including null/falsy values and a value whose type disagrees with
- * the declaration asking for the backfill.
- */
-export async function writePropertyIfMissing(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => {
-    const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
-    if (Object.prototype.hasOwnProperty.call(parsed.properties, key)) return content
-    // On broken frontmatter this is also the authoritative validation step: it throws the same
-    // FrontmatterWriteError as every other one-key write, and the file stays untouched.
-    return setFrontmatterProperty(content, key, value)
-  })
 }

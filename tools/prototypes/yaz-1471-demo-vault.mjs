@@ -205,7 +205,7 @@ const state = {
   version: 1,
   settings: { lineSpacing: 1.5, blockGap: 4, bulletThreading: true, threadWidth: 2, threadColor: null, theme: 'system', contentWidth: 'narrow', newNoteLocation: 'root', newNoteFolder: '', confirmDelete: true },
   sidebarWidth: 260,
-  sidebarLens: 'topics',
+  sidebarLens: 'files',
   recents: [{ path: V, lastOpened: Date.now() }],
   windows: [{ id: 'w1', root: V, file, tabs: [...pages, ...first8], rightPanel: { open: false, width: 440, items: [], expanded: null }, sidebarCollapsed: false, bounds: { x: 80, y: 60, width: 1200, height: 800 } }],
   folders: { [V]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } },

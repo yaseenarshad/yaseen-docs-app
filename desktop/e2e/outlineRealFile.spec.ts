@@ -1,7 +1,8 @@
 /**
- * THE REAL SHAPE, end to end (YAZ-975 — the proof YAZ-964 demanded): `AI Curriculum.md` is a
- * line-for-line stand-in for the vault file that hit the bug (fixtures/curriculum-vault) — the
- * words are placeholders, the structure is verbatim: 123 outline lines including the 24
+ * THE REAL SHAPE, end to end (YAZ-975 — the proof YAZ-964 demanded): the folder `AI Curriculum`
+ * carries, in its hidden `.folder.md`, a line-for-line stand-in for the outline that hit the bug
+ * (fixtures/curriculum-vault; it was a folder-page note's until YAZ-2290 made folders the pages) —
+ * the words are placeholders, the structure is verbatim: 123 outline lines including the 24
  * `1.`-spelled ones the seed used to drop, the escaped `1\)` / `\*` / `\=` survivors, inline
  * `<u>` HTML and one `<br />` spacer. YAZ-1329
  * canonicalizes the numeric same-line escape away on the first real save; the other escapes stay.
@@ -13,7 +14,7 @@
  *   2 one real edit: a line typed at the end lands on disk as line 124, and EVERY original line's
  *     text survives around it — compared whole-array, escape-insensitively, because the commit
  *     keeps same-line `1.` visible without an escape (YAZ-1329) and the `<br />` spacer as an empty bullet (Decision A);
- *     the file stays frontmatter-only
+ *     the settings file stays frontmatter-only
  *   3 quit → relaunch: the converged spelling reloads to the same 124 rendered lines — the
  *     round-trip is a fixed point, not a slow mutation
  *
@@ -21,17 +22,21 @@
  * left that loses a line, so the read-only path is pinned by fault injection in
  * `client/src/views/view/outlineSeedGuard.test.tsx` instead of by shipping a hole to trip on.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, bulletAfterLine, caretAtEndOfLine, contents, copyVault, launchApp, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
+import { appWindow, bulletAfterLine, caretAtEndOfLine, contents, copyVault, launchApp, openFolder, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'curriculum-vault')
-const FILE = 'AI Curriculum.md'
+const FOLDER = 'AI Curriculum'
+/** Where the folder's outline lives: the settings file, which holds no notecard of its own (YAZ-2290 D1). */
+const FILE = path.join(FOLDER, '.folder.md')
 /** `outlineDoc.ts`'s BULLET_LINE, verbatim — the spec counts lines with the grammar's own eyes. */
 const BULLET_LINE = /^(([ \t]*)[-*+](?:[ \t]+|(?=\r?$)))(.*?)[ \t]*\r?$/
 
@@ -81,9 +86,9 @@ test.afterAll(async () => {
 })
 
 test('step 1 — every line renders, the once-dropped spellings included, and opening writes nothing', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, FILE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, path.join(vault, FOLDER))
 
   await expect(outlineLines(contents(win))).toHaveCount(123)
   for (const text of ONCE_DROPPED) expect(await outlineLineIndex(contents(win), text)).toBeGreaterThanOrEqual(0)
@@ -115,16 +120,16 @@ test('step 2 — one edit writes line 124 and every original line survives on di
   expect(outline).toContain('1. Title > Promise > Intro > Temp Check')
   expect(outline).toContain('4. Level 1) Human (Good old Meat Machines)')
   expect(outline).toContain('1) have a subscription?')
-  // The file is still title → outline: frontmatter, and nothing after it.
+  // The settings file is still frontmatter, and nothing after it.
   expect((await readFile(path.join(vault, FILE), 'utf8')).trimEnd().endsWith('---')).toBe(true)
   await shoot(win, 'realfile-02-edit-preserves-all')
 })
 
 test('step 3 — relaunch: the converged spelling reloads to the same document', async () => {
   await quitApp(app)
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, FILE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, path.join(vault, FOLDER))
 
   await expect(outlineLines(contents(win))).toHaveCount(124)
   for (const text of [...ONCE_DROPPED, ESCAPED_SURVIVOR, ADDED]) expect(await outlineLineIndex(contents(win), text)).toBeGreaterThanOrEqual(0)

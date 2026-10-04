@@ -1,14 +1,15 @@
-import { basename, stripExt } from './paths'
+import { pageLabel } from './pageLabel'
 
 export const APP_NAME = 'Yaseen Docs'
 
 /**
- * Obsidian-style window title (C3, GRO-2165): `<file> — <vault>` (vault extension stripped),
- * the vault alone with no file open, the app name on the Welcome screen (no vault). `vault` is
- * the vault's NAME — its display name or folder name (YAZ-1974 D4), never its path.
+ * Obsidian-style window title (C3, GRO-2165): `<file> — <vault>` (vault extension stripped; a
+ * FOLDER tab keeps its whole name, YAZ-2290), the vault alone with no file open, the app name on
+ * the Welcome screen (no vault). `vault` is the vault's NAME — its display name or folder name
+ * (YAZ-1974 D4), never its path.
  */
-export function windowTitle(vault: string | null, file: string | null): string {
+export function windowTitle(vault: string | null, file: string | null, folder = false): string {
   if (vault === null) return APP_NAME
   if (file === null) return vault
-  return `${stripExt(basename(file))} — ${vault}`
+  return `${pageLabel(file, folder)} — ${vault}`
 }

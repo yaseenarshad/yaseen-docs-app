@@ -1,11 +1,14 @@
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
+import { copyNoteId } from '../../lib/copyNoteId'
 import { basename } from '../../lib/paths'
 
 interface PageContextMenuProps {
   x: number
   y: number
   path: string
+  /** The page's note id (YAZ-2293), off the row's own index record; absent when it has none, and "Copy ID" is then not offered. */
+  noteId?: string
   onOpenRight?: (path: string) => void
   onOpenBackground?: (path: string) => void
   onNotice?: (message: string) => void
@@ -13,7 +16,7 @@ interface PageContextMenuProps {
 }
 
 /** Page actions shared by folder-page views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, noteId, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path }).catch((error: unknown) => {
@@ -53,10 +56,24 @@ export function PageContextMenu({ x, y, path, onOpenRight, onOpenBackground, onN
       >
         Copy path
       </button>
+      {/* Right under Copy path (YAZ-2293): exactly the id, which is what a `[[id]]` link names. */}
+      {noteId !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            copyNoteId(noteId, onNotice)
+            onClose()
+          }}
+        >
+          Copy ID
+        </button>
+      )}
       <button type="button" className="ctx-menu__item" role="menuitem" onClick={reveal}>
         Reveal in Finder
       </button>
-      {/* Last on purpose (YAZ-1556): the pane-specific open sits below the three page actions every surface shares. */}
+      {/* Last on purpose (YAZ-1556): the pane-specific open sits below the page actions every surface shares. */}
       {onOpenRight !== undefined && (
         <button
           type="button"

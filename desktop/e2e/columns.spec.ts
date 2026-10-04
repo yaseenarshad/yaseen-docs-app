@@ -1,10 +1,9 @@
 /**
- * The folder page column overhaul, end to end (YAZ-1513 — 2A-2D, 3A-3E; header drag YAZ-1548;
- * polish YAZ-1549; this spec is 5-, YAZ-1550). What a folder page's Table says about its columns,
- * and what every column gesture writes — proven on the REAL app over the small committed
- * `fixtures/columns-vault`: `Tasks` (born WITH the `status` Select, six members across three
- * statuses plus one with none), `Legacy` (born BEFORE the rule, no `status`), `Plain` (not a
- * folder page at all) and `Home`.
+ * The column overhaul, end to end (YAZ-1513 — 2A-2D, 3A-3E; header drag YAZ-1548; polish
+ * YAZ-1549; this spec is 5-, YAZ-1550). What a folder's Table says about its columns, and what
+ * every column gesture writes — proven on the REAL app over the small committed
+ * `fixtures/columns-vault`: the folder `Tasks`, whose `.folder.md` declares the `status` Select,
+ * holding six notecards across three statuses plus one with none.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 the Table's `#` gutter counts from 1 and RESTARTS at every group header, and the name cell
@@ -15,38 +14,31 @@
  *     list, written as a `properties` LABEL — the key `status` never moves
  *   4 dragging the last header before `Stage` rewrites the view's `order` in one write
  *   5 "Delete column…" asks first, naming the count; confirming drops the declaration, every view
- *     reference and the label, and each member file loses ONLY its `status:` line — the rest of
+ *     reference and the label, and each notecard loses ONLY its `status:` line — the rest of
  *     every file is byte-identical
- *   6 "Turn into folder page" on `Plain` births the flag AND the default `status` declaration,
- *     with the note's own keys and body untouched
- *   7 `tools/seedDefaultColumns.mjs` on a git-inited copy: the dry run (the default) changes
- *     nothing, `--apply` gives the pre-feature `Legacy` the column and appends `note.status` to
- *     its Table, a second run has nothing to do, and the app then shows the seeded column
  *
- * Same harness as folderPages.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `columns-`
- * step screenshots). The CLI step drives the script the way a human does — as a child process,
- * with `process.execPath` — so the git preflight and Node's own type stripping are under test.
+ * Same harness as folderView.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `columns-`
+ * step screenshots).
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { execFileSync } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_COLUMNS } from '../../shared/folderPageDefaults'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, contents, copyVault, fileRow, launchApp, quitApp, REPO_ROOT, seededState, sheet, shoot, viewTabs } from './helpers'
+import { appWindow, contents, copyVault, launchApp, openFolder, quitApp, seededState, sheet, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 /** The committed fixture. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'columns-vault')
-const SEED_SCRIPT = path.join(REPO_ROOT, 'tools', 'seedDefaultColumns.mjs')
-const TASKS = 'Tasks.md'
-const LEGACY = 'Legacy.md'
-const PLAIN = 'Plain.md'
-/** `Tasks`' six direct members, as the fixture spells them — every one carries a `status:` line. */
+const TASKS = 'Tasks'
+/** Where the folder's columns, views and labels live (YAZ-2290 D1). */
+const SETTINGS = path.join(TASKS, '.folder.md')
+/** The six notecards in `Tasks`, as the fixture spells them — every one carries a `status:` line. */
 const MEMBERS = ['Write launch post', 'Ship installer', 'Q3-2026 plan', 'Fix sync bug', 'Release 0.9', 'Loose end'].map((n) =>
-  path.join('tasks', `${n}.md`),
+  path.join(TASKS, `${n}.md`),
 )
 
 let userData: string
@@ -54,7 +46,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-// ---------- locators (the folderPages / freezeColumns idiom) ----------
+// ---------- locators (the folderView / freezeColumns idiom) ----------
 
 const table = () => contents(win).locator('.view-table')
 const headers = () => table().locator('thead th')
@@ -100,32 +92,6 @@ const viewOf = (settings: OnDiskSettings, type: string): OnDiskView => settings.
 const statusLabel = (settings: OnDiskSettings): string | undefined =>
   settings.properties?.status?.displayName ?? settings.properties?.['note.status']?.displayName
 
-// ---------- the seed script, as a human runs it ----------
-
-const git = (root: string, ...args: string[]): string => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-
-/** A copy the script may touch: a git repo with everything committed — the preflight's one demand. */
-async function gitInitedCopy(): Promise<string> {
-  const root = await copyVault(FIXTURE)
-  git(root, 'init', '-q')
-  git(root, 'config', 'user.email', 'columns@e2e.local')
-  git(root, 'config', 'user.name', 'Columns E2E')
-  git(root, 'config', 'commit.gpgsign', 'false')
-  git(root, 'add', '-A')
-  git(root, 'commit', '-q', '-m', 'fixture')
-  return root
-}
-
-function runSeed(root: string, ...args: string[]): { status: number; stdout: string; stderr: string } {
-  try {
-    const stdout = execFileSync(process.execPath, [SEED_SCRIPT, '--vault', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    return { status: 0, stdout, stderr: '' }
-  } catch (err) {
-    const e = err as { status?: number; stdout?: string; stderr?: string }
-    return { status: e.status ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }
-  }
-}
-
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'columns-userdata-'))
   vault = await copyVault(FIXTURE)
@@ -137,10 +103,10 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the `#` gutter restarts at every group, and the name cell is the page title, no `.md`', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, TASKS)) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(contents(win)).toBeVisible()
-  // `defaultView: Table` opens the page on the table (YAZ-1104); the click is a no-op that pins it.
+  await openFolder(win, path.join(vault, TASKS))
+  // `defaultView: Table` opens the folder on the table (YAZ-1104); the click is a no-op that pins it.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(table()).toBeVisible()
 
@@ -174,7 +140,7 @@ test('step 2 — the `#` header hides the gutter; Properties → Row numbers bri
   await expect(table().locator('td.view-table__gutter')).toHaveCount(0)
   await expect(headers()).toHaveText(['Name', 'Status', 'Owner', 'Due'])
   // `rowNumbers: false` lands on the VIEW, through the one settings door.
-  const tasks = path.join(vault, TASKS)
+  const tasks = path.join(vault, SETTINGS)
   await expect.poll(async () => viewOf(await settingsOf(tasks), 'table').rowNumbers, { timeout: 10_000 }).toBe(false)
   await shoot(win, 'columns-02-row-numbers-hidden')
 
@@ -227,12 +193,12 @@ test('step 3 — "Rename column…" on the header: `Status` → `Stage` is a LAB
 
   // On disk: a `properties` entry for `status` (the writer's own spelling — bare, or `note.`-
   // prefixed — is asserted as whichever it chose), and the DECLARATION still keyed `status`.
-  const tasks = path.join(vault, TASKS)
+  const tasks = path.join(vault, SETTINGS)
   await expect.poll(async () => statusLabel(await settingsOf(tasks)), { timeout: 10_000 }).toBe('Stage')
   const settings = await settingsOf(tasks)
   expect(Object.keys(settings.columns ?? {})).toEqual(['status', 'owner', 'due'])
   expect(viewOf(settings, 'table').order).toEqual(['file.name', 'note.status', 'note.owner', 'note.due'])
-  // The members' frontmatter is untouched: a label is what the header SAYS, never what a note stores.
+  // The notecards' frontmatter is untouched: a label is what the header SAYS, never what a note stores.
   for (const member of MEMBERS) expect(await readFile(path.join(vault, member), 'utf8')).toContain('status:')
   await shoot(win, 'columns-05-renamed-stage')
 })
@@ -252,7 +218,7 @@ test('step 4 — dragging the last header before `Stage` rewrites the view’s o
   await win.mouse.up()
 
   await expect(headers()).toHaveText(['#', 'Name', 'Due', 'Stage', 'Owner'])
-  const tasks = path.join(vault, TASKS)
+  const tasks = path.join(vault, SETTINGS)
   await expect.poll(async () => viewOf(await settingsOf(tasks), 'table').order, { timeout: 10_000 }).toEqual([
     'file.name',
     'note.due',
@@ -266,22 +232,22 @@ test('step 4 — dragging the last header before `Stage` rewrites the view’s o
   await shoot(win, 'columns-06-dragged-due')
 })
 
-test('step 5 — "Delete column…" asks first, then strips declaration, references, label and each member’s `status:` line — nothing else', async () => {
-  const tasks = path.join(vault, TASKS)
+test('step 5 — "Delete column…" asks first, then strips declaration, references, label and each notecard’s `status:` line — nothing else', async () => {
+  const tasks = path.join(vault, SETTINGS)
   const before = new Map(await Promise.all(MEMBERS.map(async (m) => [m, await readFile(path.join(vault, m), 'utf8')] as const)))
   for (const text of before.values()) expect(text).toMatch(/^status:/m)
 
   await colHeader('Stage').click({ button: 'right' })
   await menuItem(win, 'Delete column…').click()
 
-  // The sheet names the LABEL, the bare KEY and the count of direct members carrying it — all six,
+  // The sheet names the LABEL, the bare KEY and the count of notecards in the folder carrying it — all six,
   // the empty `status:` on `Loose end` included, because presence is the exact YAML key.
-  await expect(sheet(win)).toContainText('Delete "Stage"? This removes the column from this page and the "status" value from 6 notes.')
+  await expect(sheet(win)).toContainText('Delete "Stage"? This removes the column from this folder and the "status" value from 6 notes.')
   await shoot(win, 'columns-07-delete-sheet')
   await sheet(win).locator('.confirm__btn--danger', { hasText: 'Delete' }).click()
   await expect(sheet(win)).toHaveCount(0)
 
-  // Settings FIRST (awaited before any member is touched): the declaration, the table's order
+  // Settings FIRST (awaited before any notecard is touched): the declaration, the table's order
   // entry and its groupBy, the board's groupBy, and the label — all gone in one write.
   await expect.poll(async () => Object.keys((await settingsOf(tasks)).columns ?? {}), { timeout: 10_000 }).toEqual(['owner', 'due'])
   const settings = await settingsOf(tasks)
@@ -297,7 +263,7 @@ test('step 5 — "Delete column…" asks first, then strips declaration, referen
     expect(JSON.stringify(config)).not.toMatch(/status/)
   }
 
-  // Then every member: ONLY its `status:` line is gone — the rest of the file byte for byte.
+  // Then every notecard: ONLY its `status:` line is gone — the rest of the file byte for byte.
   for (const member of MEMBERS) {
     const file = path.join(vault, member)
     await expect.poll(() => readFile(file, 'utf8'), { timeout: 10_000 }).not.toMatch(/^status:/m)
@@ -311,101 +277,5 @@ test('step 5 — "Delete column…" asks first, then strips declaration, referen
   // No strip failed, so the aggregated banner never showed.
   await expect(contents(win).locator('.views-pane__error')).toHaveCount(0)
   await shoot(win, 'columns-08-deleted')
-})
-
-test('step 6 — "Turn into folder page" births the flag AND the default `status` declaration; the note’s own keys survive', async () => {
-  const plain = path.join(vault, PLAIN)
-  const original = await readFile(plain, 'utf8')
-  expect((await propertiesOf(plain)).folder_page).toBeUndefined()
-
-  // The sidebar's one gesture (YAZ-840); forward never confirms.
-  await fileRow(win, 'Plain').click({ button: 'right' })
-  await menuItem(win, 'Turn into folder page').click()
-
-  await expect.poll(() => readFile(plain, 'utf8'), { timeout: 10_000 }).toContain('folder_page: true')
-  const properties = await propertiesOf(plain)
-  expect(properties.folder_page).toBe(true)
-  // `bornFolderPage`: the declaration is the app's ONE `DEFAULT_COLUMNS`, spelled from `shared/`.
-  expect((await settingsOf(plain)).columns).toEqual(DEFAULT_COLUMNS)
-  expect(properties.tags).toEqual(['scratch']) // the note's own key, untouched
-  const { body } = splitFrontmatter(await readFile(plain, 'utf8'))
-  expect(body).toBe(splitFrontmatter(original).body) // and its body, byte for byte
-
-  // Opened, it is a folder page: Q7's default views, and the declared column is a HEADER at once —
-  // a Table with no `order` shows every key seen OR declared (`propertyKeys`, YAZ-1549), so a
-  // newborn page with no members already carries `Status`.
-  await fileRow(win, 'Plain').click()
-  await expect(contents(win)).toBeVisible()
-  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(headers()).toHaveText(['#', 'Name', 'Status'])
-  await contents(win).locator('[aria-label="Properties"]').click()
-  await expect(propsMenu().locator('[aria-label="Show Status"]')).toBeChecked()
-  await shoot(win, 'columns-09-turned-into')
-  await win.keyboard.press('Escape')
-  await expect(propsMenu()).toHaveCount(0)
-
   await quitApp(app)
-})
-
-test('step 7 — `seedDefaultColumns.mjs`: the dry run changes nothing, `--apply` seeds the pre-feature page, and it is idempotent', async () => {
-  const seedVault = await gitInitedCopy()
-  try {
-    const legacy = path.join(seedVault, LEGACY)
-    const tasks = path.join(seedVault, TASKS)
-    const home = path.join(seedVault, 'Home.md')
-    const [legacyBefore, tasksBefore, homeBefore] = await Promise.all([legacy, tasks, home].map((f) => readFile(f, 'utf8')))
-    expect((await settingsOf(legacy)).columns).toEqual({ owner: { kind: 'text' } })
-
-    // The DEFAULT is a dry run: the plan is reported, nothing is written, git stays clean.
-    const dry = runSeed(seedVault)
-    expect(dry.status, dry.stderr).toBe(0)
-    expect(dry.stdout).toContain('DRY RUN')
-    expect(dry.stdout).toContain('Legacy.md')
-    expect(dry.stdout).toContain('added columns.status')
-    expect(dry.stdout).toContain('Tasks.md: nothing to do')
-    expect(dry.stdout).toContain('Dry run — nothing was written')
-    expect(await readFile(legacy, 'utf8')).toBe(legacyBefore)
-    expect(git(seedVault, 'status', '--porcelain')).toBe('')
-
-    // `--apply`: the pre-feature page gets the SAME declaration the app births, and `note.status`
-    // is appended to its Table's order; the outline's order (wikilinks) is never touched, and the
-    // pages that already have the column are byte-identical.
-    const applied = runSeed(seedVault, '--apply')
-    expect(applied.status, applied.stderr).toBe(0)
-    expect(applied.stdout).toContain('APPLIED')
-    const seeded = await settingsOf(legacy)
-    expect(seeded.columns).toEqual({ owner: { kind: 'text' }, status: DEFAULT_COLUMNS.status })
-    expect(viewOf(seeded, 'table').order).toEqual(['file.name', 'note.owner', 'note.status'])
-    expect(viewOf(seeded, 'outline').order).toBeUndefined()
-    expect(splitFrontmatter(await readFile(legacy, 'utf8')).body).toBe(splitFrontmatter(legacyBefore).body)
-    expect(await readFile(tasks, 'utf8')).toBe(tasksBefore)
-    expect(await readFile(home, 'utf8')).toBe(homeBefore)
-    // Members are the app's business (YAZ-999 stamps `status:` on the next open), never the script's.
-    expect(await readFile(path.join(seedVault, 'legacy', 'Old thing.md'), 'utf8')).not.toContain('status')
-    expect(git(seedVault, 'status', '--porcelain').trim()).toBe(`M ${LEGACY}`)
-
-    // Idempotent: once committed, a second `--apply` finds nothing to do and writes nothing.
-    git(seedVault, 'commit', '-q', '-am', 'seeded')
-    const again = runSeed(seedVault, '--apply')
-    expect(again.status, again.stderr).toBe(0)
-    expect(again.stdout).toContain('Folder pages changed: 0')
-    expect(again.stdout).toContain('Legacy.md: nothing to do')
-    expect(git(seedVault, 'status', '--porcelain')).toBe('')
-
-    // And the app reads the seeded page as any other: the column is a header from the first paint.
-    const seedUserData = await mkdtemp(path.join(tmpdir(), 'columns-seed-userdata-'))
-    try {
-      app = await launchApp({ userData: seedUserData, seedState: seededState(seedVault, legacy) })
-      win = await appWindow(app, 'w1')
-      await expect(contents(win)).toBeVisible()
-      await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-      await expect(headers()).toHaveText(['#', 'Name', 'Owner', 'Status'])
-      await shoot(win, 'columns-10-seeded-legacy')
-      await quitApp(app)
-    } finally {
-      await rm(seedUserData, { recursive: true, force: true })
-    }
-  } finally {
-    await rm(seedVault, { recursive: true, force: true })
-  }
 })

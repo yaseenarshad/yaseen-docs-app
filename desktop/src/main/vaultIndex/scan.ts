@@ -1,9 +1,27 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { COMMENTS_KEY } from '@shared/comments'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
-import { fsCall } from '../fs/fsUtils'
+import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
+import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
+import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
+
+/**
+ * Markdown files under `dir`, skipping dot-entries / node_modules; unreadable subdirs are skipped like `buildTree`.
+ * A folder's settings file is the one dot-entry it keeps (YAZ-2290 D8).
+ */
+export async function walk(dir: string, out: string[]): Promise<void> {
+  const dirents = await readdir(dir, { withFileTypes: true })
+  await Promise.all(
+    dirents.map(async (e) => {
+      if (isSkipped(e.name) && !(e.isFile() && e.name === FOLDER_SETTINGS_FILE)) return
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) await walk(full, out).catch(() => undefined)
+      else if (e.isFile() && isMarkdown(e.name)) out.push(full)
+    }),
+  )
+}
 
 /** De-duplicates keeping first appearance. */
 const unique = (items: string[]): string[] => [...new Set(items)]
@@ -150,7 +168,11 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const { frontmatter, body } = splitFrontmatter(content)
   const { properties, error } = parseFrontmatter(frontmatter)
   delete properties[COMMENTS_KEY] // the note's own comment stream (YAZ-1472), never a property
+  const reviews = reviewEntries(properties[REVIEWS_KEY])
+  delete properties[REVIEWS_KEY] // the note's own review log (YAZ-2322), never a property
   record.properties = properties
   if (error !== undefined) record.frontmatterError = error
-  return { ...record, ...extractBody(properties, body) }
+  const id = properties[NOTE_ID_KEY]
+  if (isNoteId(id)) record.id = id
+  return { ...record, ...extractBody(properties, body), ...(reviews.length > 0 && { reviews }), text: textFingerprint(body) }
 }

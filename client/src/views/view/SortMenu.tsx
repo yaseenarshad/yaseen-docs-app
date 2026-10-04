@@ -5,7 +5,7 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels } from '../viewSchema'
 import { propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
-import type { FolderPageSettings } from '../folderPageSettings'
+import type { FolderSettings } from '../folderSettings'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, propertyOptions } from './properties'
 
@@ -15,7 +15,7 @@ export interface SortMenuProps {
   viewIndex: number
   records: readonly IndexRecord[]
   onUpdate: Mutate
-  folderPage?: FolderPageSettings | null
+  settings: FolderSettings
   properties?: PropertiesResponse | null
 }
 
@@ -24,8 +24,8 @@ const EMPTY_SORT: SortSpec[] = []
 const flip = (d: string | undefined): 'ASC' | 'DESC' => (d === 'DESC' ? 'ASC' : 'DESC')
 
 /** Sort menu (GRO-2135): `view.sort` rows (property, direction, order, remove) and `view.groupBy` beneath. */
-export function SortMenu({ def, view, viewIndex, records, onUpdate, folderPage, properties }: SortMenuProps) {
-  const keys = allPropertyKeys(def, view, records, folderPage?.columns)
+export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, properties }: SortMenuProps) {
+  const keys = allPropertyKeys(def, view, records, settings.columns)
   const sort = view.sort ?? EMPTY_SORT
   const [groupBy, thenBy] = groupByLevels(view)
   const nextId = useRef(sort.length)
@@ -78,7 +78,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, folderPage, 
     })
 
   const groupDirectionLabel = (group: GroupBySpec) => {
-    const typing = columnTyping(group.property, records, properties, folderPage)
+    const typing = columnTyping(group.property, records, properties, settings)
     const declaredOptions = view.type === 'board' && (typing?.assigned === 'select' || typing?.assigned === 'multi-select')
     return declaredOptions ? (group.direction === 'DESC' ? 'Reversed option order' : 'Option order') : (group.direction === 'DESC' ? 'DESC' : 'ASC')
   }

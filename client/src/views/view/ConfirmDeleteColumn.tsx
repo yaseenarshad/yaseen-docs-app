@@ -1,21 +1,23 @@
-import { useMemo } from 'react'
+import { useContext, useMemo } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { membersCarrying } from '../deleteColumn'
+import { isShortcut } from '../../links/shortcuts'
+import { residentsCarrying } from '../deleteColumn'
 import { propertyLabel } from '../engine'
 import type { ViewSet } from '../viewSchema'
+import { ViewFolder } from './GroupHeader'
 import { canonicalKey } from './keys'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 
 /** The sheet's copy (YAZ-1513) — pure and separately tested, like `deleteConfirmMessage` next door. */
 export function deleteColumnMessage(label: string, key: string, count: number): string {
-  return `Delete "${label}"? This removes the column from this page and the "${key}" value from ${count} ${count === 1 ? 'note' : 'notes'}.`
+  return `Delete "${label}"? This removes the column from this folder and the "${key}" value from ${count} ${count === 1 ? 'note' : 'notes'}.`
 }
 
 interface ConfirmDeleteColumnProps {
   /** The column, any spelling — the sheet derives its label, bare key and count itself (YAZ-1549). */
   columnKey: string
   def: ViewSet
-  /** The direct members: the count is taken ONCE, when the sheet opens. */
+  /** The folder's rows: the count is taken ONCE, when the sheet opens, over the ones that live in it — a shortcut row is not stripped (E4). */
   records: readonly IndexRecord[]
   onConfirm: () => void
   onCancel: () => void
@@ -30,8 +32,9 @@ interface ConfirmDeleteColumnProps {
 export function ConfirmDeleteColumn({ columnKey, def, records, onConfirm, onCancel }: ConfirmDeleteColumnProps) {
   const label = propertyLabel(def, columnKey)
   const propKey = canonicalKey(columnKey).slice('note.'.length)
+  const folder = useContext(ViewFolder)
   // Taken once at open: the number the user reads is the number the confirm meant.
-  const count = useMemo(() => membersCarrying(records, columnKey).length, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const count = useMemo(() => residentsCarrying(folder === null ? records : records.filter((r) => !isShortcut(r, folder)), columnKey).length, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <ConfirmSheet
       labelId="confirm-delete-column-text"

@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile as fsReadFile, utimes, writeFile as fsWriteFil
 import path from 'node:path'
 import { readFile, writeFile } from './file'
 import { failure, makeFixture } from './testFixture'
-import { MAX_FILE_BYTES } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES } from '@shared/types'
 
 let root: string
 let cleanup: () => Promise<void>
@@ -103,6 +103,17 @@ describe('writeFile', () => {
     await fsWriteFile(file, original)
     expect(await code(writeFile({ path: file, content: 'clobber' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await fsReadFile(file)).toEqual(original)
+  })
+
+  // A folder's settings file is born by its first change (YAZ-2290 D1): the renderer reads a
+  // missing one as empty with mtime 0 (`readForWrite`) and this write is what creates it.
+  it('a missing folder settings file is created by a write that expected nothing; one that appeared meanwhile is a CONFLICT', async () => {
+    const file = path.join(root, 'alpha', FOLDER_SETTINGS_FILE)
+    const w = await writeFile({ path: file, content: '---\nowner: Yaseen\n---\n', expectedMtime: 0 })
+    expect(await fsReadFile(file, 'utf8')).toBe('---\nowner: Yaseen\n---\n')
+    const raced = await failure(writeFile({ path: file, content: 'clobber', expectedMtime: 0 }))
+    expect(raced).toMatchObject({ code: 'CONFLICT', mtime: w.mtime })
+    expect(await fsReadFile(file, 'utf8')).toBe('---\nowner: Yaseen\n---\n')
   })
 
   it('NOT_FOUND when parent dir does not exist', async () => {

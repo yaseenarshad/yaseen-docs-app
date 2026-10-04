@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { PropertyDecl } from '@shared/types'
-import { writeFolderColumn } from './folderPageSettings'
+import { DEFAULT_COLUMNS } from './folderSettings'
+import { writeFolderColumn } from './folderSettings'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -23,12 +24,19 @@ beforeEach(() => {
 })
 
 describe('writeFolderColumn', () => {
-  it.each([undefined, null])('creates a definition when settings are %s without injecting view defaults', async settings => {
+  it.each([undefined, null])('creates a definition when settings are %s: the default columns are stated with it (YAZ-2290 E2), no view defaults injected', async settings => {
     read.mockResolvedValue(file(content(settings)))
     await expect(writeFolderColumn(path, 'Status', base, undefined)).resolves.toMatchObject({ mtime: 200 })
-    expect(settingsWritten()).toEqual({ columns: { Status: base } })
+    expect(settingsWritten()).toEqual({ columns: { ...DEFAULT_COLUMNS, Status: base } })
     expect(write.mock.lastCall![0].expectedMtime).toBe(100)
     expect(write.mock.lastCall![0].content).toContain('Body stays.\n')
+  })
+
+  it('with nothing saved, the default Status column is the base an edit of it is checked against (YAZ-2290 E2)', async () => {
+    read.mockResolvedValue(file(''))
+    const edited: PropertyDecl = { ...DEFAULT_COLUMNS.status, options: ['Todo', 'Done'] }
+    await writeFolderColumn(path, 'status', edited, DEFAULT_COLUMNS.status)
+    expect(settingsWritten()).toEqual({ columns: { status: edited } })
   })
 
   it('preserves concurrent sibling edits, raw view settings and unknown definition metadata', async () => {

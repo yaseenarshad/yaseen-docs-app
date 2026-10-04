@@ -215,6 +215,19 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     CONTENT[A] = '# A\n\nSee [[B]] for the details.\n'
   })
 
+  it('a note linking by ID is listed, and its snippet shows the linked note\'s title (YAZ-2293)', async () => {
+    const ID = 'k3m9x2pq7abc'
+    readFile.mockImplementation(async (path: string) => ({ path, content: `# A\n\nSee [[${ID}]] for the details.\n`, mtime: 1, size: 1 }))
+    const el = mount()
+    feed([rec(A, { links: [ID] }), { ...rec(B), id: ID }])
+    expect(header(el)?.textContent).toBe('Linked mentions (1)')
+    click(header(el)!)
+    await flush()
+    expect(notes(el).map((n) => n.textContent)).toEqual(['A'])
+    expect(snippets(el).map((s) => s.textContent)).toEqual(['See B for the details.'])
+    expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
+  })
+
   it('the header draws no hairline above it (YAZ-1680)', () => {
     const rule = backlinksCss.match(/\.backlinks__header\s*\{([^}]*)\}/s)?.[1]
     expect(rule).toBeDefined()

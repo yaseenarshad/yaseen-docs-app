@@ -1,5 +1,5 @@
 /**
- * THE OUTLINE EDITOR (YAZ-901, 🔒 F3): the folder page's outline view is a SECOND, small Milkdown
+ * THE OUTLINE EDITOR (YAZ-901, 🔒 F3): a folder's outline view is a SECOND, small Milkdown
  * instance — the note editor's own `createCrepe()`, its outliner plugins (bullet glyphs, Tab /
  * Shift-Tab, guide lines, folding) and its wikilink surfaces (live-preview decorations, the `[[`
  * picker, click navigation) — locked by `editor/outline/bulletsOnly.ts` to a document that is
@@ -11,7 +11,7 @@
  * needs: the document cannot be anything but bullets. Each line's text goes in through the
  * grammar's `escapeBlockStart`, so text that merely LOOKS like a block — `1. Title`, `# x` — stays
  * the literal text the grammar promises instead of re-parsing into a node the lock drops (YAZ-964).
- * A later `markdown` — the disk moving under an open folder page — lands as a DIFF over the live
+ * A later `markdown` — the disk moving under an open folder — lands as a DIFF over the live
  * state (`applyExternalMarkdown`, the note editor's own path since YAZ-1347), so caret, folds and
  * scroll ride ProseMirror's position mapping. TYPING WINS: a live document the caller has not been
  * told about yet means the user's save is about to be the truth on disk, so that snapshot is skipped

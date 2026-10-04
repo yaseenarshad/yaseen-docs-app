@@ -4,17 +4,18 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FrontmatterWriteError } from '@shared/frontmatter'
-import { settleFileWrites, transformFile, writeProperties, writeProperty, writePropertyIfMissing } from './writeProperty'
+import { settleFileWrites, transformFile, writeProperties, writeProperty } from './writeProperty'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn() },
 }))
 
 import { BridgeRequestError, api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
+const createFile = vi.mocked(api.createFile)
 
 const PATH = '/vault/Deep Work.md'
 
@@ -24,6 +25,7 @@ const conflict = (mtime: number) => new BridgeRequestError('CONFLICT', 'file cha
 beforeEach(() => {
   readFile.mockReset()
   writeFile.mockReset()
+  createFile.mockReset()
 })
 
 describe('writeProperty', () => {
@@ -114,51 +116,53 @@ describe('writeProperties', () => {
   })
 })
 
-describe('writePropertyIfMissing (YAZ-999)', () => {
-  it('writes the requested empty value when the key is absent', async () => {
-    readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
-    writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 38 })
+describe("a folder's settings file is created on its first change (YAZ-2290 D1)", () => {
+  const SETTINGS = '/vault/Projects/.folder.md'
+  const missing = () => new BridgeRequestError('NOT_FOUND', 'path does not exist')
+  const settings = (content: string, mtime: number) => ({ path: SETTINGS, content, mtime, size: content.length })
 
-    await expect(writePropertyIfMissing(PATH, 'score', null)).resolves.toMatchObject({ mtime: 200 })
+  it('no file: it reads as empty, and the write creates it with the change in it', async () => {
+    readFile.mockRejectedValueOnce(missing())
+    writeFile.mockResolvedValue({ path: SETTINGS, mtime: 60, size: 20 })
 
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({
-      path: PATH,
-      content: '---\nstatus: draft\nscore: null\n---\nBody\n',
-      expectedMtime: 100,
-    })
+    await expect(writeProperty(SETTINGS, 'folder_page_settings', { views: [] })).resolves.toMatchObject({ mtime: 60 })
+
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: SETTINGS, content: '---\nfolder_page_settings:\n  views: []\n---\n', expectedMtime: 0 })
   })
 
-  it.each([
-    ['null', 'score: null'],
-    ['false', 'score: false'],
-    ['zero', 'score: 0'],
-    ['empty string', 'score: ""'],
-    ['empty list', 'score: []'],
-    ['a value of the wrong local type', 'score: text'],
-  ])('preserves a present %s value instead of replacing it', async (_label, yaml) => {
-    readFile.mockResolvedValue(file(`---\n${yaml}\n---\nBody\n`, 100))
+  it('no file and a change that comes to nothing, or throws: nothing is left on disk', async () => {
+    readFile.mockRejectedValue(missing())
 
-    await expect(writePropertyIfMissing(PATH, 'score', 42)).resolves.toMatchObject({ mtime: 100 })
+    await expect(transformFile(SETTINGS, (content) => content)).resolves.toEqual({ mtime: 0, content: '' })
+    await expect(transformFile(SETTINGS, () => { throw new Error('refused') })).rejects.toThrow('refused')
 
+    expect(createFile).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('rechecks after a conflict and preserves a value another writer added', async () => {
-    readFile
-      .mockResolvedValueOnce(file('---\nstatus: draft\n---\nBody\n', 100))
-      .mockResolvedValueOnce(file('---\nstatus: draft\nscore: 9\n---\nBody\n', 150))
-    writeFile.mockRejectedValueOnce(conflict(150))
+  it('a second change finds the file', async () => {
+    readFile.mockResolvedValue(settings('---\nfolder_page_settings:\n  views: []\n---\n', 60))
+    writeFile.mockResolvedValue({ path: SETTINGS, mtime: 70, size: 20 })
 
-    await expect(writePropertyIfMissing(PATH, 'score', null)).resolves.toMatchObject({ mtime: 150 })
+    await writeProperty(SETTINGS, 'folder_page_settings', { views: [{ type: 'table', name: 'Table' }] })
 
-    expect(readFile).toHaveBeenCalledTimes(2)
-    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 60 }))
   })
 
-  it('keeps broken frontmatter read-only', async () => {
-    readFile.mockResolvedValue(file('---\ntags: [a, b\n---\nBody\n', 100))
+  it('another writer creating it first is a CONFLICT: its file is read and written into', async () => {
+    readFile.mockRejectedValueOnce(missing()).mockResolvedValueOnce(settings('---\nfolder_page_settings:\n  defaultView: Board\n---\n', 55))
+    writeFile.mockRejectedValueOnce(conflict(55)).mockResolvedValueOnce({ path: SETTINGS, mtime: 60, size: 20 })
 
-    await expect(writePropertyIfMissing(PATH, 'score', null)).rejects.toBeInstanceOf(FrontmatterWriteError)
+    await expect(writeProperty(SETTINGS, 'tags', ['x'])).resolves.toMatchObject({ mtime: 60 })
+
+    expect(writeFile.mock.calls[1][0]).toMatchObject({ expectedMtime: 55 })
+    expect(writeFile.mock.calls[1][0].content).toContain('defaultView: Board') // the winner's bytes survive
+  })
+
+  it('a missing NOTE is still an error: only the settings file is created by a write', async () => {
+    readFile.mockRejectedValue(missing())
+
+    await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(BridgeRequestError)
 
     expect(writeFile).not.toHaveBeenCalled()
   })

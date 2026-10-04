@@ -3,26 +3,27 @@
  * seed YAZ-1236).
  *
  * The unit suites already pin the rule ↔ expression grammar, the menu's writes and the engine's
- * narrowing. What they cannot show is the thing the feature was asked for: a REAL folder page,
- * whose `filters` is a block written on disk, narrowing a real table in the real app — surviving a
- * quit, composing with search, re-bucketing a two-level board, deleting its own key when it is
- * emptied, and seeding the note the toolbar's New button births.
+ * narrowing. What they cannot show is the thing the feature was asked for: a REAL folder, whose
+ * `filters` is a block written in its `.folder.md`, narrowing a real table in the real app —
+ * surviving a quit, composing with search, re-bucketing a two-level board, deleting its own key
+ * when it is emptied, and seeding the note the toolbar's New button births.
  *
- * The fixture is `nested-vault`'s AUTOMATIONS page, the same one `nestedGroups.spec.ts` drives:
- * four members over two departments, where `status` splits them 3/1 — three `Live`, one `Draft`.
+ * The fixture is `nested-vault`'s AUTOMATIONS folder, the same one `nestedGroups.spec.ts` drives:
+ * four notecards over two departments, where `status` splits them 3/1 — three `Live`, one `Draft`.
  * That one split is what every step below is built on. It is a STRICT subset (a filter that keeps
  * everything proves nothing), it takes out the whole `Review` process (so a group left with no rows
- * has to disappear, on the table AND on the board), and `Shift handover` is the only member holding
- * it, so nothing else moves when it goes.
+ * has to disappear, on the table AND on the board), and `Shift handover` is the only notecard
+ * holding it, so nothing else moves when it goes.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 the Filter button opens on "No filters", one built rule narrows the table to the three Live
  *     rows, the emptied `Review` section is gone, and the button wears the badge
- *   2 the rule is DURABLE: the `filters:` block stands under `folder_page_settings` on disk, and
+ *   2 the rule is DURABLE: the `filters:` block stands under `folder_page_settings` in the
+ *     folder's settings file, and
  *     quit → relaunch comes back to the same filtered view
  *   3 search composes on top: both narrow, and clearing the box restores the FILTERED set
  *   4 the board buckets POST-filter — the same subset, one column short of a subgroup
- *   5 removing the rules restores every view and DELETES the key from the card (empty → no key)
+ *   5 removing the rules restores every view and DELETES the key from the settings (empty → no key)
  *   6 the seed (YAZ-1236): with an equality filter active, "New" births a note that satisfies it
  *     and walks straight into the filtered view
  *
@@ -34,24 +35,27 @@
  * Same harness as nestedGroups.spec.ts (temp `--user-data-dir`, a COPY of the committed fixture,
  * `filter-` step screenshots).
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, contents, copyVault, fileRow, launchApp, quitApp, seededState, shoot, viewTabs } from './helpers'
+import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
+import { activeTab, appWindow, contents, copyVault, launchApp, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 /** The committed two-level fixture. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'nested-vault')
-const AUTOMATIONS = 'Automations.md'
+const AUTOMATIONS = 'Automations'
 /** The table view names the fixture writes; the board it declares last is simply `Board`. */
 const NESTED_VIEW = 'Dept then process'
 const FLAT_VIEW = 'Dept only'
 /**
- * The four members in the nested table's own READING order (grouped `dept` then `proc`, which is
+ * The four notecards in the nested table's own READING order (grouped `dept` then `proc`, which is
  * not alphabetical), and the three the fixture marks `status: Live` — `Shift handover` is the
- * `Draft` one, and the only member of the `Review` process. Spelled as the name cell shows them:
+ * `Draft` one, and the only one in the `Review` process. Spelled as the name cell shows them:
  * the page TITLE, never `.md` (YAZ-1513).
  */
 const ALL = ['Invoice sync', 'Ops dashboard', 'Ticket triage', 'Shift handover']
@@ -142,9 +146,9 @@ async function removeRule(w: Page): Promise<void> {
   await filterBtn(w).click()
 }
 
-/** The folder page's own card, sliced to what stands under its settings key. */
+/** The folder's own settings file, sliced to what stands under its settings key. */
 async function settingsOf(): Promise<string> {
-  const card = await readFile(path.join(vault, AUTOMATIONS), 'utf8')
+  const card = await readFile(path.join(vault, AUTOMATIONS, '.folder.md'), 'utf8')
   return card.slice(card.indexOf('folder_page_settings:'))
 }
 
@@ -159,17 +163,17 @@ test.afterAll(async () => {
 })
 
 test('step 1 — one built rule narrows the table to the matching rows, and the button wears the badge', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, AUTOMATIONS)) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
 
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, path.join(vault, AUTOMATIONS))
   // The fixture's own first view IS the two-level grouped table, so nothing has to be clicked.
   await expect(viewTabs(contents(win))).toHaveText([NESTED_VIEW, FLAT_VIEW, 'Board'])
   await expect.poll(() => rowNames(win).allTextContents(), { timeout: 15_000 }).toEqual(ALL)
   await expect(count(win)).toHaveText('4 items')
   await expect(badge(win)).toHaveCount(0) // an unfiltered view wears nothing
 
-  // The menu opens EMPTY: a folder page's set is the lookup, and it has never been filtered.
+  // The menu opens EMPTY: a folder's set is the notecards in it, and it has never been filtered.
   await filterBtn(win).click()
   await expect(menu(win).locator('.view-menu__empty')).toHaveText('No filters')
   await shoot(win, 'filter-01-menu-empty')
@@ -195,8 +199,8 @@ test('step 1 — one built rule narrows the table to the matching rows, and the 
   await shoot(win, 'filter-02-table-narrowed')
 })
 
-test('step 2 — the rule stands in the page’s frontmatter and survives quit → relaunch', async () => {
-  // Durable, not cosmetic: the block is under the page's OWN settings, holding the expression the
+test('step 2 — the rule stands in the folder’s settings file and survives quit → relaunch', async () => {
+  // Durable, not cosmetic: the block is under the folder's OWN settings, holding the expression the
   // builder writes for `is` — the same string `ruleToExpr` produces and `exprToRule` reads back.
   await expect.poll(() => settingsOf(), { timeout: 10_000 }).toContain('filters:')
   expect(await settingsOf()).toContain('note.status == "Live"')
@@ -205,7 +209,7 @@ test('step 2 — the rule stands in the page’s frontmatter and survives quit �
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
 
-  await expect(contents(win)).toBeVisible()
+  await expect(contents(win)).toBeVisible() // the folder's tab is restored like any other
   await expect.poll(() => rowNames(win).allTextContents(), { timeout: 15_000 }).toEqual(LIVE)
   await expect(badge(win)).toHaveText('1')
   await expect(count(win)).toHaveText('3 items')
@@ -268,7 +272,7 @@ test('step 4 — the board buckets POST-filter: the subgroup whose cards all wen
   await shoot(win, 'filter-05-board-narrowed')
 })
 
-test('step 5 — removing the rules restores every view and deletes the key from the card', async () => {
+test('step 5 — removing the rules restores every view and deletes the key from the settings', async () => {
   await removeRule(win)
   await expect.poll(() => boardScript(win)).toEqual([
     '# Finance (1)',
@@ -299,18 +303,19 @@ test('step 6 — "New" seeds the note from the active filter, and it lands in th
 
   await contents(win).locator('[aria-label="New note"]').click()
 
-  // The equality rule IS the seed (YAZ-1236): the newborn carries the property the filter asks for,
-  // on top of the declaration's empty columns and under the belonging that lands last.
-  const created = path.join(vault, 'automations', `${NEWBORN}.md`)
+  // The equality rule IS the seed (YAZ-1236): the newborn is born IN the folder (YAZ-2290 D4)
+  // carrying the property the filter asks for — and none of the folder's other columns, which are
+  // never stamped empty into a notecard (E1).
+  const created = path.join(vault, AUTOMATIONS, `${NEWBORN}.md`)
   await expect.poll(() => readFile(created, 'utf8').catch(() => ''), { timeout: 10_000 }).toContain('status: Live')
-  expect(await readFile(created, 'utf8')).toContain('[[Automations]]')
+  const born = parseFrontmatter(splitFrontmatter(await readFile(created, 'utf8')).frontmatter).properties
+  expect(Object.keys(born).sort()).toEqual(['id', 'status']) // the seed, and the id every created note is given
   await expect(activeTab(win)).toHaveText('Untitled')
   await shoot(win, 'filter-07-new-seeded')
 
   // …so it walks straight into the view that made it, with nobody typing a thing. It groups under
-  // "No value": `dept` and `proc` are not what the filter asked for, so the seed left them empty.
-  await fileRow(win, 'Automations').click()
-  await expect(contents(win)).toBeVisible()
+  // "No value": `dept` and `proc` are not what the filter asked for, so the seed left them out.
+  await openFolder(win, path.join(vault, AUTOMATIONS))
   await expect.poll(() => rowNames(win).allTextContents(), { timeout: 15_000 }).toEqual([...LIVE, NEWBORN])
   await expect(count(win)).toHaveText('4 items')
   await expect(badge(win)).toHaveText('1')

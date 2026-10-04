@@ -1,28 +1,11 @@
 /**
  * "New" note derivation (5D, GRO-2144), pure over the view's filter AST: equality filters and
- * `file.hasTag` become seed frontmatter (YAML types preserved), a single `file.inFolder`
- * names the target folder, `Untitled` names de-duplicate, and `createNewNote` creates in one
- * atomic content-at-create call (Bible B, GRO-2202; `api` mocked, same as writeProperty.test.ts).
+ * `file.hasTag` become seed frontmatter (YAML types preserved), and names de-duplicate.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { ViewSet, ViewDef, FilterNode } from './viewSchema'
-import { createNewNote, deriveSeed, freeName, seedContent, untitledName } from './newNote'
+import { deriveSeed, freeName } from './newNote'
 import { ruleToExpr } from './view/filterRows'
-
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api')>()),
-  api: { createFile: vi.fn(), writeFile: vi.fn() },
-}))
-
-import { api } from '../api'
-
-const createFile = vi.mocked(api.createFile)
-const writeFile = vi.mocked(api.writeFile)
-
-beforeEach(() => {
-  createFile.mockReset()
-  writeFile.mockReset()
-})
 
 /** A minimal def + view around the two filter slots. */
 const seed = (viewFilters?: FilterNode, defFilters?: FilterNode) =>
@@ -63,15 +46,6 @@ describe('deriveSeed', () => {
     expect(s.properties).toEqual({ status: 'idea' })
   })
 
-  it('a single file.inFolder names the folder, slashes trimmed', () => {
-    expect(seed({ and: ['file.inFolder("/Content Pillars/1. Agentic Agency/")'] }).folder).toBe('Content Pillars/1. Agentic Agency')
-  })
-
-  it('zero or several inFolder rules leave the folder null (view-folder rule)', () => {
-    expect(seed({ and: ['status == "idea"'] }).folder).toBeNull()
-    expect(seed({ and: ['file.inFolder("A")', 'file.inFolder("B")'] }).folder).toBeNull()
-  })
-
   // The strings the Filter menu actually writes (YAZ-1236): built through `ruleToExpr`, never typed
   // out here, so the seed is pinned to the BUILDER's grammar and moves with it.
   it('a menu-built equality rule seeds its property', () => {
@@ -95,18 +69,6 @@ describe('deriveSeed', () => {
   })
 })
 
-describe('untitledName', () => {
-  it('Untitled when free, then Untitled 2, Untitled 3…', () => {
-    expect(untitledName(new Set())).toBe('Untitled')
-    expect(untitledName(new Set(['Untitled']))).toBe('Untitled 2')
-    expect(untitledName(new Set(['Untitled', 'Untitled 2']))).toBe('Untitled 3')
-  })
-
-  it('fills gaps left by renames', () => {
-    expect(untitledName(new Set(['Untitled', 'Untitled 3']))).toBe('Untitled 2')
-  })
-})
-
 describe('freeName (YAZ-943): the Untitled scheme, generalized to any typed base', () => {
   it('the base when free, then base 2, base 3…', () => {
     expect(freeName('Ship it', new Set())).toBe('Ship it')
@@ -114,52 +76,7 @@ describe('freeName (YAZ-943): the Untitled scheme, generalized to any typed base
     expect(freeName('Ship it', new Set(['Ship it', 'Ship it 2']))).toBe('Ship it 3')
   })
 
-  it('untitledName IS freeName("Untitled")', () => {
-    expect(freeName('Untitled', new Set(['Untitled']))).toBe(untitledName(new Set(['Untitled'])))
-  })
-})
-
-describe('seedContent', () => {
-  it('empty seed → empty file', () => {
-    expect(seedContent({})).toBe('')
-  })
-
-  it('writes one frontmatter block with native YAML types; null prints `key:`', () => {
-    expect(seedContent({ status: 'idea', priority: 2 })).toBe('---\nstatus: idea\npriority: 2\n---\n')
-    expect(seedContent({ tags: ['agentic'] })).toBe('---\ntags:\n  - agentic\n---\n')
-    expect(seedContent({ unit: null })).toBe('---\nunit:\n---\n')
-  })
-})
-
-describe('createNewNote', () => {
-  it('creates the note in ONE atomic content-at-create call (GRO-2202), never a follow-up write', async () => {
-    createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 20 })
-
-    await createNewNote('/v/Untitled.md', { status: 'idea' })
-
-    expect(createFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '---\nstatus: idea\n---\n' })
-    expect(writeFile).not.toHaveBeenCalled()
-  })
-
-  it('an empty seed creates an empty file', async () => {
-    createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 0 })
-
-    await createNewNote('/v/Untitled.md', {})
-
-    expect(createFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '' })
-  })
-
-  it('a body lands after the frontmatter block (template bodies, R3)', async () => {
-    createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 40 })
-
-    await createNewNote('/v/Untitled.md', { kpi_category: 'lagging' }, '# Notes\n')
-
-    expect(createFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '---\nkpi_category: lagging\n---\n# Notes\n' })
-  })
-
-  it('propagates a create failure', async () => {
-    createFile.mockRejectedValue(new Error('parent folder does not exist'))
-
-    await expect(createNewNote('/v/Untitled.md', { status: 'idea' })).rejects.toThrow('parent folder does not exist')
+  it('fills gaps left by renames', () => {
+    expect(freeName('Untitled', new Set(['Untitled', 'Untitled 3']))).toBe('Untitled 2')
   })
 })

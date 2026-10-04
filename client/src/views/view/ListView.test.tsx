@@ -16,13 +16,13 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { type ViewSet, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const FOLDER_PAGE = testFolderHost()
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -77,9 +77,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.md"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -186,6 +186,27 @@ describe('primary line', () => {
     const attribution = items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'Attribution')
     expect(attribution).toBeDefined()
     expect(inlineOf(attribution!)).toBeNull()
+  })
+})
+
+describe('an id link (YAZ-2293 D8)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const records = TEST_RECORDS.map((r) =>
+    r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
+  )
+  const props = { records, folder: testFolderHost({ vaultRecords: records }) }
+  const vsl = (el: ParentNode) => items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'VSL-v1')!
+
+  it('the inline run reads as the title of the note the id names, as a name link reads as its name', () => {
+    const { el } = mount('views:\n  - type: list\n    name: L\n    order:\n      - file.name\n      - note.related\n', props)
+    expect(inlineOf(vsl(el))).toBe('[[Attribution]]')
+    expect(inlineOf(items(el)[1])).toBe('[[Agentic Agency]]')
+  })
+
+  it('an indented property row and a group header read as the title too', () => {
+    const { el } = mount('views:\n  - type: list\n    name: L\n    indentProperties: true\n    order:\n      - file.name\n      - note.related\n    groupBy:\n      property: note.related\n', props)
+    expect(q(vsl(el), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })
 

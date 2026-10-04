@@ -2,20 +2,23 @@ import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import type { ViewSet, ViewDef } from '../viewSchema'
-import { belongsToBasenames } from '../../links/folderPages'
-import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
+import { basenameCandidates, type LinkCandidate } from '../../links/completion'
+import { belongsToBasenames } from '../../links/folderLinks'
+import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
+import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { cellEditor, columnTyping } from '../editorType'
-import type { FolderPageSettings } from '../folderPageSettings'
+import type { Resolver } from '../expr'
+import type { FolderSettings } from '../folderSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, pageTitle } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
 
 export interface CardsViewProps {
   def: ViewSet
   view: ViewDef
-  /** Vault root, for resolving local cover assets over the bridge; null → local covers stay placeholders. */
-  root: string | null
+  /** Vault root, for resolving local cover assets over the bridge. */
+  root: string
   records: readonly IndexRecord[]
   /** The post-search rows — the one flat grid when the view has no `groupBy`. */
   rows: readonly Row[]
@@ -29,10 +32,16 @@ export interface CardsViewProps {
   onNewInGroup?: (group: Group) => void
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
-  /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
-  folderPage?: FolderPageSettings | null
-  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the MEMBERS: link resolution and the pickers read this. */
+  /** The settings of the folder whose rows these are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
+  settings: FolderSettings
+  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the folder's rows: link resolution and the pickers read this. */
   vaultRecords: readonly IndexRecord[]
+  /** The snapshot's folder settings records, for a link column narrowed to a folder. */
+  vaultFolders: readonly IndexRecord[]
+  /** ViewsPane's resolver: a cell reads an id link as the title of the notecard, or folder, it names (YAZ-2293 D8). */
+  resolve: Resolver
+  /** The window's link resolver, by which a link column's target names its folder. */
+  resolveLink: ResolveLink
 }
 
 // ---------- covers ----------
@@ -80,14 +89,14 @@ export function _resetAssetCache(): void {
 }
 
 /** One card's cover box (only rendered when the view sets `image`): colour block, remote img, resolved asset img, or the neutral placeholder. */
-function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
+function CardCover({ root, cover }: { root: string; cover: Cover }) {
   const ref = cover?.kind === 'asset' ? cover.ref : null
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     setSrc(null)
     setFailed(false)
-    if (ref === null || root === null) return
+    if (ref === null) return
     let live = true
     loadAsset(root, ref).then(
       (url) => live && setSrc(url),
@@ -118,8 +127,8 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, properties = null, folderPage = null, vaultRecords }: CardsViewProps) {
-  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {})), [def, view, records, folderPage])
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: CardsViewProps) {
+  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
@@ -130,24 +139,18 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     [rest],
   )
   const typings = useMemo(
-    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, properties, folderPage)])),
-    [rest, rowRecords, properties, folderPage],
+    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, properties, settings)])),
+    [rest, rowRecords, properties, settings],
   )
-  /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */
-  const basenames = useMemo(() => vaultRecords.map((r) => r.basename), [vaultRecords])
-  // Relation columns narrow the link picker to the pages of the folder page the target names
-  // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
-  // The resolver carries the ROOT since YAZ-846, so it is the very instance the wikilink
-  // surfaces hold and an absolute-path target resolves here too.
-  const resolve = useMemo(() => {
-    const resolver = resolverFor(vaultRecords, root ?? undefined)
-    return (target: string) => resolver(target)?.record.path ?? null
-  }, [vaultRecords, root])
+  /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
+  const basenames = useMemo(() => basenameCandidates(vaultRecords), [vaultRecords])
+  // Relation columns narrow the link picker to the notecards in the FOLDER the target names
+  // (YAZ-2290 D10: `belongsToBasenames`); a target naming no folder falls back to all basenames.
   const linkNames = useMemo(() => {
-    const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, resolve, t.target))
+    const m = new Map<string, LinkCandidate[]>()
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, vaultFolders, resolveLink, root, t.target))
     return m
-  }, [typings, vaultRecords, resolve])
+  }, [typings, vaultRecords, vaultFolders, resolveLink, root])
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
   const ratio = Number(view.imageAspectRatio)
   const style = {
@@ -163,7 +166,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           {imageKey !== null && <CardCover root={root} cover={coverOf(row.record, imageKey)} />}
           <div className="view-card__body">
             <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)}>
-              {pageTitle(row)}
+              {rowTitle(row)}
             </button>
             {rest.map((key) => {
               const bare = bares.get(key) ?? null
@@ -172,7 +175,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                   <span className="view-card__prop-name">{propertyLabel(def, key)}</span>
                   <span className="view-card__prop-value">
                     {bare === null ? (
-                      cellContent(row.values[key])
+                      cellContent(row.values[key], resolve)
                     ) : (
                       <EditableCell
                         path={row.record.path}
@@ -182,6 +185,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                         editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
                         options={typings.get(key)?.options}
                         basenames={linkNames.get(key) ?? basenames}
+                        resolve={resolve}
                       />
                     )}
                   </span>
@@ -212,6 +216,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                   collapsed={isCollapsed}
                   onToggle={() => onToggleGroup(gk)}
                   onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
+                  resolve={resolve}
                 />
                 {!isCollapsed && grid(g.rows)}
               </section>

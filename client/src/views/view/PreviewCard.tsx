@@ -13,8 +13,10 @@
  * invalidated by `mtime`, so re-hovering the same row costs nothing; a REJECTED read is dropped
  * from the cache so the next hover retries instead of re-serving the failure.
  *
- * The instance is a real Crepe with BlockEdit and the Toolbar off and no wikilink/find/drawing
+ * The instance is a real Crepe with BlockEdit and the Toolbar off and no find/drawing/link-click
  * options — the plugins that exist to EDIT are simply never registered — then `setReadonly(true)`.
+ * It does take the window's wikilink resolve source (YAZ-2293): a `[[<id>]]` link has no readable
+ * text of its own, so without the source a preview would show bare ids where the note shows titles.
  */
 import { type CSSProperties, type MouseEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CrepeFeature } from '../../editor/crepe'
@@ -22,6 +24,7 @@ import type { FileResponse, IndexRecord } from '@shared/types'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../../api'
 import { createCrepe } from '../../editor/createCrepe'
+import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { features } from '../../editor/featureConfig'
 import './previewCard.css'
 
@@ -63,11 +66,12 @@ type Content = { kind: 'loading' } | { kind: 'body'; body: string } | { kind: 'e
 interface CardProps {
   record: IndexRecord
   anchor: HTMLElement
+  wikilinks?: WikilinkResolveSource
   onEnter: () => void
   onLeave: () => void
 }
 
-function PreviewCard({ record, anchor, onEnter, onLeave }: CardProps) {
+function PreviewCard({ record, anchor, wikilinks, onEnter, onLeave }: CardProps) {
   const ref = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState<Content>({ kind: 'loading' })
@@ -113,12 +117,12 @@ function PreviewCard({ record, anchor, onEnter, onLeave }: CardProps) {
     host.appendChild(el)
     // No `image` options (YAZ-1656): the card knows the record's path but not the vault root, and a
     // vault-relative src has nothing to resolve against without it — images stay Crepe's stock `<img>`.
-    const crepe = createCrepe({ root: el, defaultValue: content.body, features: previewFeatures })
+    const crepe = createCrepe({ root: el, defaultValue: content.body, features: previewFeatures, wikilinks })
     const ready = crepe.create().then(() => crepe.setReadonly(true))
     return () => {
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [content])
+  }, [content, wikilinks])
 
   return (
     <div ref={ref} className="view-preview" style={pos} onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -146,7 +150,7 @@ export interface PreviewHandle {
   close: () => void
 }
 
-export function usePreview(enabled: boolean): PreviewHandle {
+export function usePreview(enabled: boolean, wikilinks?: WikilinkResolveSource): PreviewHandle {
   const [target, setTarget] = useState<Target | null>(null)
   const openTimer: TimerRef = useRef(null)
   const closeTimer: TimerRef = useRef(null)
@@ -203,7 +207,7 @@ export function usePreview(enabled: boolean): PreviewHandle {
   const card =
     target === null ? null : (
       // Keyed by path: re-targeting another row is a fresh card, never a half-swapped one.
-      <PreviewCard key={target.record.path} record={target.record} anchor={target.anchor} onEnter={keepOpen} onLeave={scheduleClose} />
+      <PreviewCard key={target.record.path} record={target.record} anchor={target.anchor} wikilinks={wikilinks} onEnter={keepOpen} onLeave={scheduleClose} />
     )
 
   return { rowProps, card, close }

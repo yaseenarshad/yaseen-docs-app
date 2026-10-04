@@ -137,7 +137,7 @@ const LIST: Table<Value[]> = {
   containsAll: (l, xs, { resolve }) => xs.every(x => l.some(v => equals(v, x, resolve))),
   containsAny: (l, xs, { resolve }) => xs.some(x => l.some(v => equals(v, x, resolve))),
   flat: l => flatten(l),
-  join: (l, [sep]) => l.map(render).join(sep == null ? ', ' : render(sep)),
+  join: (l, [sep]) => l.map(x => render(x)).join(sep == null ? ', ' : render(sep)),
   reverse: l => [...l].reverse(),
   slice: (l, [a, b]) => l.slice(needNumber('slice', a), optNumber('slice', b)),
   sort: l => [...l].sort(compareNatural),

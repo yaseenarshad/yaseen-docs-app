@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { PROPERTY_NAME } from '@shared/types'
-import type { ColumnDecl } from '../folderPageSettings'
+import type { ColumnDecl } from '../folderSettings'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
 import { declarationForKind } from './declarationForKind'
 import { canonicalKey } from './keys'
 
 export interface AddColumnProps {
-  /** Every key the menu already offers — the folder page's DECLARED columns among them (YAZ-895). */
+  /** Every key the menu already offers — the folder's DECLARED columns among them (YAZ-895). */
   taken: readonly string[]
   onSave: (name: string, column: ColumnDecl) => void
   /** Start on the form rather than the "+ Add column" button (the header menu's "Add column to the right…", YAZ-1513). */
@@ -16,7 +16,7 @@ export interface AddColumnProps {
 }
 
 /**
- * "+ Add column" (YAZ-896): declare a column on the FOLDER PAGE — the typing ladder's top rung
+ * "+ Add column" (YAZ-896): declare a column on the FOLDER — the typing ladder's top rung
  * (🔒 Q8) — and show it, in one `folder_page_settings` write (🔒 D3). A name that is not a
  * property name, or one the menu already offers, is refused inline and nothing is written. It
  * lived inside `PropertiesMenu.tsx` until YAZ-1513 gave the table header a second doorway to it.

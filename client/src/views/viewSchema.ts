@@ -2,8 +2,8 @@ import { type Document, isMap, parseDocument } from 'yaml'
 import { isRecord } from '@shared/guards'
 
 /**
- * The Obsidian Bases view-schema model — the shape a folder page's `views` block round-trips
- * through (`FolderPageContents`). The types mirror Obsidian's schema and
+ * The Obsidian Bases view-schema model — the shape a folder's `views` block round-trips
+ * through (`FolderView`). The types mirror Obsidian's schema and
  * are ours too (extended later); unknown keys are typed as `unknown` and must
  * survive a parse → update → serialise cycle untouched, comments included.
  */
@@ -70,7 +70,7 @@ export interface ViewSet {
 
 /**
  * The ONE config-write door every menu is handed: `ViewsPane`'s `update`, which re-parses and
- * calls `onChange` (the folder-page host turns it into exactly one `folder_page_settings`
+ * calls `onChange` (the folder host turns it into exactly one `folder_page_settings`
  * write). It lived in `view/FilterMenu.tsx` until YAZ-846 deleted that menu.
  */
 export type Mutate = (mutate: (def: ViewSet) => void) => void

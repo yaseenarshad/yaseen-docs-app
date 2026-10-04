@@ -7,7 +7,7 @@
  * row is observable exactly where folder-page views read it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { Profiler, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { PROPERTY_NAME, type IndexRecord, type PropertyDecl, type PropertiesResponse } from '@shared/types'
 import { FrontmatterPanel, type FrontmatterPanelProps } from './FrontmatterPanel'
@@ -20,7 +20,7 @@ vi.mock('../api', async (importOriginal) => {
   const { propertiesStub } = await import('../views/propertiesStub')
   return {
     ...(await importOriginal<typeof import('../api')>()),
-    api: { readFile: vi.fn(), writeFile: vi.fn(), properties: propertiesStub },
+    api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), properties: propertiesStub },
   }
 })
 
@@ -29,6 +29,7 @@ import { propertiesStub, resetPropertiesStub } from '../views/propertiesStub'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
+const createFile = vi.mocked(api.createFile)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -65,7 +66,7 @@ Body line
 /** TYPED plus a name the registry's grammar rejects — an accepted edge, never a workaround UI. */
 const LADDER = TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nNot A Key: whatever')
 
-/** Values no typed editor can hold, and the two keys the app reserves for its own doors. */
+/** Values no typed editor can hold, the settings key the app reserves for its own door, and a retired `folder_page` flag. */
 const OPAQUE = `---
 folder_page: true
 folder_page_settings:
@@ -90,6 +91,7 @@ let container: HTMLElement | null = null
 beforeEach(() => {
   readFile.mockReset()
   writeFile.mockReset()
+  createFile.mockReset()
   writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 10 })
   resetPropertiesStub()
 })
@@ -145,16 +147,25 @@ const removeProperty = (el: HTMLElement, key: string) => {
   click(buttonNamed(el, 'Remove from this note'))
 }
 
-const FOLDER = '/vault/Roadmap.md'
-const LOCAL_NOTE = '---\nStatus: Ready\nfolder_pages:\n  - "[[Roadmap]]"\n---\nOriginal note body\n'
-const folderRecord = (name: string, declaration: PropertyDecl): IndexRecord => ({
-  ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name,
-  properties: { folder_page: true, folder_page_settings: { columns: { Status: declaration }, views: [{ type: 'board', name: 'Board' }] } },
-})
-const folderFeed = (...parents: IndexRecord[]) => {
+/** Where the folder the note at PATH lives in keeps its settings (YAZ-2290 D1). */
+const FOLDER = '/vault/.folder.md'
+const LOCAL_NOTE = '---\nStatus: Ready\n---\nOriginal note body\n'
+/** The window's feed after its first snapshot; `columns` undefined = the folder has no settings file. */
+const folderFeed = (columns?: Record<string, PropertyDecl>) => {
   const source = createWikilinkResolveSource()
-  const note: IndexRecord = { ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work', properties: { Status: 'Ready', folder_pages: parents.map(parent => `[[${parent.basename}]]`) } }
-  source.update(link => parents.find(parent => link === `[[${parent.basename}]]`)?.path ?? null, [note, ...parents])
+  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', properties: { folder_page_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
+  source.update(() => null, [{ ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work' }], settings)
+  return source
+}
+
+/** A note that is also a SHORTCUT in Areas (YAZ-2290 D2): `also_in` names that folder's id — and one no folder has. */
+const AREAS_ID = 'k3m9x2pq7abc'
+const SHORTCUT_NOTE = `---\nalso_in:\n  - ${AREAS_ID}\n  - a1b2c3d4e5f6\n---\nBody\n`
+/** The living folder declares Status and effort; Areas declares effort (differently) and owner. */
+const shortcutFeed = () => {
+  const source = createWikilinkResolveSource()
+  const settings = (path: string, columns: Record<string, PropertyDecl>, id?: string): IndexRecord => ({ ...TEST_RECORDS[0], path, name: '.folder.md', basename: '.folder', id, properties: { folder_page_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } })
+  source.update(() => null, [], [settings(FOLDER, { Status: { kind: 'select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } }), settings('/vault/Areas/.folder.md', { effort: { kind: 'text' }, owner: { kind: 'text' } }, AREAS_ID)])
   return source
 }
 
@@ -545,18 +556,15 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(keysOf(el)).toContain('status')
   })
 
-  it('RESERVED keys and values no editor can hold are read-only, chipped, and offer nothing', () => {
+  it('values no editor can hold are read-only, chipped, and offer nothing', () => {
     const el = mount(OPAQUE, { root: ROOT })
     expand(el)
     expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings', 'note', 'tags'])
 
-    for (const [key, chip] of [
-      ['folder_page', 'Reserved'],
-      ['folder_page_settings', 'Reserved'],
-      ['note', 'YAML'],
-    ] as const) {
+    // On a note the retired settings block is an ordinary property: a nested map, like any other.
+    for (const key of ['folder_page_settings', 'note']) {
       const r = rowOf(el, key)
-      expect(chipIn(r)).toBe(chip)
+      expect(chipIn(r)).toBe('YAML')
       // 🔒 A row with no editor offers nothing but its chip.
       expect(r.querySelector('[data-edit]')).toBeNull()
       expect(byLabel(r, `Configure ${key}`)).toBeNull()
@@ -567,9 +575,24 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(chipIn(tags)).toBeNull()
     expect(byLabel(tags, 'Configure tags')).not.toBeNull()
     expect(byLabel(tags, 'Delete tags')).toBeNull()
+
+    // A retired `folder_page` flag is ordinary frontmatter (YAZ-2290 D6): no chip, and an editor.
+    const flag = rowOf(el, 'folder_page')
+    expect(chipIn(flag)).toBeNull()
+    expect(flag.querySelector('[data-edit]')).not.toBeNull()
   })
 
-  it('`comments` is RESERVED too (YAZ-1472): chipped, read-only — its door is the Comments block', () => {
+  it('a retired `folder_page_settings` on a NOTE is an ordinary property: an empty one has an editor and its menu', () => {
+    const el = mount('---\nfolder_page_settings:\nstatus: draft\n---\nBody\n', { root: ROOT })
+    expand(el)
+    const r = rowOf(el, 'folder_page_settings')
+    expect(chipIn(r)).toBeNull()
+    expect(r.querySelector('[data-edit]')).not.toBeNull()
+    click(byLabel(r, 'Configure folder_page_settings')!)
+    expect(buttonNamed(el, 'Remove from this note')).not.toBeNull()
+  })
+
+  it('`comments` is RESERVED (YAZ-1472): chipped, read-only — its door is the Comments block', () => {
     const el = mount('---\ncomments:\n  - id: 3f9a1c2e\n    at: 2026-09-11T18:22:31Z\n    body: Hi\nstatus: draft\n---\nBody\n', { root: ROOT })
     expand(el)
     expect(keysOf(el)).toEqual(['comments', 'status'])
@@ -580,12 +603,49 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(chipIn(rowOf(el, 'status'))).toBeNull()
   })
 
-  it('uses the sole folder page definition for uppercase Status and writes only the selected note value', async () => {
-    const wikilinks = folderFeed(folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }))
+  it('`id` is RESERVED too (YAZ-2293): chipped, read-only — editing it would orphan every link to the note', () => {
+    const el = mount('---\nid: k3m9x2pq7abc\nstatus: draft\n---\nBody\n', { root: ROOT })
+    expand(el)
+    expect(keysOf(el)).toEqual(['id', 'status'])
+    const r = rowOf(el, 'id')
+    expect(chipIn(r)).toBe('Reserved')
+    expect(r.querySelector('[data-edit]')).toBeNull()
+    expect(byLabel(r, 'Configure id')).toBeNull()
+    expect(chipIn(rowOf(el, 'status'))).toBeNull()
+  })
+
+  it('a link value naming a FOLDER by its id reads as the folder’s name, as a note’s reads as its title (YAZ-2290 D10)', () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === AREAS_ID ? '/vault/Areas' : null), [], []) // the window's link resolver: a notecard, else a folder
+    const el = mount(`---\narea: "[[${AREAS_ID}]]"\n---\nBody\n`, { root: ROOT, wikilinks: source })
+    expand(el)
+    expect(rowOf(el, 'area').querySelector('.view-table__chip')?.textContent).toBe('Areas')
+  })
+
+  it('`also_in` is RESERVED too (YAZ-2290 D2): chipped, read-only — and it reads as the folders it names, an id no folder has as written', () => {
+    const el = mount(SHORTCUT_NOTE, { root: ROOT, wikilinks: shortcutFeed() })
+    expand(el)
+    const r = rowOf(el, 'also_in')
+    expect(chipIn(r)).toBe('Reserved')
+    expect(r.querySelector('[data-edit]')).toBeNull()
+    expect(byLabel(r, 'Configure also_in')).toBeNull()
+    expect([...r.querySelectorAll('.view-table__chip')].map((chip) => chip.textContent)).toEqual(['Areas', 'a1b2c3d4e5f6'])
+  })
+
+  it('lists the columns of the folders it is a SHORTCUT in after its own folder’s — a column several declare once, typed by the first (D2)', () => {
+    const el = mount(SHORTCUT_NOTE, { root: ROOT, wikilinks: shortcutFeed() })
+    expand(el)
+    // Its own key, the living folder's two columns, then the one only the shortcut folder declares.
+    expect(keysOf(el)).toEqual(['also_in', 'Status', 'effort', 'owner'])
+    expect(editorOf(el, 'effort')).toBe('number') // the living folder says number; Areas says text
+  })
+
+  it('is typed by the folder the note LIVES in (YAZ-2290): its definition for uppercase Status, and only the note value is written', async () => {
+    const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } })
     readFile.mockResolvedValue(fileOf(LOCAL_NOTE))
     const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
     expand(el)
-    expect(byLabel<HTMLSelectElement>(el, 'Property context')?.value).toBe(FOLDER)
+    expect(byLabel(el, 'Property context')).toBeNull() // one folder, nothing to choose
     expect(rowOf(el, 'Status').querySelector('.property-choice-chip')?.textContent).toBe('Ready')
     expect(byLabel(el, 'Type of Status')).toBeNull()
     expect(byLabel(el, 'Delete Status')).toBeNull()
@@ -597,32 +657,38 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: LOCAL_NOTE.replace('Status: Ready', 'Status: Later'), expectedMtime: 100 })
   })
 
-  it('requires an explicit context for multiple folder memberships and keeps their options separate', () => {
-    const wikilinks = folderFeed(
-      folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }),
-      folderRecord('Personal', { kind: 'select', options: ['Ready', 'Someday'] }),
-    )
+  it("the folder's columns the note has no value for are EMPTY rows — nothing is written until one is filled in, and then only that key (E1)", async () => {
+    const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] }, effort: { kind: 'number' }, owner: { kind: 'text' } })
+    readFile.mockResolvedValue(fileOf(LOCAL_NOTE))
     const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    expect(header(el)?.textContent).toBe('1') // the count is the note's OWN keys
     expand(el)
-    const context = byLabel<HTMLSelectElement>(el, 'Property context')
-    expect(context?.value).toBe('')
-    click(byLabel(el, 'Configure Status'))
-    expect(document.querySelector('.frontmatter-property-menu')?.textContent).toContain('Choose a folder page')
-    expect(buttonNamed(el, 'Edit property ›')).toBeNull()
-    setValue(context, FOLDER)
-    click(rowOf(el, 'Status').querySelector('[data-edit]'))
-    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['Ready', 'Later'])
-    press(document.querySelector('[role="combobox"]'), 'Escape')
-    setValue(context, '/vault/Personal.md')
-    click(rowOf(el, 'Status').querySelector('[data-edit]'))
-    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['Ready', 'Someday'])
+    expect(keysOf(el)).toEqual(['Status', 'effort', 'owner'])
+    expect(editorOf(el, 'effort')).toBe('number')
+    press(el.querySelector('.view-cell-edit__input'), 'Escape')
+    await flush()
+    expect(writeFile).not.toHaveBeenCalled()
+
+    click(rowOf(el, 'effort').querySelector('[data-edit]'))
+    const input = rowOf(el, 'effort').querySelector<HTMLInputElement>('input')
+    setValue(input, '3')
+    press(input, 'Enter')
+    await flush()
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: '---\nStatus: Ready\neffort: 3\n---\nOriginal note body\n', expectedMtime: 100 })
+  })
+
+  it('a folder with no settings file types its notes from the defaults: an empty Status row (E2)', () => {
+    const el = mount('Just a body\n', { root: ROOT, wikilinks: folderFeed() })
+    expand(el)
+    expect(keysOf(el)).toEqual(['status'])
+    click(rowOf(el, 'status').querySelector('[data-edit]'))
+    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'])
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('saves a local definition against fresh folder bytes, preserving other settings and the note value', async () => {
-    const wikilinks = folderFeed(folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }))
+  it("saves a definition into the folder's settings file against its fresh bytes, preserving other settings and the note value", async () => {
+    const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } })
     const freshFolder = `---
-folder_page: true
 owner: untouched
 folder_page_settings:
   columns:
@@ -631,14 +697,12 @@ folder_page_settings:
       options: [Ready, Later]
     effort:
       kind: number
-  folder: New location
   defaultView: Table
   future_setting: keep me
   views:
     - type: table
       name: Table
 ---
-Fresh folder body
 `
     readFile.mockResolvedValue({ path: FOLDER, content: freshFolder, mtime: 444, size: freshFolder.length })
     const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
@@ -657,17 +721,16 @@ Fresh folder body
     expect(write.path).toBe(FOLDER)
     expect(write.expectedMtime).toBe(444)
     const saved = parseFrontmatter(splitFrontmatter(write.content).frontmatter).properties
-    expect(saved).toEqual({ folder_page: true, owner: 'untouched', folder_page_settings: {
+    expect(saved).toEqual({ owner: 'untouched', folder_page_settings: {
       columns: { Status: { kind: 'multi-select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } },
-      folder: 'New location', defaultView: 'Table', future_setting: 'keep me', views: [{ type: 'table', name: 'Table' }],
+      defaultView: 'Table', future_setting: 'keep me', views: [{ type: 'table', name: 'Table' }],
     } })
-    expect(splitFrontmatter(write.content).body).toBe('Fresh folder body\n')
     expect((await propertiesStub.get(ROOT)).properties).toEqual({})
     toRaw(el)
     expect(area(el)?.value).toContain('Status: Ready')
   })
 
-  it('allows removal without a folder context but offers no global type dropdown', () => {
+  it('with no index feed there is no folder to configure: removal is offered, a type dropdown is not', () => {
     const el = mount(TYPED)
     expand(el)
     expect(byLabel(rowOf(el, 'status'), 'Type of status')).toBeNull()
@@ -705,6 +768,82 @@ Fresh folder body
     expect(rows(el)).toHaveLength(0)
     expect(btn(el, 'Add property')).not.toBeNull()
     expect(btn(el, 'Edit as YAML')).not.toBeNull()
+  })
+})
+
+describe('FrontmatterPanel — the app\'s own names are refused as new properties', () => {
+  it('"comments" is not added to a note: said in the chip\'s own words, nothing written', () => {
+    const name = 'comments'
+    const el = mount(TYPED)
+    expand(el)
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), name)
+    click(btn(el, 'Add'))
+    expect(errorLine(el)?.textContent).toBe(`${name} is the app's own property — it is set where it belongs, not here`)
+    expect(readFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('FrontmatterPanel — the index feed (YAZ-2196)', () => {
+  it('re-renders when a folder settings file moved, and not on a refetch that moved none', () => {
+    const source = createWikilinkResolveSource()
+    const settings = (mtime: number): IndexRecord => ({ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', mtime, properties: {} })
+    source.update(() => null, [], [settings(1)])
+    let renders = 0
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Profiler id="panel" onRender={() => renders++}><FrontmatterPanel file={{ path: PATH, content: LOCAL_NOTE, mtime: 1 }} wikilinks={source} /></Profiler>))
+    const mounted = renders
+    act(() => source.update(() => null, [{ ...TEST_RECORDS[0] }], [settings(1)])) // a save elsewhere: new arrays, the same settings file
+    expect(renders).toBe(mounted)
+    act(() => source.update(() => null, [], [settings(2)]))
+    expect(renders).toBeGreaterThan(mounted)
+  })
+})
+
+/** A folder's OWN panel (YAZ-2290 D9) is mounted on its settings file; the file exists only after the first change (D1). */
+describe('FrontmatterPanel — a folder\'s own panel (YAZ-2290 D9)', () => {
+  const OWN = '/vault/Projects/.folder.md'
+  const mountOwn = (content: string): HTMLElement => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<FrontmatterPanel file={{ path: OWN, content, mtime: 0 }} />))
+    return container
+  }
+
+  it('the row menu says "Remove from this folder"', () => {
+    const el = mountOwn('---\nowner: Yasin\n---\n')
+    expand(el)
+    click(byLabel(el, 'Configure owner'))
+    expect(buttonNamed(el, 'Remove from this folder')).not.toBeNull()
+    expect(buttonNamed(el, 'Remove from this note')).toBeNull()
+  })
+
+  it('invalid raw YAML on a folder with no settings file is refused BEFORE anything is created', async () => {
+    readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist'))
+    const el = mountOwn('')
+    expandRaw(el)
+    typeInto(el, 'tags: [a, b\nstatus: : :')
+    click(btn(el, 'Save'))
+    await settle()
+    expect(errorLine(el)?.textContent).toMatch(/^Not valid YAML: /)
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('"folder_page_settings" is refused as a new property — the row would be hidden — and nothing is created', () => {
+    const el = mountOwn('')
+    expand(el)
+    click(btn(el, 'Add property'))
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'folder_page_settings')
+    click(btn(el, 'Add'))
+    expect(errorLine(el)?.textContent).toBe("folder_page_settings is the app's own property — it is set where it belongs, not here")
+    expect(createFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
   })
 })
 
@@ -780,5 +919,34 @@ describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
     expect(search(el)?.value).toBe('')
     expect(rows(el)).toHaveLength(6)
     expect(writeFile).not.toHaveBeenCalled()
+  })
+})
+
+// ---------- an id link reads as the note's title (YAZ-2293 D8) ----------
+
+describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-2293 D8)', () => {
+  const ID = 'k3m9x2pq7abc'
+  /** One typed link row, and a list no typed editor can hold (the read-only YAML row). */
+  const NOTE = `---\nparent: "[[${ID}]]"\nrefs:\n  - "[[${ID}]]"\n  - |\n    a\n    b\n---\nBody line\n`
+  const feed = () => {
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [{ ...TEST_RECORDS[0], path: '/vault/Home.md', name: 'Home.md', basename: 'Home', folder: '', id: ID }])
+    return source
+  }
+  const linkIn = (el: HTMLElement, key: string) => rowOf(el, key).querySelector('.view-table__chip--link')?.textContent
+
+  it('a link row and a read-only row both show the title, while the editor still holds the id the file stores', () => {
+    const el = mount(NOTE, { root: ROOT, wikilinks: feed() })
+    expand(el)
+    expect(linkIn(el, 'parent')).toBe('Home')
+    expect(linkIn(el, 'refs')).toBe('Home')
+    click(rowOf(el, 'parent').querySelector('[data-edit]'))
+    expect(byLabel<HTMLInputElement>(el, 'Edit parent')?.value).toBe(`[[${ID}]]`)
+  })
+
+  it('an id the index does not know shows as written', () => {
+    const el = mount(NOTE, { root: ROOT })
+    expand(el)
+    expect(linkIn(el, 'parent')).toBe(ID)
   })
 })

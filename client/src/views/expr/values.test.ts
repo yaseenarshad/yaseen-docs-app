@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, RegexValue, fromYaml, isTruthy, render } from './index'
+import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, RegexValue, fromYaml, isTruthy, linkText, render } from './index'
 
 const rec = {
   path: 'Notes/Foo.md', name: 'Foo.md', basename: 'Foo', folder: 'Notes', ext: 'md', size: 10,
@@ -58,6 +58,41 @@ describe('render', () => {
     expect(render(new ErrorValue('boom'))).toBe('#ERROR: boom')
     expect(render([1, 'a', null, [2, 3]])).toBe('1, a, , 2, 3')
     expect(render({ a: 1 })).toBe('{"a":1}')
+  })
+
+  // YAZ-2293 D8: the file stores the id; with a resolver, what is shown is the note's title.
+  describe('with a resolver (YAZ-2293 D8)', () => {
+    const resolve = (target: string) => (target === 'k3m9x2pq7abc' ? new FileValue(rec) : null)
+
+    it('an id link reads as the title of the note it names', () => {
+      expect(render(new LinkValue('k3m9x2pq7abc'), resolve)).toBe('[[Foo]]')
+      expect(render([new LinkValue('k3m9x2pq7abc'), 'a'], resolve)).toBe('[[Foo]], a')
+    })
+
+    it('a hand-typed label, an id naming no note and a name link all render as stored', () => {
+      expect(render(new LinkValue('k3m9x2pq7abc', 'Label'), resolve)).toBe('[[k3m9x2pq7abc|Label]]')
+      expect(render(new LinkValue('7tq2m8vd4xhn'), resolve)).toBe('[[7tq2m8vd4xhn]]')
+      expect(render(new LinkValue('Bar'), resolve)).toBe('[[Bar]]')
+    })
+
+    it('without one the stored form is untouched — what every write-back and the collapse key read', () => {
+      expect(render(new LinkValue('k3m9x2pq7abc'))).toBe('[[k3m9x2pq7abc]]')
+      expect(render([new LinkValue('k3m9x2pq7abc'), new LinkValue('k3m9x2pq7abc')])).toBe('[[k3m9x2pq7abc]], [[k3m9x2pq7abc]]')
+    })
+  })
+
+  it('linkText: the label, else the title of the note its id names, else the target as written', () => {
+    const resolve = (target: string) => (target === 'k3m9x2pq7abc' || target === 'Bar' ? new FileValue(rec) : null)
+    expect(linkText(new LinkValue('k3m9x2pq7abc', 'Label'), resolve)).toBe('Label')
+    expect(linkText(new LinkValue('k3m9x2pq7abc'), resolve)).toBe('Foo')
+    expect(linkText(new LinkValue('7tq2m8vd4xhn'), resolve)).toBe('7tq2m8vd4xhn')
+    // A NAME link shows what it shows today, even when it resolves to a note spelled otherwise.
+    expect(linkText(new LinkValue('Bar'), resolve)).toBe('Bar')
+    expect(linkText(new LinkValue('k3m9x2pq7abc'))).toBe('k3m9x2pq7abc')
+    // A `#heading` rides on the id as it would on a name: the id part is what gets the title.
+    expect(linkText(new LinkValue('k3m9x2pq7abc#Section'), resolve)).toBe('Foo#Section')
+    expect(linkText(new LinkValue('7tq2m8vd4xhn#Section'), resolve)).toBe('7tq2m8vd4xhn#Section')
+    expect(render(new LinkValue('k3m9x2pq7abc#Section'), resolve)).toBe('[[Foo#Section]]')
   })
 })
 

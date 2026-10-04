@@ -1,16 +1,18 @@
 /**
  * BOARD CARD STYLES, END TO END (YAZ-1206/YAZ-1217): the per-property `cardStyle` flags proven
  * against the REAL app over the committed encyclopedia. The Properties menu's toggles write ONE
- * `cardStyle` entry per click into the KPIs folder page on disk; the board's cards restyle
- * live — bold, hidden label, and the JOIN model gluing a value onto the row above with a dash.
- * Same harness as its siblings (temp `--user-data-dir`, COPY of the fixture, step
+ * `cardStyle` entry per click into the KPIs folder's settings file on disk; the board's cards
+ * restyle live — bold, hidden label, and the JOIN model gluing a value onto the row above with a
+ * dash. Same harness as its siblings (temp `--user-data-dir`, COPY of the fixture, step
  * screenshots); serial by design — each step continues the previous state.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, contents, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, launchApp, openFolder, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -21,13 +23,15 @@ let win: Page
 let vault: string
 
 const firstCard = (): Locator => contents(win).locator('.view-board__card').first()
-const kpis = (): Promise<string> => readFile(path.join(vault, 'KPIs.md'), 'utf8')
+/** The folder's settings file: where every `cardStyle` write lands (YAZ-2290 D1). */
+const kpis = (): Promise<string> => readFile(path.join(vault, 'KPIs', '.folder.md'), 'utf8')
 
 test.beforeAll(async () => {
   const userData = await mkdtemp(path.join(tmpdir(), 'cardstyle-userdata-'))
   vault = await copyVault(FIXTURE)
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'KPIs.md')) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
+  await openFolder(win, path.join(vault, 'KPIs'))
 })
 
 test.afterAll(async () => {

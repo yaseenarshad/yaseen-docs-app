@@ -1,17 +1,15 @@
-import type { SidebarLens } from '@shared/types'
 import { basename } from '../lib/paths'
 
-/** One tab-menu gesture, pinned to the lens selected when the user invoked it. */
+/** One "show this row in Files" gesture: a tab's menu, or a folder search row. */
 export interface SidebarRevealRequest {
   id: number
   path: string
-  lens: SidebarLens
 }
 
 export const SIDEBAR_REVEAL_MS = 3000
 
-export const revealMissingMessage = (path: string, lens: SidebarLens): string =>
-  `Can't show "${basename(path)}" in ${lens === 'topics' ? 'Topics' : 'Files'} — it is no longer there`
+export const revealMissingMessage = (path: string): string =>
+  `Can't show "${basename(path)}" in Files — it is no longer there`
 
 /** Flash every visible occurrence of `path`; the caller owns replacement/unmount cleanup. */
 export function flashTreeRows(host: ParentNode, path: string): (() => void) | null {

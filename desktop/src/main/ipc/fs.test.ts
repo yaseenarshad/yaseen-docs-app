@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import type { IndexResponse } from '@shared/types'
+import { VAULT_CONFIG_DIR, type IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { makeFixture } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
@@ -177,7 +177,7 @@ describe('registerFsIpc', () => {
     const newPath = path.join(root, 'ext2.md')
     await writeFile(oldPath, '# ext\n')
     await rename(oldPath, newPath) // the EXTERNAL mover already moved it — no fs work left
-    store.upsertWindow({ id: 'w-ext', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w-ext', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const res = await registered(CONTRACT.file.repairRename.channel)({ sender: {} }, { oldPath, newPath })
@@ -205,13 +205,13 @@ describe('registerFsIpc', () => {
   it('fs:rename renames on disk, repairs the store and broadcasts file:renamed to every window (Links E1, GRO-2194)', async () => {
     const oldPath = path.join(root, 'b.md')
     const newPath = path.join(root, 'bee.md')
-    store.upsertWindow({ id: 'w1', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
     store.setFolder(root, { lastFile: oldPath })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const res = await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath, newPath })
     expect(res).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
-    expect(await readFile(newPath, 'utf8')).toBe('# b\n')
+    expect(await readFile(newPath, 'utf8')).toMatch(/# b\n$/) // the body; the index call above may have given it an id (YAZ-2293)
     // Store repaired in the SAME handler: window file/tabs and the folder's lastFile follow.
     expect(store.get().windows.find((win) => win.id === 'w1')).toMatchObject({ file: newPath, tabs: [newPath] })
     expect(store.get().folders[root].lastFile).toBe(newPath)
@@ -221,7 +221,7 @@ describe('registerFsIpc', () => {
 
   it('fs:rename refuses the calling window\'s own vault root (E1b, GRO-2241) but allows another window\'s subfolder root', async () => {
     const sub = path.join(root, 'Zeta')
-    store.upsertWindow({ id: 'w-sub', root: sub, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w-sub', root: sub, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     // The caller's OWN root: refused, nothing moves, nothing broadcast.
@@ -255,11 +255,50 @@ describe('registerFsIpc', () => {
     expect(w.webContents.send).not.toHaveBeenCalled()
   })
 
+  describe('fs:create-file adopts the folder (YAZ-2293)', () => {
+    const windowOn = (id: string, at: string) => {
+      store.upsertWindow({ id, root: at, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = id
+    }
+    const adopted = (at: string) => stat(path.join(at, VAULT_CONFIG_DIR)).then((st) => st.isDirectory(), () => false)
+    const create = (p: string) => registered(CONTRACT.createFile.channel)({ sender: {} }, p)
+
+    it("the first notecard created in a window's folder makes it a vault, and the notes already there are given ids", async () => {
+      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-'))
+      try {
+        await writeFile(path.join(plain, 'from an agent.md'), 'body\n')
+        await registered(CONTRACT.index.channel)({ sender: {} }, plain) // the window has opened: indexed, un-adopted, untouched
+        expect(await adopted(plain)).toBe(false)
+        windowOn('w-adopt', plain)
+        expect(await create(path.join(plain, 'First.md'))).toMatchObject({ ok: true })
+        expect(await adopted(plain)).toBe(true)
+        await vi.waitFor(async () => expect(await readFile(path.join(plain, 'from an agent.md'), 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\n---\nbody\n$/))
+      } finally {
+        senderWinId = undefined
+        await rm(plain, { recursive: true, force: true })
+      }
+    })
+
+    it('a create outside the window\'s own folder, or from a window with none, adopts nothing', async () => {
+      const [mine, other] = await Promise.all([mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-mine-')), mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))])
+      try {
+        windowOn('w-mine', mine)
+        expect(await create(path.join(other, 'Elsewhere.md'))).toMatchObject({ ok: true })
+        senderWinId = undefined
+        expect(await create(path.join(other, 'No window.md'))).toMatchObject({ ok: true })
+        expect(await adopted(other)).toBe(false)
+        expect(await adopted(mine)).toBe(false)
+      } finally {
+        await Promise.all([mine, other].map((d) => rm(d, { recursive: true, force: true })))
+      }
+    })
+  })
+
   describe('fs:delete (GRO-2272)', () => {
     it('trashes the file, repairs the store and pushes file:deleted to every window', async () => {
       const target = path.join(root, 'delete-me.md')
       await writeFile(target, '# gone\n')
-      store.upsertWindow({ id: 'wd', root, file: target, tabs: [target, path.join(root, 'A.md')], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'wd', root, file: target, tabs: [target, path.join(root, 'A.md')], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
@@ -274,14 +313,14 @@ describe('registerFsIpc', () => {
     it("refuses the calling window's own vault root: nothing trashed, nothing broadcast", async () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      store.upsertWindow({ id: 'w-own', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-own', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
       senderWinId = 'w-own'
       expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: root })).toEqual({
         ok: false,
         error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be deleted', path: root },
       })
       expect(w.webContents.send).not.toHaveBeenCalled()
-      await expect(readFile(path.join(root, 'A.md'), 'utf8')).resolves.toBe('# A\n') // vault intact
+      await expect(readFile(path.join(root, 'A.md'), 'utf8')).resolves.toMatch(/# A\n$/) // vault intact
       senderWinId = undefined
     })
 
@@ -289,7 +328,7 @@ describe('registerFsIpc', () => {
       const sub = path.join(root, 'DeleteMeDir')
       await mkdir(sub, { recursive: true })
       await writeFile(path.join(sub, 'inner.md'), 'inner')
-      store.upsertWindow({ id: 'w-other', root: sub, file: path.join(sub, 'inner.md'), tabs: [path.join(sub, 'inner.md')], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-other', root: sub, file: path.join(sub, 'inner.md'), tabs: [path.join(sub, 'inner.md')], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
@@ -315,7 +354,7 @@ describe('registerFsIpc', () => {
       const oldPath = path.join(root, 'fav-a.md')
       const newPath = path.join(root, 'fav-b.md')
       await writeFile(oldPath, '# fav\n')
-      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -336,7 +375,7 @@ describe('registerFsIpc', () => {
     it('fs:delete hands the open roots + path to favorites.removePath; a repair failure is warned and the delete still answers and broadcasts', async () => {
       const target = path.join(root, 'fav-gone.md')
       await writeFile(target, '# gone\n')
-      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -352,7 +391,7 @@ describe('registerFsIpc', () => {
 
   describe('fs:clip / fs:paste (YAZ-1674)', () => {
     const win = (id: string, file: string | null) =>
-      store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
 
     it('fs:clip stores the ordered selection and pushes clip:changed (count + op) to EVERY window (D1)', async () => {
       fileClip.clear()

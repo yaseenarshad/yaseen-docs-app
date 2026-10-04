@@ -37,22 +37,6 @@ export function SidebarPanelIcon() {
   )
 }
 
-/**
- * 2×2 grid marking a FOLDER PAGE row in the outline (YAZ-820) and in its add-row picker; same
- * stroke weight as `SidebarPanelIcon`. It lived in `sidebar/Tree.tsx` while tree rows and tabs
- * wore it too; YAZ-844 left the folder page its only wearer, so it moved in with the rest of
- * the folder-page glyphs.
- */
-export function FolderPageGlyph({ className }: { className: string }) {
-  return (
-    <svg className={className} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
-      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
-      <line x1="6" y1="1.5" x2="6" y2="10.5" />
-      <line x1="1.5" y1="6" x2="10.5" y2="6" />
-    </svg>
-  )
-}
-
 export const PlusIcon = () => (
   <svg {...svg}>
     <path d="M8 3v10M3 8h10" />
@@ -87,31 +71,10 @@ export const SearchIcon = () => (
   </svg>
 )
 
-export const PencilIcon = () => (
-  <svg {...svg}>
-    <path d="m3 13 .8-3.2L11.2 2.4l2.4 2.4-7.4 7.4z" />
-  </svg>
-)
-
 /** Stacked chevrons, for the toolbar's collapse / expand all groups toggle (YAZ-744). */
 export const ChevronsIcon = () => (
   <svg {...svg}>
     <path d="M4.5 4 8 7l3.5-3M4.5 9 8 12l3.5-3" />
-  </svg>
-)
-
-/** Circling arrows, for the toolbar's "Sync from folder" (YAZ-953). */
-export const SyncIcon = () => (
-  <svg {...svg}>
-    <path d="M15.3 2.7v4h-4M0.7 13.3v-4h4" />
-    <path d="M2.3 6a6 6 0 0 1 9.9-2.2l3.1 2.9M0.7 9.3l3.1 2.9A6 6 0 0 0 13.7 10" />
-  </svg>
-)
-
-/** Chain link, for the relation-column editor (5E, GRO-2217). */
-export const RelationIcon = () => (
-  <svg {...svg}>
-    <path d="M6.5 9.5 9.5 6.5M7.8 4.6l1.5-1.5a2.3 2.3 0 0 1 3.6 3.6l-1.5 1.5M8.2 11.4l-1.5 1.5a2.3 2.3 0 0 1-3.6-3.6l1.5-1.5" />
   </svg>
 )
 
@@ -136,6 +99,13 @@ export const InfoIcon = () => (
 export const HeartIcon = () => (
   <svg {...svg} width={15} height={15} viewBox="0 0 24 24" strokeWidth={2} className="heart-icon">
     <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+  </svg>
+)
+
+/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a notecard's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
+export const ShortcutIcon = () => (
+  <svg {...svg} width={11} height={11} className="shortcut-mark">
+    <path d="M5.5 4H12v6.5M12 4 4 12" />
   </svg>
 )
 

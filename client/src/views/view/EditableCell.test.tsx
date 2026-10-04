@@ -11,10 +11,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import '../views.css'
 
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
 
@@ -22,8 +24,8 @@ const write = vi.mocked(writeProperty)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const FOLDER_PAGE = testFolderHost()
 
 /** file.name plus one column per editor type, and a read-only formula column. */
 const EDIT_BASE = `views:
@@ -62,10 +64,10 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
-          root={null}
-          thisFile={null}
+          root="/vault"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -300,6 +302,81 @@ describe('link editor', () => {
     expect(byLabel<HTMLInputElement>(el, 'Edit related').value).toBe('[[The Gold In Your Archive]]')
     press(byLabel(el, 'Edit related'), 'Enter')
     expect(write).toHaveBeenCalledExactlyOnceWith(LEVELS, 'related', '[[The Gold In Your Archive]]')
+  })
+})
+
+describe('completing a note that has an id (YAZ-2293)', () => {
+  const ID = 'k3m9x2pq7abc'
+  /** The vault with ONE id'd note: Creator Economy links by id, everyone else still by name. */
+  const withId = () => ({
+    folder: testFolderHost({ vaultRecords: TEST_RECORDS.map((r) => (r.basename === 'Creator Economy' ? { ...r, id: ID } : r)) }),
+  })
+
+  it('the link editor writes [[id]] — the row still reads as the name; a note without an id is written by name', () => {
+    const { el } = mount(EDIT_BASE, withId())
+    open(el, 1, 6)
+    setValue(byLabel<HTMLInputElement>(el, 'Edit related'), '[[Cre')
+    expect([...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['Creator Economy'])
+    press(byLabel(el, 'Edit related'), 'Enter')
+    expect(byLabel<HTMLInputElement>(el, 'Edit related').value).toBe(`[[${ID}]]`)
+    press(byLabel(el, 'Edit related'), 'Enter')
+    expect(write).toHaveBeenCalledExactlyOnceWith(LEVELS, 'related', `[[${ID}]]`)
+
+    open(el, 0, 6)
+    setValue(byLabel<HTMLInputElement>(el, 'Edit related'), '[[Gold')
+    click(q(el, '[role="option"]'))
+    press(byLabel(el, 'Edit related'), 'Enter')
+    expect(write).toHaveBeenLastCalledWith(AGENTIC, 'related', '[[The Gold In Your Archive]]')
+  })
+
+  it('the chips editor writes [[id]] too, beside a by-name chip', () => {
+    const { el } = mount(EDIT_BASE, { ...withId(), properties: { root: '/vault', version: 1, properties: { tags: { kind: 'multi-link' } } } })
+    open(el, 0, 5) // tags: [agentic, pillar]
+    for (const typed of ['[[Cre', '[[Gold']) {
+      setValue(byLabel<HTMLInputElement>(el, 'Edit tags'), typed)
+      press(byLabel(el, 'Edit tags'), 'Enter') // completes
+      press(byLabel(el, 'Edit tags'), 'Enter') // adds the chip
+    }
+    press(byLabel(el, 'Edit tags'), 'Enter') // empty input commits the list
+    expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'tags', ['agentic', 'pillar', `[[${ID}]]`, '[[The Gold In Your Archive]]'])
+  })
+})
+
+describe('a stored id link reads as the note title (YAZ-2293 D8)', () => {
+  const ID = 'k3m9x2pq7abc'
+  /** "Creator Economy" carries the id; the first note lists it BY id beside a by-name link, the second links to it alone. */
+  const linked = () => {
+    const records = TEST_RECORDS.map((r) =>
+      r.basename === 'Creator Economy' ? { ...r, id: ID }
+      : r.path === AGENTIC ? { ...r, properties: { ...r.properties, tags: [`[[${ID}]]`, '[[Attribution]]'] } }
+      : r.path === LEVELS ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } }
+      : r,
+    )
+    return { records, folder: testFolderHost({ vaultRecords: records }), properties: { root: '/vault', version: 1 as const, properties: { tags: { kind: 'multi-link' as const } } } }
+  }
+  const chipsOf = (el: ParentNode) => [...el.querySelectorAll('.view-cell-edit__chips > .view-table__chip')].map((c) => c.firstChild?.textContent)
+
+  it('the chips editor shows titles, an untouched one writes nothing, and an edited one writes the stored ids back', () => {
+    const { el } = mount(EDIT_BASE, linked())
+    open(el, 0, 5)
+    expect(chipsOf(el)).toEqual(['[[Creator Economy]]', '[[Attribution]]'])
+    blur(byLabel(el, 'Edit tags'))
+    expect(write).not.toHaveBeenCalled()
+
+    open(el, 0, 5)
+    click(byLabel(el, 'Remove [[Attribution]]'))
+    blur(byLabel(el, 'Edit tags'))
+    expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'tags', [`[[${ID}]]`])
+  })
+
+  it('the link cell rests as the title, edits as the stored text, and an unchanged Enter writes nothing', () => {
+    const { el } = mount(EDIT_BASE, linked())
+    expect(cell(el, 1, 6).textContent).toBe('Creator Economy')
+    open(el, 1, 6)
+    expect(byLabel<HTMLInputElement>(el, 'Edit related').value).toBe(`[[${ID}]]`)
+    press(byLabel(el, 'Edit related'), 'Enter')
+    expect(write).not.toHaveBeenCalled()
+    expect(cell(el, 1, 6).textContent).toBe('Creator Economy')
   })
 })
 

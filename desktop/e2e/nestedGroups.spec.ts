@@ -2,13 +2,15 @@
  * TWO-LEVEL GROUPING, end to end (YAZ-1102; the engine is YAZ-1097/1098, the table YAZ-1100).
  *
  * The unit suites already pin the bucketing and the display list. What they cannot show is the
- * thing the feature was asked for: a REAL folder page, whose `groupBy` is a LIST written on disk,
- * rendering a real two-level table in the real app — and keeping what the user folded across a
- * quit. So this spec drives the two shapes the real vault actually has, on a fixture that is a
- * miniature of each:
+ * thing the feature was asked for: a REAL folder, whose `groupBy` is a LIST written in its
+ * `.folder.md`, rendering a real two-level table in the real app — and keeping what the user
+ * folded across a quit. So this spec drives the two shapes the real vault actually has, on a
+ * fixture that is a miniature of each:
  *
- *   PROBLEMS — the FORMULA case. Functions are pages (`1 Lead Gen`, its children `1.1 Cross` /
- *   `1.2 Paid`, and the childless `3 Sales`), each problem names ONE of them, and the outer level
+ *   PROBLEMS — the FORMULA case. Functions are pages at the vault root (`1 Lead Gen`, its children
+ *   `1.1 Cross` / `1.2 Paid`, and the childless `3 Sales`) — OUTSIDE the folder, so every link to
+ *   one resolves over the whole vault while the rows are only the folder's — each problem names
+ *   ONE of them, and the outer level
  *   is a formula that climbs to the top function: `parent` when the function has one, the function
  *   itself when it does not. Which is what makes the merge rule visible — a `3 Sales` problem's
  *   inner value EQUALS its outer one, so it sits directly under the outer section with no inner
@@ -25,7 +27,7 @@
  *     the merge rule's direct rows under `3 Sales`
  *   2 collapse folds a whole BRANCH, an inner collapse folds only its own rows, and both survive
  *     quit → relaunch in the main-owned `baseGroups` bucket — the inner one under an OUTER-SCOPED
- *     composite key, never in the page's own frontmatter
+ *     composite key, never in the folder's own settings file
  *   3 Automations proves the same render over two plain columns, and the per-level sticky label
  *     while the eight-column table is scrolled to its right edge
  *   4 regression: a single-level `groupBy` — the LIST form with one entry, the shape that could
@@ -33,20 +35,23 @@
  *   5 the same plain-column hierarchy renders inside one Board column per outer value; both
  *     collapse scopes, named child creation, and an atomic cross-outer child drag work end to end
  *
- * Same harness as folderPages.spec.ts (temp `--user-data-dir`, a COPY of the committed fixture,
+ * Same harness as folderView.spec.ts (temp `--user-data-dir`, a COPY of the committed fixture,
  * `nested-` step screenshots).
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, contents, copyVault, fileRow, launchApp, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
+import { appWindow, contents, copyVault, launchApp, openFolder, quitApp, readState, seededState, shoot, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 /** The committed two-level fixture. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'nested-vault')
-const PROBLEMS = 'Problems.md'
+const PROBLEMS = 'Problems'
+const AUTOMATIONS = 'Automations'
 /** The view names the fixture writes — half of the `baseGroups` key. */
 const PROBLEMS_VIEW = 'By function'
 const NESTED_VIEW = 'Dept then process'
@@ -142,12 +147,12 @@ test.afterAll(async () => {
 })
 
 test('step 1 — two levels render: outer sections in reading order, indented inner ones, merged direct rows', async () => {
-  const state = seededState(vault, path.join(vault, PROBLEMS))
+  const state = seededState(vault, null)
   state.windows[0].bounds.width = 900
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
 
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, path.join(vault, PROBLEMS))
   // The fixture's own first view IS the grouped table, so nothing has to be clicked to reach it.
   await expect(viewTabs(contents(win))).toHaveText([PROBLEMS_VIEW, 'Board'])
 
@@ -203,17 +208,17 @@ test('step 2 — collapsing folds a whole branch, an inner collapse folds only i
   await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
   const problems = path.join(vault, PROBLEMS)
   const stored = (await readState(userData)).folders?.[vault]?.baseGroups ?? {}
-  // ONE bucket, keyed by the folder page's own path and the VIEW's name…
+  // ONE bucket, keyed by the folder's own path and the VIEW's name…
   expect(Object.keys(stored)).toEqual([`${problems}::${PROBLEMS_VIEW}`])
   // …holding exactly the two keys: the outer's, and the inner's OUTER-SCOPED composite. Sorted
   // because the list is a set — what it holds is the contract, the append order is not.
   expect([...stored[`${problems}::${PROBLEMS_VIEW}`]].sort()).toEqual([OUTER_KEY, INNER_KEY].sort())
-  // And never in the page's own card — collapsing must not be able to touch autosave (4C).
-  expect(await readFile(problems, 'utf8')).not.toContain('baseGroups')
+  // And never in the folder's settings file — collapsing writes nothing into the vault (4C).
+  expect(await readFile(path.join(problems, '.folder.md'), 'utf8')).not.toContain('baseGroups')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expect(contents(win)).toBeVisible()
+  await expect(contents(win)).toBeVisible() // the folder's tab is restored like any other
   // The outer is still folded…
   await expect.poll(() => tableScript(win), { timeout: 15_000 }).toEqual([
     '# 1 Lead Gen (3)',
@@ -237,8 +242,7 @@ test('step 2 — collapsing folds a whole branch, an inner collapse folds only i
 })
 
 test('step 3 — two plain columns, and a per-level sticky label at the table’s right edge', async () => {
-  await fileRow(win, 'Automations').click()
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, path.join(vault, AUTOMATIONS))
   await expect(viewTabs(contents(win))).toHaveText([NESTED_VIEW, FLAT_VIEW, 'Board'])
 
   // The same two-level shape with no formula in sight — `dept` then `proc`, both plain columns.
@@ -346,11 +350,12 @@ test('step 5 — nested Board layout, both collapse scopes, named child creation
   const input = financeIntake.locator('[aria-label="New card name"]')
   await input.fill('Reconcile invoices')
   await input.press('Enter')
-  const created = path.join(vault, 'automations', 'Reconcile invoices.md')
+  // Born IN the folder (YAZ-2290 D4), seeded with BOTH levels of the section it was typed in.
+  const created = path.join(vault, AUTOMATIONS, 'Reconcile invoices.md')
   await expect
     .poll(async () => {
       const text = await readFile(created, 'utf8').catch(() => '')
-      return text.includes('dept: Finance') && text.includes('proc: Intake') && text.includes('[[Automations]]')
+      return text.includes('dept: Finance') && text.includes('proc: Intake')
     })
     .toBe(true)
   const createdCard = financeIntake.locator('.view-board__card', { hasText: 'Reconcile invoices' })

@@ -17,6 +17,10 @@
  * else claims the alias (aliases resolve after basenames, and two notes may share one). Two
  * notes claiming the same alias therefore both show, told apart by the note half of the label —
  * which is already `folder/basename` when their basenames collide as well.
+ * A note WITH a frontmatter `id` (YAZ-2293, 🔒) is linked by it instead: both its name row and
+ * its alias rows insert the plain `[[id]]` — no name, no pipe — so the link survives any rename
+ * or move. The names above are then only what such a row is TYPED and READ as; a note with no
+ * id keeps inserting them, and the exception below is theirs alone.
  * Inserting exactly a candidate's `insert` text therefore always links to its record — with ONE
  * honest exception (GRO-2197 audit): the `r.folder === ''` clause below hands the bare basename
  * to EVERY root-level record, so two files at the vault ROOT whose basenames differ only by case
@@ -34,9 +38,9 @@ export const MAX_SUGGESTIONS = 8
 export interface LinkCandidate {
   /** The text the typed fragment matches: the note's link name, or one of its aliases. */
   name: string
-  /** Placed between `[[` and `]]` — the name, or the piped `Note|Alias` of an alias row. */
+  /** Placed between `[[` and `]]` — the note's `id`; for a note without one the name, or the piped `Note|Alias` of an alias row. */
   insert: string
-  /** Row text: the name alone, or `Alias — Note` (the alias row's disambiguation). */
+  /** Row text: the name alone, or `Alias — Note` (the alias row's disambiguation). Equal to `name` on a name row ONLY — how `linkNames` tells the two apart. */
   label: string
   /**
    * `name.toLowerCase()`, precomputed by the constructors so the ranking scan (GRO-2197 —
@@ -59,7 +63,8 @@ export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: n
  * Picker-only composition: every recognized view-only TARGET spelling belongs to the
  * navigation-only route, even before its catalog entry exists. Semantic aliases whose DISPLAY
  * happens to match remain valid because their target (before `|`) is still an ordinary note.
- * Resolution sources stay split.
+ * So does a row inserting an `id` (YAZ-2293): an id is no view-only spelling, and unlike its
+ * name it does link to a note NAMED like a view-only file. Resolution sources stay split.
  */
 export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[]): LinkCandidate[] {
   return [
@@ -68,10 +73,10 @@ export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly
   ]
 }
 
-/** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted piped. */
-const aliasCandidate = (alias: string, note: string, path: string): LinkCandidate => ({
+/** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted as the note's `id` — piped by name when it has none. */
+const aliasCandidate = (alias: string, note: string, path: string, id?: string): LinkCandidate => ({
   name: alias,
-  insert: `${note}|${alias}`,
+  insert: id ?? `${note}|${alias}`,
   label: `${alias} — ${note}`,
   lower: alias.toLowerCase(),
   path,
@@ -119,20 +124,24 @@ export function matchLinkCandidates<T extends { name: string; lower?: string }>(
   return [...exact, ...prefix, ...substring].slice(0, cap)
 }
 
-/** The same match over plain names — Bases' cell editors complete over index basenames, no aliases in play. */
-export function matchLinkNames(names: readonly string[], fragment: string): string[] {
-  return matchLinkCandidates(names.map(nameCandidate), fragment).map(c => c.insert)
-}
-
 /** Folder depth exactly as `makeResolver` counts it: root = 0. */
 const depthOf = (r: IndexRecord): number => (r.folder === '' ? 0 : r.folder.split('/').length)
+
+/**
+ * What Bases' cell editors complete over: the index BASENAMES — no aliases, no folder
+ * disambiguation — each written as every link the app writes (YAZ-2293): the note's `id` when it
+ * has one, else the basename it always was.
+ */
+export const basenameCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
+  records.map((r) => ({ ...nameCandidate(r.basename), insert: r.id ?? r.basename }))
 
 /**
  * Candidates for one index snapshot, in records order (i.e. path-sorted): per record its name —
  * the basename when this record is what the bare basename resolves to (unique, or the shallowest
  * duplicate — equal depth to the first in order, mirroring `makeResolver`), else the
  * root-relative `folder/basename` — followed by one alias row per frontmatter alias, inserting
- * the piped form. Duplicate detection is case-insensitive, like resolution. Two alias rows are
+ * the piped form; every row of a record with an `id` inserts that id instead (module doc).
+ * Duplicate detection is case-insensitive, like resolution. Two alias rows are
  * SKIPPED (GRO-2197): an alias equal to the chosen name (case-insensitively) would only add a
  * degenerate `[[X|X]]` next to the plain `[[X]]` row, and an alias containing `[` or `]` would
  * build a piped insert the wikilink regex (`wikilinkPlugin.ts` WIKILINK_RE, inner class
@@ -155,20 +164,20 @@ export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[]
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== name.toLowerCase() && !/[[\]]/.test(alias))
     // The record rides along (YAZ-957) — added HERE, where it is known, so `nameCandidate` keeps
     // its single argument and `names.map(nameCandidate)` can never pass an index as a path.
-    return [{ ...nameCandidate(name), path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, r.path))]
+    return [{ ...nameCandidate(name), insert: r.id ?? name, path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, r.path, r.id))]
   })
 }
 
 /**
- * Every indexed note's own link NAME, keyed by path — the ONE lookup behind both sync-from-folder
- * (YAZ-951) and adoption (YAZ-1152), so the two can never spell one note two ways. The
- * name is the shortest unambiguous one `linkCandidates` offers, which is exactly the text that
- * links BACK to that record. Alias rows are skipped: they insert the piped `Note|Alias` form.
+ * Every indexed note's own link NAME, keyed by path — one lookup, so no two surfaces can spell one
+ * note two ways. The name is the shortest unambiguous one `linkCandidates` offers, which is
+ * exactly the text that links BACK to that record. Alias rows are skipped — told by their `label`,
+ * never by `insert`, which is the id on BOTH kinds of row once a note has one (YAZ-2293).
  */
 export function linkNames(records: readonly IndexRecord[]): Map<string, string> {
   const names = new Map<string, string>()
   for (const candidate of linkCandidates(records)) {
-    if (candidate.insert === candidate.name && candidate.path !== undefined) names.set(candidate.path, candidate.insert)
+    if (candidate.label === candidate.name && candidate.path !== undefined) names.set(candidate.path, candidate.name)
   }
   return names
 }

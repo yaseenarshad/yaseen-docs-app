@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import appCss from './app.css?inline'
 import commentsCss from './comments/comments.css?inline'
 import backlinksCss from './links/backlinks.css?inline'
-import folderPageCss from './views/folderPageContents.css?inline'
+import folderViewCss from './views/folderView.css?inline'
 
 const maxWidthFor = (css: string, selector: string): string | undefined => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -19,7 +19,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
   it('routes every aligned shell through the one shared token', () => {
     expect(maxWidthFor(appCss, '.page-header')).toBe('var(--content-max-width)')
     expect(maxWidthFor(appCss, '.editor-instance')).toBe('var(--content-max-width)')
-    expect(maxWidthFor(folderPageCss, '.folder-page-contents')).toBe('var(--content-max-width)')
+    expect(maxWidthFor(folderViewCss, '.folder-view')).toBe('var(--content-max-width)')
     expect(maxWidthFor(commentsCss, '.comments')).toBe('var(--content-max-width)')
     expect(maxWidthFor(backlinksCss, '.backlinks')).toBe('var(--content-max-width)')
   })
@@ -27,7 +27,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
   it('the scroller owns the page\'s ONE tail; the blocks under the note carry no tail and no hairline (YAZ-1680)', () => {
     expect(appCss).toMatch(/\.editor-host\s*\{[^}]*padding-bottom:\s*64px;/s)
     for (const [css, selector] of [
-      [folderPageCss, '.folder-page-contents'],
+      [folderViewCss, '.folder-view'],
       [commentsCss, '.comments'],
       [backlinksCss, '.backlinks'],
     ] as const) {
@@ -36,6 +36,10 @@ describe('content-width CSS contract (YAZ-1176)', () => {
       expect(rule, selector).toMatch(/padding:\s*0 48px;/)
       expect(rule, selector).not.toMatch(/border/)
     }
+  })
+
+  it("no rule hides a note's body: a note flagged `folder_page: true` is an ordinary note (YAZ-2290)", () => {
+    expect(appCss).not.toMatch(/\.editor-mount\s*\{[^}]*display:\s*none/)
   })
 
   it('document zoom sits on the CONTENT, never on a shell (YAZ-1710 D14): the scroller carries the variable, the content selectors read it, the runner adds the measured slack (D15)', () => {

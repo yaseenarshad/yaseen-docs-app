@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, IndexResponse, TreeNode, TreeResponse, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../../hooks/useWatch'
 import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } from './wikilinkPicker'
-import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilinkPlugin'
+import { createWikilinkResolveSource, idLinkTitle, type MutableWikilinkResolveSource } from './wikilinkPlugin'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { WikilinkIndexBridge } from './WikilinkIndexBridge'
 
@@ -45,8 +45,9 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
   }
 }
 
-const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), generatedAt: 1 })
+const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), folders: [], generatedAt: 1 })
 const viewNode = (path: string, kind: 'text' | 'pdf' | 'image'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
+const dirNode = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 const treeResponse = (...nodes: TreeNode[]): TreeResponse => ({ root: '/vault', tree: nodes, generatedAt: 1 })
 
 let root: Root | null = null
@@ -69,11 +70,11 @@ function renderBridge(vault = '/vault'): void {
   act(() => root?.render(<WikilinkIndexBridge root={vault} watch={watch} source={source} candidates={candidates} viewOnly={viewOnly} />))
 }
 
-function mount(): void {
+function mount(vault = '/vault'): void {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  renderBridge()
+  renderBridge(vault)
 }
 
 async function flush(): Promise<void> {
@@ -131,6 +132,17 @@ describe('WikilinkIndexBridge', () => {
     expect(source.resolve?.('New')).toBe('/vault/New.md')
   })
 
+  it("a folder's settings file refetches like a note and rides `source.folders`, never `records` (YAZ-2290 D8)", async () => {
+    mount()
+    await flush()
+    expect(source.folders).toEqual([])
+    const settings = rec('/vault/deep/.folder.md')
+    indexFn.mockResolvedValue({ ...response('/vault/Note.md', '/vault/deep/Other.md'), folders: [settings] })
+    await emitPastDebounce({ type: 'add', path: settings.path, mtime: 2 })
+    expect(source.folders).toEqual([settings])
+    expect(source.records.map((r) => r.path)).toEqual(['/vault/Note.md', '/vault/deep/Other.md'])
+  })
+
   it('a save wakes the semantic source once and never the unchanged view-only catalog, while the picker still takes the new records (YAZ-2196 P8)', async () => {
     mount()
     await flush()
@@ -185,6 +197,7 @@ describe('WikilinkIndexBridge', () => {
     indexFn.mockResolvedValue({
       root: '/vault',
       records: [rec('/vault/Customer Acquisition Cost.md', ['CAC'])],
+      folders: [],
       generatedAt: 1,
     })
     mount()
@@ -201,10 +214,50 @@ describe('WikilinkIndexBridge', () => {
     ])
 
     // Dropping the alias from the frontmatter unresolves `[[CAC]]` again on the next snapshot.
-    indexFn.mockResolvedValue({ root: '/vault', records: [rec('/vault/Customer Acquisition Cost.md')], generatedAt: 2 })
+    indexFn.mockResolvedValue({ root: '/vault', records: [rec('/vault/Customer Acquisition Cost.md')], folders: [], generatedAt: 2 })
     await emitPastDebounce({ type: 'change', path: '/vault/Customer Acquisition Cost.md', mtime: 2 })
     expect(source.resolve?.('CAC')).toBeNull()
     expect(candidates.candidates.map((c) => c.label)).toEqual(['Customer Acquisition Cost', 'data.json', 'report.PDF'])
+  })
+
+  it('ids ride the same feed (YAZ-2293): nothing resolves before the index is ready, then the id follows its note through a rename and names nothing once it is deleted', async () => {
+    const ID = 'k3m9x2pq7abc'
+    const withId = (path: string): IndexResponse => ({ root: '/vault', records: [{ ...rec(path), id: ID }, rec('/vault/Zed.md')], folders: [], generatedAt: 1 })
+    indexFn.mockResolvedValue(withId('/vault/Road Map.md'))
+    mount()
+    expect(source.resolve).toBeNull() // D13: no resolver yet, so an id link has no title to show
+    await flush()
+    expect(source.resolve?.(ID)).toBe('/vault/Road Map.md')
+    expect(source.resolve?.('Road Map')).toBe('/vault/Road Map.md') // D11: the name still resolves
+
+    // C2: renamed and moved outside the app — the next snapshot carries the same id at the new path.
+    indexFn.mockResolvedValue(withId('/vault/Archive/Roadmap 2027.md'))
+    await emitPastDebounce({ type: 'add', path: '/vault/Archive/Roadmap 2027.md', mtime: 2 })
+    expect(source.resolve?.(ID)).toBe('/vault/Archive/Roadmap 2027.md')
+    expect(source.resolve?.('Road Map')).toBeNull()
+
+    // C3: deleted — the id resolves to nothing, which is what dims the link.
+    indexFn.mockResolvedValue(response('/vault/Zed.md'))
+    await emitPastDebounce({ type: 'unlink', path: '/vault/Archive/Roadmap 2027.md' })
+    expect(source.resolve?.(ID)).toBeNull()
+  })
+
+  it('the picker links a note by its id and a PDF, a text file or an image by its name, as before (YAZ-2293, scenario D12)', async () => {
+    indexFn.mockResolvedValue({ root: '/vault', records: [{ ...rec('/vault/Road Map.md', ['Plan']), id: 'k3m9x2pq7abc' }, rec('/vault/Zed.md')], folders: [], generatedAt: 1 })
+    treeFn.mockResolvedValue(treeResponse(viewNode('/vault/data.json', 'text'), viewNode('/vault/deep/report.PDF', 'pdf'), viewNode('/vault/photo.PNG', 'image')))
+    mount()
+    await flush()
+    expect(candidates.candidates.map(({ label, insert }) => [label, insert])).toEqual([
+      ['Road Map', 'k3m9x2pq7abc'],
+      ['Plan — Road Map', 'k3m9x2pq7abc'],
+      ['Zed', 'Zed'],
+      ['data.json', 'data.json'],
+      ['report.PDF', 'report.PDF'],
+      ['photo.PNG', 'photo.PNG'],
+    ])
+    // A view-only file resolves through its own catalog, by name; the semantic resolver knows it by neither name nor id.
+    expect(viewOnly.resolve?.('report.PDF')).toBe('/vault/deep/report.PDF')
+    expect(source.resolve?.('report.PDF')).toBeNull()
   })
 
   it('feeds a separate view-only source and merges only picker candidates, reserving explicit collisions', async () => {
@@ -277,7 +330,7 @@ describe('WikilinkIndexBridge', () => {
       ? new Promise((resolve) => { resolveNextTree = resolve })
       : Promise.resolve(treeResponse()))
     indexFn.mockImplementation(async (vault) => vault === '/next'
-      ? { root: vault, records: [rec('/next/New.md')], generatedAt: 2 }
+      ? { root: vault, records: [rec('/next/New.md')], folders: [], generatedAt: 2 }
       : response('/vault/Note.md'))
 
     renderBridge('/next')
@@ -315,8 +368,79 @@ describe('WikilinkIndexBridge', () => {
     expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['tool.py'])
     expect(candidates.candidates.map((candidate) => candidate.insert)).not.toContain('Old')
 
-    resolveNextIndex({ root: '/next', records: [rec('/next/New.md')], generatedAt: 2 })
+    resolveNextIndex({ root: '/next', records: [rec('/next/New.md')], folders: [], generatedAt: 2 })
     await flush()
     expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['New', 'tool.py'])
+  })
+
+  describe('folders are pages (YAZ-2290 D10): the tree feed\'s folders ride the semantic source', () => {
+    // Its own root, with its own tree feed: `/trees` is as long as `/vault`, which `rec` measures by.
+    const FOLDER_ID = 'f7n2w8rt4xyz'
+    const index = (...paths: string[]): IndexResponse => ({
+      root: '/trees',
+      records: paths.map((p) => rec(p)),
+      folders: [{ ...rec('/trees/Work/Projects/.folder.md'), id: FOLDER_ID }],
+      generatedAt: 1,
+    })
+    const tree = (...extra: TreeNode[]): TreeResponse => ({
+      root: '/trees',
+      tree: [dirNode('/trees/Note'), dirNode('/trees/Projects'), dirNode('/trees/Work', [dirNode('/trees/Work/Projects')]), ...extra],
+      generatedAt: 1,
+    })
+
+    beforeEach(() => {
+      indexFn.mockResolvedValue(index('/trees/Note.md', '/trees/Work/Plan.md'))
+      treeFn.mockResolvedValue(tree())
+    })
+
+    it('a link no notecard answers resolves to the FOLDER of that name — its directory path — and a notecard of the name still wins', async () => {
+      mount('/trees')
+      await flush()
+      expect(source.resolve?.('Projects')).toBe('/trees/Projects') // the shallowest of the two
+      expect(source.resolve?.('Work/Projects')).toBe('/trees/Work/Projects')
+      expect(source.resolve?.('Note')).toBe('/trees/Note.md')
+      expect(source.resolve?.('Nope')).toBeNull()
+    })
+
+    it('the id of a folder\'s settings file resolves to the folder, and an id link shows the folder\'s name', async () => {
+      mount('/trees')
+      await flush()
+      expect(source.resolve?.(FOLDER_ID)).toBe('/trees/Work/Projects')
+      expect(idLinkTitle(FOLDER_ID, source.resolve)).toBe('Projects')
+    })
+
+    it('the picker offers the folders after the notecards: by name, by path when the name is taken, not at all when the path is', async () => {
+      mount('/trees')
+      await flush()
+      expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'Plan', 'Projects', 'Work', 'Work/Projects'])
+    })
+
+    it('a new folder wakes the editors once and resolves; a tree that moved no folder wakes nobody (YAZ-2196)', async () => {
+      mount('/trees')
+      await flush()
+      const wake = vi.fn()
+      source.subscribe(wake)
+      await emitPastDebounce({ type: 'addDir', path: '/trees/Elsewhere' }) // the same tree comes back
+      expect(wake).not.toHaveBeenCalled()
+      treeFn.mockResolvedValue(tree(dirNode('/trees/Empty')))
+      await emitPastDebounce({ type: 'addDir', path: '/trees/Empty' })
+      expect(wake).toHaveBeenCalledTimes(1)
+      expect(source.resolve?.('Empty')).toBe('/trees/Empty') // an EMPTY folder: only the tree knows it
+      expect(candidates.candidates.map((c) => c.insert)).toContain('Empty')
+    })
+
+    it('a folder list that moved is no index snapshot: `onSnapshot` hears each snapshot once', async () => {
+      const onSnapshot = vi.fn()
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      act(() => root?.render(<WikilinkIndexBridge root="/trees" watch={watch} source={source} candidates={candidates} viewOnly={viewOnly} onSnapshot={onSnapshot} />))
+      await flush()
+      expect(onSnapshot).toHaveBeenCalledTimes(1)
+      treeFn.mockResolvedValue(tree(dirNode('/trees/Later')))
+      await emitPastDebounce({ type: 'addDir', path: '/trees/Later' })
+      expect(source.resolve?.('Later')).toBe('/trees/Later')
+      expect(onSnapshot).toHaveBeenCalledTimes(1)
+    })
   })
 })

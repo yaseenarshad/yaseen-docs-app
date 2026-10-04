@@ -42,6 +42,13 @@ describe('HOTKEYS source of truth', () => {
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
   })
 
+  it('covers the review session\'s keys (YAZ-2322): the two answers and the way out', () => {
+    const byKeys = (keys: string) => WINDOW_HOTKEYS.find((h) => h.keys === keys)
+    expect(byKeys('⌘⇧⏎')?.label).toMatch(/review.*still relevant/i)
+    expect(byKeys('⌘⇧S')?.label).toMatch(/review.*skip/i)
+    expect(byKeys('Esc')?.label).toMatch(/close the review/i)
+  })
+
   it('the mouse tips carry the I3 + Links C click rulings: link click = current tab (create-on-missing), shared ⌘-click = background tab, right-click = new window', () => {
     const byKeys = (keys: string) => MOUSE_TIPS.find((t) => t.keys === keys)
     // GRO-2192: editor wiki links — click opens in the current tab, an unresolved link creates first.
@@ -50,6 +57,8 @@ describe('HOTKEYS source of truth', () => {
     // ONE shared ⌘-click convention: sidebar file rows (I3) AND editor wiki links (Links C).
     expect(byKeys('⌘-click file or link')?.label).toMatch(/background tab/i)
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
+    // Copy ID (YAZ-2293) sits right under Copy path in that menu, so the tip names it there.
+    expect(byKeys('Right-click file')?.label).toMatch(/Copy path, Copy ID,/)
     // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5).
     expect(byKeys('Right-click vault')?.label).toMatch(/Open in this window/)
     expect(byKeys('Right-click vault')?.label).toMatch(/Set display name/)

@@ -15,7 +15,7 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import type { NewNoteSeed } from '../newNote'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -59,7 +59,7 @@ const PRIORITY_BOARD = `views:
 `
 
 const FOLDER_PAGE_PATH = '/vault/Bases/Content.md'
-/** Where the folder page's settings park a new member — this test's stand-in for `createMember`. */
+/** Where the folder page's settings park a new member — this test's stand-in for `createInFolder`. */
 const PARKED = '/vault/Bases/Untitled.md'
 
 /** The created note as the next index refetch would deliver it. */
@@ -100,9 +100,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile={FOLDER_PAGE_PATH}
+          folderPath={FOLDER_PAGE_PATH}
           records={records}
-          folderPage={testFolderPage({ create })}
+          folder={testFolderHost({ create })}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -183,16 +183,14 @@ describe('toolbar New', () => {
     expect(onOpenFile).toHaveBeenCalledWith(PARKED)
   })
 
-  // The `inFolder` seed still DERIVES (`newNote.test.ts` pins it) — it just no longer places the
-  // note: inside a folder page the settings' `folder` decides, and the toolbar's New passes no
-  // name, so `createMember` keeps the `Untitled` scheme (`FolderPageContents.test.tsx`).
-  it('a single file.inFolder filter rides along in the seed but never places the note', async () => {
+  // The note is born in the folder being viewed, and the toolbar's New passes no name, so
+  // `createInFolder` keeps the `Untitled` scheme (`FolderView.test.tsx`).
+  it('a file.inFolder filter seeds nothing and never places the note', async () => {
     const { el } = mount(FOLDER_TABLE)
 
     click(byLabel(el, 'New note'))
 
-    expect(create.mock.calls[0][0].folder).toBe('Content Pillars/1. Agentic Agency')
-    expect(create.mock.calls[0][1]).toBeUndefined()
+    expect(create.mock.calls[0]).toEqual([{ properties: {} }, undefined])
   })
 
   it('a failed create shows an inline error and opens nothing', async () => {
@@ -307,6 +305,15 @@ describe('the group "+" under fan-out (YAZ-671 D4)', () => {
 
     click(byLabel(el, 'New note in group [[Lead Gen]]'))
     expect(seed()).toEqual({ status: ['[[Lead Gen]]'] })
+  })
+
+  it('seeds an id link element as the stored `[[id]]`, though its group is headed by the title (YAZ-2293 D8)', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = [listRec('spans', [`[[${ID}]]`, '[[Sales]]']), { ...listRec('Lead Gen', []), id: ID }]
+    const { el } = mount(STATUS_BOARD, { records, folder: testFolderHost({ create, vaultRecords: records }) })
+
+    click(byLabel(el, 'New note in group [[Lead Gen]]'))
+    expect(seed()).toEqual({ status: [`[[${ID}]]`] })
   })
 
   it('the "No value" group still seeds nothing when the grouping is fanned out', () => {

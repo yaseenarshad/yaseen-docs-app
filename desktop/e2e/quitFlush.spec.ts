@@ -2,8 +2,8 @@
  * QUIT AND CLOSE NEVER LOSE AN EDIT (YAZ-2174, reliability R1). A keystroke typed a moment before ⌘Q
  * or ⌘W must be on disk once the app is gone. Main holds each window for its renderer's flush
  * handshake (GRO-2160, 5 s cap) and then DESTROYS it, which runs no React unmount — so a writer that
- * only saves on unmount loses its last edit. The note editor always joined the handshake; the folder
- * page's OUTLINE (its own 500 ms debounce on top of Crepe's 200 ms listener) joins it since YAZ-2174,
+ * only saves on unmount loses its last edit. The note editor always joined the handshake; a folder's
+ * OUTLINE view (its own 500 ms debounce on top of Crepe's 200 ms listener) joins it since YAZ-2174,
  * and before that lost the edit 5 of 5 times.
  *
  * No wait between the last keystroke and the quit/close: that is the case under test. The acceptance
@@ -17,6 +17,8 @@
  *
  * Same harness as the rest of the suite: a temp `--user-data-dir`, a COPY of the fixture.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -30,6 +32,7 @@ import {
   copyVault,
   editorOf,
   launchApp,
+  openFolder,
   outlineEditor,
   outlineLines,
   quitApp,
@@ -39,6 +42,8 @@ import {
 } from './helpers'
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
+/** The folder whose settings file ships a three-line outline document (YAZ-2290). */
+const OUTLINE_FOLDER = 'Funnel Stages'
 
 let app: ElectronApplication | null = null
 const dirs: string[] = []
@@ -90,17 +95,18 @@ test('note editor: an edit typed right before ⌘Q, while 230 files land in the 
 })
 
 for (const how of ['⌘Q', '⌘W'] as const) {
-  test(`folder-page outline: an edit typed right before ${how} is on disk`, async () => {
+  test(`folder outline: an edit typed right before ${how} is on disk`, async () => {
     const vault = await copyVault(FIXTURE)
     dirs.push(vault)
-    const file = path.join(vault, 'Home.md')
-    app = await launchApp({ userData: await tempDir('quitflush-outline-'), seedState: seededState(vault, file) })
+    // The outline is a string inside the folder's hidden settings file — that is where the edit lands.
+    const file = path.join(vault, OUTLINE_FOLDER, '.folder.md')
+    app = await launchApp({ userData: await tempDir('quitflush-outline-'), seedState: seededState(vault, null) })
     const win = await appWindow(app, 'w1')
+    await openFolder(win, path.join(vault, OUTLINE_FOLDER))
     const scope = contents(win)
     await expect(outlineEditor(scope)).toBeVisible({ timeout: 20_000 })
-    // Adoption's own first settings write (the five topics appended) lands before the probe.
-    await expect.poll(async () => (await readFile(file, 'utf8')).includes('[[Roles]]'), { timeout: 20_000 }).toBe(true)
-    await expect(outlineLines(scope)).toHaveCount(8, { timeout: 20_000 })
+    // The document as shipped: three lines, and opening wrote nothing — the probe is the only edit.
+    await expect(outlineLines(scope)).toHaveCount(3, { timeout: 20_000 })
     await caretAtEndOfLine(win, scope, 0)
     const marker = `OUTLINEPROBE${Date.now()}`
     await win.keyboard.type(` ${marker}`, { delay: 5 })
@@ -114,6 +120,6 @@ for (const how of ['⌘Q', '⌘W'] as const) {
     }
     app = null
     const onDisk = await readFile(file, 'utf8')
-    expect(onDisk.includes(marker), `Home.md after ${how}:\n${onDisk.slice(0, 600)}`).toBe(true)
+    expect(onDisk.includes(marker), `${OUTLINE_FOLDER}/.folder.md after ${how}:\n${onDisk.slice(0, 600)}`).toBe(true)
   })
 }

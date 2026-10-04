@@ -1,7 +1,10 @@
+import { createContext, useContext, type ReactNode } from 'react'
+import { isShortcut } from '../../links/shortcuts'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import { type Row, propertyLabel } from '../engine'
-import { ErrorValue, FileValue, LinkValue, type Value, render } from '../expr'
+import { ErrorValue, FileValue, LinkValue, type Resolver, type Value, linkText, render } from '../expr'
 import { summarize } from '../summaries'
+import { ShortcutIcon } from './icons'
 import { canonicalKey } from './keys'
 
 /**
@@ -13,7 +16,9 @@ import { canonicalKey } from './keys'
 /**
  * Stable string identity for one group, the key persisted in the app state's `baseGroups`:
  * `∅` for the trailing "No value" group, `v:<render(key)>` otherwise (the prefix keeps any
- * rendered value from colliding with the sentinel). Deterministic across sessions.
+ * rendered value from colliding with the sentinel). Deterministic across sessions — and `render`
+ * with NO resolver on purpose (YAZ-2293 D8): the key is the link as STORED, `v:[[<id>]]`, so
+ * renaming the note a group is headed by never reopens the group.
  */
 export const groupKeyOf = (key: Value | null): string => (key === null ? '∅' : `v:${render(key)}`)
 
@@ -33,10 +38,10 @@ export function summaryKindOf(view: ViewDef, key: string): string | undefined {
   return k !== undefined && typeof s[k] === 'string' ? s[k] : undefined
 }
 
-/** One value inside a list / link cell (shared with TableView's cells). */
-export function chip(v: Value, key?: number) {
+/** One value inside a list / link cell (shared with TableView's cells); through `resolve`, an id link reads as its note's title (`linkText`, YAZ-2293 D8). */
+export function chip(v: Value, key?: number, resolve?: Resolver) {
   const link = v instanceof LinkValue || v instanceof FileValue
-  const text = v instanceof LinkValue ? v.display ?? v.target : v instanceof FileValue ? v.record.basename : render(v)
+  const text = v instanceof LinkValue ? linkText(v, resolve) : v instanceof FileValue ? v.record.basename : render(v, resolve)
   return (
     <span key={key} className={`view-table__chip${link ? ' view-table__chip--link' : ''}`} title={text}>
       {text}
@@ -48,12 +53,26 @@ export function chip(v: Value, key?: number) {
  * The page's TITLE wherever a skin shows its `file.name` column (YAZ-1513/1549): the basename, never
  * the file name — one spelling for the table's name cell, the board's card title, the card's title
  * and the list's primary. `file.name`'s VALUE keeps its extension for sort and filter; only what
- * the eye reads is the name.
+ * the eye reads is the name. A row that is in the folder by a SHORTCUT (YAZ-2290 D2) wears the mark
+ * after it — here, so every skin marks it alike.
  */
-export const pageTitle = (row: Row): string => row.record.basename
+export const rowTitle = (row: Row): ReactNode => <RowTitle row={row} />
+
+/** The folder whose rows the skins are drawing, as the index names it; null (no folder host) marks nothing. */
+export const ViewFolder = createContext<string | null>(null)
+
+function RowTitle({ row }: { row: Row }) {
+  const folder = useContext(ViewFolder)
+  return (
+    <>
+      {row.record.basename}
+      {folder !== null && isShortcut(row.record, folder) && <ShortcutIcon />}
+    </>
+  )
+}
 
 /** Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
-export function cellContent(v: Value) {
+export function cellContent(v: Value, resolve?: Resolver) {
   if (v instanceof ErrorValue)
     return (
       <span className="view-table__chip view-table__chip--error" title={v.message}>
@@ -61,16 +80,16 @@ export function cellContent(v: Value) {
       </span>
     )
   if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
-  if (Array.isArray(v)) return v.map((item, i) => chip(item, i))
-  if (v instanceof LinkValue || v instanceof FileValue) return chip(v)
-  return render(v)
+  if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
+  if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
+  return render(v, resolve)
 }
 
 /** The group value by type: chips for lists and links/files, `render()` for the rest. */
-function groupValue(v: Value) {
-  if (Array.isArray(v)) return v.map((item, i) => chip(item, i))
-  if (v instanceof LinkValue || v instanceof FileValue) return chip(v)
-  return render(v)
+function groupValue(v: Value, resolve?: Resolver) {
+  if (Array.isArray(v)) return v.map((item, i) => chip(item, i, resolve))
+  if (v instanceof LinkValue || v instanceof FileValue) return chip(v, undefined, resolve)
+  return render(v, resolve)
 }
 
 export interface GroupHeaderProps {
@@ -86,10 +105,12 @@ export interface GroupHeaderProps {
   onToggle: () => void
   /** Create a note in this group (5D, GRO-2144); absent → no "+" affordance. */
   onNew?: () => void
+  /** The vault's resolver: a group keyed by an id link is headed by that note's title (YAZ-2293 D8). */
+  resolve?: Resolver
 }
 
-export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onToggle, onNew }: GroupHeaderProps) {
-  const label = groupKey === null ? 'No value' : render(groupKey)
+export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onToggle, onNew, resolve }: GroupHeaderProps) {
+  const label = groupKey === null ? 'No value' : render(groupKey, resolve)
   return (
     <div className="view-group">
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
@@ -98,7 +119,7 @@ export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onT
         </svg>
       </button>
       <span className={`view-group__value${groupKey === null ? ' view-group__value--none' : ''}`}>
-        {groupKey === null ? 'No value' : groupValue(groupKey)}
+        {groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
       </span>
       <span className="view-group__count">{rows.length}</span>
       {onNew !== undefined && (
@@ -114,7 +135,7 @@ export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onT
         return (
           <span key={key} className="view-group__summary" title={`${propertyLabel(def, key)} ${kind}`}>
             <span className="view-group__summary-kind">{kind}</span>
-            {render(summarize(kind, rows.map((r) => r.values[key]), def.summaries))}
+            {render(summarize(kind, rows.map((r) => r.values[key]), def.summaries), resolve)}
           </span>
         )
       })}

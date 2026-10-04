@@ -16,8 +16,8 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 
 test.describe.configure({ mode: 'serial' })
 
-/** The nav as the registry orders it (registry.tsx): four scroll sections, a divider, the one standalone page. */
-const NAV_ORDER = ['Appearance', 'Editor', 'Files & Links', 'Sync', '—', 'Hotkeys'] as const
+/** The nav as the registry orders it (registry.tsx): five scroll sections, a divider, the one standalone page. */
+const NAV_ORDER = ['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 

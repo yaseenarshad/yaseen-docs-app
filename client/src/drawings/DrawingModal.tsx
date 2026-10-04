@@ -5,7 +5,7 @@
  *
  * 🔒 A MODAL, NEVER A NODE VIEW. The embed stays plain markdown text under decorations (rule 27),
  * so there is no node to host an editor in — and a full drawing canvas inside a text column would
- * fight the caret for every key it owns. This is React beside the editor, the `FolderPageContents`
+ * fight the caret for every key it owns. This is React beside the editor, the `FolderView`
  * / `PageTitle` precedent: `Editor`'s `CrepeHost` holds `openDrawing`, the preview's click sets it
  * (`drawingPreview.onOpenDrawing`), and this renders over the window.
  *

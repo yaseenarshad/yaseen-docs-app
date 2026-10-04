@@ -15,7 +15,7 @@
  * the index stores no positions, and nothing is read until the section is expanded.
  */
 import type { IndexRecord } from '@shared/types'
-import { WIKILINK_RE, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { maskCode } from './renameLinks'
 
 /** Records whose links/embeds resolve to `path`, path-sorted; `path` itself never counts. */
@@ -26,18 +26,19 @@ function referencing(path: string, records: readonly IndexRecord[], resolve: Res
 }
 
 /**
- * Referencing sets per records array identity, then per path — `resolverFor`'s WeakMap idiom.
+ * Referencing sets per RESOLVER identity, then per path — `resolverFor`'s WeakMap idiom.
  * Every mounted tab's section recomputes on each ready snapshot, so one snapshot must cost one
- * pass per open path; a refetched index is a NEW array and recomputes (that IS the live update),
- * and dropped snapshots are collectable. The resolver is derived from the SAME snapshot
- * (memoized per its identity too), so records identity is the whole key.
+ * pass per open path; a refetched index swaps in a NEW resolver and recomputes (that IS the live
+ * update), and dropped snapshots are collectable. The window's source holds ONE resolver per
+ * snapshot — and per folder list (YAZ-2290 D10), which the records alone cannot tell apart — so
+ * its identity is the whole key.
  */
-const backlinkCache = new WeakMap<readonly IndexRecord[], Map<string, IndexRecord[]>>()
+const backlinkCache = new WeakMap<ResolveLink, Map<string, IndexRecord[]>>()
 
 /** The notes mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
 export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
-  let byPath = backlinkCache.get(records)
-  if (byPath === undefined) backlinkCache.set(records, (byPath = new Map()))
+  let byPath = backlinkCache.get(resolve)
+  if (byPath === undefined) backlinkCache.set(resolve, (byPath = new Map()))
   let hit = byPath.get(path)
   if (hit === undefined) byPath.set(path, (hit = referencing(path, records, resolve)))
   return hit
@@ -62,9 +63,9 @@ export interface MentionRange {
 export interface MentionSnippet {
   /**
    * The mention's line AS THE EDITOR SHOWS IT — every wikilink on it replaced by its display
-   * text (`linkDisplayText`; embeds and empty-display forms stay raw, exactly the decorations'
-   * rule) — whitespace-trimmed and windowed to ~`SNIPPET_MAX_CHARS` around the first mention
-   * (FN9, GRO-2197).
+   * text (`linkDisplayText`; an id link by its note's title, YAZ-2293; embeds and empty-display
+   * forms stay raw, exactly the decorations' rule) — whitespace-trimmed and windowed to
+   * ~`SNIPPET_MAX_CHARS` around the first mention (FN9, GRO-2197).
    */
   text: string
   /**
@@ -77,15 +78,17 @@ export interface MentionSnippet {
 /**
  * One snippet for the line owning the matches `line[first..]` (content coords) of `matches`,
  * anchored on `matches[first]` — the first TARGET mention on the line. Builds the display line
- * (every match replaced per `linkDisplayText`), records the [from, to) of each target mention,
- * then trims and windows centred on the first of them. Returns the content offset the line ends
- * at, so the caller can skip the matches this snippet consumed.
+ * (every match replaced per `linkDisplayText`, with `titleOf` naming the note an id link points
+ * at), records the [from, to) of each target mention, then trims and windows centred on the
+ * first of them. Returns the content offset the line ends at, so the caller can skip the matches
+ * this snippet consumed.
  */
 function lineSnippet(
   content: string,
   matches: readonly RegExpExecArray[],
   first: number,
   isMention: (m: RegExpExecArray) => boolean,
+  titleOf: (target: string) => string | undefined,
 ): { snippet: MentionSnippet; lineEnd: number } {
   const endOfLine = (pos: number): number => {
     const nl = content.indexOf('\n', pos)
@@ -110,7 +113,7 @@ function lineSnippet(
     text += content.slice(cursor, m.index)
     // Embeds are undecorated in the editor and empty-display forms stay raw (FN12): both keep
     // their raw text here too — the snippet reads exactly like the document.
-    const display = m[1] === '!' ? '' : linkDisplayText(m[2])
+    const display = m[1] === '!' ? '' : linkDisplayText(m[2], titleOf)
     const shown = display === '' ? m[0] : display
     if (isMention(m)) ranges.push({ from: text.length, to: text.length + shown.length })
     text += shown
@@ -161,7 +164,7 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
   const out: MentionSnippet[] = []
   for (let i = 0; i < matches.length && out.length < limit; i++) {
     if (!isMention(matches[i])) continue
-    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention)
+    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve))
     out.push(snippet)
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
   }

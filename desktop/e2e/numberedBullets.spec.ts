@@ -68,9 +68,9 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
     expect(mid).toBeLessThanOrEqual(p!.y + p!.height)
     // Hover-probe headroom under full-suite load (YAZ-819 → YAZ-847 → YAZ-848 → YAZ-904): every
     // wave that adds a spec ahead of this one leaves the machine warmer here, and the throttled
-    // mousemove is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts`, and again
-    // with 8H-'s `folderPageOutline.spec.ts`, which sorts ahead of this file and drives a second
-    // Milkdown instance. Healthy runs pass on the FIRST attempt and never spend any of this — the
+    // mousemove is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts` (since
+    // deleted, YAZ-2290), and again with 8H-'s outline spec (`folderOutline.spec.ts` today), which
+    // sorts ahead of this file and drives a second Milkdown instance. Healthy runs pass on the FIRST attempt and never spend any of this — the
     // budget only buys retries. NOTE the budget is only spendable because the steps that call this
     // raise their OWN timeout past it: a 30s probe inside a 30s test can never retry at all.
   }).toPass({ timeout: 30_000 })

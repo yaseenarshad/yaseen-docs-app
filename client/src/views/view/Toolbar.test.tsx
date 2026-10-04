@@ -3,7 +3,7 @@
  * Yasin's base. `onChange` is a spy that swaps in the new `ParsedViews` and re-renders, so every
  * assertion can read the YAML the file would get (`serializeViews`) next to the DOM.
  *
- * YAZ-846: the mount is a FOLDER PAGE's contents block, because that is the only mount there is.
+ * YAZ-846: the mount is the folder view's, because that is the only mount there is.
  * Two consequences run through this file — the **Filter** menu edits THIS view's `filters` and
  * nothing else (D1, YAZ-1227: a folder page's set IS the lookup, 🔒 Q3), and the tabs are
  * EDITABLE again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): the drag-to-reorder half is
@@ -14,17 +14,19 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
-import type { ColumnDecl } from '../folderPageSettings'
+import { testFolderHost } from '../testFolderHost'
+import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
 
 /** The document skin's editor is a real Crepe instance; the toolbar's own chrome is what is under test. */
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('./OutlineEditor', () => ({ OutlineEditor: () => null }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const FOLDER_PAGE = testFolderHost()
 
 /** Yasin's real base (also pinned in viewSchema.test.ts and engine.test.ts). */
 const YASIN_BASE = `views:
@@ -61,10 +63,10 @@ function mount(text = YASIN_BASE, props: Partial<ViewsPaneProps> = {}) {
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
-          root={null}
-          thisFile={null}
+          root="/vault"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -150,7 +152,7 @@ async function settle(): Promise<void> {
 }
 
 /**
- * A host that keeps its declarations AHEAD (YAZ-1549), as `FolderPageContents` does: each
+ * A host that keeps its declarations AHEAD (YAZ-1549), as `FolderView` does: each
  * `setColumn` lands in `settings.columns` at once, so the panel's next `base` is what just landed.
  */
 function aheadHost(columns: Record<string, ColumnDecl>) {
@@ -158,7 +160,7 @@ function aheadHost(columns: Record<string, ColumnDecl>) {
   const setColumn = vi.fn(async (key: string, next: ColumnDecl) => {
     settings.columns[key] = next
   })
-  return { settings, setColumn, folderPage: testFolderPage({ settings, setColumn }) }
+  return { settings, setColumn, folder: testFolderHost({ settings, setColumn }) }
 }
 
 /** Type into a TextField and commit with Enter (one onChange). */
@@ -636,7 +638,7 @@ describe('filter menu (YAZ-1227-1229)', () => {
   })
 
   it('an outline is a DOCUMENT, not rows: no button at all', () => {
-    const { el } = mount('views:\n  - type: outline\n    name: Outline\n', { thisFile: '/vault/Topic.md' })
+    const { el } = mount('views:\n  - type: outline\n    name: Outline\n', { folderPath: '/vault/Topic.md' })
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull()
   })
 
@@ -1043,7 +1045,7 @@ views:
   - type: table
     name: Other
     order: [file.name]
-`, { records, folderPage: testFolderPage({ settings, vaultRecords: records }) })
+`, { records, folder: testFolderHost({ settings, vaultRecords: records }) })
     const before = structuredClone(def())
     const pop = openMenu(el, 'Properties')
     const select = byText<HTMLButtonElement>(pop, 'button', 'Select all')
@@ -1261,7 +1263,7 @@ views:
 
   it('the folder page’s DECLARED columns are offered too, valueless or not (YAZ-895)', () => {
     const settings = { columns: { owner: { kind: 'link' as const } }, views: [], problems: [] }
-    const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ settings }) })
     expect(byLabel(openMenu(el, 'Properties'), 'Show Owner')).toBeDefined()
   })
 
@@ -1269,7 +1271,7 @@ views:
     const name = 'campaign_narrative_summary'
     const label = 'Campaign narrative summary' // the default label (YAZ-1513); the key rides in the <small>
     const settings = { columns: { [name]: { kind: 'text' as const } }, views: [], problems: [] }
-    const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ settings }) })
     const pop = openMenu(el, 'Properties')
     const row = byLabel(pop, `Show ${label}`).closest<HTMLElement>('.view-prop')
     expect(row).not.toBeNull()
@@ -1286,7 +1288,7 @@ views:
   it('+ Add column declares it and shows it, in ONE write (YAZ-896)', () => {
     const setColumns = vi.fn()
     const settings = { columns: { tag: { kind: 'text' as const } }, views: [], problems: [] }
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings, setColumns }) })
+    const { el, onChange } = mount(undefined, { folder: testFolderHost({ settings, setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
     setValue(byLabel(pop, 'Column name'), 'budget')
@@ -1305,7 +1307,7 @@ views:
 
   it('an invalid or already-taken column name says so and writes nothing', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
     setValue(byLabel(pop, 'Column name'), 'Budget!')
@@ -1319,7 +1321,7 @@ views:
 
   it('the target is offered for link kinds only, and lands in the declaration', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
     expect(pop.querySelector('[aria-label="Link target"]')).toBeNull()
@@ -1332,8 +1334,8 @@ views:
 
   it("a declared link column's target writes on commit — trimmed, against the captured base — and an emptied field removes it against what just landed (3D)", async () => {
     const base = { kind: 'link' as const, target: 'People' }
-    const { setColumn, folderPage } = aheadHost({ owner: base, tag: { kind: 'text' } })
-    const { el } = mount(undefined, { root: '/vault', folderPage })
+    const { setColumn, folder } = aheadHost({ owner: base, tag: { kind: 'text' } })
+    const { el } = mount(undefined, { root: '/vault', folder })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Owner'))
     expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('People')
@@ -1347,7 +1349,7 @@ views:
 
   it('a target typed under a link kind does not ride into a non-link declaration', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
     choosePropertyType(pop, 'Link')
@@ -1361,7 +1363,7 @@ views:
   it('a declared column shows its kind in the Type select; changing it writes that definition immediately, and nothing else', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const settings = { columns: { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }, views: [], problems: [] }
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings, setColumn }) })
+    const { el, onChange } = mount(undefined, { folder: testFolderHost({ settings, setColumn }) })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Owner'))
     const select = byLabel<HTMLSelectElement>(pop, 'Edit property Owner')
@@ -1373,7 +1375,7 @@ views:
 
   it('an undeclared note key reads Auto; picking a kind declares it immediately', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ setColumn }) })
+    const { el, onChange } = mount(undefined, { folder: testFolderHost({ setColumn }) })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     const select = byLabel<HTMLSelectElement>(pop, 'Edit property Status')
@@ -1398,8 +1400,8 @@ views:
 
   it.each(['table', 'board'])('%s definition edits write immediately (3D): a type change, then an option-order change, each ONE setColumn against the previous', async viewType => {
     const base = { kind: 'select' as const, options: ['Later', 'Ready'], optionSort: 'manual' as const }
-    const { setColumn, folderPage } = aheadHost({ status: base })
-    const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folderPage })
+    const { setColumn, folder } = aheadHost({ status: base })
+    const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folder })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('select')
@@ -1418,7 +1420,7 @@ views:
   it('a refused declaration write (changed since opened) shows its text inline and refreshes the panel from the live settings (3D)', async () => {
     const base = { kind: 'text' as const }
     const setColumn = vi.fn().mockRejectedValue(new Error('Property “status” changed since these settings were opened. Reopen the property and try again.'))
-    const { el } = mount(undefined, { folderPage: testFolderPage({ settings: { columns: { status: base }, views: [], problems: [] }, setColumn }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ settings: { columns: { status: base }, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     setValue(byLabel(pop, 'Edit property Status'), 'date')
@@ -1430,8 +1432,8 @@ views:
 
   it('options (3D): add, reorder and remove each write the declaration immediately, against what just landed', async () => {
     const base = { kind: 'select' as const, options: ['A', 'B'] }
-    const { setColumn, folderPage } = aheadHost({ status: base })
-    const { el, onChange } = mount(undefined, { folderPage })
+    const { setColumn, folder } = aheadHost({ status: base })
+    const { el, onChange } = mount(undefined, { folder })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect([...pop.querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
@@ -1469,7 +1471,7 @@ views:
 
   it('new Select columns retain their option sort mode and start with blank options', () => {
     const setColumns = vi.fn()
-    const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+    const { el } = mount(undefined, { folder: testFolderHost({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
     setValue(byLabel(pop, 'Column name'), 'stage')
@@ -1517,7 +1519,7 @@ views:
 
   it('the conditional sections (YAZ-1513): Options only for Select kinds, Relation only for note keys with a root, card styling only on a board', () => {
     const settings = { columns: { status: { kind: 'select' as const, options: ['A', 'B'] }, owner: { kind: 'link' as const, target: '[[People]]' } }, views: [], problems: [] }
-    const { el } = mount(undefined, { root: '/vault', folderPage: testFolderPage({ settings }) })
+    const { el } = mount(undefined, { root: '/vault', folder: testFolderHost({ settings }) })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect([...q(pop, '[aria-label="Property options"]').querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
@@ -1547,12 +1549,12 @@ views:
 
   it('the actions row (YAZ-1513): Delete column… asks first with the label, key and member count; Cancel deletes nothing; Delete calls the ONE door', () => {
     const deleteColumn = vi.fn(async () => {})
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ deleteColumn }) })
+    const { el, onChange } = mount(undefined, { folder: testFolderHost({ deleteColumn }) })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     click(byLabel(pop, 'Delete column Status'))
     const sheet = q<HTMLElement>(pop, '.confirm[role="dialog"]')
-    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this page and the "status" value from 5 notes.')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this folder and the "status" value from 5 notes.')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(pop.querySelector('.confirm')).toBeNull()
     expect(deleteColumn).not.toHaveBeenCalled()
@@ -1564,12 +1566,12 @@ views:
     expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
   })
 
-  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and app-owned keys, enabled for a plain note key', () => {
+  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, enabled for a plain note key — a retired `folder_pages` is one (YAZ-2290 D6)', () => {
     const deleteColumn = vi.fn(async () => {})
-    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', folder_pages: ['[[Home]]'] } }]
-    const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.folder_pages, formula.score]\n`, { records, folderPage: testFolderPage({ deleteColumn, vaultRecords: records }) })
+    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', folder_pages: ['[[Home]]'], comments: [] } }]
+    const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.folder_pages, note.comments, formula.score]\n`, { records, folder: testFolderHost({ deleteColumn, vaultRecords: records }) })
     const pop = openMenu(el, 'Properties')
-    for (const [label, disabled] of [['Name', true], ['Score', true], ['Folder pages', true], ['Status', false]] as const) {
+    for (const [label, disabled] of [['Name', true], ['Score', true], ['Comments', true], ['Folder pages', false], ['Status', false]] as const) {
       click(byLabel(pop, `Open ${label}`))
       const del = byLabel<HTMLButtonElement>(pop, `Delete column ${label}`)
       expect(del.disabled).toBe(disabled)
@@ -1580,7 +1582,7 @@ views:
 
   it('a label shared by two rows — file.name and a `name` property both read "Name" — shows the key beside BOTH, and nowhere else (YAZ-1549)', () => {
     const records = [{ ...TEST_RECORDS[0], properties: { name: 'alias', status: 'idea' } }]
-    const { el } = mount('views:\n  - type: table\n    name: T\n    order: [file.name, note.name, note.status]\n', { records, folderPage: testFolderPage({ vaultRecords: records }) })
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order: [file.name, note.name, note.status]\n', { records, folder: testFolderHost({ vaultRecords: records }) })
     const pop = openMenu(el, 'Properties')
     const rows = [...pop.querySelectorAll<HTMLElement>('.view-prop')]
     const keyed = rows.map((row) => row.querySelector('.view-prop__name small')?.textContent ?? null)
@@ -1607,6 +1609,20 @@ describe('search, count and body', () => {
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'drafting')
     expect(rows(el)).toEqual(['The Levels of an Agency'])
+  })
+
+  it('search finds a row by the TITLE of a note it links to by id (YAZ-2293 D8)', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = TEST_RECORDS.map((r) =>
+      r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
+    )
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.related\n', { records, folder: testFolderHost({ vaultRecords: records }) })
+    click(byLabel(el, 'Search'))
+    setValue(byLabel(el, 'Search rows'), 'attrib')
+    expect(rows(el)).toEqual(['Attribution', 'VSL-v1'])
+    // …and no longer by the id nobody sees.
+    setValue(byLabel(el, 'Search rows'), ID)
+    expect(rows(el)).toEqual([])
   })
 
   it('a view limit also reduces the count to shown / total', () => {
@@ -1640,9 +1656,9 @@ describe('the notes line', () => {
     expect(el.querySelector('.views-pane__notes')).toBeNull()
   })
 
-  it("lists the settings' problems — the one-liners folderPageSettings collects while ignoring an unusable key", () => {
+  it("lists the settings' problems — the one-liners folderSettings collects while ignoring an unusable key", () => {
     const problems = ['folder_page_settings.folder must be a root-relative folder name — ignoring it']
-    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: { columns: {}, views: [], problems } }) })
+    const { el } = mount(YASIN_BASE, { folder: testFolderHost({ settings: { columns: {}, views: [], problems } }) })
     const note = q<HTMLElement>(el, '.views-pane__notes')
     expect(note.getAttribute('role')).toBe('note') // a note, never an alert: nothing here failed
     expect(note.textContent).toBe(problems[0])
@@ -1659,7 +1675,7 @@ describe('the notes line', () => {
   it('joins both halves into ONE line — the settings first, then the engine', () => {
     const problems = ['folder_page_settings must be a map of settings — using the defaults']
     const { el } = mount('filters: 1 +\nviews:\n  - type: table\n    name: T\n    order:\n      - file.name\n', {
-      folderPage: testFolderPage({ settings: { columns: {}, views: [], problems } }),
+      folder: testFolderHost({ settings: { columns: {}, views: [], problems } }),
     })
     const notes = el.querySelectorAll('.views-pane__notes')
     expect(notes).toHaveLength(1)
@@ -1681,20 +1697,6 @@ describe('popover behaviour', () => {
     })
     draw()
     expect(el.querySelector('.view-popover')).toBeNull()
-  })
-})
-
-/**
- * "Sync from folder" (YAZ-953). The gesture appends a disk folder's notes to the outline DOCUMENT,
- * so the button rides that skin and no other: a table or a board has nothing to append them to.
- */
-describe('sync from folder', () => {
-  const OUTLINE = 'views:\n  - type: outline\n    name: Outline\n'
-
-  it('the button is offered on the document skin, and only there', () => {
-    expect(mount().el.querySelector('[aria-label="Sync from folder"]')).toBeNull() // the table skin
-    expect(mount(OUTLINE).el.querySelector('[aria-label="Sync from folder"]')).toBeNull() // no folder page under it, no document
-    expect(byLabel(mount(OUTLINE, { thisFile: '/vault/Topic.md' }).el, 'Sync from folder')).toBeDefined()
   })
 })
 
@@ -1928,7 +1930,7 @@ describe('preview mode toggle (YAZ-1244)', () => {
     click(byText(el, '[role="tab"]', 'View')) // the cards view
     expect(el.querySelector(`[aria-label="${EYE}"]`)).toBeNull()
     expect(byLabel(mount(BOARD_VIEW).el, EYE)).toBeDefined()
-    expect(mount(OUTLINE_VIEW, { thisFile: '/vault/Topic.md' }).el.querySelector(`[aria-label="${EYE}"]`)).toBeNull()
+    expect(mount(OUTLINE_VIEW, { folderPath: '/vault/Topic.md' }).el.querySelector(`[aria-label="${EYE}"]`)).toBeNull()
   })
 
   it('toggling writes preview: true in ONE write and toggling off cleans the YAML', () => {
@@ -2092,7 +2094,7 @@ views:
 
   it('declared-only columns remain available in Properties and Sort', () => {
     const { el, onChange } = mount(SEARCHABLE, {
-      folderPage: testFolderPage({ settings: { columns: { owner: { kind: 'text' } }, views: [], problems: [] } }),
+      folder: testFolderHost({ settings: { columns: { owner: { kind: 'text' } }, views: [], problems: [] } }),
     })
     const properties = openMenu(el, 'Properties')
     setValue(byLabel(properties, 'Search columns'), 'owner')
@@ -2216,7 +2218,7 @@ describe('folder-local relation shortcut', () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const base = { kind: 'link' as const, target: '[[Local People]]' }
     const properties = { root: '/vault', version: 1, properties: { owner: { kind: 'multi-link' as const, target: '[[Global People]]' } } }
-    const { el, onChange } = mount(undefined, { root: '/vault', properties, folderPage: testFolderPage({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
+    const { el, onChange } = mount(undefined, { root: '/vault', properties, folder: testFolderHost({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Owner'))
     expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[Local People]]') // the local declaration, not the legacy one
@@ -2228,8 +2230,8 @@ describe('folder-local relation shortcut', () => {
 
   it('Make relation seeds from legacy metadata against a missing local base, in ONE immediate write; nothing is written before the click', async () => {
     const legacy = { kind: 'multi-link' as const, target: '[[Global People]]' }
-    const { setColumn, folderPage } = aheadHost({})
-    const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folderPage })
+    const { setColumn, folder } = aheadHost({})
+    const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folder })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect(setColumn).not.toHaveBeenCalled()

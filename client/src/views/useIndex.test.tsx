@@ -40,6 +40,7 @@ const rec = (path: string): IndexRecord => ({
 const response = (root: string, ...paths: string[]): IndexResponse => ({
   root,
   records: paths.map(rec),
+  folders: [],
   generatedAt: 1,
 })
 

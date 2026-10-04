@@ -12,6 +12,12 @@ describe('allPropertyKeys', () => {
     expect(allPropertyKeys(def, view, TEST_RECORDS, { owner: { kind: 'link' } })).toContain('note.owner')
   })
 
+  it("a note's `id` is not shown by default but stays OFFERED, so a view can add it as a column (YAZ-2293)", () => {
+    const withIds = TEST_RECORDS.map((r, i) => ({ ...r, id: `k3m9x2pq7ab${i}`, properties: { ...r.properties, id: `k3m9x2pq7ab${i}` } }))
+    expect(allPropertyKeys(def, view, withIds)).toContain('note.id')
+    expect(allPropertyKeys(def, view, TEST_RECORDS)).not.toContain('note.id')
+  })
+
   it('a declared column already seen in the values is listed once, not twice', () => {
     const keys = allPropertyKeys(def, view, TEST_RECORDS, { status: { kind: 'text' } })
     expect(keys.filter((k) => k === 'note.status')).toEqual(['note.status'])

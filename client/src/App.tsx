@@ -16,6 +16,7 @@ import { useMenuEvents } from './hooks/useMenuEvents'
 import { requestZoom } from './editor/zoomRequest'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
+import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
@@ -23,7 +24,7 @@ import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
 import { NoticeIcon } from './components/NoticeIcon'
-import { basename } from './lib/paths'
+import { basename, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
@@ -33,9 +34,13 @@ import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
+import { isFolderPath } from './lib/pageLabel'
+import { onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
-import { useEnsureHome } from './sidebar/ensureHome'
+import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
+import { useReview } from './review/useReview'
+import { useReviewSettings } from './review/useReviewSettings'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
@@ -52,7 +57,7 @@ function syncHash(path: string | null): void {
 
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
-// with it: a folder page's Board runs layout animation after every render, so an unrelated right
+// with it: a folder's Board runs layout animation after every render, so an unrelated right
 // header click would otherwise remeasure and visibly nudge its cards.
 const RetainedEditor = memo(Editor)
 
@@ -114,16 +119,19 @@ export function App() {
   // vault index, so index changes restyle links live without any editor remounting. The stable
   // navigation-only source beside it is tree-derived; only the picker's rows compose both feeds.
   const [wikilinks] = useState(createWikilinkResolveSource)
+  /** A note's id off the index snapshot (YAZ-2293): what the sidebar row's and the tab's "Copy ID" copy. */
+  const noteId = useCallback((path: string) => wikilinks.records.find((r) => r.path === path)?.id, [wikilinks])
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
   const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
   // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
   // ONE per window, threaded down rather than re-fetched per surface. It is the editor ladder's
-  // rung 2 inside a folder page's contents block (YAZ-846) — Editor → FolderPageContents.
+  // rung 2 inside a folder's views (YAZ-846) — Editor → FolderView.
   const { properties: propertyDecls } = useProperties(root)
   // GitHub sync (YAZ-1081 3A/3B), owned here for the same reason: ONE per window. Two surfaces
   // read it — the editor's chip (every mounted tab) and the settings cog's section — and they
   // must never disagree, which two hooks watching the same root eventually would.
   const githubSync = useGithubSync(root)
+  const reviewSettings = useReviewSettings(root)
   // The attention banner (3B): passive, exactly like the external-rename one — `role="status"`,
   // explicit buttons, never a modal. Sync failing is not worth stealing focus over; the vault
   // still works, and the note in front of the user is untouched.
@@ -244,7 +252,7 @@ export function App() {
   // Files & Links (C2-, GRO-2240; YAZ-1643): where a bare unresolved [[link]] creates its page —
   // the "default location for new notes" setting resolved against this window's root + the
   // CALLING editor's own path (`sourcePath`: the page the link was clicked or typed in, so a
-  // right-panel or folder-page editor creates beside itself, never beside the main tab).
+  // right-panel editor or a folder's outline creates beside itself, never beside the main tab).
   // A ref-backed getter: the value recomputes at CLICK time from whatever settings are current
   // (settings changes broadcast via storage.subscribe land in `settings` above), while the
   // callback identity stays stable — it sits in CrepeHost's effect deps, and a new identity
@@ -287,9 +295,14 @@ export function App() {
 
   // The OS window title mirrors what is open (C3, GRO-2165) under the vault's display name (YAZ-1974 D4); Electron follows document.title.
   const vaultName = useVaultName(root)
+  // Whether the active tab is a FOLDER is the Files tree's to say (YAZ-2290), so the title follows the tree too.
   useEffect(() => {
-    document.title = windowTitle(vaultName, file)
-  }, [vaultName, file])
+    const sync = (): void => {
+      document.title = windowTitle(vaultName, file, file !== null && isFolderPath(root, file))
+    }
+    sync()
+    return root === null ? undefined : onTree(root, sync)
+  }, [vaultName, file, root])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -362,16 +375,15 @@ export function App() {
   const showInSidebar = useCallback((path: string) => {
     if (sidebarCollapsed) toggleSidebar()
     // Favorites is a SUBSET of the vault (YAZ-1766 D1): a reveal there hops to Files, where every row exists.
-    const lens = sidebarLens === 'favorites' ? 'files' : sidebarLens
-    if (lens !== sidebarLens) changeLens(lens)
-    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens })
+    if (sidebarLens !== 'files') changeLens('files')
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
 
   // A folder search row (🔒 D3, YAZ-1491): always the FILES lens, whichever tab was showing. The
   // sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
   const revealInFiles = useCallback((path: string) => {
     changeLens('files')
-    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: 'files' })
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
   }, [changeLens])
 
   const consumeSidebarReveal = useCallback((id: number) => {
@@ -384,10 +396,6 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
-
-  // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
-  // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;
@@ -402,6 +410,23 @@ export function App() {
     return () => clearTimeout(timer)
   }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: notify })
+  // Upkeep review (YAZ-2322): the Inbox count and the window's one session, read off the SAME index
+  // source the wikilinks use. App's, because the sidebar that shows the count unmounts while collapsed.
+  const review = useReview(root, wikilinks, reviewSettings.settings, notify)
+  // A link clicked in a tab's page opens in that tab. While a review is open it opens in a
+  // background tab instead: the review stays in front and the active tab under it does not move.
+  // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
+  const reviewing = useRef(false)
+  reviewing.current = review.session !== null
+  const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : openCurrent)(path), [openBackground, openCurrent])
+  // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
+  const closeReview = review.close
+  useEffect(() => closeReview(), [file, closeReview])
+
+  // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
+  // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
+  // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322).
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: review.session === null ? closeTabOrWindow : closeReview, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
@@ -461,14 +486,6 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // HOME (6C-, YAZ-849): every ADOPTED vault gets one the first time its index lands — one
-  // `Home.md` carrying `folder_page: true`, created automatically, never twice, never over
-  // anything. An UN-ADOPTED folder (no `.yaseendocs/`) is not written into at all: `unadopted`
-  // rides down to the Topics lens, which offers a card whose button runs the same create. It
-  // belongs HERE, beside the window's one index feed, because Home is born on VAULT OPEN — the
-  // sidebar is unmounted while collapsed, and the Topics tree only exists on its own lens.
-  const { unadopted, createHome } = useEnsureHome(root, wikilinks, openCurrent, notify)
-
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector fed by the cold-start reconcile diff and by
   // consecutive index snapshots (WikilinkIndexBridge's onSnapshot below), surfacing ONE
@@ -477,7 +494,7 @@ export function App() {
   // the referencing notes; Dismiss → drop for this session. In-app renames are suppressed
   // through the file:renamed effect below, so their watcher echo never banners.
   const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, notify)
-  const relLabel = useCallback((p: string) => (root !== null && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p), [root])
+  const relLabel = useCallback((p: string) => (root === null ? p : relTo(root, p)), [root])
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
   // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
@@ -523,11 +540,14 @@ export function App() {
       await flushRenamedPath(oldPath)
       await flushRenamedDir(oldPath)
       let records: Awaited<ReturnType<typeof api.index>>['records'] = []
+      let folders: typeof records = []
       try {
-        records = (await api.index(r)).records
+        ;({ records, folders } = await api.index(r))
       } catch {
         records = [] // no index snapshot → the rename still runs, links just stay as they are
       }
+      // The folders as they stand BEFORE the rename too: a link to a folder resolves over them (YAZ-2290 D10).
+      const dirs = vaultDirs(r)
       let kind: 'file' | 'dir'
       try {
         kind = (await api.file.rename({ oldPath, newPath })).kind
@@ -545,6 +565,8 @@ export function App() {
         newPath,
         kind,
         records,
+        folders,
+        dirs,
         ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
       })
       if (summary.updated > 0 || summary.skipped > 0) notify(renameNotice(summary))
@@ -564,7 +586,7 @@ export function App() {
    * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
    * The chosen snapshot is pinned through confirmation, and a root change cancels the request.
    */
-  const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; newPath: string; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
+  const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; newPath: string; kind: 'file' | 'dir'; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
   const renameRootGeneration = useRef(0)
   useLayoutEffect(() => {
     renameRootGeneration.current++
@@ -613,14 +635,15 @@ export function App() {
         root,
         oldPath,
         newPath,
-        count: countLinkReferences({ root, oldPath, kind, records, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+        kind,
+        count: countLinkReferences({ root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
         viewOnlyCatalog: catalog,
       })
     },
     [root, catalogForRename, renameFile, wikilinks],
   )
   const requestEditorRename = useCallback(
-    (oldPath: string, newPath: string) => requestRename(oldPath, newPath, 'file'),
+    (oldPath: string, newPath: string, kind: TreeNode['type'] = 'file') => requestRename(oldPath, newPath, kind),
     [requestRename],
   )
 
@@ -715,7 +738,13 @@ export function App() {
     // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
     commentsOrder: settings.commentsOrder,
     onChangeCommentsOrder: changeCommentsOrder,
+    reviewSettings: reviewSettings.settings,
   }
+
+  // While a review is open (YAZ-2322) the main pane shows ITS notecard, not the active tab's page.
+  // The tabs, their history and the right panel are not touched: closing the review uncovers them.
+  const session = review.session
+  const shown = session === null ? file : session.path
 
   const dropOnMain = (page: PageDrag, at: number): void => {
     if (page.owner === 'right') transferRightToMain(page.path, at)
@@ -742,7 +771,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled } }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled }, review: root === null ? undefined : reviewSettings }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -781,6 +810,7 @@ export function App() {
         <Sidebar
           key={root}
           root={root}
+          noteId={noteId}
           activeFile={file}
           watch={watch}
           onOpenFile={openCurrent}
@@ -806,7 +836,7 @@ export function App() {
           selectionRef={sidebarSelection}
           // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
           clipboardRef={sidebarClipboard}
-          // The folder-page toggle's flag state (YAZ-840) reads the SAME per-window index source
+          // The folder rows' notecard counts (🔒 E6, YAZ-2290) read the SAME per-window index source
           // WikilinkIndexBridge already feeds below — read-only, and no second feed.
           indexSource={wikilinks}
           pendingSearchFocus={pendingSearchFocus}
@@ -815,13 +845,18 @@ export function App() {
           switcherOpenRequest={switcherRequest.root === root ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
           onOpenVaultHere={openRoot}
-          // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
-          unadopted={unadopted}
-          onCreateHome={createHome}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
           asideRef={sidebarRef}
+          // The Inbox row (YAZ-2322): it opens the review, and closes the one that is open.
+          dueCount={review.dueCount}
+          reviewing={review.session !== null}
+          onOpenInbox={() => (review.session === null ? review.start() : review.close())}
+          // The menu names the folder by its absolute path; a session takes it relative to the vault.
+          onReviewFolder={(dir) => review.start(relLabel(dir))}
+          reviewState={review.inReview}
+          onSetReview={review.setInReview}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -833,39 +868,65 @@ export function App() {
       ) : (
         <div className="workspace">
           <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onIndexSnapshot} />
-          {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
-          <TabBar
-            tabs={tabs}
-            active={file}
-            onActivate={activate}
-            onClose={closeTab}
-            onMove={moveTab}
-            onDropPage={dropOnMain}
-            onMoveToRight={(path) => transferMainToRight(path, rightPanel.items.length)}
-            canBack={canBack}
-            canForward={canForward}
-            onBack={back}
-            onForward={forward}
-            onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
-            onShowInSidebar={showInSidebar}
-            onNotice={notify}
-          />
+          {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs.
+              A review (YAZ-2322) is not a tab: its bar stands in the strip's place until it closes. */}
+          {session !== null ? (
+            <ReviewBar session={session} onKeep={review.keep} onSkip={review.skip} onUndo={review.undo} onClose={review.close} />
+          ) : (
+            <TabBar
+              root={root}
+              tabs={tabs}
+              active={file}
+              onActivate={activate}
+              onClose={closeTab}
+              onMove={moveTab}
+              onDropPage={dropOnMain}
+              onMoveToRight={(path) => transferMainToRight(path, rightPanel.items.length)}
+              canBack={canBack}
+              canForward={canForward}
+              onBack={back}
+              onForward={forward}
+              onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
+              onShowInSidebar={showInSidebar}
+              onNotice={notify}
+              noteId={noteId}
+              reviewState={review.inReview}
+              onSetReview={review.setInReview}
+            />
+          )}
           <div className="tabstack">
-            {mounted.length === 0 && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+            {mounted.length === 0 && session === null && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
               // for why display:none would lose scroll positions.
-              <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
-                {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                {editorCommon !== null && <RetainedEditor {...editorCommon} path={path} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+              <div key={path} className={path === shown ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
+                {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. */}
+                {editorCommon !== null && <RetainedEditor {...editorCommon} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} />}
               </div>
             ))}
+            {/* A review's notecard (YAZ-2322) shows through its own tab's layer, above, when it has
+                one. Open in the side panel it is reviewed THERE. Otherwise it gets the one extra
+                layer, whose links open in background tabs so the review stays in front. Two editors
+                on one path would run two autosaves, so there is never a second. */}
+            {session !== null &&
+              (session.path === null || (rightPanel.open && rightPanel.items.includes(session.path)) ? (
+                <ReviewMessage session={session} onClose={review.close} />
+              ) : (
+                !mounted.includes(session.path) &&
+                editorCommon !== null && (
+                  <div key={session.path} className="tabstack__layer">
+                    <RetainedEditor {...editorCommon} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} />
+                  </div>
+                )
+              ))}
           </div>
+          {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
       )}
       {root !== null && rightPanel.open && (
         <RightPanel
+          root={root}
           items={rightPanel.items}
           expanded={rightPanel.expanded}
           width={rightPanel.width}
@@ -912,6 +973,7 @@ export function App() {
         <ConfirmRename
           oldPath={pendingRename.oldPath}
           newPath={pendingRename.newPath}
+          kind={pendingRename.kind}
           count={pendingRename.count}
           onConfirm={confirmRename}
           onCancel={() => setPendingRename(null)}

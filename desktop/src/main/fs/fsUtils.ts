@@ -191,6 +191,11 @@ export async function atomicWrite(file: string, content: string | Uint8Array): P
  * `link` failure (exFAT/FAT have no hard links) gets a fsynced `wx` write straight onto the name
  * instead: still never over anything — a rename could replace a file created in between. Parent
  * dir must exist.
+ *
+ * The link only CLAIMS the name (YAZ-2380): the same bytes are then renamed in over it. macOS
+ * reports nothing at all when a file whose first name was a since-removed hard link is later
+ * deleted, so a note left on the linked inode could be deleted outside the app and stay in the
+ * tree and the index for good. A renamed-in file — what every save already leaves — is seen to go.
  */
 export async function createDurable(file: string, content: string | Uint8Array): Promise<void> {
   const tmp = tmpSibling(file)
@@ -200,8 +205,9 @@ export async function createDurable(file: string, content: string | Uint8Array):
       await link(tmp, file)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST') throw err
-      await writeDurable(file, content, 'wx')
+      return await writeDurable(file, content, 'wx')
     }
+    await atomicWrite(file, content)
   } finally {
     await unlink(tmp).catch(() => undefined)
   }
