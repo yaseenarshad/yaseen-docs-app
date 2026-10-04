@@ -188,6 +188,9 @@ function readDefaultView(raw: unknown, problems: string[]): string | undefined {
   return undefined
 }
 
+/** Whether the folder SAVED settings: its `.folder.md` holds the key with a value. */
+export const hasFolderSettings = (record: IndexRecord | undefined): boolean => record?.properties[FOLDER_SETTINGS_KEY] != null
+
 /**
  * A FOLDER's settings (YAZ-2290 D1/E2), off its `.folder.md` record. Until that file saves any, the
  * folder has the defaults — the default views and the default Status column — and nothing is

@@ -1,9 +1,9 @@
 /**
  * Delete column (YAZ-1513): the declaration goes, every view reference goes, the label goes — ONE
- * settings write through the host's door — and the key is stripped from every direct resident that
- * carries it, byte-preserving everything else. Members without the key are never written; a note
- * whose frontmatter will not parse is reported, never rewritten; built-in keys are refused before
- * anything is touched. `transformFile` is stubbed over an in-memory disk so the strips are real
+ * settings write through the host's door — and the key is stripped from every note the folder shows
+ * that carries it, byte-preserving everything else, unless another folder showing the note has a
+ * column of that name. Notes without the key are never written; a note whose frontmatter will
+ * not parse is reported, never rewritten; built-in keys are refused before anything is touched. `transformFile` is stubbed over an in-memory disk so the strips are real
  * `setFrontmatterProperty` rewrites.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,11 +22,12 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { transformFile } from './writeProperty'
-import { deleteColumn, filterMentions, residentsCarrying, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
+import { deleteColumn, filterMentions, notesCarrying, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
 
 const rec = (path: string, properties: Record<string, unknown>): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
-  return { path, name, basename: name.replace(/\.md$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }
+  const folder = path.slice('/vault/'.length, Math.max('/vault/'.length, path.lastIndexOf('/')))
+  return { path, name, basename: name.replace(/\.md$/, ''), folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }
 }
 
 const A = '/vault/a.md'
@@ -59,7 +60,9 @@ beforeEach(() => {
 const host = (over: Partial<DeleteColumnHost> = {}): DeleteColumnHost => ({
   columns: { status: { kind: 'select', options: ['1-Backlog', '2-Todo'] }, owner: { kind: 'link' } },
   def: { views: [TABLE, BOARD, OUTLINE], properties: { status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } } } as ViewSet,
-  residents: [rec(A, { title: 'A', status: '2-Todo', owner: '[[Sam]]' }), rec(B, { title: 'B', owner: '[[Kim]]' }), rec(C, { status: '1-Backlog' })],
+  rows: [rec(A, { title: 'A', status: '2-Todo', owner: '[[Sam]]' }), rec(B, { title: 'B', owner: '[[Kim]]' }), rec(C, { status: '1-Backlog' })],
+  folder: '',
+  folders: [],
   writeSettings: vi.fn(async () => {}),
   ...over,
 })
@@ -145,14 +148,14 @@ describe('the pure pruners', () => {
     expect(pruneColumnLabel(undefined, 'status')).toBeUndefined()
   })
 
-  it('residentsCarrying counts the direct residents whose card holds the exact key', () => {
-    expect(residentsCarrying(host().residents, 'note.status').map((m) => m.basename)).toEqual(['a', 'c'])
-    expect(residentsCarrying(host().residents, 'owner').map((m) => m.basename)).toEqual(['a', 'b'])
+  it('notesCarrying lists the rows whose frontmatter holds the exact key', () => {
+    expect(notesCarrying(host().rows, 'note.status', '', []).strip.map((m) => m.basename)).toEqual(['a', 'c'])
+    expect(notesCarrying(host().rows, 'owner', '', []).strip.map((m) => m.basename)).toEqual(['a', 'b'])
   })
 })
 
 describe('deleteColumn', () => {
-  it('writes the settings ONCE — declaration gone, references pruned, label gone — then strips the key from the carrying residents, byte-preserving every other key', async () => {
+  it('delete a column from a folder: it leaves the folder’s settings and every view that used it — ONE settings write, label gone — then the key is stripped from the notes carrying it, byte-preserving every other key', async () => {
     const h = host()
     await deleteColumn('note.status', h)
     expect(h.writeSettings).toHaveBeenCalledExactlyOnceWith(
@@ -162,7 +165,7 @@ describe('deleteColumn', () => {
     )
     expect(disk.get(A)).toBe('---\n# a comment\ntitle: A\nowner: "[[Sam]]"\n---\n\nbody a\n')
     expect(disk.get(C)).toBe('---\n---\nbody c\n')
-    // a resident without the key is never even read
+    // a note without the key is never even read
     expect(disk.get(B)).toBe('---\ntitle: B\nowner: "[[Kim]]"\n---\n')
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
   })
@@ -180,8 +183,8 @@ describe('deleteColumn', () => {
     expect(order).toContain('strip')
   })
 
-  it('a note whose frontmatter will not parse is reported, not written; the others still commit (no rollback)', async () => {
-    const h = host({ residents: [...host().residents, rec(BROKEN, { status: 'x' })] })
+  it('a note that cannot be written (invalid YAML) is reported, not written; the others are still stripped (no rollback)', async () => {
+    const h = host({ rows: [...host().rows, rec(BROKEN, { status: 'x' })] })
     await expect(deleteColumn('status', h)).rejects.toThrow(/Could not remove "status" from 1 note: broken \(frontmatter is not valid YAML/)
     expect(disk.get(BROKEN)).toBe('---\nstatus: [unclosed\n---\n')
     expect(disk.get(A)).not.toContain('status:')
@@ -200,24 +203,86 @@ describe('deleteColumn', () => {
     const h = host()
     await expect(deleteColumn('file.name', h)).rejects.toThrow("Can't delete file.name: built-in column — hide it instead")
     await expect(deleteColumn('comments', h)).rejects.toThrow(/built-in column/)
-    // The note id (YAZ-2293): stripping it from every resident would orphan every link to them.
+    // The note id (YAZ-2293): stripping it from every note would orphan every link to them.
     await expect(deleteColumn('id', h)).rejects.toThrow(/built-in column/)
     expect(h.writeSettings).not.toHaveBeenCalled()
     expect(transformFile).not.toHaveBeenCalled()
   })
 
-  it('a REFUSED settings write aborts: the error surfaces and not one resident is touched (YAZ-1549)', async () => {
+  it('the settings write is refused: the error surfaces and nothing is stripped (YAZ-1549)', async () => {
     const h = host({ writeSettings: vi.fn(async () => { throw new Error('disk full') }) })
     await expect(deleteColumn('status', h)).rejects.toThrow('disk full')
     expect(transformFile).not.toHaveBeenCalled()
     expect(disk.get(A)).toContain('status: 2-Todo')
   })
 
-  it('a key with no declaration and no references still strips the residents and writes the settings unchanged in shape', async () => {
+  it('a key with no declaration and no references still strips the notes and writes the settings unchanged in shape', async () => {
     const h = host({ columns: {}, def: { views: [{ type: 'table', name: 'T' }] } })
     await deleteColumn('owner', h)
     expect(h.writeSettings).toHaveBeenCalledExactlyOnceWith({}, [{ type: 'table', name: 'T' }], undefined)
     expect(disk.get(A)).toBe('---\n# a comment\ntitle: A\nstatus: 2-Todo\n---\n\nbody a\n')
     expect(disk.get(B)).toBe('---\ntitle: B\n---\n')
+  })
+})
+
+describe('who loses the value, who keeps it', () => {
+  const PROJECTS_ID = 'k3m9x2pq7abc'
+  const AREAS_ID = 'z8y7x6w5v4t3'
+  const settings = (folder: string, id: string, columns?: Record<string, unknown>): IndexRecord => ({
+    ...rec(`/vault/${folder}/.folder.md`, columns === undefined ? {} : { folder_settings: { columns, views: [{ type: 'table', name: 'Table' }] } }),
+    id,
+  })
+  /** Projects is the folder deleting; Areas saved an `owner` column and no Status; Inbox and Projects/Deep saved nothing, so each has the default Status. */
+  const FOLDERS = [settings('Areas', AREAS_ID, { owner: { kind: 'text' } }), settings('Inbox', 'a1b2c3d4e5f6'), settings('Projects', PROJECTS_ID, { owner: { kind: 'link' }, status: { kind: 'select' } })]
+  const DIRECT = '/vault/Projects/direct.md'
+  const DEEP = '/vault/Projects/Deep/Deeper/deep.md'
+  const SHORTCUT = '/vault/Inbox/shortcut.md'
+  const IN_AREAS = '/vault/Areas/in-areas.md'
+  const ALSO_AREAS = '/vault/Projects/also-areas.md'
+  const note = (properties: Record<string, unknown>): string => `---\n${Object.entries(properties).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n')}\n---\n`
+  const rows = (properties: Record<string, unknown>): IndexRecord[] =>
+    [
+      rec(IN_AREAS, { ...properties, also_in: [PROJECTS_ID] }),
+      rec(SHORTCUT, { ...properties, also_in: [PROJECTS_ID] }),
+      rec(DEEP, properties),
+      rec(ALSO_AREAS, { ...properties, also_in: [AREAS_ID] }),
+      rec(DIRECT, properties),
+    ].map((row) => (disk.set(row.path, note(row.properties)), row))
+  const projects = (properties: Record<string, unknown>): DeleteColumnHost => host({ rows: rows(properties), folder: 'Projects', folders: FOLDERS })
+  const carries = (path: string, key: string): boolean => disk.get(path)!.includes(`${key}:`)
+
+  it('a note under the folder, at any depth, that has the value: the value is removed', async () => {
+    await deleteColumn('owner', projects({ owner: 'Sam' }))
+    expect(carries(DIRECT, 'owner')).toBe(false)
+    expect(carries(DEEP, 'owner')).toBe(false)
+  })
+
+  it('a shortcut note in the folder’s table that has the value: the value is removed, by the same rule', async () => {
+    await deleteColumn('owner', projects({ owner: 'Sam' }))
+    expect(disk.get(SHORTCUT)).toBe(`---\nalso_in: ["${PROJECTS_ID}"]\n---\n`)
+  })
+
+  it('a note that ANOTHER folder showing it still has a column of that name for keeps the value — it lives there, or is a shortcut there', async () => {
+    const h = projects({ owner: 'Sam' })
+    await deleteColumn('owner', h)
+    expect(carries(IN_AREAS, 'owner')).toBe(true)
+    expect(carries(ALSO_AREAS, 'owner')).toBe(true)
+    expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([SHORTCUT, DEEP, DIRECT])
+    expect(notesCarrying(h.rows, 'owner', 'Projects', FOLDERS).keep.map((row) => row.path)).toEqual([IN_AREAS, ALSO_AREAS])
+  })
+
+  it('that other folder has the column only as a default (no saved settings, default Status): it still counts — the note keeps the value', async () => {
+    await deleteColumn('status', projects({ status: '2-Todo' }))
+    expect(carries(SHORTCUT, 'status')).toBe(true) // lives in Inbox: nothing saved, the default Status
+    expect(carries(DEEP, 'status')).toBe(true) // Projects/Deep/Deeper and Projects/Deep: the same
+    expect(carries(DIRECT, 'status')).toBe(false)
+    // Areas SAVED its columns and Status is not one of them.
+    expect(carries(IN_AREAS, 'status')).toBe(false)
+    expect(carries(ALSO_AREAS, 'status')).toBe(false)
+  })
+
+  it('column names compare exactly: another folder’s `Owner` is not `owner`', async () => {
+    const folders = [settings('Areas', AREAS_ID, { Owner: { kind: 'text' } }), FOLDERS[2]]
+    expect(notesCarrying([rec(IN_AREAS, { owner: 'Sam', also_in: [PROJECTS_ID] })], 'owner', 'Projects', folders).keep).toEqual([])
   })
 })

@@ -201,6 +201,11 @@
 .frontmatter-property-menu__heading strong {
   font-weight: 500;
 }
+/* "Properties from": the folder whose columns type and list the note's rows. */
+.frontmatter-property-context {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
 .frontmatter-property-menu__scope {
   padding: 0 9px;
   margin: 8px 0 12px;

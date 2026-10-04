@@ -345,19 +345,63 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'order', 9)
   })
 
-  it('deleting a column strips the value only from the notes DIRECTLY in the folder; a subfolder’s note and the shortcut keep theirs (E4)', async () => {
-    await mount(SETTINGS, shortcut())
-    await act(async () => captured.folder!.deleteColumn('order'))
-    // Other.md and archive/Old.md carry `order` and are rows here — but neither lives in the folder itself.
-    expect(transform.mock.calls.map(([path]) => path)).toEqual([LEAD, SALES])
-  })
-
-  it('the delete-column confirm sheet counts those same notes — direct notes only, no subfolder row, no shortcut row', async () => {
-    const el = await mount(SETTINGS, shortcut())
+  /** The snapshot with a second settings file beside the folder's own: `dir`'s, saving `columns`. */
+  const feedWith = (dir: string, columns: Record<string, unknown>, records: IndexRecord[] = shortcut()): void => {
+    const folders = [{ ...rec(`${dir}/.folder.md`, { folder_settings: { columns, views: [TABLE] } }), id: 'z8y7x6w5v4t3' }, { ...rec(SETTINGS_FILE, { folder_settings: SETTINGS }), id: STAGES_ID }]
+    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+  }
+  const openDeleteSheet = (el: HTMLElement): void => {
     selectView(el, 'Table')
     rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][1]) // `order`: Other, Lead Gen, Sales and Old all carry it
     click(menuItem(el, 'Delete column…'))
-    expect(q(el, '.confirm__text').textContent).toContain('the "order" value from 2 notes')
+  }
+
+  it('a cell in a folder’s table is typed by that folder’s own columns, whatever the folder the note lives in declares', async () => {
+    const el = await mount(SETTINGS, shortcut())
+    feedWith('/vault', { order: { kind: 'text' } }) // Other lives at the root, which says `order` is text
+    selectView(el, 'Table')
+    openCell(el, 0, 1)
+    const input = byLabel<HTMLInputElement>(el, 'Edit order')
+    setValue(input, '9')
+    press(input, 'Enter')
+    expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'order', 9) // a number: stages' own declaration
+  })
+
+  it('deleting a column removes the value from every note in the folder’s table: a note under it at any depth, and a shortcut', async () => {
+    await mount(SETTINGS, shortcut())
+    await act(async () => captured.folder!.deleteColumn('order'))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
+  })
+
+  it('a note that ANOTHER folder showing it still has a column of that name for keeps the value', async () => {
+    await mount(SETTINGS, shortcut())
+    feedWith('/vault/stages/archive', { order: { kind: 'text' } })
+    await act(async () => captured.folder!.deleteColumn('order'))
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES]) // archive/Old keeps its `order`
+  })
+
+  it('a note that cannot be written is reported in the column banner; the others are still stripped', async () => {
+    transform.mockRejectedValueOnce(new Error('frontmatter is not valid YAML'))
+    const el = await mount(SETTINGS, shortcut())
+    await act(async () => captured.folder!.deleteColumn('order'))
+    expect(q(el, '[role="alert"]').textContent).toContain('Could not remove "order" from 1 note: Other (frontmatter is not valid YAML)')
+    expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
+  })
+
+  it('the confirm sheet states how many notes lose the value; when none are kept it says nothing about kept notes', async () => {
+    const el = await mount(SETTINGS, shortcut())
+    openDeleteSheet(el)
+    expect(q(el, '.confirm__text').textContent).toBe('Delete "Order"? This removes the column from this folder and the "order" value from 4 notes.')
+  })
+
+  it('the confirm sheet states how many notes keep the value because another folder uses it — both numbers taken once, when the sheet opens', async () => {
+    const el = await mount(SETTINGS, shortcut())
+    feedWith('/vault/stages/archive', { order: { kind: 'text' } })
+    openDeleteSheet(el)
+    const text = 'Delete "Order"? This removes the column from this folder and the "order" value from 3 notes. 1 note keeps it because another folder uses it.'
+    expect(q(el, '.confirm__text').textContent).toBe(text)
+    feedWith('/vault/stages/archive', { order: { kind: 'text' } }, [...shortcut(), rec('/vault/stages/New.md', { order: 4 }), rec('/vault/stages/archive/Older.md', { order: 5 })])
+    expect(q(el, '.confirm__text').textContent).toBe(text)
   })
 
   it('a cell edit on a row from a subfolder writes that note’s own frontmatter', async () => {

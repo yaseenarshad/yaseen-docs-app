@@ -7,8 +7,9 @@
  *      `summaries`, `columnSize`, `cardStyle`, a cards `image`, and every filter leaf that names
  *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows
  *      the shortened order through the one order writer, `withOrder`),
- *  (c) the key from the frontmatter of every note that LIVES in the folder and carries it
- *      (YAZ-2290 E4) — the host hands that list in, so a row that merely shows there is not touched.
+ *  (c) the key from the frontmatter of every note the folder SHOWS that carries it — under it at
+ *      any depth, or a shortcut — unless another folder showing that note has a column of that
+ *      name, saved or default (`notesCarrying`).
  *
  * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder
  * host's echo guard (YAZ-1234/1241) — and they land FIRST and are AWAITED: settings are the source
@@ -23,7 +24,8 @@
 import { setFrontmatterProperty } from '@shared/frontmatter'
 import type { IndexRecord } from '@shared/types'
 import { RESERVED_KEYS } from '../links/reservedKeys'
-import type { ColumnDecl } from './folderSettings'
+import { foldersById, foldersShowing } from '../links/shortcuts'
+import { folderSettings, type ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'
 import { groupByLevels, type FilterNode, type ViewDef, type ViewSet } from './viewSchema'
@@ -37,10 +39,30 @@ export function undeletableReason(key: string): string | null {
   return !c.startsWith('note.') || RESERVED_KEYS.has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
 }
 
-/** The notes whose frontmatter currently carries the key — the confirm sheet's count, the strip's list. */
-export function residentsCarrying(residents: readonly IndexRecord[], key: string): IndexRecord[] {
+/**
+ * The rows of `folder` whose frontmatter carries the key, by what a delete does to each — the
+ * confirm sheet's two counts, the strip's list. `strip` lose the value; `keep` hold it, because
+ * another folder showing the note has a column of that name: one it saved, or the default one.
+ * With no folder (null — no folder host) nothing is kept.
+ */
+export function notesCarrying(rows: readonly IndexRecord[], key: string, folder: string | null, folders: readonly IndexRecord[]): { strip: IndexRecord[]; keep: IndexRecord[] } {
   const bare = bareOf(key)
-  return residents.filter((resident) => Object.prototype.hasOwnProperty.call(resident.properties, bare))
+  const byId = foldersById(folders)
+  const settings = new Map(folders.map((record) => [record.folder, record]))
+  const declared = new Map<string, boolean>()
+  const declares = (other: string): boolean => {
+    let has = declared.get(other)
+    if (has === undefined) declared.set(other, (has = Object.prototype.hasOwnProperty.call(folderSettings(settings.get(other)).columns, bare)))
+    return has
+  }
+  const strip: IndexRecord[] = []
+  const keep: IndexRecord[] = []
+  for (const row of rows) {
+    if (!Object.prototype.hasOwnProperty.call(row.properties, bare)) continue
+    const kept = folder !== null && foldersShowing(row.folder, row.properties, byId).some((other) => other !== folder && declares(other))
+    ;(kept ? keep : strip).push(row)
+  }
+  return { strip, keep }
 }
 
 /** Every `"…"` / `'…'` literal blanked (escapes honoured), so a key spelled INSIDE a string is not a reference. */
@@ -139,16 +161,18 @@ export interface DeleteColumnHost {
   columns: Readonly<Record<string, ColumnDecl>>
   /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
   def: ViewSet
-  /** The notes that live directly in the folder (YAZ-2290 E4) — the only ones the key is stripped from. */
-  residents: readonly IndexRecord[]
+  /** The folder's rows, the folder as the index names it, and every folder's settings record: what `notesCarrying` decides the strip by. */
+  rows: readonly IndexRecord[]
+  folder: string
+  folders: readonly IndexRecord[]
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
 }
 
 /**
  * Delete `key` everywhere in this folder (see the module doc). The settings write is awaited and a
- * refusal ABORTS — no resident is touched; the host has already surfaced that error. Rejects with
- * the aggregated resident failures otherwise.
+ * refusal ABORTS — no note is touched; the host has already surfaced that error. Rejects with
+ * the aggregated strip failures otherwise.
  */
 export async function deleteColumn(key: string, host: DeleteColumnHost): Promise<void> {
   const reason = undeletableReason(key)
@@ -159,15 +183,15 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   delete columns[bare]
   await host.writeSettings(columns, pruneColumnFromViews(host.def.views, key), pruneColumnLabel(host.def.properties, key))
 
-  const carrying = residentsCarrying(host.residents, key)
+  const { strip } = notesCarrying(host.rows, key, host.folder, host.folders)
   const results = await Promise.allSettled(
-    carrying.map((resident) => transformFile(resident.path, (content) => setFrontmatterProperty(content, bare, undefined))),
+    strip.map((note) => transformFile(note.path, (content) => setFrontmatterProperty(content, bare, undefined))),
   )
   const failed = results.flatMap((result, index) =>
-    result.status === 'rejected' ? [{ resident: carrying[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
+    result.status === 'rejected' ? [{ note: strip[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
   )
   if (failed.length === 0) return
   throw new Error(
-    `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ resident, why }) => `${resident.basename} (${why})`).join('; ')}`,
+    `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ note, why }) => `${note.basename} (${why})`).join('; ')}`,
   )
 }

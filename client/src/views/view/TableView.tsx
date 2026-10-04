@@ -613,6 +613,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             columnKey={confirmDelete}
             def={def}
             records={records}
+            folders={vaultFolders}
             onCancel={() => setConfirmDelete(null)}
             onConfirm={() => {
               const gone = confirmDelete
