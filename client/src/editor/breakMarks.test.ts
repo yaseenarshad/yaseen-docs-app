@@ -10,6 +10,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { toggleStrongCommand } from '@milkdown/kit/preset/commonmark'
 import { deleteSelection } from '@milkdown/kit/prose/commands'
+import { undo } from '@milkdown/kit/prose/history'
 import { endOf, md, mount, posOf, pressKey, runCommand, select, selectAcross, selectText, unmountAll } from './marks/markTestKit'
 import { setHighlightCommand, type HighlightColor } from './marks/highlight'
 
@@ -73,7 +74,7 @@ describe('a mark added across soft breaks', () => {
     await expectSaved(crepe, 'one **two\nthree four\nfive** six\n')
   })
 
-  it('6. on then off returns the original bytes', async () => {
+  it('4. on then off returns the original bytes', async () => {
     const { crepe } = await mount(SOFT)
     selectAcross(crepe, 'two', 'five')
     highlight(crepe)
@@ -85,7 +86,7 @@ describe('a mark added across soft breaks', () => {
 })
 
 describe('a mark never starts or ends on a break', () => {
-  it('4. a selection that starts on a break leaves it unmarked', async () => {
+  it('5. a selection that starts on a break leaves it unmarked', async () => {
     const { crepe } = await mount(SOFT)
     select(crepe, endOf(crepe, 'two'), endOf(crepe, 'four'))
     highlight(crepe)
@@ -93,7 +94,7 @@ describe('a mark never starts or ends on a break', () => {
     await expectSaved(crepe, 'one two\n==three four==\nfive six\n')
   })
 
-  it('5. a selection that ends on a break leaves it unmarked', async () => {
+  it('6. a selection that ends on a break leaves it unmarked', async () => {
     const { crepe } = await mount(SOFT)
     select(crepe, posOf(crepe, 'three'), posOf(crepe, 'five'))
     highlight(crepe)
@@ -131,7 +132,17 @@ describe('a mark never starts or ends on a break', () => {
 })
 
 describe('what stays as it was', () => {
-  it('10. hard breaks stay hard and unmarked', async () => {
+  it('10. one undo takes back a highlight together with its break clean-up', async () => {
+    const { crepe } = await mount(SOFT)
+    select(crepe, endOf(crepe, 'two'), endOf(crepe, 'four'))
+    highlight(crepe)
+    runCommand(crepe, undo)
+    expect(breaks(crepe)).toEqual(['soft', 'soft'])
+    await expectSaved(crepe, SOFT)
+  })
+
+
+  it('11. hard breaks stay hard and unmarked', async () => {
     const { crepe } = await mount(HARD)
     selectAcross(crepe, 'two', 'five')
     highlight(crepe)
@@ -139,7 +150,7 @@ describe('what stays as it was', () => {
     await expectSaved(crepe, 'one ==two==\\\n==three four==\\\n==five== six\n')
   })
 
-  it('11. Shift-Enter inside a highlight inserts an unmarked hard break', async () => {
+  it('12. Shift-Enter inside a highlight inserts an unmarked hard break', async () => {
     const { crepe } = await mount('one ==twothree== four\n')
     select(crepe, endOf(crepe, 'two'))
     pressKey(crepe, 'Enter', { shift: true })
@@ -147,7 +158,7 @@ describe('what stays as it was', () => {
     await expectSaved(crepe, 'one ==two==\\\n==three== four\n')
   })
 
-  it('12. a loaded multi-line highlight saves byte-identical', async () => {
+  it('13. a loaded multi-line highlight saves byte-identical', async () => {
     const { crepe } = await mount('one ==two\nthree== four\n')
     expect(breaks(crepe)).toEqual(['soft+mark'])
     await expectSaved(crepe, 'one ==two\nthree== four\n')

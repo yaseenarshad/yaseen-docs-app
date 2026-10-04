@@ -18,11 +18,11 @@
 - Done:
   - [x] 1 Scope (YAZ-2281)
   - [x] 2 Marks keep soft line breaks soft (YAZ-2282)
-- Now: [→] 3 Repair the damaged transcript (YAZ-2283)
+  - [x] 3 Repair the damaged transcript (YAZ-2283): 37 lines, verified byte-identical through the fixed editor
+  - [x] 4 Polish and anti-slop (YAZ-2284, 4A YAZ-2286, 4B YAZ-2287)
+- Now: [→] 5 Verify in the real app (YAZ-2285): Desktop demo, waiting on Yasin's sign-off
 - Remaining:
-  - [ ] 4 Polish and anti-slop (YAZ-2284, 4A YAZ-2286, 4B YAZ-2287)
-  - [ ] 5 Verify in the real app (YAZ-2285): Desktop demo, Yasin's sign-off
-  - [ ] Merge to main, release (smallest bump), release notes
+  - [ ] Merge to main, release (smallest bump), install, release notes
 
 ## Open Questions
 - None.
