@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { textFingerprint } from '@shared/reviews'
-import { MAX_FILE_BYTES } from '@shared/types'
+import { MAX_FILE_BYTES, VAULT_CONFIG_DIR } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
 import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
 
@@ -219,6 +219,24 @@ describe('scanFile', () => {
     const r = await scanFile(root, reviewed)
     expect(r.properties).toEqual({ status: 'draft', review: false })
     expect(r.reviews?.map((e) => e.at)).toEqual(['2026-10-04T14:02:11Z', '2026-11-03T09:00:00Z'])
+  })
+
+  it('upkeep off: the index is unchanged — the record still carries the review log and the body fingerprint, `reviews` is never a property, and the note is left byte for byte', async () => {
+    const reviewed = path.join(root, 'reviewed-off.md')
+    const bytes = '---\nreview: true\nreviews:\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\nBody.\n'
+    await writeFile(reviewed, bytes)
+    // No review.json, one that says off, one that says on: the same record each time.
+    const records = [await scanFile(root, reviewed)]
+    await mkdir(path.join(root, VAULT_CONFIG_DIR))
+    for (const enabled of [false, true]) {
+      await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled }))
+      records.push(await scanFile(root, reviewed))
+    }
+    await rm(path.join(root, VAULT_CONFIG_DIR), { recursive: true }) // the fixture is an un-adopted folder
+    expect(records[0]).toMatchObject({ properties: { review: true }, reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }], text: textFingerprint('Body.\n') })
+    expect(records[1]).toEqual(records[0])
+    expect(records[2]).toEqual(records[0])
+    expect(await readFile(reviewed, 'utf8')).toBe(bytes)
   })
 
   it('`text` is the fingerprint of the body alone: a frontmatter change leaves it, a body change moves it (YAZ-2322)', async () => {

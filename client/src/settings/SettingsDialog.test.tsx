@@ -39,8 +39,13 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, el: container }
+  /** The open dialog with the vault's review settings changed under it: a save shown at once. */
+  const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
+  return { onChange, onClose, setEnabled, save, rerender, el: container }
 }
+
+/** Upkeep turned on, the rest as a new vault has it. */
+const REVIEW_ON: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
 
 const unmount = () => {
   act(() => root?.unmount())
@@ -147,10 +152,10 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
   })
 
   it('renders every settings section on the one page, in order, each anchored by id and every row addressed by data-setting — Hotkeys is not on it', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
     expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance', 'settings-editor', 'settings-files', 'settings-review', 'settings-sync'])
-    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'newNoteLocation', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
+    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'newNoteLocation', 'enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
     for (const r of el.querySelectorAll<HTMLElement>('.setting')) expect(r.dataset.setting).toBeTruthy()
     expect(el.querySelector('[data-setting^="hotkeys"]')).toBeNull()
   })
@@ -322,8 +327,9 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 })
 
 describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)', () => {
-  const S = DEFAULT_REVIEW_SETTINGS
+  const S = REVIEW_ON
   const number = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
+  const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
 
   it('is absent with no vault open', () => {
     const { el } = mount()
@@ -331,7 +337,47 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     expect(row(el, 'baseDays')).toBeNull()
   })
 
-  it('its four rows show the current values, each number beside its unit', () => {
+  it('upkeep off: the Review section shows one row, a switch labelled "Enable upkeep review", reading Off', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    expect(reviewRows(el)).toEqual(['enabled'])
+    expect(row(el, 'enabled')?.querySelector('.setting__label')?.textContent).toBe('Enable upkeep review')
+    expect(rowButtons(el, 'enabled').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(el.querySelector('#settings-review .settings-section__note')).not.toBeNull()
+  })
+
+  it('Enable upkeep review: On saves the whole object with enabled true, Off with it false — never onChange', () => {
+    const off = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    act(() => rowButtons(off.el, 'enabled')[0].click())
+    expect(off.save).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_REVIEW_SETTINGS, enabled: true })
+    expect(off.onChange).not.toHaveBeenCalled()
+    unmount()
+    const on = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14 })
+    act(() => rowButtons(on.el, 'enabled')[1].click())
+    expect(on.save).toHaveBeenCalledExactlyOnceWith({ ...S, baseDays: 14, enabled: false })
+  })
+
+  it('turned on: the three numbers and "New notes are in review" appear under the switch at once; turned off, they go', () => {
+    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    rerender(S)
+    expect(reviewRows(el)).toEqual(['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault'])
+    expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    rerender(DEFAULT_REVIEW_SETTINGS)
+    expect(reviewRows(el)).toEqual(['enabled'])
+  })
+
+  it('upkeep off: search finds the switch and none of the rows it hides; turned on, it finds them', () => {
+    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    type(searchInput(el), 'upkeep')
+    expect(rowIds(el)).toEqual(['enabled'])
+    type(searchInput(el), 'longest wait')
+    expect(rowIds(el)).toEqual([])
+    expect(el.querySelector('.settings-empty')).not.toBeNull()
+    rerender(S)
+    expect(rowIds(el)).toEqual(['maxDays'])
+  })
+
+  it('turned on, the four rows under the switch show the current values, each number beside its unit', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14, growth: 1.5, maxDays: 90, reviewByDefault: false })
     expect(['baseDays', 'growth', 'maxDays', 'reviewByDefault'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Check a note after', 'Each time it is still relevant, wait', 'Longest wait', 'New notes are in review'])
     expect(['baseDays', 'growth', 'maxDays'].map((id) => number(el, id).value)).toEqual(['14', '1.5', '90'])

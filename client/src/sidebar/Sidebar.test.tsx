@@ -135,7 +135,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     clipboardRef: { current: null },
     // The folder rows' counts (🔒 E6, YAZ-2290) read the window's index source: empty unless a test feeds it.
     indexSource: createWikilinkResolveSource(),
-    // The Inbox row (YAZ-2322): App counts and owns the session; nothing due and no review open by default.
+    // Upkeep review (YAZ-2322) is off, as in a new vault, unless a test turns it on; App counts and
+    // owns the session, with nothing due and no review open by default.
+    upkeep: false,
     dueCount: 0,
     reviewing: false,
     onOpenInbox: vi.fn(),
@@ -3008,25 +3010,25 @@ describe('Inbox row (YAZ-2322)', () => {
   const inbox = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__inbox')
 
   it('shows the due count, and carries it in its accessible name', async () => {
-    const { el } = await mount({ dueCount: 3 })
+    const { el } = await mount({ upkeep: true, dueCount: 3 })
     expect(inbox(el)?.textContent).toBe('Inbox3')
     expect(inbox(el)?.getAttribute('aria-label')).toBe('Inbox, 3 due')
   })
 
   it('shows no number at zero: the row reads "Inbox" alone', async () => {
-    const { el } = await mount({ dueCount: 0 })
+    const { el } = await mount({ upkeep: true, dueCount: 0 })
     expect(inbox(el)?.textContent).toBe('Inbox')
     expect(inbox(el)?.getAttribute('aria-label')).toBe('Inbox')
   })
 
   it('a click asks App to open the Inbox', async () => {
-    const { el, props } = await mount({ dueCount: 3 })
+    const { el, props } = await mount({ upkeep: true, dueCount: 3 })
     act(() => inbox(el)?.click())
     expect(props.onOpenInbox).toHaveBeenCalledTimes(1)
   })
 
   it('reads as active exactly while a review is open', async () => {
-    const { el, rerender } = await mount({ dueCount: 3 })
+    const { el, rerender } = await mount({ upkeep: true, dueCount: 3 })
     expect(inbox(el)?.getAttribute('aria-pressed')).toBe('false')
     expect(inbox(el)?.classList.contains('sidebar__inbox--active')).toBe(false)
     await rerender({ dueCount: 3, reviewing: true })
@@ -3036,12 +3038,30 @@ describe('Inbox row (YAZ-2322)', () => {
 
   it('stays put in every lens and while a query is typed', async () => {
     for (const lens of ['files', 'favorites'] as const) {
-      const { el } = await mount({ lens, dueCount: 2 })
+      const { el } = await mount({ upkeep: true, lens, dueCount: 2 })
       expect(inbox(el)?.textContent).toBe('Inbox2')
     }
-    const { el } = await mount({ dueCount: 2 })
+    const { el } = await mount({ upkeep: true, dueCount: 2 })
     await type(searchInput(el)!, 'a')
     expect(inbox(el)?.textContent).toBe('Inbox2')
+  })
+
+  it('upkeep off: no Inbox row, in any lens, while a query is typed, whatever App counts', async () => {
+    for (const lens of ['files', 'favorites'] as const) {
+      const { el } = await mount({ upkeep: false, lens, dueCount: 2 })
+      expect(inbox(el)).toBeNull()
+    }
+    const { el } = await mount({ upkeep: false, dueCount: 2 })
+    await type(searchInput(el)!, 'a')
+    expect(inbox(el)).toBeNull()
+  })
+
+  it('turned on: the Inbox row appears at once; turned off, it goes', async () => {
+    const { el, rerender } = await mount({ upkeep: false, dueCount: 2 })
+    await rerender({ upkeep: true })
+    expect(inbox(el)?.textContent).toBe('Inbox2')
+    await rerender({ upkeep: false })
+    expect(inbox(el)).toBeNull()
   })
 })
 
@@ -3052,7 +3072,7 @@ describe('review menu items (YAZ-2322)', () => {
 
   it('"Review this folder" sits on a FOLDER row, above Rename, and hands App the folder — in Favorites too', async () => {
     for (const lens of ['files', 'favorites'] as const) {
-      const { el, props } = await mount({ lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
+      const { el, props } = await mount({ upkeep: true, lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
       rightClick(el, '.tree__row--dir')
       const labels = menuItems(el).map((b) => b.textContent)
       expect(labels.indexOf('Review this folder')).toBe(labels.indexOf('Rename') - 1)
@@ -3061,8 +3081,20 @@ describe('review menu items (YAZ-2322)', () => {
     }
   })
 
+  it('upkeep off: a folder\'s menu has no "Review this folder" — in Favorites too — until it is turned on', async () => {
+    for (const lens of ['files', 'favorites'] as const) {
+      const { el, rerender } = await mount({ upkeep: false, lens }, (b) => b.favorites.get.mockResolvedValue(['/v/sub']))
+      rightClick(el, '.tree__row--dir')
+      expect(menuItems(el).map((b) => b.textContent)).toContain('Rename')
+      expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
+      await rerender({ upkeep: true })
+      rightClick(el, '.tree__row--dir')
+      expect(itemByLabel(el, 'Review this folder')).toBeDefined()
+    }
+  })
+
   it('a FILE row and blank space do not offer it', async () => {
-    const { el } = await mount()
+    const { el } = await mount({ upkeep: true })
     rightClick(el, '.tree__row--file')
     expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
     rightClick(el, '.sidebar__body')
@@ -3074,7 +3106,7 @@ describe('review menu items (YAZ-2322)', () => {
     [false, 'Turn review on'],
   ])('a note whose review state is %s reads "%s", above Rename, and asks App for the opposite', async (state, label) => {
     const reviewState = vi.fn(() => state)
-    const { el, props } = await mount({ reviewState })
+    const { el, props } = await mount({ upkeep: true, reviewState })
     rightClick(el, '.tree__row--file')
     expect(reviewState).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     const labels = menuItems(el).map((b) => b.textContent)
@@ -3083,7 +3115,7 @@ describe('review menu items (YAZ-2322)', () => {
     expect(props.onSetReview).toHaveBeenCalledExactlyOnceWith('/v/a.md', !state)
   })
 
-  it('a file App has no review state for gets no toggle, and a folder is never asked about', async () => {
+  it('a file App has no review state for — every note, with upkeep off — gets no toggle, and a folder is never asked about', async () => {
     const reviewState = vi.fn(() => null)
     const { el } = await mount({ reviewState })
     rightClick(el, '.tree__row--file')

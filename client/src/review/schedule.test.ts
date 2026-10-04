@@ -4,10 +4,12 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { ReviewEntry } from '@shared/reviews'
-import { DEFAULT_REVIEW_SETTINGS as S } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { dueAfter, dueAt, isInReview, reviewQueue, scheduleInWords } from '@shared/schedule'
 import { type IndexRecord, inFolder } from '@shared/types'
 
+/** Upkeep turned on, the rest as a new vault has it. */
+const S = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
 const DAY = 86_400_000
 const CHANGED = Date.parse('2026-01-10T12:00:00Z')
 const days = (from: number, to: number): number => (to - from) / DAY
@@ -95,6 +97,11 @@ describe('isInReview', () => {
     expect(isInReview(record({ path: '/v/a.md', frontmatterError: 'bad yaml' }), S)).toBe(false)
     expect(isInReview(record({ path: '/v/a.md', text: undefined }), S)).toBe(false)
   })
+
+  it('upkeep off: no note is in review, whatever the vault default and its own `review` say', () => {
+    expect(isInReview(record({ path: '/v/a.md' }), DEFAULT_REVIEW_SETTINGS)).toBe(false)
+    expect(isInReview(record({ path: '/v/a.md', properties: { review: true } }), { ...S, enabled: false })).toBe(false)
+  })
 })
 
 describe('reviewQueue', () => {
@@ -120,6 +127,13 @@ describe('reviewQueue', () => {
   it('leaves out a note that is not in review', () => {
     const when = new Date(2026, 5, 1)
     expect(reviewQueue([dueOn('/v/off.md', when, { properties: { review: false } }), dueOn('/v/broken.md', when, { frontmatterError: 'x' })], S, NOW)).toEqual([])
+  })
+
+  it('upkeep off: nothing is due, in the vault or in a folder', () => {
+    const records = [dueOn('/v/root.md', new Date(2026, 5, 1)), dueOn('/v/notes/a.md', new Date(2026, 5, 1), { folder: 'notes', properties: { review: true } })]
+    expect(reviewQueue(records, S, NOW)).toHaveLength(2)
+    expect(reviewQueue(records, { ...S, enabled: false }, NOW)).toEqual([])
+    expect(reviewQueue(records, { ...S, enabled: false }, NOW, 'notes')).toEqual([])
   })
 
   it('a folder takes its own notes and its subfolders, not a sibling that starts the same', () => {

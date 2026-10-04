@@ -738,7 +738,8 @@ export function App() {
     // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
     commentsOrder: settings.commentsOrder,
     onChangeCommentsOrder: changeCommentsOrder,
-    reviewSettings: reviewSettings.settings,
+    // Upkeep off (🔒 D7): no settings, so no Reviews section.
+    reviewSettings: reviewSettings.settings.enabled ? reviewSettings.settings : undefined,
   }
 
   // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
@@ -849,7 +850,8 @@ export function App() {
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
           asideRef={sidebarRef}
-          // The Inbox row (YAZ-2322): it opens the review, and closes the one that is open.
+          // The Inbox row (YAZ-2322), there with upkeep on: it opens the review, and closes the one that is open.
+          upkeep={reviewSettings.settings.enabled}
           dueCount={review.dueCount}
           reviewing={review.session !== null}
           onOpenInbox={() => (review.session === null ? review.start() : review.close())}

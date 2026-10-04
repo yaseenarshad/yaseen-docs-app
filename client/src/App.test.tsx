@@ -53,6 +53,8 @@ interface SidebarStubProps {
   onNotice: (message: string, icon?: NoticeKind) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean } | null }
+  /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): the Inbox row and "Review this folder" exist only then. */
+  upkeep: boolean
   /** The Inbox row (YAZ-2322): App counts what is due and owns the one review session. */
   dueCount: number
   reviewing: boolean
@@ -73,11 +75,11 @@ const captured = vi.hoisted(() => ({
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown }) => {
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
-      <div data-editor data-root={root} data-path={path ?? ''}>
+      <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
         <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
       </div>
@@ -230,8 +232,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setEnabled: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
       onStatus: vi.fn(() => () => undefined),
     },
-    // No `review.json` (YAZ-2322): App owns one `useReviewSettings`, which reads and subscribes on vault open.
-    vaultConfig: { read: vi.fn(async () => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
+    vaultConfig: { read: vi.fn(async (): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
@@ -1816,6 +1818,11 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
   const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>
     void b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+  /** The vault's `review.json` turns upkeep on, and the index holds `records`. */
+  const upkeepOn = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) => {
+    b.bridge.vaultConfig.read.mockResolvedValue({ enabled: true })
+    withIndex(...records)(b)
+  }
   const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'] }
 
   const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
@@ -1830,7 +1837,8 @@ describe('App upkeep review (YAZ-2322)', () => {
   const openInbox = () => act(() => captured.sidebar?.onOpenInbox())
 
   it('the sidebar is handed the due count, and told while a review is open', async () => {
-    await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+    await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    expect(captured.sidebar?.upkeep).toBe(true)
     expect(captured.sidebar?.dueCount).toBe(2)
     expect(captured.sidebar?.reviewing).toBe(false)
     openInbox()
@@ -1843,7 +1851,7 @@ describe('App upkeep review (YAZ-2322)', () => {
       defaultAppState(),
       { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
       {},
-      withIndex(due('x'), due('y')),
+      upkeepOn(due('x'), due('y')),
     )
     bridge.window.setIdentity.mockClear()
     openInbox()
@@ -1862,7 +1870,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('with a session open the tab strip gives way to the review bar, and the note\'s editor is the only visible layer', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
     openInbox()
     expect(el.querySelector('.tabbar')).toBeNull()
     expect(el.querySelector('.review-bar__label')?.textContent).toBe('Inbox')
@@ -1875,7 +1883,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('Skip shows the next note in a layer of its own; the one before is gone', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
     openInbox()
     act(() => button(el, 'Skip⌘⇧S')?.click())
     expect(layers(el)).toEqual([
@@ -1885,7 +1893,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('a note that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, withIndex(due('a')))
+    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
     expect(layers(el)).toEqual([
       ['/v/a.md', true],
@@ -1910,7 +1918,7 @@ describe('App upkeep review (YAZ-2322)', () => {
       defaultAppState(),
       { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
       {},
-      withIndex(due('r')),
+      upkeepOn(due('r')),
     )
     openInbox()
     expect(el.querySelector('.tabstack .review-message')?.textContent).toBe('This note is open in the side panel.')
@@ -1920,7 +1928,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('nothing due: the empty state, no answers, and "Back to tabs" closes', async () => {
-    const { el } = await mount(defaultAppState(), TABS)
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn())
     openInbox()
     expect(el.querySelector('.tabstack .review-message p')?.textContent).toBe('Inbox complete.')
     expect(el.querySelector('.review-answers')).toBeNull()
@@ -1930,7 +1938,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('a link clicked in the note opens in a background tab; the review stays', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
     openInbox()
     act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/x.md"] [data-open-right-current]')?.click())
     expect(el.querySelector('.review-bar')).not.toBeNull()
@@ -1940,7 +1948,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('"Review this folder" starts a session over that folder alone, named for it', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('p', 'Work/Projects'), due('q', 'Work/Projects/sub')))
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('p', 'Work/Projects'), due('q', 'Work/Projects/sub')))
     act(() => captured.sidebar?.onReviewFolder('/v/Work/Projects'))
     expect(el.querySelector('.review-bar__label')?.textContent).toBe('Projects')
     expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
@@ -1949,7 +1957,7 @@ describe('App upkeep review (YAZ-2322)', () => {
 
   it('the sidebar and the tab menu get the SAME review lookup and write: a note answers, anything else is null', async () => {
     const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
-    const { bridge, el } = await mount(defaultAppState(), TABS, files, withIndex(due('a')))
+    const { bridge, el } = await mount(defaultAppState(), TABS, files, upkeepOn(due('a')))
     expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
     expect(captured.sidebar?.reviewState('/v/photo.png')).toBeNull()
     act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
@@ -1958,7 +1966,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('the same holds for a note shown through its own tab: its link does not navigate the active tab under the review', async () => {
-    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, withIndex(due('a')))
+    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
     openInbox()
     act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/a.md"] [data-open-right-current]')?.click())
@@ -1968,7 +1976,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('clicking the Inbox row again closes the review', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
     openInbox()
     expect(el.querySelector('.review-bar')).not.toBeNull()
     openInbox()
@@ -1977,7 +1985,7 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('opening a file from the sidebar ends the review and shows that file', async () => {
-    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
     openInbox()
     act(() => captured.sidebar?.onOpenFile('/v/a.md'))
     expect(el.querySelector('.review-bar')).toBeNull()
@@ -1985,11 +1993,88 @@ describe('App upkeep review (YAZ-2322)', () => {
   })
 
   it('File › Close Tab closes the review, not the tab hidden under it', async () => {
-    const { el, emitCloseTab } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    const { el, emitCloseTab } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
     openInbox()
     act(() => emitCloseTab())
     expect(el.querySelector('.review-bar')).toBeNull()
     expect(stripLabels(el)).toEqual(['a', 'b'])
   })
-})
 
+  /** Upkeep is off until a vault turns it on (🔒 D7): every test below starts with no `review.json`. */
+  describe('off until the vault turns it on', () => {
+    const editorSettings = (el: HTMLElement, path: string) => el.querySelector(`[data-editor][data-path="${path}"]`)?.getAttribute('data-review-settings')
+    const tabMenu = (el: HTMLElement) => {
+      act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
+    }
+    /** The Settings dialog's "Enable upkeep review" switch, clicked On or Off. */
+    const setUpkeep = (el: HTMLElement, emitSettings: () => void, on: boolean) => {
+      act(() => emitSettings())
+      act(() => el.querySelectorAll<HTMLButtonElement>('[data-setting="enabled"] button')[on ? 0 : 1].click())
+      act(() => button(el, 'Close settings')?.click())
+    }
+
+    it('upkeep off: the sidebar is told so — no Inbox row, no "Review this folder" — nothing is due, and nothing is written', async () => {
+      const { bridge } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+      expect(captured.sidebar?.upkeep).toBe(false)
+      expect(captured.sidebar?.dueCount).toBe(0)
+      expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+    })
+
+    it('upkeep off: a note\'s row menu and its tab menu have no "Turn review on" / "Turn review off"', async () => {
+      const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('a')))
+      expect(captured.sidebar?.reviewState('/v/a.md')).toBeNull()
+      const items = tabMenu(el)
+      expect(items).toContain('Copy path')
+      expect(items.some((label) => label.startsWith('Turn review'))).toBe(false)
+    })
+
+    it('upkeep off: a page is handed no review settings, so it has no Reviews section', async () => {
+      const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('b')))
+      expect(editorSettings(el, '/v/b.md')).toBe('none')
+    })
+
+    it('upkeep off: the review hotkeys do nothing', async () => {
+      const { bridge, el } = await mount(defaultAppState(), TABS, { '/v/x.md': { content: 'Body.\n', mtime: 1 } }, withIndex(due('x')))
+      for (const key of ['Enter', 'S', 'Escape']) {
+        const event = new KeyboardEvent('keydown', { key, metaKey: key !== 'Escape', shiftKey: key !== 'Escape', bubbles: true, cancelable: true })
+        act(() => void document.body.dispatchEvent(event))
+        expect(event.defaultPrevented).toBe(false)
+      }
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+      expect(el.querySelector('.review-bar')).toBeNull()
+      expect(stripLabels(el)).toEqual(['a', 'b'])
+    })
+
+    it('turned on in Settings: the Inbox row, the menu items and the Reviews section are there at once, and a review runs', async () => {
+      const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
+      const { bridge, el, emitSettings } = await mount(defaultAppState(), TABS, files, withIndex(due('a'), due('p', 'Work')))
+      setUpkeep(el, emitSettings, true)
+      expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', 'review.json', { algorithm: 'upkeep', enabled: true, baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true })
+      expect(captured.sidebar?.upkeep).toBe(true)
+      expect(captured.sidebar?.dueCount).toBe(2)
+      expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
+      expect(tabMenu(el)).toContain('Turn review off')
+      expect(editorSettings(el, '/v/b.md')).toBe('given')
+      act(() => captured.sidebar?.onReviewFolder('/v/Work'))
+      expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
+      expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 1')
+    })
+
+    it('turned off while a review is open: the review closes, the tabs are as they were, and nothing is written to a note', async () => {
+      const { bridge, el, emitSettings } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
+      openInbox()
+      expect(el.querySelector('.review-bar')).not.toBeNull()
+      setUpkeep(el, emitSettings, false)
+      expect(el.querySelector('.review-bar')).toBeNull()
+      expect(el.querySelector('.review-answers')).toBeNull()
+      expect(captured.sidebar?.upkeep).toBe(false)
+      expect(captured.sidebar?.reviewing).toBe(false)
+      expect(captured.sidebar?.dueCount).toBe(0)
+      expect(stripLabels(el)).toEqual(['a', 'b'])
+      expect(activeLabel(el)).toBe('b')
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+    })
+  })
+})

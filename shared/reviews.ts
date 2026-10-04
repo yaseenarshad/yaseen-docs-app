@@ -120,6 +120,8 @@ export const REVIEW_SETTINGS_FILE = 'review.json'
  */
 export interface ReviewSettings {
   algorithm: 'upkeep'
+  /** Whether the vault has upkeep review at all; off, no note is in review and the app shows none of it. */
+  enabled: boolean
   /** A note untouched this many days comes up. */
   baseDays: number
   /** Each "Still relevant" in a row multiplies the wait; 1 is a fixed rotation. */
@@ -130,7 +132,7 @@ export interface ReviewSettings {
   reviewByDefault: boolean
 }
 
-export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = { algorithm: 'upkeep', baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true }
+export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = { algorithm: 'upkeep', enabled: false, baseDays: 30, growth: 2, maxDays: 365, reviewByDefault: true }
 
 const wholeDays = (v: unknown, min: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min
 
@@ -139,13 +141,14 @@ export function setInReview(content: string, on: boolean, s: ReviewSettings): st
   return setFrontmatterProperty(content, REVIEW_KEY, on === s.reviewByDefault ? undefined : on)
 }
 
-/** A missing or malformed file is the defaults; a bad field falls back alone. `maxDays` is never under `baseDays`. */
+/** A missing or malformed file is the defaults, so upkeep is off; a bad field falls back alone. `maxDays` is never under `baseDays`. */
 export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
   const r = isRecord(raw) ? raw : {}
   const d = DEFAULT_REVIEW_SETTINGS
   const baseDays = wholeDays(r.baseDays, 1) ? r.baseDays : d.baseDays
   return {
     algorithm: 'upkeep',
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
     baseDays,
     growth: typeof r.growth === 'number' && Number.isFinite(r.growth) && r.growth >= 1 ? r.growth : d.growth,
     maxDays: wholeDays(r.maxDays, baseDays) ? r.maxDays : Math.max(d.maxDays, baseDays),

@@ -27,6 +27,12 @@
 - D8 size ceilings are set to what the finished branch measures.
 - D9 the fork finishes its own build issues; the hand walk-throughs happen once, in docs-app.
 - D10 legacy "folder page" names are renamed; the on-disk key is `folder_settings`; old-model Playwright specs are deleted.
+- D11 the properties panel says "Properties from <folder>"; several folders is a choice, nearest with saved settings first; "Edit property" saves to the chosen folder.
+- D12 deleting a column strips every note in that table, except a note another of its folders still has that column for (replaces YAZ-2290 E4).
+- D13 every folder has a `.folder.md` with an `id` from the moment it exists (derived from its path when the app did not create it).
+- D14 the `[[` picker offers a folder as "<name> (folder)" and inserts its ID.
+- D15 a folder in sidebar search opens its page. D16 `comments` on a new folder says "no comments". D17 linked mentions include folder pages.
+- The conversion table is approved (YAZ-2383): each page becomes the folder that holds its members; 2 shortcuts, 5 nestings, 2 relations dropped.
 
 ## State
 
@@ -34,17 +40,20 @@
   - [x] Scope pass, decisions locked on YAZ-2375, 27 sub-issues created (YAZ-2381 to YAZ-2407)
   - [x] 1B: conversion table approved by Yaseen (YAZ-2383); a dry run confirmed it (352 rows for `AI-Dev-Hire/`, 73 for the QuickBooks folder, no membership lost)
   - [x] 4A draft 1: conversion and backfill instructions posted on YAZ-2396 (three items marked "verify" against the ported app)
-- Now: [→] Phase 1: Scope and lock the merge (1A and 1C wait on the fork's final commit; a background check runs every 10 minutes: `scratchpad/fork_check.py`)
-- Next: Phase 2: Bring the code over (starts when the fork is finished)
+  - [x] Phase 2: the fork (`c5bf2d5`) is applied (`ee7512d`), Docs names (`c13056f`), `folder_settings` key (`db3c178`), gates and ceilings (`95ad199`)
+  - [x] 3A, 3B: a folder shows every note under it; the count matches (`7c7fb83`)
+  - [x] 3C, 3D: upkeep is off until a vault turns it on
+- Now: [→] Phase 3, the part decided on 2026-10-04 ("Locked decisions, part 3", D11 to D17), in this order: 3G every folder has an ID, 3E "Properties from <folder>", 3F deleting a column, 3H folder links by ID, 3J mentions from folder pages, 3I search opens a folder, 3K comments on a new folder
+- Next: 1A and 1C close-out comments, then 4A (update the draft for D10 to D13) and 4B (the conversion on a copy)
 - Remaining:
-  - [ ] Phase 3: Docs-app changes to the fork's behavior (D4, D7)
   - [ ] Phase 4: Convert the existing vault (4A, 4B before the walk-through; 4C, 4D last, after merge and install)
   - [ ] Phase 5: Polish and anti-slop
   - [ ] Phase 6: Verify, merge, install, close out
 
 ## Open Questions
 
-- UNCONFIRMED: the fork's final commit. Shortcuts (YAZ-2306 to 2308) and links to folders (YAZ-2304) were not built when the scope was taken; the conversion depends on both.
+- None blocking. Shortcuts and links to folders are both in the ported code.
+- The fork's final commit is read from GitHub (`git ls-remote`); its local `main` ref is stale.
 
 ## Working Set
 

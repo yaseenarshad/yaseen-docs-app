@@ -58,10 +58,12 @@ afterEach(() => {
 })
 
 describe('useReviewSettings', () => {
-  it('gives the defaults when the vault has no file, and makes no call with no vault open', async () => {
+  it('a vault with no review.json: upkeep is off and nothing is written; no call at all with no vault open', async () => {
     await mount('/vault')
     expect(read).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE)
     expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    expect(state.settings.enabled).toBe(false)
+    expect(write).not.toHaveBeenCalled()
     act(() => root?.unmount())
     read.mockClear()
     await mount(null)
@@ -73,6 +75,15 @@ describe('useReviewSettings', () => {
     read.mockResolvedValue({ baseDays: 7, growth: 'fast' })
     await mount('/vault')
     expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 7 })
+  })
+
+  it('turned on: the file says so, and a change broadcast turns it on or off in place', async () => {
+    read.mockResolvedValue({ enabled: true })
+    await mount('/vault')
+    expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, enabled: true })
+    read.mockResolvedValue({ enabled: false })
+    await act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
+    expect(state.settings.enabled).toBe(false)
   })
 
   it('re-reads on a change to this vault\'s file only', async () => {

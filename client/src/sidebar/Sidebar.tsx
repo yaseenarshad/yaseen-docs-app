@@ -136,6 +136,8 @@ interface SidebarProps {
    * input changes and emptied on unmount. Each verb answers whether it acted, so App knows what to swallow.
    */
   clipboardRef: { current: SidebarClipboard | null }
+  /** Whether the vault has upkeep review on (YAZ-2322 🔒 D7): off, there is no Inbox row and no "Review this folder". */
+  upkeep: boolean
   /**
    * The Inbox row (YAZ-2322): how many notes are due, and whether a review is open. App counts
    * and owns the session — this component is unmounted while collapsed, and the count has to be
@@ -357,6 +359,7 @@ export function Sidebar({
   onSearchFocusHandled,
   selectionRef,
   clipboardRef,
+  upkeep,
   dueCount,
   reviewing,
   onOpenInbox,
@@ -516,14 +519,14 @@ export function Sidebar({
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null ? null : plural ?? [node.path],
         favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favorites.includes(p)),
-        reviewDir: node?.type === 'dir' ? node.path : null,
+        reviewDir: upkeep && node?.type === 'dir' ? node.path : null,
         reviewPath: inReview === null ? null : filePath,
         reviewIsOn: inReview === true,
         shortcutDir: plural === null && node?.type === 'dir' ? node.path : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
       })
     },
-    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, reviewState],
+    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState],
   )
 
   const { clip, clipTo, pasteInto } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice)
@@ -698,17 +701,19 @@ export function Sidebar({
           <SidebarPanelIcon />
         </button>
       </div>
-      {/* The Inbox (YAZ-2322): above the lens tabs, so it shows in every lens and during a search. */}
-      <button
-        type="button"
-        className={`sidebar__inbox${reviewing ? ' sidebar__inbox--active' : ''}`}
-        aria-pressed={reviewing}
-        aria-label={dueCount > 0 ? `Inbox, ${dueCount} due` : 'Inbox'}
-        onClick={onOpenInbox}
-      >
-        Inbox
-        {dueCount > 0 && <span className="tree__count">{dueCount}</span>}
-      </button>
+      {/* The Inbox (YAZ-2322), with upkeep on: above the lens tabs, so it shows in every lens and during a search. */}
+      {upkeep && (
+        <button
+          type="button"
+          className={`sidebar__inbox${reviewing ? ' sidebar__inbox--active' : ''}`}
+          aria-pressed={reviewing}
+          aria-label={dueCount > 0 ? `Inbox, ${dueCount} due` : 'Inbox'}
+          onClick={onOpenInbox}
+        >
+          Inbox
+          {dueCount > 0 && <span className="tree__count">{dueCount}</span>}
+        </button>
+      )}
       {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Files (the file
           explorer) ⇄ Favorites. The row stays VISIBLE and clickable during a search,
           and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`

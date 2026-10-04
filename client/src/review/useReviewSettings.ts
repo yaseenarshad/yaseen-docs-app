@@ -6,7 +6,7 @@ import { api } from '../api'
  * A vault's review settings as the UI sees them (YAZ-2322 🔒 D7): `.yaseendocs/review.json`
  * through the generic vault-config door, sanitised on the way in, re-read whenever that file
  * changes — a write from another window, or one that arrived by sync. A vault with no file has the
- * defaults, and nothing is created until `save`. App owns ONE of these.
+ * defaults — upkeep off — and nothing is created until `save`. App owns ONE of these.
  */
 export interface ReviewSettingsState {
   settings: ReviewSettings

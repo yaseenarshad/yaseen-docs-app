@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_REVIEW_SETTINGS as S, reviewsOf } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, reviewsOf } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { ReviewsSection } from './ReviewsSection'
@@ -23,6 +23,8 @@ const write = vi.mocked(transformFile)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
+/** Upkeep turned on — the only settings App hands the section. */
+const S = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
 const DAY = 86_400_000
 const PATH = '/vault/Card.md'
 const NOW = Date.parse('2026-10-04T12:00:00Z')
@@ -194,7 +196,7 @@ describe('ReviewsSection (YAZ-2322)', () => {
     expect(el.querySelector('[role="alert"]')).toBeNull()
   })
 
-  it('renders nothing without the settings, without the index, or until the index has the note — then follows it', () => {
+  it('renders nothing without the settings (upkeep off: App hands none), without the index, or until the index has the note — then follows it', () => {
     feed([rec()])
     expect(mount(TWO, { source }).innerHTML).toBe('')
     expect(mount(TWO, { settings: S }).innerHTML).toBe('')
