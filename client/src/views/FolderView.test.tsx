@@ -4,7 +4,7 @@
  * mocked (the ONE frontmatter writer, shared by the settings door and every cell) and `api` mocked
  * for the create path.
  *
- * Pinned here: its rows are the notes that live IN the folder and nobody else; a folder with no
+ * Pinned here: its rows are the notes UNDER the folder, at any depth, and its shortcuts; a folder with no
  * `.folder.md` shows the defaults and opening it writes nothing; link resolution and the link
  * pickers read the WHOLE vault even though the rows are a subset; a config edit is ONE
  * `folder_settings` write on the folder's `.folder.md` while a cell edit still writes the
@@ -191,7 +191,7 @@ describe('a folder with no settings file', () => {
     await flush()
     expect(q(el, 'h1').textContent).toBe('stages')
     expect(texts(el, '.view-tab__btn')).toEqual(['Table', 'Board'])
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old'])
     expect(captured.folder!.settings.columns).toEqual(DEFAULT_COLUMNS) // E2: the default Status column, on no file
     expect(write).not.toHaveBeenCalled()
     expect(transform).not.toHaveBeenCalled()
@@ -256,21 +256,42 @@ describe('a folder whose `.folder.md` declares columns', () => {
 
 // ---------- the rows (D4) ----------
 
-describe('rows are the notes IN the folder, and only those', () => {
-  it('a note in another folder, or in a subfolder, is not a row', async () => {
+describe('rows are the notes UNDER the folder, at any depth, and only those', () => {
+  it('a note directly in the folder is a row; a note in another folder is not', async () => {
     const el = await mount()
     selectView(el, 'Table')
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
+    expect(rowNames(el)).toEqual(expect.arrayContaining(['Lead Gen', 'Sales']))
     expect(el.textContent).not.toContain('Other') // another folder
-    expect(el.textContent).not.toContain('Old') // stages/archive: not recursive
     expect(el.textContent).not.toContain('CAC')
+  })
+
+  it('a note in a subfolder, at any depth, is a row', async () => {
+    const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
+    selectView(el, 'Table')
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Older'])
+  })
+
+  it('a folder with no notes of its own but notes in its subfolders shows all of them', async () => {
+    const el = await mount(SETTINGS, [rec(OTHER), rec(DEEP), rec('/vault/stages/archive/2019/Older.md'), rec('/vault/stages/live/Now.md')])
+    selectView(el, 'Table')
+    expect(rowNames(el)).toEqual(['Old', 'Older', 'Now'])
+  })
+
+  it('a subfolder is never a row — not even one with a settings file of its own', async () => {
+    const el = renderFolderView({ path: STAGES, source, onOpenFile })
+    const folders = [{ ...rec(SETTINGS_FILE, { folder_settings: SETTINGS }), id: STAGES_ID }, { ...rec('/vault/stages/archive/.folder.md'), id: 'z8y7x6w5v4t3' }]
+    act(() => source.update(linkResolver(vault(), '/vault', vaultDirs('/vault'), folders), vault(), folders))
+    await flush()
+    selectView(el, 'Table')
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old'])
+    expect(rowNames(el)).not.toContain('archive')
   })
 
   it('a note that lands in the folder on the next snapshot is a row with no user action', async () => {
     const el = await mount()
     selectView(el, 'Table')
     feed(SETTINGS, [...vault(), rec('/vault/stages/Expansion.md')])
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Expansion']) // the snapshot's order
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Expansion']) // the snapshot's order
   })
 
   it('the whole-vault resolver reaches the engine: a link pointing OUTSIDE the folder resolves', async () => {
@@ -288,14 +309,14 @@ describe('a shortcut is a row too (D2/D4)', () => {
   it('a note whose `also_in` holds the folder’s id shows among its rows, in the snapshot’s order', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
-    expect(rowNames(el)).toEqual(['Other', 'Lead Gen', 'Sales'])
+    expect(rowNames(el)).toEqual(['Other', 'Lead Gen', 'Sales', 'Old'])
   })
 
-  it('the shortcut row wears the mark beside its name in every view; a note that lives here wears none', async () => {
-    /** Of the three titles a view draws, the ones wearing the mark — by the name they read as, which the mark adds nothing to. */
+  it('the shortcut mark: a row that does not live under the folder wears it in every view; a note that lives here, or in a subfolder, wears none', async () => {
+    /** Of the four titles a view draws, the ones wearing the mark — by the name they read as, which the mark adds nothing to. */
     const marked = (el: ParentNode, title: string): string[] => {
       const titles = [...el.querySelectorAll(title)]
-      expect(titles).toHaveLength(3)
+      expect(titles).toHaveLength(4)
       return titles.filter((name) => name.querySelector('.shortcut-mark') !== null).map((name) => name.textContent ?? '')
     }
     const order = ['file.name']
@@ -311,7 +332,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
 
   it('a folder with no `.folder.md` has no id, so the same note is no row there', async () => {
     const el = await mount(null, shortcut())
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old'])
   })
 
   it('editing a cell on the shortcut row writes the ORIGINAL file — it is the same note', async () => {
@@ -324,19 +345,48 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'order', 9)
   })
 
-  it('a column delete strips the key from the notes that LIVE in the folder; the shortcut keeps its value (E4)', async () => {
+  it('deleting a column strips the value only from the notes DIRECTLY in the folder; a subfolder’s note and the shortcut keep theirs (E4)', async () => {
     await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn('order'))
-    // Other.md carries `order` and is a row here — but it lives elsewhere.
+    // Other.md and archive/Old.md carry `order` and are rows here — but neither lives in the folder itself.
     expect(transform.mock.calls.map(([path]) => path)).toEqual([LEAD, SALES])
   })
 
-  it('the delete sheet counts those same notes, not the shortcut row', async () => {
+  it('the delete-column confirm sheet counts those same notes — direct notes only, no subfolder row, no shortcut row', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
-    rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][1]) // `order`: Other, Lead Gen and Sales all carry it
+    rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][1]) // `order`: Other, Lead Gen, Sales and Old all carry it
     click(menuItem(el, 'Delete column…'))
     expect(q(el, '.confirm__text').textContent).toContain('the "order" value from 2 notes')
+  })
+
+  it('a cell edit on a row from a subfolder writes that note’s own frontmatter', async () => {
+    const el = await mount()
+    selectView(el, 'Table')
+    openCell(el, 2, 1) // archive/Old's `order`
+    const input = byLabel<HTMLInputElement>(el, 'Edit order')
+    setValue(input, '9')
+    press(input, 'Enter')
+    expect(write).toHaveBeenCalledExactlyOnceWith(DEEP, 'order', 9)
+  })
+
+  it('a board drag on a row from a subfolder writes that note’s own frontmatter', async () => {
+    const el = await mount({ ...SETTINGS, views: [{ ...BOARD, order: ['file.name'], groupBy: { property: 'note.order' } }] })
+    const fire = (target: Element, type: string): void => act(() => void target.dispatchEvent(new Event(type, { bubbles: true, cancelable: true })))
+    const old = [...el.querySelectorAll('.view-board__title')].find((title) => title.textContent === 'Old')!.closest('.view-board__card')!
+    const column = [...el.querySelectorAll('.view-board__col')].find((col) => q(col, '.view-group__value').textContent === '1')!
+    fire(old, 'dragstart')
+    fire(column, 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith(DEEP, 'order', 1)
+  })
+
+  it('"New" creates the note DIRECTLY in the opened folder; its name-clash check looks only at notes directly in it, not at rows from subfolders', async () => {
+    const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/archive/Untitled.md')])
+    selectView(el, 'Table')
+    expect(rowNames(el)).toContain('Untitled') // a row here, from the subfolder
+    click(byLabel(el, 'New note'))
+    await flush()
+    expect(created(0).path).toBe('/vault/stages/Untitled.md')
   })
 
   it('New steps past the names of the notes that live here, never a shortcut’s', async () => {
@@ -374,7 +424,7 @@ describe('the chrome is the views chrome', () => {
     expect(el.querySelector('.view-table')).toBeNull()
     selectView(el, 'Table')
     expect(el.querySelector('.view-table')).not.toBeNull()
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old'])
   })
 
   it('switching view writes NOTHING — which view is active is session state, never the file', async () => {
@@ -887,6 +937,28 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     click(byLabel(el, 'New note in group 4-Done'))
     await flush()
     expect(created(0)).toEqual({ path: '/vault/stages/Untitled.md', content: '---\nstatus: 4-Done\n---\n' })
+  })
+
+  it.each(['table', 'board', 'cards', 'list'])('the "+" on a group header when a %s is grouped by Folder (`file.folder`) creates the note in that group’s folder', async (type) => {
+    const view = { type, name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }
+    const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/Untitled.md')])
+    click(byLabel(el, 'New note in group stages/archive'))
+    await flush()
+    // Born in the subfolder, from ITS template, and named past ITS notes alone: `stages/Untitled` is no clash there.
+    expect(readFile.mock.calls.at(-1)).toEqual(['/vault/stages/archive/.template.md'])
+    expect(created(0)).toEqual({ path: '/vault/stages/archive/Untitled.md', content: '' })
+    expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/archive/Untitled.md')
+    click(byLabel(el, 'New note in group stages'))
+    await flush()
+    expect(created(1).path).toBe('/vault/stages/Untitled 2.md')
+  })
+
+  it('the "+" under a group-by-Folder group that is not under the opened folder (a shortcut’s home) creates in the opened folder', async () => {
+    const records = vault().map((r) => (r.path === OUTSIDER ? { ...r, properties: { also_in: [STAGES_ID] } } : r))
+    const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, records)
+    click(byLabel(el, 'New note in group Sub'))
+    await flush()
+    expect(created(0).path).toBe('/vault/stages/Untitled.md')
   })
 
   it('a TYPED name (YAZ-943) lands in the folder under that name and dedups like Untitled', async () => {

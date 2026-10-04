@@ -139,7 +139,7 @@ export interface DeleteColumnHost {
   columns: Readonly<Record<string, ColumnDecl>>
   /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
   def: ViewSet
-  /** The notes that live in the folder (YAZ-2290 E4) — the only ones the key is stripped from. */
+  /** The notes that live directly in the folder (YAZ-2290 E4) — the only ones the key is stripped from. */
   residents: readonly IndexRecord[]
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>

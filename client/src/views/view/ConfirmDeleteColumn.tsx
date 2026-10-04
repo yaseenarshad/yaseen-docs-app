@@ -1,6 +1,6 @@
 import { useContext, useMemo } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { isShortcut } from '../../links/shortcuts'
+import { livesIn } from '../../links/shortcuts'
 import { residentsCarrying } from '../deleteColumn'
 import { propertyLabel } from '../engine'
 import type { ViewSet } from '../viewSchema'
@@ -17,7 +17,7 @@ interface ConfirmDeleteColumnProps {
   /** The column, any spelling — the sheet derives its label, bare key and count itself (YAZ-1549). */
   columnKey: string
   def: ViewSet
-  /** The folder's rows: the count is taken ONCE, when the sheet opens, over the ones that live in it — a shortcut row is not stripped (E4). */
+  /** The folder's rows: the count is taken ONCE, when the sheet opens, over the ones that live directly in it — a subfolder's row and a shortcut row are not stripped (E4). */
   records: readonly IndexRecord[]
   onConfirm: () => void
   onCancel: () => void
@@ -34,7 +34,7 @@ export function ConfirmDeleteColumn({ columnKey, def, records, onConfirm, onCanc
   const propKey = canonicalKey(columnKey).slice('note.'.length)
   const folder = useContext(ViewFolder)
   // Taken once at open: the number the user reads is the number the confirm meant.
-  const count = useMemo(() => residentsCarrying(folder === null ? records : records.filter((r) => !isShortcut(r, folder)), columnKey).length, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const count = useMemo(() => residentsCarrying(folder === null ? records : records.filter((r) => livesIn(r, folder)), columnKey).length, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <ConfirmSheet
       labelId="confirm-delete-column-text"

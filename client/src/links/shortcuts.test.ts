@@ -31,7 +31,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, folderRows, isShortcut, removeShortcut, rowsByFolder } from './shortcuts'
+import { addShortcut, folderRows, isShortcut, livesIn, removeShortcut, rowsByFolder } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -56,18 +56,61 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
 const PROJECTS_ID = 'k3m9x2pq7abc'
 const AREAS_ID = 'z8y7x6w5v4t3'
 const NOBODY_ID = 'a1b2c3d4e5f6'
+const DEEP_ID = 'd5e6f7g8h9j2'
+const DEEPER_ID = 'm4n5p6q7r8s9'
 
 /** A folder's settings file: its `id` is the folder's id. */
 const settings = (folder: string, id?: string): IndexRecord => ({ ...rec(`/vault/${folder}/.folder.md`), id })
 
 const FOLDERS = [settings('Areas', AREAS_ID), settings('Projects', PROJECTS_ID)]
+/** The same two, and two folders under Projects — one inside the other. */
+const NESTED = [...FOLDERS, settings('Projects/Deep', DEEP_ID), settings('Projects/Deep/Deeper', DEEPER_ID)]
 const pathsIn = (records: readonly IndexRecord[], folder: string, folders: readonly IndexRecord[] = FOLDERS): string[] =>
   folderRows(records, folders, folder).map((r) => r.path)
 
 describe('what a folder shows (YAZ-2290 D4)', () => {
-  it('the notes that live DIRECTLY in it — not a subfolder’s, not another folder’s', () => {
-    const records = [rec('/vault/Other.md'), rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md'), rec('/vault/Projects/C.md')]
+  it('a note directly in the folder is a row; another folder’s note is not', () => {
+    const records = [rec('/vault/Other.md'), rec('/vault/Projects/A.md'), rec('/vault/Projects-old/X.md'), rec('/vault/Projects/C.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/A.md', '/vault/Projects/C.md'])
+  })
+
+  it('a note in a subfolder, at any depth, is a row', () => {
+    const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md'), rec('/vault/Projects/Deep/Deeper/C.md')]
+    expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/A.md', '/vault/Projects/Deep/B.md', '/vault/Projects/Deep/Deeper/C.md'])
+    expect(pathsIn(records, 'Projects/Deep')).toEqual(['/vault/Projects/Deep/B.md', '/vault/Projects/Deep/Deeper/C.md'])
+    expect(pathsIn(records, 'Projects/Deep/Deeper')).toEqual(['/vault/Projects/Deep/Deeper/C.md'])
+  })
+
+  it('a folder with no notes of its own but notes in its subfolders shows all of them', () => {
+    const records = [rec('/vault/Projects/Deep/B.md'), rec('/vault/Projects/Deep/Deeper/C.md'), rec('/vault/Projects/Other/D.md')]
+    expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/Deep/B.md', '/vault/Projects/Deep/Deeper/C.md', '/vault/Projects/Other/D.md'])
+  })
+
+  it('a subfolder is never a row: every row is a note of the snapshot', () => {
+    const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md')]
+    expect(folderRows(records, NESTED, 'Projects')).toEqual(records)
+  })
+
+  it('a shortcut into one of its subfolders is a row in the subfolder AND in every folder above it', () => {
+    const records = [rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID] })]
+    for (const folder of ['Projects/Deep/Deeper', 'Projects/Deep', 'Projects']) expect(pathsIn(records, folder, NESTED)).toEqual(['/vault/Areas/Health.md'])
+  })
+
+  it('a note that would be a row twice is shown once: it lives under the folder and is also a shortcut into it, or into a subfolder of it', () => {
+    const records = [
+      rec('/vault/Areas/Both.md', { also_in: [PROJECTS_ID, DEEP_ID, DEEPER_ID] }),
+      rec('/vault/Projects/A.md', { also_in: [DEEP_ID] }),
+      rec('/vault/Projects/Deep/B.md', { also_in: [PROJECTS_ID] }),
+      rec('/vault/Projects/Deep/Deeper/C.md', { also_in: [DEEP_ID] }),
+    ]
+    const all = records.map((r) => r.path)
+    expect(pathsIn(records, 'Projects', NESTED)).toEqual(all)
+    expect(pathsIn(records, 'Projects/Deep', NESTED)).toEqual(all)
+  })
+
+  it('the vault root has no "everything" list: its entry is the notes directly in the root, as before', () => {
+    const records = [rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md', { also_in: [AREAS_ID] }), rec('/vault/Top.md')]
+    expect(pathsIn(records, '', NESTED)).toEqual(['/vault/Top.md'])
   })
 
   it('plus the notes whose `also_in` holds the folder’s id — the `id` of its `.folder.md`', () => {
@@ -119,11 +162,24 @@ describe('`also_in`, read tolerantly', () => {
   })
 })
 
-describe('a row is a shortcut where it does not live', () => {
-  it('says so for the folder being shown', () => {
+describe('a row is a shortcut where it does not live under the folder', () => {
+  it('the shortcut mark: a note that is not under the folder being shown is there by a shortcut', () => {
     const health = rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] })
     expect(isShortcut(health, 'Projects')).toBe(true)
     expect(isShortcut(health, 'Areas')).toBe(false)
+    expect(isShortcut(rec('/vault/Projects-old/X.md'), 'Projects')).toBe(true)
+  })
+
+  it('a note from a subfolder, at any depth, is no shortcut', () => {
+    expect(isShortcut(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
+    expect(isShortcut(rec('/vault/Projects/Deep/Deeper/C.md'), 'Projects')).toBe(false)
+    expect(isShortcut(rec('/vault/Projects/A.md'), 'Projects/Deep')).toBe(true)
+  })
+
+  it('livesIn is narrower: directly in the folder, not in a subfolder of it', () => {
+    expect(livesIn(rec('/vault/Projects/A.md'), 'Projects')).toBe(true)
+    expect(livesIn(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
+    expect(livesIn(rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), 'Projects')).toBe(false)
   })
 })
 
@@ -209,6 +265,20 @@ describe('removing a shortcut (YAZ-2290 E5)', () => {
     disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
     await removeShortcut('/vault/Projects', NOTE, FOLDERS)
     expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
+  })
+
+  it('"Remove shortcut" removes the entries naming the folder OR any folder under it, and never deletes the note', async () => {
+    disk.set(NOTE, `---\nalso_in:\n  - ${DEEPER_ID}\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\ntitle: Health\n---\nBody\n`)
+    await removeShortcut('/vault/Projects/Deep', NOTE, NESTED)
+    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', NOTE, NESTED)
+    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\ntitle: Health\n---\nBody\n`)
+  })
+
+  it('a folder with no `.folder.md` of its own still removes the entries naming the folders under it', async () => {
+    disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\n  - ${AREAS_ID}\n---\nBody\n`)
+    await removeShortcut('/vault/Projects', NOTE, [settings('Projects/Deep', DEEP_ID), settings('Projects-old', AREAS_ID)])
+    expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
   })
 
   it('the key goes with its last entry — list or scalar: an emptied list is no list', async () => {

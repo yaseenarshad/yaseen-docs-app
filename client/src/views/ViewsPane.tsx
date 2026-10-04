@@ -16,7 +16,7 @@ import { writeProperties, writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
-import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, applyMoves, groupByKey, groupsByFolder } from './view/groupDrag'
 import { groupKeyOf, nestedGroupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
@@ -113,6 +113,12 @@ function seedGroupValue(properties: Record<string, unknown>, group: Group, key: 
   if (key === null || group.key === null) return
   const raw = group.fannedOut ? [render(group.key)] : group.rows[0]?.record.properties[key] ?? group.optionValue
   if (raw !== undefined) properties[key] = raw
+}
+
+/** One group into a new note's seed, for the group's LEVEL: grouped by Folder it is where the note is born, else its value (`seedGroupValue`). */
+function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number): void {
+  if (!groupsByFolder(view, level)) seedGroupValue(seed.properties, group, groupByKey(view, level))
+  else if (typeof group.key === 'string') seed.folder = group.key
 }
 
 /**
@@ -270,15 +276,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group. It is born
   // IN the folder, from its template and that seed alone (YAZ-2290 D4/E1): a group "+" seeds its
-  // group. The note opens once the create lands; a failure shows the alert.
+  // group — or, grouped by Folder, is born in it. The note opens once the create lands; a failure shows the alert.
   // A `name` means the board's inline add (YAZ-943) — it already named the card and the caller is
   // mid-typing in the column, so that create STAYS on the board and opens nothing.
   const onNewNote = (group: Group | null, name?: string, at?: GroupSpot) => {
     const seed = deriveSeed(def, view)
     if (group !== null) {
-      seedGroupValue(seed.properties, group, groupByKey(view, at?.level ?? 0))
+      seedGroup(seed, group, view, at?.level ?? 0)
       // 🔒 YAZ-745: an INNER "+" seeds the outer too, so the note lands in the very section clicked.
-      if (at !== undefined && at.level > 0) seedGroupValue(seed.properties, at.outer, groupByKey(view))
+      if (at !== undefined && at.level > 0) seedGroup(seed, at.outer, view, 0)
     }
     setCreateError(null)
     folder

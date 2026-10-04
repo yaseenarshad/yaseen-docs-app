@@ -3,7 +3,7 @@
  * search — the search bar's own candidates, matcher and result list (`searchCandidates`,
  * `searchTitles`, `SearchResults`) inside the confirm sheet's shell, so it ranks like the bar and
  * closes like a sheet. Notes only (the index holds nothing else), and none the folder already
- * shows: one living there or already a shortcut there has nothing to add.
+ * shows: one living under it or already a shortcut there has nothing to add.
  *
  * The input keeps focus, as the bar's does: type to filter, ↑/↓ move the highlight (clamped, never
  * wrapping), ⏎ picks it, Esc or a click away closes. An empty query lists the first `SEARCH_CAP`.

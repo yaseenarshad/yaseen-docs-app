@@ -11,7 +11,7 @@ import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle, summaryKindOf } from './GroupHeader'
-import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupsByFolder, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
 import type { ResolveLink, WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
@@ -465,7 +465,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       rows={line.header.rows}
                       collapsed={collapsedSet.has(line.gk)}
                       onToggle={() => onToggleGroup(line.gk)}
-                      onNew={onNewInGroup === undefined || levelKeys[line.at.level] === null ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
+                      onNew={onNewInGroup === undefined || (levelKeys[line.at.level] === null && !groupsByFolder(view, line.at.level)) ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
                       resolve={resolve}
                     />
                   </td>

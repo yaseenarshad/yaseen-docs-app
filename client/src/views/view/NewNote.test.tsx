@@ -269,6 +269,60 @@ describe('New inside a group', () => {
   })
 })
 
+// ---------- Grouped by Folder: the group "+" is born in that folder ----------
+
+const BY_FOLDER = (type: string, inner = ''): string => `views:
+  - type: ${type}
+    name: V
+    order:
+      - file.name
+    groupBy:
+      - property: file.folder
+${inner}`
+
+const AGENTIC_FOLDER = 'Content Pillars/1. Agentic Agency'
+
+describe('the "+" on a group header when the view is grouped by Folder (`file.folder`)', () => {
+  it.each(['table', 'board', 'cards', 'list'])('a %s: the create is handed that group\'s folder, and no property is seeded', (type) => {
+    const { el } = mount(BY_FOLDER(type))
+
+    click(byLabel(el, `New note in group ${AGENTIC_FOLDER}`))
+
+    expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: AGENTIC_FOLDER }, undefined])
+  })
+
+  it('a board column\'s inline "New card" is born there too, under its typed name', () => {
+    const { el } = mount(BY_FOLDER('board'))
+    const column = [...el.querySelectorAll<HTMLElement>('.view-board__col')].find((c) => q(c, '.view-group__value').textContent === AGENTIC_FOLDER)!
+
+    click(byLabel(column, 'New card'))
+    const input = byLabel<HTMLInputElement>(column, 'New card name')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'Ship it')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+
+    expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: AGENTIC_FOLDER }, 'Ship it'])
+  })
+
+  it('an inner "+" under a Folder outer seeds its own property and is born in the outer\'s folder', () => {
+    const { el } = mount(BY_FOLDER('table', '      - property: note.status\n'))
+
+    click(q(el, '[aria-label="New note in group idea"]')) // the first `idea`: Agentic Agency's
+
+    expect(create.mock.calls[0]).toEqual([{ properties: { status: 'idea' }, folder: AGENTIC_FOLDER }, undefined])
+  })
+
+  it('the "No value" group — the vault root\'s notes — names no folder', () => {
+    const { el } = mount(BY_FOLDER('table'))
+
+    click(byLabel(el, 'New note in group No value'))
+
+    expect(create.mock.calls[0]).toEqual([{ properties: {} }, undefined])
+  })
+})
+
 // ---------- Fan-out: the group "+" seeds its own element (YAZ-671 D4) ----------
 
 const STATUS_BOARD = `views:

@@ -107,7 +107,7 @@ interface TreeProps {
   move: TreeFileMove
   /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. */
   selection: TreeSelection
-  /** Notes each folder shows, by its path (🔒 E6, YAZ-2290) — the ones directly in it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
+  /** Notes each folder shows, by its path (🔒 E6, YAZ-2290) — the ones under it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
   counts: ReadonlyMap<string, number>
   /**
    * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): notes that live elsewhere, drawn as
