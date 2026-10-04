@@ -78,7 +78,7 @@ const declaredColumns = async (): Promise<Record<string, { kind?: string }>> => 
 }
 
 /**
- * A folder's settings whose table shows its notecards' `status` column and declare NOTHING about
+ * A folder's settings whose table shows its notes' `status` column and declare NOTHING about
  * it — so the only thing that can type that column is the declaration the panel writes there.
  * (A settings file that says anything at all states its own columns: the default Status column
  * is only what a folder with NO saved settings falls back to.)

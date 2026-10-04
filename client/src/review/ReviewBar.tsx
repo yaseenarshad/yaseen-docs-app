@@ -4,7 +4,7 @@ import './reviewBar.css'
 
 /**
  * The review surface's own chrome (YAZ-2322). A session REPLACES the main pane and is not a tab:
- * App puts `ReviewBar` where the tab strip was, shows the session's notecard under it, and
+ * App puts `ReviewBar` where the tab strip was, shows the session's note under it, and
  * `ReviewAnswers` under that. Presentational — the session and every answer are `useReview`'s.
  */
 
@@ -25,7 +25,7 @@ interface ReviewBarProps {
  */
 export function ReviewBar({ session, onKeep, onSkip, onUndo, onClose }: ReviewBarProps) {
   useEffect(() => {
-    // CAPTURE, and the key stops here: the answers work with the caret in the notecard, and
+    // CAPTURE, and the key stops here: the answers work with the caret in the note, and
     // nothing under the window may also act on them — a comment box submits on any ⌘⏎.
     const onAnswer = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase()
@@ -67,7 +67,7 @@ export function ReviewBar({ session, onKeep, onSkip, onUndo, onClose }: ReviewBa
   )
 }
 
-/** The two answers, under the notecard, each with the chord that gives it. */
+/** The two answers, under the note, each with the chord that gives it. */
 export function ReviewAnswers({ onKeep, onSkip }: Pick<ReviewBarProps, 'onKeep' | 'onSkip'>) {
   return (
     <div className="review-answers">
@@ -83,10 +83,10 @@ export function ReviewAnswers({ onKeep, onSkip }: Pick<ReviewBarProps, 'onKeep' 
 
 /**
  * What the main pane says when the session has no page of its own to show there: nothing is left,
- * or the notecard is open in the side panel — one editor per notecard, so it is reviewed there.
+ * or the note is open in the side panel — one editor per note, so it is reviewed there.
  */
 export function ReviewMessage({ session, onClose }: Pick<ReviewBarProps, 'session' | 'onClose'>) {
-  if (session.path !== null) return <p className="review-message">This notecard is open in the side panel.</p>
+  if (session.path !== null) return <p className="review-message">This note is open in the side panel.</p>
   return (
     <div className="review-message">
       <p>{session.label === 'Inbox' ? 'Inbox complete.' : `Nothing due in ${session.label}.`}</p>

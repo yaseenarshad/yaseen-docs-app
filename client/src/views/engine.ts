@@ -62,7 +62,7 @@ export interface ViewResult {
 }
 
 export interface RunOptions {
-  /** The folder's declared column names — shown by default before any notecard carries them (YAZ-1549). */
+  /** The folder's declared column names — shown by default before any note carries them (YAZ-1549). */
   declared?: readonly string[]
   /** Vault root; lets link targets written as `<root>/…` resolve. */
   root?: string
@@ -327,7 +327,7 @@ const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof 
 /**
  * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
  * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
- * a column before any notecard carries it, so a new folder shows its `status` at once. Two keys
+ * a column before any note carries it, so a new folder shows its `status` at once. Two keys
  * the app writes and nobody reads as a value are never default columns: the note's `id`
  * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2). A view can still add either
  * (`allPropertyKeys` offers them).

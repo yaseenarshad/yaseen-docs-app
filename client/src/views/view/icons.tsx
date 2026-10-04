@@ -102,7 +102,7 @@ export const HeartIcon = () => (
   </svg>
 )
 
-/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a notecard's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
+/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a note's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
 export const ShortcutIcon = () => (
   <svg {...svg} width={11} height={11} className="shortcut-mark">
     <path d="M5.5 4H12v6.5M12 4 4 12" />

@@ -2,7 +2,7 @@
  * Owns the window's two deliberately separate wikilink feeds. Ready index snapshots replace the
  * stable semantic source's resolver/records and contribute Markdown picker rows. A Files-tree
  * catalog independently replaces the stable navigation-only source and contributes text/PDF rows;
- * it never enters the semantic source. The tree's FOLDERS do (YAZ-2290 D10): a link no notecard
+ * it never enters the semantic source. The tree's FOLDERS do (YAZ-2290 D10): a link no note
  * answers resolves to the folder of that name, and the picker offers it. A root switch
  * synchronously retires the old catalog and the composed picker rows before either new feed can
  * resolve, preventing cross-vault composition while every subscribed editor keeps the same
@@ -62,7 +62,7 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
   // loaded, as resolved (source.resolve null) — never flashing everything unresolved.
   const ready = !rootChanged && status === 'ready'
   // ONE resolver per snapshot and folder list, and the semantic picker rows it names: the
-  // notecards, then the folders — after them, so a notecard wins an equal match (D10).
+  // notes, then the folders — after them, so a note wins an equal match (D10).
   const semantic = useMemo(() => {
     if (!ready) return null
     const dirs = dirList === '' ? [] : dirList.split('\n')

@@ -1,10 +1,10 @@
 /**
- * Shortcuts (YAZ-2290 D2): a notecard lives in exactly ONE folder and may also APPEAR in others.
- * The shortcut is stored on the notecard — `also_in`, a list of FOLDER IDS, a folder's id being the
+ * Shortcuts (YAZ-2290 D2): a note lives in exactly ONE folder and may also APPEAR in others.
+ * The shortcut is stored on the note — `also_in`, a list of FOLDER IDS, a folder's id being the
  * `id` of its `.folder.md` (YAZ-2293) — so it is the same file wherever it shows, and nothing is
- * rewritten when a folder or a notecard is renamed or moved. This module is the one door to that key.
+ * rewritten when a folder or a note is renamed or moved. This module is the one door to that key.
  *
- * WHAT A FOLDER SHOWS (D4): the notecards directly in it, plus the notecards whose `also_in` holds
+ * WHAT A FOLDER SHOWS (D4): the notes directly in it, plus the notes whose `also_in` holds
  * its id — each once, in the index's own order. An entry no folder has (a deleted folder, a typo)
  * is ignored quietly, and a folder with no `.folder.md` has no id, so nothing is a shortcut in it.
  */
@@ -89,8 +89,8 @@ async function folderId(dir: string): Promise<string> {
 }
 
 /**
- * Make the notecard at `path` also appear in the folder at `dir` (D2): the folder's id joins the
- * notecard's `also_in` — once, and beside every entry already there, understood or not.
+ * Make the note at `path` also appear in the folder at `dir` (D2): the folder's id joins the
+ * note's `also_in` — once, and beside every entry already there, understood or not.
  */
 export async function addShortcut(dir: string, path: string): Promise<void> {
   const id = await folderId(dir)
@@ -101,9 +101,9 @@ export async function addShortcut(dir: string, path: string): Promise<void> {
 }
 
 /**
- * Take the notecard at `path` out of the folder at `dir` (E5): the folder's id leaves its
+ * Take the note at `path` out of the folder at `dir` (E5): the folder's id leaves its
  * `also_in`, and the key goes with its last entry — an emptied list is no list, the comments
- * store's rule (`shared/comments.ts`). The notecard itself stays where it lives.
+ * store's rule (`shared/comments.ts`). The note itself stays where it lives.
  */
 export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[]): Promise<unknown> {
   const id = folderRecord(folders, dir)?.id

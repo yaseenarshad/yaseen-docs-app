@@ -62,7 +62,7 @@ interface EditorProps {
   watch: WatchSource
   /** A folder's views open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
-  /** A folder's Table/Board actions open a notecard in the window's right panel. */
+  /** A folder's Table/Board actions open a note in the window's right panel. */
   onOpenFileRight?: (path: string) => void
   /**
    * ⌘-click on an editor wiki link (Links C, GRO-2192) opens a background tab; App passes

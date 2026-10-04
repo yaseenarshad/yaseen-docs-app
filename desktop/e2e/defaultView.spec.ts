@@ -11,7 +11,7 @@
  * ONE test by design: the proof is the arc, and every step needs the state the previous one left.
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`) on
  * `KPIs` — the folder whose settings list an Outline first, then a Table and a Board, over five
- * notecards, so "the first view" and "the saved view" are genuinely different.
+ * notes, so "the first view" and "the saved view" are genuinely different.
  *
  * Same harness as folderColumns.spec.ts (temp `--user-data-dir`, a COPY of the fixture,
  * `defaultview-` step screenshots).

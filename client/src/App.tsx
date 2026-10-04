@@ -741,7 +741,7 @@ export function App() {
     reviewSettings: reviewSettings.settings,
   }
 
-  // While a review is open (YAZ-2322) the main pane shows ITS notecard, not the active tab's page.
+  // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
   // The tabs, their history and the right panel are not touched: closing the review uncovers them.
   const session = review.session
   const shown = session === null ? file : session.path
@@ -836,7 +836,7 @@ export function App() {
           selectionRef={sidebarSelection}
           // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
           clipboardRef={sidebarClipboard}
-          // The folder rows' notecard counts (🔒 E6, YAZ-2290) read the SAME per-window index source
+          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME per-window index source
           // WikilinkIndexBridge already feeds below — read-only, and no second feed.
           indexSource={wikilinks}
           pendingSearchFocus={pendingSearchFocus}
@@ -905,7 +905,7 @@ export function App() {
                 {editorCommon !== null && <RetainedEditor {...editorCommon} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} />}
               </div>
             ))}
-            {/* A review's notecard (YAZ-2322) shows through its own tab's layer, above, when it has
+            {/* A review's note (YAZ-2322) shows through its own tab's layer, above, when it has
                 one. Open in the side panel it is reviewed THERE. Otherwise it gets the one extra
                 layer, whose links open in background tabs so the review stays in front. Two editors
                 on one path would run two autosaves, so there is never a second. */}

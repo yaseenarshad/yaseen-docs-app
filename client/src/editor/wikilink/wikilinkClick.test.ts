@@ -10,7 +10,7 @@
  * F2 (GRO-2197) added two more notices for otherwise invisible outcomes: a click during the
  * pre-index window, and a ⌘-click whose freshly created note landed in a background tab.
  * An id link (YAZ-2293) opens from its title widget like any link; an id no note has is NEVER
- * created — a passive notice says the notecard is gone.
+ * created — a passive notice says the note is gone.
  * A link to a FOLDER (YAZ-2290 D10) is a resolved link whose path is the directory: the same two
  * gestures open the folder's tab, and nothing is created.
  */
@@ -349,11 +349,11 @@ describe('wikilink click: id links (YAZ-2293)', () => {
     ['a plain click', `pad [[${DEAD}]] tail\n`, DEAD, {}],
     ['a ⌘-click', `pad [[${DEAD}]] tail\n`, DEAD, { metaKey: true }],
     ['a click on its label', `pad [[${DEAD}|old label]] tail\n`, 'old label', {}],
-  ])('an id no note has is never created — %s says the notecard is gone and does nothing else', async (_name, markdown, shown, init) => {
+  ])('an id no note has is never created — %s says the note is gone and does nothing else', async (_name, markdown, shown, init) => {
     const { root, nav } = await mount(markdown, resolveId)
     expect(mousedown(linkSpan(root, shown), init)).toBe(false) // still swallowed: no caret, no reveal
     await vi.advanceTimersByTimeAsync(0)
-    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That notecard no longer exists')
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
     expect(nav.openCurrent).not.toHaveBeenCalled()
     expect(nav.openBackground).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
@@ -367,7 +367,7 @@ describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
     path: '/vault/Projects/.folder.md', name: '.folder.md', basename: '.folder', folder: 'Projects', ext: 'md',
     size: 1, ctime: 1, mtime: 1, id: FOLDER_ID, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   }
-  /** THE resolver the bridge feeds: no notecard at all, one folder, and its settings file's id. */
+  /** THE resolver the bridge feeds: no note at all, one folder, and its settings file's id. */
   const resolveFolder = linkResolver([], '/vault', ['/vault/Projects'], [settings])
 
   it('is styled as a RESOLVED link; a plain click opens the directory path in the current tab, ⌘-click in a background tab', async () => {

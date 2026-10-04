@@ -8,7 +8,7 @@ import { OutlineEditor } from './OutlineEditor'
  * The OUTLINE skin of a folder's views (YAZ-903): ONE free-form markdown bullet list the user
  * types into (`OutlineEditor`, YAZ-901), held as `views[i].outline` (🔒 D2, YAZ-900). It is a plain
  * document and nothing more (YAZ-2290 D5): a link in it is just a link, and says nothing about
- * what the folder holds — its rows are the notecards that live in it.
+ * what the folder holds — its rows are the notes that live in it.
  */
 export interface OutlineViewProps {
   /** The FIRST outline view's stored document, when it has one. */

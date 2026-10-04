@@ -3,9 +3,9 @@
  * committed encyclopedia driven through the REAL app, with the index, the wiki-link graph and the
  * folders all answering the same questions about it.
  *
- * The fixture (`fixtures/bible-vault/`) is five real FOLDERS of notecards — `Funnel Stages`,
+ * The fixture (`fixtures/bible-vault/`) is five real FOLDERS of notes — `Funnel Stages`,
  * `Industries`, `KPIs`, `Problems`, `Roles` — four of them carrying a hidden `.folder.md` with the
- * columns and views a folder page used to hold, plus the two loose `inbox/` notes. A notecard
+ * columns and views a folder page used to hold, plus the two loose `inbox/` notes. A note
  * belongs to a folder by living in it: nothing in its frontmatter says so, and step 1 proves the
  * counts off the disk.
  *
@@ -17,8 +17,8 @@
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  the vault is sound: zero `page_type` keys, zero broken links, and every folder row shows the
- *      count of the notecards that live in it — the same numbers read off the disk
- *   2  a declared column, edited inline in `KPIs` — a surgical write into the notecard's own file,
+ *      count of the notes that live in it — the same numbers read off the disk
+ *   2  a declared column, edited inline in `KPIs` — a surgical write into the note's own file,
  *      leaving its other keys and body byte-for-byte
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
  *   4  the backlinks panel finds every note that names a KPI, and the ones that live in `Problems`
@@ -73,17 +73,17 @@ const FOLDERS = ['Funnel Stages', 'inbox', 'Industries', 'KPIs', 'Problems', 'Ro
 
 /** The five folders of the encyclopedia proper. */
 const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
-/** The notecards living directly in each, in the same order — the shape of the whole map. */
+/** The notes living directly in each, in the same order — the shape of the whole map. */
 const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
 
-/** The folder step 2 edits through, and the notecard it writes to (row 1 in path order). */
+/** The folder step 2 edits through, and the note it writes to (row 1 in path order). */
 const KPIS = 'KPIs'
 const GROSS_MARGIN = path.join('KPIs', 'Gross Margin.md')
 /** Its `kpi_category` today, and what step 2 makes it — the page's own body argues for the change. */
 const CATEGORY_WAS = 'lagging'
 const CATEGORY_NOW = 'fundamental'
 
-/** Every notecard in `Problems` — the fixture's own answer to "which mentions are problems?". */
+/** Every note in `Problems` — the fixture's own answer to "which mentions are problems?". */
 const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
 /** The KPIs, in the path order the index hands them to a table with no sort. */
 const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
@@ -95,11 +95,11 @@ const RENAMED = 'Deal Win Rate'
  * Step 6 (YAZ-864): the folder whose name is spelled in two frontmatter places that are NESTED
  * inside `folder_page_settings`, where the index never looked for links — `Problems`' `sold_to`
  * column `target`, and its own `reports_to` target. A link to a folder resolves to it when no
- * notecard holds the name (YAZ-2290 D10), so renaming the folder has to rewrite both.
+ * note holds the name (YAZ-2290 D10), so renaming the folder has to rewrite both.
  */
 const ROLES = 'Roles'
 const ROLES_RENAMED = 'Buyer Roles'
-/** The notecards in it, alphabetically. */
+/** The notes in it, alphabetically. */
 const ROLE_MEMBERS = ['CEO', 'Head of Sales', 'RevOps Lead']
 const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED]
 
@@ -163,7 +163,7 @@ async function walk(dir: string, dirs: string[] = []): Promise<{ files: string[]
  * Every wiki link in every note AND every folder settings file — frontmatter relation values and
  * column targets as much as body prose and `![[…]]` embeds — whose target names nothing in the
  * vault: no file, by basename or by root-relative path, with or without extension, and no FOLDER
- * either, by name or by path (a link resolves to a folder when no notecard has the name, YAZ-2290
+ * either, by name or by path (a link resolves to a folder when no note has the name, YAZ-2290
  * D10). The durable result GRO-2203 asks for is that this is `[]` both before and after a rename.
  */
 async function brokenLinks(root: string): Promise<string[]> {
@@ -191,11 +191,11 @@ async function brokenLinks(root: string): Promise<string[]> {
 }
 
 /**
- * How many notecards live DIRECTLY in each of `folders` — the number its row shows (🔒 E6), read
+ * How many notes live DIRECTLY in each of `folders` — the number its row shows (🔒 E6), read
  * straight off the disk so the claim does not lean on the surface that carries it. Markdown files
  * only, and never the folder's own settings file.
  */
-async function notecardsIn(root: string, folders: readonly string[]): Promise<string[]> {
+async function notesIn(root: string, folders: readonly string[]): Promise<string[]> {
   return Promise.all(
     folders.map(async (folder) => {
       const entries = await readdir(path.join(root, folder), { withFileTypes: true })
@@ -227,7 +227,7 @@ test.afterAll(async () => {
 
 // ---------- the scenario ----------
 
-test('step 1 — the encyclopedia is sound, and every folder row counts exactly the notecards that live in it', async () => {
+test('step 1 — the encyclopedia is sound, and every folder row counts exactly the notes that live in it', async () => {
   // The fixture itself is sound before anything runs: not one `page_type` key, and not one
   // dangling wiki link — the column targets inside the folders' settings files included.
   expect(await withPageType(vault)).toEqual([])
@@ -238,24 +238,24 @@ test('step 1 — the encyclopedia is sound, and every folder row counts exactly 
 
   // The map of an encyclopedia that maintains no list: six folders, and nothing else at the root.
   await expect(topLabels(win)).toHaveText(FOLDERS)
-  // THE WHOLE MAP, on one line — the notecards directly in each folder, shown on its row (🔒 E6)
-  // once the index has landed. 17 notecards, five folders, and the two loose ones in `inbox`.
+  // THE WHOLE MAP, on one line — the notes directly in each folder, shown on its row (🔒 E6)
+  // once the index has landed. 17 notes, five folders, and the two loose ones in `inbox`.
   for (const [i, topic] of TOPICS.entries()) await expect(dirCount(win, topic)).toHaveText(TOPIC_COUNTS[i])
   await expect(dirCount(win, 'inbox')).toHaveText('2')
   // …and the same numbers asked of the vault itself: a row counts what LIVES in the folder.
-  expect(await notecardsIn(vault, TOPICS)).toEqual(TOPIC_COUNTS)
+  expect(await notesIn(vault, TOPICS)).toEqual(TOPIC_COUNTS)
   await shoot(win, 'bible-01-folders-and-counts')
 
   // A launch is collapsed since YAZ-1642: open the six folders once for every step that clicks a
-  // notecard's row.
+  // note's row.
   await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
 })
 
-test('step 2 — a declared column, edited inline: written to the notecard’s own file, surgically', async () => {
+test('step 2 — a declared column, edited inline: written to the note’s own file, surgically', async () => {
   await openFolder(win, path.join(vault, KPIS))
   await expect(activeTab(win)).toHaveText(KPIS)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  // Its rows are the five notecards that live in it, in path order.
+  // Its rows are the five notes that live in it, in path order.
   await expect(rowNames(contents(win))).toHaveText(KPI_MEMBERS)
 
   // Column 1 is `kpi_category`, declared `text` by `KPIs/.folder.md`. Row 1 is Gross Margin, whose
@@ -270,8 +270,8 @@ test('step 2 — a declared column, edited inline: written to the notecard’s o
   await input.fill(CATEGORY_NOW)
   await win.keyboard.press('Enter')
 
-  // The write lands in the NOTECARD's frontmatter, surgically — every other key and the whole
-  // body survive, and `funnel_stages`, the declared column this notecard holds no value for,
+  // The write lands in the NOTE's frontmatter, surgically — every other key and the whole
+  // body survive, and `funnel_stages`, the declared column this note holds no value for,
   // stays an empty cell rather than becoming an empty key (YAZ-2290 E1).
   const grossMargin = path.join(vault, GROSS_MARGIN)
   await expect.poll(() => readFile(grossMargin, 'utf8'), { timeout: 10_000 }).toContain(`kpi_category: ${CATEGORY_NOW}`)
@@ -303,7 +303,7 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
 })
 
 test('step 4 — the backlinks panel finds the whole mention set, problems included', async () => {
-  // Who the problems ARE is the folder's own answer, not this file's: the four notecards that
+  // Who the problems ARE is the folder's own answer, not this file's: the four notes that
   // live in `Problems`, read straight off its Table — the first of the default views, since its
   // settings file declares columns and lists no views of its own.
   await openFolder(win, path.join(vault, 'Problems'))
@@ -357,8 +357,8 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await expandBacklinks(win)
   await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
-  // And it still lives where it lived: a notecard belongs to a folder by BEING in it, so renaming
-  // the notecard is nothing the folder has to be told about — it is the same row, under its new
+  // And it still lives where it lived: a note belongs to a folder by BEING in it, so renaming
+  // the note is nothing the folder has to be told about — it is the same row, under its new
   // name, in the path order that name now sorts to.
   expect(await read(path.join('KPIs', `${RENAMED}.md`))).toContain('unit: percent')
   await openFolder(win, path.join(vault, KPIS))
@@ -386,7 +386,7 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_page_settings 
   await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 2 notes will be updated.`)
 
   // TWO files, and both are folder settings files: the two that name Roles ONLY from inside
-  // `folder_page_settings`, which the index never extracted as links. The three notecards in the
+  // `folder_page_settings`, which the index never extracted as links. The three notes in the
   // folder link to each other by BARE name, which a folder rename leaves byte-identical (E1b).
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 2 notes')
 
@@ -399,16 +399,16 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_page_settings 
   const renamedSettings = path.join(ROLES_RENAMED, '.folder.md')
   await expect.poll(() => read(renamedSettings).catch(() => '')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
   expect(await read(renamedSettings)).toContain('kind: link')
-  // … and the notecards moved with their folder, their own bare links untouched.
+  // … and the notes moved with their folder, their own bare links untouched.
   expect(await read(path.join(ROLES_RENAMED, 'Head of Sales.md'))).toContain('reports_to: "[[CEO]]"')
 
   // And everything still browses: the folder opens under its new name, holding the same three
-  // notecards — on the first of the default views, since its settings list none.
+  // notes — on the first of the default views, since its settings list none.
   await openFolder(win, path.join(vault, ROLES_RENAMED))
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
   await expect(rowNames(contents(win))).toHaveText(ROLE_MEMBERS)
   await expect(dirCount(win, ROLES_RENAMED)).toHaveText('3')
-  expect(await notecardsIn(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
+  expect(await notesIn(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
 
   // The durable result again, with the settings targets inside the audit's reach.
   await expect.poll(() => brokenLinks(vault)).toEqual([])

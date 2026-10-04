@@ -93,7 +93,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const openDetail = (key: string) => setDetail({ key, error: null, saving: false })
   /**
    * ONE declaration write (YAZ-897), immediately — the write the old editor's Save made, against
-   * the host's ahead declaration as `base` (C1, locked: notecard VALUES are never migrated; the
+   * the host's ahead declaration as `base` (C1, locked: note VALUES are never migrated; the
    * declaration alone moves). The host shows the next edit what just landed; a rejection only shows
    * its text here — the host has already reverted its copy.
    */

@@ -35,7 +35,7 @@ test.describe.configure({ mode: 'serial' })
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'curriculum-vault')
 const FOLDER = 'AI Curriculum'
-/** Where the folder's outline lives: the settings file, which holds no notecard of its own (YAZ-2290 D1). */
+/** Where the folder's outline lives: the settings file, which holds no note of its own (YAZ-2290 D1). */
 const FILE = path.join(FOLDER, '.folder.md')
 /** `outlineDoc.ts`'s BULLET_LINE, verbatim — the spec counts lines with the grammar's own eyes. */
 const BULLET_LINE = /^(([ \t]*)[-*+](?:[ \t]+|(?=\r?$)))(.*?)[ \t]*\r?$/

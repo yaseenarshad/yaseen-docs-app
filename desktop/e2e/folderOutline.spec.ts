@@ -81,7 +81,7 @@ test.describe.configure({ mode: 'serial' })
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER = 'Funnel Stages'
 const SETTINGS_FILE = path.join(FOLDER, '.folder.md')
-/** The notecards that live in the folder — its rows, whatever the outline says. */
+/** The notes that live in the folder — its rows, whatever the outline says. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 /** The page this spec links to from the outline: a kpi, so it lives in ANOTHER folder. */
 const SUBJECT = 'CAC'
@@ -90,14 +90,14 @@ const SUBJECT_FILE = path.join('KPIs', 'CAC.md')
 /** The document the settings file ships, as the editor RENDERS it — one bullet per line. */
 const BODY = [
   'Funnel Stages',
-  'The stages a deal walks through, from first touch to closed-won. Every notecard in this',
+  'The stages a deal walks through, from first touch to closed-won. Every note in this',
   'folder is one of them — there is no list to maintain.',
 ]
 /** …and as the EDITOR re-serialises it, once the document has been typed into at all (Milkdown's own `* `). */
 const BODY_COMMITTED = BODY.map((line) => `* ${line}`)
 
 /** The two text lines the document grows; neither is a link. */
-const NOTE = 'Only the notecards in the folder are its rows'
+const NOTE = 'Only the notes in the folder are its rows'
 const CHILD = 'and this one is nested under it'
 
 let userData: string
@@ -146,7 +146,7 @@ test('step 1 — first open: the document is what the settings ship, opening wri
   await expect(activeTab(win)).toHaveText(FOLDER)
 
   // THE FIRST OPEN: the outline is the folder's first view, and what it shows is the stored
-  // document — three lines of prose, and not one line for a notecard (YAZ-2290 D5). A mere look
+  // document — three lines of prose, and not one line for a note (YAZ-2290 D5). A mere look
   // is not an edit: the settings file is byte-identical once the editor has mounted.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   await expect(outlineLines(contents(win))).toHaveText(BODY)
@@ -164,7 +164,7 @@ test('step 1 — first open: the document is what the settings ship, opening wri
   expect(view.name).toBe('Outline') // the view itself is untouched — only its content key moved
   expect(view.outline?.split('\n').filter((l) => l.trim() !== '')).toEqual([...BODY_COMMITTED, `* ${NOTE}`])
 
-  // TEXT MEANS NOTHING to what the folder holds: its rows are the notecards in it, as before.
+  // TEXT MEANS NOTHING to what the folder holds: its rows are the notes in it, as before.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
@@ -238,7 +238,7 @@ test('step 5 — the document lives in the settings file, not in the session: it
   expect(await outlineOnDisk()).toBe(document)
 
   // What the folder holds was never the document's to say: the Table answers it, and it is the
-  // three notecards that have lived there all along.
+  // three notes that have lived there all along.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   await shoot(win, 'outline-07-survives-relaunch')

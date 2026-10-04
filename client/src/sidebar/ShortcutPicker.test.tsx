@@ -1,6 +1,6 @@
 /**
- * The "Add notecard shortcut" picker (YAZ-2290 D2): the search bar's matcher and result list in a
- * sheet. Pinned here: who is offered (notecards the folder does not already show), the keyboard
+ * The "Add note shortcut" picker (YAZ-2290 D2): the search bar's matcher and result list in a
+ * sheet. Pinned here: who is offered (notes the folder does not already show), the keyboard
  * (type, ↑/↓, ⏎, Esc), click-away, and the empty state.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,7 +20,7 @@ const rec = (path: string, properties: Record<string, unknown> = {}, aliases: st
   return { path, name, basename: name.replace(/\.md$/, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases, tags: [], links: [], embeds: [] }
 }
 
-/** Path order, as the index gives them: two notecards the folder already shows — one living there, one a shortcut — and three it does not. */
+/** Path order, as the index gives them: two notes the folder already shows — one living there, one a shortcut — and three it does not. */
 const RECORDS = [
   rec('/v/Areas/Health.md', {}, ['Wellbeing']),
   rec('/v/Areas/Linked.md', { also_in: [PROJECTS_ID] }),
@@ -46,7 +46,7 @@ function render(records: IndexRecord[] = RECORDS) {
   return { el: container, feed, ...props }
 }
 
-const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a notecard"]')!
+const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a note"]')!
 const labels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__label')].map((row) => row.textContent)
 const activeLabel = (el: HTMLElement) => el.querySelector('.search-results__row--active .search-results__label')?.textContent
 /** Drive the CONTROLLED input like a user: native value setter + input event (Sidebar.test's idiom). */
@@ -67,9 +67,9 @@ afterEach(() => {
 })
 
 describe('ShortcutPicker (YAZ-2290 D2)', () => {
-  it('opens as a dialog with the input focused, offering every notecard the folder does not already show', () => {
+  it('opens as a dialog with the input focused, offering every note the folder does not already show', () => {
     const { el } = render()
-    expect(el.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Add notecard shortcut')
+    expect(el.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Add note shortcut')
     expect(document.activeElement).toBe(input(el))
     // Alpha lives in Projects and Linked is already a shortcut there: neither is offered.
     expect(labels(el)).toEqual(['Health', 'Wellbeing — Health', 'Heat pump', 'Top'])
@@ -83,7 +83,7 @@ describe('ShortcutPicker (YAZ-2290 D2)', () => {
     expect(labels(el)).toEqual(['Wellbeing — Health'])
   })
 
-  it('↑/↓ move the highlight, clamped at both ends, and ⏎ picks the highlighted notecard', () => {
+  it('↑/↓ move the highlight, clamped at both ends, and ⏎ picks the highlighted note', () => {
     const { el, onPick } = render()
     type(el, 'hea')
     expect(activeLabel(el)).toBe('Health')
@@ -113,7 +113,7 @@ describe('ShortcutPicker (YAZ-2290 D2)', () => {
     expect(onPick).not.toHaveBeenCalled()
   })
 
-  it('follows the index while open: a notecard that appears is offered, one that became a shortcut here is not', () => {
+  it('follows the index while open: a note that appears is offered, one that became a shortcut here is not', () => {
     const { el, feed } = render()
     feed([...RECORDS.map((r) => (r.path === '/v/Top.md' ? { ...r, properties: { also_in: [PROJECTS_ID] } } : r)), rec('/v/Zeta.md')])
     expect(labels(el)).toEqual(['Health', 'Wellbeing — Health', 'Heat pump', 'Zeta'])

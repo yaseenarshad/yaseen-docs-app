@@ -1,21 +1,21 @@
 /**
  * The folder view, end to end (YAZ-2290; the views themselves are YAZ-819's, 🔒 D1/D2/D3 of
  * YAZ-818): a real FOLDER, opened as a tab, shows today's fully interactive views over the
- * notecards that live directly in it, columns from the folder's own hidden `.folder.md`.
+ * notes that live directly in it, columns from the folder's own hidden `.folder.md`.
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`):
- * five folders of notecards, four of them carrying a `.folder.md`, plus the two loose `inbox/`
- * notes. This file drives `Funnel Stages` — three notecards, two declared columns, and the three
+ * five folders of notes, four of them carrying a `.folder.md`, plus the two loose `inbox/`
+ * notes. This file drives `Funnel Stages` — three notes, two declared columns, and the three
  * views its settings list (Outline, Table, Board).
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 a double click on the folder's row opens it as a tab: title and properties, then the views,
- *     then its comments — and the views hold exactly the notecards IN the folder
- *   2 a cell edited in the table writes the NOTECARD's own file on disk, surgically
+ *     then its comments — and the views hold exactly the notes IN the folder
+ *   2 a cell edited in the table writes the NOTE's own file on disk, surgically
  *   3 the narrowed picker: a multi-link column whose target is a folder offers exactly the
- *     notecards in that folder — the 🔒 D2 case, resolved over the WHOLE vault while the rows
+ *     notes in that folder — the 🔒 D2 case, resolved over the WHOLE vault while the rows
  *     are only this folder's
- *   4 "New" births a notecard IN the folder, with no column stamped empty into it, and it is a
+ *   4 "New" births a note IN the folder, with no column stamped empty into it, and it is a
  *     row of the folder's views with no user action at all
  *   5 the GROUPED table (YAZ-744, restored here in YAZ-846): a `groupBy` set through the Sort
  *     menu is ONE `folder_page_settings` write, and a collapsed section survives quit → relaunch
@@ -45,12 +45,12 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER = 'Funnel Stages'
-/** The notecards in it, in the path order the index hands them over. */
+/** The notes in it, in the path order the index hands them over. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
-/** The outline DOCUMENT its settings file ships: plain text, naming none of the notecards. */
+/** The outline DOCUMENT its settings file ships: plain text, naming none of the notes. */
 const OUTLINE = [
   'Funnel Stages',
-  'The stages a deal walks through, from first touch to closed-won. Every notecard in this',
+  'The stages a deal walks through, from first touch to closed-won. Every note in this',
   'folder is one of them — there is no list to maintain.',
 ]
 
@@ -83,7 +83,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — the folder opens as a tab: title and properties, the views, its comments — holding exactly its notecards', async () => {
+test('step 1 — the folder opens as a tab: title and properties, the views, its comments — holding exactly its notes', async () => {
   // No file is seeded open: the folder's own row is the door (YAZ-2290 D3).
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
@@ -104,7 +104,7 @@ test('step 1 — the folder opens as a tab: title and properties, the views, its
   await expect(layer(win).locator('.page-title__text')).toHaveText(FOLDER)
 
   // The views are EXACTLY what the settings file lists, in its order — and the outline is a plain
-  // DOCUMENT (YAZ-2290 D5): the text the settings hold, and not one line for a notecard.
+  // DOCUMENT (YAZ-2290 D5): the text the settings hold, and not one line for a note.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   await expect(outlineLines(contents(win))).toHaveText(OUTLINE)
   await shoot(win, 'folder-01-view-outline')
@@ -119,7 +119,7 @@ test('step 1 — the folder opens as a tab: title and properties, the views, its
   await shoot(win, 'folder-02-view-table')
 })
 
-test('step 2 — a cell edited in the table writes the NOTECARD’s own file on disk', async () => {
+test('step 2 — a cell edited in the table writes the NOTE’s own file on disk', async () => {
   // Column 1 is `note.order`, typed `number` by the folder's own declaration (🔒 Q8). The CELL
   // owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`), so the
   // door in is a deliberate double-click.
@@ -132,16 +132,16 @@ test('step 2 — a cell edited in the table writes the NOTECARD’s own file on 
   const leadGen = path.join(folderPath(), 'Lead Gen.md')
   await expect.poll(() => readFile(leadGen, 'utf8'), { timeout: 10_000 }).toContain('order: 9')
   // Surgical: the one key, and nothing stamped beside it — `related_stages` is a declared column
-  // this notecard holds no value for, and it stays an empty cell rather than an empty key (E1).
+  // this note holds no value for, and it stays an empty cell rather than an empty key (E1).
   expect(await propertiesOf(leadGen)).toEqual({ order: 9 })
   expect(await readFile(leadGen, 'utf8')).toContain('# Lead Gen') // and the body is untouched
   await shoot(win, 'folder-03-cell-write')
 })
 
-test('step 3 — the narrowed picker: a multi-link column targeting a folder offers the notecards in it', async () => {
+test('step 3 — the narrowed picker: a multi-link column targeting a folder offers the notes in it', async () => {
   // Column 2 is `related_stages`, declared `multi-link` with `target: "[[Funnel Stages]]"`. No
-  // notecard has that name, so the link is the FOLDER's (YAZ-2290 D10) and the picker narrows to
-  // the notecards in it — resolved over the WHOLE vault (🔒 D2), never over the rows alone.
+  // note has that name, so the link is the FOLDER's (YAZ-2290 D10) and the picker narrows to
+  // the notes in it — resolved over the WHOLE vault (🔒 D2), never over the rows alone.
   await cell(contents(win), 0, 2).dblclick()
   const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
@@ -155,7 +155,7 @@ test('step 3 — the narrowed picker: a multi-link column targeting a folder off
   await expect(input).toHaveCount(0)
 })
 
-test('step 4 — "New" births a notecard IN the folder, no column stamped empty, and it is a row at once', async () => {
+test('step 4 — "New" births a note IN the folder, no column stamped empty, and it is a row at once', async () => {
   await contents(win).locator('[aria-label="New note"]').click()
 
   // Born in the folder being viewed (D4), from its template and the view's seed alone (E1/E3).
@@ -167,17 +167,17 @@ test('step 4 — "New" births a notecard IN the folder, no column stamped empty,
   expect(born).not.toContain('order')
   expect(born).not.toContain('related_stages')
   await expect(activeTab(win)).toHaveText('Untitled')
-  await shoot(win, 'folder-05-new-notecard')
+  await shoot(win, 'folder-05-new-note')
 
-  // …and the folder holds it, with nobody typing a thing: its rows ARE the notecards in it.
+  // …and the folder holds it, with nobody typing a thing: its rows ARE the notes in it.
   await openFolder(win, folderPath())
   await expect(activeTab(win)).toHaveText(FOLDER)
   // Which view is active is SESSION state, so the re-opened folder is back on its first view —
-  // and the outline says exactly what it said: a new notecard writes no line into a document.
+  // and the outline says exactly what it said: a new note writes no line into a document.
   await expect(outlineLines(contents(win))).toHaveText(OUTLINE)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
-  await shoot(win, 'folder-06-new-notecard-row')
+  await shoot(win, 'folder-06-new-note-row')
 })
 
 test('step 5 — the grouped table: one groupBy write, and a collapsed section that survives a relaunch', async () => {

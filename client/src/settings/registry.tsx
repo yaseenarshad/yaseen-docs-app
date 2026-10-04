@@ -82,7 +82,7 @@ const hotkeyTable = (entries: readonly HotkeyEntry[]) => (
   </dl>
 )
 
-/** What the section title does not say: the feature's other name, and where its notecards turn up. */
+/** What the section title does not say: the feature's other name, and where its notes turn up. */
 const REVIEW_KEYWORDS = ['upkeep', 'inbox']
 
 /** One number row of the Review section; the row's id is the `ReviewSettings` field it edits. */
@@ -243,16 +243,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     groups: [
       {
         items: [
-          reviewNumber('baseDays', 'Check a notecard after', 'days'),
+          reviewNumber('baseDays', 'Check a note after', 'days'),
           reviewNumber('growth', 'Each time it is still relevant, wait', '× longer'),
           // The hint is the three numbers' result in words, so it sits under the last of them.
           { ...reviewNumber('maxDays', 'Longest wait', 'days'), hint: ({ review }) => (review === undefined ? '' : scheduleInWords(review.settings)) },
           {
             id: 'reviewByDefault',
-            label: 'New notecards are in review',
+            label: 'New notes are in review',
             keywords: REVIEW_KEYWORDS,
             render: ({ review }) =>
-              review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.reviewByDefault} onChange={(reviewByDefault) => review.save({ ...review.settings, reviewByDefault })} ariaLabel="New notecards are in review" />,
+              review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.reviewByDefault} onChange={(reviewByDefault) => review.save({ ...review.settings, reviewByDefault })} ariaLabel="New notes are in review" />,
           },
         ],
       },

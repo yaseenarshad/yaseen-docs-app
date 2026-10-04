@@ -9,10 +9,10 @@
  * when it is emptied, and seeding the note the toolbar's New button births.
  *
  * The fixture is `nested-vault`'s AUTOMATIONS folder, the same one `nestedGroups.spec.ts` drives:
- * four notecards over two departments, where `status` splits them 3/1 — three `Live`, one `Draft`.
+ * four notes over two departments, where `status` splits them 3/1 — three `Live`, one `Draft`.
  * That one split is what every step below is built on. It is a STRICT subset (a filter that keeps
  * everything proves nothing), it takes out the whole `Review` process (so a group left with no rows
- * has to disappear, on the table AND on the board), and `Shift handover` is the only notecard
+ * has to disappear, on the table AND on the board), and `Shift handover` is the only note
  * holding it, so nothing else moves when it goes.
  *
  * The arc, in order (serial by design — each step continues the previous state):
@@ -53,7 +53,7 @@ const AUTOMATIONS = 'Automations'
 const NESTED_VIEW = 'Dept then process'
 const FLAT_VIEW = 'Dept only'
 /**
- * The four notecards in the nested table's own READING order (grouped `dept` then `proc`, which is
+ * The four notes in the nested table's own READING order (grouped `dept` then `proc`, which is
  * not alphabetical), and the three the fixture marks `status: Live` — `Shift handover` is the
  * `Draft` one, and the only one in the `Review` process. Spelled as the name cell shows them:
  * the page TITLE, never `.md` (YAZ-1513).
@@ -173,7 +173,7 @@ test('step 1 — one built rule narrows the table to the matching rows, and the 
   await expect(count(win)).toHaveText('4 items')
   await expect(badge(win)).toHaveCount(0) // an unfiltered view wears nothing
 
-  // The menu opens EMPTY: a folder's set is the notecards in it, and it has never been filtered.
+  // The menu opens EMPTY: a folder's set is the notes in it, and it has never been filtered.
   await filterBtn(win).click()
   await expect(menu(win).locator('.view-menu__empty')).toHaveText('No filters')
   await shoot(win, 'filter-01-menu-empty')
@@ -305,7 +305,7 @@ test('step 6 — "New" seeds the note from the active filter, and it lands in th
 
   // The equality rule IS the seed (YAZ-1236): the newborn is born IN the folder (YAZ-2290 D4)
   // carrying the property the filter asks for — and none of the folder's other columns, which are
-  // never stamped empty into a notecard (E1).
+  // never stamped empty into a note (E1).
   const created = path.join(vault, AUTOMATIONS, `${NEWBORN}.md`)
   await expect.poll(() => readFile(created, 'utf8').catch(() => ''), { timeout: 10_000 }).toContain('status: Live')
   const born = parseFrontmatter(splitFrontmatter(await readFile(created, 'utf8')).frontmatter).properties

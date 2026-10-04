@@ -15,7 +15,7 @@ import { readFile, writeFile } from '../fs/file'
  *
  * 🔒 Only in an ADOPTED vault (`.yaseendocs/` exists): the app never writes behind the user's
  * back into a folder it has merely been pointed at (the standing rule of YAZ-797). Creating a
- * notecard in the folder adopts it (`adoptVault`).
+ * note in the folder adopts it (`adoptVault`).
  *
  * The id is DERIVED from the note (its place in the vault and its bytes), not drawn at random:
  * two devices that both meet the same note before syncing then make the same edit, which merges.
@@ -67,7 +67,7 @@ async function otherFiles(r: IndexRecord, holders: readonly IndexRecord[]): Prom
 }
 
 /**
- * Makes `root` an adopted vault — the user created a notecard in it, which is what says the
+ * Makes `root` an adopted vault — the user created a note in it, which is what says the
  * folder is theirs to manage (🔒 YAZ-2293). True when this call is what adopted it. A folder
  * that cannot be written to simply stays as it is.
  */
@@ -86,7 +86,7 @@ export const isAdopted = (root: string): Promise<boolean> =>
 /**
  * The file's id becomes a fresh one, but only while it still is `held` (undefined: it has none),
  * and never one that is `taken`. Resolves to the id written, undefined when nothing was. The
- * `yaseennotecards id` command calls this too, so the command and the sweep give a note the same
+ * `yaseendocs id` command calls this too, so the command and the sweep give a note the same
  * id — it has no index to ask what is taken, and the sweep's keeper rule covers that.
  */
 export async function giveId(root: string, file: string, held: string | undefined, taken?: (id: string) => boolean): Promise<string | undefined> {

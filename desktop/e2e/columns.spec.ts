@@ -3,7 +3,7 @@
  * YAZ-1549; this spec is 5-, YAZ-1550). What a folder's Table says about its columns, and what
  * every column gesture writes — proven on the REAL app over the small committed
  * `fixtures/columns-vault`: the folder `Tasks`, whose `.folder.md` declares the `status` Select,
- * holding six notecards across three statuses plus one with none.
+ * holding six notes across three statuses plus one with none.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 the Table's `#` gutter counts from 1 and RESTARTS at every group header, and the name cell
@@ -14,7 +14,7 @@
  *     list, written as a `properties` LABEL — the key `status` never moves
  *   4 dragging the last header before `Stage` rewrites the view's `order` in one write
  *   5 "Delete column…" asks first, naming the count; confirming drops the declaration, every view
- *     reference and the label, and each notecard loses ONLY its `status:` line — the rest of
+ *     reference and the label, and each note loses ONLY its `status:` line — the rest of
  *     every file is byte-identical
  *
  * Same harness as folderView.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `columns-`
@@ -36,7 +36,7 @@ const FIXTURE = path.join(__dirname, 'fixtures', 'columns-vault')
 const TASKS = 'Tasks'
 /** Where the folder's columns, views and labels live (YAZ-2290 D1). */
 const SETTINGS = path.join(TASKS, '.folder.md')
-/** The six notecards in `Tasks`, as the fixture spells them — every one carries a `status:` line. */
+/** The six notes in `Tasks`, as the fixture spells them — every one carries a `status:` line. */
 const MEMBERS = ['Write launch post', 'Ship installer', 'Q3-2026 plan', 'Fix sync bug', 'Release 0.9', 'Loose end'].map((n) =>
   path.join(TASKS, `${n}.md`),
 )
@@ -198,7 +198,7 @@ test('step 3 — "Rename column…" on the header: `Status` → `Stage` is a LAB
   const settings = await settingsOf(tasks)
   expect(Object.keys(settings.columns ?? {})).toEqual(['status', 'owner', 'due'])
   expect(viewOf(settings, 'table').order).toEqual(['file.name', 'note.status', 'note.owner', 'note.due'])
-  // The notecards' frontmatter is untouched: a label is what the header SAYS, never what a note stores.
+  // The notes' frontmatter is untouched: a label is what the header SAYS, never what a note stores.
   for (const member of MEMBERS) expect(await readFile(path.join(vault, member), 'utf8')).toContain('status:')
   await shoot(win, 'columns-05-renamed-stage')
 })
@@ -232,7 +232,7 @@ test('step 4 — dragging the last header before `Stage` rewrites the view’s o
   await shoot(win, 'columns-06-dragged-due')
 })
 
-test('step 5 — "Delete column…" asks first, then strips declaration, references, label and each notecard’s `status:` line — nothing else', async () => {
+test('step 5 — "Delete column…" asks first, then strips declaration, references, label and each note’s `status:` line — nothing else', async () => {
   const tasks = path.join(vault, SETTINGS)
   const before = new Map(await Promise.all(MEMBERS.map(async (m) => [m, await readFile(path.join(vault, m), 'utf8')] as const)))
   for (const text of before.values()) expect(text).toMatch(/^status:/m)
@@ -240,14 +240,14 @@ test('step 5 — "Delete column…" asks first, then strips declaration, referen
   await colHeader('Stage').click({ button: 'right' })
   await menuItem(win, 'Delete column…').click()
 
-  // The sheet names the LABEL, the bare KEY and the count of notecards in the folder carrying it — all six,
+  // The sheet names the LABEL, the bare KEY and the count of notes in the folder carrying it — all six,
   // the empty `status:` on `Loose end` included, because presence is the exact YAML key.
   await expect(sheet(win)).toContainText('Delete "Stage"? This removes the column from this folder and the "status" value from 6 notes.')
   await shoot(win, 'columns-07-delete-sheet')
   await sheet(win).locator('.confirm__btn--danger', { hasText: 'Delete' }).click()
   await expect(sheet(win)).toHaveCount(0)
 
-  // Settings FIRST (awaited before any notecard is touched): the declaration, the table's order
+  // Settings FIRST (awaited before any note is touched): the declaration, the table's order
   // entry and its groupBy, the board's groupBy, and the label — all gone in one write.
   await expect.poll(async () => Object.keys((await settingsOf(tasks)).columns ?? {}), { timeout: 10_000 }).toEqual(['owner', 'due'])
   const settings = await settingsOf(tasks)
@@ -263,7 +263,7 @@ test('step 5 — "Delete column…" asks first, then strips declaration, referen
     expect(JSON.stringify(config)).not.toMatch(/status/)
   }
 
-  // Then every notecard: ONLY its `status:` line is gone — the rest of the file byte for byte.
+  // Then every note: ONLY its `status:` line is gone — the rest of the file byte for byte.
   for (const member of MEMBERS) {
     const file = path.join(vault, member)
     await expect.poll(() => readFile(file, 'utf8'), { timeout: 10_000 }).not.toMatch(/^status:/m)

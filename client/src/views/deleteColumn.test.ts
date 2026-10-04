@@ -69,7 +69,7 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
     for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.also_in', 'comments']) {
       expect(undeletableReason(key)).toBe('Built-in column — hide it instead')
     }
-    // The retired folder-page keys are ordinary frontmatter (YAZ-2290 D6) — a notecard's `folder_page_settings` with them.
+    // The retired folder-page keys are ordinary frontmatter (YAZ-2290 D6) — a note's `folder_page_settings` with them.
     for (const key of ['note.folder_page', 'folder_pages', 'note.folder_pages', 'folder_page_settings']) expect(undeletableReason(key)).toBeNull()
     expect(undeletableReason('note.status')).toBeNull()
     expect(undeletableReason('status')).toBeNull()
@@ -80,7 +80,7 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
     expect(undeletableReason('note.id')).toBe('Built-in column — hide it instead')
   })
 
-  it('refuses `also_in` (YAZ-2290 D2): a notecard\'s shortcuts are the app\'s list — stripping it would take every shortcut down', async () => {
+  it('refuses `also_in` (YAZ-2290 D2): a note\'s shortcuts are the app\'s list — stripping it would take every shortcut down', async () => {
     expect(undeletableReason('also_in')).toBe('Built-in column — hide it instead')
     expect(undeletableReason('note.also_in')).toBe('Built-in column — hide it instead')
     const h = host()

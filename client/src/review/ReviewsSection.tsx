@@ -1,8 +1,8 @@
 /**
- * "Reviews" (YAZ-2322) — a notecard's review log, the LAST block of the note's own scroller, under
+ * "Reviews" (YAZ-2322) — a note's review log, the LAST block of the note's own scroller, under
  * the backlinks' header: collapsed by default, the count on it. Unlike the backlinks it always
- * renders for a notecard the index knows, because the header's own line is the point: when the
- * notecard is next checked, or that review is off for it.
+ * renders for a note the index knows, because the header's own line is the point: when the
+ * note is next checked, or that review is off for it.
  *
  * The log is read from the DISK bytes the Editor hands down, so a write of its own shows as soon
  * as the watcher echoes it; the date is computed (`shared/schedule.ts`) from the index record's
@@ -23,9 +23,9 @@ import '../links/backlinks.css'
 import './reviewsSection.css'
 
 export interface ReviewsSectionProps {
-  /** The open notecard as the Editor last saw it on disk: the log is read from these bytes. */
+  /** The open note as the Editor last saw it on disk: the log is read from these bytes. */
   file: Pick<FileResponse, 'path' | 'content'>
-  /** The window's index feed: the notecard's own record is found in it by path. Absent → nothing renders. */
+  /** The window's index feed: the note's own record is found in it by path. Absent → nothing renders. */
   source?: WikilinkResolveSource
   /** The vault's review settings. Absent → nothing renders. */
   settings?: ReviewSettings
@@ -68,7 +68,7 @@ export function ReviewsSection({ file, source, settings }: ReviewsSectionProps) 
           <path d="m4 6 4 4 4-4" />
         </svg>
         <span className="backlinks__title">Reviews <span className="backlinks__count">({reviews.length})</span></span>
-        <span>{isInReview(record, settings) ? `Next check ${day(due)} · ${isDue(due, Date.now()) ? 'due now' : relativeDate(due)}` : 'Review is off for this notecard.'}</span>
+        <span>{isInReview(record, settings) ? `Next check ${day(due)} · ${isDue(due, Date.now()) ? 'due now' : relativeDate(due)}` : 'Review is off for this note.'}</span>
       </button>
       {expanded && (
         <div className="reviews__body">
@@ -109,7 +109,7 @@ export function ReviewsSection({ file, source, settings }: ReviewsSectionProps) 
       {confirming && (
         <ConfirmSheet
           labelId="confirm-reset-reviews-text"
-          text="Reset this notecard's review history? This cannot be undone."
+          text="Reset this note's review history? This cannot be undone."
           confirmLabel="Reset"
           danger
           onConfirm={() => {

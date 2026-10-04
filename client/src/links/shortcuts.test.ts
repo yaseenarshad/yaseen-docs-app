@@ -65,18 +65,18 @@ const pathsIn = (records: readonly IndexRecord[], folder: string, folders: reado
   folderRows(records, folders, folder).map((r) => r.path)
 
 describe('what a folder shows (YAZ-2290 D4)', () => {
-  it('the notecards that live DIRECTLY in it — not a subfolder’s, not another folder’s', () => {
+  it('the notes that live DIRECTLY in it — not a subfolder’s, not another folder’s', () => {
     const records = [rec('/vault/Other.md'), rec('/vault/Projects/A.md'), rec('/vault/Projects/Deep/B.md'), rec('/vault/Projects/C.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/A.md', '/vault/Projects/C.md'])
   })
 
-  it('plus the notecards whose `also_in` holds the folder’s id — the `id` of its `.folder.md`', () => {
+  it('plus the notes whose `also_in` holds the folder’s id — the `id` of its `.folder.md`', () => {
     const records = [rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), rec('/vault/Projects/A.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Areas/Health.md', '/vault/Projects/A.md'])
     expect(pathsIn(records, 'Areas')).toEqual(['/vault/Areas/Health.md'])
   })
 
-  it('a notecard that lives in the folder AND names it shows once; so does one naming it twice', () => {
+  it('a note that lives in the folder AND names it shows once; so does one naming it twice', () => {
     const records = [rec('/vault/Areas/Twice.md', { also_in: [PROJECTS_ID, PROJECTS_ID] }), rec('/vault/Projects/A.md', { also_in: [PROJECTS_ID] })]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Areas/Twice.md', '/vault/Projects/A.md'])
   })
@@ -183,7 +183,7 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
     expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
   })
 
-  it('a notecard with no `also_in` gains the key, and a scalar one becomes a list that keeps it', async () => {
+  it('a note with no `also_in` gains the key, and a scalar one becomes a list that keeps it', async () => {
     disk.set(SETTINGS_FILE, `---\nid: ${PROJECTS_ID}\n---\n`)
     disk.set(NOTE, 'Body\n')
     await addShortcut(PROJECTS, NOTE)
@@ -193,7 +193,7 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
     expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, PROJECTS_ID])
   })
 
-  it('a settings file whose `id` is someone else’s value is refused: nothing is overwritten, the notecard untouched', async () => {
+  it('a settings file whose `id` is someone else’s value is refused: nothing is overwritten, the note untouched', async () => {
     disk.set(SETTINGS_FILE, '---\nid: my-own-id\n---\n')
     const before = disk.get(NOTE)
     await expect(addShortcut(PROJECTS, NOTE)).rejects.toThrow(/not a page id/)
@@ -205,7 +205,7 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
 describe('removing a shortcut (YAZ-2290 E5)', () => {
   const NOTE = '/vault/Areas/Health.md'
 
-  it('takes the folder’s id out of the notecard’s `also_in` and leaves every other entry, and byte, alone', async () => {
+  it('takes the folder’s id out of the note’s `also_in` and leaves every other entry, and byte, alone', async () => {
     disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
     await removeShortcut('/vault/Projects', NOTE, FOLDERS)
     expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
@@ -220,7 +220,7 @@ describe('removing a shortcut (YAZ-2290 E5)', () => {
     expect(disk.get(NOTE)).toBe('---\n---\nBody\n') // the one-key writer's own empty block
   })
 
-  it('a folder with no `.folder.md`, or one that holds no id, names nothing: the notecard is not written', async () => {
+  it('a folder with no `.folder.md`, or one that holds no id, names nothing: the note is not written', async () => {
     vi.mocked(api.writeFile).mockClear()
     disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
     await removeShortcut('/vault/Projects', NOTE, [])
@@ -228,7 +228,7 @@ describe('removing a shortcut (YAZ-2290 E5)', () => {
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 
-  it('a notecard that does not name the folder is not written', async () => {
+  it('a note that does not name the folder is not written', async () => {
     vi.mocked(api.writeFile).mockClear()
     disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
     await removeShortcut('/vault/Projects', NOTE, FOLDERS)

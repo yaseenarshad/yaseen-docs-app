@@ -400,7 +400,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_page_settings
   const team = () => rec('/v/Team/.folder.md', { properties: { folder_page_settings: settingsOf(TEAM) } })
 
-  it('a rename rewrites bare `[[Projects]]` to the new name — in a notecard and in another folder\u2019s Outline — and the count is those two files', async () => {
+  it('a rename rewrites bare `[[Projects]]` to the new name — in a note and in another folder\u2019s Outline — and the count is those two files', async () => {
     const A = `See [[Projects]], [[projects|the work]] and [[Projects#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`
     const files = { '/v/A.md': { content: A, mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 }, '/v/N.md': { content: 'nothing\n', mtime: 1 } }
     const bridge = installBridge(files)
@@ -435,8 +435,8 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   })
 
   it.each([
-    ['a notecard NAMED Projects', rec('/v/Notes/Projects.md')],
-    ['a notecard ALIASED Projects', rec('/v/Roadmap.md', { aliases: ['Projects'] })],
+    ['a note NAMED Projects', rec('/v/Notes/Projects.md')],
+    ['a note ALIASED Projects', rec('/v/Roadmap.md', { aliases: ['Projects'] })],
   ])('%s holds the link: the folder\u2019s rename counts and touches nothing', async (_name, holder) => {
     const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
     const bridge = installBridge(files)

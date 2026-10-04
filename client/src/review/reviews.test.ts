@@ -1,5 +1,5 @@
 /**
- * `shared/reviews.ts` (YAZ-2322): a notecard's review log lives under the reserved frontmatter key
+ * `shared/reviews.ts` (YAZ-2322): a note's review log lives under the reserved frontmatter key
  * `reviews`, one line per review, and a vault's schedule numbers live in `.yaseendocs/review.json`.
  * Lives under client/src so vitest collects it; the module is shared.
  */
@@ -43,7 +43,7 @@ describe('textFingerprint', () => {
 })
 
 describe('addReview', () => {
-  it('gives a notecard with no frontmatter a block holding one line per review', () => {
+  it('gives a note with no frontmatter a block holding one line per review', () => {
     expect(addReview(BODY, AT)).toBe(`---\nreviews:\n  - {at: ${AT}, rating: keep, text: ${quoted(MARK)}}\n---\n${BODY}`)
   })
 

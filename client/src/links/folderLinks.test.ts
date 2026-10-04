@@ -1,5 +1,5 @@
 /**
- * Links to folders (YAZ-2290 D10): each case pins ONE locked rule — a notecard, path or alias of
+ * Links to folders (YAZ-2290 D10): each case pins ONE locked rule — a note, path or alias of
  * the name always wins, the shallowest of two folders takes the bare name, an id reaches its
  * folder, the root is not linkable — then the picker rows and the belongs-to picker built on them.
  * The resolvers are pure over a folder list; only the belongs-to picker reads the Files tree, so
@@ -47,7 +47,7 @@ const FOLDER_ID = 'f7n2w8rt4xyz'
 const DIRS = ['/vault/Archive', '/vault/Archive/Old', '/vault/Projects', '/vault/Work', '/vault/Work/Projects']
 
 describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing else holds it', () => {
-  it('`[[Projects]]` is the folder when no notecard is named Projects', () => {
+  it('`[[Projects]]` is the folder when no note is named Projects', () => {
     const resolve = linkResolver([rec('/vault/Note.md')], '/vault', DIRS)
     expect(resolve('Projects')).toBe('/vault/Projects')
     expect(resolve('[[Projects|the work]]')).toBe('/vault/Projects')
@@ -55,12 +55,12 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(resolve('Nowhere')).toBeNull()
   })
 
-  it('a notecard named Projects wins, wherever it lives', () => {
+  it('a note named Projects wins, wherever it lives', () => {
     const resolve = linkResolver([rec('/vault/Archive/Old/Projects.md')], '/vault', DIRS)
     expect(resolve('Projects')).toBe('/vault/Archive/Old/Projects.md')
   })
 
-  it('so does a notecard merely ALIASED Projects', () => {
+  it('so does a note merely ALIASED Projects', () => {
     const resolve = linkResolver([rec('/vault/Roadmap.md', { aliases: ['Projects'] })], '/vault', DIRS)
     expect(resolve('Projects')).toBe('/vault/Roadmap.md')
   })
@@ -74,7 +74,7 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(resolve('Work/Old')).toBeNull() // a path is exact: no name fallback behind it
   })
 
-  it('is case-insensitive, like notecard names', () => {
+  it('is case-insensitive, like note names', () => {
     const resolve = linkResolver([], '/vault', DIRS)
     expect(resolve('pROJECTS')).toBe('/vault/Projects')
     expect(resolve('work/projects')).toBe('/vault/Work/Projects')
@@ -88,7 +88,7 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(resolve(FOLDER_ID)).toBeNull()
   })
 
-  it('`[[<id>]]` of a `.folder.md` is its folder; a notecard id is still the notecard', () => {
+  it('`[[<id>]]` of a `.folder.md` is its folder; a note id is still the note', () => {
     const records = [rec('/vault/Projects/Plan.md', { id: NOTE_ID })]
     const resolve = linkResolver(records, '/vault', DIRS, [rec('/vault/Work/Projects/.folder.md', { id: FOLDER_ID })])
     expect(resolve(FOLDER_ID)).toBe('/vault/Work/Projects')
@@ -112,7 +112,7 @@ describe('folderLinkCandidates: the `[[` picker offers folders', () => {
     expect(folderLinkCandidates('/vault', DIRS, linkResolver([], '/vault', DIRS)).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Projects', 'Work', 'Work/Projects'])
   })
 
-  it('and its path when a notecard has the name; every row links back to its own folder', () => {
+  it('and its path when a note has the name; every row links back to its own folder', () => {
     const records = [rec('/vault/Notes/Old.md')]
     const resolve = linkResolver(records, '/vault', DIRS)
     const candidates = folderLinkCandidates('/vault', DIRS, resolve)
@@ -120,25 +120,25 @@ describe('folderLinkCandidates: the `[[` picker offers folders', () => {
     expect(candidates.map((c) => resolve(c.insert))).toEqual(DIRS)
   })
 
-  it('a folder whose very path a notecard holds gets no row: nothing inserted would reach it', () => {
+  it('a folder whose very path a note holds gets no row: nothing inserted would reach it', () => {
     const records = [rec('/vault/Projects.md'), rec('/vault/Work/Projects.md')]
     expect(folderLinkCandidates('/vault', DIRS, linkResolver(records, '/vault', DIRS)).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Work'])
   })
 
-  it('on an equal match the notecard ranks above the folder', () => {
-    // Both are prefix matches, and the folder sorts first by name: the notecard still leads.
+  it('on an equal match the note ranks above the folder', () => {
+    // Both are prefix matches, and the folder sorts first by name: the note still leads.
     const matches = matchLinkCandidates(rows([rec('/vault/Zed/Prospect.md')]), 'pro')
     expect(matches.map((c) => c.insert)).toEqual(['Prospect', 'Projects', 'Work/Projects'])
-    // The same name on both: the notecard has it, and the folder is offered by its path.
+    // The same name on both: the note has it, and the folder is offered by its path.
     const taken = matchLinkCandidates(rows([rec('/vault/Notes/Old.md')]), 'old')
     expect(taken.map((c) => c.insert)).toEqual(['Old', 'Archive/Old'])
   })
 })
 
-describe('belongsToBasenames: a link column narrowed to the notecards in a FOLDER', () => {
+describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', () => {
   const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 
-  /** A vault under its own root: People holds two notecards (and a subfolder's one), Empty holds none. */
+  /** A vault under its own root: People holds two notes (and a subfolder's one), Empty holds none. */
   async function vault(root: string): Promise<{ records: IndexRecord[]; names: (target: string) => string[] }> {
     const records = [
       rec(`${root}/Empty Note.md`),
@@ -160,7 +160,7 @@ describe('belongsToBasenames: a link column narrowed to the notecards in a FOLDE
     expect(vaultDirs('/no-tree-yet')).toEqual([])
   })
 
-  it('narrows to the notecards that live DIRECTLY in the target folder, written by id', async () => {
+  it('narrows to the notes that live DIRECTLY in the target folder, written by id', async () => {
     const { records, names } = await vault('/narrow')
     expect(names('[[People]]')).toEqual(['Alice', 'Bob'])
     expect(names('People')).toEqual(['Alice', 'Bob']) // a bare name is the same target
@@ -168,7 +168,7 @@ describe('belongsToBasenames: a link column narrowed to the notecards in a FOLDE
     expect(belongsToBasenames(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([NOTE_ID, 'Bob'])
   })
 
-  it("a notecard that is in the target folder by a SHORTCUT is offered with the ones that live there (D2)", async () => {
+  it("a note that is in the target folder by a SHORTCUT is offered with the ones that live there (D2)", async () => {
     const { records } = await vault('/shortcut')
     const shortcut = rec('/shortcut/Guest.md', { properties: { also_in: [FOLDER_ID] } })
     const folders = [rec('/shortcut/People/.folder.md', { id: FOLDER_ID })]
@@ -179,11 +179,11 @@ describe('belongsToBasenames: a link column narrowed to the notecards in a FOLDE
     expect(belongsToBasenames(all, folders, resolve, '/shortcut', `[[${FOLDER_ID}]]`).map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob'])
   })
 
-  it('falls back to ALL notecards when the target is no folder, or the folder is empty', async () => {
+  it('falls back to ALL notes when the target is no folder, or the folder is empty', async () => {
     const { names } = await vault('/fallback')
     expect(names('[[Nowhere]]')).toEqual(ALL)
     expect(names('[[Empty]]')).toEqual(ALL)
-    expect(names('[[Empty Note]]')).toEqual(ALL) // a notecard, not a folder
+    expect(names('[[Empty Note]]')).toEqual(ALL) // a note, not a folder
   })
 
   it('a note still carrying `folder_page: true` narrows nothing: the legacy membership is gone', async () => {

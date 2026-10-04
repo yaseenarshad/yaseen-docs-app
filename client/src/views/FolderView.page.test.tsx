@@ -4,7 +4,7 @@
  * the view settings and shown with the components a note uses. Mounted like `FolderView.test.tsx`,
  * but with the `api` mock sitting UNDER the real `writeProperty` over a tiny in-memory disk, so a
  * write on a folder with no settings file is seen creating it. Last on the page come its linked
- * mentions (D10): the notecards whose links resolve to the folder itself.
+ * mentions (D10): the notes whose links resolve to the folder itself.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -61,7 +61,7 @@ const onRenameFile = vi.fn()
 const onOpenFile = vi.fn()
 const onOpenFileBackground = vi.fn()
 
-/** The index's snapshot of the disk: the notecard, and the settings file's record when the file exists. */
+/** The index's snapshot of the disk: the note, and the settings file's record when the file exists. */
 function feed(): void {
   const records = [rec(LEAD)]
   const settings = disk.get(SETTINGS_FILE)
@@ -163,7 +163,7 @@ describe('a folder with no `.folder.md`', () => {
     expect(onDisk()).toBe('---\nowner: Yasin\n---\n')
   })
 
-  it("its own panel does not list the folder's columns as empty rows, while a notecard inside it still does", async () => {
+  it("its own panel does not list the folder's columns as empty rows, while a note inside it still does", async () => {
     const el = await mount()
     expandPanel(el)
     expect(rowKeys(el)).toEqual([])
@@ -230,11 +230,11 @@ describe('the title renames the FOLDER', () => {
   })
 })
 
-describe('linked mentions: the notecards that link to the FOLDER (YAZ-2290 D10)', () => {
+describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', () => {
   const PLAN = '/vault/Plan.md'
   const ELSEWHERE = '/vault/Elsewhere.md'
 
-  /** The snapshot as the bridge feeds it (`linkResolver`): Plan links the folder, Elsewhere only a notecard inside it. */
+  /** The snapshot as the bridge feeds it (`linkResolver`): Plan links the folder, Elsewhere only a note inside it. */
   function feedLinks(): void {
     const records = [{ ...rec(ELSEWHERE), links: ['Lead Gen', 'stages/Lead Gen'] }, { ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
     act(() => source.update(linkResolver(records, '/vault', [STAGES]), records, []))
@@ -245,7 +245,7 @@ describe('linked mentions: the notecards that link to the FOLDER (YAZ-2290 D10)'
     expect(el.querySelector('.backlinks')).toBeNull()
   })
 
-  it('lists the notecard that links `[[Stages]]`, after the comments — never one that links only INTO the folder', async () => {
+  it('lists the note that links `[[Stages]]`, after the comments — never one that links only INTO the folder', async () => {
     disk.set(PLAN, { content: 'Move it to [[Stages]] next.\n', mtime: 1 })
     const el = await mount()
     feedLinks()
@@ -258,7 +258,7 @@ describe('linked mentions: the notecards that link to the FOLDER (YAZ-2290 D10)'
     expect(q(el, '.backlinks__match').textContent).toBe('Stages')
   })
 
-  it('an entry opens its notecard: a click in the current tab, a ⌘-click in a background tab', async () => {
+  it('an entry opens its note: a click in the current tab, a ⌘-click in a background tab', async () => {
     const el = await mount()
     feedLinks()
     click(q(el, '.backlinks__header'))

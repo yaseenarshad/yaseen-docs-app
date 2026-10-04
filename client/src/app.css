@@ -1789,7 +1789,7 @@ button {
   top: 1px;
 }
 
-/* The folder's notecard count, pushed to the right edge of the row. */
+/* The folder's note count, pushed to the right edge of the row. */
 .tree__count {
   margin-left: auto;
   padding-left: 6px;
@@ -1797,7 +1797,7 @@ button {
   color: var(--fg-muted);
 }
 
-/* The shortcut mark (YAZ-2290 D2): this notecard shows here and lives elsewhere. Quiet, after the
+/* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the
    name, never squeezed by a long one — one rule for the tree row and for a title in a folder's views. */
 .shortcut-mark {
   flex: none;

@@ -1,7 +1,7 @@
 /**
  * Links to FOLDERS (YAZ-2290 D10, 🔒): a folder is a page, so it keeps what a page had. `[[Projects]]`
- * reaches the folder named Projects — but only once NO notecard, path or alias holds that name
- * (`linkResolver`), so no link that resolved before means anything new. A folder is no notecard
+ * reaches the folder named Projects — but only once NO note, path or alias holds that name
+ * (`linkResolver`), so no link that resolved before means anything new. A folder is no note
  * record: what its link resolves to is the DIRECTORY path, a folder tab's identity (D3), so a click,
  * a ⌘-click and the backlinks pass open and compare it like any resolved path, without knowing it
  * is a folder.
@@ -33,7 +33,7 @@ export function vaultDirs(root: string): readonly string[] {
 /**
  * Link target → the folder it names, as its directory path, or null: the id of the folder's
  * settings file (`folders`, YAZ-2293), its root-relative path, then its bare name — duplicates
- * resolve to the SHALLOWEST, equal depth to the first in `dirs` order, the rule notecards use
+ * resolve to the SHALLOWEST, equal depth to the first in `dirs` order, the rule notes use
  * (`makeResolver`). Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  */
 export function folderResolver(root: string, dirs: readonly string[], folders: readonly IndexRecord[] = []): ResolveLink {
@@ -55,8 +55,8 @@ export function folderResolver(root: string, dirs: readonly string[], folders: r
 }
 
 /**
- * THE path-level resolver every wikilink surface shares (`ResolveLink`): a notecard first — id,
- * path, name, alias (`resolverFor`) — and a folder only when none answers, so a notecard or alias
+ * THE path-level resolver every wikilink surface shares (`ResolveLink`): a note first — id,
+ * path, name, alias (`resolverFor`) — and a folder only when none answers, so a note or alias
  * of the same name always wins.
  */
 export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = []): ResolveLink {
@@ -68,8 +68,8 @@ export function linkResolver(records: readonly IndexRecord[], root: string, dirs
 /**
  * The `[[` picker's folder rows. A folder has an id only once its `.folder.md` does, so like a
  * view-only file (`viewOnlyCatalog.ts`) it is inserted by NAME — or by its root-relative path when
- * `resolve` gives the bare name to something else (a notecard or alias of that name, a shallower
- * folder). A folder neither spelling reaches (a notecard holds its very path) gets no row: nothing
+ * `resolve` gives the bare name to something else (a note or alias of that name, a shallower
+ * folder). A folder neither spelling reaches (a note holds its very path) gets no row: nothing
  * inserted would link to it.
  */
 export function folderLinkCandidates(root: string, dirs: readonly string[], resolve: ResolveLink): LinkCandidate[] {
@@ -80,7 +80,7 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
 }
 
 /**
- * The resolver a view reads its links through (`Resolver`), folders included (D10): the notecard,
+ * The resolver a view reads its links through (`Resolver`), folders included (D10): the note,
  * else the folder the window's link resolver (`link`) gives the target, standing in as a file named
  * like the folder. So `[[<folder id>]]` reads as the folder's name wherever an id link reads as its
  * note's title (YAZ-2293 D8), and sorts and groups under that name.
@@ -98,12 +98,12 @@ export function pageResolver(records: readonly IndexRecord[], root: string | und
 }
 
 /**
- * Picker candidates for a belongs-to column (🔒 Q2, YAZ-815): the notecards in the FOLDER `target`
- * names (YAZ-2290 D10) — by the window's link resolver (`resolve`), so a notecard of that name wins
+ * Picker candidates for a belongs-to column (🔒 Q2, YAZ-815): the notes in the FOLDER `target`
+ * names (YAZ-2290 D10) — by the window's link resolver (`resolve`), so a note of that name wins
  * and narrows nothing, and the folder is found by its id, path or name — falling back to ALL
  * basenames when the target is no folder or the folder holds none. Report-don't-block: the picker
  * narrows when it can and never goes empty. What a folder holds is what its page shows
- * (`folderRows`): the notecards that live in it, and its shortcuts. Candidates rather than bare
+ * (`folderRows`): the notes that live in it, and its shortcuts. Candidates rather than bare
  * strings since YAZ-2293: a page is offered by basename, written by id.
  */
 export function belongsToBasenames(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink, root: string, target: string): LinkCandidate[] {

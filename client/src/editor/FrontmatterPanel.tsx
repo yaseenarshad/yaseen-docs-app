@@ -82,7 +82,7 @@ function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse |
     return { key, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
   })
   // The folder's columns this note holds no value for (YAZ-2290 E1): empty rows, and a key reaches
-  // the note only when one is filled in — a column is never stamped into a notecard.
+  // the note only when one is filled in — a column is never stamped into a note.
   const missing = Object.keys(folder?.columns ?? {}).filter((key) => !Object.prototype.hasOwnProperty.call(properties, key))
   return [...own, ...missing.map((key): Row => ({ key, raw: undefined, editor: editorFor(key, undefined, decls, folder), chip: null }))]
 }
@@ -128,7 +128,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   // defaults while it has none. No feed, no folder: the rows fall to the lower rungs.
   const dir = dirname(file.path)
   // A folder's OWN panel (YAZ-2290 D9) is mounted on the settings file itself. Its properties are
-  // facts about the folder: the columns it declares for its notecards neither type nor list here,
+  // facts about the folder: the columns it declares for its notes neither type nor list here,
   // and the view settings block is edited through the views, so it is no row.
   const own = isFolderSettingsPath(file.path)
   const folderDefinition = useMemo(() => (wikilinks === undefined || own ? null : folderSettings(folderRecord(folders, dir))), [wikilinks, own, folders, dir])
@@ -148,7 +148,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content, draft: snap.draft })
 
   const basenames = useMemo(() => basenameCandidates(wikilinks?.records ?? NO_RECORDS), [wikilinks?.records])
-  /** What a value's id link reads its title through (YAZ-2293 D8): the notecard's, or the folder's (D10). */
+  /** What a value's id link reads its title through (YAZ-2293 D8): the note's, or the folder's (D10). */
   const resolve = useMemo(() => pageResolver(wikilinks?.records ?? NO_RECORDS, root ?? undefined, wikilinks?.resolve ?? null), [wikilinks?.records, root, wikilinks?.resolve])
 
   const disk = interiorOf(snap.content)

@@ -107,14 +107,14 @@ interface TreeProps {
   move: TreeFileMove
   /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. */
   selection: TreeSelection
-  /** Notecards each folder shows, by its path (🔒 E6, YAZ-2290) — the ones directly in it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
+  /** Notes each folder shows, by its path (🔒 E6, YAZ-2290) — the ones directly in it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
   counts: ReadonlyMap<string, number>
   /**
-   * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): notecards that live elsewhere, drawn as
-   * file rows among the folder's own files, marked. The row IS the notecard — it opens it, and
+   * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): notes that live elsewhere, drawn as
+   * file rows among the folder's own files, marked. The row IS the note — it opens it, and
    * selection and the active highlight follow its path, so it lights with its real row (🔒 D3's
    * rule for a favorite on two rows) — but it is no file of this folder: it never drags, and a
-   * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the notecard from here.
+   * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
    */
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
   /** Favorites-only (YAZ-1766 D4): root rows reorder the list instead of moving files; nested rows do not drag. */
@@ -242,7 +242,7 @@ function TreeLevel({
         ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) ? (
           // Inline rename (Links E1, GRO-2194): Markdown hides its suffix and re-appends it on
           // commit; view-only files show the full filename so their extension stays explicit.
-          // The REAL row only: a second input on the notecard's shortcut row would take the focus,
+          // The REAL row only: a second input on the note's shortcut row would take the focus,
           // and the first one's blur is its commit (YAZ-1553).
           <li key={node.path} role="treeitem">
             <RenameInline initial={renameInputName(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
@@ -282,7 +282,7 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath } : node, e)}
               title={node.path}
               data-path={node.path}
-              // A shortcut row never drags (YAZ-2290 D2): the drag would move the notecard out of the folder it lives in.
+              // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={fileDrag !== null && !isShortcutRow(node)}
               onDragStart={fileDrag === null || isShortcutRow(node) ? undefined : (e) => {
                 if (e.dataTransfer) {

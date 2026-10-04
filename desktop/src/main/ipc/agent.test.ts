@@ -47,7 +47,7 @@ describe('shell:agent-prompt', () => {
   it("a folder's settings file not yet created is still a page — the folder stands for it (YAZ-2290 D1); a folder that is gone rejects NOT_FOUND", async () => {
     await mkdir(path.join(dir, 'Projects'))
     const page = path.join(dir, 'Projects', '.folder.md')
-    expect(await invoke({ path: page })).toMatchObject({ ok: true, value: expect.stringContaining(`This file is a page in Yaseen Notecards: ${page}\n`) })
+    expect(await invoke({ path: page })).toMatchObject({ ok: true, value: expect.stringContaining(`This file is a page in Yaseen Docs: ${page}\n`) })
     expect(await invoke({ path: path.join(dir, 'Gone', '.folder.md') })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
   })
 

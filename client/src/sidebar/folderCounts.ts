@@ -5,10 +5,10 @@ import { isShortcut, rowsByFolder } from '../links/shortcuts'
 /**
  * What the tree shows of each folder (YAZ-2290), by the folder's absolute path, in ONE pass over the
  * rows its own view shows (`rowsByFolder`), run once per index snapshot:
- *  - `counts` (🔒 E6): how many notecards it shows — the records that live DIRECTLY in it, plus its
- *    shortcuts (D2). A subfolder's notecards are its own, a file that is no notecard is no record,
+ *  - `counts` (🔒 E6): how many notes it shows — the records that live DIRECTLY in it, plus its
+ *    shortcuts (D2). A subfolder's notes are its own, a file that is no note is no record,
  *    and a folder showing none has no entry.
- *  - `shortcuts` (D2): the notecards it shows that live somewhere else, as the file rows the tree
+ *  - `shortcuts` (D2): the notes it shows that live somewhere else, as the file rows the tree
  *    draws under it. A folder with none has no entry.
  * The vault root has no row, so it has neither.
  */

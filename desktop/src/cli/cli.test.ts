@@ -87,7 +87,7 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseennotecards id ', 'yaseennotecards links ', 'yaseennotecards due ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs due ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
@@ -423,7 +423,7 @@ describe('label and find', () => {
 describe('due (YAZ-2322)', () => {
   const DAY = 86_400_000
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
-  /** A notecard last changed `daysOld` days ago. */
+  /** A note last changed `daysOld` days ago. */
   async function aged(name: string, daysOld: number, content = `Body of ${name}.\n`): Promise<{ file: string; changed: number }> {
     const file = path.join(dir, name)
     await mkdir(path.dirname(file), { recursive: true })
@@ -464,7 +464,7 @@ describe('due (YAZ-2322)', () => {
     const older = await aged('sub/older.md', 120)
     await aged('fresh.md', 2)
     await aged('off.md', 200, '---\nreview: false\n---\nOff.\n')
-    await aged('sub/.folder.md', 300, '---\nviews: []\n---\n') // a folder's settings file is never a notecard
+    await aged('sub/.folder.md', 300, '---\nviews: []\n---\n') // a folder's settings file is never a note
     expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  ${older.file}\n${day(old.changed + 30 * DAY)}  ${old.file}\n`)
     expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
   })

@@ -52,7 +52,7 @@
  *    never lands in the match (no raw-text flash); revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.
  *  - Id link menu (YAZ-2293, `wikilink/wikilinkMenu.ts`): right-click on a rendered id link shows
- *    the notecard's name and its id and offers Copy ID; every other link keeps the native menu.
+ *    the note's name and its id and offers Copy ID; every other link keeps the native menu.
  *    Registered with the click plugin, on the same source and nav.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain

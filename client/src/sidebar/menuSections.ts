@@ -93,11 +93,11 @@ export interface MenuHandlers {
   onToggleFavorite: (paths: string[], isOn: boolean) => void
   /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
   onReviewFolder: (dir: string) => void
-  /** "Turn review off" / "Turn review on" (YAZ-2322): the notecard and the state to SET. */
+  /** "Turn review off" / "Turn review on" (YAZ-2322): the note and the state to SET. */
   onSetReview: (path: string, on: boolean) => void
-  /** "Add notecard shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
+  /** "Add note shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
   onAddShortcut: (dir: string) => void
-  /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the notecard, and the folder it stops appearing in. */
+  /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
   onDelete: (path: string) => void
@@ -256,7 +256,7 @@ const newDatedFolder: Leaf = (_t, h) => ({ id: 'new-dated-folder', label: 'New d
 
 /**
  * "Review this folder" (YAZ-2322): a FOLDER row only, either lens — a review session over the
- * notecards due inside it, subfolders included. It leads the group: Rename keeps the bottom.
+ * notes due inside it, subfolders included. It leads the group: Rename keeps the bottom.
  */
 const reviewFolder: Leaf = (t, h) => {
   const dir = t.reviewDir
@@ -265,7 +265,7 @@ const reviewFolder: Leaf = (t, h) => {
 }
 
 /**
- * The review toggle (YAZ-2322 🔒 D6): ONE state-aware item, both directions, on a NOTECARD row only —
+ * The review toggle (YAZ-2322 🔒 D6): ONE state-aware item, both directions, on a NOTE row only —
  * the caller's null target hides it for a folder, blank space and any file the index does not hold.
  */
 const toggleReview: Leaf = (t, h) => {
@@ -298,14 +298,14 @@ const toggleFavorite: Leaf = (t, h) => {
 }
 
 /**
- * "Add notecard shortcut" (YAZ-2290 D2) — a FOLDER row outside a plural selection: pick one
- * notecard that lives elsewhere, and it also appears in this folder. Under the favorite toggle: the
+ * "Add note shortcut" (YAZ-2290 D2) — a FOLDER row outside a plural selection: pick one
+ * note that lives elsewhere, and it also appears in this folder. Under the favorite toggle: the
  * other item that shows a note in a second place.
  */
 const addShortcut: Leaf = (t, h) => {
   const dir = t.shortcutDir
   if (dir === null) return null
-  return { id: 'add-shortcut', label: 'Add notecard shortcut', onSelect: () => h.onAddShortcut(dir) }
+  return { id: 'add-shortcut', label: 'Add note shortcut', onSelect: () => h.onAddShortcut(dir) }
 }
 
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
@@ -375,7 +375,7 @@ const del: Leaf = (t, h) => {
 }
 
 /**
- * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the notecard stops
+ * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the note stops
  * appearing in this folder and stays where it lives — the only place it can be deleted from. Not
  * `danger`, and no confirm: nothing is destroyed.
  */

@@ -35,7 +35,7 @@ const ONE = card(`reviews:\n  - {at: ${FIRST}, rating: keep, text: "aaaaaaaa"}\n
 /** Later review first on disk: the section reads them in time order. The first saw a body since edited. */
 const TWO = card(`reviews:\n  - {at: ${SECOND}, rating: keep, text: "bbbbbbbb"}\n  - {at: ${FIRST}, rating: keep, text: "aaaaaaaa"}\n`)
 
-/** The notecard's index record: last changed 25 days ago, its body as the second review saw it. */
+/** The note's index record: last changed 25 days ago, its body as the second review saw it. */
 const rec = (over: Partial<IndexRecord> = {}): IndexRecord => ({
   path: PATH,
   name: 'Card.md',
@@ -105,7 +105,7 @@ afterEach(() => {
 })
 
 describe('ReviewsSection (YAZ-2322)', () => {
-  it('a never-reviewed notecard shows when it is next checked, collapsed, and has no rows', () => {
+  it('a never-reviewed note shows when it is next checked, collapsed, and has no rows', () => {
     feed([rec()])
     const el = mount(NEVER)
     expect(header(el)?.getAttribute('aria-expanded')).toBe('false')
@@ -117,12 +117,12 @@ describe('ReviewsSection (YAZ-2322)', () => {
     expect(el.querySelector('.reviews__body')?.textContent).toBe('No reviews yet.')
   })
 
-  it('a notecard past its date is due now', () => {
+  it('a note past its date is due now', () => {
     feed([rec({ mtime: NOW - 40 * DAY })])
     expect(header(mount(NEVER))?.textContent).toBe(`Reviews (0)Next check ${day(NOW - 10 * DAY)} · due now`)
   })
 
-  it('a notecard due later today is due now, as the Inbox counts it', () => {
+  it('a note due later today is due now, as the Inbox counts it', () => {
     feed([rec({ mtime: NOW - 30 * DAY + 60_000 })])
     expect(header(mount(NEVER))?.textContent).toBe(`Reviews (0)Next check ${day(NOW)} · due now`)
   })
@@ -141,7 +141,7 @@ describe('ReviewsSection (YAZ-2322)', () => {
 
   it('with review off it says so and shows no date', () => {
     feed([rec({ properties: { review: false } })])
-    expect(header(mount(TWO))?.textContent).toBe('Reviews (2)Review is off for this notecard.')
+    expect(header(mount(TWO))?.textContent).toBe('Reviews (2)Review is off for this note.')
   })
 
   it('deleting a row removes exactly that review; deleting the last one removes the key', async () => {
@@ -162,7 +162,7 @@ describe('ReviewsSection (YAZ-2322)', () => {
     const el = mount(TWO)
     click(header(el))
     click(button(el, 'Reset review history'))
-    expect(sheet(el)?.querySelector('.confirm__text')?.textContent).toBe("Reset this notecard's review history? This cannot be undone.")
+    expect(sheet(el)?.querySelector('.confirm__text')?.textContent).toBe("Reset this note's review history? This cannot be undone.")
     click(button(el, 'Cancel'))
     expect(sheet(el)).toBeNull()
     expect(write).not.toHaveBeenCalled()
@@ -174,7 +174,7 @@ describe('ReviewsSection (YAZ-2322)', () => {
     await settle()
   })
 
-  it('a never-reviewed notecard has nothing to reset', () => {
+  it('a never-reviewed note has nothing to reset', () => {
     feed([rec()])
     const el = mount(NEVER)
     click(header(el))
@@ -194,7 +194,7 @@ describe('ReviewsSection (YAZ-2322)', () => {
     expect(el.querySelector('[role="alert"]')).toBeNull()
   })
 
-  it('renders nothing without the settings, without the index, or until the index has the notecard — then follows it', () => {
+  it('renders nothing without the settings, without the index, or until the index has the note — then follows it', () => {
     feed([rec()])
     expect(mount(TWO, { source }).innerHTML).toBe('')
     expect(mount(TWO, { settings: S }).innerHTML).toBe('')
@@ -204,6 +204,6 @@ describe('ReviewsSection (YAZ-2322)', () => {
     feed([rec()])
     expect(header(el)?.textContent).toContain('Reviews (2)')
     feed([rec({ properties: { review: false } })])
-    expect(header(el)?.textContent).toBe('Reviews (2)Review is off for this notecard.')
+    expect(header(el)?.textContent).toBe('Reviews (2)Review is off for this note.')
   })
 })

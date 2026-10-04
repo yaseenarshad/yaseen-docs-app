@@ -139,7 +139,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(a).not.toBe(b)
   })
 
-  it('never writes an id another notecard holds: a note dropped where one stood, with the same bytes, is given the next id — the same one on every device (YAZ-2378)', async () => {
+  it('never writes an id another note holds: a note dropped where one stood, with the same bytes, is given the next id — the same one on every device (YAZ-2378)', async () => {
     await sweep(await vault({ 'Inbox/idea.md': 'an idea\n' }))
     const held = (await idIn('Inbox', 'idea.md'))!
     // The same vault on two devices: the first note has moved on, and its twin lands where it stood.

@@ -19,7 +19,7 @@ const record = (folder: string, basename: string, properties: Record<string, unk
 })
 
 describe('folderCounts (🔒 E6, YAZ-2290)', () => {
-  it("counts the notecards that live DIRECTLY in each folder, keyed by the folder's absolute path", () => {
+  it("counts the notes that live DIRECTLY in each folder, keyed by the folder's absolute path", () => {
     const { counts } = folderCounts('/v', [record('Projects', 'a'), record('Projects', 'b'), record('Projects/Alpha', 'c'), record('', 'top')], [])
     expect([...counts]).toEqual([
       ['/v/Projects', 2],
@@ -27,13 +27,13 @@ describe('folderCounts (🔒 E6, YAZ-2290)', () => {
     ])
   })
 
-  it('a folder holding no notecard has no entry, and a trailing slash on the root changes nothing', () => {
+  it('a folder holding no note has no entry, and a trailing slash on the root changes nothing', () => {
     const { counts } = folderCounts('/v/', [record('Projects/Alpha', 'c')], [])
     expect(counts.has('/v/Projects')).toBe(false)
     expect(counts.get('/v/Projects/Alpha')).toBe(1)
   })
 
-  it("a folder's shortcuts count with the notecards that live in it (D2) — each notecard once", () => {
+  it("a folder's shortcuts count with the notes that live in it (D2) — each note once", () => {
     const id = 'k3m9x2pq7abc'
     const folders = [{ ...record('Projects', '.folder'), id }]
     const { counts } = folderCounts('/v', [record('Areas', 'health', { also_in: [id] }), record('Projects', 'a', { also_in: [id] }), record('Projects', 'b')], folders)
@@ -48,7 +48,7 @@ describe('folderCounts: the shortcut rows (YAZ-2290 D2)', () => {
   const id = 'k3m9x2pq7abc'
   const folders = [{ ...record('Projects', '.folder'), id }]
 
-  it("each folder's shortcuts as file rows, keyed by its absolute path — the notecards it shows that live elsewhere, in index order", () => {
+  it("each folder's shortcuts as file rows, keyed by its absolute path — the notes it shows that live elsewhere, in index order", () => {
     const records = [record('Areas', 'health', { also_in: [id] }), record('Projects', 'a', { also_in: [id] }), record('Zebra', 'z', { also_in: id })]
     expect([...folderCounts('/v', records, folders).shortcuts]).toEqual([
       [

@@ -368,7 +368,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   it.each([
     [true, 'Turn review off'],
     [false, 'Turn review on'],
-  ])('a notecard whose review state is %s gets "%s" under the copy items, and it asks for the opposite (YAZ-2322)', (state, label) => {
+  ])('a note whose review state is %s gets "%s" under the copy items, and it asks for the opposite (YAZ-2322)', (state, label) => {
     const reviewState = vi.fn(() => state)
     const onSetReview = vi.fn()
     const el = mount({ ...props, reviewState, onSetReview })
@@ -380,7 +380,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).toBeNull()
   })
 
-  it('a tab with no review state — a folder, a PDF, a notecard the index has not seen — gets no review item', () => {
+  it('a tab with no review state — a folder, a PDF, a note the index has not seen — gets no review item', () => {
     const el = mount({ ...props, reviewState: () => null, onSetReview: vi.fn() })
     rightClick(tabAt(el, 0))
     expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])

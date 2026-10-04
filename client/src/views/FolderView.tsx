@@ -1,15 +1,15 @@
 /**
  * The folder view (YAZ-2290): a real FOLDER, opened as a tab (D3), shown as views over its
- * notecards. Its subject is a DIRECTORY, never a note.
+ * notes. Its subject is a DIRECTORY, never a note.
  *
- *  - ROWS (D4): the notecards that live directly in the folder — not its subfolders' — plus its
+ *  - ROWS (D4): the notes that live directly in the folder — not its subfolders' — plus its
  *    SHORTCUTS (D2, `links/shortcuts.ts`). Their links resolve through the whole vault.
  *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`, created by the first change; until then
  *    the defaults (`folderSettings`), and opening writes NOTHING.
  *  - THE ADAPTER (🔒 D3, YAZ-819): ViewsPane stays ONE component. This host builds a def in memory
  *    from the settings' views and turns every def change back into ONE settings write
  *    (`writeFolderSettings`). Which view is active is session state, never written. A cell edit
- *    writes the NOTECARD's own frontmatter, and a column is never stamped into one (E1).
+ *    writes the NOTE's own frontmatter, and a column is never stamped into one (E1).
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -36,7 +36,7 @@ import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere } from './deleteColumn'
 import { freeName, type NewNoteSeed } from './newNote'
-import { createNotecard } from './scaffold'
+import { createNote } from './scaffold'
 import { ViewFolder } from './view/GroupHeader'
 import './views.css'
 import './folderView.css'
@@ -122,7 +122,7 @@ export function FolderView({
   const indexed = feed.resolve !== null
   const settings = useMemo(() => (indexed ? folderSettings(record) : null), [indexed, record])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
-  /** The rows that LIVE here (D2): a shortcut's file is in another folder, so it is no name taken here and no notecard a column delete strips (E4). */
+  /** The rows that LIVE here (D2): a shortcut's file is in another folder, so it is no name taken here and no note a column delete strips (E4). */
   const residents = useMemo(() => rows.filter((r) => !isShortcut(r, folder)), [rows, folder])
 
   /**
@@ -228,7 +228,7 @@ export function FolderView({
 
   /**
    * The declarations' ONE write (YAZ-895/1549): ahead first, then disk; a refusal puts the ahead copy
-   * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's notecard
+   * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's note
    * strips) does not.
    */
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
@@ -287,8 +287,8 @@ export function FolderView({
       void commitSettings(columns, views ?? parsed.def.views, labels === undefined ? parsed.def.properties : labels.properties).catch(() => undefined)
     },
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
-    // echo behaviour — AWAITED, so a refused write aborts before any notecard is touched; the
-    // strips report into the column banner, no rollback. They reach the notecards that LIVE in the
+    // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
+    // strips report into the column banner, no rollback. They reach the notes that LIVE in the
     // folder and no other (E4) — a shortcut row keeps its value.
     deleteColumn: (key) =>
       deleteColumnEverywhere(key, {
@@ -336,18 +336,18 @@ export function FolderView({
         </ViewFolder.Provider>
       </section>
       {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />}
-      {/* The notecards that link to the FOLDER (D10): its path is what such a link resolves to. */}
+      {/* The notes that link to the FOLDER (D10): its path is what such a link resolves to. */}
       <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
     </div>
   )
 }
 
 /**
- * Birth in a folder (YAZ-2290 D4): the notecard lands IN the folder being viewed, born like every
- * notecard (`createNotecard`) under the seed.
+ * Birth in a folder (YAZ-2290 D4): the note lands IN the folder being viewed, born like every
+ * note (`createNote`) under the seed.
  *
  * The name is the `Untitled` scheme by default — EXCEPT when the caller already knows what the
- * notecard is called (YAZ-943's inline board add types one). A typed name is tamed first: a '/'
+ * note is called (YAZ-943's inline board add types one). A typed name is tamed first: a '/'
  * would land it somewhere else entirely, so it becomes a space, and a name that is nothing but
  * whitespace is no name at all and falls back to `Untitled`. Either way the same de-duplication
  * runs over the folder's basenames, so a typed collision steps to " 2" like everything else — and
@@ -359,7 +359,7 @@ async function createInFolder(dir: string, rows: readonly IndexRecord[], seed: N
   for (;;) {
     const free = freeName(tamed === '' ? 'Untitled' : tamed, taken)
     try {
-      await createNotecard(`${dir}/${free}.md`, seed.properties)
+      await createNote(`${dir}/${free}.md`, seed.properties)
       return `${dir}/${free}.md`
     } catch (err) {
       if (!(err instanceof BridgeRequestError) || err.code !== 'ALREADY_EXISTS') throw err

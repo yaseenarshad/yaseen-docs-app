@@ -263,7 +263,7 @@ describe('registerFsIpc', () => {
     const adopted = (at: string) => stat(path.join(at, VAULT_CONFIG_DIR)).then((st) => st.isDirectory(), () => false)
     const create = (p: string) => registered(CONTRACT.createFile.channel)({ sender: {} }, p)
 
-    it("the first notecard created in a window's folder makes it a vault, and the notes already there are given ids", async () => {
+    it("the first note created in a window's folder makes it a vault, and the notes already there are given ids", async () => {
       const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-'))
       try {
         await writeFile(path.join(plain, 'from an agent.md'), 'body\n')

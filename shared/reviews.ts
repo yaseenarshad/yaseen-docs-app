@@ -3,9 +3,9 @@ import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './fr
 import { isRecord } from './guards'
 
 /**
- * Upkeep review (YAZ-2322): a notecard's review log lives ON the notecard, under the reserved
+ * Upkeep review (YAZ-2322): a note's review log lives ON the note, under the reserved
  * frontmatter key `reviews` — a flat list, one line per review (🔒 D1). The file stores only what
- * happened; when the notecard is next due is computed (`shared/schedule.ts`, 🔒 D2), never written.
+ * happened; when the note is next due is computed (`shared/schedule.ts`, 🔒 D2), never written.
  * Pure: no React, no fs. The app writes through `transformFile`, the index lifts the list onto
  * the record and drops the key from `properties`, the Properties panel chips it "Reserved".
  *
@@ -15,7 +15,7 @@ import { isRecord } from './guards'
  */
 
 export const REVIEWS_KEY = 'reviews'
-/** The opt-out (🔒 D6): `review: false` takes a notecard out of review, `true` puts it in whatever the vault default. */
+/** The opt-out (🔒 D6): `review: false` takes a note out of review, `true` puts it in whatever the vault default. */
 export const REVIEW_KEY = 'review'
 /** The one answer the upkeep algorithm writes: "Still relevant" (🔒 D4). */
 const KEEP = 'keep'
@@ -30,7 +30,7 @@ export interface ReviewEntry {
 }
 
 /**
- * Eight hex characters standing for a notecard's body (🔒 C): a review records the one it saw, and
+ * Eight hex characters standing for a note's body (🔒 C): a review records the one it saw, and
  * the body counts as changed when it no longer matches. FNV-1a over UTF-16 units, so the renderer
  * and the main process agree without a crypto dependency; line-ending style and blank space around
  * the text do not count.
@@ -120,13 +120,13 @@ export const REVIEW_SETTINGS_FILE = 'review.json'
  */
 export interface ReviewSettings {
   algorithm: 'upkeep'
-  /** A notecard untouched this many days comes up. */
+  /** A note untouched this many days comes up. */
   baseDays: number
   /** Each "Still relevant" in a row multiplies the wait; 1 is a fixed rotation. */
   growth: number
   /** The longest wait. */
   maxDays: number
-  /** Whether a notecard with no `review` key is in review. */
+  /** Whether a note with no `review` key is in review. */
   reviewByDefault: boolean
 }
 
@@ -134,7 +134,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = { algorithm: 'upkeep', ba
 
 const wholeDays = (v: unknown, min: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min
 
-/** Take a notecard in or out of review (🔒 D6): the flag is written only when it differs from the vault default; the log is untouched. */
+/** Take a note in or out of review (🔒 D6): the flag is written only when it differs from the vault default; the log is untouched. */
 export function setInReview(content: string, on: boolean, s: ReviewSettings): string {
   return setFrontmatterProperty(content, REVIEW_KEY, on === s.reviewByDefault ? undefined : on)
 }

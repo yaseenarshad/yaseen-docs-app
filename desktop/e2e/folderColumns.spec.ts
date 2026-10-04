@@ -6,19 +6,19 @@
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`),
  * on `KPIs` — the folder whose settings file already SHIPS three declarations (`funnel_stages`
- * multi-link with a target, `kpi_category`, `unit`), five notecards, and a Table view whose
+ * multi-link with a target, `kpi_category`, `unit`), five notes, and a Table view whose
  * `order` names four columns. So every step below adds to a real declaration block rather than
  * creating one, which is what makes the merge-don't-replace half of each write visible.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 "+ Add column" declares `unit_notes` and SHOWS it, in one `folder_page_settings` write
  *     (🔒 D3): the header appears, the declaration lands on disk, the Table view's `order`
- *     gains `note.unit_notes` — and NOT ONE notecard is written: a column is never stamped empty
- *     into the notecards it is declared over (YAZ-2290 E1), so every file is byte-identical
+ *     gains `note.unit_notes` — and NOT ONE note is written: a column is never stamped empty
+ *     into the notes it is declared over (YAZ-2290 E1), so every file is byte-identical
  *   2 the Type select retypes it `text` → `number`: the DECLARATION moves and nothing else does —
- *     🔒 C1, proven by byte-equality over every notecard again
- *   3 the retyped column edits as a NUMBER, and the value lands on the notecard's own file on disk
- *   4 "New" births a notecard in the folder with NO declared column in it — a missing value is an
+ *     🔒 C1, proven by byte-equality over every note again
+ *   3 the retyped column edits as a NUMBER, and the value lands on the note's own file on disk
+ *   4 "New" births a note in the folder with NO declared column in it — a missing value is an
  *     empty cell, never an empty key
  *   5 quit → relaunch: the column and its declaration are in the settings file, not in the session
  *   6 a name that is not a property name is refused inline, and NOTHING is written
@@ -40,9 +40,9 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER = 'KPIs'
-/** Its notecards, in the order the table lists them (no `sort`, so the index order stands). */
+/** Its notes, in the order the table lists them (no `sort`, so the index order stands). */
 const MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
-/** The column this spec declares, and the notecard whose cell it fills. */
+/** The column this spec declares, and the note whose cell it fills. */
 const COLUMN = 'unit_notes'
 /** …and the LABEL its header and its Properties row wear (YAZ-1513: sentence case, `_` → space). */
 const COLUMN_LABEL = 'Unit notes'
@@ -57,7 +57,7 @@ let userData: string
 let vault: string
 let app: ElectronApplication
 let win: Page
-/** Every notecard before launch; includes RETAINED's seeded legacy declared value. */
+/** Every note before launch; includes RETAINED's seeded legacy declared value. */
 let memberBytes: Record<string, string>
 
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
@@ -93,7 +93,7 @@ async function settingsOnDisk(): Promise<OnDiskSettings> {
   return (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as OnDiskSettings
 }
 
-/** Every notecard's full bytes, keyed by name — the before/after pair E1 and C1 are proven with. */
+/** Every note's full bytes, keyed by name — the before/after pair E1 and C1 are proven with. */
 async function readMembers(): Promise<Record<string, string>> {
   const entries = await Promise.all(MEMBERS.map(async (name) => [name, await readFile(memberPath(name), 'utf8')] as const))
   return Object.fromEntries(entries)
@@ -120,14 +120,14 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — "+ Add column" declares a column and shows it, in one settings write, and stamps it into no notecard', async () => {
+test('step 1 — "+ Add column" declares a column and shows it, in one settings write, and stamps it into no note', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   await openFolder(win, folderPath())
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   // The shipped shape this step adds to: four columns from the view's `order` (each header its
-  // LABEL, behind the `#` gutter — YAZ-1513), five notecards named by their titles.
+  // LABEL, behind the `#` gutter — YAZ-1513), five notes named by their titles.
   await expect(headers(contents(win))).toHaveText(HEADERS)
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   // Opening a folder writes nothing (YAZ-2290): a declaration with an already-present legacy value
@@ -167,14 +167,14 @@ test('step 1 — "+ Add column" declares a column and shows it, in one settings 
     `note.${COLUMN}`,
   ])
 
-  // YAZ-2290 E1: a column is NEVER stamped empty into the notecards — not on open, not when it is
+  // YAZ-2290 E1: a column is NEVER stamped empty into the notes — not on open, not when it is
   // added. The settings write above has landed and been indexed (the header shows it), and every
-  // notecard is still byte for byte what it was before launch, the legacy value among them.
+  // note is still byte for byte what it was before launch, the legacy value among them.
   expect(await readMembers()).toEqual(memberBytes)
   expect(parseFrontmatter(splitFrontmatter(memberBytes[RETAINED]!).frontmatter).properties[RETAINED_KEY]).toEqual(RETAINED_VALUE)
 })
 
-test('step 2 — retyping moves the DECLARATION and nothing else: every notecard is byte-identical', async () => {
+test('step 2 — retyping moves the DECLARATION and nothing else: every note is byte-identical', async () => {
   // The per-key Type select (YAZ-897) lives one level down since YAZ-1513: the list row the
   // declaration made offerable opens the column's DETAIL panel, and the select sits there.
   const menu = propsMenu(contents(win))
@@ -189,7 +189,7 @@ test('step 2 — retyping moves the DECLARATION and nothing else: every notecard
   await expect(kind).toHaveValue('number')
   await shoot(win, 'columns-03-retyped-number')
 
-  // 🔒 C1 (locked): a retype never touches notecards — no migration, no rewrite, not one byte.
+  // 🔒 C1 (locked): a retype never touches notes — no migration, no rewrite, not one byte.
   expect(await readMembers()).toEqual(memberBytes)
 
   // `views` was not passed to this write, so the order it does not own is untouched.
@@ -198,7 +198,7 @@ test('step 2 — retyping moves the DECLARATION and nothing else: every notecard
   expect(settings.columns?.kpi_category).toEqual({ kind: 'text' })
 })
 
-test('step 3 — the retyped column edits as a number, onto the NOTECARD’s own file', async () => {
+test('step 3 — the retyped column edits as a number, onto the NOTE’s own file', async () => {
   // Back out of the detail panel, then close the Properties popover; the table is what edits now.
   await propsMenu(contents(win)).locator('[aria-label="Back to columns"]').click()
   await expect(propsMenu(contents(win)).locator(`[aria-label="Open ${COLUMN_LABEL}"]`)).toBeVisible()
@@ -226,12 +226,12 @@ test('step 3 — the retyped column edits as a number, onto the NOTECARD’s own
   expect(props[COLUMN]).toBe(42)
   await shoot(win, 'columns-04-number-cell-write')
 
-  // Only the edited notecard moved; the other four are still byte-identical to what launched.
+  // Only the edited note moved; the other four are still byte-identical to what launched.
   const now = await readMembers()
   for (const name of MEMBERS.filter((n) => n !== SUBJECT)) expect(now[name]).toBe(memberBytes[name])
 })
 
-test('step 4 — "New" births a notecard in the folder with no declared column stamped into it', async () => {
+test('step 4 — "New" births a note in the folder with no declared column stamped into it', async () => {
   await contents(win).locator('[aria-label="New note"]').click()
 
   // Born IN the folder being viewed (YAZ-2290 D4), from its template and the view's seed alone.
@@ -245,7 +245,7 @@ test('step 4 — "New" births a notecard in the folder with no declared column s
   expect(born).not.toContain(COLUMN)
   expect(born).not.toContain('funnel_stages')
   await expect(activeTab(win)).toHaveText('Untitled')
-  await shoot(win, 'columns-05-born-notecard')
+  await shoot(win, 'columns-05-born-note')
 })
 
 test('step 5 — the column lives in the settings file, not in the session: it survives quit → relaunch', async () => {
@@ -267,7 +267,7 @@ test('step 5 — the column lives in the settings file, not in the session: it s
 })
 
 test('step 6 — a name that is not a property name is refused inline, and nothing is written', async () => {
-  // Parsed, not read as bytes: creating step 4's notecard made this folder a vault the app may
+  // Parsed, not read as bytes: creating step 4's note made this folder a vault the app may
   // give ids in, and an `id` landing on the settings file is not what this step is about.
   const before = await settingsOnDisk()
 

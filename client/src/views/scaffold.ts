@@ -13,13 +13,13 @@ async function readTemplate(path: string): Promise<string> {
 }
 
 /**
- * Birth (YAZ-2290 E1/E3), the ONE way a notecard is created: with its folder's template — the
+ * Birth (YAZ-2290 E1/E3), the ONE way a note is created: with its folder's template — the
  * hidden `.template.md` beside it, frontmatter and body — under `seed`. Nothing else: no column is
  * ever stamped empty, a missing value is an empty cell. ONE atomic call (`CreateFileRequest.content`,
  * GRO-2202), so it never overwrites and there is no create-then-write race. Failures propagate.
- * `id` is for a caller that has already written a link to the notecard (YAZ-2293); else main mints one.
+ * `id` is for a caller that has already written a link to the note (YAZ-2293); else main mints one.
  */
-export async function createNotecard(path: string, seed: Record<string, unknown> = {}, id?: string): Promise<void> {
+export async function createNote(path: string, seed: Record<string, unknown> = {}, id?: string): Promise<void> {
   const { frontmatter, body } = splitFrontmatter(await readTemplate(`${dirname(path)}/.template.md`))
   await api.createFile({ path, content: buildFrontmatter({ ...parseFrontmatter(frontmatter).properties, ...seed }) + body, id })
 }
