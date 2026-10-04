@@ -18,15 +18,9 @@
  *   4 "New" births a note IN the folder, with no column stamped empty into it, and it is a
  *     row of the folder's views with no user action at all
  *   5 the GROUPED table (YAZ-744, restored here in YAZ-846): a `groupBy` set through the Sort
- *     menu is ONE `folder_page_settings` write, and a collapsed section survives quit → relaunch
+ *     menu is ONE `folder_settings` write, and a collapsed section survives quit → relaunch
  *     in the main-owned `baseGroups` bucket — keyed by the folder's own path, never written into
  *     its settings file
- *
- * TOMBSTONE (YAZ-2290): the folder-page model this file used to drive is gone — a note flagged
- * `folder_page: true`, members joining it through their own `folder_pages`, the outline's link
- * lines tagging and un-tagging pages, adoption, the parking bin and the body migrating into the
- * outline on first open. The steps that proved those (the old 5, 6, 7 and 9) went with them; the
- * outline that survives is a plain document, and `folderOutline.spec.ts` owns it.
  *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `folder-` step
  * screenshots).
@@ -183,7 +177,7 @@ test('step 4 — "New" births a note IN the folder, no column stamped empty, and
 test('step 5 — the grouped table: one groupBy write, and a collapsed section that survives a relaunch', async () => {
   // `order` is the folder's own number column: step 2 made `Lead Gen` a 9, the other two shipped
   // as 2 and 3, and step 4's newborn has none — so the run has three real groups and the trailing
-  // "No value" one. Setting it is ONE `folder_page_settings` write through the one door. "Group
+  // "No value" one. Setting it is ONE `folder_settings` write through the one door. "Group
   // by" is the shared `ColumnPicker` (YAZ-1466): a button opening a searchable listbox, each
   // option keyed by `data-value`; choosing one closes the list, and Esc then closes the Sort menu.
   await contents(win).locator('[aria-label="Sort"]').click()

@@ -1,5 +1,5 @@
 /**
- * Folder page settings (YAZ-830): the ONE door to `folder_page_settings`. Each case pins a
+ * Folder settings (YAZ-830): the ONE door to `folder_settings`. Each case pins a
  * locked rule — tolerant parsing (report, never block, never throw), DEFAULT_VIEWS (Table, Board),
  * the 7 property kinds, parseViews's own view assertion mirrored, and a FOLDER's defaults.
  */
@@ -41,7 +41,7 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
 const METRICS = '/vault/Metrics/.folder.md'
 
 /** A folder's settings file carrying this settings value, parsed. */
-const settingsOf = (value: unknown) => folderSettings(rec(METRICS, { folder_page_settings: value }))
+const settingsOf = (value: unknown) => folderSettings(rec(METRICS, { folder_settings: value }))
 
 const TABLE_BOARD = [
   { type: 'table', name: 'Table' },
@@ -79,14 +79,14 @@ describe("a FOLDER's settings (YAZ-2290 D1/E2): its `.folder.md`, else the defau
   it('a file that has saved NO settings yet is the defaults too, each read its own copy', () => {
     const a = folderSettings(rec(FILE, {}))
     expect(a).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
-    expect(folderSettings(rec(FILE, { folder_page_settings: null }))).toEqual(a)
+    expect(folderSettings(rec(FILE, { folder_settings: null }))).toEqual(a)
     expect(a.columns).not.toBe(DEFAULT_COLUMNS)
     expect(a.columns.status).not.toBe(folderSettings(rec(FILE, {})).columns.status)
   })
 
   it('once saved, the file states exactly which columns the folder has — Status is not added back', () => {
-    expect(folderSettings(rec(FILE, { folder_page_settings: { columns: { owner: { kind: 'text' } } } })).columns).toEqual({ owner: { kind: 'text' } })
-    expect(folderSettings(rec(FILE, { folder_page_settings: { views: [{ type: 'table', name: 'Table' }] } })).columns).toEqual({})
+    expect(folderSettings(rec(FILE, { folder_settings: { columns: { owner: { kind: 'text' } } } })).columns).toEqual({ owner: { kind: 'text' } })
+    expect(folderSettings(rec(FILE, { folder_settings: { views: [{ type: 'table', name: 'Table' }] } })).columns).toEqual({})
   })
 })
 
@@ -193,7 +193,7 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     expect(settings.problems).toHaveLength(1)
   })
 
-  it('an empty list yields DEFAULT_VIEWS quietly — a folder page always has its two skins', () => {
+  it('an empty list yields DEFAULT_VIEWS quietly — a folder always has its two skins', () => {
     const settings = settingsOf({ views: [] })
     expect(settings.views).toEqual(TABLE_BOARD)
     expect(settings.problems).toEqual([])
@@ -262,7 +262,7 @@ describe('writeFolderSettings: ONE key, through the shared writer', () => {
     await expect(writeFolderSettings(METRICS, settings)).resolves.toMatchObject({ mtime: 200 })
 
     expect(write).toHaveBeenCalledTimes(1)
-    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', raw)
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_settings', raw)
   })
 
   it('never serializes problems, and omits empty columns', async () => {
@@ -271,12 +271,12 @@ describe('writeFolderSettings: ONE key, through the shared writer', () => {
 
     await writeFolderSettings(METRICS, settings)
 
-    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', { views: [{ type: 'table', name: 'Table' }] })
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_settings', { views: [{ type: 'table', name: 'Table' }] })
   })
 
   it('writes undefined to DELETE the key when the caller explicitly asks for it', async () => {
     await writeFolderSettings(METRICS, undefined)
-    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', undefined)
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_settings', undefined)
   })
 })
 
@@ -298,11 +298,11 @@ it('reads option order tolerantly and reports malformed order without changing t
   const settings = settingsOf(raw)
   expect(settings.columns.Status).toEqual({ kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' })
   expect(settings.columns.Labels).toEqual({ kind: 'multi-select', options: ['B', 'A'] })
-  expect(settings.problems).toEqual(['folder_page_settings.columns.Labels.optionSort must be manual, ascending, or descending — using manual order'])
+  expect(settings.problems).toEqual(['folder_settings.columns.Labels.optionSort must be manual, ascending, or descending — using manual order'])
   expect(raw.columns.Labels.optionSort).toBe('sideways')
 })
 
-describe('the default status column (YAZ-1513): every folder page is born with it', () => {
+describe('the default status column (YAZ-1513): every folder is born with it', () => {
   const STATUS = { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] }
 
   it('DEFAULT_COLUMNS is one Select, its options in board order', () => {
@@ -316,7 +316,7 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
     expect(settings.properties).toEqual({ status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } })
     expect(settings.problems).toEqual([])
     writeFolderSettings('/vault/F.md', settings)
-    expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_page_settings', {
+    expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_settings', {
       properties: { status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } },
       views: [{ type: 'table', name: 'T' }],
     })
@@ -326,7 +326,7 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
     const settings = settingsOf({ views: [{ type: 'table', name: 'T' }] })
     expect(settings.properties).toBeUndefined()
     writeFolderSettings('/vault/F.md', settings)
-    expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_page_settings', { views: [{ type: 'table', name: 'T' }] })
+    expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_settings', { views: [{ type: 'table', name: 'T' }] })
   })
 
   it('a blank displayName reads as absent — the header never goes empty (YAZ-1549)', () => {
@@ -337,12 +337,12 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
 
   it("reads tolerantly: a non-map is ignored with a problem; a non-map entry or a non-string displayName drops that entry", () => {
     expect(settingsOf({ properties: 'nope' }).properties).toBeUndefined()
-    expect(settingsOf({ properties: 'nope' }).problems).toEqual(['folder_page_settings.properties must be a map of column labels — ignoring it'])
+    expect(settingsOf({ properties: 'nope' }).problems).toEqual(['folder_settings.properties must be a map of column labels — ignoring it'])
     const mixed = settingsOf({ properties: { a: { displayName: 'A' }, b: 'text', c: { displayName: 7 }, d: {} } })
     expect(mixed.properties).toEqual({ a: { displayName: 'A' }, d: {} })
     expect(mixed.problems).toEqual([
-      'folder_page_settings.properties.b must be a map with a displayName — ignoring that label',
-      'folder_page_settings.properties.c.displayName must be text — ignoring that label',
+      'folder_settings.properties.b must be a map with a displayName — ignoring that label',
+      'folder_settings.properties.c.displayName must be text — ignoring that label',
     ])
   })
 

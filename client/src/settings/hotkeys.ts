@@ -4,7 +4,7 @@
  * label and key so "close tab" finds the page. When a keymap changes anywhere (editor/outline/hotkeys.ts,
  * foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, marks/highlight.ts,
  * listCommands.ts, lineSelection.ts, views/view/*, the application menu in desktop/src/main/menu.ts), update HOTKEYS
- * (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it — `VIEW_HOTKEYS` is the folder-page view surface's own
+ * (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it — `VIEW_HOTKEYS` is the folder view surface's own
  * set (table / cards / outline bindings); it was `BASES_HOTKEYS` under the heading "Bases" until
  * YAZ-861 renamed both to what they describe. hotkeys.test.ts pins the expected set so drift fails
  * loudly. Until YAZ-1679 this lived in sidebar/HotkeysPanel.tsx beside a keyboard-icon popover.

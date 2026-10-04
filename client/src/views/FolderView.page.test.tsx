@@ -1,5 +1,5 @@
 /**
- * The folder PAGE (YAZ-2290 D9): around its views a folder keeps what a page has — the editable
+ * A folder as a PAGE (YAZ-2290 D9): around its views a folder keeps what a page has — the editable
  * title, its OWN properties panel and its OWN comments, the last two stored in `.folder.md` beside
  * the view settings and shown with the components a note uses. Mounted like `FolderView.test.tsx`,
  * but with the `api` mock sitting UNDER the real `writeProperty` over a tiny in-memory disk, so a
@@ -35,7 +35,7 @@ const LEAD = '/vault/stages/Lead Gen.md'
 
 /** View settings, a property of the folder's own and one comment — all in the one file (D9). */
 const FULL = `---
-folder_page_settings:
+folder_settings:
   columns:
     Status:
       kind: select
@@ -180,7 +180,7 @@ describe('a folder with no `.folder.md`', () => {
 describe('a folder whose `.folder.md` holds view settings, a property and a comment', () => {
   beforeEach(() => void disk.set(SETTINGS_FILE, { content: FULL, mtime: 50 }))
 
-  it('shows the property and the comment, keeps `folder_page_settings` out of the panel, and the views still follow the settings', async () => {
+  it('shows the property and the comment, keeps `folder_settings` out of the panel, and the views still follow the settings', async () => {
     const el = await mount()
     expect(q(el, '.frontmatter-panel__header').getAttribute('aria-label')).toBe('Properties (2)')
     expandPanel(el)

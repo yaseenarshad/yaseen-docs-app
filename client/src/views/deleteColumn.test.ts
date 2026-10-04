@@ -69,8 +69,6 @@ describe('undeletableReason: built-in keys are hidden, never deleted', () => {
     for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.also_in', 'comments']) {
       expect(undeletableReason(key)).toBe('Built-in column — hide it instead')
     }
-    // The retired folder-page keys are ordinary frontmatter (YAZ-2290 D6) — a note's `folder_page_settings` with them.
-    for (const key of ['note.folder_page', 'folder_pages', 'note.folder_pages', 'folder_page_settings']) expect(undeletableReason(key)).toBeNull()
     expect(undeletableReason('note.status')).toBeNull()
     expect(undeletableReason('status')).toBeNull()
   })

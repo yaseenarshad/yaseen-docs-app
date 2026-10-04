@@ -64,7 +64,7 @@ describe('getIndex: drains in-flight watcher scans (YAZ-986)', () => {
   it('a snapshot requested while a created note is mid-scan still includes that note', async () => {
     const file = path.join(root, 'Raced.md')
     gate.close()
-    await writeFile(file, '---\nfolder_pages:\n  - "[[VSL-v1]]"\n---\n\n# raced\n')
+    await writeFile(file, '---\nrelated:\n  - "[[VSL-v1]]"\n---\n\n# raced\n')
     await until(() => gate.calls.has(file)) // the watcher fired; the scan is now in flight, held
     const snapshot = getIndex(root) // the renderer's one refetch, arriving mid-scan
     setTimeout(() => gate.open(), 100) // the scan finishes a beat later, as under real load

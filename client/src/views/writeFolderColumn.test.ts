@@ -16,8 +16,8 @@ const write = vi.mocked(api.writeFile)
 const file = (content: string, mtime = 100) => ({ path, content, mtime, size: content.length })
 const base: PropertyDecl = { kind: 'select', options: ['Later', 'Ready'] }
 const next: PropertyDecl = { ...base, optionSort: 'ascending' }
-const content = (settings: unknown) => setFrontmatterProperty('---\nfolder_page: true\n---\nBody stays.\n', 'folder_page_settings', settings)
-const settingsWritten = () => parseFrontmatter(splitFrontmatter(write.mock.lastCall![0].content).frontmatter).properties.folder_page_settings
+const content = (settings: unknown) => setFrontmatterProperty('---\nowner: Sam\n---\nBody stays.\n', 'folder_settings', settings)
+const settingsWritten = () => parseFrontmatter(splitFrontmatter(write.mock.lastCall![0].content).frontmatter).properties.folder_settings
 beforeEach(() => {
   read.mockReset(); write.mockReset()
   write.mockResolvedValue({ path, mtime: 200, size: 200 })

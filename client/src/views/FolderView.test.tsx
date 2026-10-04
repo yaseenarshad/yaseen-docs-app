@@ -7,7 +7,7 @@
  * Pinned here: its rows are the notes that live IN the folder and nobody else; a folder with no
  * `.folder.md` shows the defaults and opening it writes nothing; link resolution and the link
  * pickers read the WHOLE vault even though the rows are a subset; a config edit is ONE
- * `folder_page_settings` write on the folder's `.folder.md` while a cell edit still writes the
+ * `folder_settings` write on the folder's `.folder.md` while a cell edit still writes the
  * NOTE's own frontmatter; switching view writes nothing at all; and "New" births a note in
  * the folder from its template and the seed alone.
  */
@@ -105,7 +105,7 @@ const onOpenFile = vi.fn()
  * folder has no `.folder.md`.
  */
 function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault()): void {
-  const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_page_settings: settings }), id: STAGES_ID }]
+  const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_settings: settings }), id: STAGES_ID }]
   act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
 }
 
@@ -205,7 +205,7 @@ describe('a folder with no settings file', () => {
     expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Cards', 'List', 'Outline']) // the Outline is the "+" menu's (D5a)
     click(menuItem(el, 'Cards'))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', {
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {
       columns: DEFAULT_COLUMNS,
       views: [
         { type: 'table', name: 'Table' },
@@ -247,7 +247,7 @@ describe('a folder whose `.folder.md` declares columns', () => {
     await flush()
     act(() => captured.folder!.setColumns({ ...SETTINGS.columns, owner: { kind: 'link' } }))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', expect.anything()) // the settings, and no note
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', expect.anything()) // the settings, and no note
     expect(transform).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
@@ -447,7 +447,7 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     click(byLabel(el, 'Properties'))
     setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', { ...SETTINGS, defaultView: 'Table' })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, defaultView: 'Table' })
   })
 
   it('the dropdown shows the saved value, and First view clears the key', async () => {
@@ -506,7 +506,7 @@ describe('config edits are ONE settings write on the folder', () => {
     click(clear)
     await flush()
 
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', {
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {
       ...settings,
       views: views.map((view) => {
         if (view.name !== name) return view
@@ -520,7 +520,7 @@ describe('config edits are ONE settings write on the folder', () => {
     expect(write).toHaveBeenCalledTimes(1)
   })
 
-  it('a Board column-width edit is one whole-key folder_page_settings write', async () => {
+  it('a Board column-width edit is one whole-key folder_settings write', async () => {
     const withBoard = { ...SETTINGS, views: [...SETTINGS.views, BOARD] } // the settings SAY board now (D3)
     const el = await mount(withBoard)
     selectView(el, 'Board')
@@ -530,7 +530,7 @@ describe('config edits are ONE settings write on the folder', () => {
     press(width, 'Enter')
     await flush()
 
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', {
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {
       ...withBoard,
       views: [...SETTINGS.views, { ...BOARD, cardSize: 400 }],
     })
@@ -546,7 +546,7 @@ describe('config edits are ONE settings write on the folder', () => {
     expect(write).toHaveBeenCalledTimes(1)
     const [path, key, value] = write.mock.calls[0]
     expect(path).toBe(SETTINGS_FILE) // the FOLDER's settings file, not a note
-    expect(key).toBe('folder_page_settings')
+    expect(key).toBe('folder_settings')
     expect(value).toEqual({
       ...SETTINGS,
       views: [SETTINGS.views[0], { ...TABLE, sort: [{ property: 'file.name', direction: 'ASC' }] }],
@@ -563,7 +563,7 @@ describe('config edits are ONE settings write on the folder', () => {
     expect(write).toHaveBeenCalledTimes(1)
     const [path, key, value] = write.mock.calls[0]
     expect(path).toBe(SETTINGS_FILE)
-    expect(key).toBe('folder_page_settings')
+    expect(key).toBe('folder_settings')
     expect(value).toEqual({
       ...SETTINGS,
       views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['file.name.contains("")'] } }],
@@ -619,7 +619,7 @@ describe('config edits are ONE settings write on the folder', () => {
     expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('Name')
   })
 
-  it('a column rename lands in folder_page_settings.properties — ONE write, the label persisted, its echo not fought (YAZ-1513)', async () => {
+  it('a column rename lands in folder_settings.properties — ONE write, the label persisted, its echo not fought (YAZ-1513)', async () => {
     // Before YAZ-1513 the def's `properties` was never persisted: the pencil's rename showed until
     // the next echo and then silently vanished. Now the header menu and the pencil share one writer.
     const el = await mount()
@@ -631,7 +631,7 @@ describe('config edits are ONE settings write on the folder', () => {
     press(field, 'Enter')
     await flush()
 
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', { ...SETTINGS, properties: { order: { displayName: 'Rank' } } })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, properties: { order: { displayName: 'Rank' } } })
     const headers = () => [...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)
     expect(headers()).toEqual(['Name', 'Rank', 'Related'])
     // the index echoes our own write back: the label stays, nothing is rebuilt from an older def
@@ -765,7 +765,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     await mount()
     act(() => captured.folder!.setColumns(COLUMNS))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS })
   })
 
   it('columns AND views ride in that SAME single write when views are passed', async () => {
@@ -773,7 +773,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     const views = [{ type: 'outline', name: 'Outline', order: ['[[Sales]]'] }, TABLE]
     act(() => captured.folder!.setColumns(COLUMNS, views))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS, views })
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', { ...SETTINGS, columns: COLUMNS, views })
   })
 
   /**
@@ -863,7 +863,7 @@ describe('cell editing still writes the NOTE, typed by the folder (🔒 Q8)', ()
 })
 
 describe('New births a note in the folder (D4/E1/E3)', () => {
-  it('creates it IN the folder with no frontmatter at all — no `folder_pages`, no empty column keys — and opens it', async () => {
+  it('creates it IN the folder with no frontmatter at all — no empty column keys — and opens it', async () => {
     const el = await mount()
     click(byLabel(el, 'New note'))
     await flush()

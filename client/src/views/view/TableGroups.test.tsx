@@ -19,7 +19,7 @@ import { groupKeyOf } from './GroupHeader'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -74,7 +74,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,

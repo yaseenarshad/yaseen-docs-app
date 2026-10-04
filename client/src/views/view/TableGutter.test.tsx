@@ -17,7 +17,7 @@ import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** In-memory stand-in for the main-owned store (same shape as TableGroups.test.tsx). */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -57,7 +57,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
   draw = () =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={FOLDER_PAGE} onOpenFile={vi.fn()} {...props} />,
+        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={HOST} onOpenFile={vi.fn()} {...props} />,
       ),
     )
   draw()

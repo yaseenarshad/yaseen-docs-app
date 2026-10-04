@@ -12,7 +12,7 @@ describe('HOTKEYS source of truth', () => {
     expect(HOTKEYS.find((h) => h.keys === '⌘⇧I')?.label).toMatch(/bullets and headings/i)
   })
 
-  it('covers the folder-page view bindings', () => {
+  it('covers the folder view bindings', () => {
     const keys = VIEW_HOTKEYS.map((h) => h.keys)
     // Table cell navigation (4B), cell editors (5B), board drag cancel (5C) — 7B, GRO-2148.
     for (const expected of ['↑ ↓ ← →', '⌘⏎ / ⌥⏎', '⏎ / Esc', 'Esc']) {
@@ -67,7 +67,7 @@ describe('HOTKEYS source of truth', () => {
     expect(byKeys('⇧-click file or folder')?.label).toMatch(/multi-selection/i)
     expect(byKeys('⇧-click file or folder')?.label).toMatch(/Copy N paths/)
     expect(byKeys('⇧-click file or folder')?.label).toMatch(/Open N in new tabs/)
-    // YAZ-1557 (D1/D2): click = select on a board card, ⌥ = the right panel on both folder-page views.
+    // YAZ-1557 (D1/D2): click = select on a board card, ⌥ = the right panel on both folder views.
     expect(byKeys('Click card')?.label).toMatch(/select/i)
     expect(byKeys('⌥-click name or card')?.label).toMatch(/right panel/i)
   })

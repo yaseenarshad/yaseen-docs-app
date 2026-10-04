@@ -264,11 +264,11 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
   })
 
   it('a folder whose settings are the ONLY reference still banners, and Update rewrites its `.folder.md` (YAZ-2290 D8)', async () => {
-    const settings = rec('/v/Projects/.folder.md', { size: 30, mtime: 9, properties: { folder_page_settings: { views: [{ type: 'table', name: 'T', order: ['[[B]]'] }] } } })
+    const settings = rec('/v/Projects/.folder.md', { size: 30, mtime: 9, properties: { folder_settings: { views: [{ type: 'table', name: 'T', order: ['[[B]]'] }] } } })
     const before = [rec('/v/B.md')]
     const after = [rec('/v/B2.md')]
     const { bridge, files } = await mount()
-    files[settings.path] = { content: '---\nfolder_page_settings:\n  views:\n    - type: table\n      name: T\n      order:\n        - "[[B]]"\n---\n', mtime: 1 }
+    files[settings.path] = { content: '---\nfolder_settings:\n  views:\n    - type: table\n      name: T\n      order:\n        - "[[B]]"\n---\n', mtime: 1 }
     bridge.index.mockResolvedValue({ root: '/v', records: after, folders: [settings], generatedAt: 2 })
     await snapshot(before, [settings])
     await snapshot(after, [settings])

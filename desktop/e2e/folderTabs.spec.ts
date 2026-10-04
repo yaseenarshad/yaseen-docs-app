@@ -86,11 +86,11 @@ interface OnDiskSettings {
   views?: { type?: string; name?: string; groupBy?: unknown }[]
 }
 
-/** The folder's `folder_page_settings` AS WRITTEN — parsed, never string-matched; null while there is no file. */
+/** The folder's `folder_settings` AS WRITTEN — parsed, never string-matched; null while there is no file. */
 async function settingsOnDisk(dir = folderPath()): Promise<OnDiskSettings | null> {
   const text = await readFile(settingsFile(dir), 'utf8').catch(() => null)
   if (text === null) return null
-  return (parseFrontmatter(splitFrontmatter(text).frontmatter).properties.folder_page_settings ?? {}) as OnDiskSettings
+  return (parseFrontmatter(splitFrontmatter(text).frontmatter).properties.folder_settings ?? {}) as OnDiskSettings
 }
 
 test.beforeAll(async () => {
@@ -151,7 +151,7 @@ test('step 2 — a folder with no `.folder.md` shows Table and Board over its ow
 })
 
 test('step 3 — the first view change creates `.folder.md`, stating the defaults it had been showing', async () => {
-  // Grouping the Table is a view change like any other: ONE `folder_page_settings` write — and
+  // Grouping the Table is a view change like any other: ONE `folder_settings` write — and
   // for this folder the first, so it is the one that creates the file (D1). "Group by" is the
   // shared `ColumnPicker`: a button opening a listbox, each option keyed by `data-value`.
   await contents(win).locator('[aria-label="Sort"]').click()

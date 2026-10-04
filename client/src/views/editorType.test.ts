@@ -122,10 +122,10 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
 })
 
 /**
- * The ladder's TOP rung (🔒 Q8 of YAZ-815, wired here at YAZ-819): a FOLDER PAGE's own column
+ * The ladder's TOP rung (🔒 Q8 of YAZ-815, wired here at YAZ-819): a FOLDER's own column
  * declaration, view-scoped — read off its settings, never re-parsed here.
  */
-describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
+describe('folder columns are the top rung (🔒 Q8, YAZ-815)', () => {
   const DECLS: PropertiesResponse = {
     root: '/vault',
     version: 1,
@@ -145,16 +145,16 @@ describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
     expect(cellEditor(7, col)).toBe('multi-link')
   })
 
-  it('a key the folder page does not declare falls through to the rungs below, untouched', () => {
+  it('a key the folder does not declare falls through to the rungs below, untouched', () => {
     expect(columnTyping('stage', recs, DECLS, settings({ owner: { kind: 'link' } }))?.assigned).toBe('date')
   })
 
-  it('no folder page is exactly today’s ladder', () => {
+  it('no folder is exactly today’s ladder', () => {
     expect(columnTyping('owner', recs, DECLS, null)?.assigned).toBe('text')
     expect(columnTyping('owner', recs, DECLS)?.assigned).toBe('text')
   })
 
-  it('a folder page whose settings declare nothing changes nothing', () => {
+  it('a folder whose settings declare nothing changes nothing', () => {
     expect(columnTyping('owner', recs, DECLS, settings({}))?.assigned).toBe('text')
   })
 })

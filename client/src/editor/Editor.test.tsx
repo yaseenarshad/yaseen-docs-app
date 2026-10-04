@@ -242,7 +242,7 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     const subscribe = vi.spyOn(source, 'subscribe')
     const split = vi.spyOn(frontmatter, 'splitFrontmatter')
     const rename = vi.fn()
-    const el = await mount('---\nfolder_page: true\n---\nraw\r\n\ttext\r\n', 1, { path: '/vault/data.JSON', wikilinks: source, onRenameFile: rename })
+    const el = await mount('---\nstatus: idea\n---\nraw\r\n\ttext\r\n', 1, { path: '/vault/data.JSON', wikilinks: source, onRenameFile: rename })
 
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/data.JSON')
     expect(createCrepeMock).not.toHaveBeenCalled()
@@ -535,17 +535,6 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect([...(host?.querySelector('.page-header')?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel'])
     expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
-  })
-
-  it('a note flagged `folder_page: true` is an ordinary note (YAZ-2290): no views block, its body in the editor, and opening rewrites nothing', async () => {
-    const source = createWikilinkResolveSource()
-    const el = await mount(`---\nfolder_page: true\n---\n${BODY}`, 1, { wikilinks: source })
-    feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH, [], { folder_page: true })])
-    const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks'])
-    expect(el.querySelector('.views-pane')).toBeNull()
-    expect(crepe().md).toBe(BODY)
-    expect(writeFile).not.toHaveBeenCalled()
   })
 
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {

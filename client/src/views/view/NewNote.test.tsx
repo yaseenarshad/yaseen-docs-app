@@ -1,7 +1,7 @@
 /**
  * "New" button (5D, GRO-2144): ViewsPane mounted with react-dom in jsdom over `TEST_RECORDS`,
- * with the folder page's own `create` spied (the seed DERIVATION runs for real). Every New goes
- * through it since YAZ-846 amputated the plain `createFromSeed` path — a folder page births its
+ * with the folder host's own `create` spied (the seed DERIVATION runs for real). Every New goes
+ * through it since YAZ-846 amputated the plain `createFromSeed` path — a folder births its
  * members from its DECLARATION and parks them per its settings (🔒 Q5/Q6), so what this file
  * pins is the SEED that rides along and what happens to the note the create resolves. The
  * per-group "+" seeds the group's value on top (acceptance: filter `status == "idea"` grouped by
@@ -20,7 +20,7 @@ import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** The folder page's own birth (🔒 Q5): the ONE create path, spied for the seed it is handed. */
+/** The folder's own birth (🔒 Q5): the ONE create path, spied for the seed it is handed. */
 const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
 /** The seed of the nth create — `properties` is what every assertion here is about. */
 const seed = (n = 0): Record<string, unknown> => create.mock.calls[n][0].properties
@@ -58,8 +58,8 @@ const PRIORITY_BOARD = `views:
       property: note.priority
 `
 
-const FOLDER_PAGE_PATH = '/vault/Bases/Content.md'
-/** Where the folder page's settings park a new member — this test's stand-in for `createInFolder`. */
+const FOLDER_PATH = '/vault/Bases/Content.md'
+/** Where the folder parks a new note — this test's stand-in for `createInFolder`. */
 const PARKED = '/vault/Bases/Untitled.md'
 
 /** The created note as the next index refetch would deliver it. */
@@ -100,7 +100,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          folderPath={FOLDER_PAGE_PATH}
+          folderPath={FOLDER_PATH}
           records={records}
           folder={testFolderHost({ create })}
           onOpenFile={onOpenFile}
@@ -172,7 +172,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
 // ---------- tests ----------
 
 describe('toolbar New', () => {
-  it('hands the filter-derived seed to the folder page\'s own create, then opens what it returns', async () => {
+  it('hands the filter-derived seed to the folder\'s own create, then opens what it returns', async () => {
     const { el, onOpenFile } = mount(IDEA_TABLE)
 
     click(byLabel(el, 'New note'))

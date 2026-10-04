@@ -27,7 +27,7 @@ import viewsCss from '../views.css?inline'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** Preview mode's fetch and Crepe (YAZ-1244) are stand-ins here — the real render is PreviewCard.crepe.test.tsx's. */
 vi.mock('../../api', async (importOriginal) => {
@@ -133,7 +133,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -523,7 +523,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('reports a stale Reveal through the folder-page passive notice', async () => {
+  it('reports a stale Reveal through the folder passive notice', async () => {
     const onNotice = vi.fn()
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })

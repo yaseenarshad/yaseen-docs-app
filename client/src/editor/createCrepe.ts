@@ -103,7 +103,7 @@
  *    Paste/drop of image BYTES writes `assets/images/<note>-<stamp>.<ext>` and inserts the node
  *    (`image/insertImage.ts`, wired in `clipboardPaste.ts` through the `imageOptionsCtx` slice).
  *    Registered only when `opts.image` supplies the root + note path; without it images render as
- *    Crepe's stock `<img>` — the folder-page outline (its bullets-only lock has no `image`) and the
+ *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
  */
 import { Crepe, CrepeFeature } from './crepe'

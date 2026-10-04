@@ -63,7 +63,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 |---|---|---|
 | S1 | Lens tabs Files / ♥; default Files (YAZ-1846). The Topics tab was removed by YAZ-2290; a saved `topics` lens falls back to Files | A `lenses` · U `desktop/src/main/store.test.ts`, `sidebar/Sidebar.test.tsx` |
 | S2 | REMOVED by YAZ-2290: the Topics tree, Uncategorized and drag to re-parent. Folders are the pages now, see [Folders](#folders) | — |
-| S3 | Create note / dated note / folder / dated folder ("New folder page" was removed by YAZ-2290) | U `sidebar/Sidebar.test.tsx`, `sidebar/createEntry.test.ts`, `sidebar/CreateInline.test.tsx` · M [N1–N5](#n1n5-ids-on-files) (step 1) |
+| S3 | Create note / dated note / folder / dated folder | U `sidebar/Sidebar.test.tsx`, `sidebar/createEntry.test.ts`, `sidebar/CreateInline.test.tsx` · M [N1–N5](#n1n5-ids-on-files) (step 1) |
 | S4 | Rename + vault-wide link rewrite | A `rename` |
 | S5 | External rename detection + repair | A `externalRename` |
 | S6 | Delete to Trash; tabs close | A `delete` |
@@ -102,15 +102,15 @@ Folders are the pages (YAZ-2290). This section was "Folder pages", one row `F1�
 | F5 | Folder view: filter and sort | A `filter` · U `views/view/filterRows.test.ts`, `views/view/SortMenu.test.tsx`, `views/engine.test.ts` |
 | F6 | Default views are Table then Board (Cards, List and Outline are in the "+" menu); a saved default view; switching views writes nothing | A `defaultView` · U `views/folderSettings.test.ts`, `views/FolderView.test.tsx`, `views/view/Toolbar.test.tsx` |
 | F7 | REMOVED by YAZ-2290: Sync from folder. A folder's rows are what lives in it, so there is nothing to sync | — |
-| F8 | Backlinks ("Linked mentions") on a note, and on a folder page for the notes that link to the folder | A `backlinks` · U `links/backlinks.test.ts`, `links/BacklinksSection.test.tsx`, `views/FolderView.page.test.tsx` |
+| F8 | Backlinks ("Linked mentions") on a note, and on a folder's page for the notes that link to the folder | A `backlinks` · U `links/backlinks.test.ts`, `links/BacklinksSection.test.tsx`, `views/FolderView.page.test.tsx` |
 | F9 | "bible" convergence: the index, the link graph and the folder views agree over one committed vault | A `bible` |
-| F10 | Folder settings live in a hidden `<folder>/.folder.md` under `folder_page_settings`: no file means the defaults, opening a folder writes nothing, the first change creates the file, and from then on it states the columns exactly; the index and the watcher see it, as `IndexResponse.folders` and never as a record (YAZ-2290 D1, D8, E2) | A `folderTabs`, `folderView` · U `views/FolderView.test.tsx`, `views/folderSettings.test.ts`, `views/writeFolderColumn.test.ts`, `views/writeProperty.test.ts`, `desktop/src/main/vaultIndex/folderSettings.test.ts`, `desktop/src/main/fs/watchers.test.ts`, `editor/wikilink/WikilinkIndexBridge.test.tsx` |
-| F11 | A folder page's own title (a commit renames the folder), properties and comments, stored in `.folder.md`; "Copy for Agent" on a folder hands out `<folder>/.folder.md`, and the CLI's first `comment` on it creates the file (YAZ-2290 D9) | U `views/FolderView.page.test.tsx`, `editor/FrontmatterPanel.test.tsx`, `lib/copyForAgent.test.ts`, `sidebar/Sidebar.test.tsx`, `tabs/TabBar.test.tsx`, `desktop/src/main/ipc/agent.test.ts`, `desktop/src/cli/cli.test.ts` |
+| F10 | Folder settings live in a hidden `<folder>/.folder.md` under `folder_settings`: no file means the defaults, opening a folder writes nothing, the first change creates the file, and from then on it states the columns exactly; the index and the watcher see it, as `IndexResponse.folders` and never as a record (YAZ-2290 D1, D8, E2) | A `folderTabs`, `folderView` · U `views/FolderView.test.tsx`, `views/folderSettings.test.ts`, `views/writeFolderColumn.test.ts`, `views/writeProperty.test.ts`, `desktop/src/main/vaultIndex/folderSettings.test.ts`, `desktop/src/main/fs/watchers.test.ts`, `editor/wikilink/WikilinkIndexBridge.test.tsx` |
+| F11 | A folder's own title (a commit renames the folder), properties and comments, stored in `.folder.md`; "Copy for Agent" on a folder hands out `<folder>/.folder.md`, and the CLI's first `comment` on it creates the file (YAZ-2290 D9) | U `views/FolderView.page.test.tsx`, `editor/FrontmatterPanel.test.tsx`, `lib/copyForAgent.test.ts`, `sidebar/Sidebar.test.tsx`, `tabs/TabBar.test.tsx`, `desktop/src/main/ipc/agent.test.ts`, `desktop/src/cli/cli.test.ts` |
 | F12 | Links to folders: `[[Folder]]` resolves to a folder when no note, path or alias holds the name; a click opens the folder tab; `[[` completion offers folders; renaming a folder rewrites name links to it; a link column's `target: "[[Folder]]"` narrows its picker to that folder's notes (YAZ-2290 D10) | U `links/folderLinks.test.ts`, `links/renameLinks.test.ts`, `links/backlinks.test.ts`, `editor/wikilink/wikilinkClick.test.ts`, `editor/wikilink/WikilinkIndexBridge.test.tsx`, `App.test.tsx` |
 | F13 | Note shortcuts: `also_in` on the note holds folder ids; "Add note shortcut" on a folder row opens the picker; shortcut rows wear a mark in the tree and in the folder's views; "Remove shortcut" stands where Delete would; deleting a column leaves a shortcut note's value alone (YAZ-2290 D2, E4, E5) | U `links/shortcuts.test.ts`, `sidebar/ShortcutPicker.test.tsx`, `sidebar/menuSections.test.ts`, `sidebar/Sidebar.test.tsx`, `sidebar/folderCounts.test.ts`, `views/FolderView.test.tsx`, `editor/FrontmatterPanel.test.tsx`, `views/deleteColumn.test.ts`, `desktop/src/cli/cli.test.ts` |
 | F14 | Every folder row shows its note count, shortcuts included (YAZ-2290 E6) | U `sidebar/folderCounts.test.ts`, `sidebar/Sidebar.test.tsx` |
 | F15 | A folder's note template is a hidden `<folder>/.template.md`, used by "New" in the folder view and "New note" in the tree; empty column keys are never written into a note, and a note's properties panel lists its folder's unfilled columns as empty rows (YAZ-2290 E1, E3) | U `views/scaffold.test.ts`, `views/FolderView.test.tsx`, `views/FolderView.page.test.tsx`, `sidebar/Sidebar.test.tsx`, `editor/FrontmatterPanel.test.tsx` |
-| F16 | No converter for old vaults: a note still carrying `folder_page`, `folder_pages` or `folder_page_settings` is an ordinary note, and opening a vault creates no `Home.md` (YAZ-2290 D6, D11) | U `editor/Editor.test.tsx`, `links/folderLinks.test.ts`, `App.test.tsx` |
+| F16 | Opening a vault creates no `Home.md` (YAZ-2290 D11) | U `App.test.tsx` |
 
 ## Note ids
 
@@ -134,7 +134,7 @@ Folders are the pages (YAZ-2290). This section was "Folder pages", one row `F1�
 | ID | Feature | Proof |
 |---|---|---|
 | G1 | GitHub sync (chip, sync now, quit-time push) | A `sync`, `settings` · U `desktop/src/main/git/*.test.ts`, `desktop/src/main/ipc/github.test.ts` |
-| T1 | REMOVED by YAZ-2290: the `migrateFolderPages` / `seedDefaultColumns` CLIs. There is no converter for old vaults (D6), see F16 | — |
+| T1 | REMOVED by YAZ-2290: the `migrateFolderPages` / `seedDefaultColumns` CLIs. There is no converter for old vaults (D6) | — |
 | P1 | `app://` is a secure, standard, fetch-capable origin; no request leaves `app:` / `data:` / `blob:` | A `secureContext` |
 | P2 | Info.plist `yaseendocs` scheme + `.md` as Alternate Editor | gate `npm run perf:budget` (packaged half) · M [P2–P4](#p2p4-packaging) when the gate isn't run |
 | P3 | Ad-hoc signature valid | gate `npm run perf:budget` (packaged half) · M [P2–P4](#p2p4-packaging) when the gate isn't run |

@@ -932,7 +932,7 @@ describe('delete (GRO-2272)', () => {
       path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'hub', folder: '', ext: 'md',
       size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [] as string[], embeds: [], ...over,
     })
-    const folders = [rec('/v/other/.folder.md', { folder: 'other', properties: { folder_page_settings: { columns: { in: { kind: 'link', target: '[[sub]]' } } } } })]
+    const folders = [rec('/v/other/.folder.md', { folder: 'other', properties: { folder_settings: { columns: { in: { kind: 'link', target: '[[sub]]' } } } } })]
     const m = await mount()
     m.bridge.index.mockResolvedValue({ root: '/v', records: [rec('/v/hub.md', { links: ['sub'] })], folders, generatedAt: 1 } as never)
     act(() => void m.el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
@@ -2360,7 +2360,7 @@ describe('New note (GRO-2022)', () => {
   })
 
   it('writes no empty column keys (YAZ-2290 E1): the columns the folder declares are not stamped into the note, with a template or without', async () => {
-    const declares = { path: '/v/sub/.folder.md', properties: { folder_page_settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] }, due: { kind: 'date' }, tags: { kind: 'list' } } } } }
+    const declares = { path: '/v/sub/.folder.md', properties: { folder_settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] }, due: { kind: 'date' }, tags: { kind: 'list' } } } } }
     const bare = await openOn('.tree__row--dir')
     bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
     act(() => itemByLabel(bare.el, 'New note')?.click())

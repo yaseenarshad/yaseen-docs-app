@@ -45,7 +45,7 @@ vi.mock('../../editor/createCrepe', () => ({
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** file.name plus one column per value type, and a formula the evaluator cannot resolve. */
 const TYPED_BASE = `views:
@@ -86,7 +86,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { edi
           root="/vault"
           folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />
@@ -433,7 +433,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('reports a stale Reveal through the folder-page notice instead of failing silently', async () => {
+  it('reports a stale Reveal through the folder notice instead of failing silently', async () => {
     const onNotice = vi.fn()
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })

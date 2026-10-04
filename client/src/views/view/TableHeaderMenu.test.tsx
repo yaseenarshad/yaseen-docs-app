@@ -2,7 +2,7 @@
  * The table header's context menu (YAZ-1513): ViewsPane mounted with react-dom in jsdom over
  * `TEST_RECORDS`; a right-click on a column `<th>` offers Rename / Hide / Add-to-the-right, and
  * on the `#` header only Hide row numbers. Every write is one `onChange` (the Properties menu's own
- * rules: `setDisplayName`, `setViewOrder`) or one `setColumns` — the folder page host's door.
+ * rules: `setDisplayName`, `setViewOrder`) or one `setColumns` — the folder host's door.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'

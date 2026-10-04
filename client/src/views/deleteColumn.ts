@@ -2,7 +2,7 @@
  * Delete a column (YAZ-1513, Notion semantics, confirm-first): ONE function behind both doorways —
  * the table header's right-click and the Properties menu's detail panel. It removes
  *
- *  (a) the declaration `folder_page_settings.columns.<key>` of THIS folder,
+ *  (a) the declaration `folder_settings.columns.<key>` of THIS folder,
  *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`,
  *      `summaries`, `columnSize`, `cardStyle`, a cards `image`, and every filter leaf that names
  *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows

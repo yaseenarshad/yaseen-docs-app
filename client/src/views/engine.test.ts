@@ -669,7 +669,7 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
 
 /**
  * The rows a run walks and the snapshot its links resolve against are two different things
- * (🔒 D2, YAZ-819). A caller whose rows ARE the vault never notices, but a folder page's
+ * (🔒 D2, YAZ-819). A caller whose rows ARE the vault never notices, but a folder's
  * contents pass only the MEMBERS as rows while injecting the whole-vault resolver, so a link
  * cell pointing at a page OUTSIDE the members still resolves.
  */

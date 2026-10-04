@@ -56,18 +56,18 @@ interface OnDiskView {
 
 async function tableSettings(): Promise<OnDiskView> {
   const { frontmatter } = splitFrontmatter(await readFile(settingsFile(), 'utf8'))
-  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
+  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { views?: OnDiskView[] }
   return settings.views?.find((view) => view.type === 'table') ?? {}
 }
 
 async function updateTableSettings(update: (view: OnDiskView) => void): Promise<void> {
   const content = await readFile(settingsFile(), 'utf8')
   const { frontmatter } = splitFrontmatter(content)
-  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
+  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { views?: OnDiskView[] }
   const view = settings.views?.find((candidate) => candidate.type === 'table')
   if (view === undefined) throw new Error('fixture has no Table view')
   update(view)
-  await writeFile(settingsFile(), setFrontmatterProperty(content, 'folder_page_settings', settings), 'utf8')
+  await writeFile(settingsFile(), setFrontmatterProperty(content, 'folder_settings', settings), 'utf8')
 }
 
 async function openProperties(): Promise<Locator> {

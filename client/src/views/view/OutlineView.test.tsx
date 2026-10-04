@@ -61,7 +61,7 @@ const onOpenFileBackground = vi.fn()
 
 function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault()): void {
   const resolve = resolverFor(records, '/vault')
-  act(() => source.update((target) => resolve(target)?.record.path ?? null, records, [rec(SETTINGS_FILE, { folder_page_settings: settings })]))
+  act(() => source.update((target) => resolve(target)?.record.path ?? null, records, [rec(SETTINGS_FILE, { folder_settings: settings })]))
 }
 
 async function mount(settings: unknown = SETTINGS): Promise<HTMLElement> {
@@ -180,7 +180,7 @@ describe('an edit stores the document', () => {
     const el = await mount()
     edit('- [[Sales]]\n- [[Lead Gen]]')
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_page_settings', {
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', {
       views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]\n- [[Lead Gen]]' }, TABLE],
     })
     expect(el.querySelector('.views-pane__error')).toBeNull()

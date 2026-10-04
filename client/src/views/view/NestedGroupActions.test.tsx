@@ -5,7 +5,7 @@
  * from the target group; the seed of an inner "+" carries both for the same reason. A level
  * whose property is not `note.*` (a formula outer) shows summaries but disables its own
  * "+"/drag while the other level's actions keep working. Fan-out D3/D4 hold at the inner
- * level. `writeProperty` mocked, the folder page's `create` spied, per the sibling files.
+ * level. `writeProperty` mocked, the folder host's `create` spied, per the sibling files.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'

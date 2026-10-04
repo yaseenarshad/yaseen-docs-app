@@ -1,7 +1,7 @@
 /**
  * THE REAL SHAPE, end to end (YAZ-975 — the proof YAZ-964 demanded): the folder `AI Curriculum`
  * carries, in its hidden `.folder.md`, a line-for-line stand-in for the outline that hit the bug
- * (fixtures/curriculum-vault; it was a folder-page note's until YAZ-2290 made folders the pages) —
+ * (fixtures/curriculum-vault) —
  * the words are placeholders, the structure is verbatim: 123 outline lines including the 24
  * `1.`-spelled ones the seed used to drop, the escaped `1\)` / `\*` / `\=` survivors, inline
  * `<u>` HTML and one `<br />` spacer. YAZ-1329
@@ -61,7 +61,7 @@ let originalTexts: string[]
 
 const outlineOnDisk = async (): Promise<string> => {
   const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FILE), 'utf8'))
-  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: { type?: string; outline?: string }[] }
+  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { views?: { type?: string; outline?: string }[] }
   return settings.views?.find((v) => v.type === 'outline')?.outline ?? ''
 }
 

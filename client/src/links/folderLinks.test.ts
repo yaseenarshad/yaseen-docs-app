@@ -142,10 +142,10 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
   async function vault(root: string): Promise<{ records: IndexRecord[]; names: (target: string) => string[] }> {
     const records = [
       rec(`${root}/Empty Note.md`),
-      rec(`${root}/KPIs.md`, { properties: { folder_page: true } }),
+      rec(`${root}/KPIs.md`),
       rec(`${root}/People/Alice.md`, { id: NOTE_ID }),
-      rec(`${root}/People/Bob.md`, { properties: { folder_pages: ['[[KPIs]]'] } }),
-      rec(`${root}/People/Teams/Core.md`, { properties: { folder_pages: ['[[KPIs]]'] } }),
+      rec(`${root}/People/Bob.md`),
+      rec(`${root}/People/Teams/Core.md`),
     ]
     vi.mocked(api.tree).mockResolvedValueOnce({ root, tree: [dir(`${root}/Empty`), dir(`${root}/People`, [dir(`${root}/People/Teams`)])], generatedAt: 1 })
     await fetchTree(root)
@@ -184,10 +184,5 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
     expect(names('[[Nowhere]]')).toEqual(ALL)
     expect(names('[[Empty]]')).toEqual(ALL)
     expect(names('[[Empty Note]]')).toEqual(ALL) // a note, not a folder
-  })
-
-  it('a note still carrying `folder_page: true` narrows nothing: the legacy membership is gone', async () => {
-    const { names } = await vault('/legacy')
-    expect(names('[[KPIs]]')).toEqual(ALL) // Bob and Core still name it in `folder_pages`
   })
 })

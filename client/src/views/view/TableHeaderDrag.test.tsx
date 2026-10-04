@@ -18,7 +18,7 @@ import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 const BASE = `views:
   - type: table
@@ -44,7 +44,7 @@ function mount(text = BASE, props: Partial<ViewsPaneProps> = {}) {
   draw = () =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={FOLDER_PAGE} onOpenFile={vi.fn()} {...props} />,
+        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={HOST} onOpenFile={vi.fn()} {...props} />,
       ),
     )
   draw()

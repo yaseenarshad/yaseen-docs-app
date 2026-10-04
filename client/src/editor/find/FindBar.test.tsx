@@ -120,12 +120,12 @@ describe('opening', () => {
   })
 })
 
-describe('claim rule on a folder page (note editor + outline view mounted together)', () => {
+describe('claim rule with a note editor and an outline view mounted together', () => {
   it('routes CMD+F to the outline bar only while focus is inside the outline host', async () => {
     const noteChannel = createFindChannel()
     const note = await mountEditor('note apple', { find: noteChannel })
     // The production DOM detail the claim reads: CrepeHost mounts the note editor inside
-    // `.editor-mount` (the element a folder page hides, YAZ-919 / the visibility amendment).
+    // `.editor-mount`.
     const noteMount = document.createElement('div')
     noteMount.className = 'editor-mount'
     document.body.appendChild(noteMount)

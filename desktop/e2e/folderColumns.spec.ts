@@ -1,8 +1,8 @@
 /**
  * Declared columns, end to end (YAZ-898; the seams landed in YAZ-895/896/897): a folder's
- * `folder_page_settings.columns`, in its hidden `.folder.md`, is the typing ladder's TOP rung
+ * `folder_settings.columns`, in its hidden `.folder.md`, is the typing ladder's TOP rung
  * (🔒 Q8), and the Properties menu is the only door to it — "+ Add column" declares one and the
- * per-key Type select retypes one, each in a single `folder_page_settings` write.
+ * per-key Type select retypes one, each in a single `folder_settings` write.
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`),
  * on `KPIs` — the folder whose settings file already SHIPS three declarations (`funnel_stages`
@@ -11,7 +11,7 @@
  * creating one, which is what makes the merge-don't-replace half of each write visible.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 "+ Add column" declares `unit_notes` and SHOWS it, in one `folder_page_settings` write
+ *   1 "+ Add column" declares `unit_notes` and SHOWS it, in one `folder_settings` write
  *     (🔒 D3): the header appears, the declaration lands on disk, the Table view's `order`
  *     gains `note.unit_notes` — and NOT ONE note is written: a column is never stamped empty
  *     into the notes it is declared over (YAZ-2290 E1), so every file is byte-identical
@@ -84,13 +84,13 @@ interface OnDiskSettings {
 }
 
 /**
- * The folder's `folder_page_settings` AS WRITTEN, read off its `.folder.md`. Parsed rather than
+ * The folder's `folder_settings` AS WRITTEN, read off its `.folder.md`. Parsed rather than
  * string-matched: the assertions below are about the SHAPE the one door wrote (which keys moved,
  * which survived), and a `toContain` would pass on a block that had lost half of it.
  */
 async function settingsOnDisk(): Promise<OnDiskSettings> {
   const { frontmatter } = splitFrontmatter(await readFile(settingsFile(), 'utf8'))
-  return (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as OnDiskSettings
+  return (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as OnDiskSettings
 }
 
 /** Every note's full bytes, keyed by name — the before/after pair E1 and C1 are proven with. */

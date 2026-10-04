@@ -12,7 +12,7 @@
  *     in place: an inline error, and not one byte written
  *   3 a TYPED ROW edits one value SURGICALLY (the comment and every other key stay put), and a
  *     type declared from that row lands on the FOLDER the note lives in — the
- *     `folder_page_settings.columns` of its `.folder.md`, the typing ladder's top rung (🔒 Q8) —
+ *     `folder_settings.columns` of its `.folder.md`, the typing ladder's top rung (🔒 Q8) —
  *     where the same key's column in that folder's table picks it up (the wider arc is YAZ-885's)
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
@@ -70,10 +70,10 @@ const FOLDER = 'Topics'
 /** Where the note is: the vault root for steps 1 and 2, inside `Topics` for step 3. */
 let notePath: string
 const read = () => readFile(notePath, 'utf8')
-/** The folder's `folder_page_settings.columns` as written — parsed, never string-matched. */
+/** The folder's `folder_settings.columns` as written — parsed, never string-matched. */
 const declaredColumns = async (): Promise<Record<string, { kind?: string }>> => {
   const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FOLDER, '.folder.md'), 'utf8'))
-  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { columns?: Record<string, { kind?: string }> }
+  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { columns?: Record<string, { kind?: string }> }
   return settings.columns ?? {}
 }
 
@@ -84,7 +84,7 @@ const declaredColumns = async (): Promise<Record<string, { kind?: string }>> => 
  * is only what a folder with NO saved settings falls back to.)
  */
 const TOPICS = `---
-folder_page_settings:
+folder_settings:
   views:
     - type: table
       name: Table
@@ -208,7 +208,7 @@ test('step 3 — a typed row writes ONE key, and a type declared there types the
 
   // Declared HERE, on the folder the note lives in: the row's Configure menu (a note lives in ONE
   // folder, so `Topics` is the context with nobody choosing it) opens the definition editor for
-  // `status`, and Save writes `folder_page_settings.columns.status` into `Topics/.folder.md` —
+  // `status`, and Save writes `folder_settings.columns.status` into `Topics/.folder.md` —
   // the typing ladder's top rung (🔒 Q8), the very thing its Table reads.
   await panelRow(win, 'status').locator('[aria-label="Configure status"]').click()
   const propMenu = win.locator('.view-popover[aria-label="Property status"]')

@@ -1,7 +1,7 @@
 /**
  * Shortcuts (YAZ-2290 D2/D4): what a folder shows, over an index snapshot. Each case pins ONE rule
  * of the lookup — who lives there, who is there by a shortcut, what is ignored quietly, and the
- * order — on bare records, the way `folderPages.test.ts` pins the legacy lookup. The write below it
+ * order — on bare records. The write below it
  * runs the real one-key writer over an in-memory disk behind `api`, so what lands is real bytes.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -175,11 +175,11 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
   })
 
   it('a settings file with NO id: a fresh one is written into it beside its settings, then used', async () => {
-    disk.set(SETTINGS_FILE, '---\nfolder_page_settings:\n  views:\n    - type: table\n      name: Table\n---\n')
+    disk.set(SETTINGS_FILE, '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n')
     await pickTwice()
-    const { id, folder_page_settings } = frontmatterOf(SETTINGS_FILE)
+    const { id, folder_settings } = frontmatterOf(SETTINGS_FILE)
     expect(isNoteId(id)).toBe(true)
-    expect(folder_page_settings).toEqual({ views: [{ type: 'table', name: 'Table' }] })
+    expect(folder_settings).toEqual({ views: [{ type: 'table', name: 'Table' }] })
     expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
   })
 
