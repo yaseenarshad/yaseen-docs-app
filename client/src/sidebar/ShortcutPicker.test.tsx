@@ -75,6 +75,11 @@ describe('ShortcutPicker (YAZ-2290 D2)', () => {
     expect(labels(el)).toEqual(['Health', 'Wellbeing — Health', 'Heat pump', 'Top'])
   })
 
+  it('a note already shown by the folder — one in a subfolder of it, at any depth — is not offered', () => {
+    const { el } = render([...RECORDS, rec('/v/Projects/Deep/Beta.md'), rec('/v/Projects/Deep/Deeper/Gamma.md'), rec('/v/Projects-old/Delta.md')])
+    expect(labels(el)).toEqual(['Health', 'Wellbeing — Health', 'Heat pump', 'Top', 'Delta'])
+  })
+
   it('typing filters through the search bar’s matcher — basename and alias, ranked', () => {
     const { el } = render()
     type(el, 'hea')

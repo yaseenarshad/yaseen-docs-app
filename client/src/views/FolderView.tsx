@@ -2,7 +2,7 @@
  * The folder view (YAZ-2290): a real FOLDER, opened as a tab (D3), shown as views over its
  * notes. Its subject is a DIRECTORY, never a note.
  *
- *  - ROWS (D4): the notes that live directly in the folder — not its subfolders' — plus its
+ *  - ROWS (D4): the notes under the folder, at any depth — never a subfolder itself — plus its
  *    SHORTCUTS (D2, `links/shortcuts.ts`). Their links resolve through the whole vault.
  *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`, created by the first change; until then
  *    the defaults (`folderSettings`), and opening writes NOTHING.
@@ -19,18 +19,18 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
-import { folderSettingsPath, type CommentsOrder, type FileResponse, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
-import { relTo } from '../lib/paths'
+import { absFrom, relTo } from '../lib/paths'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { folderRecord, folderRows, isShortcut } from '../links/shortcuts'
+import { folderRecord, folderRows, livesIn } from '../links/shortcuts'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
@@ -122,8 +122,8 @@ export function FolderView({
   const indexed = feed.resolve !== null
   const settings = useMemo(() => (indexed ? folderSettings(record) : null), [indexed, record])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
-  /** The rows that LIVE here (D2): a shortcut's file is in another folder, so it is no name taken here and no note a column delete strips (E4). */
-  const residents = useMemo(() => rows.filter((r) => !isShortcut(r, folder)), [rows, folder])
+  /** The rows that live DIRECTLY here: a subfolder's note and a shortcut are files in another folder, so no name taken here and no note a column delete strips (E4). */
+  const residents = useMemo(() => rows.filter((r) => livesIn(r, folder)), [rows, folder])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -264,7 +264,11 @@ export function FolderView({
     vaultRecords: feed.records,
     vaultFolders: feed.folders,
     resolveLink,
-    create: (seed, name) => createInFolder(path, residents, seed, name),
+    // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
+    create: (seed, name) => {
+      const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
+      return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => livesIn(r, into)), seed, name)
+    },
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {
@@ -288,8 +292,8 @@ export function FolderView({
     },
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
     // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
-    // strips report into the column banner, no rollback. They reach the notes that LIVE in the
-    // folder and no other (E4) — a shortcut row keeps its value.
+    // strips report into the column banner, no rollback. They reach the notes DIRECTLY in the
+    // folder and no other (E4) — a subfolder's row and a shortcut row keep their value.
     deleteColumn: (key) =>
       deleteColumnEverywhere(key, {
         columns: liveSettings.columns,
@@ -343,8 +347,8 @@ export function FolderView({
 }
 
 /**
- * Birth in a folder (YAZ-2290 D4): the note lands IN the folder being viewed, born like every
- * note (`createNote`) under the seed.
+ * Birth in a folder (YAZ-2290 D4): the note lands DIRECTLY in `dir`, born like every note
+ * (`createNote`) under the seed; `rows` are the notes already there, whose names are taken.
  *
  * The name is the `Untitled` scheme by default — EXCEPT when the caller already knows what the
  * note is called (YAZ-943's inline board add types one). A typed name is tamed first: a '/'

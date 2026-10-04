@@ -3429,9 +3429,9 @@ describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
     return { ...mounted, indexSource }
   }
 
-  it('a folder row shows its DIRECT notes — not its subfolder\'s, not other files — and a folder holding none shows no number', async () => {
+  it('the count beside a folder is every note under it — its subfolder\'s too, not other files — and a folder holding none shows no number', async () => {
     const { el } = await mountCounted()
-    expect(countOf(el, '/v/Projects')).toBe('2')
+    expect(countOf(el, '/v/Projects')).toBe('3')
     expect(countOf(el, '/v/Projects/Alpha')).toBe('1')
     expect(countOf(el, '/v/Empty')).toBeNull()
     expect(el.querySelectorAll('.tree__row--file .tree__count')).toHaveLength(0)
@@ -3441,7 +3441,7 @@ describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
     const { el, indexSource } = await mountCounted()
     act(() => indexSource.update(() => null, [...RECORDS, indexRecord('/v/Empty/new.md')]))
     expect(countOf(el, '/v/Empty')).toBe('1')
-    expect(countOf(el, '/v/Projects')).toBe('2')
+    expect(countOf(el, '/v/Projects')).toBe('3')
   })
 
   it('shows nothing before the first index lands', async () => {
@@ -3451,7 +3451,7 @@ describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
 
   it('the Favorites tab\'s folder rows show the count too', async () => {
     const { el } = await mountCounted({ lens: 'favorites' }, (bridge) => bridge.favorites.get.mockResolvedValue(['/v/Projects']))
-    expect(countOf(el, '/v/Projects')).toBe('2')
+    expect(countOf(el, '/v/Projects')).toBe('3')
     expect(countOf(el, '/v/Projects/Alpha')).toBe('1')
   })
 })

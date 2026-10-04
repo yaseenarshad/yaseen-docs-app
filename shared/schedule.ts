@@ -1,5 +1,5 @@
 import { REVIEW_KEY, type ReviewEntry, type ReviewSettings } from './reviews'
-import type { IndexRecord } from './types'
+import { type IndexRecord, inFolder } from './types'
 
 /**
  * The upkeep schedule (YAZ-2322): when a note is next due, and what is due now. The ONLY place
@@ -66,7 +66,7 @@ export function isInReview(record: IndexRecord, s: ReviewSettings): boolean {
  */
 export function reviewQueue(records: readonly IndexRecord[], s: ReviewSettings, now: number, folder = ''): IndexRecord[] {
   return records
-    .filter((r) => isInReview(r, s) && (folder === '' || r.folder === folder || r.folder.startsWith(`${folder}/`)))
+    .filter((r) => isInReview(r, s) && inFolder(r.folder, folder))
     .map((record) => ({ record, due: dueAt(record, s) }))
     .filter(({ due }) => isDue(due, now))
     .sort((a, b) => a.due - b.due || (a.record.path < b.record.path ? -1 : 1))

@@ -4,14 +4,17 @@
  * `id` of its `.folder.md` (YAZ-2293) — so it is the same file wherever it shows, and nothing is
  * rewritten when a folder or a note is renamed or moved. This module is the one door to that key.
  *
- * WHAT A FOLDER SHOWS (D4): the notes directly in it, plus the notes whose `also_in` holds
- * its id — each once, in the index's own order. An entry no folder has (a deleted folder, a typo)
- * is ignored quietly, and a folder with no `.folder.md` has no id, so nothing is a shortcut in it.
+ * WHAT A FOLDER SHOWS (D4): the notes under it at any depth, plus the notes whose `also_in` holds
+ * its id or the id of a folder under it — each once, in the index's own order. A subfolder is no
+ * row, and the vault root has no page: its entry is the notes directly in it. An entry no folder
+ * has (a deleted folder, a typo) is ignored quietly, and a folder with no `.folder.md` has no id,
+ * so nothing is a shortcut in it.
  */
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
-import { folderSettingsPath, type IndexRecord } from '@shared/types'
+import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
+import { dirname } from '../lib/paths'
 import { transformFile } from '../views/writeProperty'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
@@ -43,15 +46,22 @@ export function rowsByFolder(records: readonly IndexRecord[], folders: readonly 
   return rows
 }
 
+/** `folder` and every folder above it, short of the root. */
+function addWithParents(shown: Set<string>, folder: string): void {
+  shown.add(folder)
+  for (let cut = folder.lastIndexOf('/'); cut > 0; cut = folder.lastIndexOf('/', cut - 1)) shown.add(folder.slice(0, cut))
+}
+
 function buildRows(records: readonly IndexRecord[], folders: readonly IndexRecord[]): Map<string, IndexRecord[]> {
   const byId = foldersById(folders)
   const rows = new Map<string, IndexRecord[]>()
   for (const record of records) {
-    // A Set: living in a folder and naming it, or naming it twice, is still one row.
-    const shown = new Set([record.folder])
+    // A Set: under a folder and naming it or one under it, or naming it twice, is still one row.
+    const shown = new Set<string>()
+    addWithParents(shown, record.folder)
     for (const id of alsoIn(record.properties)) {
       const folder = byId.get(id)?.folder
-      if (folder !== undefined) shown.add(folder)
+      if (folder !== undefined) addWithParents(shown, folder)
     }
     for (const folder of shown) {
       const held = rows.get(folder)
@@ -66,8 +76,11 @@ function buildRows(records: readonly IndexRecord[], folders: readonly IndexRecor
 export const folderRows = (records: readonly IndexRecord[], folders: readonly IndexRecord[], folder: string): IndexRecord[] =>
   rowsByFolder(records, folders).get(folder) ?? []
 
-/** Whether a row `folder` shows is there by a shortcut: it lives somewhere else. */
-export const isShortcut = (record: IndexRecord, folder: string): boolean => record.folder !== folder
+/** Whether a row `folder` shows is there by a shortcut: it does not live under it. */
+export const isShortcut = (record: IndexRecord, folder: string): boolean => !inFolder(record.folder, folder)
+
+/** Whether a note lives DIRECTLY in `folder`: its name is taken there, and a column delete strips it (E4). */
+export const livesIn = (record: IndexRecord, folder: string): boolean => record.folder === folder
 
 const propertiesOf = (content: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
 
@@ -101,15 +114,15 @@ export async function addShortcut(dir: string, path: string): Promise<void> {
 }
 
 /**
- * Take the note at `path` out of the folder at `dir` (E5): the folder's id leaves its
- * `also_in`, and the key goes with its last entry — an emptied list is no list, the comments
- * store's rule (`shared/comments.ts`). The note itself stays where it lives.
+ * Take the note at `path` out of the folder at `dir` (E5): the ids of that folder and of every
+ * folder under it leave its `also_in`, and the key goes with its last entry — an emptied list is
+ * no list, the comments store's rule (`shared/comments.ts`). The note itself stays where it lives.
  */
 export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[]): Promise<unknown> {
-  const id = folderRecord(folders, dir)?.id
+  const ids = new Set<unknown>(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
   return transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
-    const kept = list.filter((entry) => entry !== id)
+    const kept = list.filter((entry) => !ids.has(entry))
     return kept.length === list.length ? content : setFrontmatterProperty(content, ALSO_IN_KEY, kept.length === 0 ? undefined : kept)
   })
 }

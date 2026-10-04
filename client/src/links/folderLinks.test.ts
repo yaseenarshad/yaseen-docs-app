@@ -138,7 +138,7 @@ describe('folderLinkCandidates: the `[[` picker offers folders', () => {
 describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', () => {
   const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 
-  /** A vault under its own root: People holds two notes (and a subfolder's one), Empty holds none. */
+  /** A vault under its own root: People holds two notes and a subfolder's one, Empty holds none. */
   async function vault(root: string): Promise<{ records: IndexRecord[]; names: (target: string) => string[] }> {
     const records = [
       rec(`${root}/Empty Note.md`),
@@ -160,12 +160,12 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
     expect(vaultDirs('/no-tree-yet')).toEqual([])
   })
 
-  it('narrows to the notes that live DIRECTLY in the target folder, written by id', async () => {
+  it('a link column whose `target` is `[[Folder]]` narrows to that folder’s rows — its subfolders’ notes included — written by id', async () => {
     const { records, names } = await vault('/narrow')
-    expect(names('[[People]]')).toEqual(['Alice', 'Bob'])
-    expect(names('People')).toEqual(['Alice', 'Bob']) // a bare name is the same target
+    expect(names('[[People]]')).toEqual(['Alice', 'Bob', 'Core'])
+    expect(names('People')).toEqual(['Alice', 'Bob', 'Core']) // a bare name is the same target
     expect(names('[[People/Teams]]')).toEqual(['Core'])
-    expect(belongsToBasenames(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([NOTE_ID, 'Bob'])
+    expect(belongsToBasenames(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([NOTE_ID, 'Bob', 'Core'])
   })
 
   it("a note that is in the target folder by a SHORTCUT is offered with the ones that live there (D2)", async () => {
@@ -174,9 +174,9 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
     const folders = [rec('/shortcut/People/.folder.md', { id: FOLDER_ID })]
     const all = [...records, shortcut].sort((a, b) => (a.path < b.path ? -1 : 1))
     const resolve = linkResolver(all, '/shortcut', vaultDirs('/shortcut'), folders)
-    expect(belongsToBasenames(all, folders, resolve, '/shortcut', '[[People]]').map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob'])
+    expect(belongsToBasenames(all, folders, resolve, '/shortcut', '[[People]]').map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
     // The folder's id names it too (YAZ-2293): a target written by id narrows the same way.
-    expect(belongsToBasenames(all, folders, resolve, '/shortcut', `[[${FOLDER_ID}]]`).map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob'])
+    expect(belongsToBasenames(all, folders, resolve, '/shortcut', `[[${FOLDER_ID}]]`).map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
   })
 
   it('falls back to ALL notes when the target is no folder, or the folder is empty', async () => {

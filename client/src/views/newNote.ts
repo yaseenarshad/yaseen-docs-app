@@ -12,6 +12,8 @@ import { type Expr, compile } from './expr'
 export interface NewNoteSeed {
   /** Bare frontmatter keys → raw YAML values. */
   properties: Record<string, unknown>
+  /** The folder of the group whose "+" was pressed, when the view is grouped by Folder: root-relative. */
+  folder?: string
 }
 
 const SCOPE_IDENTS = new Set(['note', 'file', 'formula', 'this'])

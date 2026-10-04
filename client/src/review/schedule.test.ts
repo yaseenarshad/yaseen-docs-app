@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import type { ReviewEntry } from '@shared/reviews'
 import { DEFAULT_REVIEW_SETTINGS as S } from '@shared/reviews'
 import { dueAfter, dueAt, isInReview, reviewQueue, scheduleInWords } from '@shared/schedule'
-import type { IndexRecord } from '@shared/types'
+import { type IndexRecord, inFolder } from '@shared/types'
 
 const DAY = 86_400_000
 const CHANGED = Date.parse('2026-01-10T12:00:00Z')
@@ -133,5 +133,22 @@ describe('reviewQueue', () => {
     expect(reviewQueue(records, S, NOW, 'notes').map((r) => r.basename)).toEqual(['a', 'b'])
     expect(reviewQueue(records, S, NOW, '')).toHaveLength(4)
     expect(reviewQueue(records, S, NOW)).toHaveLength(4)
+  })
+})
+
+describe('inFolder: the one rule for "this folder, or under it"', () => {
+  it('the folder itself and a folder under it at any depth; not one above it, beside it, or merely starting the same', () => {
+    expect(inFolder('notes', 'notes')).toBe(true)
+    expect(inFolder('notes/deep', 'notes')).toBe(true)
+    expect(inFolder('notes/deep/er', 'notes')).toBe(true)
+    expect(inFolder('notes', 'notes/deep')).toBe(false)
+    expect(inFolder('other', 'notes')).toBe(false)
+    expect(inFolder('notes-old', 'notes')).toBe(false)
+    expect(inFolder('', 'notes')).toBe(false)
+  })
+
+  it('every folder is under the root', () => {
+    expect(inFolder('', '')).toBe(true)
+    expect(inFolder('notes/deep', '')).toBe(true)
   })
 })

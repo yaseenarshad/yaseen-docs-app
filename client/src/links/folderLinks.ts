@@ -103,7 +103,7 @@ export function pageResolver(records: readonly IndexRecord[], root: string | und
  * and narrows nothing, and the folder is found by its id, path or name — falling back to ALL
  * basenames when the target is no folder or the folder holds none. Report-don't-block: the picker
  * narrows when it can and never goes empty. What a folder holds is what its page shows
- * (`folderRows`): the notes that live in it, and its shortcuts. Candidates rather than bare
+ * (`folderRows`): the notes under it, and its shortcuts. Candidates rather than bare
  * strings since YAZ-2293: a page is offered by basename, written by id.
  */
 export function belongsToBasenames(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink, root: string, target: string): LinkCandidate[] {

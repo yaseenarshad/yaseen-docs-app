@@ -54,6 +54,12 @@ export function groupByKey(view: ViewDef, level = 0): string | null {
   return c.startsWith('note.') ? c.slice(5) : null
 }
 
+/** Whether `groupBy` at `level` is the Folder: nothing to write or drag there, but its group "+" has a place — that folder. */
+export const groupsByFolder = (view: ViewDef, level = 0): boolean => {
+  const property = groupByLevels(view)[level]?.property
+  return typeof property === 'string' && canonicalKey(property) === 'file.folder'
+}
+
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
 export function applyMoves(records: readonly IndexRecord[], moves: Record<string, PendingMove>): IndexRecord[] {
   return records.map((r) => {
