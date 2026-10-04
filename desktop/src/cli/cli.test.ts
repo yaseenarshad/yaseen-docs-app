@@ -183,12 +183,13 @@ describe('comment', () => {
     }
   })
 
-  it("the first comment on a folder creates its settings file (YAZ-2290 D1); the other verbs, and a folder that is not there, fail as any missing page does", async () => {
+  it("the first comment on a folder creates its settings file (YAZ-2290 D1); `edit` and `delete`, and a folder that is not there, fail as any missing page does; `comments` reads it as empty", async () => {
     await mkdir(path.join(dir, 'Projects'))
     const p = path.join(dir, 'Projects', '.folder.md')
-    for (const argv of [['comments', p], ['edit', p, '#1', '--body', 'x'], ['delete', p, '#1']]) {
+    for (const argv of [['edit', p, '#1', '--body', 'x'], ['delete', p, '#1']]) {
       expect((await run(argv)).code, argv[0]).toBe(1)
     }
+    expect((await run(['comments', p])).code).toBe(0)
     const r = await run(['comment', p, '--body', 'On the folder'])
     expect(r).toEqual({ code: 0, out: `#1 added to ${p}\n`, err: '' })
     expect(readComments(await readFile(p, 'utf8'))).toMatchObject([{ n: 1, by: 'agent', body: 'On the folder' }])
@@ -229,6 +230,26 @@ describe('comments', () => {
     const empty = await page('e.md', '# Nothing\n')
     expect((await run(['comments', empty])).out).toBe(`no comments on ${empty}\n`)
     expect(JSON.parse((await run(['comments', empty, '--json'])).out)).toEqual([])
+  })
+
+  it('`comments <folder>/.folder.md` when the file is missing and the folder exists: `no comments on <path>`, `[]` with --json, and nothing is written', async () => {
+    await mkdir(path.join(dir, 'Projects'))
+    const p = path.join(dir, 'Projects', FOLDER_SETTINGS_FILE)
+    expect(await run(['comments', p])).toEqual({ code: 0, out: `no comments on ${p}\n`, err: '' })
+    expect(await run(['comments', p, '--json'])).toEqual({ code: 0, out: '[]\n', err: '' })
+    await expect(stat(p)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('the same when the folder does not exist: the not-found error, as for any missing page', async () => {
+    const missing = await run(['comments', path.join(dir, 'nope.md')])
+    const gone = await run(['comments', path.join(dir, 'Gone', FOLDER_SETTINGS_FILE)])
+    expect(gone).toEqual(missing)
+    expect(gone).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
+  })
+
+  it('a note path that does not exist: the not-found error', async () => {
+    expect(await run(['comments', path.join(dir, 'nope.md')])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
+    expect(await run(['comments', path.join(dir, 'nope.md'), '--json'])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 })
 
