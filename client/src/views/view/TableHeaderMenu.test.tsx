@@ -11,6 +11,7 @@ import { type ParsedViews, type ViewSet, parseViews, serializeViews } from '../v
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
+import { deleteColumnMessage } from './ConfirmDeleteColumn'
 import { insertAfter } from './TableHeaderMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -226,6 +227,13 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
     expect(deleteColumn).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('the confirm sheet’s copy: how many notes lose the value and — only when some do — how many keep it because another folder uses it', () => {
+    const lost = (notes: string): string => `Delete "Status"? This removes the column from this folder and the "status" value from ${notes}.`
+    expect(deleteColumnMessage('Status', 'status', 1, 0)).toBe(lost('1 note'))
+    expect(deleteColumnMessage('Status', 'status', 3, 1)).toBe(`${lost('3 notes')} 1 note keeps it because another folder uses it.`)
+    expect(deleteColumnMessage('Status', 'status', 0, 2)).toBe(`${lost('0 notes')} 2 notes keep it because another folder uses it.`)
   })
 
   it('Delete column…: confirming hands the key to FolderHost.deleteColumn — the ONE function — and closes the sheet', () => {

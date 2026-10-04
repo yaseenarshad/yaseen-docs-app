@@ -123,8 +123,6 @@ export function FolderView({
   const indexed = feed.resolve !== null
   const settings = useMemo(() => (indexed ? folderSettings(record) : null), [indexed, record])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
-  /** The rows that live DIRECTLY here: a subfolder's note and a shortcut are files in another folder, so no name taken here and no note a column delete strips (E4). */
-  const residents = useMemo(() => rows.filter((r) => livesIn(r, folder)), [rows, folder])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -293,13 +291,15 @@ export function FolderView({
     },
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
     // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
-    // strips report into the column banner, no rollback. They reach the notes DIRECTLY in the
-    // folder and no other (E4) — a subfolder's row and a shortcut row keep their value.
+    // strips report into the column banner, no rollback. They reach every row no other folder
+    // showing it has a column of that name for.
     deleteColumn: (key) =>
       deleteColumnEverywhere(key, {
         columns: liveSettings.columns,
         def: parsed.def,
-        residents,
+        rows,
+        folder,
+        folders: feed.folders,
         writeSettings: commitSettings,
       }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     openRight: onOpenFileRight,

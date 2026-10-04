@@ -47,7 +47,7 @@ const SHEETS: Array<[string, () => ReactElement]> = [
   ['ConfirmDelete', () => <ConfirmDelete target={{ path: '/v/Projects', kind: 'dir', children: { notes: 3, folders: 1 }, backlinks: 2 }} {...cb} />],
   ['ConfirmRename', () => <ConfirmRename oldPath="/v/Old.md" newPath="/v/New.md" kind="file" count={2} {...cb} />],
   ['ConfirmDeleteComment', () => <ConfirmDeleteComment label="#3" replies={2} {...cb} />],
-  ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} records={TEST_RECORDS} {...cb} />],
+  ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} records={TEST_RECORDS} folders={[]} {...cb} />],
   ['ConfirmDeleteView', () => <ConfirmDeleteView view={{ type: 'table', name: 'All notes' }} {...cb} />],
 ]
 

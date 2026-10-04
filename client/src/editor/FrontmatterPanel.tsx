@@ -1,20 +1,21 @@
-/** Note property rows share the view editors and the definitions of the folder the note lives in
- * (YAZ-2290). Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
+/** Note property rows share the view editors and the definitions of ONE of the folders that show
+ * the note — "Properties from". Value writes remain surgical and conflict-checked; raw YAML
+ * retains its own dirty draft.
  */
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { ALSO_IN_KEY, alsoIn } from '@shared/alsoIn'
-import { PROPERTY_NAME, folderSettingsPath, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
+import { ALSO_IN_KEY } from '@shared/alsoIn'
+import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { basenameCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
-import { basename, dirname } from '../lib/paths'
+import { absFrom, basename, dirname, relTo } from '../lib/paths'
 import { RESERVED_KEYS } from '../links/reservedKeys'
-import { folderRecord, foldersById } from '../links/shortcuts'
+import { folderRecord, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
-import { FOLDER_SETTINGS_KEY, folderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
+import { FOLDER_SETTINGS_KEY, folderSettings, hasFolderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
 import { PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
@@ -124,15 +125,14 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const subscribe = useCallback((poke: () => void) => wikilinks?.subscribe(poke) ?? (() => {}), [wikilinks])
   const stamp = useSyncExternalStore(subscribe, () => (wikilinks?.folders ?? NO_RECORDS).map((r) => `${r.path}\0${r.mtime}`).join('\n'))
   const folders = useMemo(() => wikilinks?.folders ?? NO_RECORDS, [wikilinks, stamp])
-  // The note is typed from the folder it LIVES in (YAZ-2290): that folder's settings file, or the
-  // defaults while it has none. No feed, no folder: the rows fall to the lower rungs.
   const dir = dirname(file.path)
   // A folder's OWN panel (YAZ-2290 D9) is mounted on the settings file itself. Its properties are
   // facts about the folder: the columns it declares for its notes neither type nor list here,
   // and the view settings block is edited through the views, so it is no row.
   const own = isFolderSettingsPath(file.path)
-  const folderDefinition = useMemo(() => (wikilinks === undefined || own ? null : folderSettings(folderRecord(folders, dir))), [wikilinks, own, folders, dir])
   const byId = useMemo(() => foldersById(folders), [folders])
+  // The choice of folder is the panel's own state, held with the note it was made for.
+  const [picked, setPicked] = useState<{ note: string; dir: string } | null>(null)
   const [expanded, setExpanded] = useState(false)
   // 🔒 Typed rows are the default; raw is the fallback under them.
   const [yamlMode, setYamlMode] = useState(false)
@@ -197,17 +197,17 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   }
 
   const { properties: parsed, error: parseError } = useMemo(() => parseFrontmatter(splitFrontmatter(snap.content).frontmatter), [snap.content])
-  // …and, after the folder it lives in, from the folders it is a SHORTCUT in (YAZ-2290 D2): a column
-  // several declare is one row, typed by the first. A definition is still edited in the living folder.
-  const typing = useMemo(() => {
-    if (folderDefinition === null) return null
-    const columns = { ...folderDefinition.columns }
-    for (const id of alsoIn(parsed)) {
-      const folder = byId.get(id)
-      if (folder !== undefined) for (const [key, decl] of Object.entries(folderSettings(folder).columns)) columns[key] ??= decl
-    }
-    return { ...folderDefinition, columns }
-  }, [folderDefinition, parsed, byId])
+  // The folders that show the note (`foldersShowing`), as directories; a note outside the vault has
+  // its own alone. No feed, no folder: the rows fall to the lower rungs.
+  const vault = root?.replace(/\/+$/, '')
+  const dirs = useMemo(() => {
+    if (wikilinks === undefined || own) return []
+    if (vault === undefined || !inFolder(dir, vault)) return [dir]
+    return foldersShowing(dir === vault ? '' : relTo(vault, dir), parsed, byId).map((folder) => (folder === '' ? vault : absFrom(vault, folder)))
+  }, [wikilinks, own, vault, dir, parsed, byId])
+  // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
+  const chosen = dirs.find((d) => picked?.note === file.path && d === picked.dir) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
+  const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(folderRecord(folders, chosen))), [folders, chosen])
   /** `also_in` as the eye reads it: each folder id as that folder's name; an entry no folder has stays as written. */
   const folderNames = (raw: unknown): unknown => {
     const name = (entry: unknown): unknown => {
@@ -223,7 +223,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const label = empty ? 'Add properties' : count > 0 ? `Properties (${count})` : 'Properties'
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
-  const rows = rawMode ? [] : rowsOf(parsed, decls, typing).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY))
+  const rows = rawMode ? [] : rowsOf(parsed, decls, folderDefinition).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY))
   const needle = query.trim().toLocaleLowerCase()
   const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
 
@@ -250,18 +250,18 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
       return
     }
     setSaving(true)
-    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls, typing)))
+    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls, folderDefinition)))
       .then(() => setAdding(null))
       .catch((err: unknown) => setError(`Could not add "${name}": ${messageOf(err)}`))
       .finally(() => setSaving(false))
   }
 
   const saveDefinition = async (): Promise<void> => {
-    if (!propertyMenu) return
+    if (!propertyMenu || chosen === undefined) return
     setSaving(true)
     try {
       const { key, definition, base } = propertyMenu
-      await writeFolderColumn(folderSettingsPath(dir), key, definition, base)
+      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base)
       setPropertyMenu(null)
       setError(null)
     } catch (err) { setError(`Could not save the property: ${messageOf(err)}`) }
@@ -280,7 +280,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
-          <p className="frontmatter-property-menu__scope">In {basename(dir)}</p>
+          <p className="frontmatter-property-menu__scope">In {basename(chosen ?? dir)}</p>
           <fieldset disabled={saving} className="property-settings-fields">
           <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(parsed[propertyMenu.key]) ? (parsed[propertyMenu.key] as unknown[]).map(String) : parsed[propertyMenu.key] == null ? [] : [String(parsed[propertyMenu.key])]} />
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
@@ -293,6 +293,15 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
       </Popover>, document.body)}
       {expanded && (
         <div className="frontmatter-panel__body">
+          {chosen !== undefined && !rawMode && (
+            <div className="frontmatter-property-context">
+              {dirs.length === 1 ? `Properties from ${basename(chosen)}` : (
+                <label>Properties from <select className="view-select" aria-label="Property context" value={chosen} onChange={(e) => { setPicked({ note: file.path, dir: e.target.value }); setPropertyMenu(null) }}>
+                  {dirs.map((d) => <option key={d} value={d}>{basename(d)}</option>)}
+                </select></label>
+              )}
+            </div>
+          )}
           {rawMode ? (
             <textarea
               className="frontmatter-panel__text"
@@ -321,7 +330,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                 <ul className="frontmatter-panel__rows">
                   {shown.map((row) => (
                     <li key={row.key} className="frontmatter-panel__row" data-key={row.key}>
-                      {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, anchor: event.currentTarget, base: folderDefinition?.columns[row.key], definition: typing?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
+                      {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, anchor: event.currentTarget, base: folderDefinition?.columns[row.key], definition: folderDefinition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
                         <PropertyTypeIcon kind={row.editor} /><span>{row.key}</span>
                       </button>}
                       <span className="frontmatter-panel__value">
@@ -342,7 +351,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                             raw={row.raw}
                             value={fromYaml(row.raw)}
                             editor={row.editor}
-                            options={columnTyping(row.key, NO_RECORDS, decls, typing)?.options}
+                            options={columnTyping(row.key, NO_RECORDS, decls, folderDefinition)?.options}
                             basenames={basenames}
                             resolve={resolve}
                             onCommit={(next) => commit(row.key, next)}

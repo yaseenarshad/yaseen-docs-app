@@ -6,7 +6,8 @@
  *
  * WHAT A FOLDER SHOWS (D4): the notes under it at any depth, plus the notes whose `also_in` holds
  * its id or the id of a folder under it — each once, in the index's own order. A subfolder is no
- * row, and the vault root has no page: its entry is the notes directly in it. An entry no folder
+ * row, and the vault root has no page: its entry is the notes directly in it. `foldersShowing` is
+ * the same rule from the note's side, and what the rows are built from. An entry no folder
  * has (a deleted folder, a typo) is ignored quietly, and a folder with no `.folder.md` has no id,
  * so nothing is a shortcut in it.
  */
@@ -52,18 +53,27 @@ function addWithParents(shown: Set<string>, folder: string): void {
   for (let cut = folder.lastIndexOf('/'); cut > 0; cut = folder.lastIndexOf('/', cut - 1)) shown.add(folder.slice(0, cut))
 }
 
+/**
+ * The folders that SHOW a note, in order: the folder it lives in (`folder`, as the index names it)
+ * and each folder above it, nearest first, then each folder its `also_in` names with the folders
+ * above that one. A note directly in the root is shown by the root ('').
+ */
+export function foldersShowing(folder: string, properties: Record<string, unknown>, byId: ReadonlyMap<string, IndexRecord>): string[] {
+  // A Set: under a folder and naming it or one under it, or naming it twice, is still one row.
+  const shown = new Set<string>()
+  addWithParents(shown, folder)
+  for (const id of alsoIn(properties)) {
+    const named = byId.get(id)?.folder
+    if (named !== undefined) addWithParents(shown, named)
+  }
+  return [...shown]
+}
+
 function buildRows(records: readonly IndexRecord[], folders: readonly IndexRecord[]): Map<string, IndexRecord[]> {
   const byId = foldersById(folders)
   const rows = new Map<string, IndexRecord[]>()
   for (const record of records) {
-    // A Set: under a folder and naming it or one under it, or naming it twice, is still one row.
-    const shown = new Set<string>()
-    addWithParents(shown, record.folder)
-    for (const id of alsoIn(record.properties)) {
-      const folder = byId.get(id)?.folder
-      if (folder !== undefined) addWithParents(shown, folder)
-    }
-    for (const folder of shown) {
+    for (const folder of foldersShowing(record.folder, record.properties, byId)) {
       const held = rows.get(folder)
       if (held === undefined) rows.set(folder, [record])
       else held.push(record)
@@ -79,7 +89,7 @@ export const folderRows = (records: readonly IndexRecord[], folders: readonly In
 /** Whether a row `folder` shows is there by a shortcut: it does not live under it. */
 export const isShortcut = (record: IndexRecord, folder: string): boolean => !inFolder(record.folder, folder)
 
-/** Whether a note lives DIRECTLY in `folder`: its name is taken there, and a column delete strips it (E4). */
+/** Whether a note lives DIRECTLY in `folder`: its name is taken there. */
 export const livesIn = (record: IndexRecord, folder: string): boolean => record.folder === folder
 
 const propertiesOf = (content: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(content).frontmatter).properties

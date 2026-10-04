@@ -31,7 +31,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, folderRows, isShortcut, livesIn, removeShortcut, rowsByFolder } from './shortcuts'
+import { addShortcut, folderRows, foldersById, foldersShowing, isShortcut, livesIn, removeShortcut, rowsByFolder } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -150,6 +150,37 @@ describe('what a folder shows (YAZ-2290 D4)', () => {
     const twins = [settings('Areas', PROJECTS_ID), settings('Projects', PROJECTS_ID)]
     expect(pathsIn(records, 'Areas', twins)).toEqual(['/vault/Inbox/N.md'])
     expect(pathsIn(records, 'Projects', twins)).toEqual([])
+  })
+})
+
+describe('the folders that show a note', () => {
+  const showing = (record: IndexRecord, folders: readonly IndexRecord[] = NESTED): string[] => foldersShowing(record.folder, record.properties, foldersById(folders))
+
+  it('the folder it lives in, then each folder above it, nearest first — never the root', () => {
+    expect(showing(rec('/vault/Projects/Deep/Deeper/C.md'))).toEqual(['Projects/Deep/Deeper', 'Projects/Deep', 'Projects'])
+    expect(showing(rec('/vault/Projects/A.md'))).toEqual(['Projects'])
+  })
+
+  it('then each folder it is a shortcut in, followed by the folders above that one — each folder once', () => {
+    const note = rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID, PROJECTS_ID, AREAS_ID, NOBODY_ID] })
+    expect(showing(note)).toEqual(['Areas', 'Projects/Deep/Deeper', 'Projects/Deep', 'Projects'])
+  })
+
+  it('a note directly in the vault root is shown by the root alone', () => {
+    expect(showing(rec('/vault/Top.md'))).toEqual([''])
+  })
+
+  it('agrees with the rows: a folder shows a note exactly when it is one of the folders showing that note', () => {
+    const records = [
+      rec('/vault/Top.md', { also_in: [DEEP_ID] }),
+      rec('/vault/Areas/Health.md', { also_in: [DEEPER_ID, NOBODY_ID] }),
+      rec('/vault/Projects/A.md', { also_in: [AREAS_ID] }),
+      rec('/vault/Projects/Deep/Deeper/C.md'),
+    ]
+    const rows = rowsByFolder(records, NESTED)
+    for (const record of records) {
+      expect([...rows].filter(([, shown]) => shown.includes(record)).map(([folder]) => folder).sort()).toEqual(showing(record).sort())
+    }
   })
 })
 
