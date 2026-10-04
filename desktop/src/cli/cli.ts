@@ -256,7 +256,13 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'comments': {
-      const comments = readComments((await readFile(page)).content)
+      // A folder with no settings file yet has no comments (YAZ-2290 D1); a folder that is not there is still not found.
+      const { content } = await readFile(page).catch(async (err: unknown) => {
+        if (!isFolderSettingsPath(page) || !(err instanceof BridgeFailure) || err.code !== 'NOT_FOUND') throw err
+        if (!(await stat(dirname(page)).catch(() => null))?.isDirectory()) throw err
+        return { content: '' }
+      })
+      const comments = readComments(content)
       io.stdout(flags.has('--json') ? `${JSON.stringify(threadsOf(comments), null, 2)}\n` : comments.length === 0 ? `no comments on ${page}\n` : `${listing(comments)}\n`)
       return
     }
