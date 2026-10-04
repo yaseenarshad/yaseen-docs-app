@@ -29,27 +29,27 @@ sub-issue YAZ-2323..YAZ-2343 is Done, the scenario record on YAZ-2293 holds, `np
   existing index tests.
 
 ## State
-- Done (all on branch `yaz-2293-note-ids`, pushed; `main` at d333746 is merged in, commit 41aedd3):
+- CLOSED OUT 2026-10-04. Everything is on `main`; the feature branches and the worktree are deleted.
+  The full handoff is the comment "Handoff" on Linear YAZ-2293; read that first.
+- Done:
   - [x] 1 scope; 2A/2B/2C ids on files; 3A/3B/3C/3D link by id; 4A/4B/4C Copy ID, reserved key, CLI
-  - [x] 5A/5B polish (one `copyNoteId`; sweep renamed `sweepIds` in `vaultIndex/idSweep.ts`)
-  - [x] 6A scenario audit: found and fixed "notes moved outside the app into a new folder lose
-        their ids" (the sweep now counts only holders that are another file on disk)
-  - [x] 6C docs (CONTRACTS "Note ids" section, REGRESSION N1–N12)
-- [x] Creating a note in a folder adopts it (`adoptVault` in `idSweep.ts`, the `fs:create-file`
-  handler, `sweepIndexed` in `live.ts`) — Yaseen's choice, locked as D10
-- [x] `mainBundleBytes` ceiling raised to 490,469 with Yaseen's OK (D9)
-- [x] MERGED TO `main` at 9a251e6 (fast-forward), 2026-10-04
-- Now: [→] nothing in flight
-- Remaining:
-  - [ ] 6B hand walk-through in the dev app (14 steps on YAZ-2342) — Yaseen walks it, or computer
-        use; NOT done. YAZ-2340 and YAZ-2293 stay In Progress until it is.
+  - [x] 5A/5B polish; 6A scenario audit; 6B walk-through in the dev app; 6C docs
+  - [x] D9 ceiling raised; D10 creating a note adopts the folder; D11 swept ids are derived
+  - [x] YAZ-2378 the sweep never writes an id another note holds
+  - [x] YAZ-2380 a note created in the app and deleted outside is seen to go (`createDurable`)
+  - [x] follow-ups: `id` is never a default column; `desktop/e2e/links.spec.ts`; CACHE_VERSION in docs
+- Not verified (none blocks anything):
+  - Walk-through step 12 (a link cell in a table view) was never walked in the app; unit tests cover it.
+  - The dimmed look of a dead id link and the " > " in `Title > Heading` were never looked at by eye.
+  - Walk-through step 8 (delete the target) was not re-run in the app after the YAZ-2380 fix.
+  - `desktop/e2e/*.spec.ts` are typechecked only; none was run (no Playwright, by instruction).
+- Deferred: YAZ-2344, a clickable `yaseendocs://id/<id>` link.
 
 ## Open Questions
-- UNCONFIRMED by Yaseen: the sweep derives its id from the note's path and bytes instead of
-  drawing a random one (D11 on YAZ-2293). He asked how it works; explained in chat.
+- None open. D1–D11 are locked on YAZ-2293 (comments "Locked decisions, part 1–4" and "D11").
 
 ## Working Set
-- Worktree: `.claude/worktrees/yaz-2293-ids`, branch `yaz-2293-note-ids`
+- Worktree and branches: removed at closeout; start a new branch from `main`
 - Tests: `npx vitest run --project desktop <file>`, `npx vitest run --project client <file>`,
   full: `npm run typecheck && npm test && npm run build`
 - Linear helper: scratchpad `lin.py` (move / comment / create), key in `~/Desktop/growprofit-ai.env`
