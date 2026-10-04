@@ -2,7 +2,6 @@ import {
   DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
-  MAX_TOPICS_EXPANDED_PAGES,
   addRecentRoot,
   cleanVaultName,
   defaultAppState,
@@ -28,7 +27,7 @@ import { basename } from './paths'
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusTopics: [], focusFavorites: [] }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -77,14 +76,14 @@ export const storage = {
 
   getRoot: (): string | null => identity.root,
   /**
-   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and all
-   * three Focus Mode lists (YAZ-1628, YAZ-1766), and lands the lens on Files (🔒 D2, YAZ-1846),
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both
+   * Focus Mode lists (YAZ-1628, YAZ-1766), and lands the lens on Files (🔒 D2, YAZ-1846),
    * in the same write; re-setting the same root keeps them.
    */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusTopics: [] as string[], focusFavorites: [] as string[] }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusFavorites: [] as string[] }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => api.window.setIdentity(patch))
   },
@@ -120,19 +119,6 @@ export const storage = {
   },
 
   /**
-   * The Topics tree's expanded folder pages (🔒 D4, YAZ-848) — PAGE PATHS, not tree positions,
-   * so a page under two folder pages is one entry and opens under both. `expanded`'s twin in
-   * every way: same per-root bucket, same `setFolder` patch, same path-keyed repair in
-   * `store.renamePath` / `store.removePath`.
-   */
-  getTopicsExpanded: (root: string): string[] => folderOf(root).topicsExpanded,
-  setTopicsExpanded(root: string, pages: readonly string[]): void {
-    const topicsExpanded = pages.slice(0, MAX_TOPICS_EXPANDED_PAGES)
-    patchFolder(root, { topicsExpanded })
-    send('state.setFolder', () => api.state.setFolder(root, { topicsExpanded }))
-  },
-
-  /**
    * Focus Mode (YAZ-1605): a path list per lens, empty when off. Window identity since YAZ-1628,
    * like `sidebarCollapsed` below — no root argument, and a global state broadcast never follows
    * another window's focus into this one; a root change clears both lists (`setRoot`).
@@ -142,12 +128,6 @@ export const storage = {
     const focusDirs = [...dirs]
     identity = { ...identity, focusDirs }
     send('window.setIdentity', () => api.window.setIdentity({ focusDirs }))
-  },
-  getFocusTopics: (): string[] => identity.focusTopics,
-  setFocusTopics(pages: readonly string[]): void {
-    const focusTopics = [...pages]
-    identity = { ...identity, focusTopics }
-    send('window.setIdentity', () => api.window.setIdentity({ focusTopics }))
   },
   /** The Favorites tab's own focus list (YAZ-1766 D5): the favorited dirs it is narrowed to. */
   getFocusFavorites: (): string[] => identity.focusFavorites,

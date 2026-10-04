@@ -1,8 +1,7 @@
 /**
- * The delete-a-view sheet's COPY (YAZ-1471, 🔒 D2), tested apart from the component exactly as
- * `removeMemberMessage` is: the sheet itself is `ConfirmRemoveMember`'s mechanics verbatim
- * (focus on Cancel, Esc cancels, Enter confirms, click-away cancels) and is pinned where it is
- * driven — on the tabs, in `Toolbar.test.tsx`. What is ONLY here is the sentence, and the one
+ * The delete-a-view sheet's COPY (YAZ-1471, 🔒 D2), tested apart from the component: the sheet
+ * itself is the shared `ConfirmSheet`'s mechanics verbatim (focus on Cancel, Esc cancels, Enter
+ * confirms, click-away cancels) and is pinned where it is driven — on the tabs, in `Toolbar.test.tsx`. What is ONLY here is the sentence, and the one
  * thing it has to get right: an outline view takes a DOCUMENT with it, every other view takes a
  * configuration — and neither one takes a single page.
  */

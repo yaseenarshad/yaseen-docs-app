@@ -303,58 +303,49 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_pag
   const oldPath = '/v/B.md'
   const newPath = '/v/C.md'
   /** Home names B in its outline `order`; Cols names it as a column target. Neither has a `links` entry. */
-  const HOME = '---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n---\n\n# Home\n'
-  const COLS = '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n---\n\n# Cols\n'
-  const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_page_settings
+  const HOME = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n---\n'
+  const COLS = '---\nfolder_page_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n---\n'
+  /** A folder's settings record, as the index hands it over beside the notes. */
+  const settings = (folder: string, raw: string) => rec(`/v/${folder}/.folder.md`, { folder, properties: parseFrontmatter(splitFrontmatter(raw).frontmatter).properties })
 
-  it('counts them in the banner N and rewrites both leaves on disk; a settings page naming nobody is never read', async () => {
-    const OTHER = '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n---\n\n# Other\n'
+  it('counts them in the banner N and rewrites both leaves on disk; a settings file naming nobody is never read', async () => {
+    const OTHER = '---\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n---\n'
     const files = {
-      '/v/Home.md': { content: HOME, mtime: 1 },
-      '/v/Cols.md': { content: COLS, mtime: 1 },
-      '/v/Other.md': { content: OTHER, mtime: 1 },
+      '/v/Home/.folder.md': { content: HOME, mtime: 1 },
+      '/v/Cols/.folder.md': { content: COLS, mtime: 1 },
+      '/v/Other/.folder.md': { content: OTHER, mtime: 1 },
     }
     const bridge = installBridge(files)
-    const records = [
-      rec('/v/Home.md', { properties: { folder_page: true, folder_page_settings: settingsOf(HOME) } }),
-      rec('/v/Cols.md', { properties: { folder_page: true, folder_page_settings: settingsOf(COLS) } }),
-      rec('/v/Other.md', { properties: { folder_page: true, folder_page_settings: settingsOf(OTHER) } }),
-      rec('/v/A.md'),
-      rec('/v/B.md'),
-    ]
+    const records = [rec('/v/A.md'), rec('/v/B.md')]
+    const folders = [settings('Cols', COLS), settings('Home', HOME), settings('Other', OTHER)]
     // The banner's N and the rewrite agree — the probe walks the same leaves the rewrite does.
-    expect(countLinkReferences({ root, oldPath, records })).toBe(2)
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 2, skipped: 0 })
-    expect(files['/v/Home.md'].content).toContain('- "[[C]]"')
-    expect(files['/v/Home.md'].content).toContain('- "[[A]]"')
-    expect(files['/v/Cols.md'].content).toContain('target: "[[C]]"')
-    expect(files['/v/Other.md'].content).toBe(OTHER) // byte-for-byte: settings, but no reference
-    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Other.md')
+    expect(countLinkReferences({ root, oldPath, records, folders })).toBe(2)
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records, folders })).toEqual({ updated: 2, skipped: 0 })
+    expect(files['/v/Home/.folder.md'].content).toContain('- "[[C]]"')
+    expect(files['/v/Home/.folder.md'].content).toContain('- "[[A]]"')
+    expect(files['/v/Cols/.folder.md'].content).toContain('target: "[[C]]"')
+    expect(files['/v/Other/.folder.md'].content).toBe(OTHER) // byte-for-byte: settings, but no reference
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Other/.folder.md')
   })
 
   it('a page referenced ONLY by an outline LINE is counted and rewritten too (YAZ-900)', async () => {
-    const OUT = '---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[B]]\n        - prose about [[A]]\n---\n\n# Out\n'
-    const files = { '/v/Out.md': { content: OUT, mtime: 1 } }
+    const OUT = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[B]]\n        - prose about [[A]]\n---\n'
+    const files = { '/v/Out/.folder.md': { content: OUT, mtime: 1 } }
     installBridge(files)
-    const records = [
-      rec('/v/Out.md', { properties: { folder_page: true, folder_page_settings: settingsOf(OUT) } }),
-      rec('/v/B.md'),
-    ]
-    expect(countLinkReferences({ root, oldPath, records })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
-    expect(files['/v/Out.md'].content).toContain('- [[C]]')
-    expect(files['/v/Out.md'].content).toContain('- prose about [[A]]')
+    const records = [rec('/v/B.md')]
+    const folders = [settings('Out', OUT)]
+    expect(countLinkReferences({ root, oldPath, records, folders })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/Out/.folder.md'].content).toContain('- [[C]]')
+    expect(files['/v/Out/.folder.md'].content).toContain('- prose about [[A]]')
   })
 
   it('a FOLDER rename leaves a bare settings leaf byte-identical, exactly like a bare body link (LOCKED)', async () => {
-    const files = { '/v/Home.md': { content: HOME, mtime: 1 } }
+    const files = { '/v/Home/.folder.md': { content: HOME, mtime: 1 } }
     installBridge(files)
-    const records = [
-      rec('/v/Home.md', { properties: { folder_page: true, folder_page_settings: settingsOf(HOME) } }),
-      rec('/v/Old/B.md', { folder: 'Old' }),
-    ]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 0, skipped: 0 })
-    expect(files['/v/Home.md'].content).toBe(HOME)
+    const records = [rec('/v/Old/B.md', { folder: 'Old' })]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records, folders: [settings('Home', HOME)], dirs: ['/v/Home', '/v/Old'] })).toEqual({ updated: 0, skipped: 0 })
+    expect(files['/v/Home/.folder.md'].content).toBe(HOME)
   })
 })
 
@@ -396,6 +387,71 @@ describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
     ]
     expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 0, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Sub/x]] and [[Older/y]]\n')
+  })
+})
+
+// ---------- YAZ-2290 D10: a folder is a page, and its name links follow it ----------
+
+describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', () => {
+  const root = '/v'
+  const FOLDER_ID = 'f7n2w8rt4xyz'
+  /** Another folder's settings: its Outline names Projects on a line of its own, and a column targets it. */
+  const TEAM = '---\nfolder_page_settings:\n  columns:\n    project:\n      kind: link\n      target: "[[Projects]]"\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n        - prose about [[Projects]]\n---\n'
+  const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_page_settings
+  const team = () => rec('/v/Team/.folder.md', { properties: { folder_page_settings: settingsOf(TEAM) } })
+
+  it('a rename rewrites bare `[[Projects]]` to the new name — in a notecard and in another folder\u2019s Outline — and the count is those two files', async () => {
+    const A = `See [[Projects]], [[projects|the work]] and [[Projects#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`
+    const files = { '/v/A.md': { content: A, mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 }, '/v/N.md': { content: 'nothing\n', mtime: 1 } }
+    const bridge = installBridge(files)
+    const records = [rec('/v/A.md', { links: ['Projects', 'projects', 'Sub', FOLDER_ID] }), rec('/v/N.md'), rec('/v/Projects/Plan.md')]
+    const opts = { root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir' as const, records, folders: [team()], dirs: ['/v/Projects', '/v/Projects/Sub', '/v/Team'] }
+    expect(countLinkReferences(opts)).toBe(2)
+    expect(await updateLinksAfterRename(opts)).toEqual({ updated: 2, skipped: 0 })
+    // A bare link to a folder INSIDE the renamed one keeps resolving (LOCKED E1b); an id link names no place.
+    expect(files['/v/A.md'].content).toBe(`See [[Work]], [[Work|the work]] and [[Work#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`)
+    expect(files['/v/Team/.folder.md'].content).toContain('- [[Work]]')
+    expect(files['/v/Team/.folder.md'].content).toContain('- prose about [[Projects]]') // prose is not a link line
+    expect(files['/v/Team/.folder.md'].content).toContain('target: "[[Work]]"')
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/N.md')
+  })
+
+  it('a pathed link follows a MOVE — to the folder and to what is inside it — while a bare one that still reaches it is left byte-identical', async () => {
+    const files = { '/v/A.md': { content: '[[Team/Projects]], [[ Projects ]], [[Team/Projects/Sub]] and [[Team/Projects/Plan]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['Team/Projects', 'Projects', 'Team/Projects/Sub', 'Team/Projects/Plan'] }), rec('/v/Team/Projects/Plan.md')]
+    const dirs = ['/v/Archive', '/v/Team', '/v/Team/Projects', '/v/Team/Projects/Sub']
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Team/Projects', newPath: '/v/Archive/Projects', kind: 'dir', records, dirs })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Archive/Projects]], [[ Projects ]], [[Archive/Projects/Sub]] and [[Archive/Projects/Plan]]\n')
+  })
+
+  it('a bare link ESCALATES to the path when the move hands the name to a shallower folder', async () => {
+    const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
+    installBridge(files)
+    const dirs = ['/v/Deep', '/v/Deep/Er', '/v/Other', '/v/Other/Projects', '/v/Projects']
+    const records = [rec('/v/A.md', { links: ['Projects'] })]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Projects', newPath: '/v/Deep/Er/Projects', kind: 'dir', records, dirs })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Deep/Er/Projects]]\n')
+  })
+
+  it.each([
+    ['a notecard NAMED Projects', rec('/v/Notes/Projects.md')],
+    ['a notecard ALIASED Projects', rec('/v/Roadmap.md', { aliases: ['Projects'] })],
+  ])('%s holds the link: the folder\u2019s rename counts and touches nothing', async (_name, holder) => {
+    const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
+    const bridge = installBridge(files)
+    const opts = { root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] }), holder], dirs: ['/v/Projects'] }
+    expect(countLinkReferences(opts)).toBe(0)
+    expect(await updateLinksAfterRename(opts)).toEqual({ updated: 0, skipped: 0 })
+    expect(bridge.readFile).not.toHaveBeenCalled()
+  })
+
+  it('a folder\u2019s own settings file is read and rewritten at its NEW path, like any note inside it', async () => {
+    const files = { '/v/Work/.folder.md': { content: TEAM, mtime: 1 } }
+    installBridge(files)
+    const own = rec('/v/Projects/.folder.md', { properties: { folder_page_settings: settingsOf(TEAM) } })
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir', records: [], folders: [own], dirs: ['/v/Projects'] })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/Work/.folder.md'].content).toContain('- [[Work]]')
   })
 })
 
@@ -483,6 +539,58 @@ describe('view-only rename references stay outside the semantic index (YAZ-1310)
 })
 
 // ---------- the E1c dry-run count (GRO-2242) ----------
+
+describe('id links are never rewritten (YAZ-2293 D5)', () => {
+  const root = '/v'
+  const B = rec('/v/B.md', { id: 'k3m9x2pq7abc' })
+
+  it('a note linking only by id is not a reference: the count is 0 and nothing is read or written', async () => {
+    const records = [rec('/v/A.md', { links: ['k3m9x2pq7abc'] }), B]
+    const { readFile, writeFile } = installBridge({ '/v/A.md': { content: 'see [[k3m9x2pq7abc]]\n', mtime: 1 } })
+    expect(countLinkReferences({ root, oldPath: '/v/B.md', records })).toBe(0)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 0, skipped: 0 })
+    expect(readFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('in a note linking by name AND by id, the name is rewritten and the id is left byte-identical', async () => {
+    const records = [rec('/v/A.md', { links: ['B', 'k3m9x2pq7abc'] }), B]
+    const files = { '/v/A.md': { content: '[[B]] and [[k3m9x2pq7abc]] and [[k3m9x2pq7abc|label]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[C]] and [[k3m9x2pq7abc]] and [[k3m9x2pq7abc|label]]\n')
+  })
+
+  it('one rename, two linkers: the note linking by NAME is the whole count and the only file touched — the note linking by ID (body and property) and the renamed note itself are never read or written (scenario C1, D15)', async () => {
+    const records = [rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/ByName.md', { links: ['B'] }), B]
+    const byId = '---\nparent: "[[k3m9x2pq7abc]]"\n---\nsee [[k3m9x2pq7abc]] and [[k3m9x2pq7abc#Scope]]\n'
+    const renamed = '---\nid: k3m9x2pq7abc\n---\nbody\n'
+    const files = {
+      '/v/ById.md': { content: byId, mtime: 1 },
+      '/v/ByName.md': { content: 'see [[B]]\n', mtime: 1 },
+      '/v/C.md': { content: renamed, mtime: 1 },
+    }
+    const { readFile, writeFile } = installBridge(files)
+    expect(countLinkReferences({ root, oldPath: '/v/B.md', records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(readFile.mock.calls.map(([path]) => path)).toEqual(['/v/ByName.md'])
+    expect(writeFile.mock.calls.map(([req]) => req.path)).toEqual(['/v/ByName.md'])
+    expect(files['/v/ByName.md'].content).toBe('see [[C]]\n')
+    expect(files['/v/ById.md']).toEqual({ content: byId, mtime: 1 })
+    expect(files['/v/C.md']).toEqual({ content: renamed, mtime: 1 })
+  })
+
+  it('a FOLDER move leaves the id links to the notes inside it alone too, while a pathed name link is rewritten', async () => {
+    const records = [rec('/v/A.md', { links: ['k3m9x2pq7abc', 'Dir/B'] }), rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/Dir/B.md', { folder: 'Dir', id: 'k3m9x2pq7abc' })]
+    const files = { '/v/A.md': { content: '[[k3m9x2pq7abc]] and [[Dir/B]]\n', mtime: 1 }, '/v/ById.md': { content: '[[k3m9x2pq7abc]]\n', mtime: 1 } }
+    const { writeFile } = installBridge(files)
+    expect(countLinkReferences({ root, oldPath: '/v/Dir', kind: 'dir', records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Dir', newPath: '/v/Moved', kind: 'dir', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[k3m9x2pq7abc]] and [[Moved/B]]\n')
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(files['/v/ById.md']).toEqual({ content: '[[k3m9x2pq7abc]]\n', mtime: 1 })
+  })
+})
 
 describe('countLinkReferences (the banner N — the exact referencing-set filter, no reads, no writes)', () => {
   const root = '/v'

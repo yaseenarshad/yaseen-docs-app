@@ -1,18 +1,22 @@
 /**
  * Relation definitions now save to the current folder page with the shared Save/Cancel editor.
  * Legacy vault declarations remain read fallbacks. Link values still write through the normal
- * cell editors; their pickers constrain suggestions to the declared target folder page.
+ * cell editors; their pickers constrain suggestions to the notecards in the declared target FOLDER
+ * (YAZ-2290 D10), which the Files tree names — `tree` is stubbed on the bridge beside `properties`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, PropertiesResponse, PropertyDecl } from '@shared/types'
+import type { IndexRecord, PropertiesResponse, PropertyDecl, TreeNode } from '@shared/types'
+import { fetchTree } from '../../lib/treeFeed'
 import { defaultLabel } from '../engine'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { propertiesStub, resetPropertiesStub } from '../propertiesStub'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
 
@@ -43,30 +47,33 @@ const REVENUE = '/vault/KPIs/Revenue.md'
 const CHURN = '/vault/KPIs/Churn.md'
 
 /**
- * Two folder pages (`People`, `Funnels`) with members naming them, plus the two KPI rows the
+ * Two folders (`People`, `Funnels`) and the notecards that live in them, plus the two KPI rows the
  * table shows. `page_type` rides along as ORDINARY frontmatter — it is what `KPI_BASE` filters
- * on, and nothing in the client reads it as an identity any more (YAZ-836).
+ * on, and nothing in the client reads it as an identity any more (YAZ-836). `Topics` is a LEGACY
+ * folder page — flagged, and named in a member's `folder_pages` — which is an ordinary note now.
  */
 const RECORDS: IndexRecord[] = [
   rec(REVENUE, { page_type: 'kpi', owner: '[[Alice]]' }),
   rec(CHURN, { page_type: 'kpi' }),
-  rec('/vault/People.md', { folder_page: true }),
-  rec('/vault/Funnels.md', { folder_page: true }),
-  rec('/vault/Funnels/Signup.md', { folder_pages: ['[[Funnels]]'] }),
-  rec('/vault/Funnels/Retention.md', { folder_pages: ['[[Funnels]]'] }),
-  rec('/vault/People/Alice.md', { folder_pages: ['[[People]]'] }),
-  rec('/vault/People/Bob.md', { folder_pages: ['[[People]]'] }),
+  rec('/vault/Topics.md', { folder_page: true }),
+  rec('/vault/Funnels/Retention.md', { folder_pages: ['[[Topics]]'] }),
+  rec('/vault/Funnels/Signup.md', {}),
+  rec('/vault/People/Alice.md', {}),
+  rec('/vault/People/Bob.md', {}),
 ]
 
+/** The folders, as the Files tree lists them. */
+const DIRS: TreeNode[] = ['Empty', 'Funnels', 'KPIs', 'People'].map((name) => ({ type: 'dir', name, path: `/vault/${name}`, children: [] }))
+
 /** Every basename, in record order — what an unnarrowed picker offers. */
-const ALL_NAMES = ['Revenue', 'Churn', 'People', 'Funnels', 'Signup', 'Retention', 'Alice', 'Bob']
+const ALL_NAMES = ['Revenue', 'Churn', 'Topics', 'Retention', 'Signup', 'Alice', 'Bob']
 
 /**
- * YAZ-846: `folderPage` is required. The whole `RECORDS` list is the VAULT here — the picker's
+ * YAZ-846: `folder` is required. The whole `RECORDS` list is the VAULT here — the picker's
  * narrowing resolves its `target` over it, exactly as 🔒 D2 says, even when a filter has cut the
  * rows down to the two KPIs.
  */
-const FOLDER_PAGE = testFolderPage({ vaultRecords: RECORDS })
+const FOLDER_PAGE = testFolderHost({ vaultRecords: RECORDS })
 
 const ORDER = '    order:\n      - file.name\n      - note.owner\n      - note.funnels\n'
 const KPI_BASE = `filters: page_type == "kpi"\nviews:\n  - type: table\n    name: T\n${ORDER}`
@@ -104,9 +111,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile={null}
+          folderPath="/vault/kpis"
           records={RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={FOLDER_PAGE}
           properties={EMPTY_DECLS}
           onOpenFile={onOpenFile}
           {...props}
@@ -118,11 +125,13 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
   return { el }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   write.mockReset()
   write.mockResolvedValue({ mtime: 1 })
   // `useProperties` reads the real bridge; the stub plays it in tests.
-  Object.defineProperty(window, 'yaseenDocs', { value: { properties: propertiesStub }, configurable: true, writable: true })
+  const tree = async () => ({ root: '/vault', tree: DIRS, generatedAt: 1 })
+  Object.defineProperty(window, 'yaseenDocs', { value: { properties: propertiesStub, tree }, configurable: true, writable: true })
+  await fetchTree('/vault') // the window's tree feed, which a mounted folder view always finds answered
 })
 
 afterEach(() => {
@@ -173,13 +182,13 @@ function press(el: Element, key: string): void {
   draw()
 }
 
-/** A host that keeps its declarations AHEAD (YAZ-1549), like `FolderPageContents`: each write lands in `settings.columns` at once. */
+/** A host that keeps its declarations AHEAD (YAZ-1549), like `FolderView`: each write lands in `settings.columns` at once. */
 function aheadHost() {
   const settings = { columns: {} as Record<string, PropertyDecl>, views: [], problems: [] }
   const setColumn = vi.fn(async (key: string, next: PropertyDecl) => {
     settings.columns[key] = next
   })
-  return { setColumn, folderPage: testFolderPage({ vaultRecords: RECORDS, settings, setColumn }) }
+  return { setColumn, folder: testFolderHost({ vaultRecords: RECORDS, settings, setColumn }) }
 }
 
 /** Pick a `<select>` value the way a user does: the native setter, then a bubbling change event React sees. */
@@ -212,8 +221,8 @@ function openRelation(el: ParentNode, key: string) {
 
 describe('column menu relation flow', () => {
   it('a filtered view saves a local relation definition without changing the vault registry', async () => {
-    const { setColumn, folderPage } = aheadHost()
-    const { el } = mount(KPI_BASE, { folderPage })
+    const { setColumn, folder } = aheadHost()
+    const { el } = mount(KPI_BASE, { folder })
     openRelation(el, 'owner') // "Make relation": the declaration is born as a link, immediately
     expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link' }, undefined)
     await settle()
@@ -224,8 +233,8 @@ describe('column menu relation flow', () => {
   })
 
   it('Multi-link: the Type select, then the target — each an immediate folder-local write against what just landed', async () => {
-    const { setColumn, folderPage } = aheadHost()
-    const { el } = mount(UNFILTERED_BASE, { folderPage })
+    const { setColumn, folder } = aheadHost()
+    const { el } = mount(UNFILTERED_BASE, { folder })
     openRelation(el, 'funnels')
     expect(setColumn).toHaveBeenNthCalledWith(1, 'funnels', { kind: 'link' }, undefined)
     await settle()
@@ -239,7 +248,7 @@ describe('column menu relation flow', () => {
   })
 
   it('the target is free text with no obsolete type-name suggestion list', async () => {
-    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: aheadHost().folderPage })
+    const { el } = mount(KPI_BASE, { properties: DECLS, folder: aheadHost().folder })
     openRelation(el, 'owner')
     await settle()
     expect(el.querySelector('datalist')).toBeNull()
@@ -247,8 +256,8 @@ describe('column menu relation flow', () => {
   })
 
   it('an existing legacy declaration is the seed: nothing is written before the click, and Make relation writes exactly it', async () => {
-    const { setColumn, folderPage } = aheadHost()
-    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage })
+    const { setColumn, folder } = aheadHost()
+    const { el } = mount(KPI_BASE, { properties: DECLS, folder })
     click(byLabel(el, 'Properties'))
     click(byLabel(el, 'Open Funnels'))
     expect(setColumn).not.toHaveBeenCalled()
@@ -257,13 +266,6 @@ describe('column menu relation flow', () => {
     await settle()
     expect(byLabel<HTMLSelectElement>(el, 'Edit property Funnels').value).toBe('multi-link')
     expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
-  })
-
-  it('without a known root there is no relation editor to offer', () => {
-    const { el } = mount(KPI_BASE, { root: null })
-    click(byLabel(el, 'Properties'))
-    click(byLabel(el, 'Open Owner'))
-    expect(el.querySelector('[aria-label="Relation for Owner"]')).toBeNull()
   })
 
   it('file.* rows never offer a relation; note.* rows do', () => {
@@ -278,21 +280,23 @@ describe('column menu relation flow', () => {
 })
 
 describe('constrained picker', () => {
-  it('the link editor offers the target folder page\'s pages and commits the wiki-link through writeProperty', () => {
+  it('the link editor offers the notecards in the target FOLDER and commits the wiki-link through writeProperty', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
     open(el, 1, 1) // Churn's empty owner cell — typed link by the declaration alone
     const input = byLabel<HTMLInputElement>(el, 'Edit owner')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Alice', 'Bob']) // the pages inside [[People]]
+    expect(options(el)).toEqual(['Alice', 'Bob']) // the notecards in the folder People
     click(q(el, '[role="option"]'))
     press(byLabel(el, 'Edit owner'), 'Enter')
     expect(write).toHaveBeenCalledExactlyOnceWith(CHURN, 'owner', '[[Alice]]')
   })
 
-  it('a target naming no folder page falls back to ALL basenames — never an error', () => {
-    // This is also the mid-wave degradation: targets still spelled as old TYPE names name no
-    // folder page, so their columns widen to every page until 5.1 re-points them.
-    const ghost: PropertiesResponse = { ...DECLS, properties: { owner: { kind: 'link', target: 'person' } } }
+  it.each([
+    ['naming no folder', 'person'],
+    ['naming an EMPTY folder', '[[Empty]]'],
+    ['naming a note still flagged `folder_page: true` — the legacy membership is gone (YAZ-2290)', '[[Topics]]'],
+  ])('a target %s falls back to ALL basenames — never an error', (_name, target) => {
+    const ghost: PropertiesResponse = { ...DECLS, properties: { owner: { kind: 'link', target } } }
     const { el } = mount(KPI_BASE, { properties: ghost })
     open(el, 1, 1)
     setValue(byLabel<HTMLInputElement>(el, 'Edit owner'), '[[')
@@ -306,7 +310,7 @@ describe('multi-link cells', () => {
     open(el, 0, 2) // Revenue's empty funnels cell — multi-link vault-wide
     const input = byLabel<HTMLInputElement>(el, 'Edit funnels')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Retention', 'Signup']) // the pages inside [[Funnels]], path-sorted
+    expect(options(el)).toEqual(['Retention', 'Signup']) // the notecards in the folder Funnels, in the index's path order
     setValue(byLabel<HTMLInputElement>(el, 'Edit funnels'), '[[Sig')
     press(byLabel(el, 'Edit funnels'), 'Enter') // completes to [[Signup]]
     expect(byLabel<HTMLInputElement>(el, 'Edit funnels').value).toBe('[[Signup]]')

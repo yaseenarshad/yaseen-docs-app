@@ -2,9 +2,9 @@ import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewSchema'
 import type { EngineError } from '../engine'
-import type { FolderPageMode } from '../ViewsPane'
+import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
-import { ChevronsIcon, EyeIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
+import { ChevronsIcon, EyeIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
@@ -34,19 +34,16 @@ export interface ToolbarProps {
   collapsed: readonly string[]
   onSetAllGroups: (next: readonly string[]) => void
   tabs: ViewTabsProps
-  /** Relation columns (5E, GRO-2217): the vault root and the vault-wide declarations, for the Properties menu. */
-  root?: string | null
+  /** The vault-wide declarations, for the menus' typing ladder. */
   properties?: PropertiesResponse | null
   /**
-   * The folder page's OUTLINE is showing (YAZ-820, amended YAZ-903): the outline is a free-form
+   * The folder's OUTLINE is showing (YAZ-820, amended YAZ-903): the outline is a free-form
    * DOCUMENT, not rows — it has no columns for the Properties menu to configure and no row values
    * for search to filter, so neither is offered.
    */
   documentView?: boolean
-  /** Opens the outline's "Sync from folder" sheet (YAZ-953); the sheet and the append are the outline's own. */
-  onSync: () => void
-  /** The folder page bundle, for the Properties menu: its declarations, and the door they are written back through (YAZ-895). */
-  folderPage: FolderPageMode
+  /** The folder's bundle, for the Properties menu: its declarations, and the door they are written back through (YAZ-895). */
+  folder: FolderHost
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -54,7 +51,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** Shared view actions: Sort, Properties, Filter, group collapse, Preview, New, Search, count. */
-export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, onSync, folderPage }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   // Each grouping LEVEL is one rule in the badge (YAZ-745) — and an empty `groupBy: []` is none.
@@ -88,20 +85,14 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
     <div className="view-toolbar">
       <ViewTabs {...tabs} />
       <div className="view-toolbar__actions">
-        {/* The folder's notes are appended to the DOCUMENT (YAZ-953): no other skin has anywhere to put them. */}
-        {documentView && (
-          <button type="button" className="view-toolbar__btn" aria-label="Sync from folder" title="Sync from folder" onClick={onSync}>
-            <SyncIcon />
-          </button>
-        )}
-        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu folderPage={folderPage.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
+        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu settings={folder.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {!documentView &&
           button(
             'properties',
             'Properties',
             <PropertiesIcon />,
             0,
-            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} folderPage={folderPage} />,
+            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} properties={properties} folder={folder} />,
           )}
         {/* An outline is a DOCUMENT, not rows (YAZ-903): there is nothing there to filter. */}
         {!documentView &&
@@ -110,7 +101,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             'Filter',
             <FilterIcon />,
             countRules(view.filters),
-            <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={filterErrors} properties={properties} folderPage={folderPage} onUpdate={onUpdate} />,
+            <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={filterErrors} properties={properties} folder={folder} onUpdate={onUpdate} />,
             filterErrors.length > 0 ? 'view-toolbar__btn--error' : undefined,
           )}
         {allGroupKeys.length > 0 && (

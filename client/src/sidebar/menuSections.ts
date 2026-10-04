@@ -1,5 +1,6 @@
 import type { FileClipState } from '@shared/types'
 import type { MenuTargets } from './Sidebar'
+import { copyNoteId } from '../lib/copyNoteId'
 
 /**
  * The sidebar context menu's items AS DATA (🔒 D8, YAZ-1674). Every gating rule that used to be a
@@ -19,8 +20,8 @@ import type { MenuTargets } from './Sidebar'
  *
  * D7 amended (YAZ-1674): the OS verbs collapse into ONE "Open in ▸" parent whose flyout is itself
  * groups of leaves — the same renderer, the same separator rule, one level deep — and that parent
- * is its OWN group between the this-row group and Delete. The Open group keeps only the plural
- * open and Focus and is EMPTY on a single file row, so the clipboard group then leads.
+ * is its OWN group between the this-row group and Delete. The Open group keeps only a folder's
+ * Open, the plural open and Focus and is EMPTY on a single file row, so the clipboard group then leads.
  */
 interface MenuItemBase {
   id: string
@@ -60,23 +61,22 @@ export type MenuSection = MenuItem[]
 export type MenuSectionTargets = MenuTargets & { clip: FileClipState }
 
 export interface MenuHandlers {
+  /** "Open" on a folder row (YAZ-2290 D3): the folder becomes the current tab, as a double click makes it. */
+  onOpen: (path: string) => void
   /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
   onOpenInNewTabs: (paths: string[]) => void
   onOpenNewWindow: (path: string) => void
   onOpenVsCode: (path: string) => void
   onOpenDefault: (path: string) => void
   onReveal: (path: string) => void
-  /** "Focus on folder" / "Focus on N topics" (YAZ-1605) — the caller spells the label: it knows the lens and the count. */
+  /** "Focus on folder" / "Focus on N folders" (YAZ-1605) — the caller spells the label: it knows the count. */
   focusLabel: string
   onFocus: (paths: string[]) => void
   /** Cut / Copy (YAZ-1674): the paths go to main's ONE app-wide clipboard (🔒 D1); the caller reports. */
   onCut: (paths: string[]) => void
   onCopy: (paths: string[]) => void
-  /**
-   * Paste into the menu's target dir — null WITHHOLDS the item (🔒 D5, YAZ-1674): Paste is offered
-   * exactly where "New folder" is, so a Topics PAGE row (a meaning row) never gets a disk verb.
-   */
-  onPaste: (() => void) | null
+  /** Paste into the menu's target dir (🔒 D5, YAZ-1674): offered exactly where "New folder" is. */
+  onPaste: () => void
   /**
    * The panel's passive notice (YAZ-1337): a clipboard write that never lands says so, the way
    * `PageContextMenu` reports it — a copy that quietly did nothing is the worst kind of no-op.
@@ -86,20 +86,19 @@ export interface MenuHandlers {
   onNewNote: () => void
   /** "New dated note" (YAZ-2242): a note born with today's `MM_DD- ` seed. Never hidden, same as `onNewNote`. */
   onNewDatedNote: () => void
-  /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
-  onNewFolderPage: () => void
-  /**
-   * Create a DISK folder — null hides the item (YAZ-948). Topics pages and blank space still
-   * browse by meaning and omit it; YAZ-1080's explicit Uncategorized disk-folder targets reuse
-   * the Files directory menu and therefore supply it.
-   */
-  onNewFolder: (() => void) | null
-  /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Same gate as `onNewFolder`. */
-  onNewDatedFolder: (() => void) | null
-  /** The direction rides along with the target so the caller never re-derives it after the close (🔒 D2, YAZ-817). */
-  onToggleFolderPage: (path: string, isOn: boolean) => void
-  /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read, same idiom. */
+  onNewFolder: () => void
+  /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Never hidden, same as `onNewFolder`. */
+  onNewDatedFolder: () => void
+  /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read. */
   onToggleFavorite: (paths: string[], isOn: boolean) => void
+  /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
+  onReviewFolder: (dir: string) => void
+  /** "Turn review off" / "Turn review on" (YAZ-2322): the notecard and the state to SET. */
+  onSetReview: (path: string, on: boolean) => void
+  /** "Add notecard shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
+  onAddShortcut: (dir: string) => void
+  /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the notecard, and the folder it stops appearing in. */
+  onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
   onDelete: (path: string) => void
 }
@@ -113,13 +112,23 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 /** "1 item" / "3 items" — the one spelling the menu's labels and the Sidebar's notices share. */
 export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 
-// ---- (1) Open / View: the plural open and Focus — read-only, and often empty on one row ----
+// ---- (1) Open / View: a folder's Open, the plural open and Focus — read-only, and often empty on one row ----
 
 /**
- * "Open N in new tabs" — the FILES of a 2+ selection (🔒 D5, YAZ-1337): a folder cannot be a tab
- * (YAZ-1578 🔒 D3), so a folders-only selection has no item. It LEADS the menu: when a right-click
- * lands inside a selection, what the user is pointing at is the SELECTION. It leaves the
- * selection standing — acting on it is not the same as ending it.
+ * "Open" — a FOLDER row (YAZ-2290 D3): the folder itself is a tab, and a click on its row only
+ * folds, so this is the one-click door to it. A file row opens on its click and has no such item.
+ */
+const open: Leaf = (t, h) => {
+  const path = t.openPath
+  if (path === null) return null
+  return { id: 'open', label: 'Open', onSelect: () => h.onOpen(path) }
+}
+
+/**
+ * "Open N in new tabs" — every row of a 2+ selection (🔒 D5, YAZ-1337), files and folders alike:
+ * the folder itself is a tab (YAZ-2290 D3). It LEADS the menu: when a right-click lands inside a
+ * selection, what the user is pointing at is the SELECTION. It leaves the selection standing —
+ * acting on it is not the same as ending it.
  */
 const openInNewTabs: Leaf = (t, h) => {
   const paths = t.openTabPaths
@@ -128,7 +137,7 @@ const openInNewTabs: Leaf = (t, h) => {
 }
 
 /**
- * Focus on folder / topic (YAZ-1605): a read-only VIEW verb, so it closes the Open group — it
+ * Focus on folder (YAZ-1605): a read-only VIEW verb, so it closes the Open group — it
  * changes what the tree shows, never what is on disk. An EMPTY list hides it too (the caller's
  * "nothing here can be focused" answer).
  */
@@ -154,16 +163,16 @@ const cut = clipVerb('cut', 'Cut', '⌘X', (h) => h.onCut)
 const copy = clipVerb('copy', 'Copy', '⌘C', (h) => h.onCopy)
 
 /**
- * Paste (🔒 D5, YAZ-1674): offered wherever "New folder" is (`onPaste` null withholds it), and
+ * Paste (🔒 D5, YAZ-1674): offered wherever "New folder" is, and
  * DISABLED — not hidden — while the clipboard is empty, so the verb is discoverable before the
  * first Cut or Copy. With something clipped the label counts it: "Paste 1 item", "Paste 3 items".
+ * Withheld on a SHORTCUT row with Cut and Copy (YAZ-2290 E5): the row is not a file in this folder.
  */
 const paste: Leaf = (t, h) => {
-  const onPaste = h.onPaste
-  if (onPaste === null) return null
+  if (t.removeShortcut !== null) return null
   const clip = t.clip
   if (clip === null) return { id: 'paste', label: 'Paste', hint: '⌘V', disabled: true, onSelect: () => undefined }
-  return { id: 'paste', label: `Paste ${countItems(clip.count)}`, hint: '⌘V', onSelect: onPaste }
+  return { id: 'paste', label: `Paste ${countItems(clip.count)}`, hint: '⌘V', onSelect: h.onPaste }
 }
 
 /**
@@ -209,7 +218,22 @@ const copyPath: Leaf = (t, h) => {
   }
 }
 
-/** Right under Copy path (YAZ-1617 🔒 D2): a Markdown PAGE row only — the same path, plus the handshake an agent needs. */
+/**
+ * "Copy ID" (YAZ-2293) — directly under Copy path: the note's permanent `id`, exactly, which is
+ * what a `[[id]]` link names. A NOTE row that has one only — a note with no id, a PDF, a folder
+ * and blank space have nothing to copy, and a 2+ selection offers none. No hint: there is no chord.
+ */
+const copyId: Leaf = (t, h) => {
+  const id = t.noteId
+  if (id === null) return null
+  return {
+    id: 'copy-id',
+    label: 'Copy ID',
+    onSelect: () => copyNoteId(id, h.onNotice),
+  }
+}
+
+/** Right under Copy path (YAZ-1617 🔒 D2): a PAGE row only — a Markdown file, or a folder (YAZ-2290 D9) — the page's path, plus the handshake an agent needs. */
 const copyForAgent: Leaf = (t, h) => {
   const path = t.agentPath
   if (path === null) return null
@@ -217,40 +241,38 @@ const copyForAgent: Leaf = (t, h) => {
 }
 
 // ---- (3) Create and (3b) More create: births BESIDE the right-clicked row — both target a DIRECTORY, never the row.
-// The everyday pair leads; the dated twins and the folder page get their own section under it, lined
+// The everyday pair leads; the dated twins get their own section under it, lined
 // up with the pair, so they never crowd it (YAZ-2249 🔒 E1/E2). ----
 
 const newNote: Leaf = (_t, h) => ({ id: 'new-note', label: 'New note', onSelect: h.onNewNote })
 
-const newFolder: Leaf = (_t, h) => (h.onNewFolder === null ? null : { id: 'new-folder', label: 'New folder', onSelect: h.onNewFolder })
+const newFolder: Leaf = (_t, h) => ({ id: 'new-folder', label: 'New folder', onSelect: h.onNewFolder })
 
 const newDatedNote: Leaf = (_t, h) => ({ id: 'new-dated-note', label: 'New dated note', onSelect: h.onNewDatedNote })
 
-const newDatedFolder: Leaf = (_t, h) =>
-  h.onNewDatedFolder === null ? null : { id: 'new-dated-folder', label: 'New dated folder', onSelect: h.onNewDatedFolder }
-
-/**
- * Last in the More create section (YAZ-2249 🔒 E2), above the toggle (🔒 D4, YAZ-817): a folder
- * page is a NOTE born with one flag (🔒 D1). It creates beside the right-clicked row like the
- * rest of the create items — the act-on-this-row toggle below is the other half of the gesture,
- * and the two must not drift together.
- */
-const newFolderPage: Leaf = (_t, h) => ({ id: 'new-folder-page', label: 'New folder page', onSelect: h.onNewFolderPage })
+const newDatedFolder: Leaf = (_t, h) => ({ id: 'new-dated-folder', label: 'New dated folder', onSelect: h.onNewDatedFolder })
 
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
 
 /**
- * The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions, MARKDOWN FILE
- * rows only — folders and blank space can no more carry the flag than the root can. Above
- * Rename, because the destructive pair keeps the bottom. The reverse label is the one that opens
- * a confirm sheet (🔒 D5); the forward one writes immediately (🔒 D1), which is why neither reads
- * like a warning. The direction rides along with the target (GRO-2296).
+ * "Review this folder" (YAZ-2322): a FOLDER row only, either lens — a review session over the
+ * notecards due inside it, subfolders included. It leads the group: Rename keeps the bottom.
  */
-const toggleFolderPage: Leaf = (t, h) => {
-  const path = t.folderPagePath
+const reviewFolder: Leaf = (t, h) => {
+  const dir = t.reviewDir
+  if (dir === null) return null
+  return { id: 'review-folder', label: 'Review this folder', onSelect: () => h.onReviewFolder(dir) }
+}
+
+/**
+ * The review toggle (YAZ-2322 🔒 D6): ONE state-aware item, both directions, on a NOTECARD row only —
+ * the caller's null target hides it for a folder, blank space and any file the index does not hold.
+ */
+const toggleReview: Leaf = (t, h) => {
+  const path = t.reviewPath
   if (path === null) return null
-  const isOn = t.folderPageIsOn
-  return { id: 'toggle-folder-page', label: isOn ? 'Turn back into normal page' : 'Turn into folder page', onSelect: () => h.onToggleFolderPage(path, isOn) }
+  const isOn = t.reviewIsOn
+  return { id: 'toggle-review', label: isOn ? 'Turn review off' : 'Turn review on', onSelect: () => h.onSetReview(path, !isOn) }
 }
 
 /** Rename — a concrete row only, NEVER blank space: main refuses to rename a window's own vault root (E1b, GRO-2241). */
@@ -273,6 +295,17 @@ const toggleFavorite: Leaf = (t, h) => {
   const isOn = t.favoriteIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
   return { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, onSelect: () => h.onToggleFavorite(paths, isOn) }
+}
+
+/**
+ * "Add notecard shortcut" (YAZ-2290 D2) — a FOLDER row outside a plural selection: pick one
+ * notecard that lives elsewhere, and it also appears in this folder. Under the favorite toggle: the
+ * other item that shows a note in a second place.
+ */
+const addShortcut: Leaf = (t, h) => {
+  const dir = t.shortcutDir
+  if (dir === null) return null
+  return { id: 'add-shortcut', label: 'Add notecard shortcut', onSelect: () => h.onAddShortcut(dir) }
 }
 
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
@@ -341,13 +374,24 @@ const del: Leaf = (t, h) => {
   return { id: 'delete', label: 'Delete', danger: true, onSelect: () => h.onDelete(path) }
 }
 
-const OPEN_GROUP: readonly Item[] = [openInNewTabs, focus]
-const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath, copyForAgent]
+/**
+ * "Remove shortcut" (YAZ-2290 E5) stands where Delete would on a SHORTCUT row: the notecard stops
+ * appearing in this folder and stays where it lives — the only place it can be deleted from. Not
+ * `danger`, and no confirm: nothing is destroyed.
+ */
+const removeShortcut: Leaf = (t, h) => {
+  const row = t.removeShortcut
+  if (row === null) return null
+  return { id: 'remove-shortcut', label: 'Remove shortcut', onSelect: () => h.onRemoveShortcut(row.path, row.dir) }
+}
+
+const OPEN_GROUP: readonly Item[] = [open, openInNewTabs, focus]
+const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath, copyId, copyForAgent]
 const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
-const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder, newFolderPage]
-const ROW_GROUP: readonly Item[] = [toggleFolderPage, rename]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, openIn]
-const DELETE_GROUP: readonly Item[] = [del]
+const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
+const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openIn]
+const DELETE_GROUP: readonly Item[] = [del, removeShortcut]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>

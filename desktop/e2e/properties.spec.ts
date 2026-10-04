@@ -11,19 +11,21 @@
  *   2 the saved text is what the panel shows after reopening the page, and broken YAML is refused
  *     in place: an inline error, and not one byte written
  *   3 a TYPED ROW edits one value SURGICALLY (the comment and every other key stay put), and a
- *     type declared from that row lands on the FOLDER PAGE the note belongs to — its
- *     `folder_page_settings.columns`, the typing ladder's top rung (🔒 Q8) — where the same key's
- *     column in that folder page's table picks it up (the wider arc is YAZ-885's)
+ *     type declared from that row lands on the FOLDER the note lives in — the
+ *     `folder_page_settings.columns` of its `.folder.md`, the typing ladder's top rung (🔒 Q8) —
+ *     where the same key's column in that folder's table picks it up (the wider arc is YAZ-885's)
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `props-` step screenshots).
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, buildFixtureVault, contents, copyVault, editorOf, fileRow, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, contents, copyVault, editorOf, fileRow, launchApp, layer, openFolder, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -61,23 +63,27 @@ const yaml = (w: Page) => panel(w).locator('.frontmatter-panel__text')
 const panelBtn = (w: Page, label: string) => panel(w).locator('.frontmatter-panel__btn', { hasText: label })
 
 const NOTE = 'Deep Work.md'
-/** …as a folder page's name cell shows it: the TITLE, never `.md` (YAZ-1513). */
+/** …as a folder's name cell shows it: the TITLE, never `.md` (YAZ-1513). */
 const NOTE_TITLE = 'Deep Work'
-const FOLDER_PAGE = 'Topics.md'
-const read = () => readFile(path.join(vault, NOTE), 'utf8')
-/** The folder page's `folder_page_settings.columns` as written — parsed, never string-matched. */
+/** The folder step 3 moves the note into, and the settings file a declaration made there lands in. */
+const FOLDER = 'Topics'
+/** Where the note is: the vault root for steps 1 and 2, inside `Topics` for step 3. */
+let notePath: string
+const read = () => readFile(notePath, 'utf8')
+/** The folder's `folder_page_settings.columns` as written — parsed, never string-matched. */
 const declaredColumns = async (): Promise<Record<string, { kind?: string }>> => {
-  const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FOLDER_PAGE), 'utf8'))
+  const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FOLDER, '.folder.md'), 'utf8'))
   const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { columns?: Record<string, { kind?: string }> }
   return settings.columns ?? {}
 }
 
 /**
- * A folder page whose table shows the member's `status` column and declares NOTHING about it —
- * so the only thing that can type that column is the declaration the panel writes onto it.
+ * A folder's settings whose table shows its notecards' `status` column and declare NOTHING about
+ * it — so the only thing that can type that column is the declaration the panel writes there.
+ * (A settings file that says anything at all states its own columns: the default Status column
+ * is only what a folder with NO saved settings falls back to.)
  */
 const TOPICS = `---
-folder_page: true
 folder_page_settings:
   views:
     - type: table
@@ -86,16 +92,14 @@ folder_page_settings:
         - file.name
         - note.status
 ---
-# Topics
-
-props-topics-body
 `
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'props-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  await writeFile(path.join(vault, NOTE), MESSY)
+  notePath = path.join(vault, NOTE)
+  await writeFile(notePath, MESSY)
 })
 
 test.afterAll(async () => {
@@ -104,7 +108,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the raw block edits in place, and the save is byte-for-byte the user\'s own text', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('props-note-body')
 
@@ -176,31 +180,35 @@ test('step 2 — the panel shows the saved text after a reopen, and broken YAML 
   await quitApp(app)
 })
 
-test('step 3 — a typed row writes ONE key, and a type declared there types the same column in a folder page', async () => {
-  // Deep Work joins a folder page whose table shows its `status` column and declares nothing
-  // about it: the only thing that can type that column is the registry the panel writes.
-  const joined = (await read()).replace('status: done\n', 'status: done\nfolder_pages: "[[Topics]]"\n')
-  await writeFile(path.join(vault, NOTE), joined)
-  await writeFile(path.join(vault, FOLDER_PAGE), TOPICS)
+test('step 3 — a typed row writes ONE key, and a type declared there types the same column in the note’s folder', async () => {
+  // Deep Work moves INTO a folder whose table shows its `status` column and whose settings
+  // declare nothing about it: the only thing that can type that column is the declaration the
+  // panel writes. Living there is the whole of belonging — not a byte of the note changes.
+  await mkdir(path.join(vault, FOLDER))
+  await writeFile(path.join(vault, FOLDER, '.folder.md'), TOPICS)
+  await rename(notePath, path.join(vault, FOLDER, NOTE))
+  notePath = path.join(vault, FOLDER, NOTE)
+  const moved = await read()
 
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('props-note-body')
 
+  // The note's own three keys, and nothing more: this folder declares no column the note lacks.
   await panelHeader(win).click()
-  await expect(panelRows(win)).toHaveCount(4)
+  await expect(panelRows(win)).toHaveCount(3)
 
   // ONE key, surgically: the comment, the quoted spacing, the list and the body all stay put.
   await panelRow(win, 'status').locator('[data-edit]').click()
   const field = panelRow(win, 'status').locator('[aria-label="Edit status"]')
   await field.fill('shipped')
   await field.press('Enter')
-  await expect.poll(read, { timeout: 10_000 }).toBe(joined.replace('status: done', 'status: shipped'))
+  await expect.poll(read, { timeout: 10_000 }).toBe(moved.replace('status: done', 'status: shipped'))
   await shoot(win, 'props-06-typed-row')
 
-  // Declared HERE, on the folder page the note belongs to: the row's Configure menu (Deep Work has
-  // ONE folder page, so `Topics` is the context with nobody choosing it) opens the definition
-  // editor for `status`, and Save writes `folder_page_settings.columns.status` onto `Topics.md` —
+  // Declared HERE, on the folder the note lives in: the row's Configure menu (a note lives in ONE
+  // folder, so `Topics` is the context with nobody choosing it) opens the definition editor for
+  // `status`, and Save writes `folder_page_settings.columns.status` into `Topics/.folder.md` —
   // the typing ladder's top rung (🔒 Q8), the very thing its Table reads.
   await panelRow(win, 'status').locator('[aria-label="Configure status"]').click()
   const propMenu = win.locator('.view-popover[aria-label="Property status"]')
@@ -213,11 +221,11 @@ test('step 3 — a typed row writes ONE key, and a type declared there types the
   await expect(propMenu).toHaveCount(0)
   await expect.poll(async () => (await declaredColumns()).status?.kind, { timeout: 10_000 }).toBe('list')
   // The note itself was never touched by a DECLARATION.
-  expect(await read()).toBe(joined.replace('status: done', 'status: shipped'))
+  expect(await read()).toBe(moved.replace('status: done', 'status: shipped'))
 
-  // …and the folder page's own table reads that very declaration for the same key: the cell now
+  // …and the folder's own table reads that very declaration for the same key: the cell now
   // opens the LIST editor it never had before.
-  await fileRow(win, 'Topics').click()
+  await openFolder(win, path.join(vault, FOLDER))
   await expect(contents(win).locator('.view-table__link')).toHaveText([NOTE_TITLE])
   // The CELL owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`).
   // `data-cell` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none — so `status` is still column 1.

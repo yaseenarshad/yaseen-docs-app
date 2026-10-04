@@ -11,18 +11,27 @@
  * GitHub sync (YAZ-1081 3B) is the ONE setting not in `SettingsState`: the switch lives per-vault
  * in `.yaseendocs/github.json`, read and written through the engine, so its section is
  * `available` only when App hands the engine's status + setter over.
+ *
+ * Review (YAZ-2322 🔒 D7) is per-vault the same way: `.yaseendocs/review.json`, read and saved
+ * through App's one `useReviewSettings`, so its section is `available` only with a vault open and
+ * its rows call `review.save` — never `onChange`.
  */
 import type { ReactNode } from 'react'
+import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, SettingsState } from '@shared/types'
+import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
   onChange: (next: SettingsState) => void
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
+  /** This vault's review settings (YAZ-2322); absent with no vault open. */
+  review?: ReviewSettingsState
 }
 
 export interface SettingDef {
@@ -36,7 +45,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'sync' | 'hotkeys'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -72,6 +81,17 @@ const hotkeyTable = (entries: readonly HotkeyEntry[]) => (
     ))}
   </dl>
 )
+
+/** What the section title does not say: the feature's other name, and where its notecards turn up. */
+const REVIEW_KEYWORDS = ['upkeep', 'inbox']
+
+/** One number row of the Review section; the row's id is the `ReviewSettings` field it edits. */
+const reviewNumber = (field: ReviewNumberField, label: string, unit: string): SettingDef => ({
+  id: field,
+  label,
+  keywords: REVIEW_KEYWORDS,
+  render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} />,
+})
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
@@ -210,6 +230,29 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
             render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'review',
+    title: 'Review',
+    available: (ctx) => ctx.review !== undefined,
+    note: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
+    groups: [
+      {
+        items: [
+          reviewNumber('baseDays', 'Check a notecard after', 'days'),
+          reviewNumber('growth', 'Each time it is still relevant, wait', '× longer'),
+          // The hint is the three numbers' result in words, so it sits under the last of them.
+          { ...reviewNumber('maxDays', 'Longest wait', 'days'), hint: ({ review }) => (review === undefined ? '' : scheduleInWords(review.settings)) },
+          {
+            id: 'reviewByDefault',
+            label: 'New notecards are in review',
+            keywords: REVIEW_KEYWORDS,
+            render: ({ review }) =>
+              review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.reviewByDefault} onChange={(reviewByDefault) => review.save({ ...review.settings, reviewByDefault })} ariaLabel="New notecards are in review" />,
           },
         ],
       },

@@ -138,9 +138,9 @@ button {
 
 /* The note's scroller. Stacked blocks live inside it: `.page-header` (block ZERO since YAZ-918 —
    ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel sharing one row), `.editor-mount`, where
-   CrepeHost appends its `.editor-instance`, and — for markdown files — the folder page's
-   contents block and the "Linked mentions" section (Links D, GRO-2193; styled by
-   links/backlinks.css), all of which therefore scroll WITH the note. */
+   CrepeHost appends its `.editor-instance`, and — for markdown files — the comment stream and the
+   "Linked mentions" section (Links D, GRO-2193; styled by links/backlinks.css), all of which
+   therefore scroll WITH the note. A folder's tab reuses it for the folder view (YAZ-2290). */
 .editor-host {
   flex: 1;
   min-height: 0;
@@ -220,13 +220,6 @@ button {
   font-size: 12px;
 }
 
-/* Folder pages (YAZ-919): the outline IS the document — the body editor above it is gone.
-   Title, then contents, nothing else. (The divider this rule used to cancel is gone at the
-   source since YAZ-1680: no block under a note draws a hairline.) */
-.editor-host:has(.folder-page-contents) .editor-mount {
-  display: none;
-}
-
 .page-title__text {
   margin: 0;
   padding: 2px 4px;
@@ -241,14 +234,9 @@ button {
   cursor: text;
 }
 
-/* A wash on hover says "this is editable" without a control of its own; Home has no such offer. */
+/* A wash on hover says "this is editable" without a control of its own. */
 .page-title__text:hover {
   background: var(--bg-hover);
-}
-
-.page-title__text--home:hover {
-  background: none;
-  cursor: default;
 }
 
 .page-title__input {
@@ -445,20 +433,6 @@ button {
   /* No lead-in of its own (YAZ-918): the properties panel left this slot for the title row, so
      the gap under the title is ProseMirror's 16px + the first paragraph's 4px — nothing more. */
   padding: 0 48px 120px;
-}
-
-/* A folder page's body is a short preamble between Properties and its contents block — not a
-   document with an end (YAZ-909, tightened by YAZ-917): the column's 32px lead-in and 120px tail
-   collapse to ZERO, and so does ProseMirror's 16px halo below — the paragraph's own 4px rhythm is
-   all the air a preamble needs. Ordinary notes keep everything. */
-.editor-host:has(.folder-page-contents) .editor-mount > .editor-instance {
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.editor-host:has(.folder-page-contents) .editor-mount .milkdown .ProseMirror {
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 .editor-instance .milkdown {
@@ -1191,7 +1165,28 @@ button {
   color: var(--fg-muted);
 }
 
-/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Topics ⇄ Files.
+/* The Inbox row (YAZ-2322): the search bar's row as a button, the count pushed right by
+   `.tree__count`; it wears the open file's fill while a review is open. */
+.sidebar__inbox {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px 6px 14px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar__inbox:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar__inbox--active,
+.sidebar__inbox--active:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Files ⇄ Favorites.
    The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
    accent on the active one, pulled down over the row's own hairline so the two read as one line. */
 .sidebar__lenses {
@@ -1406,7 +1401,7 @@ button {
 /* ---------- scrolling strips (YAZ-1471) ---------- */
 
 /*
- * A horizontal strip that scrolls with NO scrollbar — the window's tab strip and a folder page's
+ * A horizontal strip that scrolls with NO scrollbar — the window's tab strip and a folder's
  * view tabs, one utility between them: a scroll-driven fade marks whichever edge still hides
  * items. The keyframes run on the strip's OWN inline scroll position, so a strip that does not
  * overflow has no timeline and no mask applies. `scrollbar-width: none` is the whole hiding rule
@@ -1621,50 +1616,16 @@ button {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-/* Sync from folder (YAZ-952): the confirm sheet's shell, plus the two lists only it has —
-   the folder picker and the preview of what it would add. Both scroll; the sheet does not. */
-
-.sync__folders {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  max-height: 168px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+/* The shortcut picker (YAZ-2290 D2): the sheet's shell around the search bar and its result list,
+   flush to the edges like the bar it borrows; a long list scrolls inside the sheet. */
+.shortcut-picker {
+  padding: 0 0 6px;
+  overflow: hidden;
 }
 
-.sync__folder {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 4px 8px;
-  font-size: 13px;
-  text-align: left;
-}
-
-.sync__folder:hover {
-  background: var(--bg-hover-row);
-}
-
-.sync__folder[aria-pressed='true'] {
-  background: var(--accent-soft);
-}
-
-.sync__count {
-  flex: none;
-  color: var(--fg-muted);
-}
-
-.sync__missing {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  max-height: 120px;
-  overflow-y: auto;
-  font-size: 12px;
-  color: var(--fg-muted);
+.shortcut-picker .search-results {
+  max-height: 280px;
+  overflow: auto;
 }
 
 .create-inline {
@@ -1828,27 +1789,7 @@ button {
   top: 1px;
 }
 
-/* ---------- Topics lens (YAZ-848): the same tree rows, plus what a MEANING tree needs ---------- */
-
-/* A leaf keeps the chevron's slot so its label lines up with its siblings' — the mockup's rule. */
-.tree__chevron--none::before {
-  display: none;
-}
-
-/* The folder-page marker: the app's own folder-page glyph, at the size the mockup uses. */
-.tree__glyph {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  margin-right: 2px;
-  color: var(--fg-muted);
-}
-
-.tree__row--active .tree__glyph {
-  color: inherit;
-}
-
-/* Direct-member count, pushed to the right edge of the row. */
+/* The folder's notecard count, pushed to the right edge of the row. */
 .tree__count {
   margin-left: auto;
   padding-left: 6px;
@@ -1856,43 +1797,13 @@ button {
   color: var(--fg-muted);
 }
 
-/* The Uncategorized row (🔒 D7): present, quiet, not one of the topics. */
-.tree__row--muted {
+/* The shortcut mark (YAZ-2290 D2): this notecard shows here and lives elsewhere. Quiet, after the
+   name, never squeezed by a long one — one rule for the tree row and for a title in a folder's views. */
+.shortcut-mark {
+  flex: none;
+  margin-left: 3px;
+  vertical-align: -1px;
   color: var(--fg-muted);
-  font-style: italic;
-}
-
-.tree--uncategorized {
-  margin-top: 10px;
-}
-
-/* The offer card (6C-, YAZ-849): shown ONLY in an un-adopted folder with no Home. Quiet, small,
-   and above the tree it does not replace — an invitation, never an empty state. */
-.topics-offer {
-  margin: 8px 8px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--accent-soft);
-}
-
-.topics-offer__title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.topics-offer__body {
-  margin: 4px 0 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--fg-muted);
-}
-
-/* One button, sized for a sidebar rather than a dialog. */
-.topics-offer__go {
-  padding: 4px 10px;
-  font-size: 12px;
 }
 
 .btn {

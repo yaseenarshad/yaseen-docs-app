@@ -74,9 +74,9 @@ export type TabsAction =
   | { type: 'forward' } // …and forward again, as far as the stack was walked back
   | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: replace wholesale, normalizing
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): the open tab follows the file in place
-  | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): every tab under the prefix follows in place
+  | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): the folder's own tab and every tab under it follow in place
   | { type: 'delete'; path: string } // in-app delete (GRO-2272): the tab goes, the active one closing to its heir
-  | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): every tab under the folder goes
+  | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): the folder's own tab and every tab under it go
 
 const EMPTY: TabsState = { tabs: [], active: null, mounted: [], history: {} }
 
@@ -106,6 +106,9 @@ function rekey(h: Record<string, TabHistory>, f: (p: string) => string | null): 
   }
   return out
 }
+
+/** `path` is the folder `dir` itself — a folder is a tab too (YAZ-2290 D3) — or sits below it. */
+const atOrUnder = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}/`)
 
 /** Pure; returns the SAME state object for a no-op so callers can skip the identity mirror. */
 export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
@@ -234,27 +237,26 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       return tabsReducer(base, { type: 'close', path: a.path })
     }
     case 'delete-dir': {
-      // Every tab under the folder closes, left to right, each through the SAME ladder. The
-      // fold means the heir is whatever survives after all of them are gone; the old prefix
-      // itself can never be a tab (tabs are files, not dirs).
-      const prefix = `${a.path}/`
-      const under = (t: string) => t.startsWith(prefix)
+      // The folder's own tab (YAZ-2290 D3) and every tab under it close, left to right, each
+      // through the SAME ladder. The fold means the heir is whatever survives after all of them
+      // are gone.
+      const under = (t: string) => atOrUnder(t, a.path)
       const base = Object.values(s.history).some((r) => r.entries.some(under)) ? { ...s, history: rekey(s.history, (p) => (under(p) ? null : p)) } : s
       const doomed = s.tabs.filter(under)
       if (doomed.length === 0) return base
       return doomed.reduce((acc, path) => tabsReducer(acc, { type: 'close', path }), base)
     }
     case 'rename-dir': {
-      // A FOLDER moved (E1b): every tab under `oldPath/` follows by prefix, each in its own
-      // slot; activation and the mounted set remap with them. A remapped tab landing on a
-      // path that was ALREADY open is dropped — the de-dup invariant wins (same rule as
-      // `rename`); the old prefix itself can never be a tab (tabs are files, not dirs).
-      const prefix = `${a.oldPath}/`
+      // A FOLDER moved (E1b): its own tab (YAZ-2290 D3) and every tab under `oldPath/` follow
+      // by prefix, each in its own slot; activation and the mounted set remap with them. A
+      // remapped tab landing on a path that was ALREADY open is dropped — the de-dup invariant
+      // wins (same rule as `rename`).
       if (a.oldPath === a.newPath) return s
-      const remap = (t: string) => (t.startsWith(prefix) ? a.newPath + t.slice(a.oldPath.length) : t)
-      if (!s.tabs.some((t) => t.startsWith(prefix))) {
-        // Nothing open under the folder, but a stack further back may still point inside it.
-        return Object.values(s.history).some((r) => r.entries.some((e) => e.startsWith(prefix))) ? { ...s, history: rekey(s.history, remap) } : s
+      const moved = (t: string) => atOrUnder(t, a.oldPath)
+      const remap = (t: string) => (moved(t) ? a.newPath + t.slice(a.oldPath.length) : t)
+      if (!s.tabs.some(moved)) {
+        // Nothing open at or under the folder, but a stack further back may still point inside it.
+        return Object.values(s.history).some((r) => r.entries.some(moved)) ? { ...s, history: rekey(s.history, remap) } : s
       }
       const existing = new Set(s.tabs)
       const tabs: string[] = []
@@ -446,11 +448,11 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
     }
     case 'rename-dir': {
       if (a.oldPath === a.newPath) return s
-      const prefix = `${a.oldPath}/`
-      const map = (path: string) => path.startsWith(prefix) ? a.newPath + path.slice(a.oldPath.length) : path
+      const moved = (path: string) => atOrUnder(path, a.oldPath)
+      const map = (path: string) => moved(path) ? a.newPath + path.slice(a.oldPath.length) : path
       const main = tabsReducer(s, a)
-      const rightReferenced = s.rightPanel.items.some((path) => path.startsWith(prefix))
-        || Object.values(s.rightHistory).some((history) => history.entries.some((path) => path.startsWith(prefix)))
+      const rightReferenced = s.rightPanel.items.some(moved)
+        || Object.values(s.rightHistory).some((history) => history.entries.some(moved))
       return main === s && !rightReferenced ? s : repairRightPaths(s, main, map)
     }
     case 'delete': {
@@ -461,11 +463,11 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
       return main === s && !rightReferenced ? s : repairRightPaths(s, main, map)
     }
     case 'delete-dir': {
-      const prefix = `${a.path}/`
-      const map = (path: string) => path.startsWith(prefix) ? null : path
+      const gone = (path: string) => atOrUnder(path, a.path)
+      const map = (path: string) => gone(path) ? null : path
       const main = tabsReducer(s, a)
-      const rightReferenced = s.rightPanel.items.some((path) => path.startsWith(prefix))
-        || Object.values(s.rightHistory).some((history) => history.entries.some((path) => path.startsWith(prefix)))
+      const rightReferenced = s.rightPanel.items.some(gone)
+        || Object.values(s.rightHistory).some((history) => history.entries.some(gone))
       return main === s && !rightReferenced ? s : repairRightPaths(s, main, map)
     }
     case 'open-current':
@@ -511,7 +513,7 @@ export function bootWorkspace(root: string | null): WorkspaceState {
 }
 
 export interface UseWorkspace extends WorkspaceState {
-  /** Rule 11: sidebar single-click, inline-create, Bases row links, base embeds, deep links. */
+  /** Rule 11: sidebar single-click, inline-create, a folder view's row links, deep links. */
   openCurrent: (path: string) => void
   /** Rule 5: append at the end + activate. No shipped gesture yet — I3's ⌘-click ruling landed on openBackground. */
   openNew: (path: string) => void

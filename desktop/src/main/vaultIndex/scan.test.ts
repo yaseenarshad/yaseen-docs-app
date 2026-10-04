@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
+import { textFingerprint } from '@shared/reviews'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
 import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
@@ -177,6 +178,16 @@ describe('scanFile', () => {
     expect(r.embeds).toEqual(['chart.png'])
   })
 
+  it('`id` is the frontmatter id when it has the note-id shape, else absent (YAZ-2293 D1)', async () => {
+    const withId = path.join(root, 'With id.md')
+    const foreign = path.join(root, 'Foreign id.md')
+    await writeFile(withId, '---\nid: k3m9x2pq7abc\n---\nbody\n')
+    await writeFile(foreign, '---\nid: 42\n---\nbody\n')
+    expect((await scanFile(root, withId)).id).toBe('k3m9x2pq7abc')
+    expect('id' in (await scanFile(root, foreign))).toBe(false)
+    expect('id' in (await scanFile(root, path.join(root, 'VSL-v1.md')))).toBe(false)
+  })
+
   it('string `tags:` is split', async () => {
     const r = await scanFile(root, note('2. Creator Economy', 'The Gold In Your Archive.md'))
     expect(r.tags).toEqual(['creator'])
@@ -202,12 +213,33 @@ describe('scanFile', () => {
     expect(r.links).toEqual([])
   })
 
+  it('frontmatter `reviews` land on the record in time order and are never a property (YAZ-2322)', async () => {
+    const reviewed = path.join(root, 'reviewed.md')
+    await writeFile(reviewed, '---\nstatus: draft\nreview: false\nreviews:\n  - {at: 2026-11-03T09:00:00Z, rating: keep, text: 9f3a1c2e}\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\nBody.\n')
+    const r = await scanFile(root, reviewed)
+    expect(r.properties).toEqual({ status: 'draft', review: false })
+    expect(r.reviews?.map((e) => e.at)).toEqual(['2026-10-04T14:02:11Z', '2026-11-03T09:00:00Z'])
+  })
+
+  it('`text` is the fingerprint of the body alone: a frontmatter change leaves it, a body change moves it (YAZ-2322)', async () => {
+    const file = path.join(root, 'fingerprinted.md')
+    await writeFile(file, '---\nstatus: draft\n---\nBody.\n')
+    const first = await scanFile(root, file)
+    expect(first.text).toBe(textFingerprint('Body.\n'))
+    expect(first.reviews).toBeUndefined()
+    await writeFile(file, '---\nstatus: done\ncomments:\n  - {id: a, at: 2026-09-11T18:22:31Z, body: hi}\n---\nBody.\n')
+    expect((await scanFile(root, file)).text).toBe(first.text)
+    await writeFile(file, '---\nstatus: done\n---\nBody, edited.\n')
+    expect((await scanFile(root, file)).text).not.toBe(first.text)
+  })
+
   it('files over MAX_FILE_BYTES → metadata only', async () => {
     const big = path.join(root, 'big.md')
     await writeFile(big, '---\na: 1\n---\n#tag [[x]]\n' + 'x'.repeat(MAX_FILE_BYTES))
     const r = await scanFile(root, big)
     expect(r.size).toBeGreaterThan(MAX_FILE_BYTES)
     expect(r).toMatchObject({ name: 'big.md', properties: {}, aliases: [], tags: [], links: [], embeds: [] })
+    expect(r.text).toBeUndefined() // not read, so never a review card
   })
 
   it('missing file → BridgeFailure NOT_FOUND', async () => {

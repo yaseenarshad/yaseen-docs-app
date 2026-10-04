@@ -15,6 +15,13 @@
  * with the seed, and the app is never told to turn sync on. That is the SECOND-MACHINE path (D4):
  * the switch travels with the folder, and opening the vault is what adopts it (D3, adoption pulls).
  *
+ * THE SEED'S NOTES CARRY THEIR `id` ALREADY. A folder holding `.yaseendocs/` is one the app manages,
+ * and there it gives a permanent frontmatter `id` to every note that arrives without one (YAZ-2293,
+ * `vaultIndex/idSweep.ts`) — at launch, into the working tree. Left to that, step 1 would open on
+ * four files the app had just written and the chip would say Pending before anybody typed. So the
+ * fixture's notes are given their ids before the seed commit, the way notes made in the app are
+ * born with them, and the tree the app opens is the one the remote holds.
+ *
  * The chip's click is the instant path on purpose — the edit debounce is 30 s (`manager.ts`
  * DEFAULTS), which is longer than this suite's per-test timeout and is exactly why the chip is a
  * button (🔒 D5). What the debounce guarantees is unit-tested; what a CLICK does is this.
@@ -23,12 +30,16 @@
  * `github-sync-` step screenshots (folderSync.spec.ts already owns the bare `sync-` prefix).
  * Serial — one launch, and each step continues the last one's state.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { setFrontmatterProperty } from '../../shared/frontmatter'
+import { mintNoteId, NOTE_ID_KEY } from '../../shared/noteId'
 import { VAULT_CONFIG_DIR } from '../../shared/types'
 import { appWindow, buildFixtureVault, copyVault, LAST_BULLET, launchApp, quitApp, SEED_FILE, seededState, shoot } from './helpers'
 
@@ -98,6 +109,16 @@ const chipTrail = (w: Page): Promise<string[]> => w.evaluate(() => (window as un
 
 // ---------- fixture ----------
 
+/** Every markdown note under `dir` gets a fresh `id` in its frontmatter — see the module doc. */
+async function giveIds(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) await giveIds(full)
+    else if (entry.name.endsWith('.md')) await writeFile(full, setFrontmatterProperty(await readFile(full, 'utf8'), NOTE_ID_KEY, mintNoteId()))
+  }
+}
+
 let userData: string
 let vaultSrc: string
 let vault: string
@@ -115,11 +136,8 @@ test.beforeAll(async () => {
   bare = await mkdtemp(path.join(tmpdir(), 'sync-remote-'))
   notePath = path.join(vault, SEED_FILE)
   configPath = path.join(vault, VAULT_CONFIG_DIR, 'github.json')
-
-  // A Home the vault already has. An ADOPTED vault (one with `.yaseendocs/`) whose `[[Home]]`
-  // resolves to nothing gets one written on open (YAZ-849) — a byte the sync engine would rightly
-  // report as `pending` a beat after adoption, and a race this spec has no business running.
-  await writeFile(path.join(vault, 'Home.md'), '# Home\n\nsynthetic-home-body\n')
+  // Before the seed commit, so the ids are part of what the remote holds (module doc).
+  await giveIds(vault)
 
   // THE SWITCH, ON, BEFORE THE APP EVER RUNS — and committed with everything else, so the working
   // tree is clean at launch and `synced` means "agrees with the remote", not "just committed".

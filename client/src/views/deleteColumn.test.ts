@@ -1,6 +1,6 @@
 /**
  * Delete column (YAZ-1513): the declaration goes, every view reference goes, the label goes — ONE
- * settings write through the host's door — and the key is stripped from every direct member that
+ * settings write through the host's door — and the key is stripped from every direct resident that
  * carries it, byte-preserving everything else. Members without the key are never written; a note
  * whose frontmatter will not parse is reported, never rewritten; built-in keys are refused before
  * anything is touched. `transformFile` is stubbed over an in-memory disk so the strips are real
@@ -22,7 +22,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { transformFile } from './writeProperty'
-import { deleteColumn, filterMentions, membersCarrying, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
+import { deleteColumn, filterMentions, residentsCarrying, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
 
 const rec = (path: string, properties: Record<string, unknown>): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -59,18 +59,33 @@ beforeEach(() => {
 const host = (over: Partial<DeleteColumnHost> = {}): DeleteColumnHost => ({
   columns: { status: { kind: 'select', options: ['1-Backlog', '2-Todo'] }, owner: { kind: 'link' } },
   def: { views: [TABLE, BOARD, OUTLINE], properties: { status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } } } as ViewSet,
-  members: [rec(A, { title: 'A', status: '2-Todo', owner: '[[Sam]]' }), rec(B, { title: 'B', owner: '[[Kim]]' }), rec(C, { status: '1-Backlog' })],
+  residents: [rec(A, { title: 'A', status: '2-Todo', owner: '[[Sam]]' }), rec(B, { title: 'B', owner: '[[Kim]]' }), rec(C, { status: '1-Backlog' })],
   writeSettings: vi.fn(async () => {}),
   ...over,
 })
 
 describe('undeletableReason: built-in keys are hidden, never deleted', () => {
   it('refuses file.*, formula.* and the reserved keys with the one tooltip; a plain note key may go', () => {
-    for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.folder_page', 'folder_pages', 'note.folder_pages', 'note.folder_page_settings', 'comments']) {
+    for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.also_in', 'comments']) {
       expect(undeletableReason(key)).toBe('Built-in column — hide it instead')
     }
+    // The retired folder-page keys are ordinary frontmatter (YAZ-2290 D6) — a notecard's `folder_page_settings` with them.
+    for (const key of ['note.folder_page', 'folder_pages', 'note.folder_pages', 'folder_page_settings']) expect(undeletableReason(key)).toBeNull()
     expect(undeletableReason('note.status')).toBeNull()
     expect(undeletableReason('status')).toBeNull()
+  })
+
+  it('refuses `id` (YAZ-2293): the note id is the app\'s value — a column that can be hidden, never deleted', () => {
+    expect(undeletableReason('id')).toBe('Built-in column — hide it instead')
+    expect(undeletableReason('note.id')).toBe('Built-in column — hide it instead')
+  })
+
+  it('refuses `also_in` (YAZ-2290 D2): a notecard\'s shortcuts are the app\'s list — stripping it would take every shortcut down', async () => {
+    expect(undeletableReason('also_in')).toBe('Built-in column — hide it instead')
+    expect(undeletableReason('note.also_in')).toBe('Built-in column — hide it instead')
+    const h = host()
+    await expect(deleteColumn('also_in', h)).rejects.toThrow(/built-in column/)
+    expect(h.writeSettings).not.toHaveBeenCalled()
   })
 })
 
@@ -132,14 +147,14 @@ describe('the pure pruners', () => {
     expect(pruneColumnLabel(undefined, 'status')).toBeUndefined()
   })
 
-  it('membersCarrying counts the direct members whose card holds the exact key', () => {
-    expect(membersCarrying(host().members, 'note.status').map((m) => m.basename)).toEqual(['a', 'c'])
-    expect(membersCarrying(host().members, 'owner').map((m) => m.basename)).toEqual(['a', 'b'])
+  it('residentsCarrying counts the direct residents whose card holds the exact key', () => {
+    expect(residentsCarrying(host().residents, 'note.status').map((m) => m.basename)).toEqual(['a', 'c'])
+    expect(residentsCarrying(host().residents, 'owner').map((m) => m.basename)).toEqual(['a', 'b'])
   })
 })
 
 describe('deleteColumn', () => {
-  it('writes the settings ONCE — declaration gone, references pruned, label gone — then strips the key from the carrying members, byte-preserving every other key', async () => {
+  it('writes the settings ONCE — declaration gone, references pruned, label gone — then strips the key from the carrying residents, byte-preserving every other key', async () => {
     const h = host()
     await deleteColumn('note.status', h)
     expect(h.writeSettings).toHaveBeenCalledExactlyOnceWith(
@@ -149,12 +164,12 @@ describe('deleteColumn', () => {
     )
     expect(disk.get(A)).toBe('---\n# a comment\ntitle: A\nowner: "[[Sam]]"\n---\n\nbody a\n')
     expect(disk.get(C)).toBe('---\n---\nbody c\n')
-    // a member without the key is never even read
+    // a resident without the key is never even read
     expect(disk.get(B)).toBe('---\ntitle: B\nowner: "[[Kim]]"\n---\n')
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual([A, C])
   })
 
-  it('settings land BEFORE the first strip — the source of truth first, so the presence invariant cannot re-add the key meanwhile', async () => {
+  it('settings land BEFORE the first strip — the source of truth first', async () => {
     const order: string[] = []
     const h = host({ writeSettings: vi.fn(async () => void order.push('settings')) })
     vi.mocked(transformFile).mockImplementationOnce(async (path, transform) => {
@@ -168,7 +183,7 @@ describe('deleteColumn', () => {
   })
 
   it('a note whose frontmatter will not parse is reported, not written; the others still commit (no rollback)', async () => {
-    const h = host({ members: [...host().members, rec(BROKEN, { status: 'x' })] })
+    const h = host({ residents: [...host().residents, rec(BROKEN, { status: 'x' })] })
     await expect(deleteColumn('status', h)).rejects.toThrow(/Could not remove "status" from 1 note: broken \(frontmatter is not valid YAML/)
     expect(disk.get(BROKEN)).toBe('---\nstatus: [unclosed\n---\n')
     expect(disk.get(A)).not.toContain('status:')
@@ -186,19 +201,21 @@ describe('deleteColumn', () => {
   it('refuses a built-in key before touching anything', async () => {
     const h = host()
     await expect(deleteColumn('file.name', h)).rejects.toThrow("Can't delete file.name: built-in column — hide it instead")
-    await expect(deleteColumn('folder_pages', h)).rejects.toThrow(/built-in column/)
+    await expect(deleteColumn('comments', h)).rejects.toThrow(/built-in column/)
+    // The note id (YAZ-2293): stripping it from every resident would orphan every link to them.
+    await expect(deleteColumn('id', h)).rejects.toThrow(/built-in column/)
     expect(h.writeSettings).not.toHaveBeenCalled()
     expect(transformFile).not.toHaveBeenCalled()
   })
 
-  it('a REFUSED settings write aborts: the error surfaces and not one member is touched (YAZ-1549)', async () => {
+  it('a REFUSED settings write aborts: the error surfaces and not one resident is touched (YAZ-1549)', async () => {
     const h = host({ writeSettings: vi.fn(async () => { throw new Error('disk full') }) })
     await expect(deleteColumn('status', h)).rejects.toThrow('disk full')
     expect(transformFile).not.toHaveBeenCalled()
     expect(disk.get(A)).toContain('status: 2-Todo')
   })
 
-  it('a key with no declaration and no references still strips the members and writes the settings unchanged in shape', async () => {
+  it('a key with no declaration and no references still strips the residents and writes the settings unchanged in shape', async () => {
     const h = host({ columns: {}, def: { views: [{ type: 'table', name: 'T' }] } })
     await deleteColumn('owner', h)
     expect(h.writeSettings).toHaveBeenCalledExactlyOnceWith({}, [{ type: 'table', name: 'T' }], undefined)

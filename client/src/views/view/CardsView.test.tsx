@@ -14,13 +14,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const FOLDER_PAGE = testFolderHost()
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -103,9 +103,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.md"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -189,6 +189,21 @@ describe('grid', () => {
     expect([...bare.querySelectorAll('.view-card__prop-value')][0].textContent).toBe('Empty')
     click(q(card, '.view-card__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+  })
+})
+
+describe('an id link (YAZ-2293 D8)', () => {
+  it('a card property and a group header both read as the title of the note the id names', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = TEST_RECORDS.map((r) =>
+      r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
+    )
+    const { el } = mount('views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n      - note.related\n    groupBy:\n      property: note.related\n', {
+      records,
+      folder: testFolderHost({ vaultRecords: records }),
+    })
+    expect(q(cardOf(el, 'VSL-v1'), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })
 

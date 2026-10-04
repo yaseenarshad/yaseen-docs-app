@@ -17,7 +17,8 @@ import { removeEntry } from '../fs/remove'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
-import { getColdStartDiff, getIndex } from '../vaultIndex'
+import { getColdStartDiff, getIndex, sweepIndexed } from '../vaultIndex'
+import { adoptVault } from '../vaultIndex/idSweep'
 import type { WindowLookup } from '../windows'
 import { broadcastAll, rootsOf } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
@@ -37,7 +38,15 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.readImage, readImage)
   handle(CONTRACT.writeFile, writeFile)
   handle(CONTRACT.createDir, createDir)
-  handle(CONTRACT.createFile, createFile)
+  // Creating a notecard in a window's folder is what makes that folder a vault (🔒 YAZ-2293):
+  // from then on the app may give an id to a note it did not create, starting with those there.
+  handleWithEvent(CONTRACT.createFile, async (e, req) => {
+    const created = await createFile(req)
+    const senderId = windows.idFor(e.sender)
+    const root = store.get().windows.find((w) => w.id === senderId)?.root
+    if (root != null && created.path.startsWith(`${root}${path.sep}`) && (await adoptVault(root))) sweepIndexed(root)
+    return created
+  })
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle

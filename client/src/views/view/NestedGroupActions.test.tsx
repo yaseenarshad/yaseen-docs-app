@@ -14,9 +14,11 @@ import type { IndexRecord } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import type { NewNoteSeed } from '../newNote'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 import { writeProperties, writeProperty } from '../writeProperty'
 
@@ -87,10 +89,10 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
-          root={null}
-          thisFile={null}
+          root="/vault"
+          folderPath="/vault/pillars.md"
           records={records}
-          folderPage={testFolderPage({ create })}
+          folder={testFolderHost({ create })}
           onOpenFile={vi.fn()}
           {...props}
         />,

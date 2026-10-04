@@ -3,8 +3,8 @@ import { ColumnSearch, matchesColumn } from './ColumnSearch'
 import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { PROPERTY_KINDS, type IndexRecord, type PropertiesResponse, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
-import type { ColumnDecl } from '../folderPageSettings'
-import type { FolderPageMode } from '../ViewsPane'
+import type { ColumnDecl } from '../folderSettings'
+import type { FolderHost } from '../ViewsPane'
 import { defaultLabel, propertyKeys, propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
 import { undeletableReason } from '../deleteColumn'
@@ -27,11 +27,10 @@ export interface PropertiesMenuProps {
   viewIndex: number
   records: readonly IndexRecord[]
   onUpdate: Mutate
-  /** Existing relation shortcut visibility and legacy declarations used only as read fallbacks. */
-  root?: string | null
+  /** Legacy vault declarations, used only as read fallbacks. */
   properties?: PropertiesResponse | null
-  /** The folder page's own declarations (the ladder's TOP rung) and `setColumns`, the door they go back through (YAZ-895). */
-  folderPage: FolderPageMode
+  /** The folder's own declarations (the ladder's TOP rung) and `setColumns`, the door they go back through (YAZ-895). */
+  folder: FolderHost
 }
 
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
@@ -65,13 +64,13 @@ type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
  *  skin that reads `cardStyle`); and the actions: Hide in this view (= unchecking) and Delete
  *  column… (`views/deleteColumn.ts`, confirm-first; built-in keys disabled with a tooltip).
  *
- *  Every declaration edit WRITES IMMEDIATELY through `folderPage.setColumn` — the exact write the
+ *  Every declaration edit WRITES IMMEDIATELY through `folder.setColumn` — the exact write the
  *  old editor's Save made, with the same optimistic-concurrency `base`: the host's AHEAD declaration
  *  (YAZ-1549), which the panel renders and hands straight back, so a second edit is checked against
  *  what just landed and a "changed since opened" rejection shows its text inline while the host
  *  reverts. There is no third level and no Save/Cancel; Esc or `‹` returns to the list.
  */
-export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
+export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, properties = null, folder }: PropertiesMenuProps) {
   const [query, setQuery] = useState('')
   /**
    * The DETAIL level (YAZ-1513), or null for the list. The declaration itself is NOT held here: the
@@ -83,8 +82,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
   const [deleting, setDeleting] = useState<string | null>(null)
   /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
-  const shown = propertyKeys(def, view, records, Object.keys(folderPage.settings.columns))
-  const keys = allPropertyKeys(def, view, records, folderPage.settings.columns)
+  const shown = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
+  const keys = allPropertyKeys(def, view, records, folder.settings.columns)
   const filtering = query.trim() !== ''
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
   const matchingKeys = new Set(matches.map(canonicalKey))
@@ -94,7 +93,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
   const openDetail = (key: string) => setDetail({ key, error: null, saving: false })
   /**
    * ONE declaration write (YAZ-897), immediately — the write the old editor's Save made, against
-   * the host's ahead declaration as `base` (C1, locked: member VALUES are never migrated; the
+   * the host's ahead declaration as `base` (C1, locked: notecard VALUES are never migrated; the
    * declaration alone moves). The host shows the next edit what just landed; a rejection only shows
    * its text here — the host has already reverted its copy.
    */
@@ -104,7 +103,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
     const name = bare(d.key)
     setDetail({ ...d, saving: true, error: null })
     try {
-      await folderPage.setColumn(name, next, folderPage.settings.columns[name])
+      await folder.setColumn(name, next, folder.settings.columns[name])
       setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, saving: false }))
     } catch (error) {
       setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, saving: false, error: error instanceof Error ? error.message : String(error) }))
@@ -156,14 +155,14 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
     })
 
   /** The kinds the list glyphs show, remembered per canonical key for as long as their inputs stand (YAZ-1549) — no row rescan per render. */
-  const kinds = useMemo(() => new Map<string, PropertyKind>(), [records, properties, folderPage.settings])
+  const kinds = useMemo(() => new Map<string, PropertyKind>(), [records, properties, folder.settings])
   /** The kind a list row's glyph shows: the declaration, else the inferred editor kind, else text. */
   const kindOf = (key: string): PropertyKind => {
     const c = canonicalKey(key)
     const known = kinds.get(c)
     if (known !== undefined) return known
-    const decl = folderPage.settings.columns[bare(key)]
-    const typing = decl === undefined ? columnTyping(key, records, properties, folderPage.settings) : null
+    const decl = folder.settings.columns[bare(key)]
+    const typing = decl === undefined ? columnTyping(key, records, properties, folder.settings) : null
     const kind = decl?.kind ?? typing?.assigned ?? typing?.dominant ?? 'text'
     kinds.set(c, kind)
     return kind
@@ -185,7 +184,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
   if (detail !== null) {
     const { key, error, saving } = detail
     const name = bare(key)
-    const decl = folderPage.settings.columns[name]
+    const decl = folder.settings.columns[name]
     const label = propertyLabel(def, key)
     const c = canonicalKey(key)
     const isNote = c.startsWith('note.')
@@ -265,14 +264,14 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
             </div>
           )}
           {/* The relation (YAZ-895): a declared link kind's target inline; any other note key can BECOME one from the legacy seed. */}
-          {root !== null && isNote && (
+          {isNote && (
             <div className="column-detail__row">
               <span>Relation</span>
               {linkKind && decl !== undefined ? (
                 <TextField
                   className="view-input"
                   aria-label="Link target"
-                  placeholder="Any page, or [[Folder page]]"
+                  placeholder="Any page, or [[Folder]]"
                   value={decl.target ?? ''}
                   onCommit={(target) => {
                     const next: ColumnDecl = { ...decl }
@@ -340,7 +339,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
               const gone = deleting
               setDeleting(null)
               setDetail(null)
-              void folderPage.deleteColumn(gone)
+              void folder.deleteColumn(gone)
             }}
           />
         )}
@@ -441,8 +440,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       <AddColumn
         taken={keys}
         onSave={(name, column) =>
-          folderPage.setColumns(
-            { ...folderPage.settings.columns, [name]: column },
+          folder.setColumns(
+            { ...folder.settings.columns, [name]: column },
             // The new column shown TOO, in that same one write (🔒 D3): `shown` is what `writeOrder`
             // writes — the view's own `order`, or the derived keys when it has none.
             def.views.map((v, i) => (i === viewIndex ? withOrder(v, [...shown, `note.${name}`]) : v)),
@@ -571,8 +570,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           </div>
         </>
       )}
-      {/* The folder-page-level setting (YAZ-1104) — the saved START, in the def since YAZ-1471: ONE door. */}
-      <p className="view-menu__label">Page</p>
+      {/* The folder-level setting (YAZ-1104) — the saved START, in the def since YAZ-1471: ONE door. */}
+      <p className="view-menu__label">Folder</p>
       <label className="view-settings-row">
         <span>Default view</span>
         <select

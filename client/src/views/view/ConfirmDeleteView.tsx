@@ -1,7 +1,7 @@
 import type { ViewDef } from '../viewSchema'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 
-/** PURE copy (the `ConfirmRemoveMember` idiom, tested apart): what goes, then what stays. */
+/** PURE copy (tested apart): what goes, then what stays. */
 export function deleteViewMessage(view: ViewDef): string {
   const goes = view.type === 'outline' ? 'Its outline document goes with it' : 'Its columns, sort, filters and grouping go with it'
   return `Delete the view '${view.name}'? ${goes} — the pages themselves stay put.`

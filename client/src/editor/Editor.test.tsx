@@ -11,27 +11,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { createRoot, type Root } from 'react-dom/client'
-import type { FileResponse, IndexRecord, WatchEvent } from '@shared/types'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { FileResponse, IndexRecord, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
-import * as folderMigration from '../views/migrateFolderBody'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
  * through a counting wrapper, so every other test sees it render exactly as before.
  */
-const renders = vi.hoisted(() => ({ frontmatter: 0, folderContents: 0, comments: 0, backlinks: 0 }))
+const renders = vi.hoisted(() => ({ frontmatter: 0, comments: 0, backlinks: 0, reviews: 0 }))
 vi.mock('./FrontmatterPanel', async (importOriginal) => {
   const real = await importOriginal<typeof import('./FrontmatterPanel')>()
   return { ...real, FrontmatterPanel: (props: Parameters<typeof real.FrontmatterPanel>[0]) => (renders.frontmatter++, real.FrontmatterPanel(props)) }
-})
-vi.mock('../views/FolderPageContents', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../views/FolderPageContents')>()
-  return { ...real, FolderPageContents: (props: Parameters<typeof real.FolderPageContents>[0]) => (renders.folderContents++, real.FolderPageContents(props)) }
 })
 vi.mock('../comments/CommentsSection', async (importOriginal) => {
   const real = await importOriginal<typeof import('../comments/CommentsSection')>()
@@ -41,10 +37,14 @@ vi.mock('../links/BacklinksSection', async (importOriginal) => {
   const real = await importOriginal<typeof import('../links/BacklinksSection')>()
   return { ...real, BacklinksSection: (props: Parameters<typeof real.BacklinksSection>[0]) => (renders.backlinks++, real.BacklinksSection(props)) }
 })
+vi.mock('../review/ReviewsSection', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../review/ReviewsSection')>()
+  return { ...real, ReviewsSection: (props: Parameters<typeof real.ReviewsSection>[0]) => (renders.reviews++, real.ReviewsSection(props)) }
+})
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
-  return { ...actual, api: { ...actual.api, readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() }, index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } } }
+  return { ...actual, api: { ...actual.api, tree: vi.fn(), readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() }, index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } } }
 })
 
 vi.mock('./createCrepe', () => {
@@ -77,17 +77,9 @@ vi.mock('./external/applyExternalMarkdown', () => ({
   }),
 }))
 
-/**
- * The folder page's outline editor (YAZ-903) is a SECOND Crepe instance, and the factory above is
- * faked here — so it is stubbed as the document it was seeded with. The real one is pinned in
- * `views/view/OutlineEditor.test.tsx`.
- */
-vi.mock('../views/view/OutlineEditor', () => ({
-  OutlineEditor: ({ markdown }: { markdown: string }) => <pre className="outline-doc">{markdown}</pre>,
-}))
-
 import { api } from '../api'
 import { storage } from '../lib/storage'
+import { fetchTree } from '../lib/treeFeed'
 import { createCrepe, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 
@@ -97,6 +89,7 @@ interface FakeCrepe {
 }
 
 const readFile = vi.mocked(api.readFile)
+const tree = vi.mocked(api.tree)
 const readPdf = vi.mocked(api.readPdf)
 const readImage = vi.mocked(api.readImage)
 const writeFile = vi.mocked(api.writeFile)
@@ -130,14 +123,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
   await settle()
   await settle()
   return container
@@ -193,6 +186,8 @@ beforeEach(() => {
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:editor-pdf') })
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
+  // The dispatch asks the Files tree which paths are folders (YAZ-2290 D3): none, in this vault.
+  tree.mockImplementation(async (root) => ({ root, tree: [], generatedAt: 1 }))
   Object.defineProperty(window, 'yaseenDocs', {
     value: {
       window: {
@@ -246,7 +241,6 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     const source = createWikilinkResolveSource()
     const subscribe = vi.spyOn(source, 'subscribe')
     const split = vi.spyOn(frontmatter, 'splitFrontmatter')
-    const migrate = vi.spyOn(folderMigration, 'migrateFolderBody')
     const rename = vi.fn()
     const el = await mount('---\nfolder_page: true\n---\nraw\r\n\ttext\r\n', 1, { path: '/vault/data.JSON', wikilinks: source, onRenameFile: rename })
 
@@ -255,17 +249,15 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(writeFile).not.toHaveBeenCalled()
     expect(flushListeners).toHaveLength(0) // no autosave owner
     expect(split).not.toHaveBeenCalled()
-    expect(migrate).not.toHaveBeenCalled()
     expect(subscribe).not.toHaveBeenCalled() // no backlinks/home semantic feed
     expect(rename).not.toHaveBeenCalled()
     expect(el.querySelector('.page-title')).toBeNull()
     expect(el.querySelector('.frontmatter-panel')).toBeNull()
-    expect(el.querySelector('.folder-page-contents')).toBeNull()
+    expect(el.querySelector('.folder-view')).toBeNull()
     expect(el.querySelector('.backlinks')).toBeNull()
     expect(el.querySelector('.text-viewer')).not.toBeNull()
 
     split.mockRestore()
-    migrate.mockRestore()
     subscribe.mockRestore()
   })
 
@@ -294,7 +286,7 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(writeFile).not.toHaveBeenCalled()
     expect(flushListeners).toHaveLength(0)
     expect(el.querySelector('canvas.image-viewer__canvas')).not.toBeNull()
-    expect(el.querySelector('.page-title, .frontmatter-panel, .folder-page-contents, .backlinks')).toBeNull()
+    expect(el.querySelector('.page-title, .frontmatter-panel, .folder-view, .backlinks')).toBeNull()
   })
 })
 
@@ -503,7 +495,8 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
  * `page-header, editor-mount, …` where they used to read `page-title, frontmatter-panel, …`.
  * The header's two halves are pinned inside it, so nothing the old order said is given up.
  * YAZ-1472 slid the comment stream in before the backlinks (🔒 D4): always present, since its
- * composer is the door to the first comment, and "Linked mentions" stays the LAST block.
+ * composer is the door to the first comment. YAZ-2322 put "Reviews" after "Linked mentions",
+ * as the LAST block — there once the vault's review settings are handed down.
  */
 describe('Editor backlinks section (Links D, GRO-2193)', () => {
   const record = (path: string, links: string[] = [], properties: Record<string, unknown> = {}): IndexRecord => {
@@ -544,37 +537,112 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
   })
 
-  /**
-   * The folder page's contents block (YAZ-819, 🔒 D1) sits between the Crepe mount and the
-   * comment stream (only when the open record carries the flag) — the third of the scroller's
-   * five blocks since the title and the properties panel became ONE `.page-header` row (YAZ-918,
-   * which amends ⚡ YAZ-883's "the panel is block one") and the comments joined (YAZ-1472).
-   * Order is the placement rule, so it is pinned as an order.
-   */
-  it('a FOLDER PAGE renders its contents between the mount and the backlinks', async () => {
+  it('a note flagged `folder_page: true` is an ordinary note (YAZ-2290): no views block, its body in the editor, and opening rewrites nothing', async () => {
     const source = createWikilinkResolveSource()
-    const el = await mount(BODY, 1, { wikilinks: source })
-    feed(source, [
-      record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }),
-      record(PATH, [], { folder_page: true }),
-    ])
-    const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'comments', 'backlinks'])
-    expect([...(host?.querySelector('.page-header')?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel'])
-    // fed the pages that belong to it, and no title row of its own — the header row already
-    // names the page (⚡ YAZ-888, unchanged by the wrapping).
-    // Q7's default view is the OUTLINE (YAZ-820/903), whose document names them as links.
-    expect(el.querySelector('.outline-doc')?.textContent).toBe('- [[member]]')
-  })
-
-  it('an ordinary note gets no contents block at all', async () => {
-    const source = createWikilinkResolveSource()
-    const el = await mount(BODY, 1, { wikilinks: source })
-    feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH)])
+    const el = await mount(`---\nfolder_page: true\n---\n${BODY}`, 1, { wikilinks: source })
+    feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH, [], { folder_page: true })])
     const host = el.querySelector('.editor-host')
     expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks'])
+    expect(el.querySelector('.views-pane')).toBeNull()
+    expect(crepe().md).toBe(BODY)
+    expect(writeFile).not.toHaveBeenCalled()
   })
 
+  it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: DEFAULT_REVIEW_SETTINGS })
+    feed(source, [record('/vault/other.md', ['note']), record(PATH)])
+    expect([...(el.querySelector('.editor-host')?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks', 'reviews'])
+  })
+})
+
+/**
+ * The folder itself is a tab (YAZ-2290 D3). Which path is a folder is the Files tree's answer,
+ * never the extension's — so each case here stands in its own root, with its own tree.
+ */
+describe('Editor folder dispatch (YAZ-2290 D3)', () => {
+  const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+
+  async function open(vault: string, path: string): Promise<HTMLElement> {
+    const source = createWikilinkResolveSource()
+    act(() => source.update(() => null, [], [])) // the first index snapshot: an empty vault, no folder settings
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Editor root={vault} path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    await settle()
+    await settle()
+    return container
+  }
+
+  it.each(['Projects', 'Notes.md', 'v1.2'])('a folder named %s renders the folder view — nothing is read as a file, no editor mounts', async (name) => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/${name}`, [file(`${r}/${name}/a.md`)])], generatedAt: 1 }))
+    const el = await open(`/folders-${name}`, `/folders-${name}/${name}`)
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe(name)
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
+  it('a markdown FILE beside it still gets the markdown editor', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Notes.md`), file(`${r}/a.md`)], generatedAt: 1 }))
+    readFile.mockResolvedValueOnce({ path: '/files/a.md', content: BODY, mtime: 1, size: BODY.length })
+    const el = await open('/files', '/files/a.md')
+    expect(el.querySelector('.folder-view')).toBeNull()
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.editor-mount')).not.toBeNull()
+  })
+
+  it('a folder the tree does not show YET (an in-app rename) says nothing until a fresh tree answers, then renders the folder view', async () => {
+    let answer: (nodes: TreeNode[]) => void = () => undefined
+    tree
+      .mockImplementationOnce(async (r) => ({ root: r, tree: [dir(`${r}/Old`)], generatedAt: 1 })) // the tree before the rename
+      .mockImplementationOnce((r) => new Promise((resolve) => (answer = (nodes) => resolve({ root: r, tree: nodes, generatedAt: 2 }))))
+    await fetchTree('/renamed') // the window already holds that older tree
+    const el = await open('/renamed', '/renamed/New')
+    expect(el.innerHTML).toBe('<section class="editor"></section>')
+    expect(tree).toHaveBeenCalledTimes(2)
+    answer([dir('/renamed/New')])
+    await settle()
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.textContent).not.toContain('Unsupported file type.')
+  })
+
+  it('a folder named `Notes.md` that the tree does not show yet is never read as a file', async () => {
+    let answer: (nodes: TreeNode[]) => void = () => undefined
+    tree
+      .mockImplementationOnce(async (r) => ({ root: r, tree: [], generatedAt: 1 })) // the tree before the folder was made
+      .mockImplementationOnce((r) => new Promise((resolve) => (answer = (nodes) => resolve({ root: r, tree: nodes, generatedAt: 2 }))))
+    await fetchTree('/behind')
+    const el = await open('/behind', '/behind/Notes.md')
+    expect(el.innerHTML).toBe('<section class="editor"></section>')
+    answer([dir('/behind/Notes.md')])
+    await settle()
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
+  it('a folder deleted outside the app keeps its tab on the message a missing file gets', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [], generatedAt: 1 }))
+    const el = await open('/deleted', '/deleted/Projects')
+    expect(el.querySelector('.editor-msg--error')?.textContent).toBe('NOT_FOUND: path does not exist')
+    expect(readFile).not.toHaveBeenCalled()
+  })
+
+  it('a FILE of the tree with no viewer still says so', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'file', name: 'a.zip', path: `${r}/a.zip`, size: 1, mtime: 1, kind: null }], generatedAt: 1 }))
+    const el = await open('/zips', '/zips/a.zip')
+    expect(el.querySelector('.editor-msg--error')?.textContent).toBe('Unsupported file type.')
+  })
+
+  it('until the tree is known an in-root path renders the empty editor section: nothing is guessed, nothing is read', async () => {
+    tree.mockReturnValue(new Promise(() => undefined))
+    const el = await open('/pending', '/pending/Notes.md')
+    expect(el.innerHTML).toBe('<section class="editor"></section>')
+    expect(readFile).not.toHaveBeenCalled()
+  })
 })
 
 /**
@@ -796,10 +864,11 @@ describe('document magnification (YAZ-1410)', () => {
     await mount(BODY)
     readFile.mockImplementation(async (path) => ({ path, content: BODY, mtime: 1, size: BODY.length }))
     const other = '/vault/other.md'
+    const links = createWikilinkResolveSource()
     const render = (active: string, firstOpen = true) => {
       act(() => root!.render(<>
-        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} /></div>}
-        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} /></div>
+        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>}
+        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>
       </>))
     }
     render(PATH); await settle(); await settle()
@@ -817,14 +886,14 @@ describe('document magnification (YAZ-1410)', () => {
 })
 
 describe('a save repaints only the chips (YAZ-2196 P6)', () => {
-  it('the properties panel, folder contents, comments and backlinks do not re-render through a whole unsaved → saving → saved cycle', async () => {
+  it('the properties panel, comments, backlinks and reviews do not re-render through a whole unsaved → saving → saved cycle', async () => {
     const source = createWikilinkResolveSource()
     const el = await mount(FM + BODY, 1, { wikilinks: source })
     expect(renders.frontmatter).toBeGreaterThan(0)
-    expect(renders.folderContents).toBeGreaterThan(0)
     expect(renders.comments).toBeGreaterThan(0)
     expect(renders.backlinks).toBeGreaterThan(0)
-    renders.frontmatter = renders.folderContents = renders.comments = renders.backlinks = 0
+    expect(renders.reviews).toBeGreaterThan(0)
+    renders.frontmatter = renders.comments = renders.backlinks = renders.reviews = 0
 
     type('# Hello\n\nedited\n')
     expect(el.querySelector('.save-indicator--unsaved')).not.toBeNull()
@@ -832,6 +901,6 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
     await settle()
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
-    expect(renders).toEqual({ frontmatter: 0, folderContents: 0, comments: 0, backlinks: 0 })
+    expect(renders).toEqual({ frontmatter: 0, comments: 0, backlinks: 0, reviews: 0 })
   })
 })

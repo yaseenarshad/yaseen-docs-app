@@ -1,18 +1,20 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
-import { belongsToBasenames } from '../../links/folderPages'
-import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
-import { type Value, render, typeOf } from '../expr'
-import type { ColumnDecl, FolderPageSettings } from '../folderPageSettings'
+import { basenameCandidates } from '../../links/completion'
+import { belongsToBasenames } from '../../links/folderLinks'
+import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { type Resolver, type Value, render, typeOf } from '../expr'
+import type { ColumnDecl, FolderSettings } from '../folderSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, pageTitle, summaryKindOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle, summaryKindOf } from './GroupHeader'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
+import type { ResolveLink, WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
 import { openByGesture } from '../../lib/openGesture'
 import { frozenColumnCount } from './frozenColumns'
@@ -49,19 +51,27 @@ export interface TableViewProps {
   moveError: { path: string; message: string } | null
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. `at` places the section for the level-aware seed (YAZ-1101). */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
-  /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
-  root: string | null
+  /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
+  root: string
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
-  /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
-  folderPage?: FolderPageSettings | null
-  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the MEMBERS: link resolution and the link pickers read this, never the rows alone. */
+  /** The settings of the folder whose rows these are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
+  settings: FolderSettings
+  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the folder's rows: link resolution and the link pickers read this, never the rows alone. */
   vaultRecords: readonly IndexRecord[]
+  /** The snapshot's folder settings records, for a link column narrowed to a folder. */
+  vaultFolders: readonly IndexRecord[]
+  /** ViewsPane's resolver: a cell reads an id link as the title of the notecard, or folder, it names (YAZ-2293 D8). */
+  resolve: Resolver
+  /** The window's link resolver, by which a link column's target names its folder. */
+  resolveLink: ResolveLink
   /** Preview mode (`view.preview`, YAZ-1244): resting on a data row pops its page read-only. */
   preview?: boolean
-  /** `FolderPageMode.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
+  /** The window's link source, for the preview: an id link in it reads as its note's title (YAZ-2293). */
+  wikilinks?: WikilinkResolveSource
+  /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
-  /** `FolderPageMode.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. */
+  /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. */
   deleteColumn: (key: string) => Promise<void>
 }
 
@@ -121,9 +131,9 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords, preview = false, declareColumn, deleteColumn }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
-  const { rowProps, card, close } = usePreview(preview)
+  const { rowProps, card, close } = usePreview(preview, wikilinks)
   /** The name link and Enter on its cell share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
@@ -132,7 +142,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -191,27 +201,20 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
   }, [])
 
-  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {})), [def, view, records, folderPage])
+  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
-  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, folderPage)), [keys, rowRecords, properties, folderPage])
-  /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */
-  const basenames = useMemo(() => vaultRecords.map((r) => r.basename), [vaultRecords])
-  // Relation columns narrow the link picker to the pages of the folder page the target names
-  // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); a target naming no folder
-  // page falls back to all basenames. The resolver is THE shared one, memoized per records
-  // identity AND root (`resolverFor` — the root since YAZ-846, so this is the very instance the
-  // wikilink surfaces hold), adapted to `ResolveLink` as WikilinkIndexBridge does.
-  const resolve = useMemo(() => {
-    const resolver = resolverFor(vaultRecords, root ?? undefined)
-    return (target: string) => resolver(target)?.record.path ?? null
-  }, [vaultRecords, root])
+  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
+  /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
+  const basenames = useMemo(() => basenameCandidates(vaultRecords), [vaultRecords])
+  // Relation columns narrow the link picker to the notecards in the FOLDER the target names
+  // (YAZ-2290 D10: `belongsToBasenames`); a target naming no folder falls back to all basenames.
   const linkNames = useMemo(
-    () => typings.map((t) => (t?.target !== undefined ? belongsToBasenames(vaultRecords, resolve, t.target) : null)),
-    [typings, vaultRecords, resolve],
+    () => typings.map((t) => (t?.target !== undefined ? belongsToBasenames(vaultRecords, vaultFolders, resolveLink, root, t.target) : null)),
+    [typings, vaultRecords, vaultFolders, resolveLink, root],
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
@@ -307,7 +310,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     })
 
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
-  const openRowMenu = (path: string) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
+  const openRowMenu = (path: string, noteId: string | undefined) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
@@ -315,7 +318,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     event.preventDefault()
     close()
     cell.focus()
-    setRowMenu({ x: event.clientX, y: event.clientY, path })
+    setRowMenu({ x: event.clientX, y: event.clientY, path, noteId })
   }
 
   /**
@@ -463,6 +466,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       collapsed={collapsedSet.has(line.gk)}
                       onToggle={() => onToggleGroup(line.gk)}
                       onNew={onNewInGroup === undefined || levelKeys[line.at.level] === null ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
+                      resolve={resolve}
                     />
                   </td>
                 </tr>
@@ -477,7 +481,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
                   // rather than replacing it (YAZ-1244): a card must never hang over a drag.
                   onDragStartCapture={close}
-                  onContextMenu={openRowMenu(line.row.record.path)}
+                  onContextMenu={openRowMenu(line.row.record.path, line.row.record.id)}
                 >
                   {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
                   {numbered && <td className="view-table__gutter">{line.n}</td>}
@@ -496,7 +500,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                         {c === nameCol ? (
                           <>
                             <button type="button" className="view-table__link" onClick={(e) => openByGesture(e, line.row.record.path, openHandlers)}>
-                              {pageTitle(line.row)}
+                              {rowTitle(line.row)}
                             </button>
                             {moveError?.path === line.row.record.path && (
                               <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
@@ -513,9 +517,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                             editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
                             options={typings[c]?.options}
                             basenames={linkNames[c] ?? basenames}
+                            resolve={resolve}
                           />
                         ) : (
-                          cellContent(v)
+                          cellContent(v, resolve)
                         )}
                       </td>
                     )
@@ -546,7 +551,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                         {kind !== undefined && (
                           <>
                             <span className="view-table__summary-kind">{kind}</span>
-                            <span>{render(summarize(kind, rows.map((r) => r.values[key]), def.summaries))}</span>
+                            <span>{render(summarize(kind, rows.map((r) => r.values[key]), def.summaries), resolve)}</span>
                           </>
                         )}
                       </button>
@@ -580,6 +585,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             x={rowMenu.x}
             y={rowMenu.y}
             path={rowMenu.path}
+            noteId={rowMenu.noteId}
             onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}
             onNotice={onNotice}
@@ -594,8 +600,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             def={def}
             viewIndex={viewIndex}
             keys={keys}
-            takenKeys={() => allPropertyKeys(def, view, records, folderPage?.columns)}
-            columns={folderPage?.columns ?? {}}
+            takenKeys={() => allPropertyKeys(def, view, records, settings.columns)}
+            columns={settings.columns}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
             onDeleteColumn={setConfirmDelete}

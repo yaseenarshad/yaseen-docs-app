@@ -8,7 +8,8 @@
  * (`useExternalRenames`) asks first, always.
  *
  * Guard rails, firm (the GRO-2242 ruling):
- *  - markdown files only (both feeds are markdown-only already; pinned here anyway);
+ *  - markdown files only (both feeds are markdown-only already; pinned here anyway), and never a
+ *    folder's settings file — the cold diff carries those (YAZ-2290 D8);
  *  - join key = EXACT (size, mtime) equality — macOS rename/move preserves both;
  *  - zero-byte files skip (size 0 matches every empty file);
  *  - only UNAMBIGUOUS 1:1 pairs: a (size, mtime) signature carried by several removed or
@@ -17,7 +18,7 @@
  *    rewriting (the E1b engine already handles bare-stays / pathed-rewrites).
  */
 import { fileKind } from '@shared/fileKind'
-import type { DiffFileStat, IndexRecord } from '@shared/types'
+import { isFolderSettingsPath, type DiffFileStat, type IndexRecord } from '@shared/types'
 import { basename, stripExt } from '../lib/paths'
 
 /** One detected external rename/move: `oldPath` vanished while `newPath` appeared, stats equal. */
@@ -28,8 +29,8 @@ export interface RenameHypothesis {
 
 const sig = (f: DiffFileStat) => `${f.size}\u0000${f.mtime}`
 
-/** Markdown, non-empty — the only files a hypothesis may involve. */
-const eligible = (f: DiffFileStat) => f.size > 0 && fileKind(f.path) === 'markdown'
+/** A markdown note, non-empty — the only files a hypothesis may involve. */
+const eligible = (f: DiffFileStat) => f.size > 0 && fileKind(f.path) === 'markdown' && !isFolderSettingsPath(f.path)
 
 function bySignature(list: readonly DiffFileStat[]): Map<string, DiffFileStat[]> {
   const out = new Map<string, DiffFileStat[]>()

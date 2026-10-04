@@ -1,12 +1,11 @@
 /**
  * The page title (⚡ YAZ-888): the note's name, editable in place. The title IS the file name,
- * a commit is a RENAME (through App's one door, which confirms), and the page answering
- * `[[Home]]` is inert — it explains itself through the passive notice instead.
+ * and a commit is a RENAME (through App's one door, which confirms).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { HOME_TITLE_NOTICE, PageTitle } from './PageTitle'
+import { PageTitle } from './PageTitle'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,7 +20,7 @@ afterEach(() => {
 
 const PATH = '/vault/Docs/Old Note.md'
 
-function mount(opts: { path?: string; isHome?: boolean } = {}) {
+function mount(opts: { path?: string } = {}) {
   const onRename = vi.fn()
   const onNotice = vi.fn()
   const onArrowDown = vi.fn()
@@ -30,7 +29,7 @@ function mount(opts: { path?: string; isHome?: boolean } = {}) {
   root = createRoot(container)
   act(() =>
     root?.render(
-      <PageTitle path={opts.path ?? PATH} isHome={opts.isHome ?? false} onRename={onRename} onNotice={onNotice} onArrowDown={onArrowDown} />,
+      <PageTitle path={opts.path ?? PATH} onRename={onRename} onNotice={onNotice} onArrowDown={onArrowDown} />,
     ),
   )
   return { el: container, onRename, onNotice, onArrowDown }
@@ -148,14 +147,14 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(input(el)).toBeNull()
   })
 
-  it('HOME is inert: the click explains itself through the passive notice and opens no input (🔒 the Home guard)', () => {
-    const { el, onRename, onNotice } = mount({ path: '/vault/Home.md', isHome: true })
+  it('a note named Home renames like any other note (YAZ-2290)', () => {
+    const { el, onRename, onNotice } = mount({ path: '/vault/Home.md' })
     expect(heading(el)?.textContent).toBe('Home')
+    expect(heading(el)?.tabIndex).toBe(0)
     act(() => heading(el)?.click())
-    expect(input(el)).toBeNull()
-    expect(onRename).not.toHaveBeenCalled()
-    expect(onNotice).toHaveBeenCalledWith(HOME_TITLE_NOTICE)
-    expect(HOME_TITLE_NOTICE).toBe('Home anchors this vault — it keeps its name.')
+    type(el, 'Start')
+    expect(onRename).toHaveBeenCalledWith('/vault/Start.md')
+    expect(onNotice).not.toHaveBeenCalled()
   })
 
   it('a rename never REQUIRES the mouse: the heading is focusable and Enter opens the input (⚡ YAZ-891)', () => {
@@ -163,12 +162,5 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(heading(el)?.tabIndex).toBe(0)
     press(heading(el)!, 'Enter')
     expect(input(el)?.value).toBe('Old Note')
-  })
-
-  it('HOME stays out of the tab order — an inert stop would only slow the way into the note (⚡ YAZ-891)', () => {
-    const { el } = mount({ path: '/vault/Home.md', isHome: true })
-    expect(heading(el)?.hasAttribute('tabindex')).toBe(false)
-    press(heading(el)!, 'Enter')
-    expect(input(el)).toBeNull()
   })
 })

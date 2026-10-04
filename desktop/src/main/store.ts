@@ -8,7 +8,6 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
-  MAX_TOPICS_EXPANDED_PAGES,
   NEW_NOTE_LOCATIONS,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
@@ -63,8 +62,8 @@ export interface Store {
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its Focus Mode
-   * lists `focusDirs`/`focusTopics`/`focusFavorites` (YAZ-1628, YAZ-1766), recents, each
-   * folder-state key and its `expanded`/`lastFile`/`topicsExpanded`/fold keys/
+   * lists `focusDirs`/`focusFavorites` (YAZ-1628, YAZ-1766), recents, each
+   * folder-state key and its `expanded`/`lastFile`/fold keys/
    * baseGroups keys (`<basePath>::<view>`).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
@@ -76,9 +75,9 @@ export interface Store {
    * twin of `renamePath`. A directory removes BY PREFIX: everything at or under it goes.
    *
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
-   * deleted tabs are dropped as are its `focusDirs` / `focusTopics` / `focusFavorites` entries
+   * deleted tabs are dropped as are its `focusDirs` / `focusFavorites` entries
    * (YAZ-1628, YAZ-1766), `recents` loses the entry, and folder-state keys plus their
-   * `expanded` / `lastFile` / `topicsExpanded` / fold keys / `baseGroups` keys
+   * `expanded` / `lastFile` / fold keys / `baseGroups` keys
    * (`<basePath>::<view>`) go too.
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
@@ -136,7 +135,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusDirs?: unknown; focusTopics?: unknown; focusFavorites?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusDirs?: unknown; focusFavorites?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -192,9 +191,8 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const sidebarLens = isSidebarLens(w.sidebarLens) ? w.sidebarLens : legacySidebarLens
     // Focus Mode's lists (YAZ-1628) read with the `tabs` rule: relative paths drop, a missing or junk list is no focus.
     const focusDirs = isStringArray(w.focusDirs) ? w.focusDirs.filter(isAbsolute) : []
-    const focusTopics = isStringArray(w.focusTopics) ? w.focusTopics.filter(isAbsolute) : []
     const focusFavorites = isStringArray(w.focusFavorites) ? w.focusFavorites.filter(isAbsolute) : []
-    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusTopics, focusFavorites, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -218,7 +216,6 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     lastFile: typeof raw.lastFile === 'string' ? raw.lastFile : null,
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
-    topicsExpanded: [],
     name: cleanVaultName(raw.name),
   }
 }
@@ -234,9 +231,9 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
 }
 
 /** Null when the document is not a version-1 state object at all (→ treated as corrupt). */
-/** The file's shape: each folder bucket minus its session fields (YAZ-1642) — what a relaunch restores, nothing more. */
+/** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
 function toDisk(state: AppState): unknown {
-  const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, topicsExpanded: _t, ...kept }]) => [root, kept]))
+  const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))
   return { ...state, folders }
 }
 
@@ -299,8 +296,8 @@ export function createStore(filePath: string): Store {
   /** Writes are chained so two atomic writes can never land out of order. */
   let chain: Promise<void> = Promise.resolve()
   /**
-   * The text of the last successful write (YAZ-2198). Session-only state (`expanded`,
-   * `topicsExpanded`) never reaches disk, so every folder expand / collapse used to rewrite
+   * The text of the last successful write (YAZ-2198). Session-only state (`expanded`)
+   * never reaches disk, so every folder expand / collapse used to rewrite
    * byte-identical JSON; identical text is skipped. The first write after a launch always writes.
    */
   let lastWritten: string | null = null
@@ -359,9 +356,6 @@ export function createStore(filePath: string): Store {
         ...cur,
         ...(patch.expanded !== undefined ? { expanded: [...patch.expanded] } : {}),
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
-        // Capped here as well as in the renderer (`folds` / `baseGroups`' rule): the store is
-        // what a hand-edited or third-party write lands in, and this bucket grows per page.
-        ...(patch.topicsExpanded !== undefined ? { topicsExpanded: patch.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) } : {}),
         ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
       }
       commit({ ...state, folders: { ...state.folders, [root]: next } })
@@ -434,7 +428,6 @@ export function createStore(filePath: string): Store {
           }, tabs),
           // Focus Mode's lists (YAZ-1628, YAZ-1766): path lists like `tabs` — a renamed focus follows its folder.
           focusDirs: w.focusDirs.map(remap),
-          focusTopics: w.focusTopics.map(remap),
           focusFavorites: w.focusFavorites.map(remap),
         }
       })
@@ -446,10 +439,6 @@ export function createStore(filePath: string): Store {
             ...folder,
             expanded: folder.expanded.map(remap),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
-            // Path-keyed like `expanded`, only holding PAGES rather than dirs (YAZ-848) — so an
-            // expanded topic follows its own rename, and a renamed FOLDER carries every topic
-            // inside it through the same prefix branch.
-            topicsExpanded: folder.topicsExpanded.map(remap),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
           },
@@ -510,7 +499,6 @@ export function createStore(filePath: string): Store {
           rightPanel: normalizeRightPanel({ ...w.rightPanel, items: rightItems, expanded }, normalizedTabs),
           // Focus Mode's lists (YAZ-1628, YAZ-1766): a deleted focus target drops out, exactly as a deleted tab does above.
           focusDirs: drop(w.focusDirs),
-          focusTopics: drop(w.focusTopics),
           focusFavorites: drop(w.focusFavorites),
         }
       })
@@ -528,9 +516,6 @@ export function createStore(filePath: string): Store {
             {
               ...folder,
               expanded: drop(folder.expanded),
-              // The Topics tree's open pages (YAZ-848): a deleted page's entry would never match
-              // a row again, so it goes with the rest rather than sitting in the file forever.
-              topicsExpanded: drop(folder.topicsExpanded),
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),

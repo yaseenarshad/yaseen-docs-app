@@ -16,7 +16,9 @@ import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
+import { createCrepe } from '../../editor/createCrepe'
+import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { TEST_RECORDS } from '../testRecords'
 import { normalizeBoardWidth } from './PropertiesMenu'
 import { OPEN_DELAY_MS } from './PreviewCard'
@@ -24,8 +26,8 @@ import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const FOLDER_PAGE = testFolderHost()
 
 /** Preview mode's fetch and Crepe (YAZ-1244) are stand-ins here — the real render is PreviewCard.crepe.test.tsx's. */
 vi.mock('../../api', async (importOriginal) => {
@@ -129,9 +131,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.md"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -271,6 +273,22 @@ describe('board columns', () => {
   })
 })
 
+describe('an id link (YAZ-2293 D8)', () => {
+  it('a column header and a card property both read as the title of the note the id names', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = TEST_RECORDS.map((r) =>
+      r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
+    )
+    const { el } = mount('views:\n  - type: board\n    name: B\n    order:\n      - file.name\n      - note.related\n    groupBy:\n      property: note.related\n', {
+      records,
+      folder: testFolderHost({ vaultRecords: records }),
+    })
+    expect(headerTexts(el)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
+    expect(q(cols(el)[1], '.view-board__prop-value').textContent).toBe('Attribution')
+    expect(byLabel(el, 'Toggle group [[Attribution]]')).not.toBeNull()
+  })
+})
+
 describe('nested Board styling contract', () => {
   it('keeps the parent surface on its header instead of filling the nested column', () => {
     expect(viewsCss).toMatch(/\.view-board__col--nested\s*\{[^}]*background:\s*transparent;/s)
@@ -291,7 +309,7 @@ describe('nested Board styling contract', () => {
 describe('cards', () => {
   it('a card is the file name title over label/value rows rendered by type; the title opens the page in the current tab', () => {
     const openRight = vi.fn()
-    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
     const card = q<HTMLElement>(cols(el)[1], '.view-board__card') // idea → Agentic Agency
     expect(q(card, '.view-board__title').textContent).toBe('Agentic Agency')
     // the order properties minus file.name, as label/value rows
@@ -310,7 +328,7 @@ describe('cards', () => {
   it('a plain click on the card body SELECTS the card — focus, nothing opens (YAZ-1557 D2)', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const card = cardNamed(el, 'Agentic Agency')
     expect(card.tabIndex).toBe(0)
     click(q(card, '.view-board__prop-value'))
@@ -324,7 +342,7 @@ describe('cards', () => {
     const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const direct = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const direct = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     modClick(q(cardNamed(direct.el, 'Agentic Agency'), '.view-board__title'), { metaKey: true })
     expect(openBackground).toHaveBeenLastCalledWith(agentic)
     modClick(q(cardNamed(direct.el, 'Agentic Agency'), '.view-board__prop-value'), { altKey: true })
@@ -336,13 +354,13 @@ describe('cards', () => {
     expect(openRight).toHaveBeenCalledOnce()
 
     unmount()
-    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openRight }) })
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openRight }) })
     modClick(cardNamed(nested.el, 'alpha1'), { altKey: true })
     expect(openRight).toHaveBeenLastCalledWith('/vault/alpha1.md')
 
     unmount()
     const fanned = mount('views:\n  - type: board\n    name: B\n    order:\n      - file.name\n    groupBy:\n      property: note.tags\n', {
-      folderPage: testFolderPage({ openRight }),
+      folder: testFolderHost({ openRight }),
     })
     const repeated = [...fanned.el.querySelectorAll<HTMLElement>('.view-board__title')].filter(
       (title) => title.textContent === 'Agentic Agency',
@@ -352,7 +370,7 @@ describe('cards', () => {
 
     unmount()
     const empty = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
-      folderPage: testFolderPage({ openRight }),
+      folder: testFolderHost({ openRight }),
     })
     const emptyCard = q<HTMLElement>(empty.el, '.view-board__card')
     expect(emptyCard.getAttribute('role')).toBeNull()
@@ -366,7 +384,7 @@ describe('cards', () => {
     const levels = '/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md'
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const card = cardNamed(el, 'The Levels of an Agency')
     act(() => card.focus())
     press(card, 'Enter')
@@ -413,7 +431,7 @@ describe('cards', () => {
 
   it('suppresses the synthetic primary click after a secondary click or completed group drag', () => {
     const openRight = vi.fn()
-    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
     const card = cardNamed(el, 'Agentic Agency')
 
     rightClick(card, 120, 42)
@@ -448,7 +466,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
   it('opens the shared actions from any point in a rendered card, at the pointer, without opening or editing it', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile, onChange } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const { el, onOpenFile, onChange } = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const card = cardNamed(el, 'Agentic Agency')
     const event = rightClick(q(card, '.view-board__prop-value'), 120, 42)
 
@@ -463,7 +481,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 
   it('opens the exact card in the right panel without replacing the current page', () => {
     const openRight = vi.fn()
-    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
     click(itemNamed(el, 'Open in right panel')!)
 
@@ -472,9 +490,20 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
+  it('a card whose note has an id offers "Copy ID" directly under "Copy path" (YAZ-2293) and copies exactly that id', () => {
+    const records = TEST_RECORDS.map((r) => (r.path === agenticPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
+    const { el } = mount(BOARD_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
+    rightClick(cardNamed(el, 'Agentic Agency'))
+    const labels = menuItems(el).map((item) => item.textContent)
+    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+    click(itemNamed(el, 'Copy ID')!)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
   it('opens in the background, copies, and reveals the exact absolute card path, closing after every action', () => {
     const openBackground = vi.fn()
-    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground }) })
     const card = cardNamed(el, 'Agentic Agency')
 
     rightClick(card)
@@ -497,7 +526,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
   it('reports a stale Reveal through the folder-page passive notice', async () => {
     const onNotice = vi.fn()
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
-    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground: vi.fn(), onNotice }) })
+    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
     click(itemNamed(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
@@ -506,7 +535,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
   })
 
   it('retargets to the latest card and dismisses on Escape or an outside press', () => {
-    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground: vi.fn() }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
     rightClick(cardNamed(el, 'The Levels of an Agency'))
     click(itemNamed(el, 'Copy path')!)
@@ -550,14 +579,14 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     const openRight = vi.fn()
     const hidden = mount(
       'views:\n  - type: board\n    name: B\n    order:\n      - note.priority\n    groupBy:\n      property: note.status\n',
-      { folderPage: testFolderPage({ openRight }) },
+      { folder: testFolderHost({ openRight }) },
     )
     rightClick(q(hidden.el, '.view-board__card'))
     click(itemNamed(hidden.el, 'Open in right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(levelsPath)
 
     unmount()
-    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openRight }) })
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openRight }) })
     rightClick(cardNamed(nested.el, 'alphaDirect'))
     click(itemNamed(nested.el, 'Open in right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/alphaDirect.md')
@@ -567,7 +596,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 
     unmount()
     const fanned = mount('views:\n  - type: board\n    name: B\n    order:\n      - file.name\n    groupBy:\n      property: note.tags\n', {
-      folderPage: testFolderPage({ openRight }),
+      folder: testFolderHost({ openRight }),
     })
     const repeated = [...fanned.el.querySelectorAll<HTMLElement>('.view-board__title')].filter(
       (title) => title.textContent === 'Agentic Agency',
@@ -581,7 +610,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
   it('keeps the exact record target on an otherwise-empty card shell', () => {
     const openRight = vi.fn()
     const { el } = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
-      folderPage: testFolderPage({ openRight }),
+      folder: testFolderHost({ openRight }),
     })
     const shell = q<HTMLElement>(el, '.view-board__card')
     expect(shell.querySelector('.view-board__line')).toBeNull()
@@ -593,7 +622,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 
   it('leaves headers, add controls, placeholders, the no-group hint, and other view types on their native menu', () => {
     const openBackground = vi.fn()
-    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground }) })
     const firstCard = cardNamed(el, 'Agentic Agency')
     const drafting = cols(el)[0]
     const idea = cols(el)[1]
@@ -612,18 +641,18 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     drag(firstCard, 'dragend')
 
     unmount()
-    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openBackground }) })
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ openBackground }) })
     expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(false)
     expect(nested.el.querySelector('.ctx-menu')).toBeNull()
 
     unmount()
-    const hint = mount(NO_GROUP_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const hint = mount(NO_GROUP_BASE, { folder: testFolderHost({ openBackground }) })
     expect(rightClick(q(hint.el, '.view-board__hint')).defaultPrevented).toBe(false)
     expect(hint.el.querySelector('.ctx-menu')).toBeNull()
 
     unmount()
     const list = mount('views:\n  - type: list\n    name: L\n    order:\n      - file.name\n', {
-      folderPage: testFolderPage({ openBackground }),
+      folder: testFolderHost({ openBackground }),
     })
     expect(rightClick(q(list.el, '.view-list__item')).defaultPrevented).toBe(false)
     expect(list.el.querySelector('.ctx-menu')).toBeNull()
@@ -869,7 +898,7 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
 
   it('every column ends in a "New card" row; clicking it swaps in the name input', () => {
     const openRight = vi.fn()
-    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
     expect(cols(el).every((c) => c.querySelector('[aria-label="New card"]') !== null)).toBe(true)
     click(byLabel(colOf(el, 'idea'), 'New card'))
     expect(colOf(el, 'idea').querySelector('[aria-label="New card name"]')).not.toBeNull()
@@ -880,7 +909,7 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
 
   it("Enter creates the page with the typed name in THAT column's group, stays on the board, and keeps the input for the next add", async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Ship it.md'))
-    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ create }) })
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ create }) })
     click(byLabel(colOf(el, 'idea'), 'New card'))
     const input = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
     setValue(input, 'Ship it')
@@ -900,7 +929,7 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     const create = vi.fn(() => Promise.resolve('/vault/First card.md'))
     const { el, onOpenFile } = mount(BOARD_BASE.replace('    name: B', '    name: B\n    showEmptyColumns: true'), {
       records: [],
-      folderPage: testFolderPage({ create, settings: { columns: { status: { kind, options: ['Waiting: review'] } }, views: [], problems: [] } }),
+      folder: testFolderHost({ create, settings: { columns: { status: { kind, options: ['Waiting: review'] } }, views: [], problems: [] } }),
     })
     const empty = colOf(el, 'Waiting: review')
     click(byLabel(empty, 'New card'))
@@ -908,13 +937,13 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     setValue(input, 'First card')
     press(input, 'Enter')
     await flush()
-    expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { status: kind === 'select' ? 'Waiting: review' : ['Waiting: review'] }, folder: null }, 'First card')
+    expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { status: kind === 'select' ? 'Waiting: review' : ['Waiting: review'] } }, 'First card')
     expect(onOpenFile).not.toHaveBeenCalled()
   })
 
   it('a nested Board puts named inline add inside child sections and seeds both group levels', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Ship it.md'))
-    const { el, onOpenFile } = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ create }) })
+    const { el, onOpenFile } = mount(NESTED_BOARD, { records: NESTED_RECORDS, folder: testFolderHost({ create }) })
     const a = colOf(el, 'A')
     const p2 = subgroupOf(a, 'p2')
 
@@ -934,7 +963,7 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
 
   it('empty Enter creates nothing; Escape closes the input back to the row', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/x.md'))
-    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ create }) })
+    const { el } = mount(BOARD_BASE, { folder: testFolderHost({ create }) })
     click(byLabel(colOf(el, 'idea'), 'New card'))
     const input = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
     press(input, 'Enter')
@@ -1006,7 +1035,7 @@ ${cardStyle}
     const openRight = vi.fn()
     const { el, onOpenFile } = mount(
       STYLED('      - note.priority\n      - file.name', '      note.priority: { hideLabel: true }\n      file.name: { join: true }'),
-      { folderPage: testFolderPage({ openRight }) },
+      { folder: testFolderHost({ openRight }) },
     )
     const card = cardIn(el)
     const rows = linesIn(card)
@@ -1093,6 +1122,14 @@ describe('preview mode (YAZ-1244)', () => {
     expect(previewCard()!.textContent).toContain('body of /vault/')
   })
 
+  it("the preview is handed the window's link source, so an id link in it reads as a title (YAZ-2293)", async () => {
+    const wikilinks = createWikilinkResolveSource()
+    const { el } = mount(PREVIEW_BOARD, { folder: testFolderHost({ wikilinks }) })
+    hover(q<HTMLElement>(el, '.view-board__card'))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(vi.mocked(createCrepe).mock.lastCall?.[0].wikilinks).toBe(wikilinks)
+  })
+
   it('preview off: hovering opens nothing', async () => {
     const { el } = mount(BOARD_BASE)
     hover(q<HTMLElement>(el, '.view-board__card'))
@@ -1113,7 +1150,7 @@ describe('preview mode (YAZ-1244)', () => {
 
   it('a secondary click closes the preview and opens page actions for that exact card', async () => {
     const openBackground = vi.fn()
-    const { el } = mount(PREVIEW_BOARD, { folderPage: testFolderPage({ openBackground }) })
+    const { el } = mount(PREVIEW_BOARD, { folder: testFolderHost({ openBackground }) })
     const target = cardNamed(el, 'Agentic Agency')
     hover(target)
     await settle(OPEN_DELAY_MS + 50)

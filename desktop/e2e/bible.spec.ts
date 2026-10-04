@@ -1,121 +1,105 @@
 /**
- * Bible C (GRO-2203, re-pointed at the folder-page model in 7C-): the convergence proof — one
+ * Bible C (GRO-2203, re-pointed at folders-as-pages in YAZ-2290): the convergence proof — one
  * committed encyclopedia driven through the REAL app, with the index, the wiki-link graph and the
- * folder pages all answering the same questions about it.
+ * folders all answering the same questions about it.
  *
- * The fixture (`fixtures/bible-vault/`) is a MIGRATED vault: `tools/migrateFolderPages.mjs` ran
- * over the `page_type` encyclopedia this file used to open, turned its five type values into five
- * folder pages, gave them a `Home` to hang from and deleted the registry. Every page now says in
- * its OWN frontmatter which topics it belongs to — except the two `inbox/` notes, which are
- * deliberately Uncategorized. Nothing carries `page_type` any more, and step 1 proves it.
+ * The fixture (`fixtures/bible-vault/`) is five real FOLDERS of notecards — `Funnel Stages`,
+ * `Industries`, `KPIs`, `Problems`, `Roles` — four of them carrying a hidden `.folder.md` with the
+ * columns and views a folder page used to hold, plus the two loose `inbox/` notes. A notecard
+ * belongs to a folder by living in it: nothing in its frontmatter says so, and step 1 proves the
+ * counts off the disk.
  *
- * WHAT THIS SPEC IS FOR, now that the wave has three siblings: `folderPages.spec.ts` drives the
- * contents block's own gestures (cells, pickers, New, tag/untag, nesting, grouping),
- * `topics.spec.ts` drives the sidebar tree and Home's birth, `lenses.spec.ts` the tabs above them.
+ * WHAT THIS SPEC IS FOR, now that the wave has siblings: `folderView.spec.ts` drives the folder
+ * view's own gestures (cells, pickers, New, grouping), `folderTabs.spec.ts` the tab itself.
  * What is left here — and lives nowhere else — is the CONTENT: that the index reads this vault
  * correctly, that its links and backlinks agree with its relations, and that a rename leaves both
- * the graph and the belongings standing.
+ * the graph and the folders standing.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1  the migrated vault is sound: zero `page_type` keys, zero broken links, and Home holds
- *      exactly the five folder pages — its own migrated body as the document, the five ADOPTED
- *      into it below (⚡ YAZ-1152), with their direct-member counts read off the Topics tree
- *   2  a cell the MIGRATION declared, edited inline on `KPIs` — a surgical write into a card the
- *      migration itself rewrote, leaving its membership and body byte-for-byte
+ *   1  the vault is sound: zero `page_type` keys, zero broken links, and every folder row shows the
+ *      count of the notecards that live in it — the same numbers read off the disk
+ *   2  a declared column, edited inline in `KPIs` — a surgical write into the notecard's own file,
+ *      leaving its other keys and body byte-for-byte
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
- *   4  the backlinks panel finds every note that names a KPI, and the ones that BELONG TO
- *      `[[Problems]]` are exactly the two problems whose relations point at it
- *   5  rename an entity page — relations, body links, backlinks AND its belonging all survive,
- *      still zero broken links
- *   6  rename a FOLDER PAGE (YAZ-864) — the links that live INSIDE `folder_page_settings` follow
- *      too: Home's outline document line and another folder page's column `target`, alongside the
- *      members' own `folder_pages`. Still zero broken links, and the map still browses.
+ *   4  the backlinks panel finds every note that names a KPI, and the ones that live in `Problems`
+ *      are exactly the two problems whose relations point at it
+ *   5  rename an entity page — relations, body links, backlinks AND its place in its folder all
+ *      survive, still zero broken links
+ *   6  rename a FOLDER (YAZ-864, YAZ-2304) — the links to it that live INSIDE
+ *      `folder_page_settings` follow: another folder's column `target` and its own. Still zero
+ *      broken links, and the folder still browses under its new name.
  *
- * TOMBSTONE (YAZ-904 → YAZ-919 → ⚡ YAZ-1152): the outline is a free-form DOCUMENT since YAZ-903,
- * and the member rows this file used to read — one per member, each with a direct-member COUNT —
- * first moved to the APPENDED section (the members a document does not name) and then STOPPED
- * EXISTING: adoption writes those members into the document instead, so every membership this
- * file reads is now a LINK LINE of the editor's own bullets. Two consequences run through the
- * steps below. The COUNTS are gone from this surface — they live on the Topics tree, which is
- * where step 1 now asks for them, with `directMembers` still re-asking the vault itself as a
- * second source. And a rename must walk INSIDE `folder_page_settings` for every one of these
- * pages, not just for the two the fixture ships with settings links (steps 5 and 6).
+ * TOMBSTONE (YAZ-2290): `Home` and the five folder-page notes are gone, and so is every claim
+ * this file made through them — the outline's adopted link lines, the body migrated into the
+ * outline on first open, a member's `folder_pages` belonging, the retired `order` list. The
+ * direct-member counts those rows once carried are the folder rows' own numbers now (🔒 E6).
  *
  * Same harness as links.spec.ts / backlinks.spec.ts (temp `--user-data-dir`, a COPY of the
  * fixture, `bible-` step screenshots).
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, layer, lensTab, outlineLines, quitApp, seededState, shoot, tabsOf, viewTabs } from './helpers'
+import {
+  activeTab,
+  appWindow,
+  contents,
+  copyVault,
+  dirCount,
+  dirRow,
+  editorOf,
+  expandDirs,
+  fileRow,
+  launchApp,
+  layer,
+  openFolder,
+  quitApp,
+  seededState,
+  shoot,
+  tabsOf,
+  topLabels,
+  viewTabs,
+} from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
-/** The committed encyclopedia, post-migration. Copied per run; the source is never opened by the app. */
+/** The committed encyclopedia. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-const FOLDERS = ['funnel-stages', 'inbox', 'industries', 'kpis', 'problems', 'roles']
+/** Every folder at the vault root, in the Files tree's own order (case-insensitive by name). */
+const FOLDERS = ['Funnel Stages', 'inbox', 'Industries', 'KPIs', 'Problems', 'Roles']
 
-const HOME = 'Home.md'
-/** Home's members, in the `order` the migration wrote onto its outline view. */
+/** The five folders of the encyclopedia proper. */
 const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
-/** Their direct-member counts, in the same order — the shape of the whole migrated map. */
+/** The notecards living directly in each, in the same order — the shape of the whole map. */
 const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
 
-/** The folder page step 2 edits through, and the member it writes to (row 1 in path order). */
+/** The folder step 2 edits through, and the notecard it writes to (row 1 in path order). */
 const KPIS = 'KPIs'
-const GROSS_MARGIN = path.join('kpis', 'Gross Margin.md')
+const GROSS_MARGIN = path.join('KPIs', 'Gross Margin.md')
 /** Its `kpi_category` today, and what step 2 makes it — the page's own body argues for the change. */
 const CATEGORY_WAS = 'lagging'
 const CATEGORY_NOW = 'fundamental'
 
-/** Every page that belongs to `[[Problems]]` — the fixture's own answer to "which mentions are problems?". */
+/** Every notecard in `Problems` — the fixture's own answer to "which mentions are problems?". */
 const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
-/** The KPIs, alphabetically — the order ADOPTION writes them into the document in. */
+/** The KPIs, in the path order the index hands them to a table with no sort. */
 const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
 
-/**
- * ⚡ YAZ-919: every folder page in this fixture SHIPS a body, and a folder page is title → outline
- * now — so on its first open the body MOVES into `folder_page_settings.views[i].outline` (heading
- * marker stripped, blank lines dropped, one bullet per surviving line) and the file is left
- * frontmatter-only. That document is on screen from the first paint, so what `outlineLines` says
- * about any of these pages starts with the page's own PROSE — and its members, named nowhere in
- * it, are ADOPTED in underneath (⚡ YAZ-1152) as link lines of the same document. The three
- * bodies this file reads back, verbatim:
- */
-const HOME_BODY = [
-  'Home',
-  'The root of the map. Every folder page below says in its own frontmatter that it belongs here,',
-  // the editor renders `order` as a code span, so its backticks are an element and not text
-  "and the outline's order is the only thing that decides what comes first.",
-]
-const KPIS_BODY = [
-  'KPIs',
-  'The numbers the funnel is judged on. Each one names the stages it belongs to, so the same',
-  'metric can be owned jointly without anybody maintaining a second list.',
-]
-const PROBLEMS_BODY = [
-  'Problems',
-  'The things we are hired to fix. Every one names the stage it lives in, the KPIs it moves and',
-  'the role that buys it — which is why nothing here needs a category to be found.',
-]
-/** `Roles.md`'s, read after step 6 has RENAMED the page — prose is prose, and a rename never rewrites it. */
-const ROLES_BODY = ['Roles', 'Who signs, who owns and who reports to whom. The buyers every problem below is sold to.']
-
-const FUNNEL = path.join('funnel-stages', 'Sales-Conversion.md')
+const FUNNEL = path.join('Funnel Stages', 'Sales-Conversion.md')
 const RENAMED = 'Deal Win Rate'
 
 /**
- * Step 6 (YAZ-864): the folder page whose name is spelled in three OTHER frontmatter places than a
- * `folder_pages` list — Home's outline `order`, `Problems.md`'s `sold_to` column `target`, and its
- * own `reports_to` target — all of them NESTED inside `folder_page_settings`, where the index never
- * looked for links. Renamed to a name that sorts FIRST alphabetically, so a stale order entry
- * (silently ignored, then alphabetical) could not pass for a rewritten one.
+ * Step 6 (YAZ-864): the folder whose name is spelled in two frontmatter places that are NESTED
+ * inside `folder_page_settings`, where the index never looked for links — `Problems`' `sold_to`
+ * column `target`, and its own `reports_to` target. A link to a folder resolves to it when no
+ * notecard holds the name (YAZ-2290 D10), so renaming the folder has to rewrite both.
  */
 const ROLES = 'Roles'
 const ROLES_RENAMED = 'Buyer Roles'
-/** Its members, alphabetically — `Roles.md` declares no outline `order`, so [D5] falls back. */
+/** The notecards in it, alphabetically. */
 const ROLE_MEMBERS = ['CEO', 'Head of Sales', 'RevOps Lead']
 const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED]
 
@@ -133,20 +117,10 @@ const expandBacklinks = async (w: Page): Promise<void> => {
   await expect(backlinksHeader(w)).toHaveAttribute('aria-expanded', 'true')
 }
 
-/** The rows/cells of whichever view the contents block is showing. */
-const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
-/** Every name as a LINK LINE, which is how a membership is spelled into the document. */
-const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
-// This file lives on the FILE tree (its seed says so) and steps down to the Topics tree (`lensTab`)
-// for one thing only: the DIRECT-member counts, which since ⚡ YAZ-1152 live there and nowhere else —
-// the outline's appended rows, which used to print them, are gone.
-const topicRow = (w: Page, label: string) =>
-  w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
-
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 /**
  * What the name column shows. The clickable title cell is keyed to `file.name` (TableView's
- * `nameCol`), and since YAZ-1513 it reads the page TITLE — the basename, never `Funnel Stages.md`
+ * `nameCol`), and since YAZ-1513 it reads the page TITLE — the basename, never `CAC.md`
  * (`file.name`'s VALUE keeps the extension for sort and filter; the eye never sees it).
  */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
@@ -168,26 +142,32 @@ const maskCode = (text: string) => text.replace(/```[\s\S]*?(?:```|$)/g, '').rep
 const WIKILINK = /!?\[\[([^[\]]+)\]\]/g
 /** `[[Target|alias]]` / `[[Target#heading]]` → `Target`. */
 const targetOf = (inner: string) => inner.split('|')[0].split('#')[0].trim()
+/** A folder's own settings file — the ONE dot-entry the index reads (YAZ-2290 D1). */
+const SETTINGS_FILE = '.folder.md'
 
-async function walk(dir: string): Promise<string[]> {
-  const out: string[] = []
+/** Every file and every folder under `dir`; dot-entries are skipped, a folder's settings file aside. */
+async function walk(dir: string, dirs: string[] = []): Promise<{ files: string[]; dirs: string[] }> {
+  const files: string[] = []
   for (const e of await readdir(dir, { withFileTypes: true })) {
-    if (e.name.startsWith('.')) continue
+    if (e.name.startsWith('.') && e.name !== SETTINGS_FILE) continue
     const p = path.join(dir, e.name)
-    if (e.isDirectory()) out.push(...(await walk(p)))
-    else out.push(p)
+    if (e.isDirectory()) {
+      dirs.push(p)
+      files.push(...(await walk(p, dirs)).files)
+    } else files.push(p)
   }
-  return out.sort()
+  return { files: files.sort(), dirs }
 }
 
 /**
- * Every wiki link in every note — frontmatter relation values and folder-page settings as much as
- * body prose and `![[…]]` embeds — whose target names no file in the vault, by basename or by
- * root-relative path, with or without extension. The durable result GRO-2203 asks for is that this
- * is `[]` both before and after the rename.
+ * Every wiki link in every note AND every folder settings file — frontmatter relation values and
+ * column targets as much as body prose and `![[…]]` embeds — whose target names nothing in the
+ * vault: no file, by basename or by root-relative path, with or without extension, and no FOLDER
+ * either, by name or by path (a link resolves to a folder when no notecard has the name, YAZ-2290
+ * D10). The durable result GRO-2203 asks for is that this is `[]` both before and after a rename.
  */
 async function brokenLinks(root: string): Promise<string[]> {
-  const files = await walk(root)
+  const { files, dirs } = await walk(root)
   const known = new Set<string>()
   for (const f of files) {
     const rel = path.relative(root, f)
@@ -195,6 +175,10 @@ async function brokenLinks(root: string): Promise<string[]> {
     known.add(path.basename(f, path.extname(f)))
     known.add(rel)
     known.add(rel.slice(0, rel.length - path.extname(rel).length))
+  }
+  for (const d of dirs) {
+    known.add(path.basename(d))
+    known.add(path.relative(root, d))
   }
   const broken: string[] = []
   for (const f of files.filter((x) => x.endsWith('.md'))) {
@@ -207,29 +191,23 @@ async function brokenLinks(root: string): Promise<string[]> {
 }
 
 /**
- * How many pages say, in their OWN frontmatter, that they belong to each of `topics` — the fact the
- * outline printed beside every row until YAZ-903 moved it onto the appended section and ⚡ YAZ-1152
- * deleted that section outright (the Topics tree keeps it). Read straight off the vault, so the
- * claim outlives every surface that has carried it.
+ * How many notecards live DIRECTLY in each of `folders` — the number its row shows (🔒 E6), read
+ * straight off the disk so the claim does not lean on the surface that carries it. Markdown files
+ * only, and never the folder's own settings file.
  */
-async function directMembers(root: string, topics: readonly string[]): Promise<string[]> {
-  const counts = new Map(topics.map((t) => [t, 0]))
-  for (const f of (await walk(root)).filter((x) => x.endsWith('.md'))) {
-    const props = parseFrontmatter(splitFrontmatter(await readFile(f, 'utf8')).frontmatter).properties
-    const entries = Array.isArray(props.folder_pages) ? props.folder_pages : []
-    for (const topic of topics) {
-      if (entries.some((e) => typeof e === 'string' && targetOf(e.replace(/^\[\[|\]\]$/g, '')) === topic)) {
-        counts.set(topic, (counts.get(topic) ?? 0) + 1)
-      }
-    }
-  }
-  return topics.map((t) => String(counts.get(t) ?? 0))
+async function notecardsIn(root: string, folders: readonly string[]): Promise<string[]> {
+  return Promise.all(
+    folders.map(async (folder) => {
+      const entries = await readdir(path.join(root, folder), { withFileTypes: true })
+      return String(entries.filter((e) => e.isFile() && e.name.endsWith('.md') && !e.name.startsWith('.')).length)
+    }),
+  )
 }
 
-/** Any note still carrying the retired type key. The migration's own post-check, re-asked here. */
+/** Any note still carrying the retired type key. The old migration's own post-check, re-asked here. */
 async function withPageType(root: string): Promise<string[]> {
   const out: string[] = []
-  for (const f of (await walk(root)).filter((x) => x.endsWith('.md'))) {
+  for (const f of (await walk(root)).files.filter((x) => x.endsWith('.md'))) {
     if (/^page_type:/m.test(await readFile(f, 'utf8'))) out.push(path.relative(root, f))
   }
   return out
@@ -249,77 +227,60 @@ test.afterAll(async () => {
 
 // ---------- the scenario ----------
 
-test('step 1 — the migrated encyclopedia opens on Home, holding exactly its topics, with nothing left over', async () => {
-  // The fixture itself is sound before anything runs: the migration took every `page_type` with it
-  // and left not one dangling wiki link behind — settings targets and `folder_pages` entries included.
+test('step 1 — the encyclopedia is sound, and every folder row counts exactly the notecards that live in it', async () => {
+  // The fixture itself is sound before anything runs: not one `page_type` key, and not one
+  // dangling wiki link — the column targets inside the folders' settings files included.
   expect(await withPageType(vault)).toEqual([])
   expect(await brokenLinks(vault)).toEqual([])
 
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HOME)) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  // A launch is collapsed since YAZ-1642: open the six disk folders once for every step that
-  // clicks a member.
+
+  // The map of an encyclopedia that maintains no list: six folders, and nothing else at the root.
+  await expect(topLabels(win)).toHaveText(FOLDERS)
+  // THE WHOLE MAP, on one line — the notecards directly in each folder, shown on its row (🔒 E6)
+  // once the index has landed. 17 notecards, five folders, and the two loose ones in `inbox`.
+  for (const [i, topic] of TOPICS.entries()) await expect(dirCount(win, topic)).toHaveText(TOPIC_COUNTS[i])
+  await expect(dirCount(win, 'inbox')).toHaveText('2')
+  // …and the same numbers asked of the vault itself: a row counts what LIVES in the folder.
+  expect(await notecardsIn(vault, TOPICS)).toEqual(TOPIC_COUNTS)
+  await shoot(win, 'bible-01-folders-and-counts')
+
+  // A launch is collapsed since YAZ-1642: open the six folders once for every step that clicks a
+  // notecard's row.
   await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
-
-  // The map of an encyclopedia that maintains no list: the five folder pages say in their OWN
-  // frontmatter that they belong to Home, and NOTHING on Home's side says it back.
-  await expect(contents(win)).toBeVisible()
-  await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
-  // ⚡ YAZ-919: what the outline DOCUMENT holds is Home's own body, migrated in on the first open
-  // — so the page's prose is on screen and its file is frontmatter-only. ⚡ YAZ-1152: that prose
-  // names none of the five members, so ADOPTION writes all five into it, right there under the
-  // body, before anybody has typed a key. One surface, and it is the document.
-  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...HOME_BODY, ...asLinks(...TOPICS)])
-  expect((await read(HOME)).trimEnd().endsWith('---')).toBe(true)
-  // …and `order` RETIRED in that same write: adoption's commit travels the outline's one door, so
-  // it is the first EDIT the lazy migration was waiting for. Nobody reads [D5] here again.
-  expect(await read(HOME)).not.toContain('order:')
-
-  // THE WHOLE MIGRATED MAP, on one line — the DIRECT-member count per topic. ⚡ YAZ-1152 took the
-  // counts off this surface with the rows that carried them (inside the document a folder-page
-  // link is a plain wikilink, the locked scoping decision), so the claim is re-asked where they
-  // still live: the Topics tree. Confirmed independently against the vault: 17 pages, five topics.
-  await lensTab(win, 'Topics').click()
-  for (const [i, topic] of TOPICS.entries()) await expect(topicRow(win, topic).locator('.tree__count')).toHaveText(TOPIC_COUNTS[i])
-  expect(await directMembers(vault, TOPICS)).toEqual(TOPIC_COUNTS)
-  await lensTab(win, 'Files').click() // back to the lens the rest of this file navigates by
-
-  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(dataRows(contents(win))).toHaveCount(TOPICS.length)
-  await expect(rowNames(contents(win))).toHaveText(TOPICS)
-  await shoot(win, 'bible-01-home-topics')
 })
 
-test('step 2 — a MIGRATED column, edited inline: written to the member’s own file, surgically', async () => {
-  await fileRow(win, KPIS).click()
+test('step 2 — a declared column, edited inline: written to the notecard’s own file, surgically', async () => {
+  await openFolder(win, path.join(vault, KPIS))
   await expect(activeTab(win)).toHaveText(KPIS)
-  // Its own body as the document (⚡ YAZ-919), its five members adopted into it below (⚡ YAZ-1152).
-  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...KPIS_BODY, ...asLinks(...KPI_MEMBERS)])
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+  // Its rows are the five notecards that live in it, in path order.
+  await expect(rowNames(contents(win))).toHaveText(KPI_MEMBERS)
 
-  // Column 1 is `kpi_category`, declared `text` by `KPIs.md` — a column the MIGRATION wrote, out
-  // of the `types.json` the same run deleted. Row 1 is Gross Margin, whose own body argues it is
-  // not a funnel lagging indicator at all.
+  // Column 1 is `kpi_category`, declared `text` by `KPIs/.folder.md`. Row 1 is Gross Margin, whose
+  // own body argues it is not a funnel lagging indicator at all.
   // The CELL owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`),
-  // so the door in is a deliberate double-click — `folderPageColumns.spec.ts` step 3's idiom.
+  // so the door in is a deliberate double-click — `folderColumns.spec.ts` step 3's idiom.
   await cell(contents(win), 1, 1).dblclick()
   const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await expect(input).toHaveValue(CATEGORY_WAS)
-  await shoot(win, 'bible-02-migrated-cell-edit')
+  await shoot(win, 'bible-02-declared-cell-edit')
   await input.fill(CATEGORY_NOW)
   await win.keyboard.press('Enter')
 
-  // The write lands in the MEMBER's frontmatter, surgically — every other key the migration left
-  // there, its belonging and the whole body survive.
+  // The write lands in the NOTECARD's frontmatter, surgically — every other key and the whole
+  // body survive, and `funnel_stages`, the declared column this notecard holds no value for,
+  // stays an empty cell rather than becoming an empty key (YAZ-2290 E1).
   const grossMargin = path.join(vault, GROSS_MARGIN)
   await expect.poll(() => readFile(grossMargin, 'utf8'), { timeout: 10_000 }).toContain(`kpi_category: ${CATEGORY_NOW}`)
   const after = await readFile(grossMargin, 'utf8')
   expect(after).toContain('unit: percent')
-  expect(after).toContain('[[KPIs]]') // the belonging is untouched
+  expect(after).not.toContain('funnel_stages:')
   expect(after).toContain('# Gross Margin')
   expect(after).not.toContain('page_type')
-  await shoot(win, 'bible-02b-migrated-cell-written')
+  await shoot(win, 'bible-02b-declared-cell-written')
 })
 
 test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click → background tab', async () => {
@@ -342,11 +303,12 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
 })
 
 test('step 4 — the backlinks panel finds the whole mention set, problems included', async () => {
-  // Who the problems ARE is the folder page's own answer, not this file's: the four pages that
-  // say they belong to `[[Problems]]`, read straight off the block — adopted (⚡ YAZ-1152) into
-  // the document under the page's own migrated body (⚡ YAZ-919), which names none of them.
-  await fileRow(win, 'Problems').click()
-  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...PROBLEMS_BODY, ...asLinks(...PROBLEMS)])
+  // Who the problems ARE is the folder's own answer, not this file's: the four notecards that
+  // live in `Problems`, read straight off its Table — the first of the default views, since its
+  // settings file declares columns and lists no views of its own.
+  await openFolder(win, path.join(vault, 'Problems'))
+  await expect(viewTabs(contents(win))).toHaveText(['Table', 'Board'])
+  await expect(rowNames(contents(win))).toHaveText(PROBLEMS)
 
   await tabsOf(win).filter({ hasText: 'Win Rate' }).click()
   await expect(activeTab(win)).toHaveText('Win Rate')
@@ -359,59 +321,50 @@ test('step 4 — the backlinks panel finds the whole mention set, problems inclu
   await expandBacklinks(win)
   await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
-  // Convergence: the mentions that BELONG TO `[[Problems]]` are exactly the two problems whose
-  // relations point at this KPI — prose, relations and belonging answering the same question.
+  // Convergence: the mentions that LIVE IN `Problems` are exactly the two problems whose
+  // relations point at this KPI — prose, relations and folders answering the same question.
   const mentions = await backlinkNotes(win).allTextContents()
   expect(mentions.filter((n) => PROBLEMS.includes(n)).sort()).toEqual(['CRM Hygiene', 'Stage Accuracy'])
   await shoot(win, 'bible-04-backlinks-agree')
 })
 
-test('step 5 — renaming an entity page: relations, body links, backlinks and its belonging survive', async () => {
+test('step 5 — renaming an entity page: relations, body links, backlinks and its place in its folder survive', async () => {
   await fileRow(win, 'Win Rate').click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
   await expect(win.locator('.create-inline__input')).toHaveValue('Win Rate')
   await win.locator('.create-inline__input').fill(RENAMED)
   await win.keyboard.press('Enter')
-  // The name-change confirm (⚡ YAZ-888), whose count is the notes the rewrite touches — FIVE
-  // since ⚡ YAZ-1152: the four that spell the name in prose and relations, plus `KPIs.md`, whose
-  // outline document names it because adoption wrote the line there (step 2 watched it happen).
-  await confirmRename(win, `Rename 'Win Rate' to '${RENAMED}'? Links in 5 notes will be updated.`)
+  // The name-change confirm (⚡ YAZ-888), whose count is the notes the rewrite touches — the FOUR
+  // that spell the name in prose and relations. No folder's settings name it: an outline holds a
+  // link only when somebody types one (YAZ-2290 D5), and nobody has.
+  await confirmRename(win, `Rename 'Win Rate' to '${RENAMED}'? Links in 4 notes will be updated.`)
 
-  // Five referencing notes: two through frontmatter relations, two through body prose, one
-  // through the link line inside its own `folder_page_settings`.
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 5 notes')
+  // Four referencing notes: two through frontmatter relations, two through body prose.
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 4 notes')
   await expect(activeTab(win)).toHaveText(RENAMED)
 
-  const crmHygiene = path.join('problems', 'CRM Hygiene.md')
+  const crmHygiene = path.join('Problems', 'CRM Hygiene.md')
   // relation properties (whole-value links inside a list) …
   await expect.poll(() => read(crmHygiene)).toContain(`[[${RENAMED}]]`)
   expect(await read(crmHygiene)).toContain('[[Sales Cycle Time]]') // the sibling relation is untouched
-  await expect.poll(() => read(path.join('problems', 'Stage Accuracy.md'))).toContain(`[[${RENAMED}]]`)
+  await expect.poll(() => read(path.join('Problems', 'Stage Accuracy.md'))).toContain(`[[${RENAMED}]]`)
   // … and body links, including a note that was never opened in this run.
-  await expect.poll(() => read(path.join('roles', 'Head of Sales.md'))).toContain(`[[${RENAMED}]]`)
+  await expect.poll(() => read(path.join('Roles', 'Head of Sales.md'))).toContain(`[[${RENAMED}]]`)
   await expect.poll(() => read(FUNNEL)).toContain(`[[${RENAMED}]]`)
 
-  // The backlinks panel still finds the same FOUR notes on the renamed page — and the honest gap
-  // between the two counts is the point: the rewrite walks `folder_page_settings` (YAZ-864), the
-  // INDEX does not extract links from it, so KPIs' adopted line is renamed without ever becoming
-  // a mention. A membership is not a mention.
+  // The backlinks panel still finds the same FOUR notes on the renamed page.
   await expect(backlinksHeader(win)).toHaveText('Linked mentions (4)')
   await expandBacklinks(win)
   await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
-  // And it still belongs where it belonged: the entry lives on the MEMBER and names the topic, so
-  // renaming the member is nothing the topic has to be told about.
-  await fileRow(win, RENAMED).click()
-  expect(await read(path.join('kpis', `${RENAMED}.md`))).toContain('[[KPIs]]')
-  await fileRow(win, KPIS).click()
-  // ⚡ YAZ-1152: `KPIs.md`'s membership is LINES of its document now (adopted in step 2), so the
-  // rename had to walk INSIDE `folder_page_settings` to keep them honest — and it did, in place:
-  // the renamed page is still the fifth line, where adoption first wrote it, under its new name.
-  // A rename rewrites the link where it stands; it does not re-sort a document, and it does not
-  // touch a word of the prose above.
-  await expect
-    .poll(() => outlineLines(contents(win)).allTextContents())
-    .toEqual([...KPIS_BODY, ...asLinks('CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', RENAMED)])
+  // And it still lives where it lived: a notecard belongs to a folder by BEING in it, so renaming
+  // the notecard is nothing the folder has to be told about — it is the same row, under its new
+  // name, in the path order that name now sorts to.
+  expect(await read(path.join('KPIs', `${RENAMED}.md`))).toContain('unit: percent')
+  await openFolder(win, path.join(vault, KPIS))
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+  await expect(rowNames(contents(win))).toHaveText(['CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'])
+  await expect(dirCount(win, KPIS)).toHaveText('5')
 
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
@@ -419,61 +372,46 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await quitApp(app)
 })
 
-test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings follow too (YAZ-864)', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HOME)) })
+test('step 6 — renaming a FOLDER: the links to it INSIDE folder_page_settings follow (YAZ-864)', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  // Home's document is what step 1 left: the body YAZ-919 migrated (the file is frontmatter-only
-  // now, so there is nothing left to move and it moves nothing) plus the five members adoption
-  // wrote in. Read back off the page — and adoption, finding every member already named, is quiet.
-  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...HOME_BODY, ...asLinks(...TOPICS)])
+  await expect(dirCount(win, ROLES)).toHaveText('3')
 
-  await fileRow(win, ROLES).click({ button: 'right' })
+  await dirRow(win, ROLES).click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
   await expect(win.locator('.create-inline__input')).toHaveValue(ROLES)
   await win.locator('.create-inline__input').fill(ROLES_RENAMED)
   await win.keyboard.press('Enter')
   // The confirm's count sees what the rewrite sees — settings-only references included (YAZ-864).
-  await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 6 notes will be updated.`)
+  await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 2 notes will be updated.`)
 
-  // SIX notes: the three members through their own top-level `folder_pages` — the half that already
-  // worked — plus the three folder pages that name Roles ONLY from inside `folder_page_settings`,
-  // which the index never extracted as links and the rewrite therefore used to walk straight past.
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 6 notes')
+  // TWO files, and both are folder settings files: the two that name Roles ONLY from inside
+  // `folder_page_settings`, which the index never extracted as links. The three notecards in the
+  // folder link to each other by BARE name, which a folder rename leaves byte-identical (E1b).
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 2 notes')
 
-  // Home's outline DOCUMENT — the line adoption wrote, rewritten in place. (Before ⚡ YAZ-1152 the
-  // reference this step caught lived in the [D5] `order` list, which adoption's first write
-  // retired; the link moved into the document and the rewrite followed it there.) …
-  await expect.poll(() => read(HOME)).toContain(`- [[${ROLES_RENAMED}]]`)
-  expect(await read(HOME)).toContain('- [[KPIs]]') // its siblings, untouched
-  // … a column `target` on ANOTHER folder page, its column's other keys intact …
-  await expect.poll(() => read('Problems.md')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
-  const problems = await read('Problems.md')
-  expect(problems).toContain('target: "[[KPIs]]"')
-  expect(problems).toContain('required: true')
-  expect(problems).toContain('folder: problems')
-  // … the renamed page's OWN self-target, written at its new path, `folder` and belonging intact …
-  const renamedPage = await read(`${ROLES_RENAMED}.md`)
-  expect(renamedPage).toContain(`target: "[[${ROLES_RENAMED}]]"`)
-  expect(renamedPage).toContain('folder: roles')
-  expect(renamedPage).toContain('- "[[Home]]"')
-  // … and the members' plain `folder_pages`, which is the behaviour that already worked.
-  for (const member of ROLE_MEMBERS) {
-    await expect.poll(() => read(path.join('roles', `${member}.md`))).toContain(`- "[[${ROLES_RENAMED}]]"`)
-  }
+  // A column `target` on ANOTHER folder, its column's other keys intact …
+  const problems = path.join('Problems', '.folder.md')
+  await expect.poll(() => read(problems)).toContain(`target: "[[${ROLES_RENAMED}]]"`)
+  expect(await read(problems)).toContain('target: "[[KPIs]]"')
+  expect(await read(problems)).toContain('required: true')
+  // … the renamed folder's OWN self-target, written at its new path …
+  const renamedSettings = path.join(ROLES_RENAMED, '.folder.md')
+  await expect.poll(() => read(renamedSettings).catch(() => '')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
+  expect(await read(renamedSettings)).toContain('kind: link')
+  // … and the notecards moved with their folder, their own bare links untouched.
+  expect(await read(path.join(ROLES_RENAMED, 'Head of Sales.md'))).toContain('reports_to: "[[CEO]]"')
 
-  // And everything still browses. The renamed page opens for the FIRST time here, so this is also
-  // where its body migrates (⚡ YAZ-919) — out of the file the rename just moved, into the
-  // settings the rename just rewrote, with both writes intact afterwards. The prose still says
-  // "Roles", because prose is prose: a rename walks the CARD and never edits a word of the text.
-  // Its three members, untouched by any of it, are adopted into the document under that prose.
-  await fileRow(win, ROLES_RENAMED).click()
+  // And everything still browses: the folder opens under its new name, holding the same three
+  // notecards — on the first of the default views, since its settings list none.
+  await openFolder(win, path.join(vault, ROLES_RENAMED))
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
-  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...ROLES_BODY, ...asLinks(...ROLE_MEMBERS)])
-  expect(await read(`${ROLES_RENAMED}.md`)).toContain('folder: roles') // the rename's own write survived the migration's
-  expect(await directMembers(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
+  await expect(rowNames(contents(win))).toHaveText(ROLE_MEMBERS)
+  await expect(dirCount(win, ROLES_RENAMED)).toHaveText('3')
+  expect(await notecardsIn(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
 
-  // The durable result again, with the settings targets now inside the audit's reach.
+  // The durable result again, with the settings targets inside the audit's reach.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
-  await shoot(win, 'bible-06-folder-page-rename')
+  await shoot(win, 'bible-06-folder-rename')
   await quitApp(app)
 })

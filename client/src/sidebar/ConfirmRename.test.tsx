@@ -2,7 +2,7 @@
  * The rename confirm (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): renaming
  * triggers a chain — the file on disk, then links across the vault — so a name change asks
  * first, with the honest count. Moves stay silent. The copy is LOCKED, so it is pinned
- * character for character; the sheet's behaviour is pinned against `ConfirmTurnBack`'s, which
+ * character for character; the sheet's behaviour is pinned against `ConfirmDelete`'s, which
  * it mirrors: own sheet never a native dialog, initial focus on CANCEL, Esc cancels, Enter
  * confirms, click-away cancels.
  */
@@ -48,13 +48,13 @@ afterEach(() => {
 const OLD = '/v/Old Note.md'
 const NEW = '/v/New Note.md'
 
-function mount(count: number) {
+function mount(count: number, kind: 'file' | 'dir' = 'file') {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmRename oldPath={OLD} newPath={NEW} count={count} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmRename oldPath={OLD} newPath={NEW} kind={kind} count={count} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -66,6 +66,11 @@ describe('ConfirmRename', () => {
   it('renders the LOCKED copy over PAGE names — basenames minus the extension, never file names', () => {
     const { el } = mount(2)
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note' to 'New Note'? Links in 2 notes will be updated.")
+  })
+
+  it('names a FOLDER whole: one called `Old Note.md` keeps its `.md` (YAZ-2290)', () => {
+    const { el } = mount(0, 'dir')
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note.md' to 'New Note.md'? No other notes link to it.")
   })
 
   it('offers exactly Cancel and Rename', () => {
@@ -92,7 +97,7 @@ describe('ConfirmRename', () => {
   })
 
   /**
-   * The one departure from `ConfirmTurnBack`'s mirror, and the reason for it: this sheet can be
+   * The one departure from `ConfirmDelete`'s mirror, and the reason for it: this sheet can be
    * opened BY an Enter (the title input, the sidebar's inline rename), and React flushes its
    * effects inside that same keydown's dispatch — a window listener would hear the keystroke
    * that opened it and rename before the sheet was ever read.
@@ -124,7 +129,7 @@ describe('ConfirmRename', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('is an in-app dialog, labelled by its own text — never a native one (ConfirmTurnBack\'s roles)', () => {
+  it('is an in-app dialog, labelled by its own text — never a native one (ConfirmDelete\'s roles)', () => {
     const { el } = mount(3)
     const dialog = el.querySelector('.confirm')
     expect(dialog?.getAttribute('role')).toBe('dialog')

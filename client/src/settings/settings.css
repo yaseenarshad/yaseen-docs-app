@@ -379,6 +379,13 @@
   border-color: var(--danger);
 }
 
+/* A review number (YAZ-2322): the same field, a few digits wide, on the row beside its unit. */
+.settings__input--number {
+  width: 64px;
+  margin: 0 4px 0 0;
+  text-align: right;
+}
+
 /* ---------- hotkey reference (GRO-2067) — one table per Hotkeys group ---------- */
 
 .hotkeys__list {

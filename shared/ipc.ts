@@ -62,7 +62,7 @@ export const CONTRACT = {
     pushRecent: invoke<[path: string], void>('state:push-recent', 1),
     /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
     removeRecent: invoke<[path: string], void>('state:remove-recent', 1),
-    /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped and `name` cleaned main-side (YAZ-848, YAZ-1974). */
+    /** Merge into `folders[root]`; missing root entries are created with defaults. `name` is cleaned main-side (YAZ-1974). */
     setFolder: invoke<[root: string, patch: FolderPatch], void>('state:set-folder', 2),
     /** Replace the fold keys for one file; an empty list removes the entry. The preload sends a copy of `keys`. */
     setFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-folds', 3),

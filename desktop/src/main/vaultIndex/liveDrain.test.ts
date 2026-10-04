@@ -30,6 +30,7 @@ const gate = vi.hoisted(() => {
 vi.mock('./scan', async (importOriginal) => {
   const real = await importOriginal<typeof import('./scan')>()
   return {
+    ...real,
     scanFile: async (root: string, file: string) => {
       gate.calls.add(file)
       const held = gate.held()

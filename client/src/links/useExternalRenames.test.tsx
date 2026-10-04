@@ -41,7 +41,7 @@ function installBridge() {
   const files: Record<string, { content: string; mtime: number }> = {}
   const bridge = {
     coldDiff: vi.fn(async (): Promise<ColdStartDiffResponse | null> => null),
-    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], folders: [] as IndexRecord[], generatedAt: 1 })),
     tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
     readFile: vi.fn(async (path: string) => {
       const f = files[path]
@@ -83,8 +83,8 @@ async function mount(root: string | null = '/v') {
 }
 
 const banner = () => container?.querySelector('[data-banner]')?.textContent ?? null
-const snapshot = async (records: IndexRecord[]) => {
-  act(() => captured.ext?.onSnapshot(records))
+const snapshot = async (records: IndexRecord[], folders: IndexRecord[] = []) => {
+  act(() => captured.ext?.onSnapshot(records, folders))
   await act(async () => {}) // settle the cold-diff read (first snapshot) / queue updates
 }
 
@@ -247,7 +247,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
   it('Update repairs the app, rewrites the referencing note through the engine and shows the summary notice', async () => {
     const { bridge, files } = await mount()
     files['/v/A.md'] = { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 }
-    bridge.index.mockResolvedValue({ root: '/v', records: postRename, generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: postRename, folders: [], generatedAt: 2 })
     await snapshot(preRename)
     await snapshot(postRename)
     expect(bridge.writeFile).not.toHaveBeenCalled() // NOTHING before the confirmation (locked)
@@ -261,6 +261,22 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
     await snapshot(preRename)
     await snapshot(postRename)
     expect(banner()).toBeNull()
+  })
+
+  it('a folder whose settings are the ONLY reference still banners, and Update rewrites its `.folder.md` (YAZ-2290 D8)', async () => {
+    const settings = rec('/v/Projects/.folder.md', { size: 30, mtime: 9, properties: { folder_page_settings: { views: [{ type: 'table', name: 'T', order: ['[[B]]'] }] } } })
+    const before = [rec('/v/B.md')]
+    const after = [rec('/v/B2.md')]
+    const { bridge, files } = await mount()
+    files[settings.path] = { content: '---\nfolder_page_settings:\n  views:\n    - type: table\n      name: T\n      order:\n        - "[[B]]"\n---\n', mtime: 1 }
+    bridge.index.mockResolvedValue({ root: '/v', records: after, folders: [settings], generatedAt: 2 })
+    await snapshot(before, [settings])
+    await snapshot(after, [settings])
+    expect(banner()).toBe('/v/B.md|/v/B2.md|1')
+    act(() => captured.ext?.update())
+    await act(async () => {})
+    expect(files[settings.path].content).toContain('"[[B2]]"')
+    expect(notices).toEqual(['Updated links in 1 note'])
   })
 
   it('a stale hypothesis (repair refused by main) surfaces a passive notice and rewrites NOTHING', async () => {

@@ -1,8 +1,10 @@
+import { ALSO_IN_KEY } from '@shared/alsoIn'
+import { NOTE_ID_KEY } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
-  compile, equals, evaluate, fromYaml, isTruthy, render, stripBrackets,
+  compile, equals, evaluate, fromYaml, isTruthy, linkText, render, stripBrackets,
 } from './expr'
 import { summarize } from './summaries'
 
@@ -60,17 +62,14 @@ export interface ViewResult {
 }
 
 export interface RunOptions {
-  /** The folder page's declared column names — shown by default before any member carries them (YAZ-1549). */
+  /** The folder's declared column names — shown by default before any notecard carries them (YAZ-1549). */
   declared?: readonly string[]
-  /** Absolute path of the note embedding the base; `this` in expressions. */
-  thisFile?: string | null
   /** Vault root; lets link targets written as `<root>/…` resolve. */
   root?: string
   /**
-   * The resolver every link in this run resolves through (🔒 D2, YAZ-819). Absent — every caller
-   * caller — keeps today's behaviour exactly: one built from `records`, which for a base IS the
-   * vault. A FOLDER PAGE's contents pass only the MEMBERS as rows and inject the FULL-VAULT
-   * resolver here, so a link cell pointing outside the members still resolves.
+   * The resolver every link in this run resolves through (🔒 D2, YAZ-819). A folder's views pass
+   * only the folder's rows as `records` and inject the WHOLE-vault resolver here, so a link cell
+   * pointing outside them still resolves. Absent: one built from `records`.
    */
   resolve?: Resolver
 }
@@ -92,7 +91,7 @@ const NO_VALUE = 'No value'
 const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
 
 /** A link target as the resolver reads it: brackets, `#heading` and `|alias` off, trimmed, lowercased. */
-const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
+export const targetKey = (target: string) => stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()
 
 /**
  * A basename as `targetBasename` spells it: lowercased, with the one context-dependent lowercase
@@ -119,16 +118,23 @@ export interface ResolverOptions {
    * own frontmatter and travels with it.
    */
   aliases?: boolean
+  /**
+   * Resolve a target that IS a note's id (default true, YAZ-2293 D5). `false` for the rename
+   * engine's probe too: an id link names the note itself, not its place, so no rename rewrites it.
+   */
+  ids?: boolean
 }
 
 /**
- * Link target → note: absolute path, root-relative path (with or without `.md` / leading slash),
+ * Link target → note: the note's own id (YAZ-2293 — first, so a note merely NAMED like an id
+ * never captures it), absolute path, root-relative path (with or without `.md` / leading slash),
  * bare basename — duplicates resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
  * GRO-2190), equal depth to the first in the given (path-sorted) order — and finally a
  * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
  * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  */
 export function makeResolver(files: readonly FileValue[], root?: string, opts: ResolverOptions = {}): Resolver {
+  const byId = new Map<string, FileValue>()
   const byPath = new Map<string, FileValue>()
   const byRel = new Map<string, FileValue>()
   const byBase = new Map<string, { file: FileValue; depth: number }>()
@@ -139,6 +145,7 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
   }
   for (const f of files) {
     const r = f.record
+    if (opts.ids !== false && r.id !== undefined && !byId.has(r.id)) byId.set(r.id, f)
     byPath.set(r.path.toLowerCase(), f)
     const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
     if (!byRel.has(rel)) byRel.set(rel, f)
@@ -154,7 +161,7 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
     const key = targetKey(target)
     let found: FileValue | null = null
     if (key) {
-      found = byPath.get(key) ?? null
+      found = byId.get(key) ?? byPath.get(key) ?? null
       if (!found) {
         const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
         found = byRel.get(rel) ?? (rel.includes('/') ? null : byBase.get(rel)?.file ?? null)
@@ -188,7 +195,7 @@ const resolverCache = new WeakMap<readonly IndexRecord[], Map<string, Resolver>>
 export function resolverFor(records: readonly IndexRecord[], root?: string, opts: ResolverOptions = {}): Resolver {
   let byRoot = resolverCache.get(records)
   if (byRoot === undefined) resolverCache.set(records, (byRoot = new Map()))
-  const key = `${opts.aliases === false ? 'names:' : ''}${root ?? ''}`
+  const key = `${opts.aliases === false ? 'names:' : ''}${opts.ids === false ? 'noids:' : ''}${root ?? ''}`
   let resolver = byRoot.get(key)
   if (resolver === undefined) byRoot.set(key, (resolver = makeResolver(fileValuesFor(records), root, opts)))
   return resolver
@@ -285,10 +292,11 @@ const rank = (v: Value): number => {
 
 /**
  * Type-aware comparison: numbers numeric, dates/durations by ms, strings natural and
- * case-insensitive, booleans false < true, links by target, files by basename; mixed types by
+ * case-insensitive, booleans false < true, links by what they read as (`linkText` — through
+ * `resolve`, an id link by its note's title, YAZ-2293 D8), files by basename; mixed types by
  * rank. Missing (null / undefined / error) always sorts last whatever the direction.
  */
-function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC'): number {
+function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
   const x = sortKey(a)
   const y = sortKey(b)
   const mx = isMissing(x)
@@ -303,7 +311,7 @@ function compareValues(a: Value | undefined, b: Value | undefined, direction: 'A
   else if (x instanceof DateValue || x instanceof DurationValue) c = x.ms - (y as DateValue | DurationValue).ms
   else if (typeof x === 'string') c = collator.compare(x, y as string)
   else if (typeof x === 'boolean') c = Number(x) - Number(y)
-  else if (x instanceof LinkValue) c = collator.compare(x.target, (y as LinkValue).target)
+  else if (x instanceof LinkValue) c = collator.compare(linkText(x, resolve), linkText(y as LinkValue, resolve))
   else if (x instanceof FileValue) c = collator.compare(x.record.basename, (y as FileValue).record.basename)
   return sign * c
 }
@@ -318,13 +326,16 @@ const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof 
 
 /**
  * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
- * `note.<key>`. `declared` is the folder page's own column names (YAZ-1549): a declared column is
- * a column before any member carries it, so a newborn page shows its `status` at once.
+ * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
+ * a column before any notecard carries it, so a new folder shows its `status` at once. Two keys
+ * the app writes and nobody reads as a value are never default columns: the note's `id`
+ * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2). A view can still add either
+ * (`allPropertyKeys` offers them).
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
-  for (const r of records) for (const k of Object.keys(r.properties)) keys.add(`note.${k}`)
+  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== NOTE_ID_KEY && k !== ALSO_IN_KEY) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 
@@ -369,7 +380,6 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
   const files = fileValuesFor(records)
   const resolve = opts.resolve ?? resolverFor(records, opts.root)
-  const thisFile = opts.thisFile ? files.find(f => f.record.path === opts.thisFile) ?? null : null
   const formulas = def.formulas ?? {}
   const baseFilter = compileFilter(def.filters, 'filters', errors)
   const viewFilter = compileFilter(view.filters, `${viewWhere}.filters`, errors)
@@ -390,7 +400,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   // filters
   const entries: Entry[] = []
   for (let i = 0; i < records.length; i++) {
-    const scope: Scope = { note: records[i].properties, file: files[i], formulas, this: thisFile, resolve }
+    // `this` is null: the views are a FOLDER's, and a folder is no record (YAZ-2290).
+    const scope: Scope = { note: records[i].properties, file: files[i], formulas, this: null, resolve }
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
     entries.push({ row: { record: records[i], file: files[i], values: {} }, scope, cache: new Map() })
@@ -409,7 +420,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       const va = sortValues.get(a)!
       const vb = sortValues.get(b)!
       for (let i = 0; i < sort.length; i++) {
-        const c = compareValues(va[i], vb[i], sort[i].direction === 'DESC' ? 'DESC' : 'ASC')
+        const c = compareValues(va[i], vb[i], sort[i].direction === 'DESC' ? 'DESC' : 'ASC', resolve)
         if (c) return c
       }
       return byPath(a, b)
@@ -467,11 +478,11 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       }
       if (joined === 0) noValue.push(entry)
     }
-    valued.sort((a, b) => compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC'))
+    valued.sort((a, b) => compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC', resolve))
     return { valued, noValue, fannedOut }
   }
   const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean): Group =>
-    ({ key, label: key === null ? NO_VALUE : render(key), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
+    ({ key, label: key === null ? NO_VALUE : render(key, resolve), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
 
   let groups: Group[] | null = null
   // Levels past the second are ignored in v1 (YAZ-745); a level without a property name is not one.

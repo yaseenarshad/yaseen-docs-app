@@ -30,13 +30,17 @@
  * used to leave them dangling; they now rewrite exactly as a top-level entry does, through the
  * same `resolves` / `newTarget` pair, so their spelling rules cannot drift from anyone else's.
  * The key's own module owns both the key name and the list of link-bearing leaves
- * (`views/folderPageSettings.ts` `mapFolderPageSettingsLinks`) — this engine never re-parses it.
+ * (`views/folderSettings.ts` `mapFolderSettingsLinks`) — this engine never re-parses it.
  * The referencing-set probe learned the same leaves, because a page whose ONLY reference lives
  * in there has no `links` entry to be found by: one construction, never two truths.
  *
  * E1b's bare-vs-pathed rules, LOCKED (decision E thread):
  *  - FOLDER rename: bare-name links keep resolving (names unchanged) — they stay
  *    BYTE-IDENTICAL; only PATHED targets rewrite, to the new root-relative path.
+ *  - Links to the FOLDER ITSELF (YAZ-2290 D10 — a folder is a page, `links/folderLinks.ts`) follow
+ *    the FILE rule: bare `[[Projects]]` becomes the new name, a pathed one the new path, and a
+ *    bare one stays untouched while the name still reaches the folder (a move). A folder's own
+ *    settings file (`folders`) is a referencing file like any note.
  *  - FILE move (and rename): a bare link stays bare only when the bare form still resolves
  *    to the moved file AFTERWARDS — decided through the resolver against a POST-move record
  *    set (the shallowest rule may hand the name to a duplicate); otherwise it escalates to
@@ -44,16 +48,19 @@
  *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a note through its frontmatter
  *    `aliases` is NEVER rewritten — the alias travels with the file, so it still resolves
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
+ *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
+ *    reason — the id travels in the file's own frontmatter.
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { resolverFor, targetBasename } from '../views/engine'
-import { folderPageSettingsLinks, mapFolderPageSettingsLinks } from '../views/folderPageSettings'
+import { folderSettingsLinks, mapFolderSettingsLinks } from '../views/folderSettings'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
-import { basename, stripExt } from '../lib/paths'
+import { basename, relTo, stripExt } from '../lib/paths'
+import { folderResolver, linkResolver } from './folderLinks'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
 /** Does this raw link target point at the renamed file? (Wired to THE shared resolver.) */
@@ -181,8 +188,8 @@ export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTa
         }
       }
       // The nested leaves go back as the WHOLE key — the one door's own write shape
-      // (`writeFolderPageSettings`), so nothing about that block is serialised two ways.
-      const settings = mapFolderPageSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))
+      // (`writeFolderSettings`), so nothing about that block is serialised two ways.
+      const settings = mapFolderSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))
       if (settings !== null) out = setFrontmatterProperty(out, settings.key, settings.value)
     }
   }
@@ -193,7 +200,7 @@ export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTa
 function* referenceTargets(record: IndexRecord): Generator<string> {
   yield* record.links
   yield* record.embeds
-  for (const link of folderPageSettingsLinks(record.properties)) {
+  for (const link of folderSettingsLinks(record.properties)) {
     const target = exactLinkTarget(link)
     if (target !== null) yield target
   }
@@ -239,6 +246,10 @@ export interface UpdateLinksOptions {
   kind?: 'file' | 'dir'
   /** The PRE-rename index snapshot (fetched before `fs:rename` — see the module doc). */
   records: readonly IndexRecord[]
+  /** The same snapshot's folder settings records (YAZ-2290 D8): rewritten like notes, never resolved to. */
+  folders?: readonly IndexRecord[]
+  /** The PRE-rename folders (`vaultDirs`): what a link to a folder resolves over (YAZ-2290 D10). */
+  dirs?: readonly string[]
   /** Separate PRE-rename text/PDF catalog; these targets never enter `records`. */
   viewOnlyCatalog?: ViewOnlyCatalog | null
 }
@@ -256,7 +267,7 @@ export interface UpdateLinksOptions {
  * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
  * fix — deferred with the rest of the E1c queue work.
  */
-function makeResolves({ root, oldPath, kind, records, viewOnlyCatalog }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): {
+function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; dirs?: readonly string[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
 } {
@@ -264,24 +275,31 @@ function makeResolves({ root, oldPath, kind, records, viewOnlyCatalog }: { root:
   // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
   // in that file's own frontmatter and travels with it, so it keeps pointing there. Building
   // the probe without the alias map keeps the dry-run count and the rewrite agreeing on that.
-  const resolver = resolverFor(records, root, { aliases: false })
+  // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
+  // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
+  const resolver = resolverFor(records, root, { aliases: false, ids: false })
+  // A FOLDER holds a name only when no notecard, path or ALIAS does (YAZ-2290 D10) — asked of the
+  // full resolver, so a link an alias answers is never read as the folder's. No folder ids either.
+  const anyNote = resolverFor(records, root)
+  const folder = folderResolver(root, dirs)
   const prefix = `${oldPath}/`
-  const isMoved = kind === 'dir' ? (p: string) => p.startsWith(prefix) : (p: string) => p === oldPath
+  const isMoved = kind === 'dir' ? (p: string) => p === oldPath || p.startsWith(prefix) : (p: string) => p === oldPath
   const targetPaths = new Map<string, string | null>()
   const resolveTargetPath = (t: string): string | null => {
     const hit = targetPaths.get(t)
     if (hit !== undefined) return hit
     // An explicit recognized non-Markdown extension belongs exclusively to the lightweight
     // catalog. It must never acquire a semantic record/resolver fallback on a miss.
-    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : resolver(t)?.record.path ?? null
+    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : resolver(t)?.record.path ?? (anyNote(t) === null ? folder(t) : null)
     targetPaths.set(t, resolved)
     return resolved
   }
   const resolves: ResolvesToOld = (target) => {
-    // LOCKED (E1b): across a FOLDER rename, bare-name links keep resolving (names are
-    // unchanged) and stay byte-identical — only PATHED targets rewrite in dir mode.
-    if (kind === 'dir' && !target.includes('/')) return false
     const hit = resolveTargetPath(target)
+    // LOCKED (E1b): across a FOLDER rename, bare-name links keep resolving (names are
+    // unchanged) and stay byte-identical — only PATHED targets rewrite in dir mode. The one
+    // bare link that names what changed is a link to the folder ITSELF (YAZ-2290 D10).
+    if (kind === 'dir' && !target.includes('/')) return hit === oldPath
     return hit !== null && isMoved(hit)
   }
   return { resolves, resolveTargetPath }
@@ -294,21 +312,20 @@ function makeResolves({ root, oldPath, kind, records, viewOnlyCatalog }: { root:
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ root, oldPath, kind = 'file', records, viewOnlyCatalog }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): number {
-  const { resolves } = makeResolves({ root, oldPath, kind, records, viewOnlyCatalog })
-  return records.filter(makeReferences(resolves)).length
+export function countLinkReferences({ root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[]; folders?: readonly IndexRecord[]; dirs?: readonly string[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): number {
+  const { resolves } = makeResolves({ root, oldPath, kind, records, dirs, viewOnlyCatalog })
+  return [...records, ...folders].filter(makeReferences(resolves)).length
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
-export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, viewOnlyCatalog }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
-  const mapMoved = kind === 'dir' ? (p: string) => (p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
-  const relOf = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
-  const { resolves, resolveTargetPath } = makeResolves({ root, oldPath, kind, records, viewOnlyCatalog })
+  const mapMoved = kind === 'dir' ? (p: string) => (p === oldPath || p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
+  const { resolves, resolveTargetPath } = makeResolves({ root, oldPath, kind, records, dirs, viewOnlyCatalog })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
-  const newRel = relOf(newPath)
+  const newRel = relTo(root, newPath)
   const postRecords =
     kind === 'file'
       ? records.map((r) =>
@@ -318,6 +335,9 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
         )
       : records
   const postResolver = resolverFor(postRecords, root)
+  // The folders the same way: is a path a folder, and who holds a bare name once they have moved.
+  const folderPaths = new Set(dirs)
+  const postLink = linkResolver(postRecords, root, dirs.map(mapMoved))
   const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined
     ? null
     : buildViewOnlyCatalogFromEntries(root, viewOnlyCatalog.entries.map((entry) => {
@@ -325,9 +345,13 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
         return path === entry.path ? entry : { ...entry, path, name: basename(path) }
       }))
   const newTarget: NewTarget = (target) => {
-    const moved = mapMoved(resolveTargetPath(target) as string) // non-null: `resolves` vetted this target
+    const hit = resolveTargetPath(target) as string // non-null: `resolves` vetted this target
+    const moved = mapMoved(hit)
     const movedName = basename(moved)
-    const movedRel = relOf(moved)
+    const movedRel = relTo(root, moved)
+    // A folder (YAZ-2290 D10) has no extension to keep: pathed stays pathed, and bare stays bare
+    // only while the name still reaches it — else it escalates to the path, as a file's does.
+    if (folderPaths.has(hit)) return !target.includes('/') && postLink(movedName) === moved ? movedName : movedRel
     if (isViewOnly(target)) {
       // Keep the old form discipline: pathed remains pathed; bare remains bare only while the
       // post-move catalog still awards that basename to this file, otherwise disambiguate.
@@ -345,7 +369,7 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
   }
   const references = makeReferences(resolves)
   const summary: RenameRewriteSummary = { updated: 0, skipped: 0 }
-  for (const record of records) {
+  for (const record of [...records, ...folders]) {
     if (!references(record)) continue
     // A self-link travels with the file: a moved note is read/written at its NEW path
     // (for a dir, every record under the old prefix relocated).

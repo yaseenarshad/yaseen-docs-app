@@ -2,32 +2,28 @@
  * Delete a column (YAZ-1513, Notion semantics, confirm-first): ONE function behind both doorways —
  * the table header's right-click and the Properties menu's detail panel. It removes
  *
- *  (a) the declaration `folder_page_settings.columns.<key>` on THIS folder page,
- *  (b) every reference the page's views hold to the key — `order`, `sort`, `groupBy`,
+ *  (a) the declaration `folder_page_settings.columns.<key>` of THIS folder,
+ *  (b) every reference the folder's views hold to the key — `order`, `sort`, `groupBy`,
  *      `summaries`, `columnSize`, `cardStyle`, a cards `image`, and every filter leaf that names
  *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows
  *      the shortened order through the one order writer, `withOrder`),
- *  (c) the key from the frontmatter of every DIRECT member that carries it.
+ *  (c) the key from the frontmatter of every notecard that LIVES in the folder and carries it
+ *      (YAZ-2290 E4) — the host hands that list in, so a row that merely shows there is not touched.
  *
- * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder page
+ * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder
  * host's echo guard (YAZ-1234/1241) — and they land FIRST and are AWAITED: settings are the source
  * of truth, and if that write is refused nothing else moves (YAZ-1549). (c) is per note, against
  * fresh file bytes, byte-preserving every other key; a note whose record shows the key but whose
- * disk no longer does is simply not written. Strip failures are aggregated the way
- * `folderPageColumns.ts` aggregates its own — one error for the banner, successes committed, no
- * rollback; the next open is the retry.
+ * disk no longer does is simply not written. Strip failures are aggregated — one error for the
+ * banner, successes committed, no rollback.
  *
- * ACCEPTED (by ruling): a member that ALSO belongs to another folder page declaring the same key
- * gets it re-added by THAT page's presence invariant when it is next opened. The declaration is
- * per page; the value follows whichever declaration is live.
- *
- * Built-in columns are never deletable — `file.*`, `formula.*` and the app-owned keys — only
+ * Built-in columns are never deletable — `file.*`, `formula.*` and the reserved keys — only
  * hidden. `undeletableReason` is the one rule both menus disable their item by.
  */
 import { setFrontmatterProperty } from '@shared/frontmatter'
 import type { IndexRecord } from '@shared/types'
-import { APP_OWNED_KEYS } from '../links/reservedKeys'
-import type { ColumnDecl } from './folderPageSettings'
+import { RESERVED_KEYS } from '../links/reservedKeys'
+import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'
 import { groupByLevels, type FilterNode, type ViewDef, type ViewSet } from './viewSchema'
@@ -38,13 +34,13 @@ const bareOf = (key: string): string => canonicalKey(key).slice('note.'.length)
 /** The tooltip a disabled "Delete column…" wears, or null when the key may go. */
 export function undeletableReason(key: string): string | null {
   const c = canonicalKey(key)
-  return !c.startsWith('note.') || APP_OWNED_KEYS.has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
+  return !c.startsWith('note.') || RESERVED_KEYS.has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
 }
 
-/** The direct members whose card currently carries the key — the confirm sheet's count, the strip's list. */
-export function membersCarrying(members: readonly IndexRecord[], key: string): IndexRecord[] {
+/** The notecards whose frontmatter currently carries the key — the confirm sheet's count, the strip's list. */
+export function residentsCarrying(residents: readonly IndexRecord[], key: string): IndexRecord[] {
   const bare = bareOf(key)
-  return members.filter((member) => Object.prototype.hasOwnProperty.call(member.properties, bare))
+  return residents.filter((resident) => Object.prototype.hasOwnProperty.call(resident.properties, bare))
 }
 
 /** Every `"…"` / `'…'` literal blanked (escapes honoured), so a key spelled INSIDE a string is not a reference. */
@@ -139,20 +135,20 @@ export function pruneColumnLabel(properties: ViewSet['properties'], key: string)
 }
 
 export interface DeleteColumnHost {
-  /** The folder page's declarations as the host holds them — its AHEAD copy (YAZ-1549), never a stale snapshot. */
+  /** The folder's declarations as the host holds them — its AHEAD copy (YAZ-1549), never a stale snapshot. */
   columns: Readonly<Record<string, ColumnDecl>>
   /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
   def: ViewSet
-  /** The DIRECT members — the same set the presence invariant walks (YAZ-999). */
-  members: readonly IndexRecord[]
+  /** The notecards that live in the folder (YAZ-2290 E4) — the only ones the key is stripped from. */
+  residents: readonly IndexRecord[]
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
 }
 
 /**
- * Delete `key` everywhere on this page (see the module doc). The settings write is awaited and a
- * refusal ABORTS — no member is touched; the host has already surfaced that error. Rejects with
- * the aggregated member failures otherwise.
+ * Delete `key` everywhere in this folder (see the module doc). The settings write is awaited and a
+ * refusal ABORTS — no resident is touched; the host has already surfaced that error. Rejects with
+ * the aggregated resident failures otherwise.
  */
 export async function deleteColumn(key: string, host: DeleteColumnHost): Promise<void> {
   const reason = undeletableReason(key)
@@ -163,15 +159,15 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   delete columns[bare]
   await host.writeSettings(columns, pruneColumnFromViews(host.def.views, key), pruneColumnLabel(host.def.properties, key))
 
-  const carrying = membersCarrying(host.members, key)
+  const carrying = residentsCarrying(host.residents, key)
   const results = await Promise.allSettled(
-    carrying.map((member) => transformFile(member.path, (content) => setFrontmatterProperty(content, bare, undefined))),
+    carrying.map((resident) => transformFile(resident.path, (content) => setFrontmatterProperty(content, bare, undefined))),
   )
   const failed = results.flatMap((result, index) =>
-    result.status === 'rejected' ? [{ member: carrying[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
+    result.status === 'rejected' ? [{ resident: carrying[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
   )
   if (failed.length === 0) return
   throw new Error(
-    `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ member, why }) => `${member.basename} (${why})`).join('; ')}`,
+    `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ resident, why }) => `${resident.basename} (${why})`).join('; ')}`,
   )
 }

@@ -25,6 +25,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
+import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
 import './backlinks.css'
@@ -42,26 +43,8 @@ export interface BacklinksSectionProps {
 
 const NONE: readonly IndexRecord[] = []
 
-/** The resolver and the records it was built from, always read together (never half a snapshot). */
-interface Feed {
-  records: readonly IndexRecord[]
-  resolve: ResolveLink | null
-}
-
 export function BacklinksSection({ path, source, openCurrent, openBackground }: BacklinksSectionProps) {
-  // The same live-feed idiom the folder page's contents block uses: subscribe once, re-read
-  // the whole feed on each poke. Identical contents keep the previous object, so a snapshot that
-  // changed nothing for us costs no render.
-  const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
-  useEffect(() => {
-    const read = () =>
-      setFeed((prev) =>
-        prev.records === source.records && prev.resolve === source.resolve ? prev : { records: source.records, resolve: source.resolve },
-      )
-    read()
-    return source.subscribe(read)
-  }, [source])
-
+  const feed = useIndexFeed(source)
   const [expanded, setExpanded] = useState(false)
 
   const entries = feed.resolve === null ? NONE : backlinksFor(path, feed.records, feed.resolve)

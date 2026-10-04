@@ -25,6 +25,32 @@ export interface MenuRow {
 /** Called at open time with the handle's target (from blockHandleTarget.handleTargetPos) and the editor ctx. */
 export type RowProvider = (view: EditorView, target: HandleTarget, ctx: Ctx) => MenuRow[]
 
+/**
+ * Draws the popup into `parent`, unplaced: a clicked row runs, then `close`. Exported for the id
+ * link's menu (`wikilink/wikilinkMenu.ts`, YAZ-2293) — the same rows, on another target.
+ */
+export function renderMenu(parent: HTMLElement | null, items: MenuRow[], close: () => void): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'ctx-menu ctx-menu--editor'
+  el.setAttribute('role', 'menu')
+  for (const row of items) {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.className = 'ctx-menu__item'
+    item.setAttribute('role', 'menuitem')
+    item.disabled = row.disabled === true
+    item.textContent = row.label
+    item.addEventListener('mousedown', (e) => e.preventDefault())
+    item.addEventListener('click', () => {
+      row.run()
+      close()
+    })
+    el.appendChild(item)
+  }
+  parent?.appendChild(el)
+  return el
+}
+
 export const createBlockHandleMenu = (rows: RowProvider) =>
   $prose(
     (ctx) =>
@@ -40,28 +66,6 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             popup = null
           }
           const rightGrab = (e: MouseEvent) => e.button === 2 && isOwnHandleGrab(view, e.target)
-
-          const render = (items: MenuRow[]): HTMLElement => {
-            const el = document.createElement('div')
-            el.className = 'ctx-menu ctx-menu--editor'
-            el.setAttribute('role', 'menu')
-            for (const row of items) {
-              const item = document.createElement('button')
-              item.type = 'button'
-              item.className = 'ctx-menu__item'
-              item.setAttribute('role', 'menuitem')
-              item.disabled = row.disabled === true
-              item.textContent = row.label
-              item.addEventListener('mousedown', (e) => e.preventDefault())
-              item.addEventListener('click', () => {
-                row.run()
-                close()
-              })
-              el.appendChild(item)
-            }
-            view.dom.parentElement?.appendChild(el)
-            return el
-          }
 
           const onMouseDown = (e: MouseEvent) => {
             if (rightGrab(e)) e.stopImmediatePropagation()
@@ -79,7 +83,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             const items = rows(view, target, ctx)
             if (items.length === 0) return
             close()
-            popup = render(items)
+            popup = renderMenu(view.dom.parentElement, items, close)
             const r = popup.getBoundingClientRect()
             popup.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth - r.width))}px`
             popup.style.top = `${Math.max(0, Math.min(e.clientY, window.innerHeight - r.height))}px`

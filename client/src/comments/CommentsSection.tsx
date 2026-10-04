@@ -1,6 +1,6 @@
 /**
  * The comment stream (YAZ-1472) — a Linear-style block of the note's own, INSIDE the editor's
- * scroller after the folder page's contents and before "Linked mentions" (🔒 D4). Always
+ * scroller after the note's body, or a folder's views, and before "Linked mentions" (🔒 D4). Always
  * rendered, unlike the backlinks: the composer is the door to the first comment. Storage is the
  * note's frontmatter (`shared/comments.ts`, 🔒 D1), so this block is a VIEW over the same disk
  * truth the properties panel reads — `file.content` is CrepeHost's `disk` — with no watcher of

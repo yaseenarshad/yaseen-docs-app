@@ -87,12 +87,12 @@ describe('atomicWrite (YAZ-2177)', () => {
 })
 
 describe('createDurable (YAZ-2177)', () => {
-  it('fsyncs a tmp sibling, links it to the name, then drops the tmp', () =>
+  it('fsyncs a tmp sibling and links it to the name to claim it, renames the same bytes in over the link (YAZ-2380), then drops the tmp', () =>
     withDir(async (dir) => {
       const log = await traceDurability()
       const file = path.join(dir, 'new.png')
       await createDurable(file, new Uint8Array([0, 255, 7]))
-      expect(log).toEqual(['sync new.png.tmp', 'link new.png.tmp → new.png'])
+      expect(log).toEqual(['sync new.png.tmp', 'link new.png.tmp → new.png', 'sync new.png.tmp', 'rename new.png.tmp → new.png'])
       expect([...(await readFile(file))]).toEqual([0, 255, 7])
       expect(await readdir(dir)).toEqual(['new.png'])
     }))
@@ -149,7 +149,7 @@ describe('tmp names (YAZ-2179)', () => {
       vi.mocked(open).mockImplementation((file, ...rest) => (tmps.push(String(file)), real.open(file, ...rest)))
       await atomicWrite(path.join(dir, 'a.md'), 'x')
       await createDurable(path.join(dir, 'p.png'), new Uint8Array([1]))
-      expect(tmps.map((t) => path.dirname(t))).toEqual([dir, dir])
+      expect(tmps.map((t) => path.dirname(t))).toEqual([dir, dir, dir]) // a create writes two: the claim and the one renamed in
       expect(tmps.map((t) => path.basename(t)).every(isAtomicTmp)).toBe(true)
     }))
 })

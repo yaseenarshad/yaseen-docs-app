@@ -3,7 +3,6 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileResponse } from '@shared/types'
 import { useFile, type FileState } from './useFile'
-import * as folderMigration from '../views/migrateFolderBody'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -61,17 +60,14 @@ describe('useFile reloadable read state (YAZ-1299)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('hands mixed-case view-only text through byte-for-byte without folder migration or writes', async () => {
-    const path = '/vault/data.JsOn'
+  it.each(['/vault/Page.md', '/vault/data.JsOn'])('a read is only a read: %s, flagged `folder_page: true` with a body, comes through byte-for-byte and is never rewritten (YAZ-2290)', async (path) => {
     const file = response(path, '---\r\nfolder_page: true\r\n---\r\n\tvalue  \r\n')
-    const migrate = vi.spyOn(folderMigration, 'migrateFolderBody')
     readFile.mockResolvedValueOnce(file)
 
     render(path)
     await flush()
 
     expect(state).toEqual({ status: 'ready', path, file })
-    expect(migrate).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
   })
 

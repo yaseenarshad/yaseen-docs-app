@@ -1,27 +1,30 @@
 /**
  * Frozen Table axes (YAZ-742, YAZ-1151): the Properties menu persists one positional prefix count
- * on the folder page, the semantic table sticks that prefix across header/body/footer, and its
- * existing header stays pinned while the outer note scrolls vertically.
+ * in the folder's settings (`KPIs/.folder.md`), the semantic table sticks that prefix across
+ * header/body/footer, and its existing header stays pinned while the folder's tab scrolls
+ * vertically.
  *
- * This is deliberately separate from folderPageColumns.spec.ts (YAZ-999 owns that shared column
- * propagation arc). It runs on a copy of the committed bible vault and a narrow app window so the
+ * This is deliberately separate from folderColumns.spec.ts (which owns the column declaration
+ * arc). It runs on a copy of the committed bible vault and a narrow app window so the
  * four-column KPI table genuinely overflows horizontally.
  *
  * Since YAZ-1513 the Table leads with a `#` gutter — a 44px cell that is always the first `th`/`td`
  * and always sticky at `left: 0` — so the frozen prefix counts DATA columns and their sticky
  * offsets start at 44px, and every `nth` below skips that one cell. Headers wear LABELS, not keys.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, contents, copyVault, launchApp, layer, quitApp, seededState, viewTabs } from './helpers'
+import { appWindow, contents, copyVault, launchApp, layer, openFolder, quitApp, seededState, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-const FOLDER_PAGE = 'KPIs.md'
+const FOLDER = 'KPIs'
 /** The `#` gutter's fixed width (TableView's `GUTTER_WIDTH`): frozen offsets start after it. */
 const GUTTER = 44
 const NAME_WIDTH = 150
@@ -38,7 +41,9 @@ const headers = () => table().locator('thead th')
 const firstBodyRow = () => table().locator('tbody tr:not(.view-table__group):not(.view-table__spacer)').first().locator('td')
 const footer = () => table().locator('tfoot td')
 const propsMenu = () => contents(win).locator('.view-popover')
-const folderPagePath = () => path.join(vault, FOLDER_PAGE)
+const folderPath = () => path.join(vault, FOLDER)
+/** Where the folder's view settings live (YAZ-2290 D1). */
+const settingsFile = () => path.join(folderPath(), '.folder.md')
 
 interface OnDiskView {
   type?: string
@@ -50,19 +55,19 @@ interface OnDiskView {
 }
 
 async function tableSettings(): Promise<OnDiskView> {
-  const { frontmatter } = splitFrontmatter(await readFile(folderPagePath(), 'utf8'))
+  const { frontmatter } = splitFrontmatter(await readFile(settingsFile(), 'utf8'))
   const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
   return settings.views?.find((view) => view.type === 'table') ?? {}
 }
 
 async function updateTableSettings(update: (view: OnDiskView) => void): Promise<void> {
-  const content = await readFile(folderPagePath(), 'utf8')
+  const content = await readFile(settingsFile(), 'utf8')
   const { frontmatter } = splitFrontmatter(content)
   const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
   const view = settings.views?.find((candidate) => candidate.type === 'table')
   if (view === undefined) throw new Error('fixture has no Table view')
   update(view)
-  await writeFile(folderPagePath(), setFrontmatterProperty(content, 'folder_page_settings', settings), 'utf8')
+  await writeFile(settingsFile(), setFrontmatterProperty(content, 'folder_page_settings', settings), 'utf8')
 }
 
 async function openProperties(): Promise<Locator> {
@@ -88,11 +93,12 @@ const propRow = (menu: Locator, label: string): Locator => menu.locator('.view-p
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'freeze-columns-userdata-'))
   vault = await copyVault(FIXTURE)
+  // Thirty more notecards IN the folder: living there is what makes them its rows (YAZ-2290 D4).
   await Promise.all(
     Array.from({ length: 30 }, (_, index) =>
       writeFile(
-        path.join(vault, 'kpis', `Generated KPI ${String(index + 1).padStart(2, '0')}.md`),
-        `---\nfolder_pages:\n  - "[[KPIs]]"\nkpi_category: Generated\nunit: count\n---\n`,
+        path.join(folderPath(), `Generated KPI ${String(index + 1).padStart(2, '0')}.md`),
+        `---\nkpi_category: Generated\nunit: count\n---\n`,
         'utf8',
       ),
     ),
@@ -105,13 +111,13 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the header and selected prefix hold while the two scroll axes move', async () => {
-  const state = seededState(vault, folderPagePath())
+  const state = seededState(vault, null)
   state.windows[0].bounds.width = 760
   state.windows[0].bounds.height = 520
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
 
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, folderPath())
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages'])
 

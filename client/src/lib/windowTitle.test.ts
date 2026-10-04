@@ -7,6 +7,10 @@ describe('windowTitle', () => {
     expect(windowTitle('Business Wiki', '/vaults/business-wiki-MASTER/sub/Plan.markdown')).toBe('Plan — Business Wiki')
   })
 
+  it('a FOLDER tab keeps its whole name, even one named like a file (YAZ-2290)', () => {
+    expect(windowTitle('notes', '/vaults/notes/Notes.md', true)).toBe('Notes.md — notes')
+  })
+
   it('is the vault name alone when no file is open', () => {
     expect(windowTitle('Docs Vault', null)).toBe('Docs Vault')
   })

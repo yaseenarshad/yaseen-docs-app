@@ -5,11 +5,11 @@
  * back/forward stack needs to be exercised over.
  *
  * YAZ-844 retired `.base`, and with it the grouped standalone base these steps used to open.
- * The two collapse-all-groups steps (744) went with that surface: no folder-page view ships a
+ * The two collapse-all-groups steps (744) went with that surface: no view in this fixture ships a
  * `groupBy`, so there is no grouped table left to fold through the app. The GUI-evidence step
- * (741/743) drives the folder page's own table instead — same toolbar, same header; its
- * viewport-containment half moved from the (switch-only) view menu to the Sort menu, the same
- * anchored `Popover` on a surface the folder page actually offers.
+ * (741/743) drives a folder's own table instead (`Funnel Stages`, opened as a tab — YAZ-2290) —
+ * same toolbar, same header; its viewport-containment half is made through the Sort menu, the
+ * same anchored `Popover`.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  sidebar drag-to-resize: the 6px edge dragged +120px takes `.sidebar` from 260 to 380 (738)
@@ -28,19 +28,22 @@
  * Same harness as bible.spec.ts / tabs.spec.ts (temp `--user-data-dir`, a COPY of the fixture,
  * `easy-` step screenshots, `quitApp` at the end).
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_DEFAULT_W } from '../../shared/types'
-import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
+import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, openFolder, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 /** The committed encyclopedia — copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-const FOLDERS = ['funnel-stages', 'industries', 'kpis', 'problems', 'roles']
-const FOLDER_PAGE = 'Funnel Stages.md'
+const FOLDERS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
+/** The folder whose own table the GUI-evidence step drives. */
+const FOLDER = 'Funnel Stages'
 
 /** The drag distance under test: 260 (the default) + 120 = 380, comfortably inside the clamp. */
 const DRAG_DX = 120
@@ -141,9 +144,9 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- YAZ-738: sidebar resize
 
 test('step 1 — the sidebar edge drags 260 → 380', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, FOLDER_PAGE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(contents(win)).toBeVisible()
+  await openFolder(win, path.join(vault, FOLDER))
 
   expect(await sidebarWidth(win)).toBe(SIDEBAR_DEFAULT_W)
   await expect(resizeEdge(win)).toBeVisible()
@@ -157,14 +160,14 @@ test('step 2 — the width survives quit → relaunch, on disk as AppState.sideb
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expect(contents(win)).toBeVisible()
+  await expect(contents(win)).toBeVisible() // the folder's tab is restored like any other
   expect(await sidebarWidth(win)).toBe(WIDENED_W)
 })
 
 // ---------------------------------------------------------------- YAZ-741 / 743: GUI evidence
 
 test('step 3 — column dividers with the resize handle hovered, and a toolbar menu inside the viewport', async () => {
-  // The folder page opens on its OUTLINE (🔒 Q7); the table is the other skin.
+  // The folder opens on the first view its settings list, the outline; the table is the next one.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
   // YAZ-741: the header's 1px divider thickens to the accent under the pointer.
@@ -173,9 +176,8 @@ test('step 3 — column dividers with the resize handle hovered, and a toolbar m
   await handle.hover()
   await shoot(win, 'easy-table-dividers')
 
-  // YAZ-743: a toolbar menu opens ANCHORED — fully on screen, at its natural height. The
-  // folder page's tabs are switch-only (🔒 Q3: no view menu, no Filter), so the claim is made
-  // through the Sort menu — the same `Popover`, the same anchoring, on a surface that exists.
+  // YAZ-743: a toolbar menu opens ANCHORED — fully on screen, at its natural height. The claim
+  // is made through the Sort menu — the toolbar's own `Popover`, anchored under its button.
   await contents(win).locator('[aria-label="Sort"]').click()
   const menu = win.locator('[role="dialog"][aria-label="Sort"]')
   await expect(menu).toBeVisible()
@@ -283,7 +285,7 @@ test('step 8 — (d) renaming a page BEHIND the current one: Back lands on the n
   // The name-change confirm (⚡ YAZ-888) stands between the input and the rename now.
   await win.locator('.confirm[role="dialog"] .confirm__btn', { hasText: 'Rename' }).click()
   await expect(win.locator('.link-notice')).toContainText('Updated links in')
-  await expect.poll(() => gone(path.join(vault, 'kpis', 'Win Rate.md'))).toBe(true)
+  await expect.poll(() => gone(path.join(vault, 'KPIs', 'Win Rate.md'))).toBe(true)
 
   // The stack followed the file: Back opens the renamed page, by its new name and new path.
   await step(win, 'back', RENAMED, 'Closed-won as a share of closed pipeline')
@@ -304,7 +306,7 @@ test('step 9 — (e) deleting a page behind the current one: Back skips straight
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Delete' }).click()
   await expect(win.locator('.confirm')).toBeVisible()
   await win.locator('.confirm__btn', { hasText: 'Delete' }).click()
-  await expect.poll(() => gone(path.join(vault, 'problems', 'CRM Hygiene.md'))).toBe(true)
+  await expect.poll(() => gone(path.join(vault, 'Problems', 'CRM Hygiene.md'))).toBe(true)
 
   // Back must never step onto a file that is gone: the entry left the stack with the file.
   await step(win, 'back', 'Stage Accuracy', 'Deals sit in stages they have already left')

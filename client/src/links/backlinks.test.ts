@@ -103,13 +103,21 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
     expect(backlinksFor(B, records, resolverOver(records))).toEqual([])
   })
 
-  it('memoizes per (records identity, path): the same snapshot answers the same array', () => {
+  it('memoizes per (resolver identity, path): the same snapshot answers the same array', () => {
     const records = [rec('/vault/A.md', { links: ['B'] }), rec(B, {})]
     const resolve = resolverOver(records)
     expect(backlinksFor(B, records, resolve)).toBe(backlinksFor(B, records, resolve))
-    // A refetched snapshot is a NEW array and recomputes (live updates).
+    // A refetched snapshot swaps in a NEW resolver and recomputes (live updates).
     const next = [rec(B, {})]
     expect(backlinksFor(B, next, resolverOver(next))).toEqual([])
+  })
+
+  it('a new resolver over the SAME records recomputes: a folder the tree just named gains its mentions (YAZ-2290 D10)', () => {
+    const records = [rec('/vault/A.md', { links: ['Projects'] })]
+    const before = resolverOver(records)
+    expect(backlinksFor('/vault/Projects', records, before)).toEqual([])
+    const after = (target: string) => before(target) ?? (target === 'Projects' ? '/vault/Projects' : null)
+    expect(backlinksFor('/vault/Projects', records, after).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 })
 
@@ -200,5 +208,29 @@ describe('mentionSnippets (Links D, GRO-2193; display text + line grouping FN9/F
   it('reads mentions out of the frontmatter block too (the index counts them as links)', () => {
     const [snippet] = mentionSnippets('---\nparent: "[[B]]"\n---\n\nbody\n', B, resolve)
     expect(snippet.text).toBe('parent: "B"')
+  })
+})
+
+describe('id links (YAZ-2293): a mention by id, read as the title', () => {
+  const ID = 'k3m9x2pq7abc'
+  const ROAD = '/vault/Projects/Road Map.md'
+  const records = [rec('/vault/A.md', { links: [ID] }), { ...rec(ROAD), id: ID }, rec('/vault/Other.md')]
+  const resolve = resolverOver(records)
+  const marked = (s: MentionSnippet): string[] => s.ranges.map((r) => s.text.slice(r.from, r.to))
+
+  it('a note linking by id is a linked mention of the note that id names', () => {
+    expect(backlinksFor(ROAD, records, resolve).map((r) => r.path)).toEqual(['/vault/A.md'])
+  })
+
+  it('the snippet shows the note\'s current TITLE where the editor does — heading form and hand-typed label included', () => {
+    const [snippet] = mentionSnippets(`See [[${ID}]], [[${ID}#Scope]] and [[${ID}|the plan]].\n`, ROAD, resolve)
+    expect(snippet.text).toBe('See Road Map, Road Map > Scope and the plan.')
+    expect(marked(snippet)).toEqual(['Road Map', 'Road Map > Scope', 'the plan'])
+  })
+
+  it('an id no note has reads as the raw id, as the editor shows it', () => {
+    const [snippet] = mentionSnippets(`gone [[zzzzzzzzzzz9]] but [[${ID}]]\n`, ROAD, resolve)
+    expect(snippet.text).toBe('gone zzzzzzzzzzz9 but Road Map')
+    expect(marked(snippet)).toEqual(['Road Map'])
   })
 })

@@ -73,8 +73,7 @@ describe('getIndex: cold scan', () => {
     expect(res.records.map((r) => r.path)).toEqual([...res.records.map((r) => r.path)].sort())
     expect(res.records.every((r) => r.ext === 'md')).toBe(true)
     expect(res.records.some((r) => r.name.endsWith('.png'))).toBe(false)
-    // `.yaseendocs/` (vault-local config, GRO-2188) never becomes an index record (GRO-2117 note).
-    expect(res.records.some((r) => r.path.includes('/.trash/') || r.path.includes('/.obsidian/') || r.path.includes('/.yaseendocs/'))).toBe(false)
+    expect(res.records.some((r) => r.path.includes('/.trash/') || r.path.includes('/.obsidian/'))).toBe(false)
   })
 
   it('matches the fixture spec facts', async () => {
@@ -91,7 +90,8 @@ describe('getIndex: cold scan', () => {
 
   it('deep-equals TEST_RECORDS once path and stat fields are normalised', async () => {
     const { records } = await getIndex(root)
-    const normalised = records.map((r) => ({ ...r, path: '/vault' + r.path.slice(root.length), size: 0, ctime: 0, mtime: 0 }))
+    // `text` (the body fingerprint, YAZ-2322) is left off the shared fixture, so no client test sees its records as review cards.
+    const normalised = records.map(({ text: _text, ...r }) => ({ ...r, path: '/vault' + r.path.slice(root.length), size: 0, ctime: 0, mtime: 0 }))
     expect(normalised).toEqual(TEST_RECORDS)
   })
 

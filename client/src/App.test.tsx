@@ -4,7 +4,6 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
-import { HOME_CONTENT } from './sidebar/ensureHome'
 import { LINK_NOTICE_MS, type NoticeKind } from './lib/notice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -16,6 +15,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import { fetchTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
@@ -35,13 +35,10 @@ interface SidebarStubProps {
   lens: SidebarLens
   onLensChange: (lens: SidebarLens) => void
   onCollapse: () => void
-  revealRequest?: { id: number; path: string; lens: SidebarLens }
+  revealRequest?: { id: number; path: string }
   onRevealConsumed?: (id: number) => void
   /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir. */
   onRevealInFiles?: (path: string) => void
-  /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
-  unadopted: boolean
-  onCreateHome: () => void
   /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
   width: number
   /** The aside itself, which a resize drag writes its live width to (YAZ-2239). */
@@ -56,6 +53,15 @@ interface SidebarStubProps {
   onNotice: (message: string, icon?: NoticeKind) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean } | null }
+  /** The Inbox row (YAZ-2322): App counts what is due and owns the one review session. */
+  dueCount: number
+  reviewing: boolean
+  onOpenInbox: () => void
+  /** "Review this folder" (YAZ-2322): the sidebar hands the folder's ABSOLUTE path. */
+  onReviewFolder: (dirPath: string) => void
+  /** The row menu's review toggle (YAZ-2322): the hook's lookup and its write, straight through. */
+  reviewState: (path: string) => boolean | null
+  onSetReview: (path: string, on: boolean) => void
 }
 
 const captured = vi.hoisted(() => ({
@@ -91,7 +97,7 @@ import { App } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
@@ -117,7 +123,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const bridge = {
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
-    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], generatedAt: 1 })),
+    index: vi.fn(async (root: string): Promise<{ root: string; records: IndexRecord[]; folders?: IndexRecord[]; generatedAt: number }> => ({ root, records: [], generatedAt: 1 })),
     // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
     coldDiff: vi.fn(async () => null),
     readFile: vi.fn(async (path: string) => {
@@ -129,8 +135,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
       return { path, mtime: files[path].mtime, size: content.length }
     }),
-    // Home's birth (6C-, YAZ-849) is the only thing in the App tree that creates a file. Like
-    // the real `wx` write it NEVER overwrites: an existing path rejects ALREADY_EXISTS.
+    // Like the real `wx` write it NEVER overwrites: an existing path rejects ALREADY_EXISTS.
     createFile: vi.fn(async (req: string | { path: string; content?: string }) => {
       const { path, content } = typeof req === 'string' ? { path: req, content: '' } : req
       if (files[path] !== undefined) return Promise.reject({ code: 'ALREADY_EXISTS', message: 'path already exists', path })
@@ -158,9 +163,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         ...identity,
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
-        sidebarLens: identity.sidebarLens ?? 'topics',
+        sidebarLens: identity.sidebarLens ?? 'favorites',
         focusDirs: identity.focusDirs ?? [],
-        focusTopics: identity.focusTopics ?? [],
         focusFavorites: identity.focusFavorites ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
@@ -226,6 +230,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setEnabled: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
       onStatus: vi.fn(() => () => undefined),
     },
+    // No `review.json` (YAZ-2322): App owns one `useReviewSettings`, which reads and subscribes on vault open.
+    vaultConfig: { read: vi.fn(async () => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
@@ -254,7 +260,7 @@ async function mount(
   state: AppState,
   identity: IdentityFixture,
   files: Record<string, { content: string; mtime: number }> = {},
-  /** Runs BEFORE the first render, for stubs the mount itself consumes (the index, the `.yaseendocs` probe). */
+  /** Runs BEFORE the first render, for stubs the mount itself consumes (the index). */
   tweak?: (b: ReturnType<typeof installBridge>) => void,
 ) {
   const b = installBridge(state, identity, files)
@@ -534,10 +540,10 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] }],
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }],
       [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
-    expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Topics; the vault lands on Files (YAZ-1846 D2)
+    expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
@@ -545,7 +551,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on Welcome', async () => {
@@ -632,6 +638,14 @@ describe('App window title (C3, GRO-2165)', () => {
   it('is the folder alone with no file open', async () => {
     await mount(defaultAppState(), { id: 'w1', root: '/vaults/empty', file: null, tabs: [] })
     expect(document.title).toBe('empty')
+  })
+
+  it('a FOLDER tab named like a file keeps its whole name, in the title and on the strip, once the Files tree says so (YAZ-2290)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/vaults/named', file: '/vaults/named/Notes.md', tabs: ['/vaults/named/Notes.md'] })
+    bridge.tree.mockResolvedValueOnce({ root: '/vaults/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/vaults/named/Notes.md', children: [] }], generatedAt: 2 })
+    await act(async () => void (await fetchTree('/vaults/named')))
+    expect(document.title).toBe('Notes.md — named')
+    expect(el.querySelector('.tabbar [role="tab"]')?.textContent).toBe('Notes.md')
   })
 })
 
@@ -811,9 +825,9 @@ describe('App sidebar resize (YAZ-738)', () => {
  * collapse → reopen step below is the whole reason the value lives here.
  */
 describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
-  it('mounts the sidebar on the STORED lens (the fixture\'s Topics)', async () => {
+  it('mounts the sidebar on the STORED lens (the fixture\'s Favorites)', async () => {
     await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
-    expect(captured.sidebar?.lens).toBe('topics')
+    expect(captured.sidebar?.lens).toBe('favorites')
   })
 
   it('a stored `files` boots straight onto Files', async () => {
@@ -856,7 +870,7 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     act(() => showInSidebar(el)?.click())
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.lens).toBe('files')
-    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/b.md', lens: 'files' })
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/b.md' })
     expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('a')
   })
 
@@ -868,19 +882,19 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     expect(captured.sidebar?.revealRequest?.id).toBe(1)
     rightClick(tab)
     act(() => showInSidebar(el)?.click())
-    expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md', lens: 'topics' })
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md' })
   })
 
   it('a folder search row flips the lens to FILES and issues the same reveal request, ids shared with the tab menu (🔒 D3, YAZ-1491)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
-    expect(captured.sidebar?.lens).toBe('topics') // the fixture's lens: the row was chosen from Topics
+    expect(captured.sidebar?.lens).toBe('favorites') // the fixture's lens: the row was chosen from Favorites
     act(() => captured.sidebar?.onRevealInFiles?.('/v/sub'))
     expect(captured.sidebar?.lens).toBe('files')
-    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/sub', lens: 'files' })
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/sub' })
     // The tab menu's next gesture continues the SAME counter — one reveal channel, not two.
     rightClick(el.querySelector('.tabbar__tab')!)
     act(() => showInSidebar(el)?.click())
-    expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md', lens: 'files' })
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md' })
   })
 
   it('consumes handled work without replaying it after collapse/reopen, while later gestures keep monotonic IDs', async () => {
@@ -1149,6 +1163,28 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('c')
   })
 
+  it('a tab\'s menu offers "Copy ID" off the window\'s index: under "Copy path" for the note that has an id, absent for a note with none, a PDF and an image (YAZ-2293, scenario E1, E2)', async () => {
+    const note = (path: string, id?: string): IndexRecord => {
+      const name = path.slice(path.lastIndexOf('/') + 1)
+      return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+    }
+    const tabs = ['/v/a.md', '/v/b.md', '/v/report.PDF', '/v/photo.PNG']
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs }, {}, (b) =>
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/a.md', 'k3m9x2pq7abc'), note('/v/b.md')], generatedAt: 1 }),
+    )
+    const menuOf = (path: string) => {
+      const tab = el.querySelector<HTMLElement>(`[role="tab"][title="${path}"]`)?.closest<HTMLElement>('.tabbar__tab')
+      act(() => void tab?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      return [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map((item) => item.textContent)
+    }
+    const labels = menuOf('/v/a.md')
+    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+    for (const path of tabs.slice(1)) {
+      expect(menuOf(path), path).toContain('Copy path')
+      expect(menuOf(path), path).not.toContain('Copy ID')
+    }
+  })
+
   it('the active file vanishing on disk closes its tab; the neighbour takes over', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     act(() => captured.sidebar?.onFileMissing())
@@ -1315,7 +1351,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
   it('the cold-start feed banners passively: names root-relative, N from the engine, no rewrite before confirmation', async () => {
     const files = { '/v/A.md': { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 } }
     const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
-    b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
     b.bridge.coldDiff.mockResolvedValue(coldDiff as never)
     await storage.init()
     container = document.createElement('div')
@@ -1342,7 +1378,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
   it('Dismiss drops the hypothesis: no repair, no rewrite, banner gone', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
-    b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
     b.bridge.coldDiff.mockResolvedValue(coldDiff as never)
     await storage.init()
     container = document.createElement('div')
@@ -1564,6 +1600,33 @@ describe('App rename door (⚡ YAZ-888)', () => {
     await act(async () => release())
   })
 
+  it('a FOLDER rename counts the name links to the folder itself — a notecard\u2019s and another folder\u2019s Outline line — and confirming rewrites both (YAZ-2290 D10)', async () => {
+    const TEAM = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n---\n'
+    const files = { '/v/A.md': { content: 'See [[Projects]].\n', mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 } }
+    const outline = { views: [{ type: 'outline', name: 'Outline', outline: '- [[Projects]]' }] }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({
+        root: '/v',
+        records: [record('/v/A.md', { links: ['Projects'] }), record('/v/Projects/Plan.md')],
+        folders: [record('/v/Team/.folder.md', { properties: { folder_page_settings: outline } })],
+        generatedAt: 1,
+      })
+      b.bridge.tree.mockResolvedValue({
+        root: '/v',
+        tree: [{ type: 'dir', name: 'Projects', path: '/v/Projects', children: [] }, { type: 'dir', name: 'Team', path: '/v/Team', children: [] }],
+        generatedAt: 1,
+      })
+      b.bridge.file.rename.mockImplementation(async ({ oldPath, newPath }) => ({ oldPath, newPath, kind: 'dir' }))
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/Projects', '/v/Work', 'dir'))
+    expect(sheetText(el)).toBe("Rename 'Projects' to 'Work'? Links in 2 notes will be updated.")
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/Projects', newPath: '/v/Work' })
+    expect(files['/v/A.md'].content).toBe('See [[Work]].\n')
+    expect(files['/v/Team/.folder.md'].content).toContain('- [[Work]]')
+  })
+
   it('always refreshes a ready directory catalog so newly visible descendants count and rewrite', async () => {
     const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
     const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
@@ -1634,6 +1697,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
         oldPath: '/v/Archive.json',
         kind: 'dir',
         records: semanticRecords,
+        folders: [],
+        dirs: [],
       })
       expect(sheetText(el)).toBe("Rename 'Archive.json' to 'Renamed.json'? Links in 1 note will be updated.")
     } finally {
@@ -1651,7 +1716,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
   })
 })
 
@@ -1724,83 +1789,207 @@ describe('in-app delete (GRO-2272)', () => {
   })
 })
 
-// ---------------------------------------------------------------- 6C-: Home on vault open
+// ---------------------------------------------------------------- vault open writes nothing
 
 /**
- * The TRIGGER half of YAZ-849 (the decision itself is pinned in `sidebar/ensureHome.test.ts`).
- * It lives in App because Home is born ON VAULT OPEN — with the sidebar collapsed, or on the
- * Files lens, or with the Topics tree never rendered, it must still happen exactly once.
- *
- * Adoption is read through the ONE existing bridge call that can tell a missing directory from
- * an existing one: `fs:tree` of `<root>/.yaseendocs`. Nothing here creates that folder.
+ * Opening a vault creates no file (YAZ-2290). The stub bridge answers `tree` for any path, so
+ * this vault has its `.yaseendocs/` — the case that used to get a `Home.md` written into it.
  */
-describe('Home is born on vault open (6C-, YAZ-849)', () => {
-  const HOME = '/v/Home.md'
-  const DOTFOLDER = '/v/.yaseendocs'
-  const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
-
-  const homeRecord = (): IndexRecord => ({
-    path: HOME,
-    name: 'Home.md',
-    basename: 'Home',
-    folder: '',
-    ext: 'md',
-    size: 7,
-    ctime: 1,
-    mtime: 1,
-    properties: {},
-    aliases: [],
-    tags: [],
-    links: [],
-    embeds: [],
-  })
-
-  /** No `.yaseendocs/`: the probe rejects NOT_FOUND exactly as `requireDir` does; the root itself still answers. */
-  const unadopt = (b: ReturnType<typeof installBridge>) =>
-    b.bridge.tree.mockImplementation(async (r: string) =>
-      r === DOTFOLDER ? Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist', path: r }) : { root: r, tree: [], generatedAt: 1 },
-    )
-
-  it('an ADOPTED vault with no Home gets one automatically: the flag bytes, at the root, ONCE', async () => {
-    const b = await mount(defaultAppState(), identity())
-    expect(b.bridge.tree).toHaveBeenCalledWith(DOTFOLDER)
-    // Exactly 4B's birth: `folder_page: true` and nothing else — no settings block, no body.
-    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: HOME_CONTENT }) // born through the ONE builder (YAZ-1549)
-    // ONCE, though StrictMode mounts the effect twice and every index poke re-enters the
-    // subscriber: the per-root ref is what makes it once per vault, not once per snapshot.
-    expect(b.bridge.createFile).toHaveBeenCalledTimes(1)
-    // An adopted vault never offers — its map was made for it.
-    expect(captured.sidebar?.unadopted).toBe(false)
-  })
-
-  it('an UN-ADOPTED folder is never written into; the offer rides down to the Topics lens instead', async () => {
-    const b = await mount(defaultAppState(), identity(), {}, unadopt)
-    expect(b.bridge.tree).toHaveBeenCalledWith(DOTFOLDER)
+describe('opening a vault creates no file (YAZ-2290)', () => {
+  it('a vault with no Home is left exactly as it is, and nothing probes the dotfolder', async () => {
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(b.bridge.createFile).not.toHaveBeenCalled()
-    expect(captured.sidebar?.unadopted).toBe(true)
-  })
-
-  it("the offer's button runs the SAME create and opens the page it made", async () => {
-    const b = await mount(defaultAppState(), identity(), {}, unadopt)
-    await act(async () => captured.sidebar?.onCreateHome())
-    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: HOME_CONTENT }) // born through the ONE builder (YAZ-1549)
-    expect(document.querySelector('[data-editor]')?.getAttribute('data-path')).toBe(HOME)
-    // Still un-adopted — making a Home does not adopt the folder. The CARD retires because
-    // `[[Home]]` resolves now, which is the Topics tree's own live half of the condition.
-    expect(captured.sidebar?.unadopted).toBe(true)
-  })
-
-  it('a vault that ALREADY answers [[Home]] is left alone — resolver-based, never a path check', async () => {
-    const b = await mount(defaultAppState(), identity(), {}, (bb) => bb.bridge.index.mockResolvedValue({ root: '/v', records: [homeRecord()], generatedAt: 1 }))
-    expect(b.bridge.createFile).not.toHaveBeenCalled()
-    // The probe is not even reached: a vault WITH a Home is never asked whether it was adopted.
-    expect(b.bridge.tree).not.toHaveBeenCalledWith(DOTFOLDER)
-    expect(captured.sidebar?.unadopted).toBe(false)
-  })
-
-  it('nothing happens on the Welcome screen — there is no folder to have a Home', async () => {
-    const b = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
-    expect(b.bridge.createFile).not.toHaveBeenCalled()
-    expect(b.bridge.tree).not.toHaveBeenCalled()
+    expect(b.bridge.tree).not.toHaveBeenCalledWith('/v/.yaseendocs')
   })
 })
+
+/**
+ * An upkeep review (YAZ-2322) REPLACES the main pane and is not a tab: the strip gives way to the
+ * review bar, the session's notecard is the one visible page, and nothing about the workspace —
+ * tabs, active tab, right panel — moves until the user moves it. One editor per notecard, always.
+ */
+describe('App upkeep review (YAZ-2322)', () => {
+  /** A notecard last changed in 1970: in review by default, and long overdue. */
+  const due = (name: string, folder = ''): IndexRecord => ({
+    path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
+  })
+  const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>
+    void b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+  const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'] }
+
+  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+  const layers = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLElement>('.tabstack__layer')].map((l) => [
+      l.querySelector('[data-editor]')?.getAttribute('data-path'),
+      l.classList.contains('tabstack__layer--hidden'),
+    ])
+  const editorsOn = (el: HTMLElement, path: string) => el.querySelectorAll(`[data-editor][data-path="${path}"]`).length
+  const button = (el: HTMLElement, name: string) => [...el.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)
+  const openInbox = () => act(() => captured.sidebar?.onOpenInbox())
+
+  it('the sidebar is handed the due count, and told while a review is open', async () => {
+    await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+    expect(captured.sidebar?.dueCount).toBe(2)
+    expect(captured.sidebar?.reviewing).toBe(false)
+    openInbox()
+    expect(captured.sidebar?.reviewing).toBe(true)
+  })
+
+  it('starting a review moves nothing in the workspace, and closing it returns to exactly the tabs that were there', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    const { bridge, el } = await mount(
+      defaultAppState(),
+      { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
+      {},
+      withIndex(due('x'), due('y')),
+    )
+    bridge.window.setIdentity.mockClear()
+    openInbox()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(document.title).toBe('b — v')
+    expect(location.hash).toBe('#/v/b.md')
+    expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
+    act(() => button(el, 'Close review')?.click())
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('b')
+    expect(layers(el)).toEqual([['/v/b.md', false]])
+    expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(el.querySelector('.review-answers')).toBeNull()
+  })
+
+  it('with a session open the tab strip gives way to the review bar, and the notecard\'s editor is the only visible layer', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+    openInbox()
+    expect(el.querySelector('.tabbar')).toBeNull()
+    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Inbox')
+    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
+    expect(layers(el)).toEqual([
+      ['/v/b.md', true],
+      ['/v/x.md', false],
+    ])
+    expect(button(el, 'Still relevant⌘⇧⏎')).toBeDefined()
+  })
+
+  it('Skip shows the next notecard in a layer of its own; the one before is gone', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('y')))
+    openInbox()
+    act(() => button(el, 'Skip⌘⇧S')?.click())
+    expect(layers(el)).toEqual([
+      ['/v/b.md', true],
+      ['/v/y.md', false],
+    ])
+  })
+
+  it('a notecard that is already an open tab shows through that tab\'s layer — one editor for the path', async () => {
+    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, withIndex(due('a')))
+    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
+    expect(layers(el)).toEqual([
+      ['/v/a.md', true],
+      ['/v/b.md', false],
+    ])
+    openInbox()
+    expect(layers(el)).toEqual([
+      ['/v/a.md', false],
+      ['/v/b.md', true],
+    ])
+    expect(editorsOn(el, '/v/a.md')).toBe(1)
+    act(() => button(el, 'Close review')?.click())
+    expect(layers(el)).toEqual([
+      ['/v/a.md', true],
+      ['/v/b.md', false],
+    ])
+  })
+
+  it('a notecard open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    const { el } = await mount(
+      defaultAppState(),
+      { ...TABS, rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } },
+      {},
+      withIndex(due('r')),
+    )
+    openInbox()
+    expect(el.querySelector('.tabstack .review-message')?.textContent).toBe('This notecard is open in the side panel.')
+    expect(layers(el)).toEqual([['/v/b.md', true]])
+    expect(editorsOn(el, '/v/r.md')).toBe(1)
+    expect(el.querySelector('.review-answers')).not.toBeNull() // the answers still work
+  })
+
+  it('nothing due: the empty state, no answers, and "Back to tabs" closes', async () => {
+    const { el } = await mount(defaultAppState(), TABS)
+    openInbox()
+    expect(el.querySelector('.tabstack .review-message p')?.textContent).toBe('Inbox complete.')
+    expect(el.querySelector('.review-answers')).toBeNull()
+    act(() => button(el, 'Back to tabs')?.click())
+    expect(el.querySelector('.review-message')).toBeNull()
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+  })
+
+  it('a link clicked in the notecard opens in a background tab; the review stays', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    openInbox()
+    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/x.md"] [data-open-right-current]')?.click())
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    act(() => button(el, 'Close review')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('b')
+  })
+
+  it('"Review this folder" starts a session over that folder alone, named for it', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x'), due('p', 'Work/Projects'), due('q', 'Work/Projects/sub')))
+    act(() => captured.sidebar?.onReviewFolder('/v/Work/Projects'))
+    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Projects')
+    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
+    expect(el.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) [data-editor]')?.getAttribute('data-path')).toBe('/v/Work/Projects/p.md')
+  })
+
+  it('the sidebar and the tab menu get the SAME review lookup and write: a notecard answers, anything else is null', async () => {
+    const files = { '/v/a.md': { content: 'Body.\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), TABS, files, withIndex(due('a')))
+    expect(captured.sidebar?.reviewState('/v/a.md')).toBe(true)
+    expect(captured.sidebar?.reviewState('/v/photo.png')).toBeNull()
+    act(() => void el.querySelector('.tabbar__tab')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Turn review off')?.click())
+    expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/v/a.md', content: '---\nreview: false\n---\nBody.\n' }))
+  })
+
+  it('the same holds for a notecard shown through its own tab: its link does not navigate the active tab under the review', async () => {
+    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, withIndex(due('a')))
+    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
+    openInbox()
+    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/a.md"] [data-open-right-current]')?.click())
+    act(() => button(el, 'Close review')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('b')
+  })
+
+  it('clicking the Inbox row again closes the review', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    openInbox()
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    openInbox()
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(captured.sidebar?.reviewing).toBe(false)
+  })
+
+  it('opening a file from the sidebar ends the review and shows that file', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    openInbox()
+    act(() => captured.sidebar?.onOpenFile('/v/a.md'))
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(activeLabel(el)).toBe('a')
+  })
+
+  it('File › Close Tab closes the review, not the tab hidden under it', async () => {
+    const { el, emitCloseTab } = await mount(defaultAppState(), TABS, {}, withIndex(due('x')))
+    openInbox()
+    act(() => emitCloseTab())
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+  })
+})
+

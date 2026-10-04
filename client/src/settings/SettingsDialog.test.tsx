@@ -2,12 +2,14 @@
  * The settings dialog (YAZ-1679): one scrolling page of every section with grouped rows, nav
  * anchors with a scrollspy, search over the one registry, the popover's controls rehoused row by
  * row (Theme writes through `onChange`, the folder input's draft/commit logic, the per-vault
- * GitHub switch through `sync.setEnabled`), and the modal's own contract — Esc layered over
- * search, click-away, focus restored to whatever opened it.
+ * GitHub switch through `sync.setEnabled`, the per-vault review settings through `review.save`),
+ * and the modal's own contract — Esc layered over search, click-away, focus restored to whatever
+ * opened it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type SettingsState } from '@shared/types'
 import { SettingsDialog } from './SettingsDialog'
 
@@ -23,18 +25,21 @@ beforeEach(() => {
   scrollIntoView.mockClear()
 })
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings) {
   const onChange = vi.fn()
   const onClose = vi.fn()
   const setEnabled = vi.fn()
+  const save = vi.fn()
   // `undefined` (the argument omitted) means no Sync section at all; an explicit `null` is the
   // section present with its first status fetch still in flight.
   const sync = syncStatus === undefined ? undefined : { status: syncStatus, setEnabled }
+  // The same for Review: no settings handed over is no vault open, so no section.
+  const review = reviewSettings === undefined ? undefined : { settings: reviewSettings, save }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, el: container }
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review }} onClose={onClose} />))
+  return { onChange, onClose, setEnabled, save, el: container }
 }
 
 const unmount = () => {
@@ -73,6 +78,8 @@ function type(input: HTMLInputElement, value: string) {
 }
 const pressEscape = (target: HTMLElement) => act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
 const pressEnter = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+/** React hears blur as the bubbling `focusout`. */
+const blur = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
 const status = (extra: Partial<GithubSyncStatus> = {}): GithubSyncStatus => ({ root: '/vault', state: 'off', ...extra })
 
 /**
@@ -128,19 +135,22 @@ describe('SettingsDialog shell (D1)', () => {
 })
 
 describe('SettingsDialog: one page of every settings section (the post-demo redesign)', () => {
-  it('the nav: the settings-page anchors (Sync only with the engine), a divider, then the standalone Hotkeys page', () => {
+  it('the nav: the settings-page anchors (Review only with a vault, Sync only with the engine), a divider, then the standalone Hotkeys page', () => {
     const { el } = mount()
     expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Files & Links', '—', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
     expect(navShape(withSync.el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    unmount()
+    const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
   })
 
   it('renders every settings section on the one page, in order, each anchored by id and every row addressed by data-setting — Hotkeys is not on it', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Sync'])
-    expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance', 'settings-editor', 'settings-files', 'settings-sync'])
-    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'newNoteLocation', 'githubSync'])
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync'])
+    expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance', 'settings-editor', 'settings-files', 'settings-review', 'settings-sync'])
+    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'newNoteLocation', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
     for (const r of el.querySelectorAll<HTMLElement>('.setting')) expect(r.dataset.setting).toBeTruthy()
     expect(el.querySelector('[data-setting^="hotkeys"]')).toBeNull()
   })
@@ -157,11 +167,11 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
     expect(el.querySelector('#settings-files .settings-group__title')).toBeNull()
   })
 
-  it('the Sync section carries the per-vault note under its title; no other section does', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
+  it('the two per-vault sections, Review and Sync, carry a note under their titles; no other section does', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
     const notes = [...el.querySelectorAll('.settings-section__note')]
-    expect(notes.map((n) => n.textContent)).toEqual(["These settings are saved in this vault's .yaseendocs folder, not app-wide."])
-    expect(notes[0].closest('[data-section]')?.id).toBe('settings-sync')
+    expect(notes.map((n) => n.textContent)).toEqual(["These settings are saved in this vault's .yaseendocs folder and sync with it.", "These settings are saved in this vault's .yaseendocs folder, not app-wide."])
+    expect(notes.map((n) => n.closest('[data-section]')?.id)).toEqual(['settings-review', 'settings-sync'])
   })
 
   it('Hotkeys is its own page: clicking it swaps the pane for its four tables and takes aria-current; no anchor is current meanwhile', () => {
@@ -308,6 +318,82 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, null)
     expect(rowButtons(el, 'githubSync').map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true])
     expect(row(el, 'githubSync')?.querySelector('.setting__hint')?.textContent).toBe("This folder isn't a git repo — set it up with GitHub Desktop, then turn sync on.")
+  })
+})
+
+describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)', () => {
+  const S = DEFAULT_REVIEW_SETTINGS
+  const number = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
+
+  it('is absent with no vault open', () => {
+    const { el } = mount()
+    expect(el.querySelector('#settings-review')).toBeNull()
+    expect(row(el, 'baseDays')).toBeNull()
+  })
+
+  it('its four rows show the current values, each number beside its unit', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14, growth: 1.5, maxDays: 90, reviewByDefault: false })
+    expect(['baseDays', 'growth', 'maxDays', 'reviewByDefault'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Check a notecard after', 'Each time it is still relevant, wait', 'Longest wait', 'New notecards are in review'])
+    expect(['baseDays', 'growth', 'maxDays'].map((id) => number(el, id).value)).toEqual(['14', '1.5', '90'])
+    expect(['baseDays', 'growth', 'maxDays'].map((id) => row(el, id)?.querySelector('.setting__control')?.textContent)).toEqual(['days', '× longer', 'days'])
+    expect(number(el, 'baseDays').getAttribute('aria-label')).toBe('Check a notecard after')
+    expect(rowButtons(el, 'reviewByDefault').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+  })
+
+  it('says the schedule in words under the three numbers', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    expect(row(el, 'maxDays')?.querySelector('.setting__hint')?.textContent).toBe('30 days, then 60, 120, 240, 365.')
+    unmount()
+    const fixed = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, growth: 1 })
+    expect(row(fixed.el, 'maxDays')?.querySelector('.setting__hint')?.textContent).toBe('Every 30 days.')
+  })
+
+  it('a valid number commits on Enter or blur: save gets the whole object with that one field changed — never onChange', () => {
+    const { el, save, onChange } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    type(number(el, 'baseDays'), '45')
+    expect(save).not.toHaveBeenCalled() // a draft until it is committed
+    pressEnter(number(el, 'baseDays'))
+    expect(save).toHaveBeenCalledExactlyOnceWith({ ...S, baseDays: 45 })
+    type(number(el, 'growth'), '1.5')
+    blur(number(el, 'growth'))
+    expect(save).toHaveBeenLastCalledWith({ ...S, growth: 1.5 })
+    type(number(el, 'maxDays'), '90')
+    blur(number(el, 'maxDays'))
+    expect(save).toHaveBeenLastCalledWith({ ...S, maxDays: 90 })
+    expect(save).toHaveBeenCalledTimes(3)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('an unchanged number saves nothing', () => {
+    const { el, save } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    blur(number(el, 'baseDays'))
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('a draft the rules refuse is marked while it stands, is not saved, and gives way to the last good value', () => {
+    const { el, save } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    // Each is one of `sanitizeReviewSettings`' rules: whole days from 1, growth from 1, the longest wait never under the first.
+    for (const [id, draft, stored] of [['baseDays', '0', '30'], ['baseDays', '7.5', '30'], ['growth', '0.5', '2'], ['maxDays', '10', '365'], ['maxDays', 'soon', '365'], ['growth', '', '2']] as const) {
+      const input = number(el, id)
+      expect(input.getAttribute('aria-invalid')).toBe('false')
+      type(input, draft)
+      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(input.classList.contains('settings__input--error')).toBe(true)
+      blur(input)
+      expect(input.value).toBe(stored)
+      expect(input.getAttribute('aria-invalid')).toBe('false')
+    }
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('New notecards are in review: On · Off, and Off saves the whole object with reviewByDefault flipped', () => {
+    const { el, save, onChange } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    const buttons = rowButtons(el, 'reviewByDefault')
+    expect(buttons.map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
+    act(() => buttons[1].click())
+    expect(save).toHaveBeenCalledExactlyOnceWith({ ...S, reviewByDefault: false })
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
 

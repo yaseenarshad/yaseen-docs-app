@@ -1,0 +1,109 @@
+/**
+ * `useReviewSettings` (YAZ-2322 🔒 D7): a vault's `.yaseendocs/review.json`, read once per root,
+ * re-read on that file's change broadcast, sanitised on the way in. The bridge is mocked; the
+ * change listeners are captured so a test can push a broadcast.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE } from '@shared/reviews'
+import type { VaultConfigChange } from '@shared/types'
+import { useReviewSettings, type ReviewSettingsState } from './useReviewSettings'
+
+let listeners: Array<(c: VaultConfigChange) => void> = []
+
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  api: {
+    vaultConfig: {
+      read: vi.fn(),
+      write: vi.fn(),
+      onChange: vi.fn((l: (c: VaultConfigChange) => void) => {
+        listeners.push(l)
+        return () => (listeners = listeners.filter((x) => x !== l))
+      }),
+    },
+  },
+}))
+
+import { api } from '../api'
+
+const read = vi.mocked(api.vaultConfig.read)
+const write = vi.mocked(api.vaultConfig.write)
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+let root: Root | null = null
+let state: ReviewSettingsState
+
+function Probe({ vault }: { vault: string | null }) {
+  state = useReviewSettings(vault)
+  return null
+}
+
+async function mount(vault: string | null): Promise<void> {
+  root = createRoot(document.createElement('div'))
+  await act(async () => root?.render(<Probe vault={vault} />))
+}
+
+beforeEach(() => {
+  listeners = []
+  read.mockReset().mockResolvedValue(null)
+  write.mockReset().mockResolvedValue(undefined)
+})
+
+afterEach(() => {
+  act(() => root?.unmount())
+  root = null
+})
+
+describe('useReviewSettings', () => {
+  it('gives the defaults when the vault has no file, and makes no call with no vault open', async () => {
+    await mount('/vault')
+    expect(read).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE)
+    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+    act(() => root?.unmount())
+    read.mockClear()
+    await mount(null)
+    expect(read).not.toHaveBeenCalled()
+    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+  })
+
+  it('sanitises what the file holds', async () => {
+    read.mockResolvedValue({ baseDays: 7, growth: 'fast' })
+    await mount('/vault')
+    expect(state.settings).toEqual({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 7 })
+  })
+
+  it('re-reads on a change to this vault\'s file only', async () => {
+    await mount('/vault')
+    read.mockResolvedValue({ baseDays: 14 })
+    await act(async () => listeners.forEach((l) => l({ root: '/other', name: REVIEW_SETTINGS_FILE })))
+    await act(async () => listeners.forEach((l) => l({ root: '/vault', name: 'github.json' })))
+    expect(state.settings.baseDays).toBe(30)
+    await act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
+    expect(state.settings.baseDays).toBe(14)
+  })
+
+  it('save shows the new settings at once and writes only the settings file', async () => {
+    await mount('/vault')
+    const next = { ...DEFAULT_REVIEW_SETTINGS, baseDays: 10 }
+    await act(async () => state.save(next))
+    expect(state.settings).toEqual(next)
+    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, next)
+  })
+
+  it('save sanitises, so the file never holds a longest wait under the first', async () => {
+    await mount('/vault')
+    await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 400 }))
+    expect(state.settings.maxDays).toBe(400)
+    expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { ...DEFAULT_REVIEW_SETTINGS, baseDays: 400, maxDays: 400 })
+  })
+
+  it('a save that fails falls back to what the file holds', async () => {
+    await mount('/vault')
+    write.mockRejectedValue(new Error('read-only'))
+    await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 10 }))
+    expect(state.settings).toEqual(DEFAULT_REVIEW_SETTINGS)
+  })
+})

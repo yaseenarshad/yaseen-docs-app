@@ -42,14 +42,18 @@
  *  - Bullet threading (GRO-2094, `outline/bulletThreading.ts` + `.css`): root → caret path
  *    decorations (accent line + glyphs, stops at the active bullet); CSS-gated by the settings cog.
  *  - Wikilinks (GRO-2190, `wikilink/wikilinkPlugin.ts`): `[[target]]` renders Obsidian
- *    live-preview style via inline decorations only (brackets hidden, alias/heading display,
- *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`) — never a schema or
- *    serializer change, round-trip byte-identical.
+ *    live-preview style via decorations only (brackets hidden, alias/heading display,
+ *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`; an id link's id hidden
+ *    too, its note's current title drawn by a widget, YAZ-2293) — never a schema or serializer
+ *    change, round-trip byte-identical.
  *  - Wikilink click navigation (GRO-2192, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
  *    collapsed `.wikilink` span navigates (plain → current tab, ⌘ → background tab,
  *    unresolved → create-then-open via `createFromLink`) and preventDefaults so the caret
  *    never lands in the match (no raw-text flash); revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.
+ *  - Id link menu (YAZ-2293, `wikilink/wikilinkMenu.ts`): right-click on a rendered id link shows
+ *    the notecard's name and its id and offers Copy ID; every other link keeps the native menu.
+ *    Registered with the click plugin, on the same source and nav.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
  *    `[[name]]` text — and the Create row also makes the page through `opts.wikilinkNav`
@@ -155,6 +159,7 @@ import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outl
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
+import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
@@ -330,7 +335,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
-  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks))
+  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), opts.wikilinkNav))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))

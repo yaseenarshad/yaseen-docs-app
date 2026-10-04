@@ -39,7 +39,7 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280), ⌘⇧C (YAZ-1338) and the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674), plus Open Recent's open-beside gesture. */
+/** App/window shortcuts: menu-owned B3/Tabs/⌘K/⌘, (YAZ-1679), renderer-owned ⌘B (YAZ-1280), ⌘⇧C (YAZ-1338), the sidebar's ⌘X / ⌘C / ⌘V (YAZ-1674) and a review session's keys (YAZ-2322), plus Open Recent's open-beside gesture. */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
@@ -57,6 +57,10 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
   { keys: '⌘⇧] / ⌘⇧[', label: 'Next / previous tab' },
+  // An upkeep review (YAZ-2322): live only while one is open, and they answer with the caret in the notecard.
+  { keys: '⌘⇧⏎', label: 'In a review: still relevant — on to the next notecard' },
+  { keys: '⌘⇧S', label: 'In a review: skip — the notecard comes back after the others' },
+  { keys: 'Esc', label: 'Close the review and return to the tabs' },
 ]
 
 export const MOUSE_TIPS: readonly HotkeyEntry[] = [
@@ -76,7 +80,7 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   // (YAZ-1337): the two plural menu items and ⌘⇧C above. Shift toggles one row at a time — it
   // never opens anything and never folds a folder.
   { keys: '⇧-click file or folder', label: 'Add or remove it from a multi-selection — right-click for Copy N paths / Open N in new tabs' },
-  { keys: 'Right-click file', label: 'Cut / Copy / Paste, Copy path, New note…, Open in ▸ (new window, VS Code, default app, Finder)' },
+  { keys: 'Right-click file', label: 'Cut / Copy / Paste, Copy path, Copy ID, New note…, Open in ▸ (new window, VS Code, default app, Finder)' },
   // The vault menu (YAZ-1798): the sidebar header's vault name, or any vault in the ⌘O switcher.
   { keys: 'Right-click vault', label: 'Open in this window, Set display name, Copy vault name / path, Reveal in Finder, VS Code, Remove from recents' },
 ]
