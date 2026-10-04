@@ -40,9 +40,9 @@ interface SidebarProps {
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
   /**
-   * A FOLDER search row was chosen (🔒 D3, YAZ-1491): App flips the lens to Files and issues the
-   * same reveal request the tab menu uses, so the folder's row unfolds and flashes below — whichever
-   * lens was showing, by Enter or by click alike. The row is revealed; it is not opened as a tab.
+   * A search row's menu item that draws into the tree was chosen (🔒 D2, YAZ-2050): App flips the
+   * lens to Files and issues the same reveal request the tab menu uses, so the row unfolds and
+   * flashes below — whichever lens was showing.
    */
   onRevealInFiles: (path: string) => void
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
@@ -397,12 +397,11 @@ export function Sidebar({
 
   // What the chevrons button unfolds on the active lens.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
-  // One activation rule for keyboard AND click (🔒 D3, YAZ-1491): a folder reveals, a note opens.
-  // The tree rows' rule on the note half (YAZ-961): the first Enter PREVIEWS — focus stays in the
+  // One activation rule for keyboard AND click, and for a folder as for a note: the row's page
+  // opens as a tab. The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the
   // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
   const activate = (hit: SearchCandidate, background: boolean) => {
-    if (hit.kind === 'dir') onRevealInFiles(hit.path)
-    else if (background) onOpenFileBackground(hit.path)
+    if (background) onOpenFileBackground(hit.path)
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
@@ -432,7 +431,7 @@ export function Sidebar({
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, searching, tree, selectionRef, bodyRef)
 
-  // A Files reveal targets a file — or, since a folder search row (🔒 D3, YAZ-1491), a DIR of the
+  // A Files reveal targets a file — or, from a folder search row's menu (YAZ-2050), a DIR of the
   // tree. Both questions are asked once here and read by the two steps below.
   const revealIsDir = pendingReveal !== null && dirs.includes(pendingReveal.path)
   const revealTargetPresent = tree !== null && pendingReveal !== null && (revealIsDir || treeHasFile(tree.tree, pendingReveal.path))
@@ -654,8 +653,8 @@ export function Sidebar({
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
 
-  // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through the folder-row
-  // door (YAZ-1491 D3): App flips to Files; the reveal clears the query, ends a focus that would hide
+  // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through
+  // `onRevealInFiles`: App flips to Files; the reveal clears the query, ends a focus that would hide
   // the row, expands and flashes it — and the item's input or focus lands beside the row it names.
   const viaTree =
     <A extends unknown[]>(run: (...args: A) => void) =>
