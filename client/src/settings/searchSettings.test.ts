@@ -11,7 +11,7 @@ import { searchSettings, settingCandidates, type SettingHit } from './searchSett
 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
-const REVIEW_ROWS = ['baseDays', 'growth', 'maxDays', 'reviewByDefault']
+const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 
 /** A synthetic candidate list where the three tiers are all present for one needle. */

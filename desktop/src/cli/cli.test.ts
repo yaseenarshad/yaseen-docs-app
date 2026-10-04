@@ -433,25 +433,54 @@ describe('due (YAZ-2322)', () => {
     return { file, changed }
   }
 
-  it('a page: prints the date it is next due, from the vault\'s defaults when it has no settings', async () => {
+  async function reviewJson(settings: Record<string, unknown>): Promise<void> {
+    await mkdir(path.join(dir, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(dir, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify(settings))
+  }
+  /** The vault's `review.json` turns upkeep on, and says whatever else a test sets. */
+  const upkeepOn = (settings: Record<string, unknown> = {}): Promise<void> => reviewJson({ enabled: true, ...settings })
+
+  it('a page: prints the date it is next due, from the defaults for what the vault\'s settings do not say', async () => {
+    await upkeepOn()
     const { file, changed } = await aged('fresh.md', 2)
     expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  ${file}\n`, err: '' })
   })
 
+  it('upkeep off: `due <page>` and `due <folder>` report nothing due — no review.json, one with no `enabled` or a bad one, one that says false', async () => {
+    const { file } = await aged('old.md', 90)
+    const kept = await aged('sub/kept.md', 400, '---\nreview: true\n---\nKept.\n')
+    const nothing = async (): Promise<void> => {
+      for (const page of [file, kept.file]) {
+        expect(await run(['due', page])).toEqual({ code: 0, out: `${page} is not in review\n`, err: '' })
+        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ path: page, inReview: false, due: null })
+      }
+      expect(await run(['due', dir])).toEqual({ code: 0, out: `nothing is due under ${dir}\n`, err: '' })
+      expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([])
+    }
+    await nothing()
+    for (const settings of [{ baseDays: 7 }, { enabled: 'yes', baseDays: 7 }, { enabled: false }]) {
+      await reviewJson(settings)
+      await nothing()
+    }
+    await upkeepOn()
+    expect((await run(['due', dir])).out).toContain(`  ${file}\n`)
+  })
+
   it('a page: a review on the same text pushes the date out from the review', async () => {
+    await upkeepOn()
     const reviewedAt = '2026-01-10T12:00:00Z'
     const { file } = await aged('kept.md', 1, addReview('Kept.\n', reviewedAt))
     expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  ${file}\n`)
   })
 
   it('a page: uses the settings of the vault it is in', async () => {
-    await mkdir(path.join(dir, '.yaseendocs'))
-    await writeFile(path.join(dir, '.yaseendocs', 'review.json'), JSON.stringify({ baseDays: 7 }))
+    await upkeepOn({ baseDays: 7 })
     const { file, changed } = await aged('notes/deep/quick.md', 2)
     expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  ${file}\n`)
   })
 
   it('a page that is not in review says so; --json gives the raw shape', async () => {
+    await upkeepOn()
     const { file } = await aged('off.md', 90, '---\nreview: false\n---\nOff.\n')
     expect((await run(['due', file])).out).toBe(`${file} is not in review\n`)
     expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ path: file, inReview: false, due: null })
@@ -460,6 +489,7 @@ describe('due (YAZ-2322)', () => {
   })
 
   it('a folder: lists what is due now under it, most overdue first', async () => {
+    await upkeepOn()
     const old = await aged('old.md', 90)
     const older = await aged('sub/older.md', 120)
     await aged('fresh.md', 2)
@@ -470,6 +500,7 @@ describe('due (YAZ-2322)', () => {
   })
 
   it('a folder with nothing due says so', async () => {
+    await upkeepOn()
     await aged('fresh.md', 2)
     expect((await run(['due', dir])).out).toBe(`nothing is due under ${dir}\n`)
   })

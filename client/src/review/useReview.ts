@@ -39,7 +39,7 @@ export interface ReviewApi {
   /** Removes the line `keep` just wrote and shows that note again. */
   undo: () => Promise<void>
   close: () => void
-  /** Whether a note is in review; null for a path that is not a note. */
+  /** Whether a note is in review; null for a path that is not a note, and for every path while upkeep is off. */
   inReview: (path: string) => boolean | null
   setInReview: (path: string, on: boolean) => Promise<void>
 }
@@ -68,7 +68,8 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
     const timer = setTimeout(() => setDay((d) => d + 1), new Date().setHours(24, 0, 0, 0) - Date.now())
     return () => clearTimeout(timer)
   }, [day])
-  useEffect(() => setSession(null), [root])
+  // A session ends with its vault, and when upkeep is turned off.
+  useEffect(() => setSession(null), [root, settings.enabled])
 
   const dueCount = useMemo(() => reviewQueue(records, settings, Date.now()).length, [records, settings, day])
 
@@ -127,6 +128,7 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
   const close = useCallback(() => setSession(null), [])
 
   const inReview = useCallback((path: string) => {
+    if (!live.current.settings.enabled) return null
     const record = live.current.records.find((r) => r.path === path)
     return record === undefined ? null : isInReview(record, live.current.settings)
   }, [])

@@ -539,9 +539,17 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
 
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
     const source = createWikilinkResolveSource()
-    const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: DEFAULT_REVIEW_SETTINGS })
+    const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: { ...DEFAULT_REVIEW_SETTINGS, enabled: true } })
     feed(source, [record('/vault/other.md', ['note']), record(PATH)])
     expect([...(el.querySelector('.editor-host')?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks', 'reviews'])
+  })
+
+  it('upkeep off: App hands no review settings, and the page has no Reviews section — even for a note with a log', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(`---\nreview: true\nreviews:\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\n${BODY}`, 1, { wikilinks: source })
+    feed(source, [record('/vault/other.md', ['note']), record(PATH)])
+    expect(el.querySelector('.reviews')).toBeNull()
+    expect([...(el.querySelector('.editor-host')?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks'])
   })
 })
 

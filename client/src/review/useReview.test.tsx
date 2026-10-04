@@ -7,10 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { DEFAULT_REVIEW_SETTINGS as S, REVIEWS_KEY, addReview, reviewEntries, reviewsOf, textFingerprint, type ReviewSettings } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, REVIEWS_KEY, addReview, reviewEntries, reviewsOf, textFingerprint, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useReview, type ReviewApi } from './useReview'
 
+/** Upkeep turned on, the rest as a new vault has it; `OFF` is the same vault with it turned off. */
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
+const OFF: ReviewSettings = { ...S, enabled: false }
 const DAY = 86_400_000
 const NOW = new Date(2026, 5, 15, 9, 0).getTime()
 const ROOT = '/vault'
@@ -266,5 +269,67 @@ describe('turning review on or off', () => {
     failWrites = true
     await answer(() => review.setInReview(`${ROOT}/old.md`, false))
     expect(notices).toHaveLength(1)
+  })
+})
+
+describe('upkeep off', () => {
+  const turn = (settings: ReviewSettings): Promise<void> => act(async () => root?.render(<Probe settings={settings} />))
+  /** Every file's bytes and modified time. */
+  const bytes = (): unknown => [...vault].map(([path, file]) => [path, file.content, file.mtime])
+
+  it('upkeep off: nothing is due, and no note has a review state — so no menu offers "Turn review on" / "Turn review off"', async () => {
+    await mount(OFF)
+    expect(review.dueCount).toBe(0)
+    expect(review.inReview(`${ROOT}/old.md`)).toBeNull()
+    expect(review.inReview(`${ROOT}/off.md`)).toBeNull()
+    await turn(DEFAULT_REVIEW_SETTINGS) // a vault with no review.json
+    expect(review.dueCount).toBe(0)
+    expect(review.inReview(`${ROOT}/old.md`)).toBeNull()
+  })
+
+  it('upkeep off: a note that already has `reviews` or `review` is left byte for byte', async () => {
+    put('kept.md', 400, addReview('Kept.\n', '2025-01-10T12:00:00Z'))
+    const before = bytes()
+    await mount(OFF)
+    await turn(S)
+    await turn(OFF)
+    expect(bytes()).toEqual(before)
+    expect(vault.get(`${ROOT}/off.md`)?.content).toBe('---\nreview: false\n---\nOff.\n')
+    expect(logOf('kept.md')).toBe(1)
+  })
+
+  it('turned on: the count and every note\'s state are there at once, the vault default included', async () => {
+    await mount(OFF)
+    await turn(S)
+    expect(review.dueCount).toBe(3)
+    expect(review.inReview(`${ROOT}/old.md`)).toBe(true)
+    expect(review.inReview(`${ROOT}/off.md`)).toBe(false)
+    await turn({ ...S, reviewByDefault: false })
+    expect(review.dueCount).toBe(0)
+    expect(review.inReview(`${ROOT}/old.md`)).toBe(false)
+  })
+
+  it('turned off while a review is open: the review closes, and nothing answered is lost', async () => {
+    await mount()
+    act(() => review.start())
+    await answer(() => review.keep())
+    expect(review.session).not.toBeNull()
+    await turn(OFF)
+    expect(review.session).toBeNull()
+    expect(logOf('older.md')).toBe(1)
+  })
+
+  it('turned off, then on again: every note\'s log is unchanged, so each note picks up where it was', async () => {
+    await mount()
+    act(() => review.start())
+    await answer(() => review.keep())
+    const before = bytes()
+    await turn(OFF)
+    expect(review.dueCount).toBe(0)
+    await turn(S)
+    expect(bytes()).toEqual(before)
+    expect(review.dueCount).toBe(2)
+    act(() => review.start())
+    expect(shown()).toBe('old.md') // older.md was answered before, and still is
   })
 })

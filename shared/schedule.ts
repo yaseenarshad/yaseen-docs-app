@@ -52,10 +52,11 @@ export function dueAfter(reviews: readonly ReviewEntry[], index: number, s: Revi
 
 /**
  * In review (🔒 D6): the note's own `review: true | false`, else the vault default. A note
- * a review could not be written into — broken frontmatter, or too large to be read (no `text`) — never is.
+ * a review could not be written into — broken frontmatter, or too large to be read (no `text`) — never is,
+ * and no note is while the vault has upkeep off (🔒 D7).
  */
 export function isInReview(record: IndexRecord, s: ReviewSettings): boolean {
-  if (record.frontmatterError !== undefined || record.text === undefined) return false
+  if (!s.enabled || record.frontmatterError !== undefined || record.text === undefined) return false
   const own = record.properties[REVIEW_KEY]
   return typeof own === 'boolean' ? own : s.reviewByDefault
 }
