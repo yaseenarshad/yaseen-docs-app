@@ -20,10 +20,13 @@ export const breakMarks = $prose((ctx) => new Plugin({
     const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
     const type = hardbreakSchema.type(ctx)
     const { doc, tr } = newState
-    doc.nodesBetween(Math.max(0, Math.min(start, end) - 1), Math.min(doc.content.size, Math.max(start, end) + 1), (node, pos) => {
+    // One position wider than the change: the break beside edited text is the one that can go stale.
+    const from = Math.max(0, Math.min(start, end) - 1)
+    const to = Math.min(doc.content.size, Math.max(start, end) + 1)
+    doc.nodesBetween(from, to, (node, pos, parent, index) => {
       if (node.type !== type || node.marks.length === 0) return
-      const before = doc.resolve(pos).nodeBefore
-      const after = doc.resolve(pos + 1).nodeAfter
+      const before = parent?.maybeChild(index - 1)
+      const after = parent?.maybeChild(index + 1)
       const keep = node.attrs.isInline ? node.marks.filter((m) => before && after && m.isInSet(before.marks) && m.isInSet(after.marks)) : []
       if (keep.length < node.marks.length) tr.setNodeMarkup(pos, type, node.attrs, keep)
     })
