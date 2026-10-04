@@ -341,7 +341,7 @@ export function FolderView({
         </ViewFolder.Provider>
       </section>
       {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />}
-      {/* The notes that link to the FOLDER (D10): its path is what such a link resolves to. */}
+      {/* The notes and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}
       <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
     </div>
   )

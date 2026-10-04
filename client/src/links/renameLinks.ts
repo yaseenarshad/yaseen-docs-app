@@ -154,7 +154,7 @@ function rewriteExactLink(value: string, resolves: ResolvesToOld, newTarget: New
  * a bare link that stays bare still makes its note part of the referencing set, exactly as a
  * top-level `links` entry does.
  */
-function exactLinkTarget(value: string): string | null {
+export function exactLinkTarget(value: string): string | null {
   const m = EXACT_WIKILINK_RE.exec(value.trim())
   if (m === null) return null
   const target = m[1].split('|')[0].split('#')[0].trim()
