@@ -122,7 +122,7 @@ export const clipboardPaste = $prose((ctx) => {
             })
             slice = Slice.maxOpen(Fragment.from(schema.nodes.paragraph.create(null, inline)))
           }
-          // Includes table repair and the folder-page outline's bullets-only conversion.
+          // Includes table repair and the folder outline's bullets-only conversion.
           view.someProp('transformPasted', transform => { slice = transform(slice, view, mode === 'plain') })
           tr.replaceSelection(slice)
         }

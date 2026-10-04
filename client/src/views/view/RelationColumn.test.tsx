@@ -1,5 +1,5 @@
 /**
- * Relation definitions now save to the current folder page with the shared Save/Cancel editor.
+ * Relation definitions now save to the current folder with the shared Save/Cancel editor.
  * Legacy vault declarations remain read fallbacks. Link values still write through the normal
  * cell editors; their pickers constrain suggestions to the notes in the declared target FOLDER
  * (YAZ-2290 D10), which the Files tree names — `tree` is stubbed on the bridge beside `properties`.
@@ -49,14 +49,14 @@ const CHURN = '/vault/KPIs/Churn.md'
 /**
  * Two folders (`People`, `Funnels`) and the notes that live in them, plus the two KPI rows the
  * table shows. `page_type` rides along as ORDINARY frontmatter — it is what `KPI_BASE` filters
- * on, and nothing in the client reads it as an identity any more (YAZ-836). `Topics` is a LEGACY
- * folder page — flagged, and named in a member's `folder_pages` — which is an ordinary note now.
+ * on, and nothing in the client reads it as an identity any more (YAZ-836). `Topics` is a note,
+ * not a folder.
  */
 const RECORDS: IndexRecord[] = [
   rec(REVENUE, { page_type: 'kpi', owner: '[[Alice]]' }),
   rec(CHURN, { page_type: 'kpi' }),
-  rec('/vault/Topics.md', { folder_page: true }),
-  rec('/vault/Funnels/Retention.md', { folder_pages: ['[[Topics]]'] }),
+  rec('/vault/Topics.md', {}),
+  rec('/vault/Funnels/Retention.md', {}),
   rec('/vault/Funnels/Signup.md', {}),
   rec('/vault/People/Alice.md', {}),
   rec('/vault/People/Bob.md', {}),
@@ -73,7 +73,7 @@ const ALL_NAMES = ['Revenue', 'Churn', 'Topics', 'Retention', 'Signup', 'Alice',
  * narrowing resolves its `target` over it, exactly as 🔒 D2 says, even when a filter has cut the
  * rows down to the two KPIs.
  */
-const FOLDER_PAGE = testFolderHost({ vaultRecords: RECORDS })
+const HOST = testFolderHost({ vaultRecords: RECORDS })
 
 const ORDER = '    order:\n      - file.name\n      - note.owner\n      - note.funnels\n'
 const KPI_BASE = `filters: page_type == "kpi"\nviews:\n  - type: table\n    name: T\n${ORDER}`
@@ -113,7 +113,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/kpis"
           records={RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           properties={EMPTY_DECLS}
           onOpenFile={onOpenFile}
           {...props}
@@ -294,7 +294,7 @@ describe('constrained picker', () => {
   it.each([
     ['naming no folder', 'person'],
     ['naming an EMPTY folder', '[[Empty]]'],
-    ['naming a note still flagged `folder_page: true` — the legacy membership is gone (YAZ-2290)', '[[Topics]]'],
+    ['naming a note, not a folder', '[[Topics]]'],
   ])('a target %s falls back to ALL basenames — never an error', (_name, target) => {
     const ghost: PropertiesResponse = { ...DECLS, properties: { owner: { kind: 'link', target } } }
     const { el } = mount(KPI_BASE, { properties: ghost })

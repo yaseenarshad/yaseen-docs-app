@@ -27,7 +27,7 @@ const write = vi.mocked(writeProperty)
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 const STATUS_BOARD = `views:
   - type: board
@@ -87,7 +87,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/pillars.md"
           records={records}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,

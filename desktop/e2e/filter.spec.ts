@@ -18,7 +18,7 @@
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 the Filter button opens on "No filters", one built rule narrows the table to the three Live
  *     rows, the emptied `Review` section is gone, and the button wears the badge
- *   2 the rule is DURABLE: the `filters:` block stands under `folder_page_settings` in the
+ *   2 the rule is DURABLE: the `filters:` block stands under `folder_settings` in the
  *     folder's settings file, and
  *     quit → relaunch comes back to the same filtered view
  *   3 search composes on top: both narrow, and clearing the box restores the FILTERED set
@@ -149,7 +149,7 @@ async function removeRule(w: Page): Promise<void> {
 /** The folder's own settings file, sliced to what stands under its settings key. */
 async function settingsOf(): Promise<string> {
   const card = await readFile(path.join(vault, AUTOMATIONS, '.folder.md'), 'utf8')
-  return card.slice(card.indexOf('folder_page_settings:'))
+  return card.slice(card.indexOf('folder_settings:'))
 }
 
 test.beforeAll(async () => {

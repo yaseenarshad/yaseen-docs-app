@@ -3,7 +3,7 @@ import type { ViewSet } from '../viewSchema'
 /**
  * Column labels on the def (YAZ-1513) — the ONE rule for where a `displayName` lives and how it
  * is set, shared by the Properties menu's pencil and the table header's "Rename column…". Edits are
- * `Mutate` bodies, so every rename is one `onChange` → one `folder_page_settings` write through the
+ * `Mutate` bodies, so every rename is one `onChange` → one `folder_settings` write through the
  * folder host, optimistic like every other config edit.
  */
 

@@ -60,8 +60,8 @@ describe('useFile reloadable read state (YAZ-1299)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it.each(['/vault/Page.md', '/vault/data.JsOn'])('a read is only a read: %s, flagged `folder_page: true` with a body, comes through byte-for-byte and is never rewritten (YAZ-2290)', async (path) => {
-    const file = response(path, '---\r\nfolder_page: true\r\n---\r\n\tvalue  \r\n')
+  it.each(['/vault/Page.md', '/vault/data.JsOn'])('a read is only a read: %s, frontmatter and body, comes through byte-for-byte and is never rewritten', async (path) => {
+    const file = response(path, '---\r\nstatus: idea\r\n---\r\n\tvalue  \r\n')
     readFile.mockResolvedValueOnce(file)
 
     render(path)

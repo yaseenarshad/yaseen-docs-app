@@ -18,7 +18,7 @@ import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** In-memory stand-in for the main-owned store (same shape as TableGroups.test.tsx). */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -89,7 +89,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/pillars.md"
           records={NESTED_RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={vi.fn()}
           {...props}
         />,

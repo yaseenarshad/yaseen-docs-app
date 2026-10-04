@@ -85,7 +85,7 @@ async function propertiesOf(file: string): Promise<Record<string, unknown>> {
   return parseFrontmatter(splitFrontmatter(await readFile(file, 'utf8')).frontmatter).properties
 }
 async function settingsOf(file: string): Promise<OnDiskSettings> {
-  return ((await propertiesOf(file)).folder_page_settings ?? {}) as OnDiskSettings
+  return ((await propertiesOf(file)).folder_settings ?? {}) as OnDiskSettings
 }
 const viewOf = (settings: OnDiskSettings, type: string): OnDiskView => settings.views?.find((v) => v.type === type) ?? {}
 /** The stored label for `status`, whichever spelling the writer chose (bare, or `note.`-prefixed). */

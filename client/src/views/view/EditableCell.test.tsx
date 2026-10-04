@@ -25,7 +25,7 @@ const write = vi.mocked(writeProperty)
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** file.name plus one column per editor type, and a read-only formula column. */
 const EDIT_BASE = `views:
@@ -67,7 +67,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,

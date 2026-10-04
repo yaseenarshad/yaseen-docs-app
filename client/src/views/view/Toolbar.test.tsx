@@ -5,7 +5,7 @@
  *
  * YAZ-846: the mount is the folder view's, because that is the only mount there is.
  * Two consequences run through this file — the **Filter** menu edits THIS view's `filters` and
- * nothing else (D1, YAZ-1227: a folder page's set IS the lookup, 🔒 Q3), and the tabs are
+ * nothing else (D1, YAZ-1227: a folder's set IS the lookup, 🔒 Q3), and the tabs are
  * EDITABLE again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): the drag-to-reorder half is
  * pinned below, and every gesture there is ONE `update` — the same door as sort and columns.
  */
@@ -26,7 +26,7 @@ vi.mock('./OutlineEditor', () => ({ OutlineEditor: () => null }))
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
-const FOLDER_PAGE = testFolderHost()
+const HOST = testFolderHost()
 
 /** Yasin's real base (also pinned in viewSchema.test.ts and engine.test.ts). */
 const YASIN_BASE = `views:
@@ -66,7 +66,7 @@ function mount(text = YASIN_BASE, props: Partial<ViewsPaneProps> = {}) {
           root="/vault"
           folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folder={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -1261,7 +1261,7 @@ views:
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
   })
 
-  it('the folder page’s DECLARED columns are offered too, valueless or not (YAZ-895)', () => {
+  it('the folder’s DECLARED columns are offered too, valueless or not (YAZ-895)', () => {
     const settings = { columns: { owner: { kind: 'link' as const } }, views: [], problems: [] }
     const { el } = mount(undefined, { folder: testFolderHost({ settings }) })
     expect(byLabel(openMenu(el, 'Properties'), 'Show Owner')).toBeDefined()
@@ -1566,12 +1566,12 @@ views:
     expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
   })
 
-  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, enabled for a plain note key — a retired `folder_pages` is one (YAZ-2290 D6)', () => {
+  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, enabled for a plain note key', () => {
     const deleteColumn = vi.fn(async () => {})
-    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', folder_pages: ['[[Home]]'], comments: [] } }]
-    const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.folder_pages, note.comments, formula.score]\n`, { records, folder: testFolderHost({ deleteColumn, vaultRecords: records }) })
+    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', comments: [] } }]
+    const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.comments, formula.score]\n`, { records, folder: testFolderHost({ deleteColumn, vaultRecords: records }) })
     const pop = openMenu(el, 'Properties')
-    for (const [label, disabled] of [['Name', true], ['Score', true], ['Comments', true], ['Folder pages', false], ['Status', false]] as const) {
+    for (const [label, disabled] of [['Name', true], ['Score', true], ['Comments', true], ['Status', false]] as const) {
       click(byLabel(pop, `Open ${label}`))
       const del = byLabel<HTMLButtonElement>(pop, `Delete column ${label}`)
       expect(del.disabled).toBe(disabled)
@@ -1657,7 +1657,7 @@ describe('the notes line', () => {
   })
 
   it("lists the settings' problems — the one-liners folderSettings collects while ignoring an unusable key", () => {
-    const problems = ['folder_page_settings.folder must be a root-relative folder name — ignoring it']
+    const problems = ['folder_settings.columns must be a map of column names — ignoring it']
     const { el } = mount(YASIN_BASE, { folder: testFolderHost({ settings: { columns: {}, views: [], problems } }) })
     const note = q<HTMLElement>(el, '.views-pane__notes')
     expect(note.getAttribute('role')).toBe('note') // a note, never an alert: nothing here failed
@@ -1673,7 +1673,7 @@ describe('the notes line', () => {
   })
 
   it('joins both halves into ONE line — the settings first, then the engine', () => {
-    const problems = ['folder_page_settings must be a map of settings — using the defaults']
+    const problems = ['folder_settings must be a map of settings — using the defaults']
     const { el } = mount('filters: 1 +\nviews:\n  - type: table\n    name: T\n    order:\n      - file.name\n', {
       folder: testFolderHost({ settings: { columns: {}, views: [], problems } }),
     })

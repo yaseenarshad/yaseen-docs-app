@@ -8,19 +8,12 @@
  * link (YAZ-2290 D5) — it adds nobody to the folder and touches nobody's file — and what the
  * folder holds is decided by what lives in it, which the Table answers independently of every
  * line typed here. Everything is asserted ON DISK through the shared frontmatter helpers
- * (`folderColumns.spec.ts`'s idiom): the outline is a string inside `folder_page_settings`, and
+ * (`folderColumns.spec.ts`'s idiom): the outline is a string inside `folder_settings`, and
  * a `toContain` over the whole file would pass on a block that had lost half of it.
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`), on
  * `Funnel Stages` — the folder whose settings file SHIPS an outline document, three lines of
  * prose. Everything this file types happens on top of that text.
- *
- * TOMBSTONE (YAZ-2290 D5), because this file used to be the membership outline's own proof: a
- * line that was exactly one resolving wikilink no longer IS a membership. Writing one tags
- * nothing, deleting one asks nothing (the un-tag sheet is gone, and its two steps with it), no
- * member is ADOPTED into the document, the page body no longer migrates into it on first open,
- * and the `order` list retires with nobody's first write. What was step 2's tag is now a link
- * that changes no file but the settings.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 first open: the document is exactly what the settings file ships, opening wrote NOTHING,
@@ -120,7 +113,7 @@ interface OnDiskView {
 /** The folder's outline VIEW as written — parsed, never string-matched (folderColumns.spec.ts's rule). */
 async function outlineViewOnDisk(): Promise<OnDiskView> {
   const { frontmatter } = splitFrontmatter(await read(SETTINGS_FILE))
-  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
+  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { views?: OnDiskView[] }
   return settings.views?.find((v) => v.type === 'outline') ?? {}
 }
 
@@ -156,7 +149,7 @@ test('step 1 — first open: the document is what the settings ship, opening wri
   // The user's own text lives in the very same document, under the prose.
   await typeOutlineLine(win, contents(win), BODY.length - 1, NOTE)
 
-  // ONE `folder_page_settings` write, debounced 500ms — and the editor re-serialises the WHOLE
+  // ONE `folder_settings` write, debounced 500ms — and the editor re-serialises the WHOLE
   // document, so this is where a shipped line could have been lost: every one of them is still
   // here, in Milkdown's own `* ` spelling, with the typed line after them.
   await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(NOTE)

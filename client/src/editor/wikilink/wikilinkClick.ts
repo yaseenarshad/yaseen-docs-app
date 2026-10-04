@@ -45,7 +45,7 @@ export interface WikilinkNav {
    * Root-relative folder where a BARE unresolved link creates its page ('' = the vault
    * root). A getter, read at CLICK time: the host resolves the Files & Links "default
    * location for new notes" setting against ITS OWN page path (`newNoteBase`, C2- GRO-2240),
-   * so right-panel and folder-page editors create beside themselves, not beside the main
+   * so right-panel and folder editors create beside themselves, not beside the main
    * tab (YAZ-1643); settings changes land live without remounting any editor. Pathed
    * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
    */

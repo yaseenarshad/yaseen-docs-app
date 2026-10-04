@@ -1,5 +1,5 @@
 /**
- * A folder's settings (YAZ-830, YAZ-2290 D1): THE one door to the key `folder_page_settings` of
+ * A folder's settings (YAZ-830, YAZ-2290 D1): THE one door to the key `folder_settings` of
  * its `.folder.md`. Every surface reads a folder's config through `folderSettings()` and every
  * edit goes back through `writeFolderSettings()` — no surface re-parses that key itself (locked).
  *
@@ -18,10 +18,9 @@ import { transformFile, writeProperty } from './writeProperty'
 /**
  * The one reserved key this module owns; nothing else may name it — exported (⚡ YAZ-884) only so
  * the properties panel's RESERVED list can be spelled from the real constants. Reading or writing
- * it stays this module's business. The on-disk name is kept from the folder-page model: every
- * `.folder.md` already written carries it.
+ * it stays this module's business.
  */
-export const FOLDER_SETTINGS_KEY = 'folder_page_settings'
+export const FOLDER_SETTINGS_KEY = 'folder_settings'
 
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export type ColumnDecl = PropertyDecl
@@ -196,7 +195,7 @@ function readDefaultView(raw: unknown, problems: string[]): string | undefined {
  */
 export function folderSettings(record: IndexRecord | undefined): FolderSettings {
   const raw = record?.properties[FOLDER_SETTINGS_KEY]
-  // Absent, or written as a bare `folder_page_settings:` — nothing saved yet.
+  // Absent, or written as a bare `folder_settings:` — nothing saved yet.
   if (raw == null) return { columns: structuredClone(DEFAULT_COLUMNS), views: defaultViews(), problems: [] }
   const problems: string[] = []
   if (!isRecord(raw)) {
@@ -215,7 +214,7 @@ export function folderSettings(record: IndexRecord | undefined): FolderSettings 
 
 /**
  * WHERE LINKS LIVE inside the one key, and the ONE place that knows it (YAZ-864). A rename has to
- * walk INTO `folder_page_settings` — the one reserved key with app-defined link semantics (🔒 Q1) —
+ * walk INTO `folder_settings` — the one reserved key with app-defined link semantics (🔒 Q1) —
  * and the rule that no surface re-parses that key holds for the rename engine too: it comes through
  * here, and the key STRING rides back in the result rather than being spelled anywhere else.
  *

@@ -78,21 +78,21 @@ describe('rewriteNoteLinks', () => {
 
 // ---------- YAZ-864: the ONE reserved key is walked INTO ----------
 
-describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
+describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
   it('rewrites an outline `order` entry, keeping every other key and the body byte-for-byte', () => {
     const content =
-      '---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n    - type: table\n      name: Table\n---\n\n# Home\n'
+      '---\nstatus: idea\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n    - type: table\n      name: Table\n---\n\n# Home\n'
     const out = rewriteNoteLinks(content, resolvesB, toC)
     expect(out).toContain('- "[[C]]"')
     expect(out).toContain('- "[[A]]"') // the sibling entry is untouched
-    expect(out).toContain('folder_page: true')
+    expect(out).toContain('status: idea')
     expect(out).toContain('name: Table') // the second view rides along
     expect(out).toContain('\n# Home\n')
   })
 
   it('rewrites a column `target`, leaving the column\u2019s other keys and the sibling columns alone', () => {
     const content =
-      '---\nfolder_page_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n      required: true\n    owner:\n      kind: link\n      target: "[[A]]"\n    note:\n      kind: text\n  folder: roles\n---\n\nbody\n'
+      '---\nfolder_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n      required: true\n    owner:\n      kind: link\n      target: "[[A]]"\n    note:\n      kind: text\n  folder: roles\n---\n\nbody\n'
     const out = rewriteNoteLinks(content, resolvesB, toC)
     expect(out).toContain('target: "[[C]]"')
     expect(out).toContain('kind: multi-link')
@@ -104,7 +104,7 @@ describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
 
   it('the spelling rules are the top level\u2019s, not a second set: alias, heading and pathed forms all follow', () => {
     const content =
-      '---\nfolder_page_settings:\n  columns:\n    a:\n      kind: link\n      target: "[[Sub/B|Bee]]"\n  views:\n    - type: outline\n      order:\n        - "[[ B #H]]"\n---\n\nbody\n'
+      '---\nfolder_settings:\n  columns:\n    a:\n      kind: link\n      target: "[[Sub/B|Bee]]"\n  views:\n    - type: outline\n      order:\n        - "[[ B #H]]"\n---\n\nbody\n'
     const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('target: "[[Sub/C|Bee]]"') // pathed stays pathed
     expect(out).toContain('"[[C#H]]"') // heading rides along, padding normalised as everywhere else
@@ -112,7 +112,7 @@ describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
 
   it('a STALE entry that never resolved to the renamed page stays exactly as written', () => {
     const content =
-      '---\nfolder_page_settings:\n  views:\n    - type: outline\n      order:\n        - "[[Gone]]"\n        - not a link at all\n        - 7\n      order_note: "[[B]] in an unknown key"\n---\n\nbody [[B]]\n'
+      '---\nfolder_settings:\n  views:\n    - type: outline\n      order:\n        - "[[Gone]]"\n        - not a link at all\n        - 7\n      order_note: "[[B]] in an unknown key"\n---\n\nbody [[B]]\n'
     const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('- "[[Gone]]"')
     expect(out).toContain('- not a link at all')
@@ -123,26 +123,26 @@ describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
 
   it('a page with settings but no reference to the renamed file is null — never written, byte-for-byte safe', () => {
     const content =
-      '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n  views:\n    - type: outline\n      order: ["[[A]]"]\n---\n\n# Not about B\n'
+      '---\nstatus: idea\nfolder_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n  views:\n    - type: outline\n      order: ["[[A]]"]\n---\n\n# Not about B\n'
     expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
   })
 
   it('rewrites a wikilink LINE inside a view’s outline; prose lines, markers and indentation survive (YAZ-900)', () => {
     const content =
-      '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[A]]\n            * [[B]]\n        - see [[B]] inline\n        - [[B]] and [[B]]\n---\n\nbody\n'
+      '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[A]]\n            * [[B]]\n        - see [[B]] inline\n        - [[B]] and [[B]]\n---\n\nbody\n'
     const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
-    const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_page_settings as { views: { outline: string }[] }).views
+    const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { views: { outline: string }[] }).views
     expect(views[0].outline).toBe('- [[A]]\n    * [[C]]\n- see [[B]] inline\n- [[B]] and [[B]]')
   })
 
   it('an outline that only MENTIONS the renamed page mid-line is null — never written', () => {
     const content =
-      '---\nfolder_page_settings:\n  views:\n    - type: outline\n      outline: "- see [[B]] inline"\n      outline_note: "[[B]] in an unknown key"\n---\n\nbody\n'
+      '---\nfolder_settings:\n  views:\n    - type: outline\n      outline: "- see [[B]] inline"\n      outline_note: "[[B]] in an unknown key"\n---\n\nbody\n'
     expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
   })
 
   it('a non-string outline rides along untouched — the raw value is never normalised', () => {
-    const content = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      outline: 7\n      order: ["[[B]]"]\n---\n\nbody\n'
+    const content = '---\nfolder_settings:\n  views:\n    - type: outline\n      outline: 7\n      order: ["[[B]]"]\n---\n\nbody\n'
     const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('outline: 7')
     expect(out).toContain('"[[C]]"')
@@ -150,7 +150,7 @@ describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
 
   it('an unusable settings shape is not normalised away — the raw value rides along, only the leaf moves', () => {
     const content =
-      '---\nfolder_page_settings:\n  columns:\n    broken:\n      kind: not-a-kind\n      target: "[[B]]"\n    alsoBroken: 7\n  views: {}\n  stray: keep me\n---\n\nbody\n'
+      '---\nfolder_settings:\n  columns:\n    broken:\n      kind: not-a-kind\n      target: "[[B]]"\n    alsoBroken: 7\n  views: {}\n  stray: keep me\n---\n\nbody\n'
     const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
     expect(out).toContain('kind: not-a-kind') // the tolerant READ would drop this column entirely
     expect(out).toContain('target: "[[C]]"')
@@ -298,18 +298,18 @@ describe('updateLinksAfterRename', () => {
   })
 })
 
-describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_page_settings (YAZ-864)', () => {
+describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_settings (YAZ-864)', () => {
   const root = '/v'
   const oldPath = '/v/B.md'
   const newPath = '/v/C.md'
   /** Home names B in its outline `order`; Cols names it as a column target. Neither has a `links` entry. */
-  const HOME = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n---\n'
-  const COLS = '---\nfolder_page_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n---\n'
+  const HOME = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n---\n'
+  const COLS = '---\nfolder_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n---\n'
   /** A folder's settings record, as the index hands it over beside the notes. */
   const settings = (folder: string, raw: string) => rec(`/v/${folder}/.folder.md`, { folder, properties: parseFrontmatter(splitFrontmatter(raw).frontmatter).properties })
 
   it('counts them in the banner N and rewrites both leaves on disk; a settings file naming nobody is never read', async () => {
-    const OTHER = '---\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n---\n'
+    const OTHER = '---\nfolder_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n---\n'
     const files = {
       '/v/Home/.folder.md': { content: HOME, mtime: 1 },
       '/v/Cols/.folder.md': { content: COLS, mtime: 1 },
@@ -329,7 +329,7 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_pag
   })
 
   it('a page referenced ONLY by an outline LINE is counted and rewritten too (YAZ-900)', async () => {
-    const OUT = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[B]]\n        - prose about [[A]]\n---\n'
+    const OUT = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[B]]\n        - prose about [[A]]\n---\n'
     const files = { '/v/Out/.folder.md': { content: OUT, mtime: 1 } }
     installBridge(files)
     const records = [rec('/v/B.md')]
@@ -396,9 +396,9 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   const root = '/v'
   const FOLDER_ID = 'f7n2w8rt4xyz'
   /** Another folder's settings: its Outline names Projects on a line of its own, and a column targets it. */
-  const TEAM = '---\nfolder_page_settings:\n  columns:\n    project:\n      kind: link\n      target: "[[Projects]]"\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n        - prose about [[Projects]]\n---\n'
-  const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_page_settings
-  const team = () => rec('/v/Team/.folder.md', { properties: { folder_page_settings: settingsOf(TEAM) } })
+  const TEAM = '---\nfolder_settings:\n  columns:\n    project:\n      kind: link\n      target: "[[Projects]]"\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n        - prose about [[Projects]]\n---\n'
+  const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_settings
+  const team = () => rec('/v/Team/.folder.md', { properties: { folder_settings: settingsOf(TEAM) } })
 
   it('a rename rewrites bare `[[Projects]]` to the new name — in a note and in another folder\u2019s Outline — and the count is those two files', async () => {
     const A = `See [[Projects]], [[projects|the work]] and [[Projects#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`
@@ -449,7 +449,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   it('a folder\u2019s own settings file is read and rewritten at its NEW path, like any note inside it', async () => {
     const files = { '/v/Work/.folder.md': { content: TEAM, mtime: 1 } }
     installBridge(files)
-    const own = rec('/v/Projects/.folder.md', { properties: { folder_page_settings: settingsOf(TEAM) } })
+    const own = rec('/v/Projects/.folder.md', { properties: { folder_settings: settingsOf(TEAM) } })
     expect(await updateLinksAfterRename({ root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir', records: [], folders: [own], dirs: ['/v/Projects'] })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/Work/.folder.md'].content).toContain('- [[Work]]')
   })

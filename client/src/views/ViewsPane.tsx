@@ -388,7 +388,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           wikilinks={folder.wikilinks}
           wikilinkCandidates={folder.wikilinkCandidates}
           nav={folder.nav}
-          // ONE `folder_page_settings` write, through the same door every config edit uses. It
+          // ONE `folder_settings` write, through the same door every config edit uses. It
           // lands on the FIRST outline view because that is the one the seed was read from.
           onDocument={(markdown) =>
             update((d) => {

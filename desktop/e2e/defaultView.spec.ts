@@ -1,6 +1,6 @@
 /**
  * The saved default view, end to end (YAZ-1109, over YAZ-1104's seam): a folder may remember
- * which of its views a fresh open STARTS on, as `folder_page_settings.defaultView` — one name, in
+ * which of its views a fresh open STARTS on, as `folder_settings.defaultView` — one name, in
  * the folder's own `.folder.md`, through the Properties menu's own door.
  *
  * The distinction the whole arc turns on: the START persists, while which view is ACTIVE stays
@@ -42,13 +42,13 @@ const folderPath = () => path.join(vault, FOLDER)
 const settingsFile = () => path.join(folderPath(), '.folder.md')
 
 /**
- * The folder's `folder_page_settings` AS WRITTEN, read off its `.folder.md`. Parsed rather than
+ * The folder's `folder_settings` AS WRITTEN, read off its `.folder.md`. Parsed rather than
  * string-matched (folderColumns.spec.ts's idiom): the claim is that the name landed INSIDE the
  * one key, and a `toContain` would pass on the word sitting anywhere in the file.
  */
 async function settingsOnDisk(): Promise<{ defaultView?: string }> {
   const { frontmatter } = splitFrontmatter(await readFile(settingsFile(), 'utf8'))
-  return (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { defaultView?: string }
+  return (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { defaultView?: string }
 }
 
 /** Opens the Properties menu on the folder's Table view; the outline is never offered one. */
@@ -85,7 +85,7 @@ test('the saved START: picked in the Properties menu, kept in the settings file,
   expect(await readFile(settingsFile(), 'utf8')).not.toContain('defaultView')
 
   // The START goes through its OWN door instead — the Properties menu's Page section, one
-  // `folder_page_settings` write (🔒 D3), never a views write.
+  // `folder_settings` write (🔒 D3), never a views write.
   const menu = await openProperties()
   const select = menu.locator('[aria-label="Default view"]')
   await expect(select).toHaveValue('') // "First view" — the settings name none yet

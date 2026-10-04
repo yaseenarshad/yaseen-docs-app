@@ -70,7 +70,7 @@ export interface ViewSet {
 
 /**
  * The ONE config-write door every menu is handed: `ViewsPane`'s `update`, which re-parses and
- * calls `onChange` (the folder host turns it into exactly one `folder_page_settings`
+ * calls `onChange` (the folder host turns it into exactly one `folder_settings`
  * write). It lived in `view/FilterMenu.tsx` until YAZ-846 deleted that menu.
  */
 export type Mutate = (mutate: (def: ViewSet) => void) => void

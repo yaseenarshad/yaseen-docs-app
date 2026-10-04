@@ -4,7 +4,7 @@
  * observable — `views/writeProperty`'s bridge-mock idiom, since both of the panel's writes run
  * that module's read → rewrite → `expectedMtime` → retry-once dance (whole-block for raw, one key
  * for a row). The vault-wide registry is the shared `propertiesStub`, so a type declared from a
- * row is observable exactly where folder-page views read it.
+ * row is observable exactly where folder views read it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Profiler, act } from 'react'
@@ -66,11 +66,11 @@ Body line
 /** TYPED plus a name the registry's grammar rejects — an accepted edge, never a workaround UI. */
 const LADDER = TYPED.replace('parent: "[[Home]]"', 'parent: "[[Home]]"\nNot A Key: whatever')
 
-/** Values no typed editor can hold, the settings key the app reserves for its own door, and a retired `folder_page` flag. */
+/** Values no typed editor can hold, beside an ordinary flag. */
 const OPAQUE = `---
-folder_page: true
-folder_page_settings:
-  folder: Notes
+draft: true
+draft_layout:
+  width: wide
 note: |
   line one
   line two
@@ -153,7 +153,7 @@ const LOCAL_NOTE = '---\nStatus: Ready\n---\nOriginal note body\n'
 /** The window's feed after its first snapshot; `columns` undefined = the folder has no settings file. */
 const folderFeed = (columns?: Record<string, PropertyDecl>) => {
   const source = createWikilinkResolveSource()
-  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', properties: { folder_page_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
+  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
   source.update(() => null, [{ ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work' }], settings)
   return source
 }
@@ -164,7 +164,7 @@ const SHORTCUT_NOTE = `---\nalso_in:\n  - ${AREAS_ID}\n  - a1b2c3d4e5f6\n---\nBo
 /** The living folder declares Status and effort; Areas declares effort (differently) and owner. */
 const shortcutFeed = () => {
   const source = createWikilinkResolveSource()
-  const settings = (path: string, columns: Record<string, PropertyDecl>, id?: string): IndexRecord => ({ ...TEST_RECORDS[0], path, name: '.folder.md', basename: '.folder', id, properties: { folder_page_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } })
+  const settings = (path: string, columns: Record<string, PropertyDecl>, id?: string): IndexRecord => ({ ...TEST_RECORDS[0], path, name: '.folder.md', basename: '.folder', id, properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } })
   source.update(() => null, [], [settings(FOLDER, { Status: { kind: 'select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } }), settings('/vault/Areas/.folder.md', { effort: { kind: 'text' }, owner: { kind: 'text' } }, AREAS_ID)])
   return source
 }
@@ -559,10 +559,9 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
   it('values no editor can hold are read-only, chipped, and offer nothing', () => {
     const el = mount(OPAQUE, { root: ROOT })
     expand(el)
-    expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings', 'note', 'tags'])
+    expect(keysOf(el)).toEqual(['draft', 'draft_layout', 'note', 'tags'])
 
-    // On a note the retired settings block is an ordinary property: a nested map, like any other.
-    for (const key of ['folder_page_settings', 'note']) {
+    for (const key of ['draft_layout', 'note']) {
       const r = rowOf(el, key)
       expect(chipIn(r)).toBe('YAML')
       // 🔒 A row with no editor offers nothing but its chip.
@@ -576,19 +575,19 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(byLabel(tags, 'Configure tags')).not.toBeNull()
     expect(byLabel(tags, 'Delete tags')).toBeNull()
 
-    // A retired `folder_page` flag is ordinary frontmatter (YAZ-2290 D6): no chip, and an editor.
-    const flag = rowOf(el, 'folder_page')
+    // An ordinary flag: no chip, and an editor.
+    const flag = rowOf(el, 'draft')
     expect(chipIn(flag)).toBeNull()
     expect(flag.querySelector('[data-edit]')).not.toBeNull()
   })
 
-  it('a retired `folder_page_settings` on a NOTE is an ordinary property: an empty one has an editor and its menu', () => {
-    const el = mount('---\nfolder_page_settings:\nstatus: draft\n---\nBody\n', { root: ROOT })
+  it('`folder_settings` on a NOTE is an ordinary property: an empty one has an editor and its menu', () => {
+    const el = mount('---\nfolder_settings:\nstatus: draft\n---\nBody\n', { root: ROOT })
     expand(el)
-    const r = rowOf(el, 'folder_page_settings')
+    const r = rowOf(el, 'folder_settings')
     expect(chipIn(r)).toBeNull()
     expect(r.querySelector('[data-edit]')).not.toBeNull()
-    click(byLabel(r, 'Configure folder_page_settings')!)
+    click(byLabel(r, 'Configure folder_settings')!)
     expect(buttonNamed(el, 'Remove from this note')).not.toBeNull()
   })
 
@@ -690,7 +689,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     const wikilinks = folderFeed({ Status: { kind: 'select', options: ['Ready', 'Later'] } })
     const freshFolder = `---
 owner: untouched
-folder_page_settings:
+folder_settings:
   columns:
     Status:
       kind: select
@@ -721,7 +720,7 @@ folder_page_settings:
     expect(write.path).toBe(FOLDER)
     expect(write.expectedMtime).toBe(444)
     const saved = parseFrontmatter(splitFrontmatter(write.content).frontmatter).properties
-    expect(saved).toEqual({ owner: 'untouched', folder_page_settings: {
+    expect(saved).toEqual({ owner: 'untouched', folder_settings: {
       columns: { Status: { kind: 'multi-select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } },
       defaultView: 'Table', future_setting: 'keep me', views: [{ type: 'table', name: 'Table' }],
     } })
@@ -835,13 +834,13 @@ describe('FrontmatterPanel — a folder\'s own panel (YAZ-2290 D9)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('"folder_page_settings" is refused as a new property — the row would be hidden — and nothing is created', () => {
+  it('"folder_settings" is refused as a new property — the row would be hidden — and nothing is created', () => {
     const el = mountOwn('')
     expand(el)
     click(btn(el, 'Add property'))
-    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'folder_page_settings')
+    setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'folder_settings')
     click(btn(el, 'Add'))
-    expect(errorLine(el)?.textContent).toBe("folder_page_settings is the app's own property — it is set where it belongs, not here")
+    expect(errorLine(el)?.textContent).toBe("folder_settings is the app's own property — it is set where it belongs, not here")
     expect(createFile).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
   })
@@ -870,9 +869,9 @@ describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
   it('filters by KEY — trimmed, case-insensitive, block order kept, chipped rows included — and writes nothing', () => {
     const el = mount(OPAQUE)
     expand(el)
-    expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings', 'note', 'tags'])
-    setValue(search(el), '  FOLDER ')
-    expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings'])
+    expect(keysOf(el)).toEqual(['draft', 'draft_layout', 'note', 'tags'])
+    setValue(search(el), '  DRAFT ')
+    expect(keysOf(el)).toEqual(['draft', 'draft_layout'])
     expect(el.querySelector('.frontmatter-panel__count')?.textContent).toBe('4') // the count is the block's, not the match's
     setValue(search(el), 'ta')
     expect(keysOf(el)).toEqual(['tags'])

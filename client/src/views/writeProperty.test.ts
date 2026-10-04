@@ -125,9 +125,9 @@ describe("a folder's settings file is created on its first change (YAZ-2290 D1)"
     readFile.mockRejectedValueOnce(missing())
     writeFile.mockResolvedValue({ path: SETTINGS, mtime: 60, size: 20 })
 
-    await expect(writeProperty(SETTINGS, 'folder_page_settings', { views: [] })).resolves.toMatchObject({ mtime: 60 })
+    await expect(writeProperty(SETTINGS, 'folder_settings', { views: [] })).resolves.toMatchObject({ mtime: 60 })
 
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: SETTINGS, content: '---\nfolder_page_settings:\n  views: []\n---\n', expectedMtime: 0 })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: SETTINGS, content: '---\nfolder_settings:\n  views: []\n---\n', expectedMtime: 0 })
   })
 
   it('no file and a change that comes to nothing, or throws: nothing is left on disk', async () => {
@@ -141,16 +141,16 @@ describe("a folder's settings file is created on its first change (YAZ-2290 D1)"
   })
 
   it('a second change finds the file', async () => {
-    readFile.mockResolvedValue(settings('---\nfolder_page_settings:\n  views: []\n---\n', 60))
+    readFile.mockResolvedValue(settings('---\nfolder_settings:\n  views: []\n---\n', 60))
     writeFile.mockResolvedValue({ path: SETTINGS, mtime: 70, size: 20 })
 
-    await writeProperty(SETTINGS, 'folder_page_settings', { views: [{ type: 'table', name: 'Table' }] })
+    await writeProperty(SETTINGS, 'folder_settings', { views: [{ type: 'table', name: 'Table' }] })
 
     expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 60 }))
   })
 
   it('another writer creating it first is a CONFLICT: its file is read and written into', async () => {
-    readFile.mockRejectedValueOnce(missing()).mockResolvedValueOnce(settings('---\nfolder_page_settings:\n  defaultView: Board\n---\n', 55))
+    readFile.mockRejectedValueOnce(missing()).mockResolvedValueOnce(settings('---\nfolder_settings:\n  defaultView: Board\n---\n', 55))
     writeFile.mockRejectedValueOnce(conflict(55)).mockResolvedValueOnce({ path: SETTINGS, mtime: 60, size: 20 })
 
     await expect(writeProperty(SETTINGS, 'tags', ['x'])).resolves.toMatchObject({ mtime: 60 })

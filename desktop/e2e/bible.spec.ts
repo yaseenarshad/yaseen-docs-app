@@ -4,8 +4,8 @@
  * folders all answering the same questions about it.
  *
  * The fixture (`fixtures/bible-vault/`) is five real FOLDERS of notes — `Funnel Stages`,
- * `Industries`, `KPIs`, `Problems`, `Roles` — four of them carrying a hidden `.folder.md` with the
- * columns and views a folder page used to hold, plus the two loose `inbox/` notes. A note
+ * `Industries`, `KPIs`, `Problems`, `Roles` — four of them carrying a hidden `.folder.md` with its
+ * columns and views, plus the two loose `inbox/` notes. A note
  * belongs to a folder by living in it: nothing in its frontmatter says so, and step 1 proves the
  * counts off the disk.
  *
@@ -26,13 +26,8 @@
  *   5  rename an entity page — relations, body links, backlinks AND its place in its folder all
  *      survive, still zero broken links
  *   6  rename a FOLDER (YAZ-864, YAZ-2304) — the links to it that live INSIDE
- *      `folder_page_settings` follow: another folder's column `target` and its own. Still zero
+ *      `folder_settings` follow: another folder's column `target` and its own. Still zero
  *      broken links, and the folder still browses under its new name.
- *
- * TOMBSTONE (YAZ-2290): `Home` and the five folder-page notes are gone, and so is every claim
- * this file made through them — the outline's adopted link lines, the body migrated into the
- * outline on first open, a member's `folder_pages` belonging, the retired `order` list. The
- * direct-member counts those rows once carried are the folder rows' own numbers now (🔒 E6).
  *
  * Same harness as links.spec.ts / backlinks.spec.ts (temp `--user-data-dir`, a COPY of the
  * fixture, `bible-` step screenshots).
@@ -93,7 +88,7 @@ const RENAMED = 'Deal Win Rate'
 
 /**
  * Step 6 (YAZ-864): the folder whose name is spelled in two frontmatter places that are NESTED
- * inside `folder_page_settings`, where the index never looked for links — `Problems`' `sold_to`
+ * inside `folder_settings`, where the index never looked for links — `Problems`' `sold_to`
  * column `target`, and its own `reports_to` target. A link to a folder resolves to it when no
  * note holds the name (YAZ-2290 D10), so renaming the folder has to rewrite both.
  */
@@ -372,7 +367,7 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await quitApp(app)
 })
 
-test('step 6 — renaming a FOLDER: the links to it INSIDE folder_page_settings follow (YAZ-864)', async () => {
+test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follow (YAZ-864)', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   await expect(dirCount(win, ROLES)).toHaveText('3')
@@ -386,7 +381,7 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_page_settings 
   await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 2 notes will be updated.`)
 
   // TWO files, and both are folder settings files: the two that name Roles ONLY from inside
-  // `folder_page_settings`, which the index never extracted as links. The three notes in the
+  // `folder_settings`, which the index never extracted as links. The three notes in the
   // folder link to each other by BARE name, which a folder rename leaves byte-identical (E1b).
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 2 notes')
 

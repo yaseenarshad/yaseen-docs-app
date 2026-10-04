@@ -50,8 +50,8 @@ describe('createFile', () => {
     const p = path.join(root, 'NewFolder', FOLDER_SETTINGS_FILE)
     const created = await createFile(p)
     expect(isNoteId(created.id)).toBe(true) // born with its id like any note: the folder's id (YAZ-2293 D7)
-    await writeText({ path: p, content: '---\nfolder_page_settings: {}\n---\n', expectedMtime: created.mtime })
-    expect((await readText(p)).content).toBe('---\nfolder_page_settings: {}\n---\n')
+    await writeText({ path: p, content: '---\nfolder_settings: {}\n---\n', expectedMtime: created.mtime })
+    expect((await readText(p)).content).toBe('---\nfolder_settings: {}\n---\n')
   })
 
   it('UNSUPPORTED_EXTENSION for other extensions', async () => {

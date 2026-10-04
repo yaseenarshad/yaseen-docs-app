@@ -38,7 +38,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     }
   })
 
-  it("no rule hides a note's body: a note flagged `folder_page: true` is an ordinary note (YAZ-2290)", () => {
+  it("no rule hides a note's body", () => {
     expect(appCss).not.toMatch(/\.editor-mount\s*\{[^}]*display:\s*none/)
   })
 

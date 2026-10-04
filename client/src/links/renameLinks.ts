@@ -24,11 +24,11 @@
  * (top-level and inside lists), rewritten through `setFrontmatterProperty` so everything
  * else in the block survives byte-for-byte.
  *
- * ONE key is walked deeper than that (YAZ-864): `folder_page_settings`, the single reserved key
+ * ONE key is walked deeper than that (YAZ-864): `folder_settings`, the single reserved key
  * with app-defined link semantics (Q1, YAZ-815). Its `views[].order` entries and
- * `columns.<name>.target` strings ARE links the index never extracted, so a folder-page rename
- * used to leave them dangling; they now rewrite exactly as a top-level entry does, through the
- * same `resolves` / `newTarget` pair, so their spelling rules cannot drift from anyone else's.
+ * `columns.<name>.target` strings ARE links the index never extracted; they rewrite exactly as a
+ * top-level entry does, through the same `resolves` / `newTarget` pair, so their spelling rules
+ * cannot drift from anyone else's.
  * The key's own module owns both the key name and the list of link-bearing leaves
  * (`views/folderSettings.ts` `mapFolderSettingsLinks`) — this engine never re-parses it.
  * The referencing-set probe learned the same leaves, because a page whose ONLY reference lives

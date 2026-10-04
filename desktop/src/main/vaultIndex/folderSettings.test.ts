@@ -9,7 +9,7 @@ import { _evictAll, getIndex } from './index'
 // A folder's settings file (YAZ-2290 D1, D8): the ONE dot-entry the index and the watcher see. It
 // rides `IndexResponse.folders`, never `records`, so no row, search or completion has to filter it.
 
-const SETTINGS = '---\nfolder_page_settings:\n  views:\n    - type: table\n      name: Table\n---\n'
+const SETTINGS = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n'
 
 const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
   const t0 = Date.now()
@@ -50,7 +50,7 @@ describe('folder settings in the index', () => {
     const index = await getIndex(root)
     expect(index.folders.map((r) => r.path)).toEqual([path.join(root, 'Projects', FOLDER_SETTINGS_FILE)])
     expect(index.folders[0].folder).toBe('Projects')
-    expect(index.folders[0].properties).toHaveProperty('folder_page_settings')
+    expect(index.folders[0].properties).toHaveProperty('folder_settings')
     expect(index.records.some((r) => r.name === FOLDER_SETTINGS_FILE)).toBe(false)
     expect(index.records.some((r) => r.name === 'Idea.md')).toBe(true)
   })

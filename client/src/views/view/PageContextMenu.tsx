@@ -15,7 +15,7 @@ interface PageContextMenuProps {
   onClose: () => void
 }
 
-/** Page actions shared by folder-page views; positioning and dismissal stay action-free. */
+/** Page actions shared by folder views; positioning and dismissal stay action-free. */
 export function PageContextMenu({ x, y, path, noteId, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()

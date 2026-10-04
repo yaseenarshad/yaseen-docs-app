@@ -13,7 +13,7 @@ import path from 'node:path'
  * `vaultIndex/idSweep.ts`) writes nothing here and every index test sees exactly these bytes.
  *
  * Named `basesFixture` / `makeBasesFixture` until YAZ-861 renamed it for the surface it actually
- * feeds — the folder-page views and the vault index — rather than the retired `.base` format.
+ * feeds — the folder views and the vault index — rather than the retired `.base` format.
  */
 export async function makeViewsFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-views-'))

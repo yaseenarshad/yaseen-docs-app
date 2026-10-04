@@ -29,7 +29,7 @@ beforeEach(() => {
 })
 
 describe('createNote (YAZ-2290 E1/E3)', () => {
-  it('no template: the seed alone — no column is stamped, no `folder_pages` — and an empty seed is an empty file', async () => {
+  it('no template: the seed alone — no column is stamped — and an empty seed is an empty file', async () => {
     readFile.mockRejectedValue(notFound())
 
     await createNote('/v/Projects/A.md', { status: '2-Todo' })
