@@ -132,7 +132,7 @@ export const CONTRACT = {
     clip: invoke<[req: FileClipRequest], void>('fs:clip', 1),
     /** Paste INTO `targetDir` (YAZ-1674, D2–D4): per entry, a copy takes a free name, a cut moves through the rename pipeline; read `failed` for the notices. */
     paste: invoke<[req: PasteRequest], PasteResponse>('fs:paste', 1),
-    /** The clipboard now, for a window that mounted after a clip: `{ count, op }`, or null when empty. Never fails. */
+    /** The clipboard now, for a window that mounted after a clip: `{ count, op, paths }`, or null when empty. Never fails. */
     clipState: invoke<[], FileClipState>('fs:clip-state', 0),
     /** Fired in every window after every clipboard change (its own included); null = empty. */
     onClipChanged: push<FileClipState>('clip:changed'),

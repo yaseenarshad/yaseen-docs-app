@@ -411,8 +411,12 @@ export interface FileClipRequest {
   op: 'copy' | 'cut'
 }
 
-/** `clip:changed` — pushed to EVERY window after every clipboard change: how many, and which verb; null when empty (the menu's disabled "Paste"). */
-export type FileClipState = { count: number; op: 'copy' | 'cut' } | null
+/**
+ * `clip:changed` — pushed to EVERY window after every clipboard change: how many, which verb, and
+ * the paths as main holds them (absolute, de-duplicated, ordered), so a window can say what
+ * pasting a Cut would move (D21); null when empty (the menu's disabled "Paste").
+ */
+export type FileClipState = { count: number; op: 'copy' | 'cut'; paths: string[] } | null
 
 /** Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created. */
 export interface PasteRequest {

@@ -458,7 +458,7 @@ describe('registerFsIpc', () => {
     const win = (id: string, file: string | null) =>
       store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
 
-    it('fs:clip stores the ordered selection and pushes clip:changed (count + op) to EVERY window (D1)', async () => {
+    it('fs:clip stores the ordered selection and pushes clip:changed (count, op and the paths) to EVERY window (D1)', async () => {
       fileClip.clear()
       const a = fakeWindow()
       const b = fakeWindow()
@@ -466,7 +466,7 @@ describe('registerFsIpc', () => {
       const paths = [path.join(root, 'b.md'), path.join(root, 'Zeta')]
       expect(await registered(CONTRACT.file.clip.channel)({ sender: {} }, { op: 'copy', paths })).toEqual({ ok: true, value: undefined })
       expect(fileClip.get()).toEqual({ op: 'copy', paths })
-      for (const w of [a, b]) expect(w.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.file.onClipChanged.channel, { count: 2, op: 'copy' })
+      for (const w of [a, b]) expect(w.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.file.onClipChanged.channel, { count: 2, op: 'copy', paths })
     })
 
     it('fs:clip with bad input answers a BridgeError envelope, keeps the clipboard and pushes nothing', async () => {
@@ -482,11 +482,11 @@ describe('registerFsIpc', () => {
       expect(w.webContents.send).not.toHaveBeenCalled()
     })
 
-    it('fs:clip-state answers null when empty and { count, op } after a set — the catch-up read for a window that mounts after a clip', async () => {
+    it('fs:clip-state answers null when empty and { count, op, paths } after a set — the catch-up read for a window that mounts after a clip', async () => {
       fileClip.clear()
       expect(await registered(CONTRACT.file.clipState.channel)({ sender: {} })).toEqual({ ok: true, value: null })
       fileClip.set({ op: 'cut', paths: [path.join(root, 'A.md'), path.join(root, 'b.md')] })
-      expect(await registered(CONTRACT.file.clipState.channel)({ sender: {} })).toEqual({ ok: true, value: { count: 2, op: 'cut' } })
+      expect(await registered(CONTRACT.file.clipState.channel)({ sender: {} })).toEqual({ ok: true, value: { count: 2, op: 'cut', paths: [path.join(root, 'A.md'), path.join(root, 'b.md')] } })
       fileClip.clear()
     })
 

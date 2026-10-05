@@ -123,6 +123,9 @@ export async function addShortcut(dir: string, path: string): Promise<void> {
   })
 }
 
+/** The ids of the folder at `dir` and of every folder under it. */
+const idsUnder = (folders: readonly IndexRecord[], dir: string): Set<unknown> => new Set(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
+
 /**
  * Take the note at `path` out of the folder at `dir` (E5): the ids of that folder and of every
  * folder under it leave its `also_in`, and the key goes with its last entry — an emptied list is
@@ -130,7 +133,7 @@ export async function addShortcut(dir: string, path: string): Promise<void> {
  * and in the same write drops the values of the folders that no longer show it (D20).
  */
 export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[], root: string): Promise<unknown> {
-  const ids = new Set<unknown>(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
+  const ids = idsUnder(folders, dir)
   const tidy = dropStaleFolderValues(root, path, folders)
   return transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
@@ -170,22 +173,93 @@ export function dropStaleFolderValues(root: string, path: string, folders: reado
   }
 }
 
+/** One in-app move or rename of a note or a folder, as the rename door and a pasted Cut name it. */
+export interface Move {
+  oldPath: string
+  newPath: string
+  kind: 'file' | 'dir'
+}
+
+/** The PRE-move index snapshot a move is judged on. */
+interface Snapshot {
+  root: string
+  records: readonly IndexRecord[]
+  folders: readonly IndexRecord[]
+}
+
 /**
- * After an in-app move or rename of a note or a folder (D20): each note that moved drops the
- * values of the folders it left. `records` and `folders` are the PRE-move snapshot; the folders
- * that moved keep their ids, so they are asked at their new place. Which notes hold a stale block
- * is decided on the snapshot — a rename, or a move under the same folders, reads and writes
- * nothing. A note that cannot be written keeps its blocks until a value of it is next written.
+ * The notes a move leaves holding a stale block (D20), decided on the snapshot: each with its new
+ * path and the properties it keeps, and the folders as they stand `after` — those that moved keep
+ * their ids, so they are asked at their new place.
  */
-export async function dropFolderValuesAfterMove({ root, oldPath, newPath, kind, records, folders }: { root: string; oldPath: string; newPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; folders: readonly IndexRecord[] }): Promise<void> {
+function staleAfterMove({ root, oldPath, newPath, kind, records, folders }: Move & Snapshot): { after: IndexRecord[]; stale: { record: IndexRecord; path: string; kept: Record<string, unknown> }[] } {
   const moved = (path: string): string => (path === oldPath || (kind === 'dir' && path.startsWith(`${oldPath}/`)) ? newPath + path.slice(oldPath.length) : path)
   const after = folders.map((folder) => {
     const path = moved(folder.path)
     return path === folder.path ? folder : { ...folder, path, folder: dirname(relTo(root, path)) }
   })
-  for (const record of records) {
+  const stale = records.flatMap((record) => {
     const path = moved(record.path)
-    if (path === record.path || withoutLeftFolders(record.properties, dirname(relTo(root, path)), after) === record.properties) continue
-    await transformFile(path, dropStaleFolderValues(root, path, after)).catch(() => undefined)
+    if (path === record.path) return []
+    const kept = withoutLeftFolders(record.properties, dirname(relTo(root, path)), after)
+    return kept === record.properties ? [] : [{ record, path, kept }]
+  })
+  return { after, stale }
+}
+
+/**
+ * After an in-app move or rename of a note or a folder (D20): each note that moved drops the
+ * values of the folders it left. `records` and `folders` are the PRE-move snapshot. Which notes
+ * hold a stale block is decided on the snapshot — a rename, or a move under the same folders,
+ * reads and writes nothing. A note that cannot be written keeps its blocks until a value of it is
+ * next written.
+ */
+export async function dropFolderValuesAfterMove(move: Move & Snapshot): Promise<void> {
+  const { after, stale } = staleAfterMove(move)
+  for (const { path } of stale) await transformFile(path, dropStaleFolderValues(move.root, path, after)).catch(() => undefined)
+}
+
+/** What a gesture would clear (D21): how many notes, and the folders whose values go — their directories, nearest to the note first. */
+export interface LeftBehind {
+  notes: number
+  folders: string[]
+}
+
+/** The directories of the folders whose blocks leave `record` when its properties become `kept`, nearest to the note first (`foldersShowing`). */
+function clearedFolders(record: IndexRecord, kept: Record<string, unknown>, folders: readonly IndexRecord[]): string[] {
+  const stay = (kept[FOLDER_VALUES_KEY] ?? {}) as object
+  const byId = foldersById(folders)
+  const near = foldersShowing(record.folder, record.properties, byId)
+  // A folder that did not show the note comes last.
+  const rank = (folder: IndexRecord): number => (near.includes(folder.folder) ? near.indexOf(folder.folder) : near.length)
+  // Only a block whose folder is known ever goes, so each id has its record.
+  const gone = Object.keys((record.properties[FOLDER_VALUES_KEY] ?? {}) as object).flatMap((id) => (Object.hasOwn(stay, id) ? [] : [byId.get(id)!]))
+  return gone.sort((a, b) => rank(a) - rank(b)).map((folder) => dirname(folder.path))
+}
+
+/**
+ * What `moves` would clear (D21), for the sheet that asks first: D20's own answer, from a
+ * snapshot, each move judged alone as its clearing is. Across notes the folders are the union, in
+ * the order first met. Advice only: what a move clears is decided again when it runs.
+ */
+export function valuesLeftBehind({ moves, ...snapshot }: Snapshot & { moves: readonly Move[] }): LeftBehind {
+  const notes = new Set<string>()
+  const dirs = new Set<string>()
+  for (const move of moves) {
+    for (const { record, kept } of staleAfterMove({ ...move, ...snapshot }).stale) {
+      notes.add(record.path)
+      for (const dir of clearedFolders(record, kept, snapshot.folders)) dirs.add(dir)
+    }
   }
+  return { notes: notes.size, folders: [...dirs] }
+}
+
+/** What "Remove shortcut" would clear (D21), from a snapshot: the note at `path` without its `also_in` entries for `dir` and the folders under it. */
+export function valuesLeftByShortcut(dir: string, path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[]): LeftBehind {
+  const record = records.find((r) => r.path === path)
+  if (record === undefined) return { notes: 0, folders: [] }
+  const ids = idsUnder(folders, dir)
+  const without = { ...record.properties, [ALSO_IN_KEY]: alsoInEntries(record.properties).filter((entry) => !ids.has(entry)) }
+  const cleared = clearedFolders(record, withoutLeftFolders(without, record.folder, folders), folders)
+  return { notes: cleared.length === 0 ? 0 : 1, folders: cleared }
 }

@@ -887,7 +887,7 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md' })
   })
 
-  it('a folder search row flips the lens to FILES and issues the same reveal request, ids shared with the tab menu (🔒 D3, YAZ-1491)', async () => {
+  it('the sidebar’s Reveal-in-Files request flips the lens to FILES and issues a reveal request, ids shared with the tab menu (YAZ-1491)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     expect(captured.sidebar?.lens).toBe('favorites') // the fixture's lens: the row was chosen from Favorites
     act(() => captured.sidebar?.onRevealInFiles?.('/v/sub'))
@@ -1402,7 +1402,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
  * The ONE rename door (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): every
  * gesture — the sidebar's inline rename, its drag-move, the page title — arrives at App as
  * (oldPath, newPath), and the rule is asked here and nowhere else. A changed NAME confirms
- * first with the honest count; a MOVE runs silently, exactly as it always has.
+ * first with the honest count; a MOVE asks only when it would clear a folder's values (D21).
  */
 describe('App rename door (⚡ YAZ-888)', () => {
   const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
@@ -1437,29 +1437,108 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
   })
 
-  it('a note moved to another folder IN THE APP leaves the old folder’s values behind in that move; a folder that showed it before and still does keeps its block (D20)', async () => {
+  /** The app asks before a move that clears values (D21): the door's other question, of a MOVE. */
+  describe('a move that clears a folder’s values (D21)', () => {
     const HIRING = '3y7505rsr6fd'
     const TEAM = 'mzf9cjhn02vm'
     const ARCHIVE = 'a1b2c3d4e5f6'
+    const GONE = 'n0f01der0000' // no folder has it
+    const NOOR = '/v/Team/Hiring/Noor.md'
     const held = `---\nin:\n  ${TEAM}:\n    Rank: 2\n  ${HIRING}:\n    Status: Interview\n---\nBody\n`
+    const snapshot = (noor: Record<string, unknown> = { in: { [TEAM]: { Rank: 2 }, [HIRING]: { Status: 'Interview' } } }) => ({
+      root: '/v',
+      records: [record(NOOR, { properties: noor }), record('/v/Team/Hiring/Plain.md'), record('/v/Team/Hiring/Lost.md', { properties: { in: { [GONE]: { Rank: 1 } } } })],
+      folders: [record('/v/Team/.folder.md', { id: TEAM }), record('/v/Team/Archive/.folder.md', { id: ARCHIVE }), record('/v/Team/Hiring/.folder.md', { id: HIRING })],
+      generatedAt: 1,
+    })
     // The disk as it is once the rename has landed: the note is at its new place.
-    const files = { '/v/Team/Archive/Noor.md': { content: held, mtime: 1 }, '/v/Team/Archive/Plain.md': { content: 'Body\n', mtime: 1 } }
-    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) =>
-      b.bridge.index.mockResolvedValue({
-        root: '/v',
-        records: [record('/v/Team/Hiring/Noor.md', { properties: { in: { [TEAM]: { Rank: 2 }, [HIRING]: { Status: 'Interview' } } } }), record('/v/Team/Hiring/Plain.md')],
-        folders: [record('/v/Team/.folder.md', { id: TEAM }), record('/v/Team/Archive/.folder.md', { id: ARCHIVE }), record('/v/Team/Hiring/.folder.md', { id: HIRING })],
-        generatedAt: 1,
-      }),
-    )
-    await act(async () => await captured.sidebar?.onRenameFile('/v/Team/Hiring/Noor.md', '/v/Team/Archive/Noor.md', 'file'))
-    expect(el.querySelector('.confirm')).toBeNull() // a move: silent
-    expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
-    // A note that holds nothing for the folder it left is not read at all.
-    bridge.readFile.mockClear()
-    await act(async () => await captured.sidebar?.onRenameFile('/v/Team/Hiring/Plain.md', '/v/Team/Archive/Plain.md', 'file'))
-    expect(bridge.readFile).not.toHaveBeenCalled()
-    expect(files['/v/Team/Archive/Plain.md'].content).toBe('Body\n')
+    const moved = () => ({ '/v/Team/Archive/Noor.md': { content: held, mtime: 1 }, '/v/Team/Archive/Plain.md': { content: 'Body\n', mtime: 1 } })
+    const mountTeam = (files: Record<string, { content: string; mtime: number }> = moved()) => mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue(snapshot()))
+    const drag = (oldPath: string, newPath: string) => act(async () => await captured.sidebar?.onRenameFile(oldPath, newPath, 'file'))
+
+    it('a note is moved in the app (a drag in the tree) to a place where a folder that shows it now will not show it, and the note holds values for that folder: a sheet asks first', async () => {
+      const { bridge, el } = await mountTeam()
+      const fetched = bridge.index.mock.calls.length
+      await drag(NOOR, '/v/Team/Archive/Noor.md')
+      expect(sheetText(el)).toBe("Move 'Noor' to 'Archive'? Its values for Hiring will be cleared.") // Team, above both places, still shows it
+      expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Move'])
+      expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
+      expect(sheetBtn(el, 'Move')?.classList.contains('confirm__btn--danger')).toBe(true)
+      expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the answer
+      expect(bridge.index.mock.calls).toHaveLength(fetched) // the window's own snapshot answered
+    })
+
+    it('Cancel: nothing moves, nothing is written', async () => {
+      const files = moved()
+      const { bridge, el } = await mountTeam(files)
+      await drag(NOOR, '/v/Team/Archive/Noor.md')
+      await act(async () => sheetBtn(el, 'Cancel')?.click())
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+      expect(files['/v/Team/Archive/Noor.md'].content).toBe(held)
+    })
+
+    it('Move: the move runs as it does today, and the values are cleared in that move; a folder that showed the note before and still does keeps its block (D20)', async () => {
+      const files = moved()
+      const { bridge, el } = await mountTeam(files)
+      await drag(NOOR, '/v/Team/Archive/Noor.md')
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      await act(async () => sheetBtn(el, 'Move')?.click())
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md' })
+      expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+    })
+
+    it('a move that clears nothing — the same folders show the note before and after; or the note holds no values for the folders it leaves; or its only such block is for a folder the app cannot find: no sheet, the move runs at once, exactly as today', async () => {
+      const files = moved()
+      const { bridge, el } = await mountTeam(files)
+      bridge.readFile.mockClear()
+      for (const [from, to] of [
+        ['/v/Team/Hiring/Plain.md', '/v/Team/Archive/Plain.md'],
+        ['/v/Team/Hiring/Lost.md', '/v/Team/Archive/Lost.md'],
+        [NOOR, '/v/Team/Hiring/Sub/Noor.md'],
+      ]) {
+        await drag(from, to)
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: from, newPath: to })
+      }
+      // A note that holds nothing stale is not read at all.
+      expect(bridge.readFile).not.toHaveBeenCalled()
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+    })
+
+    it('a rename that only changes the name: the rename sheet as today, never this one', async () => {
+      const { el } = await mountTeam()
+      await act(async () => void captured.sidebar?.onRenameFile(NOOR, '/v/Team/Hiring/Noor Khan.md', 'file'))
+      expect(sheetText(el)).toBe("Rename 'Noor' to 'Noor Khan'? No other notes link to it.")
+      expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Rename'])
+      expect(el.querySelector('.confirm__btn--danger')).toBeNull()
+    })
+
+    it('a move to the vault’s top level: the destination is named by the vault’s name, and the folders nearest to the note first', async () => {
+      const { el } = await mountTeam()
+      await drag(NOOR, '/v/Noor.md')
+      expect(sheetText(el)).toBe("Move 'Noor' to 'v'? Its values for Hiring and Team will be cleared.")
+    })
+
+    it('the index is behind: the sheet is advice from the window’s snapshot — a note it shows no values for moves unasked, and what the move clears is still decided on a fresh index (D20)', async () => {
+      const files = moved()
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue(snapshot({})))
+      bridge.index.mockResolvedValue(snapshot()) // the index has moved on; the window has not heard
+      await drag(NOOR, '/v/Team/Archive/Noor.md')
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+    })
+
+    it('a pending move is dropped when the window root changes (the vault folder moved)', async () => {
+      const { bridge, el, emitFileRenamed } = await mountTeam()
+      await drag(NOOR, '/v/Team/Archive/Noor.md')
+      expect(el.querySelector('.confirm')).not.toBeNull()
+      await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+    })
   })
 
   it('Cancel renames nothing and rewrites nothing', async () => {

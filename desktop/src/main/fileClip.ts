@@ -33,7 +33,7 @@ export interface FileClipStore {
   get(): FileClip | null
   /** Empties the clipboard (a cut that pasted, D2). Idempotent: clearing an empty clipboard notifies nobody. */
   clear(): void
-  /** What the renderers show — count + op, never the paths (a menu label needs no more). */
+  /** What every window is told: the count and the op (the menu's label) and the paths as stored (what a Cut would move, D21). */
   state(): FileClipState
   /** Fires with the new `state()` after every change; returns the unsubscribe. */
   onChange(listener: (state: FileClipState) => void): () => void
@@ -42,7 +42,7 @@ export interface FileClipStore {
 export function createFileClip(): FileClipStore {
   let clip: FileClip | null = null
   const listeners = new Set<(state: FileClipState) => void>()
-  const state = (): FileClipState => (clip === null ? null : { count: clip.paths.length, op: clip.op })
+  const state = (): FileClipState => (clip === null ? null : { count: clip.paths.length, op: clip.op, paths: clip.paths })
   const notify = () => {
     const s = state()
     listeners.forEach((l) => l(s))
