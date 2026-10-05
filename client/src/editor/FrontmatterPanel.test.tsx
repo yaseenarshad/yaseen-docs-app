@@ -680,12 +680,12 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(chipIn(rowOf(el, 'status'))).toBeNull()
   })
 
-  it('an `id` that is no note id (a hand-written `id: 42`) is the user’s own property: an editor and no chip', () => {
+  it('an `id` that is no note id (another tool’s `id: 42`) is RESERVED like any other: the app writes its own over it, so it has no editor (YAZ-2420 D30)', () => {
     const el = mount('---\nid: 42\n---\nBody\n', { root: ROOT })
     expand(el)
     const r = rowOf(el, 'id')
-    expect(chipIn(r)).toBeNull()
-    expect(r.querySelector('[data-edit]')).not.toBeNull()
+    expect(chipIn(r)).toBe('Reserved')
+    expect(r.querySelector('[data-edit]')).toBeNull()
   })
 
   it('a link value naming a FOLDER by its id reads as the folder’s name, as a note’s reads as its title (YAZ-2290 D10)', () => {

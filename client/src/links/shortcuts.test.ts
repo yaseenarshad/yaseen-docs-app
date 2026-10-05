@@ -275,12 +275,13 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
     expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, PROJECTS_ID])
   })
 
-  it('a settings file whose `id` is someone else’s value is refused: nothing is overwritten, the note untouched', async () => {
+  it('a settings file whose `id` is another tool’s value is one with no id: this app’s is written over it, then used (YAZ-2420 D30)', async () => {
     disk.set(SETTINGS_FILE, '---\nid: my-own-id\n---\n')
-    const before = disk.get(NOTE)
-    await expect(addShortcut(PROJECTS, NOTE)).rejects.toThrow(/not a page id/)
-    expect(disk.get(SETTINGS_FILE)).toBe('---\nid: my-own-id\n---\n')
-    expect(disk.get(NOTE)).toBe(before)
+    await pickTwice()
+    const { id } = frontmatterOf(SETTINGS_FILE)
+    expect(isNoteId(id)).toBe(true)
+    expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${String(id)}\n---\n`)
+    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
   })
 })
 

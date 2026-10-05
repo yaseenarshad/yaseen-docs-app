@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
-import { isMarkdown } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { agentPage, copyForAgent } from '../lib/copyForAgent'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -106,8 +104,6 @@ interface SidebarProps {
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
-  /** A note's id off the window's index (YAZ-2293), for the row menu's "Copy ID"; the same lookup the tab bar is handed. */
-  noteId?: (path: string) => string | undefined
   /**
    * The window's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME
    * object `WikilinkIndexBridge` already feeds — App's one per-window index source — read, never
@@ -222,14 +218,6 @@ export interface MenuTargets {
   clipPaths: string[] | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
   newWindowPath: string | null
-  /** "Copy for Agent" — PAGE rows only (YAZ-1617): a Markdown file, or a folder as its settings file (YAZ-2290 D9); an EPUB is a file, not a page. */
-  agentPath: string | null
-  /**
-   * "Copy ID" — the right-clicked NOTE's `id` off the window's index snapshot (YAZ-2293), or null:
-   * a note with none, every other file, a folder, blank space — and any 2+ selection, where one
-   * row's id is not what the plural menu is about.
-   */
-  noteId: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
   /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
@@ -358,7 +346,6 @@ export function Sidebar({
   onRetitle,
   onDeleteFile,
   onNotice,
-  noteId,
   indexSource,
   pendingSearchFocus,
   onSearchFocusHandled,
@@ -515,9 +502,6 @@ export function Sidebar({
         openTabPaths: plural,
         clipPaths: shortcutIn !== null ? null : plural ?? (node === null ? null : [node.path]),
         newWindowPath: filePath,
-        agentPath: node === null ? null : agentPage(node.path, node.type === 'dir'),
-        // A NOTE row's id (YAZ-2293) — the one row's, so never in a plural menu.
-        noteId: plural === null && filePath !== null && isMarkdown(filePath) ? (noteId?.(filePath) ?? null) : null,
         renamePath: shortcutIn !== null ? null : node?.path ?? null,
         deletePath: shortcutIn !== null ? null : node?.path ?? null,
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
@@ -916,7 +900,6 @@ export function Sidebar({
               onCopy: (paths) => clipTo(paths, 'copy'),
               onPaste: () => pasteInto(menu.targetDir),
               onNotice,
-              onCopyForAgent: (path) => void copyForAgent(path, onNotice),
               onNewNote: viaTree(() => startCreate('file')),
               onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),
               onNewFolder: viaTree(() => startCreate('dir')),

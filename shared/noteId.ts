@@ -12,7 +12,7 @@ export const NOTE_ID_KEY = 'id'
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz'
 const NOTE_ID_RE = /^(?=.*\d)[0-9a-hjkmnp-tv-z]{12}$/
 
-/** A frontmatter `id` of any other shape is someone else's value: never an id, never overwritten. */
+/** A frontmatter `id` of any other shape is another tool's: never an id, and the app writes its own over it (YAZ-2420 🔒 D30). */
 export const isNoteId = (value: unknown): value is string => typeof value === 'string' && NOTE_ID_RE.test(value)
 
 /**

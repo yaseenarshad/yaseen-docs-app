@@ -551,7 +551,7 @@ describe('registerFsIpc', () => {
       })
     })
 
-    it('paste of a COPY copies under a free name, repairs NOTHING, pushes NO file event, and KEEPS the clipboard (D2/D4)', async () => {
+    it('paste of a COPY copies under its own built name (YAZ-2420 D21), repairs NOTHING, pushes NO file event, and KEEPS the clipboard (D2/D4)', async () => {
       const src = path.join(root, 'copy-src.md')
       await writeFile(src, 'copy me')
       win('w-copy', src)
@@ -561,14 +561,15 @@ describe('registerFsIpc', () => {
       const before = store.get()
       // Into its own folder: Duplicate for free.
       const res = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
-      expect(res).toEqual({ ok: true, value: { pasted: [{ from: src, to: path.join(root, 'copy-src copy.md'), kind: 'file' }], failed: [] } })
-      expect(await readFile(path.join(root, 'copy-src copy.md'), 'utf8')).toBe('copy me')
+      const copy = expect.stringMatching(/\/copy-src-copy-[0-9a-z]{12}\.md$/)
+      expect(res).toEqual({ ok: true, value: { pasted: [{ from: src, to: copy, kind: 'file' }], failed: [] } })
       expect(await readFile(src, 'utf8')).toBe('copy me')
       expect(store.get()).toBe(before) // nothing moved: no repair
       expect(w.webContents.send).not.toHaveBeenCalled() // no file:renamed, no clip:changed
       expect(fileClip.get()).toEqual({ op: 'copy', paths: [src] }) // a copy pastes again and again
       const again = await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: root })
-      expect(again).toMatchObject({ ok: true, value: { pasted: [{ to: path.join(root, 'copy-src copy 2.md') }] } })
+      expect(again).toMatchObject({ ok: true, value: { pasted: [{ to: copy }] } })
+      expect((await readdir(root)).filter((name) => name.startsWith('copy-src-copy-'))).toHaveLength(2)
     })
 
     it('paste of a CUT moves through the rename pipeline — store repaired, file:renamed per entry — then CLEARS the clipboard (D2)', async () => {

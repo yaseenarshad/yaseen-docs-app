@@ -121,8 +121,6 @@ export function App() {
   // vault index, so index changes restyle links live without any editor remounting. The stable
   // navigation-only source beside it is tree-derived; only the picker's rows compose both feeds.
   const [wikilinks] = useState(createWikilinkResolveSource)
-  /** A note's id off the index snapshot (YAZ-2293): what the sidebar row's and the tab's "Copy ID" copy. */
-  const noteId = useCallback((path: string) => wikilinks.records.find((r) => r.path === path)?.id, [wikilinks])
   /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off the index snapshot as it stands. */
   const nameOf = useCallback((path: string) => pageLabel(path, isFolderPath(root, path), pathTitles(wikilinks.records, wikilinks.folders)), [root, wikilinks])
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
@@ -837,7 +835,6 @@ export function App() {
         <Sidebar
           key={root}
           root={root}
-          noteId={noteId}
           activeFile={file}
           watch={watch}
           onOpenFile={openCurrent}
@@ -918,7 +915,6 @@ export function App() {
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}
               onNotice={notify}
-              noteId={noteId}
               indexSource={wikilinks}
               reviewState={review.inReview}
               onSetReview={review.setInReview}

@@ -135,12 +135,12 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
 export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: CardsViewProps) {
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string; noteId: string | undefined } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
     if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
     event.preventDefault()
-    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title, noteId: row.record.id })
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
   const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')

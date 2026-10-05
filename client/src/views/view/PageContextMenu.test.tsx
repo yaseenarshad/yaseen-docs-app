@@ -103,41 +103,6 @@ it('reports a clipboard rejection passively without leaving an unhandled promise
   }
 })
 
-it('offers "Copy ID" under "Copy path" for a note with an id (YAZ-2293): exactly the id, confirmed — or the refusal reported', async () => {
-  const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-  const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('clipboard permission denied'))
-  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-  const host = document.createElement('div')
-  document.body.appendChild(host)
-  const root = createRoot(host)
-  const onNotice = vi.fn()
-  const onClose = vi.fn()
-  const copyId = () => [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy ID')
-
-  try {
-    // A page with no id (the first test's menu) has no such item; this one sits directly under Copy path.
-    act(() => {
-      root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" noteId="k3m9x2pq7abc" onNotice={onNotice} onClose={onClose} />)
-    })
-    expect([...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual(['Copy path', 'Copy ID', 'Reveal in Finder'])
-
-    act(() => copyId()?.click())
-    await act(async () => Promise.resolve())
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(onClose).toHaveBeenCalledOnce()
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
-
-    act(() => copyId()?.click())
-    await act(async () => Promise.resolve())
-    expect(onNotice).toHaveBeenLastCalledWith("Can't copy ID: clipboard permission denied")
-  } finally {
-    act(() => root.unmount())
-    host.remove()
-    if (descriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
-    else Object.defineProperty(navigator, 'clipboard', descriptor)
-  }
-})
-
 it('E: a page that is gone is named by its title in the notice (YAZ-2420 D14)', async () => {
   const reveal = vi.spyOn(api.shell, 'reveal').mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'gone'))
   const host = document.createElement('div')

@@ -57,8 +57,8 @@ describe('HOTKEYS source of truth', () => {
     // ONE shared ⌘-click convention: sidebar file rows (I3) AND editor wiki links (Links C).
     expect(byKeys('⌘-click file or link')?.label).toMatch(/background tab/i)
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
-    // Copy ID (YAZ-2293) sits right under Copy path in that menu, so the tip names it there.
-    expect(byKeys('Right-click file')?.label).toMatch(/Copy path, Copy ID,/)
+    // Copy path is that menu's one copy item (YAZ-2420 🔒 D22, D31), so the tip names no other.
+    expect(byKeys('Right-click file')?.label).toMatch(/Copy path, New note/)
     // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5).
     expect(byKeys('Right-click vault')?.label).toMatch(/Open in this window/)
     expect(byKeys('Right-click vault')?.label).toMatch(/Set display name/)
