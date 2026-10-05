@@ -82,12 +82,13 @@ export function diffRecords(prev: readonly IndexRecord[], next: readonly IndexRe
  * folder recomputed; links/embeds untouched — a rename never changes content), the exact
  * inverse of the engine's own post-move mapping. A stale/bogus hypothesis — no record at
  * `newPath`, or one already living at `oldPath` — returns the input unchanged (the reference
- * count then lands on 0 and nothing is offered).
+ * count then lands on 0 and nothing is offered). Where the vault does not use IDs (`ids` false,
+ * YAZ-2523 🔒 V12) the record's title is its old file name, whatever `title:` line it holds.
  */
-export function preRenameRecords(records: readonly IndexRecord[], root: string, oldPath: string, newPath: string): IndexRecord[] {
+export function preRenameRecords(records: readonly IndexRecord[], root: string, oldPath: string, newPath: string, ids: boolean): IndexRecord[] {
   if (records.some((r) => r.path === oldPath) || !records.some((r) => r.path === newPath)) return [...records]
   const oldName = basename(oldPath)
   const oldRel = oldPath.startsWith(`${root}/`) ? oldPath.slice(root.length + 1) : oldPath
   const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : ''
-  return records.map((r) => (r.path === newPath ? { ...r, path: oldPath, name: oldName, basename: stripExt(oldName), title: titleOf(r.properties, stripExt(oldName)), folder } : r))
+  return records.map((r) => (r.path === newPath ? { ...r, path: oldPath, name: oldName, basename: stripExt(oldName), title: titleOf(ids ? r.properties : {}, stripExt(oldName)), folder } : r))
 }

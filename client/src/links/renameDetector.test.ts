@@ -88,27 +88,33 @@ describe('diffRecords (consecutive index snapshots → the cold-diff shape)', ()
 describe('preRenameRecords (the engine wants the index as it WAS)', () => {
   it('re-paths the moved record back to the old path: path, name, basename and folder recomputed, links untouched', () => {
     const records = [rec('/v/A.md', { links: ['B'] }), rec('/v/Sub/B2.md', { links: ['A'] })]
-    const pre = preRenameRecords(records, '/v', '/v/B.md', '/v/Sub/B2.md')
+    const pre = preRenameRecords(records, '/v', '/v/B.md', '/v/Sub/B2.md', true)
     expect(pre[0]).toBe(records[0]) // untouched records keep identity
     expect(pre[1]).toEqual({ ...records[1], path: '/v/B.md', name: 'B.md', basename: 'B', title: 'B', folder: '' })
   })
 
   it('a note with a frontmatter `title` keeps it: only an untitled note is titled by its old name (YAZ-2420 D14)', () => {
     const records = [rec('/v/Sub/b2-k3m9x2pq7abc.md', { properties: { title: 'The B note' }, title: 'The B note' })]
-    const pre = preRenameRecords(records, '/v', '/v/b-k3m9x2pq7abc.md', '/v/Sub/b2-k3m9x2pq7abc.md')
+    const pre = preRenameRecords(records, '/v', '/v/b-k3m9x2pq7abc.md', '/v/Sub/b2-k3m9x2pq7abc.md', true)
     expect(pre[0]).toMatchObject({ path: '/v/b-k3m9x2pq7abc.md', basename: 'b-k3m9x2pq7abc', title: 'The B note' })
+  })
+
+  it('where the vault does not use IDs a `title:` line is an ordinary property: the note is titled by its old file name (YAZ-2523 🔒 V12)', () => {
+    const records = [rec('/v/Sub/release.md', { properties: { title: 'Deploy checklist' } })]
+    const pre = preRenameRecords(records, '/v', '/v/deploy.md', '/v/Sub/release.md', false)
+    expect(pre[0]).toMatchObject({ path: '/v/deploy.md', basename: 'deploy', title: 'deploy' })
   })
 
   it('a move INTO a folder recomputes the old (nested) folder', () => {
     const records = [rec('/v/N.md')]
-    const pre = preRenameRecords(records, '/v', '/v/Docs/N.md', '/v/N.md')
+    const pre = preRenameRecords(records, '/v', '/v/Docs/N.md', '/v/N.md', true)
     expect(pre[0]).toMatchObject({ path: '/v/Docs/N.md', name: 'N.md', basename: 'N', title: 'N', folder: 'Docs' })
   })
 
   it('a stale hypothesis is a no-op: no record at newPath, or one already living at oldPath', () => {
     const records = [rec('/v/A.md')]
-    expect(preRenameRecords(records, '/v', '/v/B.md', '/v/Gone.md')).toEqual(records)
+    expect(preRenameRecords(records, '/v', '/v/B.md', '/v/Gone.md', true)).toEqual(records)
     const both = [rec('/v/B.md'), rec('/v/B2.md')]
-    expect(preRenameRecords(both, '/v', '/v/B.md', '/v/B2.md')).toEqual(both)
+    expect(preRenameRecords(both, '/v', '/v/B.md', '/v/B2.md', true)).toEqual(both)
   })
 })

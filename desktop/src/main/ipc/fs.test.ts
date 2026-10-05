@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexResponse } from '@shared/types'
+import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
-import { makeFixture } from '../fs/testFixture'
+import { makeFixture, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
 import { fileClip } from '../fileClip'
@@ -308,106 +308,121 @@ describe('registerFsIpc', () => {
     })
   })
 
-  describe('fs:create-file adopts the folder (YAZ-2293)', () => {
-    const windowOn = (id: string, at: string) => {
-      store.upsertWindow({ id, root: at, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
-      senderWinId = id
-    }
-    const adopted = (at: string) => stat(path.join(at, VAULT_CONFIG_DIR)).then((st) => st.isDirectory(), () => false)
-    const create = (p: string) => registered(CONTRACT.createFile.channel)({ sender: {} }, p)
-
-    it("the first note created in a window's folder makes it a vault, and the notes already there are given ids", async () => {
-      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-'))
+  describe('creating a note or a folder is no answer about IDs (YAZ-2523 V10, V11)', () => {
+    it("a note and a folder created in a window's folder do not create `.yaseendocs/`, and nothing already there is written to", async () => {
+      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-plain-'))
       try {
+        await mkdir(path.join(plain, 'Made in Finder'))
         await writeFile(path.join(plain, 'from an agent.md'), 'body\n')
-        await registered(CONTRACT.index.channel)({ sender: {} }, plain) // the window has opened: indexed, un-adopted, untouched
-        expect(await adopted(plain)).toBe(false)
-        windowOn('w-adopt', plain)
-        expect(await create(path.join(plain, 'First.md'))).toMatchObject({ ok: true })
-        expect(await adopted(plain)).toBe(true)
-        await vi.waitFor(async () => expect(await readFile(path.join(plain, 'from an agent.md'), 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\n---\nbody\n$/))
+        await registered(CONTRACT.index.channel)({ sender: {} }, plain) // the window has opened
+        store.upsertWindow({ id: 'w-plain', root: plain, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        senderWinId = 'w-plain'
+        expect(await registered(CONTRACT.createFile.channel)({ sender: {} }, path.join(plain, 'First.md'))).toMatchObject({ ok: true })
+        expect(await registered(CONTRACT.createDir.channel)({ sender: {} }, { path: path.join(plain, 'First') })).toEqual({ ok: true, value: { path: path.join(plain, 'First') } })
+        await sleep(300) // long enough for a write that must not be made
+        expect((await readdir(plain)).sort()).toEqual(['First', 'First.md', 'Made in Finder', 'from an agent.md'])
+        expect(await readFile(path.join(plain, 'from an agent.md'), 'utf8')).toBe('body\n')
+        expect(await readdir(path.join(plain, 'Made in Finder'))).toEqual([])
       } finally {
         senderWinId = undefined
+        store.removeWindow('w-plain')
         await rm(plain, { recursive: true, force: true })
-      }
-    })
-
-    it('a create outside the window\'s own folder, or from a window with none, adopts nothing', async () => {
-      const [mine, other] = await Promise.all([mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-mine-')), mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))])
-      try {
-        windowOn('w-mine', mine)
-        expect(await create(path.join(other, 'Elsewhere.md'))).toMatchObject({ ok: true })
-        senderWinId = undefined
-        expect(await create(path.join(other, 'No window.md'))).toMatchObject({ ok: true })
-        expect(await adopted(other)).toBe(false)
-        expect(await adopted(mine)).toBe(false)
-      } finally {
-        await Promise.all([mine, other].map((d) => rm(d, { recursive: true, force: true })))
       }
     })
   })
 
-  describe('fs:create-dir adopts the folder, as fs:create-file does (D13)', () => {
-    const windowOn = (id: string, at: string) => {
-      store.upsertWindow({ id, root: at, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
-      senderWinId = id
+  describe("a create, a title edit and a paste follow the calling window's vault (YAZ-2523 V3, V5)", () => {
+    const NOTE = '---\nstatus: idea\n---\nbody\n'
+    const ID = 'k3m9x2pq7abc'
+    /** A window on a fresh vault that holds `Plans/Name.md`; `answer` is what its `ids.json` says, and it has none when undefined. */
+    const open = async (answer?: boolean): Promise<string> => {
+      const vault = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-kind-'))
+      await mkdir(path.join(vault, 'Plans'))
+      await writeFile(path.join(vault, 'Plans', 'Name.md'), NOTE)
+      if (answer !== undefined) {
+        await mkdir(path.join(vault, '.yaseendocs'))
+        await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: answer }))
+      }
+      store.upsertWindow({ id: 'w-kind', root: vault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = 'w-kind'
+      return vault
     }
-    const adopted = (at: string) => stat(path.join(at, VAULT_CONFIG_DIR)).then((st) => st.isDirectory(), () => false)
-    const create = (p: string) => registered(CONTRACT.createDir.channel)({ sender: {} }, { path: p })
-    const settingsIn = (dir: string) => readFile(path.join(dir, FOLDER_SETTINGS_FILE), 'utf8')
-    const ONLY_ID = /^---\nid: [0-9a-z]{12}\n---\n$/
+    const close = async (...dirs: string[]): Promise<void> => {
+      senderWinId = undefined
+      store.removeWindow('w-kind')
+      fileClip.clear()
+      for (const dir of dirs) await rm(dir, { recursive: true, force: true })
+    }
+    const call = (door: { channel: string }, ...args: unknown[]) => registered(door.channel)({ sender: {} }, ...args)
+    const paste = (from: string, targetDir: string) => {
+      fileClip.set({ op: 'copy', paths: [from] })
+      return call(CONTRACT.file.paste, { targetDir })
+    }
 
-    it("the first folder created in a window's not-yet-adopted folder makes it a vault, and the sweep then runs: the folders and notes already there are given their ids", async () => {
-      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-dir-'))
+    it.each([
+      ['said no', false],
+      ['has not answered', undefined],
+    ])('in a vault that %s a note, a folder and a copy are what Finder would make, a title edit is refused, and nothing else is written', async (_, answer) => {
+      const vault = await open(answer)
       try {
-        await mkdir(path.join(plain, 'Made in Finder', 'Deeper'), { recursive: true })
-        await writeFile(path.join(plain, 'from an agent.md'), 'body\n')
-        await registered(CONTRACT.index.channel)({ sender: {} }, plain) // the window has opened: indexed, un-adopted, untouched
-        expect(await adopted(plain)).toBe(false)
-        expect(await readdir(path.join(plain, 'Made in Finder'))).toEqual(['Deeper'])
-        windowOn('w-adopt-dir', plain)
-        expect(await create(path.join(plain, 'First'))).toEqual({ ok: true, value: { path: path.join(plain, 'First') } })
-        expect(await adopted(plain)).toBe(true)
-        const born = await settingsIn(path.join(plain, 'First'))
-        expect(born).toMatch(ONLY_ID)
-        await vi.waitFor(async () => {
-          expect(await settingsIn(path.join(plain, 'Made in Finder'))).toMatch(ONLY_ID)
-          expect(await settingsIn(path.join(plain, 'Made in Finder', 'Deeper'))).toMatch(ONLY_ID)
-          expect(await readFile(path.join(plain, 'from an agent.md'), 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\n---\nbody\n$/)
+        const at = (...p: string[]) => path.join(vault, ...p)
+        expect(await call(CONTRACT.createFile, { path: at('Meeting notes.md'), content: NOTE })).toEqual({ ok: true, value: { path: at('Meeting notes.md'), mtime: expect.any(Number), size: NOTE.length } })
+        // A request shaped for a vault that uses IDs is refused, and makes nothing.
+        expect(await call(CONTRACT.createFile, { path: at(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createDir, { path: at('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createFile, at('Empty.md'))).toMatchObject({ ok: true })
+        expect(await call(CONTRACT.createDir, { path: at('Q3 Plans') })).toEqual({ ok: true, value: { path: at('Q3 Plans') } })
+        expect(await paste(at('Plans', 'Name.md'), at('Plans'))).toEqual({ ok: true, value: { pasted: [{ from: at('Plans', 'Name.md'), to: at('Plans', 'Name copy.md'), kind: 'file' }], failed: [] } })
+        // Into the vault's own folder: the root is in the vault too.
+        expect(await paste(at('Plans'), vault)).toEqual({ ok: true, value: { pasted: [{ from: at('Plans'), to: at('Plans copy'), kind: 'dir' }], failed: [] } })
+        for (const target of [at('Plans', 'Name.md'), at('Plans')]) {
+          expect(await call(CONTRACT.file.retitle, { path: target, title: 'Big Plan' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'this vault does not use IDs' } })
+        }
+        expect(await vaultFiles(vault)).toEqual({
+          ...(answer === false && { '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}' }),
+          'Meeting notes.md': NOTE,
+          'Empty.md': '',
+          'Q3 Plans/': '',
+          'Plans/': '',
+          'Plans/Name.md': NOTE,
+          'Plans/Name copy.md': NOTE,
+          'Plans copy/': '',
+          'Plans copy/Name.md': NOTE,
+          'Plans copy/Name copy.md': NOTE,
         })
-        expect(await settingsIn(path.join(plain, 'First'))).toBe(born)
-        expect((await readdir(plain)).sort()).toEqual([VAULT_CONFIG_DIR, 'First', 'Made in Finder', 'from an agent.md']) // nothing at the top level
       } finally {
-        senderWinId = undefined
-        await rm(plain, { recursive: true, force: true })
+        await close(vault)
       }
     })
 
-    it("a folder created outside the window's own folder, or from a window with none, adopts nothing", async () => {
-      const [mine, other] = await Promise.all([mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-mine-')), mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))])
+    it('in a vault that said yes a note and a folder are born with their ids, a copy is born again, and a title edit goes through', async () => {
+      const vault = await open(true)
       try {
-        windowOn('w-mine-dir', mine)
-        expect(await create(path.join(other, 'Elsewhere'))).toMatchObject({ ok: true })
-        senderWinId = undefined
-        expect(await create(path.join(other, 'No window'))).toMatchObject({ ok: true })
-        expect(await adopted(other)).toBe(false)
-        expect(await adopted(mine)).toBe(false)
+        const at = (...p: string[]) => path.join(vault, ...p)
+        expect(await call(CONTRACT.createFile, { path: at(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: true, value: { id: ID } })
+        expect(await readFile(at(`meeting-notes-${ID}.md`), 'utf8')).toBe(`---\nstatus: idea\nid: ${ID}\n---\nbody\n`)
+        expect(await call(CONTRACT.createDir, { path: at('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
+        expect(await readFile(at('q3-plans', '.folder.md'), 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\ntitle: Q3 Plans\n---\n$/)
+        expect(await paste(at('Plans', 'Name.md'), at('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-[0-9a-z]{12}\.md$/) }] } })
+        expect(await paste(at('Plans'), vault)).toMatchObject({ ok: true, value: { pasted: [{ to: at('plans-copy') }] } })
+        expect(await call(CONTRACT.file.retitle, { path: at('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: expect.stringMatching(/\/Plans\/big-plan-[0-9a-z]{12}\.md$/) } })
       } finally {
-        await Promise.all([mine, other].map((d) => rm(d, { recursive: true, force: true })))
+        await close(vault)
       }
     })
 
-    it('a create that fails adopts nothing', async () => {
-      const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-adopt-dir-'))
+    it('a path outside the calling window\u2019s vault, and a window with no vault, get no id: whatever a vault that said yes would give', async () => {
+      const vault = await open(true)
+      const other = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))
       try {
-        await mkdir(path.join(plain, 'There'))
-        windowOn('w-adopt-fail', plain)
-        expect(await create(path.join(plain, 'There'))).toMatchObject({ ok: false, error: { code: 'ALREADY_EXISTS' } })
-        expect(await adopted(plain)).toBe(false)
-        expect(await readdir(path.join(plain, 'There'))).toEqual([])
-      } finally {
+        await call(CONTRACT.createFile, path.join(other, 'Out.md'))
+        await call(CONTRACT.createDir, { path: path.join(other, 'Out') })
+        await paste(path.join(vault, 'Plans', 'Name.md'), other)
         senderWinId = undefined
-        await rm(plain, { recursive: true, force: true })
+        await call(CONTRACT.createFile, path.join(other, 'No window.md'))
+        expect(await vaultFiles(other)).toEqual({ 'Out.md': '', 'Out/': '', 'Name.md': NOTE, 'No window.md': '' })
+      } finally {
+        await close(vault, other)
       }
     })
   })
@@ -555,6 +570,7 @@ describe('registerFsIpc', () => {
       const src = path.join(root, 'copy-src.md')
       await writeFile(src, 'copy me')
       win('w-copy', src)
+      senderWinId = 'w-copy'
       fileClip.set({ op: 'copy', paths: [src] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])

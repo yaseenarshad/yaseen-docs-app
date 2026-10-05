@@ -1,9 +1,9 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BridgeFailure } from './fsUtils'
 
-/** Creates a temp vault with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
+/** Creates a temp vault that gives its notes IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })
@@ -26,9 +26,25 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
     writeFile(path.join(root, 'assets-only', 'img.png'), 'png'),
     writeFile(path.join(root, '.obsidian', 'workspace.md'), 'ws'),
     writeFile(path.join(root, '.yaseendocs', 'foo.json'), '{"a":1}'),
+    writeFile(path.join(root, '.yaseendocs', 'ids.json'), '{"enabled":true}'),
     writeFile(path.join(root, 'node_modules', 'pkg', 'README.md'), 'readme'),
   ])
   return { root, cleanup: () => rm(root, { recursive: true, force: true }) }
+}
+
+/**
+ * Everything under `dir`, hidden entries included: each file's text by its path from `dir`, each
+ * folder as `<path>/`. What a test compares to prove that nothing else was written (YAZ-2523 🔒 V3).
+ */
+export async function vaultFiles(dir: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    const file = path.join(entry.parentPath, entry.name)
+    const rel = path.relative(dir, file)
+    if (entry.isDirectory()) out[`${rel}/`] = ''
+    else out[rel] = await readFile(file, 'utf8')
+  }
+  return out
 }
 
 /** The `BridgeFailure` a promise rejects with. */

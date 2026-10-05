@@ -5,7 +5,7 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type React
  * dialogs each carried a copy of this shell. Initial focus on CANCEL, so a stray Enter arriving
  * from the tree or an input confirms nothing; Esc cancels, Enter confirms, click-away cancels;
  * `role="dialog"` + `aria-modal` labelled by its own text. The confirm button is `--danger` only
- * when something is destroyed.
+ * when something is destroyed. When the sheet goes, focus goes back to where it was.
  *
  * WHERE THE KEYS ARE HEARD (`keys`):
  *  - `window` (most sheets): anywhere in the window while the sheet is up.
@@ -24,47 +24,63 @@ export interface ConfirmSheetProps {
   keys?: 'window' | 'sheet' | 'contained'
   onConfirm: () => void
   onCancel: () => void
+  /** The second button's text. */
+  cancelLabel?: string
+  /**
+   * Given, the sheet has TWO real answers (YAZ-2523 🔒 V2): the second button still calls
+   * `onCancel`, Esc and click-away call this instead, and Enter chooses nothing. The sheet then
+   * holds the focus itself: on a button, a Space typed as the sheet appears would press an answer.
+   */
+  onDismiss?: () => void
   /** Extra controls between the text and the buttons (the delete sheet's "Don't ask me again"). */
   children?: ReactNode
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, children }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, cancelLabel = 'Cancel', onDismiss, children }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const dismiss = onDismiss ?? onCancel
 
-  useEffect(() => cancelRef.current?.focus(), [])
+  useEffect(() => {
+    const before = document.activeElement
+    ;(onDismiss === undefined ? cancelRef : sheetRef).current?.focus()
+    return () => {
+      if (before instanceof HTMLElement && before.isConnected) before.focus()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once, as the sheet opens
 
   // preventDefault matters on both keys: Enter would otherwise ALSO activate the focused Cancel.
   const onKey = (e: KeyboardEvent | ReactKeyboardEvent): void => {
     if (e.key !== 'Escape' && e.key !== 'Enter') return
     e.preventDefault()
     if (keys === 'contained') e.stopPropagation()
-    if (e.key === 'Escape') onCancel()
-    else onConfirm()
+    if (e.key === 'Escape') dismiss()
+    else if (onDismiss === undefined) onConfirm()
   }
 
   useEffect(() => {
     if (keys !== 'window') return
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keys, onConfirm, onCancel]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
+  }, [keys, onConfirm, onCancel, onDismiss]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
 
   return (
     <div
       className="confirm-overlay"
       onMouseDown={(e) => {
         if (keys === 'contained') e.stopPropagation()
-        onCancel()
+        dismiss()
       }}
       onKeyDown={keys === 'window' ? undefined : onKey}
     >
-      <div className="confirm" role="dialog" aria-modal="true" aria-labelledby={labelId} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className="confirm" role="dialog" aria-modal="true" aria-labelledby={labelId} tabIndex={onDismiss && -1} onMouseDown={(e) => e.stopPropagation()}>
         <p className="confirm__text" id={labelId}>
           {text}
         </p>
         {children}
         <div className="confirm__actions">
           <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </button>
           <button type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onConfirm}>
             {confirmLabel}

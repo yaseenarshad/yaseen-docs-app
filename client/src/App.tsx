@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { IDS_FILE } from '@shared/noteId'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type IndexRecord, type IndexResponse, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -24,8 +25,9 @@ import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
+import { ConfirmIds } from './components/ConfirmIds'
 import { NoticeIcon } from './components/NoticeIcon'
-import { relTo } from './lib/paths'
+import { dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
@@ -44,6 +46,7 @@ import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { useReview } from './review/useReview'
 import { useReviewSettings } from './review/useReviewSettings'
 import { SettingsDialog } from './settings/SettingsDialog'
+import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -506,6 +509,29 @@ export function App() {
   const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, notify)
   const relLabel = useCallback((p: string) => (root === null ? p : relTo(root, p)), [root])
 
+  // The vault's answer on IDs as the last snapshot said it (YAZ-2523 🔒 V5), with the root it is of:
+  // one of another vault says nothing here, so the Settings switch never shows an answer this vault
+  // did not give. `enabled` is undefined while the vault has not answered, and `ask` is then what a
+  // yes would write: the box that asks (🔒 V2). `held` says a note holds an ID, which is true only
+  // while the vault uses IDs (a plain vault's records carry none). An answer, or Esc, closes the box
+  // for that root: later snapshots still carry `ask` and must not reopen it. Leaving the vault forgets that.
+  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean | undefined; held: boolean; ask: IndexResponse['ask'] } | null>(null)
+  const [idsAskClosed, setIdsAskClosed] = useState<string | null>(null)
+  if (idsAskClosed !== null && idsAskClosed !== root) setIdsAskClosed(null)
+  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
+  const onSnapshot = useCallback(
+    (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => {
+      onIndexSnapshot(records, folders, ids)
+      setIdsSnapshot({ root, enabled: ask === undefined ? ids : undefined, held: records.some((record) => record.id !== undefined), ask })
+    },
+    [root, onIndexSnapshot],
+  )
+  /** Save the vault's answer in its `ids.json` (🔒 V1), from the box or from Settings; the index refetches off the write. */
+  const saveIds = (enabled: boolean): void => {
+    if (root === null) return
+    api.vaultConfig.write(root, IDS_FILE, { enabled }).then(() => setIdsAskClosed(root), (err: unknown) => notify(`Couldn't save this vault's answer: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+  }
+
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
   // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
   // dirty buffer is carried into the new path and the old controller retired (no flush to
@@ -555,8 +581,9 @@ export function App() {
       await flushRenamedDir(oldPath)
       let records: Awaited<ReturnType<typeof api.index>>['records'] = []
       let folders: typeof records = []
+      let ids = false
       try {
-        ;({ records, folders } = await api.index(r))
+        ;({ records, folders, ids } = await api.index(r))
       } catch {
         records = [] // no index snapshot → the rename still runs, links just stay as they are
       }
@@ -578,6 +605,7 @@ export function App() {
         kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
       ) ?? false
       const summary = await updateLinksAfterRename({
+        ids,
         root: r,
         oldPath,
         newPath,
@@ -665,7 +693,7 @@ export function App() {
         oldPath,
         to,
         kind,
-        count: countLinkReferences({ root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), title: to.title, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+        count: countLinkReferences({ ids: wikilinks.ids, root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), title: to.title, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
         viewOnlyCatalog: catalog,
       })
     },
@@ -673,7 +701,23 @@ export function App() {
   )
   // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
   const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])
-  const requestRetitle = useCallback((path: string, title: string, kind: TreeNode['type']) => requestRename(path, { title }, kind), [requestRename])
+  // Where the vault does not use IDs (YAZ-2523 🔒 V3) a title typed is the file's name: the door's other spelling.
+  const requestRetitle = useCallback(
+    async (path: string, title: string, kind: TreeNode['type']): Promise<void> => {
+      // Until the index lands the vault's kind is not known (🔒 V5), and it decides which rename this is.
+      if (wikilinks.resolve === null) return notify("Can't rename: couldn't load the current file list")
+      if (wikilinks.ids) return requestRename(path, { title }, kind)
+      let name: string
+      try {
+        name = plainEntryName(title, kind, path.slice(path.lastIndexOf('.')))
+      } catch (err) {
+        return notify(`Can't rename: ${(err as Error).message}`)
+      }
+      const newPath = `${dirname(path)}/${name}`
+      if (newPath !== path) return requestRename(path, { newPath }, kind)
+    },
+    [requestRename, wikilinks, notify],
+  )
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return
@@ -800,7 +844,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled }, review: root === null ? undefined : reviewSettings }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled }, review: root === null ? undefined : reviewSettings, ids: vaultIds === null ? undefined : { ...vaultIds, set: saveIds } }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -897,7 +941,7 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onIndexSnapshot} />
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs.
               A review (YAZ-2322) is not a tab: its bar stands in the strip's place until it closes. */}
           {session !== null ? (
@@ -1015,6 +1059,8 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
+      {/* The box that asks whether this vault's notes get IDs (YAZ-2523 🔒 V2). */}
+      {vaultIds?.ask !== undefined && idsAskClosed !== root && <ConfirmIds ask={vaultIds.ask} onAnswer={saveIds} onDismiss={() => setIdsAskClosed(root)} />}
     </div>
   )
 }

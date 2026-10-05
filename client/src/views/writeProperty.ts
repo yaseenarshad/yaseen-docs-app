@@ -44,8 +44,8 @@ export function trackFileWrite<T>(write: Promise<T>): Promise<T> {
 }
 
 /**
- * A folder's settings file that is not there yet (an un-adopted vault, or the id sweep has not
- * reached the folder — D13) is created by its first change (YAZ-2290 D1) — here, so every writer
+ * A folder's settings file that is not there yet (a vault that does not use IDs, or one whose ID
+ * pass has not reached the folder — D13) is created by its first change (YAZ-2290 D1) — here, so every writer
  * gets it: a missing one reads as empty and the write creates it, so a change that comes to nothing
  * or is refused leaves no file. Another writer creating it first is a CONFLICT (`expectedMtime: 0`).
  */

@@ -23,7 +23,7 @@
  */
 import { folderValues, setFolderValue } from '@shared/folderValues'
 import type { IndexRecord } from '@shared/types'
-import { RESERVED_KEYS } from '../links/reservedKeys'
+import { reservedKeys } from '../links/reservedKeys'
 import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'
@@ -35,7 +35,7 @@ const bareOf = (key: string): string => canonicalKey(key).slice('note.'.length)
 /** The tooltip a disabled "Delete column…" wears, or null when the key may go. */
 export function undeletableReason(key: string): string | null {
   const c = canonicalKey(key)
-  return !c.startsWith('note.') || RESERVED_KEYS.has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
+  return !c.startsWith('note.') || reservedKeys(true).has(c.slice('note.'.length)) ? 'Built-in column — hide it instead' : null
 }
 
 /**

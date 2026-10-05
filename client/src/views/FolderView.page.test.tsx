@@ -61,13 +61,13 @@ const onRetitle = vi.fn()
 const onOpenFile = vi.fn()
 const onOpenFileBackground = vi.fn()
 
-/** The index's snapshot of the disk: the note, and the settings file's record when the file exists. */
+/** The index's snapshot of the disk, in a vault that uses IDs (YAZ-2523): the note, and the settings file's record when the file exists. */
 function feed(): void {
   const records = [rec(LEAD)]
   const settings = disk.get(SETTINGS_FILE)
   const folders = settings === undefined ? [] : [rec(SETTINGS_FILE, parseFrontmatter(splitFrontmatter(settings.content).frontmatter).properties, settings.mtime)]
   const resolve = resolverFor(records, '/vault')
-  act(() => source.update((target) => resolve(target)?.record.path ?? null, records, folders))
+  act(() => source.update((target) => resolve(target)?.record.path ?? null, records, folders, true))
 }
 
 /** Mounts, hands over the first snapshot, and lets the settings file's read answer. */
@@ -278,7 +278,7 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
   /** The snapshot as the bridge feeds it (`linkResolver`): Plan links the folder, Elsewhere only a note inside it. */
   function feedLinks(): void {
     const records = [{ ...rec(ELSEWHERE), links: ['Lead Gen', 'stages/Lead Gen'] }, { ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
-    act(() => source.update(linkResolver(records, '/vault', [STAGES]), records, []))
+    act(() => source.update(linkResolver(records, '/vault', [STAGES]), records, [], true))
   }
 
   it('a folder nobody links to shows no section at all', async () => {
@@ -305,7 +305,7 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     const el = await mount()
     const records = [{ ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
     const folders = [settings(TEAM), settings(STAGES)]
-    act(() => source.update(linkResolver(records, '/vault', [STAGES, TEAM], folders), records, folders))
+    act(() => source.update(linkResolver(records, '/vault', [STAGES, TEAM], folders), records, folders, true))
     await flush()
     expect(q(el, '.backlinks__title').textContent).toBe('Linked mentions (2)')
     click(q(el, '.backlinks__header'))

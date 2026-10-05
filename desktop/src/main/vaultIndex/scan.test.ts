@@ -286,7 +286,7 @@ describe('scanFile', () => {
       await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled }))
       records.push(await scanFile(root, reviewed))
     }
-    await rm(path.join(root, VAULT_CONFIG_DIR), { recursive: true }) // the fixture is an un-adopted folder
+    await rm(path.join(root, VAULT_CONFIG_DIR), { recursive: true }) // the fixture is a folder that has not said yes to IDs
     expect(records[0]).toMatchObject({ properties: { review: true }, reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }], text: textFingerprint('Body.\n') })
     expect(records[1]).toEqual(records[0])
     expect(records[2]).toEqual(records[0])

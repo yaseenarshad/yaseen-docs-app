@@ -179,7 +179,7 @@ describe('folderLinkCandidates: the `[[` picker offers folders', () => {
 
 describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)" (scenario K)', () => {
   const WORK_ID = 'w4k8d2mn6pqr'
-  /** Adopted: the two folders named Projects carry ids; Archive, Old and Work have no `.folder.md`. */
+  /** The vault uses IDs: the two folders named Projects carry ids; Archive, Old and Work have no `.folder.md`. */
   const FOLDERS = [rec('/vault/Projects/.folder.md', { id: FOLDER_ID }), rec('/vault/Work/Projects/.folder.md', { id: WORK_ID })]
   const rows = (records: IndexRecord[], folders: IndexRecord[] = FOLDERS) => {
     const resolve = linkResolver(records, '/vault', DIRS, folders)
@@ -212,7 +212,7 @@ describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)
   })
 
   it('K4 — a folder that has no id: the NAME form is inserted, as before, and the row still reads "<name> (folder)"', () => {
-    // No `.folder.md` at all (a vault that is not adopted), and one that holds no id.
+    // No `.folder.md` at all (a vault that does not use IDs), and one that holds no id.
     for (const folders of [[], [rec('/vault/Projects/.folder.md')]]) {
       const { resolve, rows: all } = rows([], folders)
       expect(all.map(row)).toEqual([['Archive (folder)', 'Archive'], ['Old (folder)', 'Old'], ['Projects (folder)', 'Projects'], ['Work (folder)', 'Work'], ['Work/Projects (folder)', 'Work/Projects']])

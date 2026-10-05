@@ -14,7 +14,7 @@ import { BridgeRequestError, api } from '../api'
 import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, dirname, relTo } from '../lib/paths'
-import { RESERVED_KEYS } from '../links/reservedKeys'
+import { reservedKeys } from '../links/reservedKeys'
 import { dropStaleFolderValues, folderId, folderRecord, folderTitle, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
@@ -85,11 +85,11 @@ const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, 
  * the fields of its block — typed by its columns, one it no longer has by the lower rungs — then
  * its columns the block holds no value for.
  */
-function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderSettings | null = null): Row[] {
+function rowsOf(properties: Record<string, unknown>, reserved: ReadonlySet<string>, decls: PropertiesResponse | null, folder: FolderSettings | null = null): Row[] {
   const inFolder = folder !== null
   const held = Object.entries(properties).map(([key, raw]): Row => {
     // The app's keys are the NOTE's; an `id` that is no note id is the app's too, which writes its own over it (YAZ-2420 🔒 D30).
-    if (!inFolder && RESERVED_KEYS.has(key)) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
+    if (!inFolder && reserved.has(key)) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
     if (isOpaque(raw)) return { key, folder: inFolder, raw, editor: null, chip: 'yaml' }
     // Existing human-readable keys can have a folder-local declaration.
     return { key, folder: inFolder, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
@@ -134,9 +134,12 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const [propertyMenu, setPropertyMenu] = useState<{ key: string; folder: boolean; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
   // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
+  // It follows the vault's answer on IDs with them (YAZ-2523 🔒 V5), which moves no file.
   const subscribe = useCallback((poke: () => void) => wikilinks?.subscribe(poke) ?? (() => {}), [wikilinks])
-  const stamp = useSyncExternalStore(subscribe, () => (wikilinks?.folders ?? NO_RECORDS).map((r) => `${r.path}\0${r.mtime}`).join('\n'))
+  const stamp = useSyncExternalStore(subscribe, () => [wikilinks?.ids, ...(wikilinks?.folders ?? NO_RECORDS).map((r) => `${r.path}\0${r.mtime}`)].join('\n'))
   const folders = useMemo(() => wikilinks?.folders ?? NO_RECORDS, [wikilinks, stamp])
+  const ids = wikilinks?.ids === true
+  const reserved = reservedKeys(ids)
   const dir = dirname(file.path)
   // A folder's OWN panel (YAZ-2290 D9) is mounted on the settings file itself. Its properties are
   // facts about the folder: the columns it declares for its notes neither type nor list here,
@@ -217,25 +220,27 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   }
 
   const { properties: parsed, error: parseError } = useMemo(() => parseFrontmatter(splitFrontmatter(snap.content).frontmatter), [snap.content])
-  // The folders that show the note (`foldersShowing`), as directories. No feed, or a note outside
-  // the vault — whose folder the index never reads an id for — is no folder: the note's own rows alone.
+  // The folders that show the note (`foldersShowing`), as directories. A vault that does not use IDs,
+  // where no folder has values (YAZ-2523 🔒 V7), or a note outside the vault — whose folder the index
+  // never reads an id for — is no folder: the note's own rows alone.
   const vault = root?.replace(/\/+$/, '')
   const dirs = useMemo(() => {
-    if (wikilinks === undefined || own || vault === undefined || !inFolder(dir, vault)) return []
+    if (!ids || own || vault === undefined || !inFolder(dir, vault)) return []
     return foldersShowing(dir === vault ? '' : relTo(vault, dir), parsed, byId).map((folder) => (folder === '' ? vault : absFrom(vault, folder)))
-  }, [wikilinks, own, vault, dir, parsed, byId])
+  }, [ids, own, vault, dir, parsed, byId])
   // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
   const chosen = dirs.find((d) => d === picked) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
   const chosenRecord = useMemo(() => (chosen === undefined ? undefined : folderRecord(folders, chosen)), [folders, chosen])
-  const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(chosenRecord)), [chosen, chosenRecord])
+  const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(chosenRecord, ids)), [chosen, chosenRecord, ids])
   /** The chosen folder's id names its block; none until its `.folder.md` holds one — then its values read as empty. */
   const chosenId = chosenRecord?.id
   /**
    * The note's values for the chosen folder, and its own fields: everything at the top level but
    * `in` — and `title`, a note's or a folder's, which the page title above shows (YAZ-2420 🔒 D27).
+   * Where the vault does not use IDs both are fields like any other (YAZ-2523 🔒 V12).
    */
   const block = useMemo(() => folderValues(parsed, chosenId), [parsed, chosenId])
-  const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== FOLDER_VALUES_KEY && key !== TITLE_KEY)), [parsed])
+  const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => !ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY))), [parsed, ids])
   /** A folder as the panel names it: its title (YAZ-2420 🔒 D14). */
   const folderName = (folder: string): string => folderTitle(folders, folder)
   /** `also_in` as the eye reads it: each folder id as that folder's title; an entry no folder has stays as written. */
@@ -251,7 +256,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const label = empty ? 'Add properties' : count > 0 ? `Properties (${count})` : 'Properties'
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
-  const rows = rawMode ? [] : [...rowsOf(ownFields, decls).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY)), ...(folderDefinition === null ? [] : rowsOf(block, decls, folderDefinition))]
+  const rows = rawMode ? [] : [...rowsOf(ownFields, reserved, decls).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY)), ...(folderDefinition === null ? [] : rowsOf(block, reserved, decls, folderDefinition))]
   const needle = query.trim().toLocaleLowerCase()
   const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
 
@@ -275,7 +280,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
     }
     // The app's own keys have their own doors: a row added here would be read-only on a note and
     // hidden on a folder, and its value would stand where the app's belongs.
-    if (RESERVED_KEYS.has(name) || (own && name === FOLDER_SETTINGS_KEY)) {
+    if (reserved.has(name) || (own && name === FOLDER_SETTINGS_KEY)) {
       setError(reservedText(name))
       return
     }
@@ -291,7 +296,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
     setSaving(true)
     try {
       const { key, definition, base } = propertyMenu
-      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base)
+      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base, ids)
       setPropertyMenu(null)
       setError(null)
     } catch (err) { setError(`Could not save the property: ${messageOf(err)}`) }

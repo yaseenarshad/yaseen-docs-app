@@ -98,10 +98,15 @@ describe('getIndex: cold scan', () => {
   it('serves the cache on later calls and shares one scan between concurrent first calls', async () => {
     _evictAll()
     expect(activeWatcherRoots()).not.toContain(root)
+    // Told by the scans, not by the records being the same objects: a vault that does not use IDs
+    // is handed out as fresh records each call (YAZ-2523 V12).
+    vi.mocked(scanFile).mockClear()
     const [a, b] = await Promise.all([getIndex(root), getIndex(root)])
-    expect(a.records[0]).toBe(b.records[0])
+    expect(scanFile).toHaveBeenCalledTimes(8)
+    expect(b.records).toEqual(a.records)
     const c = await getIndex(root)
-    expect(c.records[0]).toBe(a.records[0])
+    expect(scanFile).toHaveBeenCalledTimes(8)
+    expect(c.records).toEqual(a.records)
     expect(c.generatedAt).toBeGreaterThanOrEqual(a.generatedAt)
     expect(activeWatcherRoots()).toContain(root)
   })
