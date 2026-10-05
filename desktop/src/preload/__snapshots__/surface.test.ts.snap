@@ -20,6 +20,7 @@ file.onRenamed/1: on file:renamed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root
 file.paste/1: invoke fs:paste ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
 github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

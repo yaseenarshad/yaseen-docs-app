@@ -176,7 +176,7 @@ const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: ta
 const tabs = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
 const selected = (el: ParentNode): string | undefined => [...el.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
 /** Note links in the body: the table's name cells (4B) or the placeholder list of other view types. */
-const rows = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__link, .view-row__link')].map((b) => b.textContent ?? '')
+const rows = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name, .view-row__link')].map((b) => b.textContent ?? '')
 const count = (el: ParentNode): string => q(el, '.view-toolbar__count').textContent ?? ''
 const openMenu = (el: ParentNode, label: string): HTMLElement => {
   click(byLabel(el, label))
@@ -1096,7 +1096,7 @@ views:
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(parseViews(yaml()).def).toEqual(def())
-    expect(el.querySelector(type === 'table' ? '.view-table__link' : '.view-board__title')).not.toBeNull()
+    expect(el.querySelector(type === 'table' ? '.view-table__name' : '.view-board__title')).not.toBeNull()
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
@@ -1203,12 +1203,12 @@ views:
     expect(def().views[0].order).toEqual(['note.status'])
     expect([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)).toEqual(['Status'])
     expect(q(el, '[data-cell="0:0"]').textContent).toBe('idea')
-    expect(el.querySelector('.view-table__link')).toBeNull()
+    expect(el.querySelector('.view-table__name')).toBeNull()
 
     click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual(['note.status', 'file.name'])
     expect([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)).toEqual(['Status', 'Name'])
-    expect(el.querySelector('.view-table__link')).not.toBeNull()
+    expect(el.querySelector('.view-table__name')).not.toBeNull()
     expect(onChange).toHaveBeenCalledTimes(3)
   })
 
@@ -1631,11 +1631,11 @@ describe('search, count and body', () => {
     expect(count(el)).toBe('3 / 8 items')
   })
 
-  it('row links open the note; the other order values are the row cells (4B)', () => {
+  it('Enter on a row\'s Name cell opens the note; the other order values are the row cells (4B)', () => {
     const { el, onOpenFile } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
     expect(q(el, '[data-cell="0:2"]').textContent).toBe('2')
-    click(q(el, '.view-table__link'))
+    act(() => void q(el, '.view-table__name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 

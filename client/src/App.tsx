@@ -39,7 +39,7 @@ import { isFolderPath, pageLabel, pathTitles } from './lib/pageLabel'
 import { onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
-import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
+import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { useReview } from './review/useReview'
 import { useReviewSettings } from './review/useReviewSettings'
@@ -541,9 +541,13 @@ export function App() {
    * BEFORE the rename (afterwards the old name no longer resolves), rename, then rewrite
    * every referencing note through the shared-resolver engine. All failures land in the
    * passive notice — never a dialog, never a rejection back into the inline input.
+   *
+   * A title edit (YAZ-2420 🔒 D16) is this same commit with two differences: `file.retitle` runs
+   * in place of `file.rename`, and answers with the path it built; and the link rewrite is told
+   * the new title, so a link that spelled the old one follows it.
    */
   const renameFile = useCallback(
-    async (oldPath: string, newPath: string, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
+    async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
       const r = root
       if (r === null) return
       // (a) our own unsaved buffers travel WITH the file(s). The kind is unknown until the
@@ -559,12 +563,13 @@ export function App() {
       }
       // The folders as they stand BEFORE the rename too: a link to a folder resolves over them (YAZ-2290 D10).
       const dirs = vaultDirs(r)
+      let newPath: string
       let kind: 'file' | 'dir'
       try {
-        kind = (await api.file.rename({ oldPath, newPath })).kind
+        ;({ newPath, kind } = to.title === undefined ? await api.file.rename({ oldPath, newPath: to.newPath }) : await api.file.retitle({ path: oldPath, title: to.title }))
       } catch (err) {
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
-        notify(exists ? `Can't rename: "${nameOf(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
+        notify(exists ? `Can't rename: "${to.title ?? nameOf(to.newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
       // A note that left a folder leaves that folder's values behind (D20).
@@ -580,6 +585,7 @@ export function App() {
         records,
         folders,
         dirs,
+        title: to.title,
         ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
       })
       if (summary.updated > 0 || summary.skipped > 0) notify(renameNotice(summary))
@@ -589,18 +595,20 @@ export function App() {
 
   /**
    * THE ONE DOOR (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes). Every rename
-   * gesture in the app arrives here as (oldPath, newPath, kind) — the sidebar's inline rename, its
-   * drag-move, and the page title — so the rule is asked ONCE, here, and no surface reimplements
-   * it: a changed NAME confirms first (the rename chains into the file on disk and then into
-   * every note that links to it); a MOVE asks only when it would clear a folder's values (D21,
-   * `valuesLeftBehind` over the window's own snapshot) and otherwise runs silently (a confirm on
-   * every drag would be hostile, and bare links keep resolving across a move anyway).
+   * gesture in the app arrives here as (oldPath, to, kind) — the sidebar's inline rename, its
+   * drag-move, the page title and a table's Name cell — so the rule is asked ONCE, here, and no
+   * surface reimplements it: a changed NAME confirms first (the rename chains into the file on
+   * disk and then into every note that links to it); a MOVE asks only when it would clear a
+   * folder's values (D21, `valuesLeftBehind` over the window's own snapshot) and otherwise runs
+   * silently (a confirm on every drag would be hostile, and bare links keep resolving across a
+   * move anyway). A title edit (YAZ-2420 🔒 D16) changes the name and never the folder: it
+   * confirms, and is never a move.
    *
    * Markdown-only renames still count synchronously. A ready lightweight catalog may prove a
    * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
    * The chosen snapshot is pinned through confirmation, and a root change cancels the request.
    */
-  const [pendingRename, setPendingRename] = useState<({ root: string; oldPath: string; newPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null } & ({ count: number } | { lost: LeftBehind })) | null>(null)
+  const [pendingRename, setPendingRename] = useState<({ root: string; oldPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null } & ({ to: RenameTo; count: number } | { to: { newPath: string }; lost: LeftBehind })) | null>(null)
   const renameRootGeneration = useRef(0)
   useLayoutEffect(() => {
     renameRootGeneration.current++
@@ -634,14 +642,14 @@ export function App() {
   }, [root, viewOnlyLinks, nameOf])
 
   const requestRename = useCallback(
-    async (oldPath: string, newPath: string, kind: TreeNode['type']): Promise<void> => {
+    async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
       if (root === null) return
       const catalog = await catalogForRename(oldPath, kind)
       if (catalog === undefined) return
-      if (!isNameChange(oldPath, newPath)) {
-        const lost = valuesLeftBehind({ root, moves: [{ oldPath, newPath, kind }], records: wikilinks.records, folders: wikilinks.folders })
-        if (lost.folders.length === 0) return renameFile(oldPath, newPath, catalog)
-        setPendingRename({ root, oldPath, newPath, kind, lost, viewOnlyCatalog: catalog })
+      if (to.title === undefined && !isNameChange(oldPath, to.newPath)) {
+        const lost = valuesLeftBehind({ root, moves: [{ oldPath, newPath: to.newPath, kind }], records: wikilinks.records, folders: wikilinks.folders })
+        if (lost.folders.length === 0) return renameFile(oldPath, to, catalog)
+        setPendingRename({ root, oldPath, to, kind, lost, viewOnlyCatalog: catalog })
         return
       }
       const records = wikilinks.records
@@ -653,18 +661,17 @@ export function App() {
       setPendingRename({
         root,
         oldPath,
-        newPath,
+        to,
         kind,
-        count: countLinkReferences({ root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+        count: countLinkReferences({ root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), title: to.title, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
         viewOnlyCatalog: catalog,
       })
     },
     [root, catalogForRename, renameFile, wikilinks],
   )
-  const requestEditorRename = useCallback(
-    (oldPath: string, newPath: string, kind: TreeNode['type'] = 'file') => requestRename(oldPath, newPath, kind),
-    [requestRename],
-  )
+  // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
+  const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])
+  const requestRetitle = useCallback((path: string, title: string, kind: TreeNode['type']) => requestRename(path, { title }, kind), [requestRename])
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return
@@ -672,9 +679,9 @@ export function App() {
       setPendingRename(null)
       return
     }
-    const { oldPath, newPath, viewOnlyCatalog } = pendingRename
+    const { oldPath, to, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
-    void renameFile(oldPath, newPath, viewOnlyCatalog)
+    void renameFile(oldPath, to, viewOnlyCatalog)
   }, [root, pendingRename, renameFile])
 
   /**
@@ -751,7 +758,7 @@ export function App() {
     viewOnlyLinks,
     properties: propertyDecls,
     onOpenFileRight: openRight,
-    onRenameFile: requestEditorRename,
+    onRetitle: requestRetitle,
     sync: githubSync.status,
     onSyncNow: githubSync.syncNow,
     // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
@@ -849,7 +856,8 @@ export function App() {
           onOpenSettings={openSettings}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
-          onRenameFile={requestRename}
+          onRenameFile={requestPathRename}
+          onRetitle={requestRetitle}
           onDeleteFile={deleteFile}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
@@ -995,11 +1003,11 @@ export function App() {
           that would clear a folder's values asks through its own sheet (D21). */}
       {pendingRename !== null &&
         ('lost' in pendingRename ? (
-          <ConfirmMove moves={[pendingRename]} lost={pendingRename.lost} indexSource={wikilinks} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
+          <ConfirmMove moves={[{ oldPath: pendingRename.oldPath, newPath: pendingRename.to.newPath, kind: pendingRename.kind }]} lost={pendingRename.lost} indexSource={wikilinks} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
         ) : (
           <ConfirmRename
             oldPath={pendingRename.oldPath}
-            newPath={pendingRename.newPath}
+            {...pendingRename.to}
             kind={pendingRename.kind}
             count={pendingRename.count}
             indexSource={wikilinks}

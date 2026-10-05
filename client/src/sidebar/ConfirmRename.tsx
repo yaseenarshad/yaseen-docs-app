@@ -24,11 +24,16 @@ export function renameConfirmMessage(oldName: string, newName: string, count: nu
  */
 export const isNameChange = (oldPath: string, newPath: string): boolean => basename(oldPath) !== basename(newPath)
 
-interface ConfirmRenameProps {
+/**
+ * Where a rename sends a page: to a new path — a rename, or a move — or to a new TITLE
+ * (YAZ-2420 🔒 D16), from which main builds the name, so there is no path to state until it
+ * answers. The sheet names a path by its page's title and a title as it was typed.
+ */
+export type RenameTo = { newPath: string; title?: never } | { title: string; newPath?: never }
+
+type ConfirmRenameProps = {
   /** The page as it stands; only its NAME reaches the copy. */
   oldPath: string
-  /** Where the rename would land — same directory for a name change, which is the only case that asks. */
-  newPath: string
   /** A folder is named whole: `Notes.md` may be one (YAZ-2290). */
   kind: 'file' | 'dir'
   /** The honest N: `countLinkReferences` over the window's own index snapshot. */
@@ -37,7 +42,7 @@ interface ConfirmRenameProps {
   indexSource?: WikilinkResolveSource
   onConfirm: () => void
   onCancel: () => void
-}
+} & RenameTo
 
 /**
  * In-app confirm sheet for a NAME change (⚡ YAZ-888), on `ConfirmSheet`, so the behaviour is the
@@ -55,12 +60,12 @@ interface ConfirmRenameProps {
  * confirms before the user has read a word (the e2e caught exactly that). Bound here, the sheet
  * only ever hears keys from inside itself, which is where focus is: Cancel takes it on mount.
  */
-export function ConfirmRename({ oldPath, newPath, kind, count, indexSource, onConfirm, onCancel }: ConfirmRenameProps) {
+export function ConfirmRename({ oldPath, kind, count, indexSource, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
   const titles = usePathTitles(indexSource)
   return (
     <ConfirmSheet
       labelId="confirm-rename-text"
-      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), pageLabel(newPath, kind === 'dir', titles), count)}
+      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count)}
       confirmLabel="Rename"
       keys="sheet"
       onConfirm={onConfirm}

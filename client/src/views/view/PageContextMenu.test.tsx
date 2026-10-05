@@ -58,6 +58,22 @@ it('exports reusable page actions through PageContextMenu', () => {
   host.remove()
 })
 
+it('"Open" leads the menu of a surface that hands one: it opens the page in the current tab (YAZ-2420 D26)', () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const onOpen = vi.fn()
+  const onClose = vi.fn()
+  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpen={onOpen} onOpenBackground={vi.fn()} onClose={onClose} />))
+  const items = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+  expect(items.map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
+  act(() => items[0].click())
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  expect(onClose).toHaveBeenCalledOnce()
+  act(() => root.unmount())
+  host.remove()
+})
+
 it('reports a clipboard rejection passively without leaving an unhandled promise', async () => {
   const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
   const writeText = vi.fn().mockRejectedValue(new Error('clipboard permission denied'))

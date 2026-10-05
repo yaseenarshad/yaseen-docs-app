@@ -164,7 +164,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
       current = q(tr, '.view-group__value').textContent ?? ''
       out[current] = []
     } else if (!tr.classList.contains('view-table__spacer')) {
-      out[current]?.push(q(tr, '.view-table__link').textContent ?? '')
+      out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
     }
   }
   return out

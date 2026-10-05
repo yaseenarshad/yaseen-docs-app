@@ -53,15 +53,14 @@ export function renameInputName(fileName: string): string {
 }
 
 /**
- * Absolute path for the sidebar's inline rename (Links E1, GRO-2194; folders E1b, GRO-2241):
+ * Absolute path for the sidebar's inline rename of a FILE (Links E1, GRO-2194):
  * same parent directory. Markdown keeps only an explicit Markdown suffix; any other visible name
  * inherits the old Markdown suffix. View-only files keep any explicit supported suffix and append
- * the old exact suffix only when none is recognized. Directories have no extension logic.
+ * the old exact suffix only when none is recognized.
  */
-export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'dir' = 'file'): string {
+export function renamedPath(oldPath: string, newName: string): string {
   const dir = dirname(oldPath)
   let final = newName.trim()
-  if (kind === 'dir') return `${dir}/${final}`
   const oldName = oldPath.slice(oldPath.lastIndexOf('/') + 1)
   if (final === renameInputName(oldName)) return oldPath
   const oldKind = fileKind(oldPath)

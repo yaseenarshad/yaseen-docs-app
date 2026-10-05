@@ -10,6 +10,8 @@ interface PageContextMenuProps {
   title: string
   /** The page's note id (YAZ-2293), off the row's own index record; absent when it has none, and "Copy ID" is then not offered. */
   noteId?: string
+  /** "Open", in the current tab (YAZ-2420 🔒 D26): a table's, whose Name cell no longer opens on a click. */
+  onOpen?: (path: string) => void
   onOpenRight?: (path: string) => void
   onOpenBackground?: (path: string) => void
   onNotice?: (message: string) => void
@@ -17,7 +19,7 @@ interface PageContextMenuProps {
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, title, noteId, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, title, noteId, onOpen, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path }).catch((error: unknown) => {
@@ -31,6 +33,19 @@ export function PageContextMenu({ x, y, path, title, noteId, onOpenRight, onOpen
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
+      {onOpen !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onOpen(path)
+            onClose()
+          }}
+        >
+          Open
+        </button>
+      )}
       {onOpenBackground !== undefined && (
         <button
           type="button"

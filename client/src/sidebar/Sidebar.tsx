@@ -96,6 +96,8 @@ interface SidebarProps {
    * closes.
    */
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>
+  /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
+  onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
    * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
    * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
@@ -353,6 +355,7 @@ export function Sidebar({
   onRootMissing,
   onFileMissing,
   onRenameFile,
+  onRetitle,
   onDeleteFile,
   onNotice,
   noteId,
@@ -559,7 +562,7 @@ export function Sidebar({
     [root],
   )
 
-  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, dispatch)
+  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, dispatch)
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —

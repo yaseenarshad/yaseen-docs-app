@@ -51,8 +51,12 @@
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
  *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
- *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the note whose `title:` that is —
- *    the same again. A note with no `title:` is linked by its file name, and that is rewritten.
+ *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the note whose `title:` that is, or
+ *    to the folder whose `.folder.md` holds it — the same again. A page with no `title:` is
+ *    linked by its name, and that is rewritten.
+ *  - A TITLE EDIT (YAZ-2420 D16, `title`) is the one rename a title does not travel through: a
+ *    link that spelled the old title is rewritten to the new one, and counted. Links by name or
+ *    by path follow the new file as in any rename; id links stay as written.
  */
 import { FOLDER_VALUES_KEY, folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -64,7 +68,7 @@ import { resolverFor, targetBasename, targetKey } from '../views/engine'
 import { folderSettingsLinks, mapFolderSettingsLinks } from '../views/folderSettings'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
-import { basename, relTo, stripExt } from '../lib/paths'
+import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
@@ -267,6 +271,8 @@ export interface UpdateLinksOptions {
   dirs?: readonly string[]
   /** Separate PRE-rename text/PDF catalog; these targets never enter `records`. */
   viewOnlyCatalog?: ViewOnlyCatalog | null
+  /** The new title, when the rename is a title edit of `oldPath` (YAZ-2420 🔒 D16): a link that spelled the old one follows it. */
+  title?: string
 }
 
 /**
@@ -282,9 +288,10 @@ export interface UpdateLinksOptions {
  * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
  * fix — deferred with the rest of the E1c queue work.
  */
-function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; dirs?: readonly string[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): {
+function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], viewOnlyCatalog, title }: Pick<UpdateLinksOptions, 'root' | 'oldPath' | 'records' | 'folders' | 'dirs' | 'viewOnlyCatalog' | 'title'> & { kind: 'file' | 'dir' }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
+  spellsTitle: (t: string) => boolean
 } {
   // NAME-ONLY resolution (E2, GRO-2214): an alias-form link (`[[CAC]]`) does resolve to the
   // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
@@ -293,26 +300,36 @@ function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog
   // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
   // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
   const resolver = resolverFor(records, root, { aliases: false, ids: false })
-  // A link that spells a note's `title:` (YAZ-2420 🔒 D17) is the third of that kind: the title is
-  // in the file's own frontmatter, so the link still reaches it afterwards. A note with no `title:`
-  // is titled by its file name, and a link spelling that is a name link, rewritten as ever.
+  const settings = new Map(folders.map((record) => [dirname(record.path), record]))
+  const spells = (t: string, page: IndexRecord | undefined): page is IndexRecord => page !== undefined && targetKey(t) === page.title.toLowerCase()
+  // A link that spells a page's `title:` (YAZ-2420 🔒 D17) is the third of that kind: the title is in
+  // the note's own frontmatter, or the folder's `.folder.md`, so the link still reaches it afterwards.
+  // A page with no `title:` is titled by its name, and a link spelling that is a name link, rewritten
+  // as ever. The one title that does not travel is the one a title edit replaces (`title`, 🔒 D16).
+  const travels = (t: string, page: IndexRecord | undefined, path: string): boolean =>
+    spells(t, page) && titleOf(page.properties, '') !== '' && !(title !== undefined && path === oldPath)
   const named = (t: string): string | undefined => {
     const hit = resolver(t)?.record
-    return hit !== undefined && titleOf(hit.properties, '') !== '' && targetKey(t) === hit.title.toLowerCase() ? undefined : hit?.path
+    return hit === undefined || travels(t, hit, hit.path) ? undefined : hit.path
   }
   // A FOLDER holds a name only when no note, path or ALIAS does (YAZ-2290 D10) — asked of the
-  // full resolver, so a link an alias answers is never read as the folder's. No folder ids either.
+  // full resolver, so a link an alias answers is never read as the folder's. It is found as every
+  // link finds it, by its title too (`folderResolver`), but for its id: no folder ids either.
   const anyNote = resolverFor(records, root)
-  const folder = folderResolver(root, dirs)
+  const folder = folderResolver(root, dirs, folders.map((record) => ({ ...record, id: undefined })))
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p === oldPath || p.startsWith(prefix) : (p: string) => p === oldPath
   const targetPaths = new Map<string, string | null>()
   const resolveTargetPath = (t: string): string | null => {
     const hit = targetPaths.get(t)
     if (hit !== undefined) return hit
+    const dir = (): string | null => {
+      const found = anyNote(t) === null ? folder(t) : null
+      return found !== null && travels(t, settings.get(found), found) ? null : found
+    }
     // An explicit recognized non-Markdown extension belongs exclusively to the lightweight
     // catalog. It must never acquire a semantic record/resolver fallback on a miss.
-    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : named(t) ?? (anyNote(t) === null ? folder(t) : null)
+    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : named(t) ?? dir()
     targetPaths.set(t, resolved)
     return resolved
   }
@@ -324,7 +341,8 @@ function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog
     if (kind === 'dir' && !target.includes('/')) return hit === oldPath
     return hit !== null && isMoved(hit)
   }
-  return { resolves, resolveTargetPath }
+  // Asked of a target that resolved to `oldPath`: the page it reached is the renamed one.
+  return { resolves, resolveTargetPath, spellsTitle: (t) => spells(t, kind === 'dir' ? settings.get(oldPath) : resolver(t)?.record) }
 }
 
 /**
@@ -334,16 +352,16 @@ function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[]; folders?: readonly IndexRecord[]; dirs?: readonly string[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): number {
-  const { resolves } = makeResolves({ root, oldPath, kind, records, dirs, viewOnlyCatalog })
+export function countLinkReferences({ root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): number {
+  const { resolves } = makeResolves({ root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   return [...records, ...folders].filter(makeReferences(resolves)).length
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
-export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog, title }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p === oldPath || p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
-  const { resolves, resolveTargetPath } = makeResolves({ root, oldPath, kind, records, dirs, viewOnlyCatalog })
+  const { resolves, resolveTargetPath, spellsTitle } = makeResolves({ root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
@@ -352,14 +370,22 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
     kind === 'file'
       ? records.map((r) =>
           r.path === oldPath
-            ? { ...r, path: newPath, name: newName, basename: stripExt(newName), title: titleOf(r.properties, stripExt(newName)), folder: newRel.includes('/') ? newRel.slice(0, newRel.lastIndexOf('/')) : '' }
+            ? { ...r, path: newPath, name: newName, basename: stripExt(newName), title: title ?? titleOf(r.properties, stripExt(newName)), folder: newRel.includes('/') ? newRel.slice(0, newRel.lastIndexOf('/')) : '' }
             : r,
         )
       : records
   const postResolver = resolverFor(postRecords, root)
-  // The folders the same way: is a path a folder, and who holds a bare name once they have moved.
+  // The folders the same way: is a path a folder, and who holds a bare name or a title once they have moved.
   const folderPaths = new Set(dirs)
-  const postLink = linkResolver(postRecords, root, dirs.map(mapMoved))
+  const postFolders =
+    kind === 'dir'
+      ? folders.map((f) => {
+          const path = mapMoved(f.path)
+          const own = dirname(f.path) === oldPath
+          return path === f.path && !own ? f : { ...f, path, folder: relTo(root, dirname(path)), title: own ? title ?? titleOf(f.properties, newName) : f.title }
+        })
+      : folders
+  const postLink = linkResolver(postRecords, root, dirs.map(mapMoved), postFolders)
   const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined
     ? null
     : buildViewOnlyCatalogFromEntries(root, viewOnlyCatalog.entries.map((entry) => {
@@ -369,6 +395,9 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
   const newTarget: NewTarget = (target) => {
     const hit = resolveTargetPath(target) as string // non-null: `resolves` vetted this target
     const moved = mapMoved(hit)
+    // A title edit (YAZ-2420 🔒 D16): a link that spelled the old title spells the new one, when
+    // a link can spell it and it reaches the page; else the link goes by name, as below.
+    if (title !== undefined && hit === oldPath && spellsTitle(target) && exactLinkTarget(`[[${title}]]`) === title && postLink(title) === moved) return title
     const movedName = basename(moved)
     const movedRel = relTo(root, moved)
     // A folder (YAZ-2290 D10) has no extension to keep: pathed stays pathed, and bare stays bare
