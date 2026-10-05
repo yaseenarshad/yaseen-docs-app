@@ -12,7 +12,6 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, WatchEvent } from '@shared/types'
 import type { WatchSource } from '../hooks/useWatch'
-import { pathTitles, type PathTitles } from '../lib/pageLabel'
 import { useSearchResults } from './useSearchResults'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -48,10 +47,8 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 /** The Sidebar's own `dirs` (🔒 D1, YAZ-1491): folder rows need no index read at all. */
 const NO_DIRS: readonly string[] = []
 
-const NO_TITLES = pathTitles([], [])
-
-function Harness({ watch, query, dirs = NO_DIRS, titles = NO_TITLES }: { watch: WatchSource; query: string; dirs?: readonly string[]; titles?: PathTitles }) {
-  const results = useSearchResults('/v', watch, query, dirs, titles)
+function Harness({ watch, query, dirs = NO_DIRS }: { watch: WatchSource; query: string; dirs?: readonly string[] }) {
+  const results = useSearchResults('/v', watch, query, dirs)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
@@ -187,7 +184,7 @@ describe('useSearchResults (YAZ-803)', () => {
 
   it("D: an id in the bar is that note alone, and a folder's id that folder, read off the index's folder records (YAZ-2420 D32)", async () => {
     const records = [{ ...rec('up-001-abdul-k3m9x2pq7abc'), title: 'UP-001 - Abdul', id: 'k3m9x2pq7abc' }, rec('Archive')]
-    const folders = [{ ...rec('.folder', 'Archive'), id: 'f7n2w8rt4xyz' }]
+    const folders = [{ ...rec('.folder', 'Archive'), title: 'Archive', id: 'f7n2w8rt4xyz' }]
     const { rerender } = await mount(records, '[[k3m9x2pq7abc]]', undefined, ['/v/Archive'], folders)
     expect(labels()).toEqual(['UP-001 - Abdul'])
     await rerender('/v/Archive/f7n2w8rt4xyz')

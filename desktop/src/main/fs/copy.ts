@@ -6,7 +6,7 @@ import { TITLE_KEY, kebabTitle, noteFileName, titleOf } from '@shared/noteName'
 import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type RenameFileResponse } from '@shared/types'
 import type { FileClip } from '../fileClip'
 import { carryFolderValues } from '../vaultIndex/idSweep'
-import { BridgeFailure, createDurable, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
+import { BridgeFailure, createDurable, createFolderSettings, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
 /** One entry that landed: the shape `PasteResponse.pasted` carries. */
@@ -47,7 +47,7 @@ async function freeTitle(dir: string, title: string): Promise<string> {
   let name = ''
   for (let n = 1; ; n += 1) {
     const candidate = `${title} copy${n === 1 ? '' : ` ${n}`}`
-    if (kebabTitle(candidate) === name) throw new BridgeFailure('ALREADY_EXISTS', 'a folder with this name already exists', { path: path.join(dir, name) })
+    if (kebabTitle(candidate) === name) throw new BridgeFailure('ALREADY_EXISTS', "this folder's name is too long to copy beside it", { path: path.join(dir, name) })
     name = kebabTitle(candidate)
     if (!(await taken(dir, name))) return candidate
   }
@@ -93,7 +93,7 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
   const title = picked ? await freeTitle(dir, titleOf(born?.properties ?? {}, path.basename(src))) : undefined
   const to = path.join(dir, title === undefined ? path.basename(src) : kebabTitle(title))
   await fsCall(to, () => mkdir(to))
-  if (born !== undefined) await createDurable(folderSettingsPath(to), title === undefined ? born.content : setFrontmatterProperty(born.content, TITLE_KEY, title))
+  if (born !== undefined) await createFolderSettings(to, title === undefined ? born.content : setFrontmatterProperty(born.content, TITLE_KEY, title))
   for (const entry of await readdir(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name)
     if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
@@ -109,13 +109,8 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
  * Copies one entry INTO `toDir` (YAZ-1674, D4), never over anything. Copying into the entry's OWN
  * folder is Duplicate for free.
  *
- * A NOTE's copy is its own note at once (YAZ-2420 🔒 D21): a fresh `id`, `title: <title> copy`,
- * and the name built from both, so two copies of one note differ by their ids. A FOLDER's copy is
- * titled `<title> copy` under the kebab-case of that (`freeTitle`), and every note and
- * `.folder.md` in it takes a fresh id (`copyFolder`). Each file lands holding its fresh id, so
- * the id sweep meets no second holder of an original's. Any other file — and a note whose
- * properties do not parse — is `fs.cp` under Finder's next free name (`freeName`), bytes AND
- * mtimes faithful.
+ * A note and a folder are born again (YAZ-2420 🔒 D21: `copyNote`, `copyFolder`); any other file,
+ * and a note whose properties do not parse, is `fs.cp` under Finder's next free name (`freeName`).
  *
  * Guards borrowed from rename/remove, and only where they transfer: a source the tree hides
  * (`isSkipped`: dot-entries, node_modules) is refused `BAD_REQUEST` — the UI never showed it,

@@ -99,7 +99,7 @@ beforeEach(() => {
   // this jsdom lifetime so a full parallel suite cannot execute them after teardown.
   vi.useFakeTimers()
   vi.clearAllMocks()
-  createDir.mockImplementation(async (req) => ({ path: typeof req === 'string' ? req : req.path }))
+  createDir.mockImplementation(async (req) => ({ path: req.path }))
   createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
   vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
   vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: [], generatedAt: 0 })
@@ -269,14 +269,14 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
 
   it("a bare target creates under nav.createFolder() — the Files & Links setting's folder, read at CLICK time (C2-, GRO-2240)", async () => {
     let base = 'Notes/Inbox'
-    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown, () => base)
+    const { root, nav } = await mount('pad [[Missing]] and [[Other]] tail\n', resolveKnown, () => base)
     mousedown(linkSpan(root, 'Missing'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/Notes/Inbox/missing-${born().id}.md`))
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/Notes' }, { path: '/vault/Notes/Inbox' }])
     // The getter is live: a settings change lands on the NEXT click without any remount.
     base = ''
-    mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/missing-${born(1).id}.md`))
+    mousedown(linkSpan(root, 'Other'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/other-${born(1).id}.md`))
   })
 
   it('a PATHED target stays root-relative whatever the base — an explicit path is an explicit aim (Obsidian)', async () => {
@@ -284,6 +284,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     mousedown(linkSpan(root, 'Sub/Page'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/sub/page-${born().id}.md`))
     expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/sub', title: 'Sub' }])
+    expect(api.index).not.toHaveBeenCalled() // the folders are the ones the editor's index source holds
   })
 
   it('a create failure surfaces as a passive notice — nothing opens, never a dialog', async () => {
@@ -311,6 +312,16 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     mousedown(linkSpan(root, 'Sub/Page'))
     await vi.advanceTimersByTimeAsync(0)
     expect(nav.openCurrent.mock.calls).toEqual([[born().path], [born().path]])
+    expect(createFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a repeat click after the note was made, before the index holds it, opens that note and makes no second one (YAZ-2478)', async () => {
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    mousedown(linkSpan(root, 'Missing'), { metaKey: true })
+    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith(born().path))
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
     expect(createFile).toHaveBeenCalledTimes(1)
   })
 

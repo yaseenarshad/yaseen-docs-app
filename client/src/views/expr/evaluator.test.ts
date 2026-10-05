@@ -64,6 +64,15 @@ describe('literals and scope', () => {
     expect(ev('file.basename', titled)).toBe('up-001-abdul-k3m9x2pq7abc')
   })
 
+  it('E: a file value links by its id and reads as its title: `file.asLink()`, `link(file)` and its text (YAZ-2420 D14)', () => {
+    const titled = scope({}, { file: new FileValue({ ...record, id: 'k3m9x2pq7abc', name: 'up-001-abdul-k3m9x2pq7abc.md', basename: 'up-001-abdul-k3m9x2pq7abc', title: 'UP-001 - Abdul' }) })
+    expect(ev('file.asLink()', titled)).toEqual(new LinkValue('k3m9x2pq7abc'))
+    expect(ev('link(file, "Him")', titled)).toEqual(new LinkValue('k3m9x2pq7abc', 'Him'))
+    expect(ev('file.toString()', titled)).toBe('[[UP-001 - Abdul]]')
+    // One with no id yet links by its title.
+    expect(ev('file.asLink()', scope({}, { file: new FileValue({ ...record, basename: 'plan-file', title: 'Plan' }) }))).toEqual(new LinkValue('Plan'))
+  })
+
   it('file fields', () => {
     expect(ev('file.name')).toBe('Textbook Notes')
     expect(ev('file.basename')).toBe('Textbook Notes')

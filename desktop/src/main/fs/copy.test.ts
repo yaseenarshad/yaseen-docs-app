@@ -20,6 +20,20 @@ let cleanup: () => Promise<void>
 beforeAll(async () => ({ root, cleanup } = await makeFixture()))
 afterAll(() => cleanup())
 
+// The id sweep reaching a folder first, between its `mkdir` and its `.folder.md`: `afterMkdir` runs once, after the next `mkdir`.
+let afterMkdir: ((dir: string) => Promise<void>) | undefined
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const m = await importOriginal<typeof import('node:fs/promises')>()
+  const mkdir = async (...args: Parameters<typeof m.mkdir>) => {
+    const made = await m.mkdir(...args)
+    const hook = afterMkdir
+    afterMkdir = undefined
+    await hook?.(String(args[0]))
+    return made
+  }
+  return { ...m, mkdir: mkdir as typeof m.mkdir }
+})
+
 const code = async (p: Promise<unknown>) => (await failure(p)).code
 const exists = async (p: string) => stat(p).then(() => true, () => false)
 
@@ -223,6 +237,16 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     for (const [rel, content] of Object.entries(UPWORK_FILES)) expect(await read(path.join(from, rel))).toBe(content)
   })
 
+  it('a `.folder.md` already in the copy when its own is written (the id sweep saw the folder first) ends up holding the copy\u2019s id, title and settings, and the copy is whole', async () => {
+    const parent = await folder('d21-folder-swept', { [`upwork-2026/${FOLDER_SETTINGS_FILE}`]: UPWORK_FILES[FOLDER_SETTINGS_FILE], 'upwork-2026/cv.pdf': 'pdf' })
+    afterMkdir = (dir) => writeFile(path.join(dir, FOLDER_SETTINGS_FILE), '---\nid: sweptsweptsw\n---\n')
+    const { to } = await copyEntry(path.join(parent, 'upwork-2026'), parent)
+    const id = String((await propertiesOf(path.join(to, FOLDER_SETTINGS_FILE))).id)
+    expect(id).not.toBe('sweptsweptsw')
+    expect(await read(path.join(to, FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${id}\ntitle: Upwork 2026 copy\nfolder_settings:\n  views: []\n---\n`)
+    expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, 'cv.pdf'])
+  })
+
   it('a second copy of the same folder counts on, `<title> copy 2`, because a folder’s name has no id to keep two copies apart', async () => {
     const parent = await folder('d21-folder-twice', { [`upwork-2026/${FOLDER_SETTINGS_FILE}`]: UPWORK_FILES[FOLDER_SETTINGS_FILE] })
     const from = path.join(parent, 'upwork-2026')
@@ -249,6 +273,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     const name = (await copyEntry(path.join(parent, 'long'), parent)).to // the first copy's name is free: the original was named outside the app
     const err = await failure(copyEntry(path.join(parent, 'long'), parent))
     expect(err.code).toBe('ALREADY_EXISTS')
+    expect(err.message).toBe("this folder's name is too long to copy beside it")
     expect(err.path).toBe(name)
     expect(await names(parent)).toEqual([path.basename(name), 'long'])
   })

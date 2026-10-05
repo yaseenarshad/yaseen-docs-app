@@ -14,7 +14,7 @@ import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValue
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
 import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
-import { dirname, relTo } from '../lib/paths'
+import { basename, dirname, relTo } from '../lib/paths'
 import { transformFile, type ContentTransform } from '../views/writeProperty'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
@@ -22,6 +22,12 @@ export function folderRecord(folders: readonly IndexRecord[], dir: string): Inde
   const path = folderSettingsPath(dir)
   return folders.find((r) => r.path === path)
 }
+
+/** A folder's title (YAZ-2420 🔒 D14): its settings record's, else, while it has no `.folder.md`, its directory's name. */
+export const folderTitle = (folders: readonly IndexRecord[], dir: string): string => folderRecord(folders, dir)?.title ?? basename(dir)
+
+/** The settings records by the directory each is the folder of. */
+export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))
 
 /** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`

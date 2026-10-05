@@ -40,7 +40,7 @@ export const CONTRACT = {
   readPdf: invoke<[path: string], PdfResponse>('fs:read-pdf', 1),
   readImage: invoke<[path: string], ImageResponse>('fs:read-image', 1),
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
-  createDir: invoke<[req: string | CreateDirRequest], CreateDirResponse>('fs:create-dir', 1),
+  createDir: invoke<[req: CreateDirRequest], CreateDirResponse>('fs:create-dir', 1),
   createFile: invoke<[req: string | CreateFileRequest], CreateFileResponse>('fs:create-file', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),

@@ -1,6 +1,5 @@
 import { useCallback, useRef } from 'react'
-import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { pageLabel, usePathTitles, type PathTitles } from '../lib/pageLabel'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 
 /** What the sheet is about to delete; counts come from the caller (C3) so this stays pure. */
@@ -42,8 +41,8 @@ export function deleteConfirmMessage({ path, kind, children, backlinks }: Delete
 
 interface ConfirmDeleteProps {
   target: DeleteTarget
-  /** The window's index snapshot (YAZ-2420 🔒 D14): what the copy names, it names by title. Absent, by file name. */
-  indexSource?: WikilinkResolveSource
+  /** The window's titles (YAZ-2420 🔒 D14): what the copy names, it names by title. */
+  titles: PathTitles
   /** `confirmDelete` is cleared when the user ticks "Don't ask me again" (GRO-2272 `C4-`). */
   onConfirm: (dontAskAgain: boolean) => void
   onCancel: () => void
@@ -58,8 +57,7 @@ interface ConfirmDeleteProps {
  * restore behind it. Hence initial focus lands on **Cancel**, not Delete — a stray Enter
  * arriving from the tree must not destroy anything.
  */
-export function ConfirmDelete({ target, indexSource, onConfirm, onCancel }: ConfirmDeleteProps) {
-  const titles = usePathTitles(indexSource)
+export function ConfirmDelete({ target, titles, onConfirm, onCancel }: ConfirmDeleteProps) {
   const dontAskRef = useRef<HTMLInputElement>(null)
   const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])
   return (

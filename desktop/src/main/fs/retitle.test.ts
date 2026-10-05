@@ -1,11 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { isNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
+import { giveId } from '../vaultIndex/idSweep'
 import { retitle } from './retitle'
 import { failure } from './testFixture'
+
+// A pass-through spy: one test has the id sweep reach a note between retitle's read and `giveId`'s.
+vi.mock('../vaultIndex/idSweep', async (importOriginal) => {
+  const m = await importOriginal<typeof import('../vaultIndex/idSweep')>()
+  return { ...m, giveId: vi.fn(m.giveId) }
+})
 
 // The one retitle operation (YAZ-2420 🔒 D16): scenario tables B and C of the decision record.
 
@@ -59,8 +66,22 @@ describe('retitle: a note (table B)', () => {
     const broken = '---\nid: [unclosed\n---\nbody\n'
     const old = await note('Plan.md', broken)
     const err = await failure(retitle(root, { path: old, title: 'Big Plan' }))
-    expect(err.message).toMatch(/properties .*not parse/)
+    expect(err.message).toBe("this note's properties do not parse")
     expect(await read('Plan.md')).toBe(broken)
+    expect(await readdir(root)).toEqual(['Plan.md'])
+  })
+
+  it('a note that changes on disk as it is given its id: refused, and nothing is written or renamed', async () => {
+    const old = await note('Plan.md', '---\nstatus: new\n---\n')
+    const swept = `---\nstatus: new\nid: ${ID}\n---\n`
+    const real = vi.mocked(giveId).getMockImplementation()!
+    vi.mocked(giveId).mockImplementationOnce(async (...args) => {
+      await writeFile(old, swept)
+      return real(...args)
+    })
+    const err = await failure(retitle(root, { path: old, title: 'Big Plan' }))
+    expect(err.code).toBe('CONFLICT')
+    expect(await read('Plan.md')).toBe(swept)
     expect(await readdir(root)).toEqual(['Plan.md'])
   })
 

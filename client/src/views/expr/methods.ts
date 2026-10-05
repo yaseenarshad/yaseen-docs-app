@@ -168,7 +168,7 @@ const LINK: Table<LinkValue> = {
 const trimSlashes = (s: string) => s.replace(/^\/+|\/+$/g, '')
 
 const FILE: Table<FileValue> = {
-  asLink: (f, [d]) => new LinkValue(f.record.basename, d == null ? undefined : render(d)),
+  asLink: (f, [d]) => new LinkValue(f.record.id ?? f.record.title, d == null ? undefined : render(d)),
   hasProperty: (f, [n]) => Object.hasOwn(f.record.properties, needString('hasProperty', n)),
   hasTag: (f, tags) =>
     tags.some(t => {

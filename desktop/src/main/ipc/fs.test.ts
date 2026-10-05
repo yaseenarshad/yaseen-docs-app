@@ -353,7 +353,7 @@ describe('registerFsIpc', () => {
       senderWinId = id
     }
     const adopted = (at: string) => stat(path.join(at, VAULT_CONFIG_DIR)).then((st) => st.isDirectory(), () => false)
-    const create = (p: string) => registered(CONTRACT.createDir.channel)({ sender: {} }, p)
+    const create = (p: string) => registered(CONTRACT.createDir.channel)({ sender: {} }, { path: p })
     const settingsIn = (dir: string) => readFile(path.join(dir, FOLDER_SETTINGS_FILE), 'utf8')
     const ONLY_ID = /^---\nid: [0-9a-z]{12}\n---\n$/
 

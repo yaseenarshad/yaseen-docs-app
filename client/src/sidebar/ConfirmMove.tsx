@@ -4,8 +4,7 @@
  * never asks. The LOCKED copy lives in the pure functions; the component stays trivial.
  */
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { pageLabel, usePathTitles } from '../lib/pageLabel'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import type { LeftBehind, Move } from '../links/shortcuts'
 
@@ -31,8 +30,8 @@ export function removeShortcutConfirmMessage(note: string, folder: string, folde
 type ConfirmMoveProps = {
   /** What would be cleared (`valuesLeftBehind` / `valuesLeftByShortcut`); its folders are named by their directory. */
   lost: LeftBehind
-  /** The window's index snapshot (YAZ-2420 🔒 D14): what the copy names, it names by title. Absent, by file name. */
-  indexSource?: WikilinkResolveSource
+  /** The window's titles (YAZ-2420 🔒 D14): what the copy names, it names by title. */
+  titles: PathTitles
   onConfirm: () => void
   onCancel: () => void
 } & (
@@ -52,8 +51,7 @@ type ConfirmMoveProps = {
  * are bound to the sheet (`keys="sheet"`), `ConfirmRename`'s rule: a keystroke can open it — Enter
  * on a menu item — and must not be the one that confirms it. Cancel takes the focus.
  */
-export function ConfirmMove({ lost, indexSource, onConfirm, onCancel, ...ask }: ConfirmMoveProps) {
-  const titles = usePathTitles(indexSource)
+export function ConfirmMove({ lost, titles, onConfirm, onCancel, ...ask }: ConfirmMoveProps) {
   const folders = lost.folders.map((dir) => pageLabel(dir, true, titles))
   const text =
     'moves' in ask

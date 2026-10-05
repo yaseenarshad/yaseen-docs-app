@@ -1,6 +1,7 @@
 import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { mintNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
+import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { typedFolders } from './engine'
 
@@ -46,13 +47,14 @@ export function folderPath(parent: string, title: string): string {
 
 /**
  * Create `<root>/<folder>` level by level (existing levels tolerated); resolves the absolute dir.
- * `titled` when `folder` is typed text and not a path on disk: each level is then a folder's title.
- * A level that names a folder already there, by the index as it stands, is that folder
+ * `folders`, the index's as it stands, when `folder` is typed text and not a path on disk: each
+ * level is then a folder's title. A level that names a folder already there is that folder
  * (`typedFolders`, YAZ-2478); only one that names none is made, as "New folder" makes it
  * (`folderPath`). The dir resolved is the one that was reached.
  */
-export async function ensureFolder(root: string, folder: string, titled = false): Promise<string> {
-  const held = titled ? typedFolders((await api.index(root)).folders) : undefined
+export async function ensureFolder(root: string, folder: string, folders?: readonly IndexRecord[]): Promise<string> {
+  const titled = folders !== undefined
+  const held = titled ? typedFolders(folders) : undefined
   let dir = root
   for (const segment of folder.split('/').filter((s) => s !== '')) {
     const found = held?.(dir.slice(root.length + 1), segment)
@@ -62,7 +64,7 @@ export async function ensureFolder(root: string, folder: string, titled = false)
     }
     dir = titled ? folderPath(dir, segment) : `${dir}/${segment}`
     try {
-      await api.createDir(titled ? { path: dir, title: segment } : dir)
+      await api.createDir(titled ? { path: dir, title: segment } : { path: dir })
     } catch (err) {
       if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
     }

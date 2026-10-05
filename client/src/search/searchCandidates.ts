@@ -13,9 +13,9 @@
  * gets a row under its own title, and duplicates are told apart by the folder label.
  */
 import type { IndexRecord } from '@shared/types'
-import { pageLabel, type PathTitles } from '../lib/pageLabel'
-import { dirname, relTo } from '../lib/paths'
+import { basename, relTo } from '../lib/paths'
 import { matchLinkCandidates } from '../links/completion'
+import { foldersByDir } from '../links/shortcuts'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {
@@ -53,20 +53,21 @@ export function searchCandidates(records: readonly IndexRecord[]): SearchCandida
 }
 
 /**
- * One row per folder in the loaded tree (🔒 D1, YAZ-1491): matched by its own title (`titles`,
- * YAZ-2420 🔒 D14; its directory's name when it has none), labelled by its parent. `dirs` are
+ * One row per folder in the loaded tree (🔒 D1, YAZ-1491): matched by its own title (YAZ-2420
+ * 🔒 D14; its directory's name when it has none), labelled by its parent. `dirs` are
  * ABSOLUTE paths in tree order (`allDirs`, treeState.ts), so a folder's row sits above its
  * children's — and, spliced ahead of `searchCandidates`, above any note that ties with it in a
  * rank bucket. `folder` follows `IndexRecord.folder`: root-relative, `/`
- * separated, `''` directly under the root. A folder's id is its settings record's (`folders`).
+ * separated, `''` directly under the root. A folder's title and id are its settings record's (`folders`).
  */
-export function folderCandidates(root: string, dirs: readonly string[], titles: PathTitles, folders: readonly IndexRecord[] = []): SearchCandidate[] {
-  const ids = new Map(folders.map((settings) => [dirname(settings.path), settings.id]))
+export function folderCandidates(root: string, dirs: readonly string[], folders: readonly IndexRecord[]): SearchCandidate[] {
+  const settings = foldersByDir(folders)
   return dirs.map((dir) => {
     const rel = relTo(root, dir)
     const cut = rel.lastIndexOf('/')
-    const name = pageLabel(dir, true, titles)
-    return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: cut === -1 ? '' : rel.slice(0, cut), id: ids.get(dir) }
+    const held = settings.get(dir)
+    const name = held?.title ?? basename(dir)
+    return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: cut === -1 ? '' : rel.slice(0, cut), id: held?.id }
   })
 }
 

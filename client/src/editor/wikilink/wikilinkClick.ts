@@ -18,8 +18,9 @@
  * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`,
  * the Files & Links "default location for new notes" setting read at CLICK time; C2-,
  * GRO-2240), then opened by the same gesture; failures surface via `nav.onNotice` (App's
- * passive link-notice), never a dialog. A click while its note is being made does nothing
- * (YAZ-2478): two notes of one title are two files, so the disk refuses no second one.
+ * passive link-notice), never a dialog. A click while its note is being made does nothing, and
+ * one after it was made, before the index holds it, opens that note (YAZ-2478): two notes of one
+ * title are two files, so the disk refuses no second one.
  * Two more notices (F2, GRO-2197) keep otherwise
  * invisible outcomes visible: a click during the pre-index window (nothing resolvable yet)
  * says the index is still loading, and a ⌘-click that CREATES a note names it — the new page
@@ -83,8 +84,8 @@ export function wikilinkInnerAt(doc: ProseNode, pos: number): string | null {
 }
 
 export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource) {
-  /** The dead links whose note is being made (YAZ-2478): a click on one makes nothing more. */
-  const making = new Set<string>()
+  /** The dead links whose note is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
+  const making = new Map<string, string | null>()
   return $prose(
     () =>
       new Plugin({
@@ -131,12 +132,16 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
                 return true
               }
               const path = resolve(page)
-              if (path !== null) open(path)
-              else if (isNoteId(page)) nav.onNotice('That note no longer exists')
-              else if (!making.has(page)) {
-                making.add(page)
-                void createFromLink(nav.root, inner, nav.createFolder()).then((result) => {
-                  making.delete(page)
+              const made = making.get(page)
+              if (path !== null) {
+                making.delete(page)
+                open(path)
+              } else if (isNoteId(page)) nav.onNotice('That note no longer exists')
+              else if (made === undefined) {
+                making.set(page, null)
+                void createFromLink(nav.root, inner, nav.createFolder(), undefined, source.folders).then((result) => {
+                  if (result.status === 'created') making.set(page, result.path)
+                  else making.delete(page)
                   if (result.status === 'error') nav.onNotice(result.message)
                   else if (result.status === 'created') {
                     open(result.path)
@@ -145,7 +150,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
                     if (background) nav.onNotice(`Created "${page}" in a background tab`)
                   }
                 })
-              }
+              } else if (made !== null) open(made)
               return true
             },
           },

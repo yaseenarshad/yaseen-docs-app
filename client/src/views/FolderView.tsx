@@ -30,6 +30,7 @@ import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
+import { usePathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
@@ -67,7 +68,7 @@ export interface FolderViewProps {
   newNoteFolderFor?: (sourcePath: string) => string
   onNotice?: (message: string) => void
   /** A title commit — the FOLDER's own (D9), or a row's from a table's Name cell (YAZ-2420 🔒 D19) — through App's one rename door. */
-  onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void
+  onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
 }
@@ -118,6 +119,7 @@ export function FolderView({
   onChangeCommentsOrder,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
+  const titles = usePathTitles(source)
 
   /** Where the settings live (D1) — and the file every write below goes to, created by the first one. */
   const file = folderSettingsPath(path)
@@ -323,7 +325,7 @@ export function FolderView({
         writeSettings: commitSettings,
       }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     valueCount: (key) => notesHolding(feed.records, id, key).length,
-    retitle: (note, title) => onRetitle?.(note, title, 'file'),
+    retitle: (note, title) => onRetitle(note, title, 'file'),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,
@@ -339,7 +341,7 @@ export function FolderView({
     // the table's sticky header finds the scroller it bridges to (YAZ-1151).
     <div className="editor-host">
       <div className="page-header">
-        <PageTitle path={path} kind="dir" source={source} onRetitle={(title) => onRetitle?.(path, title, 'dir')} />
+        <PageTitle path={path} kind="dir" titles={titles} onRetitle={(title) => onRetitle(path, title, 'dir')} />
         {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} />}
       </div>
       <section className="folder-view">

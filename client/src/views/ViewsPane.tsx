@@ -11,7 +11,7 @@ import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeView
 import { type Group, type Row, propertyKeys, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderSettings } from './folderSettings'
-import { type NewNoteSeed, deriveSeed, freeName } from './newNote'
+import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -139,6 +139,12 @@ function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number
  * for unknown view types. Only the active tab and the search text are component state —
  * everything else is the file.
  */
+/** The first free name for a new view: `base`, `base 2`, `base 3`… (`taken` = the views' names). */
+export function freeName(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
+}
+
 export function ViewsPane({ parsed, onChange, root, folderPath, records, properties = null, onOpenFile, folder }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:

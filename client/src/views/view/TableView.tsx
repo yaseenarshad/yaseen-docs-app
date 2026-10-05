@@ -1,8 +1,8 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
-import { basenameCandidates } from '../../links/completion'
-import { belongsToBasenames } from '../../links/folderLinks'
+import { titleCandidates } from '../../links/completion'
+import { belongsToTitles } from '../../links/folderLinks'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Resolver, type Value, render, typeOf } from '../expr'
 import type { ColumnDecl, FolderSettings } from '../folderSettings'
@@ -226,11 +226,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
-  const basenames = useMemo(() => basenameCandidates(vaultRecords), [vaultRecords])
+  const titles = useMemo(() => titleCandidates(vaultRecords), [vaultRecords])
   // Relation columns narrow the link picker to the notes in the FOLDER the target names
-  // (YAZ-2290 D10: `belongsToBasenames`); a target naming no folder falls back to all basenames.
+  // (YAZ-2290 D10: `belongsToTitles`); a target naming no folder falls back to all titles.
   const linkNames = useMemo(
-    () => typings.map((t) => (t?.target !== undefined ? belongsToBasenames(vaultRecords, vaultFolders, resolveLink, root, t.target) : null)),
+    () => typings.map((t) => (t?.target !== undefined ? belongsToTitles(vaultRecords, vaultFolders, resolveLink, root, t.target) : null)),
     [typings, vaultRecords, vaultFolders, resolveLink, root],
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
@@ -506,6 +506,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     return (
                       <td
                         key={key}
+                        // `view-table__name` has no style: the tests and the end-to-end specs find the Name cell by it.
                         className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
                         style={frozenStyle(c)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
@@ -547,7 +548,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                             value={v}
                             editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
                             options={typings[c]?.options}
-                            basenames={linkNames[c] ?? basenames}
+                            titles={linkNames[c] ?? titles}
                             resolve={resolve}
                             onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
                           />

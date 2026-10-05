@@ -17,7 +17,8 @@
  * Invalid names and create failures come back as `error` for the caller's passive notice
  * (App's link-notice).
  */
-import type { SettingsState } from '@shared/types'
+import type { IndexRecord, SettingsState } from '@shared/types'
+import { api } from '../../api'
 import { createNote, ensureFolder } from '../../views/scaffold'
 import { validateEntryName } from '../../sidebar/createEntry'
 import { linkPageName } from './wikilinkPlugin'
@@ -72,15 +73,16 @@ export function planLinkCreation(target: string, base = ''): { folder: string; t
  * Create the page behind raw `[[inner]]` under `root` — bare targets under `base` — and resolve where to open (see module doc).
  * It is born like every note in that folder (`createNote`): with the folder's `.template.md`.
  * `id` is for the picker's Create row (YAZ-2293), which has already written `[[id]]` and needs the
- * page born with it; a click on a name link passes none and one is made for it.
+ * page born with it; a click on a name link passes none and one is made for it. `folders` are the
+ * index's, for a pathed target's folders; a caller that holds none has them read.
  */
-export async function createFromLink(root: string, inner: string, base = '', id?: string): Promise<CreateFromLinkResult> {
+export async function createFromLink(root: string, inner: string, base = '', id?: string, folders?: readonly IndexRecord[]): Promise<CreateFromLinkResult> {
   const target = linkPageName(inner)
   if (target === '') return { status: 'noop' }
   const planned = planLinkCreation(target, base)
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
-    const dir = await ensureFolder(root, planned.folder, planned.titled)
+    const dir = await ensureFolder(root, planned.folder, planned.titled ? folders ?? (await api.index(root)).folders : undefined)
     return { status: 'created', path: await createNote(dir, planned.title, undefined, id) }
   } catch (err) {
     return { status: 'error', message: `Can't create "${target}": ${err instanceof Error ? err.message : String(err)}` }

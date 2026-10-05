@@ -6,14 +6,14 @@
  * asks through `ConfirmMove` (D21). The sheet itself lands with YAZ-888; the
  * LOCKED copy lives here first, `deleteConfirmMessage`'s idiom, so the component stays trivial.
  */
-import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { pageLabel, usePathTitles } from '../lib/pageLabel'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 
-/** The LOCKED copy (⚡ YAZ-888): both spellings, the honest count, and no promise about nothing. */
-export function renameConfirmMessage(oldName: string, newName: string, count: number): string {
-  const links = count === 0 ? 'No other notes link to it.' : `Links in ${count} ${count === 1 ? 'note' : 'notes'} will be updated.`
+/** The LOCKED copy (⚡ YAZ-888): both spellings, the honest count, and no promise about nothing. A title edit counts no id link (none is rewritten), so its zero says only that. */
+export function renameConfirmMessage(oldName: string, newName: string, count: number, titleEdit: boolean): string {
+  const none = titleEdit ? 'No links need updating.' : 'No other notes link to it.'
+  const links = count === 0 ? none : `Links in ${count} ${count === 1 ? 'note' : 'notes'} will be updated.`
   return `Rename '${oldName}' to '${newName}'? ${links}`
 }
 
@@ -38,8 +38,8 @@ type ConfirmRenameProps = {
   kind: 'file' | 'dir'
   /** The honest N: `countLinkReferences` over the window's own index snapshot. */
   count: number
-  /** The window's index snapshot (YAZ-2420 🔒 D14): what the copy names, it names by title. Absent, by file name. */
-  indexSource?: WikilinkResolveSource
+  /** The window's titles (YAZ-2420 🔒 D14): what the copy names, it names by title. */
+  titles: PathTitles
   onConfirm: () => void
   onCancel: () => void
 } & RenameTo
@@ -60,12 +60,11 @@ type ConfirmRenameProps = {
  * confirms before the user has read a word (the e2e caught exactly that). Bound here, the sheet
  * only ever hears keys from inside itself, which is where focus is: Cancel takes it on mount.
  */
-export function ConfirmRename({ oldPath, kind, count, indexSource, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
-  const titles = usePathTitles(indexSource)
+export function ConfirmRename({ oldPath, kind, count, titles, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
   return (
     <ConfirmSheet
       labelId="confirm-rename-text"
-      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count)}
+      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count, to.title !== undefined)}
       confirmLabel="Rename"
       keys="sheet"
       onConfirm={onConfirm}

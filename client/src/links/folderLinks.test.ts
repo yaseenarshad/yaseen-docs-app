@@ -10,7 +10,7 @@ import type { IndexRecord, TreeNode } from '@shared/types'
 import { fetchTree } from '../lib/treeFeed'
 import { resolverFor } from '../views/engine'
 import { linkCandidates, matchLinkCandidates } from './completion'
-import { belongsToBasenames, folderLinkCandidates, folderResolver, linkResolver, pageResolver, vaultDirs } from './folderLinks'
+import { belongsToTitles, folderLinkCandidates, folderResolver, linkResolver, pageResolver, vaultDirs } from './folderLinks'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -113,6 +113,15 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     const link = linkResolver(records, '/vault', ['/vault/my-folder'], folders)
     expect(link('My Folder/Page')).toBe('/vault/my-folder/page-k3m9x2pq7abc.md')
     expect(pageResolver(records, folders, '/vault', link)('[[My Folder/Page]]')?.record).toBe(records[0])
+  })
+
+  it('E: `[[My Folder/Old Clients]]` is the folder titled Old Clients in the folder titled My Folder, as `[[My Folder/Page]]` is the note (YAZ-2478)', () => {
+    const folders = [rec('/vault/my-folder/.folder.md', { title: 'My Folder' }), rec('/vault/my-folder/clients/.folder.md', { title: 'Old Clients' })]
+    const resolve = linkResolver([], '/vault', ['/vault/my-folder', '/vault/my-folder/clients', '/vault/my-folder/plain'], folders)
+    expect(resolve('[[My Folder/Old Clients]]')).toBe('/vault/my-folder/clients')
+    expect(resolve('my folder/clients')).toBe('/vault/my-folder/clients') // a level by its directory's name
+    expect(resolve('My Folder/plain')).toBe('/vault/my-folder/plain') // a folder with no settings file, by its name
+    expect(resolve('My Folder/Nowhere')).toBeNull()
   })
 
   it('two folders with one title: the shallowest', () => {
@@ -236,7 +245,7 @@ describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)
   })
 })
 
-describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', () => {
+describe('belongsToTitles: a link column narrowed to the notes in a FOLDER', () => {
   const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 
   /** A vault under its own root: People holds two notes and a subfolder's one, Empty holds none. */
@@ -250,7 +259,7 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
     ]
     vi.mocked(api.tree).mockResolvedValueOnce({ root, tree: [dir(`${root}/Empty`), dir(`${root}/People`, [dir(`${root}/People/Teams`)])], generatedAt: 1 })
     await fetchTree(root)
-    return { records, names: (target) => belongsToBasenames(records, [], linkResolver(records, root, vaultDirs(root)), root, target).map((c) => c.name) }
+    return { records, names: (target) => belongsToTitles(records, [], linkResolver(records, root, vaultDirs(root)), root, target).map((c) => c.name) }
   }
   const ALL = ['Empty Note', 'KPIs', 'Alice', 'Bob', 'Core']
 
@@ -266,7 +275,7 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
     expect(names('[[People]]')).toEqual(['Alice', 'Bob', 'Core'])
     expect(names('People')).toEqual(['Alice', 'Bob', 'Core']) // a bare name is the same target
     expect(names('[[People/Teams]]')).toEqual(['Core'])
-    expect(belongsToBasenames(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([NOTE_ID, 'Bob', 'Core'])
+    expect(belongsToTitles(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([NOTE_ID, 'Bob', 'Core'])
   })
 
   it("a note that is in the target folder by a SHORTCUT is offered with the ones that live there (D2)", async () => {
@@ -275,9 +284,9 @@ describe('belongsToBasenames: a link column narrowed to the notes in a FOLDER', 
     const folders = [rec('/shortcut/People/.folder.md', { id: FOLDER_ID })]
     const all = [...records, shortcut].sort((a, b) => (a.path < b.path ? -1 : 1))
     const resolve = linkResolver(all, '/shortcut', vaultDirs('/shortcut'), folders)
-    expect(belongsToBasenames(all, folders, resolve, '/shortcut', '[[People]]').map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
+    expect(belongsToTitles(all, folders, resolve, '/shortcut', '[[People]]').map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
     // The folder's id names it too (YAZ-2293): a target written by id narrows the same way.
-    expect(belongsToBasenames(all, folders, resolve, '/shortcut', `[[${FOLDER_ID}]]`).map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
+    expect(belongsToTitles(all, folders, resolve, '/shortcut', `[[${FOLDER_ID}]]`).map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
   })
 
   it('falls back to ALL notes when the target is no folder, or the folder is empty', async () => {

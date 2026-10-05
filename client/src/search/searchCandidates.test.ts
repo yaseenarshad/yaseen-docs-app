@@ -6,10 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { pathTitles } from '../lib/pageLabel'
 import { SEARCH_CAP, folderCandidates, searchCandidates, searchRows, searchTitles } from './searchCandidates'
-
-const NO_TITLES = pathTitles([], [])
 
 const rec = (path: string, aliases: string[] = [], title?: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -78,21 +75,21 @@ describe('searchCandidates', () => {
 
 describe('folderCandidates (🔒 D1, YAZ-1491)', () => {
   it('one `dir` row per folder: matched by its own name, carrying its own path', () => {
-    expect(folderCandidates('/vault', ['/vault/Archive'], NO_TITLES)).toEqual([
+    expect(folderCandidates('/vault', ['/vault/Archive'], [])).toEqual([
       { kind: 'dir', name: 'Archive', lower: 'archive', label: 'Archive', path: '/vault/Archive', folder: '' },
     ])
   })
 
   it('E: a folder is matched on its title and labelled with it; its parent stays a path (YAZ-2420 D14)', () => {
-    const titles = pathTitles([], [{ path: '/vault/hiring/upwork-2026/.folder.md', title: 'Upwork 2026' } as IndexRecord])
-    expect(folderCandidates('/vault', ['/vault/hiring', '/vault/hiring/upwork-2026'], titles)).toEqual([
+    const folders = [{ path: '/vault/hiring/upwork-2026/.folder.md', title: 'Upwork 2026' } as IndexRecord]
+    expect(folderCandidates('/vault', ['/vault/hiring', '/vault/hiring/upwork-2026'], folders)).toEqual([
       { kind: 'dir', name: 'hiring', lower: 'hiring', label: 'hiring', path: '/vault/hiring', folder: '' },
       { kind: 'dir', name: 'Upwork 2026', lower: 'upwork 2026', label: 'Upwork 2026', path: '/vault/hiring/upwork-2026', folder: 'hiring' },
     ])
   })
 
   it('a nested folder is labelled by its ROOT-RELATIVE parent, the way IndexRecord.folder is', () => {
-    expect(folderCandidates('/vault', ['/vault/A', '/vault/A/B', '/vault/A/B/C'], NO_TITLES).map((c) => [c.name, c.folder])).toEqual([
+    expect(folderCandidates('/vault', ['/vault/A', '/vault/A/B', '/vault/A/B/C'], []).map((c) => [c.name, c.folder])).toEqual([
       ['A', ''],
       ['B', 'A'],
       ['C', 'A/B'],
@@ -100,11 +97,11 @@ describe('folderCandidates (🔒 D1, YAZ-1491)', () => {
   })
 
   it('tolerates a trailing slash on the root', () => {
-    expect(folderCandidates('/vault/', ['/vault/A/B'], NO_TITLES).map((c) => [c.name, c.folder])).toEqual([['B', 'A']])
+    expect(folderCandidates('/vault/', ['/vault/A/B'], []).map((c) => [c.name, c.folder])).toEqual([['B', 'A']])
   })
 
   it('no folders, no rows', () => {
-    expect(folderCandidates('/vault', [], NO_TITLES)).toEqual([])
+    expect(folderCandidates('/vault', [], [])).toEqual([])
   })
 })
 
@@ -126,12 +123,12 @@ describe('searchTitles', () => {
   })
 
   it('a note never matches on its folder (🔒 D3, YAZ-739); the folder itself is ONE row (🔒 D2, YAZ-1491)', () => {
-    const rows = [...folderCandidates('/vault', ['/vault/Archive'], NO_TITLES), ...searchCandidates([rec('/vault/Archive/Note.md')])]
+    const rows = [...folderCandidates('/vault', ['/vault/Archive'], []), ...searchCandidates([rec('/vault/Archive/Note.md')])]
     expect(searchTitles(rows, 'archive').map((c) => [c.kind, c.label])).toEqual([['dir', 'Archive']])
   })
 
   it('a folder and a note of the same name both match exactly — the folder first (tree order, 🔒 D1)', () => {
-    const rows = [...folderCandidates('/vault', ['/vault/CAC'], NO_TITLES), ...searchCandidates([rec('/vault/CAC.md')])]
+    const rows = [...folderCandidates('/vault', ['/vault/CAC'], []), ...searchCandidates([rec('/vault/CAC.md')])]
     expect(searchTitles(rows, 'cac').map((c) => [c.kind, c.path])).toEqual([
       ['dir', '/vault/CAC'],
       ['file', '/vault/CAC.md'],
@@ -159,7 +156,7 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   const ABDUL = `/vault/candidates/up-001-abdul-${ID}.md`
   const folders = [{ ...rec('/vault/candidates/.folder.md', [], 'Candidates 2026'), id: 'f7n2w8rt4xyz' }]
   const rows = [
-    ...folderCandidates('/vault', ['/vault/candidates'], pathTitles([], folders), folders),
+    ...folderCandidates('/vault', ['/vault/candidates'], folders),
     ...searchCandidates([{ ...rec(ABDUL, ['Abdul'], 'UP-001 - Abdul'), id: ID }, rec('/vault/k3m9 abdul notes.md'), { ...rec('/vault/plan-7tq2m8vd4xhn.md', [], 'Plan'), id: '7tq2m8vd4xhn' }]),
   ]
   const found = (query: string) => searchRows(rows, query).map((c) => [c.kind, c.label, c.path])

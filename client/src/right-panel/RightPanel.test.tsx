@@ -1,8 +1,6 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IndexRecord } from '@shared/types'
-import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { RightPanel, type RightPanelProps } from './RightPanel'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
@@ -21,6 +19,7 @@ let container: HTMLElement | null = null
 
 const base = (): RightPanelProps => ({
   root: '/v',
+  titles: new Map(),
   items: ['/v/Alpha.md', '/v/Beta.md'],
   expanded: '/v/Alpha.md',
   width: 440,
@@ -68,9 +67,7 @@ describe('RightPanel', () => {
   })
 
   it('E: a page is headed with its title; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
-    const indexSource = createWikilinkResolveSource()
-    indexSource.update(() => null, [{ path: '/v/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord])
-    const el = mount({ ...base(), items: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/Beta.md'], expanded: null, indexSource })
+    const el = mount({ ...base(), items: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/Beta.md'], expanded: null, titles: new Map([['/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul']]) })
     expect([...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)).toEqual(['UP-001 - Abdul', 'Beta'])
     expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })

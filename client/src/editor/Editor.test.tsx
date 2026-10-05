@@ -130,7 +130,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
   await settle()
   await settle()
   return container
@@ -544,6 +544,9 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.page-title__text')?.textContent).toBe('note')
     feed(source, [{ ...record(PATH), title: 'UP-001 - Abdul' }])
     expect(el.querySelector('.page-title__text')?.textContent).toBe('UP-001 - Abdul')
+    // The outline-zoom breadcrumb's first crumb reads the same title; the file name is only its history key.
+    const zoom = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.zoom
+    expect([zoom?.title(), zoom?.fileName]).toEqual(['UP-001 - Abdul', 'note.md'])
   })
 
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
@@ -576,7 +579,7 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<Editor root={vault} path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    act(() => root?.render(<Editor root={vault} path={path} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
     await settle()
     await settle()
     return container
@@ -590,7 +593,7 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<Editor root="/titled" path="/titled/upwork-2026" watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    act(() => root?.render(<Editor root="/titled" path="/titled/upwork-2026" watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
     await settle()
     await settle()
     expect(container.querySelector('.page-title__text')?.textContent).toBe('Upwork 2026')
@@ -897,8 +900,8 @@ describe('document magnification (YAZ-1410)', () => {
     const links = createWikilinkResolveSource()
     const render = (active: string, firstOpen = true) => {
       act(() => root!.render(<>
-        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>}
-        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>
+        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>}
+        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>
       </>))
     }
     render(PATH); await settle(); await settle()

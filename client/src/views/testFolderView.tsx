@@ -37,7 +37,7 @@ export function renderFolderView(props: Pick<FolderViewProps, 'path' | 'source' 
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<FolderView root="/vault" commentsOrder="oldest" onChangeCommentsOrder={() => undefined} {...props} />))
+  act(() => root?.render(<FolderView root="/vault" onRetitle={() => undefined} commentsOrder="oldest" onChangeCommentsOrder={() => undefined} {...props} />))
   return container
 }
 

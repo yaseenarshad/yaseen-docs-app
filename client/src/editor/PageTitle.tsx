@@ -14,14 +14,13 @@
  * notice — so nothing here duplicates that.
  */
 import { useRef, useState } from 'react'
-import { pageLabel, usePathTitles } from '../lib/pageLabel'
-import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 
 interface PageTitleProps {
   /** The open page; its title is what the field edits. */
   path: string
-  /** The window's index snapshot (YAZ-2420 🔒 D14): the heading shows the page's title. Absent, its file name. */
-  source?: WikilinkResolveSource
+  /** The window's titles (YAZ-2420 🔒 D14): the heading shows the page's title. */
+  titles: PathTitles
   /** Commit: the new title, straight to App's rename door (which confirms). */
   onRetitle: (title: string) => void
   /** ArrowDown out of the title: focus the editor below it. */
@@ -30,8 +29,8 @@ interface PageTitleProps {
   kind?: 'file' | 'dir'
 }
 
-export function PageTitle({ path, source, onRetitle, onArrowDown, kind = 'file' }: PageTitleProps) {
-  const title = pageLabel(path, kind === 'dir', usePathTitles(source))
+export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file' }: PageTitleProps) {
+  const title = pageLabel(path, kind === 'dir', titles)
   const [editing, setEditing] = useState(false)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused

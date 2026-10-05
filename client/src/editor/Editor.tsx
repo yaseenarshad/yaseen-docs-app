@@ -36,7 +36,7 @@ import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { ReviewsSection } from '../review/ReviewsSection'
-import { useTreeKind } from '../lib/pageLabel'
+import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
 import { appliedTheme } from '../lib/theme'
@@ -89,11 +89,10 @@ interface EditorProps {
   /**
    * A title commit (⚡ YAZ-888, YAZ-2420 🔒 D16) goes to App's ONE rename door — the one the
    * sidebar's inline rename and drag-move reach, so the name-change confirm and every failure
-   * notice come with it. Absent → the title renders and edits, but commits nothing
-   * (decoration-only mounts). A FOLDER's title (YAZ-2290 D9) says `dir`: the door counts and
+   * notice come with it. A FOLDER's title (YAZ-2290 D9) says `dir`: the door counts and
    * rewrites links by kind. A table's Name cell commits through it too (🔒 D19).
    */
-  onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void
+  onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   /**
    * This vault's GitHub sync status (YAZ-1081 3A, 🔒 D5), App-owned like `wikilinks`: ONE
    * `useGithubSync` per window feeds every mounted tab. null while the first fetch is in
@@ -169,13 +168,14 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
 function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps & { path: string }) {
   const state = useFile(path)
+  const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
     <section className="editor">
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
       )}
     </section>
   )
@@ -185,6 +185,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
 function CrepeHost({
   root,
   file,
+  titles,
   watch,
   onOpenFile,
   onOpenFileRight,
@@ -204,6 +205,7 @@ function CrepeHost({
 }: {
   root: string
   file: FileResponse
+  titles: PathTitles
   watch: WatchSource
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
@@ -214,7 +216,7 @@ function CrepeHost({
   viewOnlyLinks?: ViewOnlyLinkSource
   wikilinkCandidates?: WikilinkCandidateSource
   properties?: PropertiesResponse | null
-  onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void
+  onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
   commentsOrder: CommentsOrder
@@ -302,6 +304,9 @@ function CrepeHost({
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
   // so the caret lands where a click would put it.
   const crepeRef = useRef<ReturnType<typeof createCrepe> | null>(null)
+  // The zoom breadcrumb's first crumb (YAZ-2420 🔒 D14), read as it draws: the Crepe below is made once.
+  const titleRef = useRef('')
+  titleRef.current = pageLabel(file.path, false, titles)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
@@ -365,7 +370,7 @@ function CrepeHost({
           writeFolds()
         },
       },
-      zoom: { fileName: basename(file.path) },
+      zoom: { fileName: basename(file.path), title: () => titleRef.current },
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
       viewOnlyLinks,
@@ -499,8 +504,8 @@ function CrepeHost({
         <div className="page-header">
           <PageTitle
             path={file.path}
-            source={wikilinks}
-            onRetitle={(title) => onRetitle?.(file.path, title, 'file')}
+            titles={titles}
+            onRetitle={(title) => onRetitle(file.path, title, 'file')}
             onArrowDown={() => {
               const crepe = crepeRef.current
               if (crepe !== null) focusEditor(crepe)

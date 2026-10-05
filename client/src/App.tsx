@@ -35,7 +35,7 @@ import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
-import { isFolderPath, pageLabel, pathTitles } from './lib/pageLabel'
+import { isFolderPath, pageName, pathTitles, usePathTitles } from './lib/pageLabel'
 import { onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -121,8 +121,9 @@ export function App() {
   // vault index, so index changes restyle links live without any editor remounting. The stable
   // navigation-only source beside it is tree-derived; only the picker's rows compose both feeds.
   const [wikilinks] = useState(createWikilinkResolveSource)
+  const titles = usePathTitles(wikilinks)
   /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off the index snapshot as it stands. */
-  const nameOf = useCallback((path: string) => pageLabel(path, isFolderPath(root, path), pathTitles(wikilinks.records, wikilinks.folders)), [root, wikilinks])
+  const nameOf = useCallback((path: string) => pageName(root, path, pathTitles(wikilinks.records, wikilinks.folders)), [root, wikilinks])
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
   const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
   // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
@@ -567,7 +568,8 @@ export function App() {
         ;({ newPath, kind } = to.title === undefined ? await api.file.rename({ oldPath, newPath: to.newPath }) : await api.file.retitle({ path: oldPath, title: to.title }))
       } catch (err) {
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
-        notify(exists ? `Can't rename: "${to.title ?? nameOf(to.newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
+        const cannot = to.title === undefined ? "Can't rename" : "Can't change the title"
+        notify(exists ? `${cannot}: "${to.title ?? nameOf(to.newPath)}" already exists` : `${cannot}: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
       // A note that left a folder leaves that folder's values behind (D20).
@@ -915,7 +917,7 @@ export function App() {
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}
               onNotice={notify}
-              indexSource={wikilinks}
+              titles={titles}
               reviewState={review.inReview}
               onSetReview={review.setInReview}
             />
@@ -953,7 +955,7 @@ export function App() {
       {root !== null && rightPanel.open && (
         <RightPanel
           root={root}
-          indexSource={wikilinks}
+          titles={titles}
           items={rightPanel.items}
           expanded={rightPanel.expanded}
           width={rightPanel.width}
@@ -999,14 +1001,14 @@ export function App() {
           that would clear a folder's values asks through its own sheet (D21). */}
       {pendingRename !== null &&
         ('lost' in pendingRename ? (
-          <ConfirmMove moves={[{ oldPath: pendingRename.oldPath, newPath: pendingRename.to.newPath, kind: pendingRename.kind }]} lost={pendingRename.lost} indexSource={wikilinks} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
+          <ConfirmMove moves={[{ oldPath: pendingRename.oldPath, newPath: pendingRename.to.newPath, kind: pendingRename.kind }]} lost={pendingRename.lost} titles={titles} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
         ) : (
           <ConfirmRename
             oldPath={pendingRename.oldPath}
             {...pendingRename.to}
             kind={pendingRename.kind}
             count={pendingRename.count}
-            indexSource={wikilinks}
+            titles={titles}
             onConfirm={confirmRename}
             onCancel={() => setPendingRename(null)}
           />

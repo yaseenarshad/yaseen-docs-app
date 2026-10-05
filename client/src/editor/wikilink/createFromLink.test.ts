@@ -36,7 +36,7 @@ const holds = (...folders: Array<[folder: string, title: string]>): void => {
 beforeEach(() => {
   vi.clearAllMocks()
   holds()
-  createDir.mockImplementation(async (req) => ({ path: typeof req === 'string' ? req : req.path }))
+  createDir.mockImplementation(async (req) => ({ path: req.path }))
   createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
 })
@@ -216,7 +216,7 @@ describe('createFromLink (bridge flow)', () => {
 
   it('a bare target with a base creates the base folders level by level, as the path they are, then the file (C2-, GRO-2240)', async () => {
     await expect(createFromLink('/vault', 'Page', 'Notes/Inbox', ID)).resolves.toEqual({ status: 'created', path: `/vault/Notes/Inbox/page-${ID}.md` })
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/Notes' }, { path: '/vault/Notes/Inbox' }])
     expect(createFile).toHaveBeenCalledWith({ path: `/vault/Notes/Inbox/page-${ID}.md`, content: '---\ntitle: Page\n---\n', id: ID })
   })
 

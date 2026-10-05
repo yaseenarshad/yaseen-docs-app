@@ -9,6 +9,20 @@ import { readFile as readText, writeFile as writeText } from './file'
 import { failure, makeFixture } from './testFixture'
 import { subscribe } from './watchers'
 
+// The id sweep reaching a folder first, between its `mkdir` and its `.folder.md`: `afterMkdir` runs once, after the next `mkdir`.
+let afterMkdir: ((dir: string) => Promise<void>) | undefined
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const m = await importOriginal<typeof import('node:fs/promises')>()
+  const mkdir = async (...args: Parameters<typeof m.mkdir>) => {
+    const made = await m.mkdir(...args)
+    const hook = afterMkdir
+    afterMkdir = undefined
+    await hook?.(String(args[0]))
+    return made
+  }
+  return { ...m, mkdir: mkdir as typeof m.mkdir }
+})
+
 let root: string
 let cleanup: () => Promise<void>
 beforeAll(async () => ({ root, cleanup } = await makeFixture()))
@@ -21,7 +35,7 @@ describe('createDir', () => {
 
   it('"New folder" / "New dated folder": creates a directory born with a `.folder.md` holding only a fresh `id`, and returns its path (D13)', async () => {
     const p = path.join(root, 'NewFolder')
-    expect(await createDir(p)).toEqual({ path: p })
+    expect(await createDir({ path: p })).toEqual({ path: p })
     expect((await stat(p)).isDirectory()).toBe(true)
     expect(await readdir(p)).toEqual([FOLDER_SETTINGS_FILE])
     const id = /^---\nid: (.+)\n---\n$/.exec(await settingsIn(p))?.[1]
@@ -36,34 +50,38 @@ describe('createDir', () => {
     expect(await settingsIn(p)).toMatch(/^---\nid: [0-9a-z]{12}\ntitle: Upwork 2026\n---\n$/)
   })
 
-  it('a request with no title is the bare path: only the `id`', async () => {
-    const p = path.join(root, 'no-title')
-    await createDir({ path: p })
-    expect(await settingsIn(p)).toMatch(/^---\nid: [0-9a-z]{12}\n---\n$/)
+  it('a title that is not text is refused, and no folder is made', async () => {
     expect(await code(createDir({ path: path.join(root, 'bad-title'), title: 7 as never }))).toBe('BAD_REQUEST')
     await expect(stat(path.join(root, 'bad-title'))).rejects.toThrow()
   })
 
   it('the id is fresh, like a note born in the app: the same folder name twice is two ids', async () => {
     const [a, b] = [path.join(root, 'Zeta', 'Twin'), path.join(root, 'alpha', 'Twin')]
-    await createDir(a)
-    await createDir(b)
+    await createDir({ path: a })
+    await createDir({ path: b })
     expect(await settingsIn(a)).not.toBe(await settingsIn(b))
   })
 
   it('ALREADY_EXISTS when the path exists (dir or file), and nothing is written into the folder that was there', async () => {
-    expect(await code(createDir(path.join(root, 'alpha')))).toBe('ALREADY_EXISTS')
-    expect(await code(createDir(path.join(root, 'b.md')))).toBe('ALREADY_EXISTS')
+    expect(await code(createDir({ path: path.join(root, 'alpha') }))).toBe('ALREADY_EXISTS')
+    expect(await code(createDir({ path: path.join(root, 'b.md') }))).toBe('ALREADY_EXISTS')
     expect(await readdir(path.join(root, 'Empty'))).toEqual([])
-    expect(await code(createDir(path.join(root, 'Empty')))).toBe('ALREADY_EXISTS')
+    expect(await code(createDir({ path: path.join(root, 'Empty') }))).toBe('ALREADY_EXISTS')
     expect(await readdir(path.join(root, 'Empty'))).toEqual([])
   })
 
   it('NOT_FOUND when the parent does not exist, BAD_REQUEST / NOT_ABSOLUTE on bad input', async () => {
-    expect(await code(createDir(path.join(root, 'nope', 'child')))).toBe('NOT_FOUND')
-    expect(await code(createDir('relative/dir'))).toBe('NOT_ABSOLUTE')
+    expect(await code(createDir({ path: path.join(root, 'nope', 'child') }))).toBe('NOT_FOUND')
+    expect(await code(createDir({ path: 'relative/dir' }))).toBe('NOT_ABSOLUTE')
     expect(await code(createDir(undefined as never))).toBe('BAD_REQUEST')
-    expect(await code(createDir(42 as never))).toBe('NOT_ABSOLUTE')
+    expect(await code(createDir('/a/bare/path' as never))).toBe('BAD_REQUEST')
+  })
+
+  it('a `.folder.md` already there when the folder\u2019s own is written (the id sweep saw the folder first) ends up holding the folder\u2019s id and title', async () => {
+    const p = path.join(root, 'swept-first')
+    afterMkdir = (dir) => writeFile(path.join(dir, FOLDER_SETTINGS_FILE), '---\nid: sweptsweptsw\n---\n')
+    await createDir({ path: p, title: 'Swept First' })
+    expect(await settingsIn(p)).toMatch(/^---\nid: (?!swept)[0-9a-z]{12}\ntitle: Swept First\n---\n$/)
   })
 })
 

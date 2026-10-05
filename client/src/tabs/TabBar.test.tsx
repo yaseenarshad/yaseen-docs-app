@@ -8,8 +8,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
-import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { TabBar, type TabBarProps } from './TabBar'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
@@ -28,11 +26,11 @@ const openVsCode = vi.mocked(api.shell.openVsCode)
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(props: Omit<TabBarProps, 'root'> & Partial<Pick<TabBarProps, 'root'>>) {
+function mount(props: Omit<TabBarProps, 'root' | 'titles'> & Partial<Pick<TabBarProps, 'root' | 'titles'>>) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<TabBar root="/v" {...props} />))
+  act(() => root?.render(<TabBar root="/v" titles={new Map()} {...props} />))
   return container
 }
 
@@ -59,9 +57,8 @@ describe('TabBar', () => {
   })
 
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
-    const indexSource = createWikilinkResolveSource()
-    indexSource.update(() => null, [{ path: '/v/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord], [{ path: '/v/upwork/.folder.md', title: 'Upwork 2026' } as IndexRecord])
-    const el = mount({ tabs: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/upwork', '/v/scan.pdf'], active: '/v/scan.pdf', indexSource, ...noop, ...noNav })
+    const titles = new Map([['/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/v/upwork', 'Upwork 2026']])
+    const el = mount({ tabs: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/upwork', '/v/scan.pdf'], active: '/v/scan.pdf', titles, ...noop, ...noNav })
     expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['UP-001 - Abdul', 'Upwork 2026', 'scan.pdf'])
     expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })
@@ -217,7 +214,7 @@ describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
     ;(HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView = spy
     try {
       mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
-      act(() => root?.render(<TabBar root="/v" tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
+      act(() => root?.render(<TabBar root="/v" titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
       const activeTab = spy.mock.contexts.at(-1) as HTMLElement
       expect(activeTab.classList.contains('tabbar__tab--active')).toBe(true)
       expect(activeTab.querySelector('[role="tab"]')?.textContent).toBe('b')
@@ -460,6 +457,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     root2 = createRoot(host)
     const base: TabBarProps = {
       root: '/vault',
+      titles: new Map(),
       tabs: ['/vault/A.md', '/vault/sub/Deep Note.md'],
       active: '/vault/A.md',
       onActivate: vi.fn(),
@@ -513,9 +511,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
   it('E: the stale-tab notice names the note by its title (YAZ-2420 D14)', async () => {
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const onNotice = vi.fn()
-    const indexSource = createWikilinkResolveSource()
-    indexSource.update(() => null, [{ path: '/vault/A.md', title: 'UP-001 - Abdul' } as IndexRecord])
-    const el = mountWith({ onNotice, indexSource })
+    const el = mountWith({ onNotice, titles: new Map([['/vault/A.md', 'UP-001 - Abdul']]) })
     rightClick(tabAt(el, 0))
     act(() => itemNamed(el, 'Reveal in Finder')?.click())
     await act(async () => {

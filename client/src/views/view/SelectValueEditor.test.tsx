@@ -11,7 +11,7 @@ let redraw: (raw: unknown) => void
 const click = (element: Element | null) => act(() => (element as HTMLElement)?.click())
 function mount(raw: unknown, multiple = false, onCommit = vi.fn().mockResolvedValue(undefined)) {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
-  redraw = raw => act(() => root.render(<EditableCell propKey="Status" raw={raw} value={fromYaml(raw)} editor={multiple ? 'multi-select' : 'select'} options={['Ready', 'Later']} basenames={[]} onCommit={onCommit} />))
+  redraw = raw => act(() => root.render(<EditableCell propKey="Status" raw={raw} value={fromYaml(raw)} editor={multiple ? 'multi-select' : 'select'} options={['Ready', 'Later']} titles={[]} onCommit={onCommit} />))
   redraw(raw)
   click(host.querySelector('[data-edit]'))
   return onCommit

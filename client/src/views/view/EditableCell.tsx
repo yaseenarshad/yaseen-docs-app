@@ -18,8 +18,8 @@ export interface EditableCellProps {
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
   editor: EditorKind | null
-  /** Index titles for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the title (`basenameCandidates`). */
-  basenames: readonly LinkCandidate[]
+  /** Index titles for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the title (`titleCandidates`). */
+  titles: readonly LinkCandidate[]
   /**
    * The ONE write: the host's own. A folder's views write its block of the note
    * (`FolderHost.writeValues`, D19); the properties panel writes the row's group and moves its
@@ -42,7 +42,7 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ propKey, raw, value, editor, basenames, onCommit, options = [], resolve }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -152,13 +152,13 @@ export function EditableCell({ propKey, raw, value, editor, basenames, onCommit,
         <ChipsEditor
           initial={Array.isArray(current) ? current.map(String) : text === '' ? [] : [text]}
           label={label}
-          basenames={editor === 'multi-link' ? basenames : undefined}
+          titles={editor === 'multi-link' ? titles : undefined}
           resolve={resolve}
           onCommit={commit}
           onDone={close}
         />
       ) : editor === 'link' ? (
-        <LinkEditor initial={text} basenames={basenames} label={label} onCommit={commit} onDone={close} />
+        <LinkEditor initial={text} titles={titles} label={label} onCommit={commit} onDone={close} />
       ) : (
         <TextField
           className="view-input view-cell-edit__input"
@@ -190,8 +190,8 @@ export function EditableCell({ propKey, raw, value, editor, basenames, onCommit,
 interface ChipsEditorProps {
   initial: string[]
   label: string
-  /** Present for multi-link (5E, GRO-2217): an unclosed trailing `[[fragment` offers these basenames, like LinkEditor. */
-  basenames?: readonly LinkCandidate[]
+  /** Present for multi-link (5E, GRO-2217): an unclosed trailing `[[fragment` offers these titles, like LinkEditor. */
+  titles?: readonly LinkCandidate[]
   /** A chip holding an id link READS as `[[Title]]` through this (YAZ-2293 D8); `items` — what commits — stay the stored text. */
   resolve?: Resolver
   /** The whole list, once, on commit (Enter with an empty input, or blur out of the editor). */
@@ -203,18 +203,18 @@ interface ChipsEditorProps {
  * List/tags chip editor: Enter adds the typed chip, empty Enter or blur commits, Esc cancels.
  * An untouched editor (no chip added/removed, no pending text) never commits: the seed
  * stringifies `initial`, so a no-op commit would rewrite a numeric list as strings.
- * With `basenames` (a multi-link relation column) the input completes `[[…]]` exactly like
+ * With `titles` (a multi-link relation column) the input completes `[[…]]` exactly like
  * LinkEditor — Enter picks the highlighted suggestion first, then adds the chip.
  */
-function ChipsEditor({ initial, label, basenames, resolve, onCommit, onDone }: ChipsEditorProps) {
+function ChipsEditor({ initial, label, titles, resolve, onCommit, onDone }: ChipsEditorProps) {
   const [items, setItems] = useState(initial)
   const [text, setText] = useState('')
   const [sel, setSel] = useState(0)
   const done = useRef(false)
   const dirty = useRef(false)
 
-  const fragment = basenames === undefined ? null : trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(basenames ?? [], fragment)
+  const fragment = titles === undefined ? null : trailingLinkFragment(text)
+  const matches = fragment === null ? [] : matchLinkCandidates(titles ?? [], fragment)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -327,25 +327,25 @@ function ChipsEditor({ initial, label, basenames, resolve, onCommit, onDone }: C
 
 interface LinkEditorProps {
   initial: string
-  basenames: readonly LinkCandidate[]
+  titles: readonly LinkCandidate[]
   label: string
   onCommit: (next: string) => void
   onDone: () => void
 }
 
 /**
- * Link editor: a text input whose unclosed trailing `[[fragment` offers index basenames
+ * Link editor: a text input whose unclosed trailing `[[fragment` offers index titles
  * (through the shared matcher, `links/completion.ts` — GRO-2191); ArrowUp/Down pick, Enter
  * completes to `[[id]]` — `[[basename]]` for a note without one, YAZ-2293 — (then Enter again
  * commits the string).
  */
-function LinkEditor({ initial, basenames, label, onCommit, onDone }: LinkEditorProps) {
+function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProps) {
   const [text, setText] = useState(initial)
   const [sel, setSel] = useState(0)
   const done = useRef(false)
 
   const fragment = trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(basenames, fragment)
+  const matches = fragment === null ? [] : matchLinkCandidates(titles, fragment)
 
   const finish = (commit: boolean) => {
     if (done.current) return

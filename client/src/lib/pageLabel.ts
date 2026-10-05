@@ -18,11 +18,14 @@ export function isFolderPath(root: string | null, path: string): boolean {
 export type PathTitles = ReadonlyMap<string, string>
 
 const titlesCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], PathTitles>>()
+let latest: PathTitles = new Map()
 
 /**
  * The index snapshot as `PathTitles`: a folder's record is its `.folder.md`, so its directory is the
  * key. Built once per snapshot — keyed by the identity of its two arrays, as `rowsByFolder` is —
- * because every rendered id link, each label holder and each notice asks.
+ * because every rendered id link, each label holder and each notice asks. A snapshot that changed
+ * no title keeps the Map the last one had, so a save elsewhere in the vault re-renders nothing
+ * that shows a name (YAZ-2194).
  */
 export function pathTitles(records: readonly IndexRecord[], folders: readonly IndexRecord[]): PathTitles {
   let byFolders = titlesCache.get(records)
@@ -32,7 +35,8 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
     const built = new Map<string, string>()
     for (const record of records) built.set(record.path, record.title)
     for (const folder of folders) built.set(dirname(folder.path), folder.title)
-    byFolders.set(folders, (titles = built))
+    if (built.size !== latest.size || [...built].some(([path, title]) => latest.get(path) !== title)) latest = built
+    byFolders.set(folders, (titles = latest))
   }
   return titles
 }
@@ -44,26 +48,11 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
  */
 export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : stripExt(basename(path)))
 
-const NO_TITLES: PathTitles = new Map()
+/** `pageLabel` of a path the Files tree says the kind of (`isFolderPath`). */
+export const pageName = (root: string | null, path: string, titles: PathTitles): string => pageLabel(path, isFolderPath(root, path), titles)
 
-/**
- * The source's `PathTitles`, live. A snapshot that changed no title keeps the Map it had, so a save
- * elsewhere in the vault re-renders nothing that shows a name (YAZ-2194). No source is no titles.
- */
-export function usePathTitles(source: WikilinkResolveSource | undefined): PathTitles {
-  const [titles, setTitles] = useState(() => (source === undefined ? NO_TITLES : pathTitles(source.records, source.folders)))
-  useEffect(() => {
-    if (source === undefined) return
-    const read = () =>
-      setTitles((prev) => {
-        const next = pathTitles(source.records, source.folders)
-        return next.size === prev.size && [...next].every(([path, title]) => prev.get(path) === title) ? prev : next
-      })
-    read()
-    return source.subscribe(read)
-  }, [source])
-  return titles
-}
+/** The source's `PathTitles`, live. */
+export const usePathTitles = (source: WikilinkResolveSource): PathTitles => useSyncExternalStore(source.subscribe, () => pathTitles(source.records, source.folders))
 
 /** The subscribe half of both hooks below: a tree for `root` landed. */
 const useTreeLanded = (root: string) => useCallback((poke: () => void) => onTree(root, poke), [root])
