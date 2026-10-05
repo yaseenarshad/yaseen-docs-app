@@ -18,6 +18,8 @@ import { appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, readStat
 test.describe.configure({ mode: 'serial' })
 
 const NOTE = 'Outline.md'
+/** The first crumb is the page's title (YAZ-2420 D14): for a file made outside the app, its name without the extension. */
+const TITLE = 'Outline'
 const BODY = '* Alpha parent\n  * Alpha child\n    * Alpha grandchild\n* Beta parent\n'
 
 let userData: string
@@ -51,7 +53,7 @@ test('step 1 — a click on a bullet glyph zooms into its subtree under a breadc
 
   await line(win, 'Alpha grandchild').click() // the caret in the editor, so ⌘Z below reaches it
   await glyph(win, 'Alpha child').click()
-  await expect(crumbs(win)).toHaveText([NOTE, 'Alpha parent', 'Alpha child'])
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child'])
   await expect(crumbs(win).last()).toHaveAttribute('aria-current', 'location')
   await expect(line(win, 'Alpha grandchild')).toBeVisible()
   await expect(line(win, 'Beta parent')).toBeHidden()
@@ -65,7 +67,7 @@ test('step 2 — ⌘Z reverts the zoom (the latest view action); the file crumb 
   await expect(line(win, 'Beta parent')).toBeVisible()
 
   await glyph(win, 'Alpha grandchild').click()
-  await expect(crumbs(win)).toHaveText([NOTE, 'Alpha parent', 'Alpha child', 'Alpha grandchild'])
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child', 'Alpha grandchild'])
   await crumbs(win).first().click()
   await expect(crumbs(win)).toHaveCount(0)
   await expect(line(win, 'Beta parent')).toBeVisible()
