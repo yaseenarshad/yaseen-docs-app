@@ -23,7 +23,9 @@ const MAX_KEBAB = 60
 /**
  * `title` as a path can carry it: lowercase, accents dropped, every run of anything that is not a
  * letter or a digit one hyphen, none at either end. Empty when the title has no letter or digit.
- * This is also a folder's name (🔒 D6), which carries no id.
+ * The underscores a title STARTS with are kept in front: they hold a note at the top of a list
+ * sorted by name, and the sidebar sorts by file name (🔒 D15). This is also a folder's name
+ * (🔒 D6), which carries no id.
  */
 export function kebabTitle(title: string): string {
   const kebab = title
@@ -33,10 +35,12 @@ export function kebabTitle(title: string): string {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-|-$/g, '')
-  if (kebab.length <= MAX_KEBAB) return kebab
+  if (kebab === '') return ''
+  const lead = title.trimStart().replace(/[^_][\s\S]*$/, '')
+  if (kebab.length <= MAX_KEBAB) return lead + kebab
   // One character past the limit is read too: a hyphen there means the cut falls between words.
   const end = kebab.lastIndexOf('-', MAX_KEBAB)
-  return kebab.slice(0, end === -1 ? MAX_KEBAB : end)
+  return lead + kebab.slice(0, end === -1 ? MAX_KEBAB : end)
 }
 
 /** The file name of the note titled `title` whose id is `id`; the id alone when the title has no letter or digit. */
