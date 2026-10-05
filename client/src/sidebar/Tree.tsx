@@ -1,8 +1,8 @@
 import { memo } from 'react'
 import type { TreeNode } from '@shared/types'
-import { stripExt } from '../lib/paths'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
-import { renameInputName, type EntryKind, type MenuRow } from './createEntry'
+import type { EntryKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { ShortcutIcon } from '../views/view/icons'
 import { RenameInline } from './RenameInline'
@@ -117,6 +117,8 @@ interface TreeProps {
    * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
    */
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
+  /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. The ORDER stays by file name. */
+  titles: PathTitles
   /** Favorites-only (YAZ-1766 D4): root rows reorder the list instead of moving files; nested rows do not drag. */
   reorder?: TreeReorder
   depth?: number
@@ -138,10 +140,11 @@ function TreeLevel({
   selection,
   counts,
   shortcuts,
+  titles,
   reorder,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, reorder }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -168,9 +171,9 @@ function TreeLevel({
         node.type === 'dir' ? (
           <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)} aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
             {renaming !== null && renaming.path === node.path ? (
-              // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, prefilled with the
-              // raw name — folders have no extension logic (one could be NAMED "Notes.md").
-              <RenameInline initial={node.name} indent={8 + depth * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+              // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, and what it edits is
+              // the folder's TITLE (YAZ-2420 🔒 D16).
+              <RenameInline initial={pageLabel(node.path, true, titles)} title indent={8 + depth * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
             ) : (
               <button
                 type="button"
@@ -233,19 +236,19 @@ function TreeLevel({
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
-                <span className="tree__label">{node.name}</span>
+                <span className="tree__label">{pageLabel(node.path, true, titles)}</span>
                 {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}
             {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} {...recurse} />}
           </li>
         ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) ? (
-          // Inline rename (Links E1, GRO-2194): Markdown hides its suffix and re-appends it on
-          // commit; view-only files show the full filename so their extension stays explicit.
+          // Inline rename (Links E1, GRO-2194): a note's box edits its TITLE (YAZ-2420 🔒 D16);
+          // view-only files show the full filename so their extension stays explicit.
           // The REAL row only: a second input on the note's shortcut row would take the focus,
           // and the first one's blur is its commit (YAZ-1553).
           <li key={node.path} role="treeitem">
-            <RenameInline initial={renameInputName(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+            <RenameInline initial={pageLabel(node.path, false, titles)} title={node.kind === 'markdown'} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
@@ -302,7 +305,7 @@ function TreeLevel({
                 rowReorder.drop()
               }}
             >
-              <span className="tree__label">{stripExt(node.name)}</span>
+              <span className="tree__label">{pageLabel(node.path, false, titles)}</span>
               {isShortcutRow(node) && <ShortcutIcon />}
             </button>
           </li>

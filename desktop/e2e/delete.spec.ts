@@ -19,7 +19,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, builtNote, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -82,8 +82,8 @@ test('step 1 — the menu offers Delete, and it opens the confirm sheet without 
 
   await askDelete(win, fileRow(win, 'Doomed'))
   await shoot(win, 'delete-01-confirm-sheet')
-  // The sheet names the file, says where it goes, and reports the backlink count.
-  await expect(sheet(win)).toContainText('Delete "Doomed.md"?')
+  // The sheet names the note by its title (YAZ-2420 🔒 D14), says where it goes, and reports the backlink count.
+  await expect(sheet(win)).toContainText('Delete "Doomed"?')
   await expect(sheet(win)).toContainText('moves to the Trash')
   await expect(sheet(win)).toContainText('1 note links to this')
   expect(await gone(path.join(vault, 'Doomed.md'))).toBe(false) // nothing deleted yet
@@ -134,8 +134,9 @@ test('step 6 — the links now render UNRESOLVED, and clicking one recreates the
   await expect(link).toHaveClass(/wikilink--unresolved/)
   await shoot(win, 'delete-06-unresolved-link')
   await link.click()
-  // Create-on-click restores the page in place — an accidental delete is recoverable here.
-  await expect.poll(() => gone(path.join(vault, 'Doomed.md'))).toBe(false)
+  // Create-on-click makes the page again, titled as the link spells it, under a name built from
+  // that title and a fresh id (YAZ-2420 🔒 D20) — an accidental delete is recoverable here.
+  await expect.poll(() => builtNote(vault, 'doomed')).not.toBe('')
   await expect(activeTab(win)).toHaveText('Doomed')
 })
 

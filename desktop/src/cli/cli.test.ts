@@ -103,6 +103,11 @@ describe('help and usage', () => {
     expect(lines.filter((line, i) => (i < first || i >= first + 3) && /`in:`|\.folder\.md/.test(line))).toEqual([])
   })
 
+  it('E: says that a page\'s title is its `title:` line, that the app builds the file name from the title and the id, and that a page is found from an id by its file name (YAZ-2420 D14)', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['`title:` line', '`<kebab-title>-<id>.md`', "search the vault's file names for it", 'a file the app did not name is found by its `id: <id>` line']) expect(help).toContain(said)
+  })
+
   it('usage errors exit 2 with the reason and the usage block on stderr, nothing on stdout', async () => {
     const p = await page('a.md', '')
     for (const [argv, reason] of [
@@ -344,13 +349,27 @@ describe('id (YAZ-2293)', () => {
     expect(await run(['id', path.join(path.dirname(theirs), 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 
-  it('a page that cannot take an id — no vault above it, a block that does not parse, an `id` of another shape — exit 1, bytes untouched', async () => {
+  it("a page whose `id` is another tool's (`id: 42`), in an adopted vault: the app's id is written over it, the one the app's sweep would write, and printed (YAZ-2420 D30)", async () => {
+    const content = '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n'
+    const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
+    const r = await run(['id', p])
+    const id = r.out.trimEnd()
+    expect(r).toEqual({ code: 0, out: `${id}\n`, err: '' })
+    expect(isNoteId(id)).toBe(true)
+    expect(await readFile(p, 'utf8')).toBe(`---\nid: ${id}\ntitle: Kickoff\n---\n# Kickoff\n`)
+    const theirs = await vault('theirs', { 'Projects/Kickoff.md': content })
+    const twin = path.join(theirs, 'Projects/Kickoff.md')
+    const record = await scanFile(theirs, twin)
+    await sweepIds(theirs, new Map([[twin, record]]), [record], () => undefined)
+    expect(await readFile(twin, 'utf8')).toBe(await readFile(p, 'utf8'))
+  })
+
+  it('a page that cannot take an id — no vault above it, a block that does not parse — exit 1, bytes untouched', async () => {
     const bare = await page('bare.md', '# No vault here\n')
-    const root = await vault('mine', { 'broken.md': '---\ntitle: [\n---\n', 'foreign.md': '---\nid: 42\n---\n' })
+    const root = await vault('mine', { 'broken.md': '---\nid: 42\ntitle: [\n---\n' })
     for (const [p, reason] of [
       [bare, `${bare} has no id and is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`],
       [path.join(root, 'broken.md'), 'the properties block does not parse (invalid)'],
-      [path.join(root, 'foreign.md'), 'the id property is not a page id (foreign)'],
     ] as const) {
       const before = await readFile(p, 'utf8')
       expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${reason}\n` })
@@ -380,7 +399,7 @@ describe('links (YAZ-2293)', () => {
     expect(await run(['links', home])).toEqual({
       code: 0,
       err: '',
-      out: `${NOTE}  Projects/Alpha/Kickoff notes.md\n${DEAD}  (missing)\n${FOLDER}  Areas/  (also in)\n`,
+      out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n${DEAD}  (missing)\n${FOLDER}  Areas  Areas/  (also in)\n`,
     })
   })
 
@@ -389,9 +408,9 @@ describe('links (YAZ-2293)', () => {
     const r = await run(['links', path.join(root, 'Home.md'), '--json'])
     expect(JSON.parse(r.out)).toEqual({
       links: [
-        { id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' },
+        { id: NOTE, kind: 'note', title: 'Kickoff notes', path: 'Projects/Alpha/Kickoff notes.md' },
         { id: DEAD, kind: 'missing' },
-        { id: FOLDER, kind: 'folder', path: 'Areas' },
+        { id: FOLDER, kind: 'folder', title: 'Areas', path: 'Areas' },
       ],
       in: [],
     })
@@ -409,21 +428,41 @@ describe('links (YAZ-2293)', () => {
     expect(await run(['links', held])).toEqual({
       code: 0,
       err: '',
-      out: `${NOTE}  Projects/Alpha/Kickoff notes.md\n\nin:\n${FOLDER}  Areas/\n${DEAD}\n${NOTE}\n`,
+      out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n\nin:\n${FOLDER}  Areas  Areas/\n${DEAD}\n${NOTE}\n`,
     })
     expect(JSON.parse((await run(['links', held, '--json'])).out)).toEqual({
-      links: [{ id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' }],
-      in: [{ id: FOLDER, path: 'Areas' }, { id: DEAD }, { id: NOTE }],
+      links: [{ id: NOTE, kind: 'note', title: 'Kickoff notes', path: 'Projects/Alpha/Kickoff notes.md' }],
+      in: [{ id: FOLDER, title: 'Areas', path: 'Areas' }, { id: DEAD }, { id: NOTE }],
     })
     // Values and no ids: the links say so, and the folders are still listed.
     const only = path.join(root, 'Only.md')
     await writeFile(only, `---\nin:\n  ${FOLDER}:\n    Status: Interview\n---\n`, 'utf8')
-    expect((await run(['links', only])).out).toBe(`no ids on ${only}\n\nin:\n${FOLDER}  Areas/\n`)
+    expect((await run(['links', only])).out).toBe(`no ids on ${only}\n\nin:\n${FOLDER}  Areas  Areas/\n`)
+  })
+
+  it('E: each id is followed by the title of the note or folder it names now, then its path — in the `in:` group too, and as `title` in --json (YAZ-2420 D14)', async () => {
+    const root = await vault('titled', {
+      'Home.md': `---\nalso_in:\n  - ${FOLDER}\nin:\n  ${FOLDER}:\n    Status: Interview\n---\nSee [[${NOTE}]] and [[${DEAD}]].\n`,
+      [`candidates/up-001-abdul-${NOTE}.md`]: `---\nid: ${NOTE}\ntitle: UP-001 - Abdul\n---\n`,
+      [`upwork-2026/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${FOLDER}\ntitle: Upwork 2026\n---\n`,
+    })
+    const home = path.join(root, 'Home.md')
+    expect((await run(['links', home])).out).toBe(
+      `${NOTE}  UP-001 - Abdul  candidates/up-001-abdul-${NOTE}.md\n${DEAD}  (missing)\n${FOLDER}  Upwork 2026  upwork-2026/  (also in)\n\nin:\n${FOLDER}  Upwork 2026  upwork-2026/\n`,
+    )
+    expect(JSON.parse((await run(['links', home, '--json'])).out)).toEqual({
+      links: [
+        { id: NOTE, kind: 'note', title: 'UP-001 - Abdul', path: `candidates/up-001-abdul-${NOTE}.md` },
+        { id: DEAD, kind: 'missing' },
+        { id: FOLDER, kind: 'folder', title: 'Upwork 2026', path: 'upwork-2026' },
+      ],
+      in: [{ id: FOLDER, title: 'Upwork 2026', path: 'upwork-2026' }],
+    })
   })
 
   it('a scalar `also_in` is one entry, as the app reads it', async () => {
     const scalar = path.join(await mine(), 'Scalar.md')
-    expect((await run(['links', scalar])).out).toBe(`${FOLDER}  Areas/  (also in)\n`)
+    expect((await run(['links', scalar])).out).toBe(`${FOLDER}  Areas  Areas/  (also in)\n`)
   })
 
   it('a page in no vault has nothing to resolve its ids against — exit 1', async () => {
@@ -507,16 +546,16 @@ describe('due (YAZ-2322)', () => {
   it('a page: prints the date it is next due, from the defaults for what the vault\'s settings do not say', async () => {
     await upkeepOn()
     const { file, changed } = await aged('fresh.md', 2)
-    expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  ${file}\n`, err: '' })
+    expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  fresh  ${file}\n`, err: '' })
   })
 
   it('upkeep off: `due <page>` and `due <folder>` report nothing due — no review.json, one with no `enabled` or a bad one, one that says false', async () => {
     const { file } = await aged('old.md', 90)
     const kept = await aged('sub/kept.md', 400, '---\nreview: true\n---\nKept.\n')
     const nothing = async (): Promise<void> => {
-      for (const page of [file, kept.file]) {
-        expect(await run(['due', page])).toEqual({ code: 0, out: `${page} is not in review\n`, err: '' })
-        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ path: page, inReview: false, due: null })
+      for (const [title, page] of [['old', file], ['kept', kept.file]]) {
+        expect(await run(['due', page])).toEqual({ code: 0, out: `${title}  ${page} is not in review\n`, err: '' })
+        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ title, path: page, inReview: false, due: null })
       }
       expect(await run(['due', dir])).toEqual({ code: 0, out: `nothing is due under ${dir}\n`, err: '' })
       expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([])
@@ -534,22 +573,29 @@ describe('due (YAZ-2322)', () => {
     await upkeepOn()
     const reviewedAt = '2026-01-10T12:00:00Z'
     const { file } = await aged('kept.md', 1, addReview('Kept.\n', reviewedAt))
-    expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  ${file}\n`)
+    expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  kept  ${file}\n`)
   })
 
   it('a page: uses the settings of the vault it is in', async () => {
     await upkeepOn({ baseDays: 7 })
     const { file, changed } = await aged('notes/deep/quick.md', 2)
-    expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  ${file}\n`)
+    expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  quick  ${file}\n`)
   })
 
   it('a page that is not in review says so; --json gives the raw shape', async () => {
     await upkeepOn()
     const { file } = await aged('off.md', 90, '---\nreview: false\n---\nOff.\n')
-    expect((await run(['due', file])).out).toBe(`${file} is not in review\n`)
-    expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ path: file, inReview: false, due: null })
+    expect((await run(['due', file])).out).toBe(`off  ${file} is not in review\n`)
+    expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ title: 'off', path: file, inReview: false, due: null })
     const on = await aged('on.md', 2)
-    expect(JSON.parse((await run(['due', on.file, '--json'])).out)).toEqual({ path: on.file, inReview: true, due: new Date(on.changed + 30 * DAY).toISOString() })
+    expect(JSON.parse((await run(['due', on.file, '--json'])).out)).toEqual({ title: 'on', path: on.file, inReview: true, due: new Date(on.changed + 30 * DAY).toISOString() })
+  })
+
+  it('E: a page is printed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
+    await upkeepOn()
+    const abdul = await aged('up-001-abdul-k3m9x2pq7abc.md', 2, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
+    expect((await run(['due', abdul.file])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
+    expect(JSON.parse((await run(['due', abdul.file, '--json'])).out)).toEqual({ title: 'UP-001 - Abdul', path: abdul.file, inReview: true, due: new Date(abdul.changed + 30 * DAY).toISOString() })
   })
 
   it('a folder: lists what is due now under it, most overdue first', async () => {
@@ -559,8 +605,15 @@ describe('due (YAZ-2322)', () => {
     await aged('fresh.md', 2)
     await aged('off.md', 200, '---\nreview: false\n---\nOff.\n')
     await aged('sub/.folder.md', 300, '---\nviews: []\n---\n') // a folder's settings file is never a note
-    expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  ${older.file}\n${day(old.changed + 30 * DAY)}  ${old.file}\n`)
-    expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
+    expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  older  ${older.file}\n${day(old.changed + 30 * DAY)}  old  ${old.file}\n`)
+    expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ title: 'older', path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
+  })
+
+  it('E: a folder: each page is listed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
+    await upkeepOn()
+    const abdul = await aged('candidates/up-001-abdul-k3m9x2pq7abc.md', 120, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
+    expect((await run(['due', dir])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
+    expect(JSON.parse((await run(['due', dir, '--json'])).out)).toEqual([{ title: 'UP-001 - Abdul', path: abdul.file, due: new Date(abdul.changed + 30 * DAY).toISOString() }])
   })
 
   it('a folder with nothing due says so', async () => {

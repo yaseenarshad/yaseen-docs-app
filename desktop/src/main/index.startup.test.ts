@@ -54,7 +54,6 @@ const h = vi.hoisted(() => {
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
     registerIpc: vi.fn(() => (s.order.push('registerIpc'), gitSync)),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
-    registerAgentIpc: vi.fn(log('registerAgentIpc')),
   }
 })
 
@@ -75,7 +74,6 @@ vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 vi.mock('./vaultIndex', () => ({ initIndexCache: vi.fn(), flushIndexCache: h.flushIndexCache }))
 vi.mock('./ipc', () => ({ registerIpc: h.registerIpc }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
-vi.mock('./ipc/agent', () => ({ registerAgentIpc: h.registerAgentIpc }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
@@ -136,8 +134,8 @@ describe('main startup order (YAZ-2172)', () => {
     await settle()
     // Every door registered before the windows restore; the cold-start link routes only after them.
     const at = (entry: string) => h.s.order.indexOf(entry)
-    for (const door of ['registerClipboardIpc', 'registerAgentIpc', 'registerIpc']) expect(at(door)).toBeGreaterThan(at('ready'))
-    for (const door of ['registerClipboardIpc', 'registerAgentIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at('restoreAll'))
+    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeGreaterThan(at('ready'))
+    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at('restoreAll'))
     expect(at(`route:${NOTE}`)).toBeGreaterThan(at('restoreAll'))
   })
 

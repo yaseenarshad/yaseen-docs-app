@@ -31,6 +31,9 @@ export function testFolderHost(over: Partial<FolderHost> = {}): FolderHost {
     deleteColumn: () => Promise.reject(new Error('this test did not expect a column delete')),
     valueCount: (key) => (over.vaultRecords ?? TEST_RECORDS).filter((r) => Object.hasOwn(r.properties, key.replace(/^note\./, ''))).length,
     writeValues: (path, writes) => (writes.length === 1 ? writeProperty(path, writes[0].key, writes[0].value) : writeProperties(path, writes)),
+    retitle: () => {
+      throw new Error('this test did not expect a title edit')
+    },
     wikilinks: createWikilinkResolveSource(),
     ...over,
   }

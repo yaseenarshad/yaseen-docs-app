@@ -2,10 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, BridgeRequestError } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
-import { agentPage, copyForAgent } from '../lib/copyForAgent'
-import { copyNoteId } from '../lib/copyNoteId'
-import { pageLabel, useFolderPaths } from '../lib/pageLabel'
-import { basename } from '../lib/paths'
+import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './tabs.css'
@@ -42,11 +39,8 @@ export interface TabBarProps {
    * nowhere to show one loses the message, never the gesture.
    */
   onNotice?: (message: string) => void
-  /**
-   * A tab's note id off the window's index (YAZ-2293), for the menu's "Copy ID": undefined for a
-   * note with none and for every file that is not a note, and the item is then not offered.
-   */
-  noteId?: (path: string) => string | undefined
+  /** The window's titles (YAZ-2420 🔒 D14): a tab is labelled with its page's title. */
+  titles: PathTitles
   /**
    * The review toggle (YAZ-2322), the sidebar row's item on a tab: whether a path is in review —
    * null for anything that is not a note in the index — and the write. App's, like the row's.
@@ -78,17 +72,17 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, noteId, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
-  // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The note's id
-  // (YAZ-2293) and its review state (YAZ-2322) are read when the menu opens, so "Copy ID" and the
-  // review item are about the tab that was right-clicked; a null state hides the review item.
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string; id: string | undefined; review: boolean | null } | null>(null)
-  const menuId = menu?.id
+  // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The note's
+  // review state (YAZ-2322) is read when the menu opens, so the review item is about the tab that
+  // was right-clicked; a null state hides it.
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; review: boolean | null } | null>(null)
   const activeRef = useRef<HTMLDivElement | null>(null)
   const isFolder = useFolderPaths(root)
+  const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
 
   // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
   // tab fully into view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
@@ -146,8 +140,6 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
     })
   }
 
-  const menuPage = menu === null ? null : agentPage(menu.path, isFolder(menu.path))
-
   return (
     <div className="tabbar-row">
       <div className="tabbar-nav">
@@ -193,7 +185,7 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
       >
         {tabs.map((path, i) => {
           const isActive = path === active
-          const label = pageLabel(path, isFolder(path))
+          const label = labelOf(path)
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
           if (drag !== null && drag.from === i) cls.push('tabbar__tab--dragging')
@@ -239,7 +231,7 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, path, id: noteId?.(path), review: reviewState?.(path) ?? null })
+                setMenu({ x: e.clientX, y: e.clientY, path, review: reviewState?.(path) ?? null })
               }}
             >
               <button
@@ -300,35 +292,7 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
           >
             Copy path
           </button>
-          {/* Right under Copy path (YAZ-2293), a note with an id only: exactly the id, which is what a `[[id]]` link names. */}
-          {menuId !== undefined && (
-            <button
-              type="button"
-              className="ctx-menu__item"
-              role="menuitem"
-              onClick={() => {
-                copyNoteId(menuId, onNotice)
-                setMenu(null)
-              }}
-            >
-              Copy ID
-            </button>
-          )}
-          {/* Under Copy path and Copy ID (YAZ-1617 🔒 D2), pages only — a Markdown file, or a folder as its settings file (YAZ-2290 D9): the tab IS the page, so it offers the sidebar row's handshake too. */}
-          {menuPage !== null && (
-            <button
-              type="button"
-              className="ctx-menu__item"
-              role="menuitem"
-              onClick={() => {
-                void copyForAgent(menuPage, onNotice)
-                setMenu(null)
-              }}
-            >
-              Copy for Agent
-            </button>
-          )}
-          {/* The review toggle (YAZ-2322), under the copy items: a tab that is not a note has no state and no item. */}
+          {/* The review toggle (YAZ-2322), under Copy path: a tab that is not a note has no state and no item. */}
           {menu.review !== null && (
             <button
               type="button"
@@ -342,10 +306,10 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
               {menu.review ? 'Turn review off' : 'Turn review on'}
             </button>
           )}
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${basename(menu.path)}" — it is no longer there`, "Can't reveal")}>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${labelOf(menu.path)}" — it is no longer there`, "Can't reveal")}>
             Reveal in Finder
           </button>
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${basename(menu.path)}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${labelOf(menu.path)}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
             Open in VS Code
           </button>
         </ContextMenuSurface>

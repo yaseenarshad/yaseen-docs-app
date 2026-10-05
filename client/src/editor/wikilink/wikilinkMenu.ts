@@ -19,6 +19,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { isNoteId } from '@shared/noteId'
 import { copyNoteId } from '../../lib/copyNoteId'
+import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { renderMenu, type MenuRow } from '../blockHandleMenu'
 import { wikilinkInnerAt, type WikilinkNav } from './wikilinkClick'
@@ -88,7 +89,7 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
             if (id === null || parent === null) return false
             event.preventDefault()
             close()
-            const title = idLinkTitle(id, source.resolve)
+            const title = idLinkTitle(id, source.resolve, pathTitles(source.records, source.folders))
             // A folder's name row says so: the id is its settings file's, and resolves to its directory.
             const dir = source.resolve?.(id)
             const isFolder = dir != null && folderRecord(source.folders, dir)?.id === id

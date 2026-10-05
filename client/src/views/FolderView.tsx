@@ -25,11 +25,12 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
-import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type IndexRecord, type PropertiesResponse } from '@shared/types'
-import { BridgeRequestError, api } from '../api'
+import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type PropertiesResponse } from '@shared/types'
+import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
+import { usePathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
@@ -41,7 +42,6 @@ import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './view
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
-import { freeName } from './newNote'
 import { createNote } from './scaffold'
 import { writeFolderValues } from './writeProperty'
 import { ViewFolder } from './view/GroupHeader'
@@ -67,8 +67,8 @@ export interface FolderViewProps {
   wikilinkCandidates?: WikilinkCandidateSource
   newNoteFolderFor?: (sourcePath: string) => string
   onNotice?: (message: string) => void
-  /** A title commit renames the FOLDER (D9) through App's one rename door. */
-  onRenameFile?: (oldPath: string, newPath: string, kind: 'dir') => void
+  /** A title commit — the FOLDER's own (D9), or a row's from a table's Name cell (YAZ-2420 🔒 D19) — through App's one rename door. */
+  onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
 }
@@ -114,11 +114,12 @@ export function FolderView({
   wikilinkCandidates,
   newNoteFolderFor,
   onNotice,
-  onRenameFile,
+  onRetitle,
   commentsOrder,
   onChangeCommentsOrder,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
+  const titles = usePathTitles(source)
 
   /** Where the settings live (D1) — and the file every write below goes to, created by the first one. */
   const file = folderSettingsPath(path)
@@ -275,7 +276,8 @@ export function FolderView({
     resolveLink,
     // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
     // Wherever it is born, the seeded values are THIS folder's — its view is the one being satisfied — and a
-    // folder with no id is given one first (`folderId`).
+    // folder with no id is given one first (`folderId`). It is titled `Untitled`, every time (YAZ-2420 🔒 D20: the
+    // ids keep the files apart), unless the caller knows what it is called (YAZ-943's inline board add types one).
     create: async (seed, name) => {
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const block = Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
@@ -283,7 +285,8 @@ export function FolderView({
         ...(block === undefined ? template : withFolderValues(template, block, seed.properties)),
         ...(seed.tags !== undefined && { tags: seed.tags }),
       })
-      return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => r.folder === into), seeded, name)
+      const typed = (name ?? '').trim()
+      return createNote(into === folder ? path : absFrom(root, into), typed === '' ? 'Untitled' : typed, seeded)
     },
     // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
     // The same save drops the note's values for the folders that no longer show it (D20).
@@ -322,6 +325,7 @@ export function FolderView({
         writeSettings: commitSettings,
       }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     valueCount: (key) => notesHolding(feed.records, id, key).length,
+    retitle: (note, title) => onRetitle(note, title, 'file'),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,
@@ -337,7 +341,7 @@ export function FolderView({
     // the table's sticky header finds the scroller it bridges to (YAZ-1151).
     <div className="editor-host">
       <div className="page-header">
-        <PageTitle path={path} kind="dir" onRename={(newPath) => onRenameFile?.(path, newPath, 'dir')} onNotice={onNotice} />
+        <PageTitle path={path} kind="dir" titles={titles} onRetitle={(title) => onRetitle(path, title, 'dir')} />
         {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} />}
       </div>
       <section className="folder-view">
@@ -365,30 +369,4 @@ export function FolderView({
       <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
     </div>
   )
-}
-
-/**
- * Birth in a folder (YAZ-2290 D4): the note lands DIRECTLY in `dir`, born like every note
- * (`createNote`) with what `seed` makes of its template; `rows` are the notes already there, whose names are taken.
- *
- * The name is the `Untitled` scheme by default — EXCEPT when the caller already knows what the
- * note is called (YAZ-943's inline board add types one). A typed name is tamed first: a '/'
- * would land it somewhere else entirely, so it becomes a space, and a name that is nothing but
- * whitespace is no name at all and falls back to `Untitled`. Either way the same de-duplication
- * runs over the folder's basenames, so a typed collision steps to " 2" like everything else — and
- * past a name the disk holds but the index does not yet (a second inline add of the same name).
- */
-async function createInFolder(dir: string, rows: readonly IndexRecord[], seed: (template: Record<string, unknown>) => Record<string, unknown>, name?: string): Promise<string> {
-  const taken = new Set(rows.map((r) => r.basename))
-  const tamed = (name ?? '').replaceAll('/', ' ').trim()
-  for (;;) {
-    const free = freeName(tamed === '' ? 'Untitled' : tamed, taken)
-    try {
-      await createNote(`${dir}/${free}.md`, seed)
-      return `${dir}/${free}.md`
-    } catch (err) {
-      if (!(err instanceof BridgeRequestError) || err.code !== 'ALREADY_EXISTS') throw err
-      taken.add(free)
-    }
-  }
 }

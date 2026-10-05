@@ -155,17 +155,18 @@ const LOCAL_NOTE = `---\nin:\n  ${FOLDER_ID}:\n    Status: Ready\n---\nOriginal 
 /** The window's feed after its first snapshot; `columns` undefined = the folder has no settings file. */
 const folderFeed = (columns?: Record<string, PropertyDecl>) => {
   const source = createWikilinkResolveSource()
-  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', folder: '', id: FOLDER_ID, properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
+  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', title: 'vault', folder: '', id: FOLDER_ID, properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
   source.update(() => null, [{ ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work' }], settings)
   return source
 }
 
 /** A folder's `.folder.md` as the index hands it over; `columns` undefined = no settings saved. */
-const folderMd = (dir: string, { columns, id }: { columns?: Record<string, PropertyDecl>; id?: string } = {}): IndexRecord => ({
+const folderMd = (dir: string, { columns, id, title = dir.slice(dir.lastIndexOf('/') + 1) }: { columns?: Record<string, PropertyDecl>; id?: string; title?: string } = {}): IndexRecord => ({
   ...TEST_RECORDS[0],
   path: `${dir}/.folder.md`,
   name: '.folder.md',
   basename: '.folder',
+  title,
   folder: dir === ROOT ? '' : dir.slice(ROOT.length + 1),
   id,
   properties: columns === undefined ? {} : { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } },
@@ -240,8 +241,17 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
   it('is COLLAPSED by default and shows the top-level key count', () => {
     const el = mount(MESSY)
     expect(header(el)?.getAttribute('aria-expanded')).toBe('false')
-    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (2)') // aliases and status: `title` is not counted (YAZ-2420 D27)
     expect(area(el)).toBeNull()
+  })
+
+  it('E: the `title` row is not shown and "Properties (N)" does not count it; the raw YAML view still shows the line (YAZ-2420 D27)', () => {
+    const el = mount('---\ntitle: UP-001 - Abdul\nStatus: Ready\n---\nBody\n')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (1)')
+    expand(el)
+    expect(keysOf(el)).toEqual(['Status'])
+    toRaw(el)
+    expect(area(el)?.value).toBe('title: UP-001 - Abdul\nStatus: Ready')
   })
 
   it('invalid frontmatter drops the count rather than guessing one', () => {
@@ -277,7 +287,20 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
     // Its own write is the new disk truth: clean again, showing what it wrote.
     expect(btn(el, 'Save')).toBeNull()
     expect(area(el)?.value).toBe(INTERIOR.replace('status: draft', 'status: done'))
-    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (2)')
+  })
+
+  it('the `title:` line edited in the raw YAML view is one more line of the block: it is saved, and the file is not renamed (YAZ-2420 D23)', async () => {
+    readFile.mockResolvedValue(fileOf(MESSY))
+    const el = mount(MESSY)
+    expandRaw(el)
+    typeInto(el, INTERIOR.replace('title: "Deep   Work"', 'title: Shallow Work'))
+    click(btn(el, 'Save'))
+    await settle()
+
+    // The whole of what the panel asks of the bridge: this mock has no rename and no retitle to call.
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: MESSY.replace('title: "Deep   Work"', 'title: Shallow Work'), expectedMtime: 100 })
+    expect(Object.keys(api)).toEqual(['readFile', 'writeFile', 'createFile', 'properties'])
   })
 
   it('a Save in flight joins the close/quit flush: the flush settles only once its write has landed (YAZ-2174)', async () => {
@@ -617,8 +640,8 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(writeFile).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
     // Every key a row, in the block's order, among the note's own; then the folder's one default column, unfilled.
-    expect(keysOf(el)).toEqual(['folder_page', 'folder_pages', 'folder_page_settings', 'title', 'status'])
-    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (4)')
+    expect(keysOf(el)).toEqual(['folder_page', 'folder_pages', 'folder_page_settings', 'status'])
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (3)')
     // Typed by their own values, like any property: a flag, a list, and a map no editor can hold.
     for (const key of ['folder_page', 'folder_pages', 'folder_page_settings']) expect(chipIn(rowOf(el, key))).not.toBe('Reserved')
     expect(chipIn(rowOf(el, 'folder_page_settings'))).toBe('YAML') // what any nested map wears (`draft_layout` above)
@@ -657,12 +680,12 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(chipIn(rowOf(el, 'status'))).toBeNull()
   })
 
-  it('an `id` that is no note id (a hand-written `id: 42`) is the user’s own property: an editor and no chip', () => {
+  it('an `id` that is no note id (another tool’s `id: 42`) is RESERVED like any other: the app writes its own over it, so it has no editor (YAZ-2420 D30)', () => {
     const el = mount('---\nid: 42\n---\nBody\n', { root: ROOT })
     expand(el)
     const r = rowOf(el, 'id')
-    expect(chipIn(r)).toBeNull()
-    expect(r.querySelector('[data-edit]')).not.toBeNull()
+    expect(chipIn(r)).toBe('Reserved')
+    expect(r.querySelector('[data-edit]')).toBeNull()
   })
 
   it('a link value naming a FOLDER by its id reads as the folder’s name, as a note’s reads as its title (YAZ-2290 D10)', () => {
@@ -869,6 +892,21 @@ describe('FrontmatterPanel — "Properties from"', () => {
     expect(el.querySelector('select')).toBeNull()
   })
 
+  it('E: a folder is named by its title: "Properties from", each choice, "In …" and what `also_in` reads as; two choices with one title read as their paths (YAZ-2420 D14)', () => {
+    const one = mountAt('/vault/upwork-2026/Note.md', 'Body\n', feedOf(folderMd('/vault/upwork-2026', { title: 'Upwork 2026' })))
+    expect(from(one)?.textContent).toBe('Properties from Upwork 2026')
+    click(byLabel(one, 'Configure status'))
+    click(buttonNamed(one, 'Edit property ›'))
+    expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In Upwork 2026')
+    act(() => root?.unmount())
+    container?.remove()
+
+    const wikilinks = feedOf(folderMd('/vault/a', { id: A_ID, title: 'Hiring' }), folderMd('/vault/a/b', { title: 'Upwork 2026' }), folderMd('/vault/areas', { id: HEALTH_ID, title: 'Hiring' }))
+    const el = mountAt('/vault/a/b/Note.md', `---\nalso_in:\n  - ${HEALTH_ID}\n---\nBody\n`, wikilinks)
+    expect(choices(el)).toEqual(['Upwork 2026', 'a', 'areas'])
+    expect([...rowOf(el, 'also_in').querySelectorAll('.view-table__chip')].map((chip) => chip.textContent)).toEqual(['Hiring'])
+  })
+
   it('a note with folders above it: a dropdown — the folder it lives in and each folder above it, nearest first; the vault root is not a choice', () => {
     const el = mountAt(NOTE, 'Body\n')
     expect(from(el)?.textContent).toMatch(/^Properties from /)
@@ -1029,6 +1067,13 @@ describe('FrontmatterPanel — a folder\'s own panel (YAZ-2290 D9)', () => {
     return container
   }
 
+  it('E: the folder\'s `title` is no row here either, and is not counted (YAZ-2420 D27)', () => {
+    const el = mountOwn('---\ntitle: Upwork 2026\nowner: Yasin\n---\n')
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (1)')
+    expand(el)
+    expect(keysOf(el)).toEqual(['owner'])
+  })
+
   it('the row menu says "Remove from this folder"', () => {
     const el = mountOwn('---\nowner: Yasin\n---\n')
     expand(el)
@@ -1145,7 +1190,7 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
   const NOTE = `---\nparent: "[[${ID}]]"\nrefs:\n  - "[[${ID}]]"\n  - |\n    a\n    b\n---\nBody line\n`
   const feed = () => {
     const source = createWikilinkResolveSource()
-    source.update(() => null, [{ ...TEST_RECORDS[0], path: '/vault/Home.md', name: 'Home.md', basename: 'Home', folder: '', id: ID }])
+    source.update(() => null, [{ ...TEST_RECORDS[0], path: '/vault/home-k3m9x2pq7abc.md', name: 'home-k3m9x2pq7abc.md', basename: 'home-k3m9x2pq7abc', title: 'Home', folder: '', id: ID }])
     return source
   }
   const linkIn = (el: HTMLElement, key: string) => rowOf(el, key).querySelector('.view-table__chip--link')?.textContent

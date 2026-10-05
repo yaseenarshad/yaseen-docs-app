@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
-import { isMarkdown } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { agentPage, copyForAgent } from '../lib/copyForAgent'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { basename, relTo } from '../lib/paths'
+import { pageName, usePathTitles } from '../lib/pageLabel'
+import { relTo } from '../lib/paths'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
 import { ancestorDirs, findDirNode, treeHasFile } from '../lib/treeState'
@@ -95,6 +94,8 @@ interface SidebarProps {
    * closes.
    */
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>
+  /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
+  onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
    * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
    * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
@@ -103,8 +104,6 @@ interface SidebarProps {
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
-  /** A note's id off the window's index (YAZ-2293), for the row menu's "Copy ID"; the same lookup the tab bar is handed. */
-  noteId?: (path: string) => string | undefined
   /**
    * The window's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME
    * object `WikilinkIndexBridge` already feeds — App's one per-window index source — read, never
@@ -219,14 +218,6 @@ export interface MenuTargets {
   clipPaths: string[] | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
   newWindowPath: string | null
-  /** "Copy for Agent" — PAGE rows only (YAZ-1617): a Markdown file, or a folder as its settings file (YAZ-2290 D9); an EPUB is a file, not a page. */
-  agentPath: string | null
-  /**
-   * "Copy ID" — the right-clicked NOTE's `id` off the window's index snapshot (YAZ-2293), or null:
-   * a note with none, every other file, a folder, blank space — and any 2+ selection, where one
-   * row's id is not what the plural menu is about.
-   */
-  noteId: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
   /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
@@ -352,9 +343,9 @@ export function Sidebar({
   onRootMissing,
   onFileMissing,
   onRenameFile,
+  onRetitle,
   onDeleteFile,
   onNotice,
-  noteId,
   indexSource,
   pendingSearchFocus,
   onSearchFocusHandled,
@@ -397,6 +388,10 @@ export function Sidebar({
     read()
     return indexSource.subscribe(read)
   }, [root, indexSource])
+  // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
+  const titles = usePathTitles(indexSource)
+  /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
+  const nameOf = useCallback((path: string) => pageName(root, path, titles), [root, titles])
 
   // What the chevrons button unfolds on the active lens.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
@@ -443,14 +438,14 @@ export function Sidebar({
     if (tree === null || pendingReveal === null || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
     if (!revealTargetPresent) {
-      onNotice(revealMissingMessage(pendingReveal.path), 'error')
+      onNotice(revealMissingMessage(nameOf(pendingReveal.path)), 'error')
       return
     }
     // A reveal is "show me THIS" (YAZ-1605): a target outside every focused folder ends the focus first.
     if (focusDirs.length > 0 && !focusDirs.some((dir) => pendingReveal.path === dir || pendingReveal.path.startsWith(`${dir}/`))) setFocusDirs([])
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses.
     dispatch({ type: 'expandTo', root, file: revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path })
-  }, [focusDirs, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
+  }, [focusDirs, nameOf, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
 
   const filesRevealReady = revealTargetPresent && ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
 
@@ -507,9 +502,6 @@ export function Sidebar({
         openTabPaths: plural,
         clipPaths: shortcutIn !== null ? null : plural ?? (node === null ? null : [node.path]),
         newWindowPath: filePath,
-        agentPath: node === null ? null : agentPage(node.path, node.type === 'dir'),
-        // A NOTE row's id (YAZ-2293) — the one row's, so never in a plural menu.
-        noteId: plural === null && filePath !== null && isMarkdown(filePath) ? (noteId?.(filePath) ?? null) : null,
         renamePath: shortcutIn !== null ? null : node?.path ?? null,
         deletePath: shortcutIn !== null ? null : node?.path ?? null,
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
@@ -554,7 +546,7 @@ export function Sidebar({
     [root],
   )
 
-  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, dispatch)
+  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, dispatch)
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
@@ -565,10 +557,10 @@ export function Sidebar({
   const reveal = useCallback(
     (path: string) => {
       api.shell.reveal({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${nameOf(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
-    [onNotice],
+    [onNotice, nameOf],
   )
 
   /**
@@ -579,10 +571,10 @@ export function Sidebar({
   const openVsCode = useCallback(
     (path: string) => {
       api.shell.openVsCode({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${nameOf(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
-    [onNotice],
+    [onNotice, nameOf],
   )
 
   /**
@@ -593,10 +585,10 @@ export function Sidebar({
   const openDefault = useCallback(
     (path: string) => {
       api.shell.openDefault({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${nameOf(path)}" — it is no longer there` : `Can't open "${nameOf(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
-    [onNotice],
+    [onNotice, nameOf],
   )
 
   // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
@@ -850,6 +842,7 @@ export function Sidebar({
                 selection={selection}
                 counts={counts}
                 shortcuts={shortcuts}
+                titles={titles}
               />
             )}
           </>
@@ -877,6 +870,7 @@ export function Sidebar({
                 selection={selection}
                 counts={counts}
                 shortcuts={shortcuts}
+                titles={titles}
               />
             )}
           </>
@@ -906,7 +900,6 @@ export function Sidebar({
               onCopy: (paths) => clipTo(paths, 'copy'),
               onPaste: () => pasteInto(menu.targetDir),
               onNotice,
-              onCopyForAgent: (path) => void copyForAgent(path, onNotice),
               onNewNote: viaTree(() => startCreate('file')),
               onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),
               onNewFolder: viaTree(() => startCreate('dir')),
@@ -928,12 +921,13 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       )}
-      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} lost={pendingPaste.lost} onConfirm={confirmPaste} onCancel={cancelPaste} />}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
+      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (
         <ConfirmMove
           shortcut={confirmingShortcut}
           lost={confirmingShortcut.lost}
+          titles={titles}
           onConfirm={() => {
             setConfirmingShortcut(null)
             removeShortcutRow(confirmingShortcut.path, confirmingShortcut.dir)

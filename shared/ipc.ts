@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -40,7 +40,7 @@ export const CONTRACT = {
   readPdf: invoke<[path: string], PdfResponse>('fs:read-pdf', 1),
   readImage: invoke<[path: string], ImageResponse>('fs:read-image', 1),
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
-  createDir: invoke<[path: string], CreateDirResponse>('fs:create-dir', 1),
+  createDir: invoke<[req: CreateDirRequest], CreateDirResponse>('fs:create-dir', 1),
   createFile: invoke<[req: string | CreateFileRequest], CreateFileResponse>('fs:create-file', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),
@@ -120,6 +120,8 @@ export const CONTRACT = {
   file: {
     /** In-app rename (Links E1 GRO-2194; folders E1b GRO-2241): same-directory, extension kind unchanged; never overwrites (`ALREADY_EXISTS`). */
     rename: invoke<[req: RenameFileRequest], RenameFileResponse>('fs:rename', 1),
+    /** A title edit (YAZ-2420 🔒 D16): writes `title:`, then renames the note or folder to the name built from it; a changed path is repaired and pushed as `rename`'s is. */
+    retitle: invoke<[req: RetitleRequest], RenameFileResponse>('fs:retitle', 1),
     /** Store/tab repair for a rename that ALREADY happened on disk (Links E1c, GRO-2242): `newPath` must exist, `oldPath` must not; pushes the same `file:renamed`. */
     repairRename: invoke<[req: RenameFileRequest], RenameFileResponse>('file:repair-rename', 1),
     /** Fired in every window after a successful rename or repair. */
@@ -151,8 +153,6 @@ export const CONTRACT = {
     openDefault: invoke<[req: RevealRequest], RevealResponse>('shell:openDefault', 1),
     /** Open a validated Markdown-link target through the OS; never creates an Electron window. */
     openLink: invoke<[req: OpenLinkRequest], void>('shell:open-link', 1),
-    /** Copy for Agent (YAZ-1617): the handshake text for a page, composed in main because only main knows where the command lives. */
-    agentPrompt: invoke<[req: RevealRequest], string>('shell:agent-prompt', 1),
   },
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188): created lazily on first write; reading never creates it. */
   vaultConfig: {

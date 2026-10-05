@@ -8,6 +8,7 @@ describe('perf (GRO-2133)', () => {
       path: `/vault/Library/${i % 7}/Note ${i}.md`,
       name: `Note ${i}.md`,
       basename: `Note ${i}`,
+      title: `Note ${i}`,
       folder: `Library/${i % 7}`,
       ext: 'md',
       size: i * 10,

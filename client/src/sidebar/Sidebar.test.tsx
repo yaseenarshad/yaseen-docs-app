@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
@@ -17,13 +18,17 @@ import { EMPTY_SELECTION } from '../lib/selection'
 import { storage } from '../lib/storage'
 
 /**
- * File-row render counter (YAZ-2194): every file row renders its label through `stripExt`, so the
+ * File-row render counter (YAZ-2194): every file row renders its label through `pageLabel`, so the
  * REAL function behind a counting wrapper tells which rows a change re-rendered.
  */
 const labelRenders = vi.hoisted(() => ({ names: [] as string[] }))
-vi.mock('../lib/paths', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../lib/paths')>()
-  return { ...real, stripExt: (name: string) => (labelRenders.names.push(name), real.stripExt(name)) }
+vi.mock('../lib/pageLabel', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/pageLabel')>()
+  const pageLabel: typeof real.pageLabel = (path, folder, titles) => {
+    if (!folder) labelRenders.names.push(path.slice(path.lastIndexOf('/') + 1))
+    return real.pageLabel(path, folder, titles)
+  }
+  return { ...real, pageLabel }
 })
 
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
@@ -43,12 +48,12 @@ function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
     // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
-    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], folders: [], generatedAt: 1 })),
     // The inline-create flow (GRO-2022).
-    createFile: vi.fn(async (req: string | { path: string; content?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
+    createFile: vi.fn(async (req: string | { path: string; content?: string; id?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
     // A note is born from its folder's hidden `.template.md` (YAZ-2290 E3): no folder has one by default.
     readFile: vi.fn((path: string): Promise<{ path: string; content: string; mtime: number; size: number }> => Promise.reject({ code: 'NOT_FOUND', message: `no such file: ${path}` })),
-    createDir: vi.fn(async (path: string) => ({ path })),
+    createDir: vi.fn(async (req: { path: string; title?: string }) => ({ path: req.path })),
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
@@ -124,6 +129,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
+    onRetitle: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
     pendingSearchFocus: false,
@@ -158,7 +164,7 @@ const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree_
 /** An index record for a note of the `/v` vault — only `folder` matters to the folder rows' counts (YAZ-2290 E6). */
 const indexRecord = (path: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
-  return { path, name, basename: name.replace(/\.md$/, ''), folder: path.slice('/v/'.length, Math.max('/v/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: path.slice('/v/'.length, Math.max('/v/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
 }
 const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
 /**
@@ -354,18 +360,12 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(fileRow(el)?.classList.contains('tree__row--active')).toBe(true)
   })
 
-  it("Copy for Agent on a FOLDER row hands out the folder's settings file; blank space has no such item (YAZ-2290 D9)", async () => {
-    const writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const agentPrompt = vi.fn(async (_req: { path: string }) => 'handshake')
-    const { props, el } = await mount({}, (bridge) => Object.assign(bridge.shell, { agentPrompt }))
-    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    await act(async () => itemByLabel(el, 'Copy for Agent')?.click())
-    expect(agentPrompt).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/.folder.md' })
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('handshake')
-    expect(props.onNotice).toHaveBeenCalledWith('Copied for agent')
-    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy for Agent')).toBeUndefined()
+  it('a note row, a folder row and blank space offer one item that copies text, "Copy path": beside the file clipboard\'s Copy, nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
+    const { el } = await mount()
+    for (const [target, copies] of [['.tree__row--file', ['Copy', 'Copy path']], ['.tree__row--dir', ['Copy', 'Copy path']], ['.sidebar__body', ['Copy path']]] as const) {
+      act(() => void el.querySelector(target)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      expect(menuItems(el).map((b) => b.textContent).filter((label) => label?.startsWith('Copy'))).toEqual(copies)
+    }
   })
 
   it('folder rows and blank space get no "Open in new window" item', async () => {
@@ -502,18 +502,48 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
-  it('a FOLDER row\'s context menu offers "Rename"; committing routes old→new (no extension logic) through onRenameFile', async () => {
-    const { props, el } = await mount()
-    act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  /** Rename on a row, the box as it opens, then `typed` and Enter. */
+  const renameRow = async (el: HTMLElement, row: Element | null | undefined, typed: string) => {
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     act(() => itemByLabel(el, 'Rename')?.click())
     const input = el.querySelector<HTMLInputElement>('.create-inline__input')
-    expect(input?.value).toBe('sub') // the raw folder name — no extension stripping for dirs
+    const prefill = input?.value
     act(() => {
-      input!.value = 'archive'
+      input!.value = typed
       input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await act(async () => undefined)
-    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive', 'dir')
+    return prefill
+  }
+  const titled = () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }], [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }])
+    return indexSource
+  }
+
+  it('a FOLDER row\'s "Rename" edits its TITLE: the box is prefilled with it, and committing is a title edit, free text and all (YAZ-2420 D16)', async () => {
+    const { props, el } = await mount({ indexSource: titled() })
+    expect(await renameRow(el, dirRow(el), 'Upwork: 2027/28')).toBe('Upwork 2026')
+    expect(props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/sub', 'Upwork: 2027/28', 'dir')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('a NOTE row\'s "Rename" edits its TITLE the same way; a note with no title is prefilled with its file name, less the extension (YAZ-2420 D16)', async () => {
+    const { props, el } = await mount({ indexSource: titled() })
+    expect(await renameRow(el, fileRow(el), 'UP-002 - Ali')).toBe('UP-001 - Abdul')
+    expect(props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'UP-002 - Ali', 'file')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    const plain = await mount()
+    expect(await renameRow(plain.el, fileRow(plain.el), 'Plan')).toBe('a')
+    expect(plain.props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'Plan', 'file')
+  })
+
+  it('a title left as it was is no edit: nothing is asked of the door', async () => {
+    const { props, el } = await mount({ indexSource: titled() })
+    await renameRow(el, fileRow(el), 'UP-001 - Abdul')
+    expect(props.onRetitle).not.toHaveBeenCalled()
+    expect(el.querySelector('.create-inline__input')).toBeNull()
   })
 
   it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered', async () => {
@@ -697,7 +727,7 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
 
   it('reports one passive notice when the loaded Files tree cannot show the path', async () => {
     const { props } = await mount({ revealRequest: { id: 1, path: '/v/Missing.md' } }, withDeepTree)
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing.md" in Files — it is no longer there', 'error')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing" in Files — it is no longer there', 'error')
   })
 })
 
@@ -863,6 +893,14 @@ describe('delete (GRO-2272)', () => {
     expect(itemByLabel(b.el, 'Delete')).toBeUndefined()
   })
 
+  it('E: the confirm sheet names the note by its title (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }])
+    const { el } = await openOn('.tree__row--file', { indexSource })
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)?.querySelector('.confirm__text')?.textContent).toBe('Delete "UP-001 - Abdul"? It moves to the Trash.')
+  })
+
   it('clicking Delete opens the confirm sheet and deletes NOTHING yet', async () => {
     const { el, props } = await openOn('.tree__row--file')
     act(() => itemByLabel(el, 'Delete')?.click())
@@ -917,12 +955,12 @@ describe('delete (GRO-2272)', () => {
     // record missing them resolves nothing, which is how the first draft of this test passed
     // vacuously against an empty count.
     const rec = (base: string, links: string[] = []) => ({
-      path: `/v/${base}.md`, name: `${base}.md`, basename: base, folder: '', ext: 'md',
+      path: `/v/${base}.md`, name: `${base}.md`, basename: base, title: base, folder: '', ext: 'md',
       size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [],
     })
     const records = [rec('a'), rec('hub', ['a'])]
     const m = await mount()
-    m.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 } as never)
+    m.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 } as never)
     act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     await act(async () => itemByLabel(m.el, 'Delete')?.click())
     await act(async () => undefined)
@@ -931,7 +969,7 @@ describe('delete (GRO-2272)', () => {
 
   it('a FOLDER target counts the notes that link to the folder, and a folder whose settings name it (YAZ-2290 D10)', async () => {
     const rec = (path: string, over: object = {}) => ({
-      path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'hub', folder: '', ext: 'md',
+      path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'hub', title: 'hub', folder: '', ext: 'md',
       size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [] as string[], embeds: [], ...over,
     })
     const folders = [rec('/v/other/.folder.md', { folder: 'other', properties: { folder_settings: { columns: { in: { kind: 'link', target: '[[sub]]' } } } } })]
@@ -1027,6 +1065,17 @@ describe('reveal in Finder (GRO-2274)', () => {
     await clickSubAsync(el, 'Reveal in Finder')
     await act(async () => undefined)
     expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('no longer there'), 'error')
+  })
+
+  it('E: the stale-row notice names the note by its title (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }])
+    const { el, bridge, props } = await mount({ indexSource })
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    bridge.shell.reveal.mockRejectedValue(Object.assign(new Error('path does not exist'), { code: 'NOT_FOUND' }))
+    await clickSubAsync(el, 'Reveal in Finder')
+    await act(async () => undefined)
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t reveal "UP-001 - Abdul" — it is no longer there', 'error')
   })
 
   it('closes the menu after revealing', async () => {
@@ -1127,14 +1176,14 @@ describe('persistent search bar (YAZ-801)', () => {
  */
 describe('search results (YAZ-803)', () => {
   const record = (basename: string, folder = '') => ({
-    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, folder, ext: 'md',
+    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, title: basename, folder, ext: 'md',
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
 
   /** Mount over an index of Alpha + Docs/Anchor, then type `query` into the bar. */
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1261,7 +1310,7 @@ describe('search results (YAZ-803)', () => {
     const { el, input, bridge, props } = await search('a', { watch })
     await press(input, 'ArrowDown')
     expect(activeLabel(el)).toBe('Anchor') // index 1 of two rows
-    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], generatedAt: 2 } as never)
+    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], folders: [], generatedAt: 2 } as never)
     await act(async () => [...listeners].forEach((l) => l({ type: 'unlink', path: '/v/Docs/Anchor.md' })))
     await afterQuiet()
     expect(rowLabels(el)).toEqual(['Alpha'])
@@ -1287,9 +1336,9 @@ describe('search results (YAZ-803)', () => {
  */
 describe('search-row context menu (YAZ-2050)', () => {
   /** `a` is the tree's own `/v/a.md`, so its row exists once the search is left. */
-  const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], folders: [], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1407,9 +1456,9 @@ describe('folder rows in search (YAZ-1491)', () => {
   const expandedState = (el: HTMLElement, label: string) => dirRow(el, label)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
 
   /** A folder AND a note both called `sub`, so the tie-break is observable. */
-  const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', title: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], folders: [], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1423,6 +1472,12 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(folder.getAttribute('aria-label')).toBe('Search result sub, folder')
     expect(folder.querySelector('.search-results__glyph')).not.toBeNull()
     expect(note.classList.contains('search-results__row--dir')).toBe(false)
+  })
+
+  it('E: a folder is found and shown by its title, off the search\'s own index read (YAZ-2420 D14)', async () => {
+    const m = await mount({}, (b) => b.index.mockResolvedValue({ root: '/v', records: [], folders: [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }], generatedAt: 1 } as never))
+    await type(searchInput(m.el)!, 'upwork')
+    expect(dirResult(m.el)?.getAttribute('aria-label')).toBe('Search result Upwork 2026, folder')
   })
 
   it('Enter on a folder in the search results opens the folder\'s page as a tab, exactly as a note hit opens the note — nothing is revealed', async () => {
@@ -1536,11 +1591,11 @@ describe('folder rows in search (YAZ-1491)', () => {
  */
 describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
   const record = (basename: string, folder = '') => ({
-    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, folder, ext: 'md',
+    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, title: basename, folder, ext: 'md',
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
-  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never)
+  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1 } as never)
 
   const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
   /** Favorites is a glyph (YAZ-1766 D1): its name is the `aria-label`, not text. */
@@ -2058,7 +2113,7 @@ describe('favorites (YAZ-1766)', () => {
     for (const label of ['Focus on folder', 'Cut', 'Copy', 'Copy path', 'New note', 'Rename', 'Remove from favorites', 'Open in', 'Delete']) expect(itemByLabel(el, label), label).toBeDefined()
     closeMenu(el)
     rightClick(rowByPath(el, `${v}/top.md`))
-    expect(itemByLabel(el, 'Copy for Agent')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
     expect(itemByLabel(el, 'Focus on folder')).toBeUndefined()
   })
 
@@ -2271,7 +2326,6 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy',
       'Paste',
       'Copy path',
-      'Copy for Agent',
       'New note',
       'New folder',
       // Their own section (YAZ-2249 🔒 E1/E2): the dated twins lined up under the everyday pair.
@@ -2307,6 +2361,12 @@ describe('New note (GRO-2022)', () => {
   }
   const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
   const errorText = (el: HTMLElement) => el.querySelector('.create-inline__error')?.textContent ?? null
+  /** The one create the flow made: the note titled `Growth`, wherever it landed, born holding `properties` and then its title. */
+  const growthIn = (bridge: Awaited<ReturnType<typeof mount>>['bridge'], dir: string, properties = '', body = '') => {
+    const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `${dir}/growth-${id}.md`, content: `---\n${properties}title: Growth\n---\n${body}`, id })
+    return `${dir}/growth-${id}.md`
+  }
   /** Type a name into the open inline input and commit it with Enter. */
   const commit = async (el: HTMLElement, name: string) => {
     const field = input(el)!
@@ -2331,13 +2391,14 @@ describe('New note (GRO-2022)', () => {
     expect(input(el)?.placeholder).toBe('New note')
   })
 
-  it('committing a name creates the note in the right-clicked folder — empty, with no template there — then opens it', async () => {
+  it('B: committing a title creates the note in the right-clicked folder — its `title` and nothing else, with no template there, under its built name — then opens it (YAZ-2420 D20)', async () => {
     const { el, bridge, props } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New note')?.click())
     await commit(el, 'Growth')
     expect(bridge.readFile).toHaveBeenCalledExactlyOnceWith('/v/sub/.template.md')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '' })
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
+    const path = growthIn(bridge, '/v/sub')
+    expect(path).toMatch(/^\/v\/sub\/growth-[0-9a-z]{12}\.md$/)
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
     expect(input(el)).toBeNull() // the input is done
   })
 
@@ -2345,12 +2406,12 @@ describe('New note (GRO-2022)', () => {
     const onFile = await openOn('.tree__row--file')
     act(() => itemByLabel(onFile.el, 'New note')?.click())
     await commit(onFile.el, 'Growth')
-    expect(onFile.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '' })
+    growthIn(onFile.bridge, '/v')
 
     const onBlank = await openOn('.sidebar__body')
     act(() => itemByLabel(onBlank.el, 'New note')?.click())
     await commit(onBlank.el, 'Growth')
-    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '' })
+    growthIn(onBlank.bridge, '/v')
   })
 
   /** The folder `dir` holds this `.template.md`; every other folder holds none. */
@@ -2364,8 +2425,7 @@ describe('New note (GRO-2022)', () => {
     withTemplate(bridge, '/v/sub', '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n')
     act(() => itemByLabel(el, 'New note')?.click())
     await commit(el, 'Growth')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n' })
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(growthIn(bridge, '/v/sub', 'owner: me\nstatus: 1-Backlog\n', '## Notes\n'))
   })
 
   it('the vault root follows the same rule: its own `.template.md`, and never a subfolder\'s', async () => {
@@ -2373,29 +2433,29 @@ describe('New note (GRO-2022)', () => {
     withTemplate(onBlank.bridge, '/v', '---\nkind: inbox\n---\n')
     act(() => itemByLabel(onBlank.el, 'New note')?.click())
     await commit(onBlank.el, 'Growth')
-    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nkind: inbox\n---\n' })
+    growthIn(onBlank.bridge, '/v', 'kind: inbox\n')
 
     const onDir = await openOn('.tree__row--dir')
     withTemplate(onDir.bridge, '/v', '---\nkind: inbox\n---\n')
     act(() => itemByLabel(onDir.el, 'New note')?.click())
     await commit(onDir.el, 'Growth')
-    expect(onDir.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '' })
+    growthIn(onDir.bridge, '/v/sub')
   })
 
   it('writes no empty column keys (YAZ-2290 E1): the columns the folder declares are not stamped into the note, with a template or without', async () => {
     const declares = { path: '/v/sub/.folder.md', properties: { folder_settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] }, due: { kind: 'date' }, tags: { kind: 'list' } } } } }
     const bare = await openOn('.tree__row--dir')
-    bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
+    bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1 })
     act(() => itemByLabel(bare.el, 'New note')?.click())
     await commit(bare.el, 'Growth')
-    expect(bare.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '' })
+    growthIn(bare.bridge, '/v/sub')
 
     const templated = await openOn('.tree__row--dir')
-    templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
+    templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1 })
     withTemplate(templated.bridge, '/v/sub', '---\nowner: me\n---\n')
     act(() => itemByLabel(templated.el, 'New note')?.click())
     await commit(templated.el, 'Growth')
-    expect(templated.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '---\nowner: me\n---\n' })
+    growthIn(templated.bridge, '/v/sub', 'owner: me\n')
   })
 
   it('a template that cannot be read is an error in the box, and nothing is created', async () => {
@@ -2408,13 +2468,23 @@ describe('New note (GRO-2022)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('an invalid name shows the error and writes nothing', async () => {
+  it('B: a title is free text — `/`, `:`, `?`, quotes and a leading dot are accepted, and the title is what was typed (YAZ-2420 D20)', async () => {
+    const { el, bridge, props } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, '.a/b: "c"?')
+    expect(errorText(el)).toBeNull()
+    const born = bridge.createFile.mock.calls[0][0] as { path: string; content: string; id: string }
+    expect(born.path).toBe(`/v/sub/a-b-c-${born.id}.md`)
+    expect(parseFrontmatter(born.content).properties).toEqual({ title: '.a/b: "c"?' })
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(born.path)
+  })
+
+  it('B: an empty title is not accepted: nothing is created and the box stays open (YAZ-2420 D20)', async () => {
     const { el, bridge } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New note')?.click())
-    await commit(el, 'a/b')
-    expect(errorText(el)).not.toBeNull()
+    await commit(el, '   ')
     expect(bridge.createFile).not.toHaveBeenCalled()
-    expect(input(el)).not.toBeNull() // the input stays open to fix the name
+    expect(input(el)).not.toBeNull()
   })
 })
 
@@ -2442,8 +2512,9 @@ describe('New dated note (YAZ-2242)', () => {
         input(el)!.value = '09_29- Launch'
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
-      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/09_29- Launch.md', content: '' })
-      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/09_29- Launch.md')
+      const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id}.md`, content: '---\ntitle: 09_29- Launch\n---\n', id })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id}.md`)
     } finally {
       vi.useRealTimers()
     }
@@ -2463,8 +2534,9 @@ describe('New dated note (YAZ-2242)', () => {
         input(el)!.value = '09_29- Launch'
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
-      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/09_29- Launch.md', content: template })
-      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/09_29- Launch.md')
+      const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id}.md`, content: '---\nowner: me\ntitle: 09_29- Launch\n---\n## Notes\n', id })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id}.md`)
     } finally {
       vi.useRealTimers()
     }
@@ -2482,6 +2554,7 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
     return m
   }
   const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+  const errorText = (el: HTMLElement) => el.querySelector('.create-inline__error')?.textContent ?? null
   const commit = async (el: HTMLElement, name: string) => {
     await act(async () => {
       input(el)!.value = name
@@ -2489,14 +2562,33 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
     })
   }
 
-  it('New folder creates a directory inside the right-clicked folder and opens nothing', async () => {
+  it('C: New folder, titled `Upwork 2026`, creates the directory `upwork-2026` inside the right-clicked folder, sends its title along, and opens nothing (YAZ-2420 D6)', async () => {
     const { el, bridge, props } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New folder')?.click())
     expect(input(el)?.placeholder).toBe('New folder')
-    await commit(el, 'Later')
-    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/sub/Later')
+    await commit(el, 'Upwork 2026')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/upwork-2026', title: 'Upwork 2026' })
     expect(bridge.createFile).not.toHaveBeenCalled()
     expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('C: a folder title with no letter or digit is refused with a notice in the box, and nothing is created (YAZ-2420 D25)', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New folder')?.click())
+    await commit(el, '—')
+    expect(errorText(el)).toBe('A folder name needs a letter or a digit')
+    expect(bridge.createDir).not.toHaveBeenCalled()
+    expect(input(el)).not.toBeNull() // the input stays open to fix the title
+  })
+
+  it('C: a title whose kebab-case name a folder beside it already has is refused as a duplicate name is — no `-2` (YAZ-2420 D25)', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    bridge.createDir.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'path already exists' })
+    act(() => itemByLabel(el, 'New folder')?.click())
+    await commit(el, 'Upwork, 2026!')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/upwork-2026', title: 'Upwork, 2026!' })
+    expect(errorText(el)).toBe('path already exists')
+    expect(input(el)).not.toBeNull()
   })
 
   it('New dated folder opens the create box pre-filled with today\'s `MM_DD- ` in that folder (YAZ-1604)', async () => {
@@ -2507,7 +2599,7 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
       act(() => itemByLabel(el, 'New dated folder')?.click())
       expect(input(el)?.value).toBe('06_22- ')
       await commit(el, '06_22- Launch')
-      expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/sub/06_22- Launch')
+      expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/06-22-launch', title: '06_22- Launch' }) // C: a dated folder (YAZ-2420 D6)
     } finally {
       vi.useRealTimers()
     }
@@ -2685,67 +2777,6 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     await act(async () => emit?.({ type: 'unlinkDir', path: '/v/gone' }))
     await afterQuiet()
     expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/kept', '/v/a.md'])
-  })
-})
-
-/**
- * "Copy ID" (YAZ-2293): the note's permanent `id`, directly under "Copy path". The target is read
- * off the window's index snapshot when the menu opens, for the right-clicked NOTE only — so a note
- * with no id, a file that is not a note, a folder and a 2+ selection all open a menu without it.
- */
-describe('Sidebar "Copy ID" (YAZ-2293)', () => {
-  const ID_TREE: TreeNode[] = [
-    { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
-    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
-    { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' },
-    { type: 'file', name: 'report.pdf', path: '/v/report.pdf', size: 1, mtime: 1, kind: 'pdf' },
-    { type: 'file', name: 'photo.png', path: '/v/photo.png', size: 1, mtime: 1, kind: 'image' },
-  ]
-  const record = (path: string, id?: string) => {
-    const name = path.slice(path.lastIndexOf('/') + 1)
-    return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.[^.]+$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
-  }
-  // Only `/v/a.md` is a note WITH an id. The PDF and the folder are given records the real index
-  // never holds, so what keeps the item off those rows is the row's kind, not an empty lookup.
-  const records = [record('/v/a.md', 'k3m9x2pq7abc'), record('/v/b.md'), record('/v/report.pdf', 'p4d8f1zz2abc'), record('/v/photo.png', 'h6g3k8vv5abc'), record('/v/sub', 's7b2q9mm4abc')]
-  const noteId = (path: string) => records.find((r) => r.path === path)?.id
-  const mountIds = () => mount({ noteId }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: ID_TREE, generatedAt: 1 }))
-  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
-  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-
-  it('a note with an id offers "Copy ID" directly under "Copy path"; it copies exactly the id, confirms and closes', async () => {
-    const writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const { el, props } = await mountIds()
-    rightClick(rowByPath(el, '/v/a.md'))
-    const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    expect(labels.indexOf('Copy for Agent')).toBe(labels.indexOf('Copy ID') + 1)
-    act(() => itemByLabel(el, 'Copy ID')?.click())
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
-    await act(async () => {})
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
-  })
-
-  it.each([
-    ['a note with no id', '/v/b.md'],
-    ['a file that is not a note', '/v/report.pdf'],
-    ['an image', '/v/photo.png'],
-    ['a folder', '/v/sub'],
-  ])('%s offers no "Copy ID" — "Copy path" stays', async (_what, path) => {
-    const { el } = await mountIds()
-    rightClick(rowByPath(el, path))
-    expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Copy ID')).toBeUndefined()
-  })
-
-  it('a 2+ selection offers no "Copy ID", even on the note that has one', async () => {
-    const { el } = await mountIds()
-    for (const path of ['/v/a.md', '/v/b.md']) act(() => void rowByPath(el, path)?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
-    rightClick(rowByPath(el, '/v/a.md'))
-    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
-    expect(itemByLabel(el, 'Copy ID')).toBeUndefined()
   })
 })
 
@@ -3254,7 +3285,18 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note.md — already exists', 'paste')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note — already exists', 'paste')
+  })
+
+  it('E: a paste that fails names the note by its title (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }])
+    const { el, bridge, props } = await mount({ indexSource }, withClipboard)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/v/a.md', code: 'ALREADY_EXISTS', message: 'already exists' }] })
+    act(() => pushClip?.(clipOf('copy', '/v/a.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: UP-001 - Abdul — already exists", 'error')
   })
 
   it('nothing pasted → "Couldn\'t paste: …"; a rejected paste → a notice, never a throw', async () => {
@@ -3263,7 +3305,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     rightClick(body(el))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
-    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: Note.md — gone", 'error')
+    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: Note — gone", 'error')
     bridge.file.paste.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'target dir is gone' })
     rightClick(body(el))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
@@ -3510,6 +3552,39 @@ describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
   })
 })
 
+/** Every row is labelled with its title, looked up in the window's index (YAZ-2420 🔒 D15); the tree itself stays a directory listing. */
+describe('tree rows show the title (YAZ-2420 D15)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const ABDUL = '/v/upwork/up-001-abdul-k3m9x2pq7abc.md'
+  const TITLED: TreeNode[] = [{ type: 'dir', name: 'upwork', path: '/v/upwork', children: [file('/v/upwork/plan.md'), { type: 'file', name: 'scan.pdf', path: '/v/upwork/scan.pdf', size: 1, mtime: 1, kind: 'pdf' }, file(ABDUL)] }]
+  const RECORDS = [indexRecord('/v/upwork/plan.md'), { ...indexRecord(ABDUL), title: 'UP-001 - Abdul' }]
+  const FOLDERS = [{ ...indexRecord('/v/upwork/.folder.md'), title: 'Upwork 2026' }]
+  const labels = (el: HTMLElement) => [...el.querySelectorAll('.tree__label')].map((label) => label.textContent)
+  const mountTitled = async (indexSource = createWikilinkResolveSource()) => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/upwork'])
+    const mounted = await mount({ indexSource }, (bridge) => bridge.tree.mockResolvedValue({ root: '/v', tree: TITLED, generatedAt: 1 }))
+    return { ...mounted, indexSource }
+  }
+
+  it('E: before the index has loaded a row shows its file name, then its title — a file that is no note keeps its name', async () => {
+    const { el, indexSource } = await mountTitled()
+    expect(labels(el)).toEqual(['upwork', 'plan', 'scan.pdf', 'up-001-abdul-k3m9x2pq7abc'])
+    act(() => indexSource.update(() => null, RECORDS, FOLDERS))
+    expect(labels(el)).toEqual(['Upwork 2026', 'plan', 'scan.pdf', 'UP-001 - Abdul'])
+  })
+
+  it('a snapshot that changes no title re-renders no row; one that changes a title re-renders them', async () => {
+    const indexSource = createWikilinkResolveSource()
+    act(() => indexSource.update(() => null, RECORDS, FOLDERS))
+    await mountTitled(indexSource)
+    labelRenders.names = []
+    act(() => indexSource.update(() => null, RECORDS.map((r) => ({ ...r, mtime: 2 })), FOLDERS))
+    expect(labelRenders.names).toEqual([])
+    act(() => indexSource.update(() => null, RECORDS.map((r) => (r.path === ABDUL ? { ...r, title: 'Renamed' } : r)), FOLDERS))
+    expect([...new Set(labelRenders.names)].sort()).toEqual(['plan.md', 'scan.pdf', 'up-001-abdul-k3m9x2pq7abc.md'])
+  })
+})
+
 /**
  * Shortcuts (YAZ-2290 D2): a note lives in one folder and also appears in another — its
  * `also_in` names that folder's id, the `id` of the folder's `.folder.md`. The folder row's menu
@@ -3531,7 +3606,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
     indexRecord('/v/Projects/Zeta.md'),
     indexRecord('/v/top.md'),
   ]
-  const FOLDERS: IndexRecord[] = [{ ...indexRecord('/v/Projects/.folder.md'), id: PROJECTS_ID }]
+  const FOLDERS: IndexRecord[] = [{ ...indexRecord('/v/Projects/.folder.md'), id: PROJECTS_ID, title: 'Projects' }]
   const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
   const rightClick = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
   const picker = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a note"]')
@@ -3573,6 +3648,13 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(rows.map((r) => r.querySelector('.shortcut-mark') !== null)).toEqual([false, true, false])
       expect(row(el, HEALTH)?.querySelector('.shortcut-mark')).toBeNull() // where it lives, it is a plain file row
       expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('3')
+    })
+
+    it('E: shows the note\'s title, as its real row does, and still stands in file-name order (YAZ-2420 D15)', async () => {
+      const { el, indexSource } = await mountLinked([PROJECTS_ID])
+      act(() => indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, title: 'Zz Top' } : r)), FOLDERS))
+      expect(row(el, HEALTH)?.textContent).toBe('Zz Top')
+      expect([...(row(el, '/v/Projects')?.closest('li')?.querySelectorAll('.tree__row--file') ?? [])].map((r) => r.textContent)).toEqual(['Alpha', 'Zz Top', 'Zeta'])
     })
 
     it('a click opens the REAL note, exactly as a file row does', async () => {
@@ -3631,7 +3713,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       const labels = menuItems(el).map((item) => item.textContent)
       expect(labels[labels.length - 1]).toBe('Remove shortcut')
       for (const absent of ['Delete', 'Rename', 'Cut', 'Copy', 'Paste', 'Add note shortcut']) expect(labels).not.toContain(absent)
-      for (const kept of ['Copy path', 'Copy for Agent', 'Add to favorites', 'Open in']) expect(labels).toContain(kept)
+      for (const kept of ['Copy path', 'Add to favorites', 'Open in']) expect(labels).toContain(kept)
       // The real row's menu is a file row's, as ever.
       rightClick(row(el, HEALTH))
       expect(itemByLabel(el, 'Delete')).toBeDefined()
@@ -3774,13 +3856,10 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
       })
 
-      it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move; a Copy removes nothing (D20)', async () => {
+      it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move (D20)', async () => {
         const { el, disk, bridge, writeFile, paste } = await mountCut()
         disk.set('/v/Areas/Alpha.md', HELD) // where the paste lands it
         bridge.file.paste.mockResolvedValue({ pasted: [{ from: ALPHA, to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
-        await paste('copy', [ALPHA])
-        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
-        expect(writeFile).not.toHaveBeenCalled()
         await paste('cut', [ALPHA])
         expect(writeFile).not.toHaveBeenCalled()
         await act(async () => sheetBtn(el, 'Move')?.click())
@@ -3809,11 +3888,91 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
       })
 
-      it('Copy, then Paste: never asks', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('copy', [ALPHA, ZETA, SUB])
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+      /**
+       * A copy keeps no values for the folders that do not show it, and the app asks first
+       * (YAZ-2420 3E1). Main lands the copy under a name of its own; the index has not heard of it
+       * when the paste answers, so the tree is what lists it. The original is never written.
+       */
+      describe('Copy, then Paste (YAZ-2420 3E1)', () => {
+        const COPY = '/v/Areas/alpha-copy-n3w1d0000001.md'
+        /** The tree once main has copied: `added` stands in the top-level folder `dir`. */
+        const landed = (bridge: ReturnType<typeof installBridge>, dir: string, added: TreeNode, to: string, from: string) => {
+          bridge.tree.mockResolvedValue({ root: '/v', tree: WITH_SUB.map((node) => (node.path === dir && node.type === 'dir' ? { ...node, children: [...node.children, added] } : node)), generatedAt: 2 })
+          bridge.file.paste.mockResolvedValue({ pasted: [{ from, to, kind: added.type }], failed: [] })
+        }
+        const indexed = (bridge: ReturnType<typeof installBridge>, folders: IndexRecord[] = FOLDERS) => bridge.index.mockResolvedValue({ root: '/v', records: [], folders, generatedAt: 2 } as never)
+
+        it('a note with values for a folder, copied into another: the sheet asks in the copy wording; Copy pastes, and the copy holds no block for that folder while the original still does', async () => {
+          const { el, disk, bridge, writeFile, paste } = await mountCut()
+          disk.set(ALPHA, HELD)
+          disk.set(COPY, HELD) // as main lands it
+          await paste('copy', [ALPHA])
+          expect(sheetText(el)).toBe("Copy 'Alpha' to 'Areas'? Its values for Projects will not be copied.")
+          expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Copy'])
+          expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
+          expect(bridge.file.paste).not.toHaveBeenCalled()
+          landed(bridge, '/v/Areas', file(COPY), COPY, ALPHA)
+          indexed(bridge)
+          await act(async () => sheetBtn(el, 'Copy')?.click())
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+          expect(disk.get(COPY)).toBe('---\n---\nBody\n')
+          expect(disk.get(ALPHA)).toBe(HELD)
+          expect(writeFile).toHaveBeenCalledTimes(1)
+        })
+
+        it('Cancel: nothing is copied, nothing is written, and the copy stays on the clipboard', async () => {
+          const { el, bridge, writeFile, paste } = await mountCut()
+          await paste('copy', [ALPHA])
+          await act(async () => sheetBtn(el, 'Cancel')?.click())
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).not.toHaveBeenCalled()
+          expect(writeFile).not.toHaveBeenCalled()
+          rightClick(row(el, '/v/Areas'))
+          expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
+        })
+
+        it('a copy into the folder the original is in asks nothing, and the copy, looked at, keeps every block', async () => {
+          const SAME = '/v/Projects/alpha-copy-n3w1d0000001.md'
+          const { el, disk, bridge, writeFile, paste } = await mountCut()
+          disk.set(SAME, HELD)
+          landed(bridge, '/v/Projects', file(SAME), SAME, ALPHA)
+          indexed(bridge)
+          await paste('copy', [ALPHA], '/v/Projects')
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Projects' })
+          expect(bridge.readFile).toHaveBeenCalledWith(SAME)
+          expect(disk.get(SAME)).toBe(HELD)
+          expect(writeFile).not.toHaveBeenCalled()
+        })
+
+        it('a copied folder: its notes keep their values under the copy’s id, and lose the blocks of the folders outside it that no longer show them', async () => {
+          const SUB_ID = 's0bf01der000'
+          const COPY_ID = 'c0pyf01der00'
+          const SUB_COPY = '/v/Areas/sub-copy'
+          const DEEP_COPY = `${SUB_COPY}/deep-n3w1d0000002.md`
+          const sub: IndexRecord = { ...indexRecord(`${SUB}/.folder.md`), id: SUB_ID, title: 'Sub' }
+          const { el, disk, bridge, writeFile, indexSource, paste } = await mountCut()
+          // By the window's snapshot Deep holds values for Projects and for Sub, the folder it is in.
+          act(() => indexSource.update(() => null, [{ ...indexRecord(`${SUB}/Deep.md`), properties: { in: { [PROJECTS_ID]: { order: 1 }, [SUB_ID]: { order: 2 } } } }], [...FOLDERS, sub]))
+          await paste('copy', [SUB])
+          expect(sheetText(el)).toBe("Copy 'Sub' to 'Areas'? 1 note will not keep its values for Projects.")
+          // As main lands it: the copy has an id of its own, and its note's values for Sub were carried to it.
+          disk.set(DEEP_COPY, `---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
+          landed(bridge, '/v/Areas', { type: 'dir', name: 'sub-copy', path: SUB_COPY, children: [file(DEEP_COPY)] }, SUB_COPY, SUB)
+          indexed(bridge, [...FOLDERS, sub, { ...indexRecord(`${SUB_COPY}/.folder.md`), id: COPY_ID, title: 'Sub copy' }])
+          await act(async () => sheetBtn(el, 'Copy')?.click())
+          expect(disk.get(DEEP_COPY)).toBe(`---\nin:\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
+          expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: DEEP_COPY })) // the original is never written
+        })
+
+        it('nothing to leave behind — a note with no values, a copy from outside this vault — means no sheet: the paste runs at once', async () => {
+          const { el, bridge, paste } = await mountCut()
+          await paste('copy', ['/v/top.md'])
+          await paste('copy', ['/w/Projects/Alpha.md'])
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste.mock.calls).toEqual([[{ targetDir: '/v/Areas' }], [{ targetDir: '/v/Areas' }]])
+        })
       })
 
       it('a folder is moved (Cut then Paste) and notes under it would lose values', async () => {

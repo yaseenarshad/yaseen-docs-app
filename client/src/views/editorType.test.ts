@@ -18,6 +18,7 @@ const record = (properties: Record<string, unknown>, i = 0): IndexRecord => ({
   path: `/vault/n${i}.md`,
   name: `n${i}.md`,
   basename: `n${i}`,
+  title: `n${i}`,
   folder: '',
   ext: 'md',
   size: 0,

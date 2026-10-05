@@ -95,7 +95,7 @@ describe('scheduleInWords', () => {
 
 function record(over: Partial<IndexRecord> & { path: string }): IndexRecord {
   const name = over.path.split('/').pop() ?? ''
-  return { name, basename: name.replace(/\.md$/, ''), folder: '', ext: 'md', size: 1, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'aaaaaaaa', ...over }
+  return { name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: '', ext: 'md', size: 1, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'aaaaaaaa', ...over }
 }
 
 describe('isInReview', () => {

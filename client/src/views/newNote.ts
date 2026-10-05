@@ -69,9 +69,3 @@ export function deriveSeed(def: ViewSet, view: ViewDef): NewNoteSeed {
   return tags.length > 0 ? { properties, tags } : { properties }
 }
 
-/** First free name in the locked scheme: `base`, `base 2`, `base 3`… (`taken` = basenames in the folder). */
-export function freeName(base: string, taken: ReadonlySet<string>): string {
-  if (!taken.has(base)) return base
-  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
-}
-

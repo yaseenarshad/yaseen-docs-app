@@ -21,7 +21,7 @@ afterEach(async () => {
 describe('createCrepe view-only source isolation (YAZ-1310)', () => {
   it('consults the separate source without replacing or extending semantic records/resolution', async () => {
     const record: IndexRecord = {
-      path: '/vault/Home.md', name: 'Home.md', basename: 'Home', folder: '', ext: 'md',
+      path: '/vault/Home.md', name: 'Home.md', basename: 'Home', title: 'Home', folder: '', ext: 'md',
       size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
     }
     const semantic = createWikilinkResolveSource()

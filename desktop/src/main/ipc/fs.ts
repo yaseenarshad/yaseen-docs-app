@@ -1,6 +1,7 @@
 import path from 'node:path'
 import type { IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
+import type { RenameFileResponse } from '@shared/types'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import { readAsset, writeAsset } from '../fs/assets'
@@ -15,6 +16,7 @@ import { openLink } from '../fs/openLink'
 import { readPdf } from '../fs/pdf'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
+import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
@@ -76,6 +78,12 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // tabs, recents, folder state) — and then pushes `file:renamed` to EVERY window so open
   // tabs remap in place (a `dir` event remaps by prefix). The vault index needs no push:
   // the shared watcher's unlink+add echo already heals it (no double-processing).
+  const afterRename = async (res: RenameFileResponse): Promise<RenameFileResponse> => {
+    store.renamePath(res.oldPath, res.newPath)
+    await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    return res
+  }
   handleWithEvent(CONTRACT.file.rename, async (e, req: unknown) => {
     // E1b: the calling window's own vault ROOT cannot be renamed — root identity is a
     // recents/vault-management question (which recents entry follows, what this window's
@@ -87,11 +95,17 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     if (oldPath !== null && senderRoot != null && senderRoot === oldPath) {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be renamed', { path: oldPath })
     }
-    const res = await renameFile(req)
-    store.renamePath(res.oldPath, res.newPath)
-    await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
-    broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
-    return res
+    return afterRename(await renameFile(req))
+  })
+  // A title edit (YAZ-2420 🔒 D16): `retitle` writes the title and renames; a path that changed
+  // then takes the rename handler's downstream (`afterRename`). One that kept its name moved
+  // nothing, so there is nothing to repair or push: the index reads the new title off the watcher.
+  handleWithEvent(CONTRACT.file.retitle, async (e, req: unknown) => {
+    const senderId = windows.idFor(e.sender)
+    const root = store.get().windows.find((w) => w.id === senderId)?.root
+    if (root == null) throw new BridgeFailure('BAD_REQUEST', 'no vault is open in this window')
+    const res = await retitle(root, req)
+    return res.newPath === res.oldPath ? res : afterRename(res)
   })
   // In-app delete (GRO-2272). Deliberately the SAME shape as the rename handler above —
   // fs work, then `store.removePath` repair, then one broadcast to every window — with two
@@ -151,7 +165,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // then `clip:changed` carries the rest (the same catch-up read `github.status` offers).
   handle(CONTRACT.file.clipState, async () => fileClip.state())
   // Paste (D2–D4). Per entry, in clipboard order, and one bad entry never stops the rest:
-  //  - a COPY is `copyEntry` (fs.cp under Finder's next free name, D3/D4) with deliberately NO
+  //  - a COPY is `copyEntry` (a note or a folder under its own built name, YAZ-2420 🔒 D21; any
+  //    other file `fs.cp` under Finder's next free name, D3/D4) with deliberately NO
   //    store repair and NO broadcast — nothing moved and nothing went, so there is nothing to
   //    remap or retire; the tree learns of the new entry from the watcher's add/addDir echo,
   //    exactly like any add made outside the app, and the client's refresh() is idempotent;

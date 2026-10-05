@@ -9,7 +9,7 @@
  *    `outline-zoom-ancestor` on the ancestor list_items (their glyph/chevron are hidden and a
  *    folded ancestor is shown expanded — fold state itself is untouched);
  *  - a breadcrumb widget at the start of the document: `File › Ancestor › … › Zoomed`. Each crumb
- *    zooms to that ancestor; the file-name crumb zooms out fully.
+ *    zooms to that ancestor; the first crumb, the page's title, zooms out fully.
  * Zooming dispatches a metadata-only transaction (`tr.docChanged === false`), so the listener never
  * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. Zoom is not
  * persisted: switching files remounts the editor and therefore clears it.
@@ -40,14 +40,16 @@ import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 export interface ZoomOptions {
-  /** Shown as the first breadcrumb; clicking it zooms out fully. */
+  /** The `file` stamped on history entries (so another file's entries are ignored). */
   fileName: string
+  /** The page's title (YAZ-2420 🔒 D14), read as the breadcrumb is drawn: the first crumb; clicking it zooms out fully. */
+  title: () => string
 }
 
 interface ZoomState {
   /** Position of the zoomed list_item, or null when not zoomed. */
   itemPos: number | null
-  /** Breadcrumb root and the `file` stamped on history entries (so another file's entries are ignored). */
+  /** The `file` stamped on history entries (so another file's entries are ignored). */
   fileName: string
   /**
    * ⌘Z target: the level before the latest zoom change, kept while that change is still the latest
@@ -224,12 +226,12 @@ const crumbButton = (view: EditorView, label: string, target: ZoomLevel, current
   return button
 }
 
-const buildDecorations = (state: EditorState, itemPos: number, fileName: string): Decoration[] => {
+const buildDecorations = (state: EditorState, itemPos: number, title: string): Decoration[] => {
   const $item = state.doc.resolve(itemPos)
   const zoomed = $item.nodeAfter
   const decorations: Decoration[] = []
   if (!isListItem(zoomed)) return decorations
-  const crumbs: Array<{ label: string; target: ZoomLevel }> = [{ label: fileName, target: null }]
+  const crumbs: Array<{ label: string; target: ZoomLevel }> = [{ label: title, target: null }]
 
   // Walk the containers on the path root → zoomed item; hide every child that is off the path.
   for (let depth = 0; depth <= $item.depth; depth++) {
@@ -286,7 +288,7 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   return isListItem($pos.parent) ? $pos.before() : null
 }
 
-export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
+export const createOutlineZoom = ({ fileName, title }: ZoomOptions) =>
   $prose(
     () =>
       new Plugin<ZoomState>({
@@ -335,7 +337,7 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
           decorations: (state) => {
             const itemPos = getZoomedItemPos(state)
             if (itemPos === null) return DecorationSet.empty
-            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, fileName))
+            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, title()))
           },
           handleDOMEvents: {
             click: (view, event) => {

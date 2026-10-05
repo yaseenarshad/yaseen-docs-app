@@ -4,7 +4,8 @@
  * title-scale data (guarded by `searchCandidates.perf.test.ts`). Since YAZ-1491 the list also
  * carries the tree's FOLDERS (🔒 D1): `dirs` is the Sidebar's own `allDirs` memo — no second
  * feed, no extra read — spliced in FIRST so a folder sits above a note it ties with (tree order:
- * dirs before files).
+ * dirs before files). A query that holds an id is answered by it alone (`searchRows`, 🔒 D32); a
+ * folder's title (YAZ-2420 🔒 D14) and id are on the snapshot's `folders`.
  *
  * The feed is LAZY (F1 finding 1, YAZ-808). The ALWAYS-ON per-window index feed is
  * WikilinkIndexBridge's; search must not duplicate it in every window for a bar nobody typed
@@ -15,10 +16,11 @@ import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
-import { folderCandidates, searchCandidates, searchTitles, type SearchCandidate } from './searchCandidates'
+import { folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
 
 export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[]): SearchCandidate[] {
   const [records, setRecords] = useState<readonly IndexRecord[]>([])
+  const [folders, setFolders] = useState<readonly IndexRecord[]>([])
   // Latched by the first non-empty query and never unlatched: after that the snapshot stays warm
   // and watch-fresh for the rest of this component's life, so clearing the bar and typing again
   // costs nothing. Until then there is no fetch and no subscription at all.
@@ -37,7 +39,9 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
       // view: a banner here would shout about something the tree below is already showing fine.
       api.index(root).then(
         (res) => {
-          if (mine === generation) setRecords(res.records)
+          if (mine !== generation) return
+          setRecords(res.records)
+          setFolders(res.folders)
         },
         () => undefined,
       )
@@ -60,10 +64,10 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
     }
   }, [root, watch, activated])
 
-  const folderRows = useMemo(() => folderCandidates(root, dirs), [root, dirs])
+  const folderRows = useMemo(() => folderCandidates(root, dirs, folders), [root, dirs, folders])
   const noteRows = useMemo(() => searchCandidates(records), [records])
   const candidates = useMemo(() => [...folderRows, ...noteRows], [folderRows, noteRows])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the
   // no-query case is answered here rather than by the ranker.
-  return useMemo(() => (query.trim() === '' ? [] : searchTitles(candidates, query)), [candidates, query])
+  return useMemo(() => (query.trim() === '' ? [] : searchRows(candidates, query)), [candidates, query])
 }

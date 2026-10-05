@@ -72,6 +72,7 @@ const cover = (name: string, properties: Record<string, unknown>): IndexRecord =
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   folder: '',
   properties,
 })
@@ -191,11 +192,22 @@ describe('grid', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('a right-click on a card opens the page menu: "Copy ID" directly under "Copy path" when its note has an id', () => {
+  it('a right-click on a card opens the page menu: "Copy path", and no "Copy ID" though its note has an id (YAZ-2420 D31)', () => {
     const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
     act(() => void cardOf(el, 'Agentic Agency').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+    expect(labels).toContain('Copy path')
+    expect(labels).not.toContain('Copy ID')
+  })
+})
+
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a card\'s title shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-card__title')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
   })
 })
 

@@ -174,7 +174,7 @@ export interface CreateCrepeOptions {
   folding?: OutlineFoldingOptions
   /** Fold state for collapsible heading sections (YAZ-1140): same contract as `folding`, its own `h:`-prefixed key space. */
   headingFolding?: HeadingFoldingOptions
-  /** Zoom into a bullet (GRO-2029); `fileName` is the root breadcrumb. Defaults to an unnamed file. */
+  /** Zoom into a bullet (GRO-2029); `title` is the root breadcrumb. Defaults to an unnamed file. */
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
   find?: FindChannel
@@ -326,7 +326,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
-  crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
+  crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled', title: () => 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.

@@ -19,13 +19,13 @@ afterEach(() => {
   container = null
 })
 
-function mount(onSubmit: (name: string) => Promise<void> = () => Promise.resolve()) {
+function mount(onSubmit: (name: string) => Promise<void> = () => Promise.resolve(), title = false) {
   const submit = vi.fn(onSubmit)
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<RenameInline initial="Old Note" indent={0} onSubmit={submit} onCancel={onCancel} />))
+  act(() => root?.render(<RenameInline initial="Old Note" title={title} indent={0} onSubmit={submit} onCancel={onCancel} />))
   const field = container.querySelector<HTMLInputElement>('.create-inline__input')
   if (field === null) throw new Error('the rename input did not mount')
   return { el: container, field, onSubmit: submit, onCancel }
@@ -61,11 +61,21 @@ describe('RenameInline (YAZ-1553)', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('click-away with the unchanged name still submits — the parent owns the same-name no-op', async () => {
-    const { field, onSubmit } = mount()
+  it('click-away with the unchanged name cancels: what the box was prefilled with is not an edit', async () => {
+    const { field, onSubmit, onCancel } = mount()
     leave(field)
     await flush()
-    expect(onSubmit).toHaveBeenCalledWith('Old Note')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['a/b', '.hidden', 'Q3: "what now"?'])('a TITLE is free text: %s is submitted, where a file name would be refused (YAZ-2420 D16)', async (title) => {
+    const { el, field, onSubmit } = mount(undefined, true)
+    field.value = title
+    leave(field)
+    await flush()
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(title)
+    expect(error(el)).toBeNull()
   })
 
   it('click-away with an empty name cancels: there is nothing to commit', async () => {

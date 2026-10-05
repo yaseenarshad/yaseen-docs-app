@@ -57,7 +57,7 @@ let source: MutableWikilinkResolveSource
 /** The vault's bytes: what `api` reads and writes. */
 let disk: Map<string, { content: string; mtime: number }>
 let clock = 100
-const onRenameFile = vi.fn()
+const onRetitle = vi.fn()
 const onOpenFile = vi.fn()
 const onOpenFileBackground = vi.fn()
 
@@ -72,7 +72,7 @@ function feed(): void {
 
 /** Mounts, hands over the first snapshot, and lets the settings file's read answer. */
 async function mount(path = STAGES): Promise<HTMLElement> {
-  const el = renderFolderView({ path, source, onOpenFile, onOpenFileBackground, onRenameFile })
+  const el = renderFolderView({ path, source, onOpenFile, onOpenFileBackground, onRetitle })
   feed()
   await flush()
   return el
@@ -236,17 +236,17 @@ describe('a folder whose `.folder.md` holds view settings, a property and a comm
   })
 })
 
-describe('the title renames the FOLDER', () => {
-  it('a commit reaches the rename door with the old and new DIRECTORY paths', async () => {
+describe('the title retitles the FOLDER (YAZ-2420 D16)', () => {
+  it('a commit reaches the rename door with the DIRECTORY and the title typed', async () => {
     const el = await mount()
     click(q(el, '.page-title__text'))
     const field = q<HTMLTextAreaElement>(el, '.page-title__input')
-    field.value = 'phases'
+    field.value = 'Phases: 2026'
     press(field, 'Enter')
-    expect(onRenameFile).toHaveBeenCalledExactlyOnceWith(STAGES, '/vault/phases', 'dir')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(STAGES, 'Phases: 2026', 'dir')
   })
 
-  it('a folder named `Notes.md` shows and renames by its full name — no extension logic', async () => {
+  it('a folder named `Notes.md` shows and edits its full name — no extension logic', async () => {
     const el = await mount('/vault/Notes.md')
     expect(q(el, '.page-title__text').textContent).toBe('Notes.md')
     click(q(el, '.page-title__text'))
@@ -254,7 +254,20 @@ describe('the title renames the FOLDER', () => {
     expect(field.value).toBe('Notes.md')
     field.value = 'Ideas'
     press(field, 'Enter')
-    expect(onRenameFile).toHaveBeenCalledExactlyOnceWith('/vault/Notes.md', '/vault/Ideas', 'dir')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('/vault/Notes.md', 'Ideas', 'dir')
+  })
+})
+
+describe('a row\u2019s title is edited from the table (YAZ-2420 D19)', () => {
+  it('a double-click on the Name cell and a commit reach the rename door as a title edit of that NOTE', async () => {
+    const el = await mount()
+    const cell = q<HTMLElement>(el, '.view-table__name')
+    act(() => void cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    const field = q<HTMLInputElement>(cell, '[aria-label="Edit title"]')
+    expect(field.value).toBe('Lead Gen')
+    setValue(field, 'Lead Generation')
+    press(field, 'Enter')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(LEAD, 'Lead Generation', 'file')
   })
 })
 

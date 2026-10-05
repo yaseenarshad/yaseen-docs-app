@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, basenameCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -18,6 +18,7 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
     path,
     name,
     basename: name.replace(/\.md$/, ''),
+    title: name.replace(/\.md$/, ''),
     folder: path.indexOf('/', '/vault/'.length) === -1 ? '' : folder,
     ext: 'md',
     size: 1,
@@ -235,10 +236,53 @@ describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
   })
 })
 
-describe('basenameCandidates (the cell editors, YAZ-2293)', () => {
+describe('linkCandidates: rows are typed and read as TITLES (YAZ-2420 D17)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const ABDUL = `/vault/candidates/up-001-abdul-${ID}.md`
+  const abdul = (aliases: string[] = []): IndexRecord => ({ ...rec(ABDUL, aliases), title: 'UP-001 - Abdul' })
+
+  it('E: the row of a note with a title matches and reads as the title, and inserts the id; so does its alias row', () => {
+    const rows = linkCandidates([{ ...abdul(['Abdul R']), id: ID }])
+    expect(rows).toEqual([
+      { name: 'UP-001 - Abdul', insert: ID, label: 'UP-001 - Abdul', lower: 'up-001 - abdul', path: ABDUL },
+      { name: 'Abdul R', insert: ID, label: 'Abdul R — UP-001 - Abdul', lower: 'abdul r', path: ABDUL },
+    ])
+    expect(matchLinkCandidates(rows, 'up-001 -').map((c) => c.label)).toEqual(['UP-001 - Abdul'])
+    expect(matchLinkCandidates(rows, ID)).toEqual([]) // the file name is not what a row is typed as
+  })
+
+  it('a note with a title and no id inserts its title, which resolves back to it', () => {
+    const records = [abdul(['Abdul R'])]
+    expect(linkCandidates(records).map((c) => c.insert)).toEqual(['UP-001 - Abdul', 'UP-001 - Abdul|Abdul R'])
+    expect(linkCandidates(records).map((c) => resolverFor(records, '/vault')(c.insert)?.record.path)).toEqual([ABDUL, ABDUL])
+  })
+
+  it('two notes with one title and no id: the shallowest inserts the title, the other its path, and each row tells them apart', () => {
+    const records = [abdul(['Abdul R']), { ...rec('/vault/z/deep/old-abdul.md', ['Old one']), title: 'UP-001 - Abdul' }]
+    expect(linkCandidates(records).map(({ label, insert }) => ({ label, insert }))).toEqual([
+      { label: 'UP-001 - Abdul', insert: 'UP-001 - Abdul' },
+      { label: 'Abdul R — UP-001 - Abdul', insert: 'UP-001 - Abdul|Abdul R' },
+      { label: 'z/deep/UP-001 - Abdul', insert: 'z/deep/old-abdul' },
+      { label: 'Old one — z/deep/UP-001 - Abdul', insert: 'z/deep/old-abdul|Old one' },
+    ])
+    const resolve = resolverFor(records, '/vault')
+    expect(linkCandidates(records).map((c) => resolve(c.insert)?.record.path)).toEqual([ABDUL, ABDUL, '/vault/z/deep/old-abdul.md', '/vault/z/deep/old-abdul.md'])
+  })
+})
+
+describe('titleCandidates (the cell editors, YAZ-2293)', () => {
+  it('E: offers a note with a title by the title, and writes its id — its title when it has none (YAZ-2420 D17)', () => {
+    const titled = { ...rec('/vault/candidates/up-001-abdul-k3m9x2pq7abc.md'), title: 'UP-001 - Abdul' }
+    expect(titleCandidates([{ ...titled, id: 'k3m9x2pq7abc' }, titled])).toEqual([
+      { name: 'UP-001 - Abdul', insert: 'k3m9x2pq7abc', label: 'UP-001 - Abdul', lower: 'up-001 - abdul' },
+      { name: 'UP-001 - Abdul', insert: 'UP-001 - Abdul', label: 'UP-001 - Abdul', lower: 'up-001 - abdul' },
+    ])
+  })
+
+
   it('offers every note by its BASENAME — no alias row, no folder form — and writes its id when it has one', () => {
     const records = [rec('/vault/Note.md', ['Alias']), { ...rec('/vault/a/Note.md'), id: 'k3m9x2pq7abc' }]
-    expect(basenameCandidates(records)).toEqual([
+    expect(titleCandidates(records)).toEqual([
       { name: 'Note', insert: 'Note', label: 'Note', lower: 'note' },
       { name: 'Note', insert: 'k3m9x2pq7abc', label: 'Note', lower: 'note' },
     ])

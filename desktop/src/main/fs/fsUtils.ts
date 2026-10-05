@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { link, open, readdir, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import type { BridgeError, FileKind, TreeNode } from '@shared/types'
+import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
 import { ATOMIC_TMP_HEX_LEN, fileKind, isAtomicTmp, isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -211,4 +211,10 @@ export async function createDurable(file: string, content: string | Uint8Array):
   } finally {
     await unlink(tmp).catch(() => undefined)
   }
+}
+
+/** A folder just made is born with its `.folder.md`, `content`. One already there is written over: the id sweep saw the folder first, and its file holds only the id it gave. */
+export async function createFolderSettings(dir: string, content: string): Promise<void> {
+  const file = folderSettingsPath(dir)
+  await createDurable(file, content).catch((err: NodeJS.ErrnoException) => (err.code === 'EEXIST' ? atomicWrite(file, content) : Promise.reject(err)))
 }

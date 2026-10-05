@@ -56,7 +56,7 @@ export const FUNCTIONS: Record<string, GlobalFn> = {
     const display = args.length > 1 && args[1] !== null ? render(args[1]) : undefined
     if (typeof target === 'string') return new LinkValue(stripBrackets(target), display)
     if (target instanceof LinkValue) return new LinkValue(target.target, display ?? target.display)
-    if (target instanceof FileValue) return new LinkValue(target.record.basename, display)
+    if (target instanceof FileValue) return new LinkValue(target.record.id ?? target.record.title, display)
     throw new ArgError(`link() expects a string, got ${typeOf(target)}`)
   },
   file: (args, { resolve }) => {

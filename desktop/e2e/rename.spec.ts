@@ -1,11 +1,12 @@
 /**
  * Links E1 (GRO-2194): in-app rename with automatic link updates, against the REAL app —
  * the sidebar context menu's "Rename" → inline input → Enter → the name-change confirm sheet
- * (⚡ YAZ-888, which every NAME change below now passes). The renamed file moves on
- * disk, every referencing note is rewritten (bare, aliased and embed forms, alias
+ * (⚡ YAZ-888, which every NAME change below now passes). The rename is a TITLE edit
+ * (YAZ-2420 🔒 D16): the `title:` line is written and the file takes the name built from it,
+ * every referencing note is rewritten (bare, aliased and embed forms, alias
  * preserved), the open tab follows in place (label + window title), the summary notice
  * shows, and clicking the rewritten link navigates to the renamed file. A rename onto an
- * existing name is DECLINED with a passive notice — never-overwrite, never a dialog.
+ * existing TITLE is allowed: each note's id is in its file name, so nothing is overwritten.
  *
  * YAZ-1553 (step 3b): LEAVING the inline box commits — click another row with a changed name
  * and the sheet asks and SURVIVES that click (the row's mousedown landed before the sheet
@@ -16,7 +17,7 @@
  * PATHED link in a referencing note rewrites on disk while the bare link stays
  * BYTE-IDENTICAL (the LOCKED rule), and the open tab under the folder follows by prefix;
  * drag-a-file-row-onto-a-folder moves it (bare link unchanged, pathed link rewritten);
- * a folder rename onto an existing folder is DECLINED with the same passive notice.
+ * a folder rename onto an existing folder is DECLINED with a passive notice (YAZ-2420 🔒 D25).
  *
  * Same harness as links.spec.ts (temp `--user-data-dir`, COPY of a generated fixture
  * vault, `rename-` step screenshots); serial by design — each step continues the last.
@@ -29,6 +30,7 @@ import {
   activeTab,
   appWindow,
   buildFixtureVault,
+  builtNote,
   confirmSheet,
   copyVault,
   dirRow,
@@ -39,6 +41,7 @@ import {
   seededState,
   shoot,
   tabsOf,
+  titleOf,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -66,7 +69,7 @@ async function startRename(w: Page, label: string): Promise<void> {
   await expect(w.locator('.create-inline__input')).toHaveValue(label)
 }
 
-/** The folder-row variant (E1b): prefilled with the RAW folder name. */
+/** The folder-row variant (E1b): prefilled with the folder's title. */
 async function startRenameDir(w: Page, label: string): Promise<void> {
   await dirRow(w, label).click({ button: 'right' })
   await w.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
@@ -134,8 +137,12 @@ test('step 1 — rename B via the context menu: disk file renamed, tab and title
   await shoot(win, 'rename-01b-confirm-sheet')
   await confirmRename(win, "Rename 'B' to 'B2'? Links in 1 note will be updated.")
 
-  // Disk: the file moved, content intact; nothing remains at the old path.
-  await expect.poll(() => readWhenReady(path.join(vault, 'B2.md'))).toContain(B_BODY)
+  // Disk: the title is written and the file takes the name built from it (YAZ-2420 🔒 D16),
+  // content intact; nothing remains at the old path.
+  await expect.poll(() => builtNote(vault, 'b2')).not.toBe('')
+  const renamed = await readFile(path.join(vault, await builtNote(vault, 'b2')), 'utf8')
+  expect(titleOf(renamed)).toBe('B2')
+  expect(renamed).toContain(B_BODY)
   await expect(readFile(path.join(vault, 'B.md'), 'utf8')).rejects.toThrow()
   // The open tab follows IN PLACE — label, editor content and the window title.
   await expect(activeTab(win)).toHaveText('B2')
@@ -174,8 +181,10 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   await expect(confirmSheet(win)).toBeVisible()
   await shoot(win, 'rename-03b-clickaway-sheet')
   await expect(activeTab(win)).toHaveText('B2')
-  await confirmRename(win, "Rename 'D' to 'D2'? No other notes link to it.")
-  await expect.poll(() => readWhenReady(path.join(vault, 'D2.md'))).toContain(D_BODY)
+  await confirmRename(win, "Rename 'D' to 'D2'? No links need updating.")
+  await expect.poll(() => builtNote(vault, 'd2')).not.toBe('')
+  const d2 = path.join(vault, await builtNote(vault, 'd2'))
+  expect(await readFile(d2, 'utf8')).toContain(D_BODY)
   await expect(readFile(path.join(vault, 'D.md'), 'utf8')).rejects.toThrow()
   await expect(fileRow(win, 'D2')).toBeVisible()
 
@@ -186,7 +195,7 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   await expect(win.locator('.create-inline__input')).toHaveCount(0)
   await expect(confirmSheet(win)).toHaveCount(0)
   await expect(fileRow(win, 'D2')).toBeVisible()
-  expect(await readFile(path.join(vault, 'D2.md'), 'utf8')).toContain(D_BODY)
+  expect(titleOf(await readFile(d2, 'utf8'))).toBe('D2')
 
   // Leaving with the unchanged name is silent: the parent's same-name no-op, no sheet.
   await startRename(win, 'D2')
@@ -196,18 +205,19 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   await expect(fileRow(win, 'D2')).toBeVisible()
 })
 
-test('step 4 — renaming onto an existing name is DECLINED with a passive notice; nothing moves', async () => {
+test('step 4 — renaming onto an existing title is allowed: the ids keep the two files apart, and nothing is overwritten', async () => {
   await startRename(win, 'A')
   await win.locator('.create-inline__input').fill('C')
   await win.keyboard.press('Enter')
-  // The sheet asks about a name nobody links to, then the never-overwrite rule declines it.
-  await confirmRename(win, "Rename 'A' to 'C'? No other notes link to it.")
-  await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "C.md" already exists')
-  // Both files untouched; the row is still A.
-  expect(await readFile(path.join(vault, 'A.md'), 'utf8')).toContain(A_BODY)
-  expect(await readFile(path.join(vault, 'C.md'), 'utf8')).toContain('c-note-body')
-  await expect(fileRow(win, 'A')).toBeVisible()
-  await shoot(win, 'rename-04-decline-notice')
+  await confirmRename(win, "Rename 'A' to 'C'? No links need updating.")
+  // Two notes may share a title (YAZ-2420, table B): A takes the name built from the title and
+  // its own id, and C.md is what it was.
+  await expect.poll(() => builtNote(vault, 'c')).not.toBe('')
+  expect(await readFile(path.join(vault, await builtNote(vault, 'c')), 'utf8')).toContain(A_BODY)
+  await expect(readFile(path.join(vault, 'A.md'), 'utf8')).rejects.toThrow()
+  expect(await readFile(path.join(vault, 'C.md'), 'utf8')).toBe('# C\n\nc-note-body\n')
+  await expect(fileRow(win, 'C')).toHaveCount(2)
+  await shoot(win, 'rename-04-same-title')
   await quitApp(app)
 })
 
@@ -227,15 +237,17 @@ test('step 5 — folder rename via its context menu: disk moves, PATHED link rew
   // link is what the rewrite would touch — the bare [[N]] keeps resolving and is not counted.
   await confirmRename(win, "Rename 'Docs' to 'Notes'? Links in 1 note will be updated.")
 
-  // Disk: the folder moved with its file; nothing remains at the old path.
-  await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'N.md'))).toContain(N_BODY)
+  // Disk: the folder is its title in kebab-case, the title in its `.folder.md` (YAZ-2420 🔒 D6);
+  // it moved with its file, whose own name is untouched; nothing remains at the old path.
+  await expect.poll(() => readWhenReady(path.join(vault, 'notes', 'N.md'))).toContain(N_BODY)
+  expect(titleOf(await readFile(path.join(vault, 'notes', '.folder.md'), 'utf8'))).toBe('Notes')
   await expect(readFile(path.join(vault, 'Docs', 'N.md'), 'utf8')).rejects.toThrow()
-  // R.md pinned WHOLE: the pathed link rewrote, the bare [[N]] is byte-identical (LOCKED).
-  await expect.poll(() => readWhenReady(path.join(vault, 'R.md'))).toBe('# R\n\nSee [[Notes/N]] and [[N]] here.\n')
+  // R.md pinned WHOLE: the pathed link rewrote to the path on disk, the bare [[N]] is byte-identical (LOCKED).
+  await expect.poll(() => readWhenReady(path.join(vault, 'R.md'))).toBe('# R\n\nSee [[notes/N]] and [[N]] here.\n')
   // The open tab under the folder followed by prefix — same label, NEW path — and the
   // window still works (editor alive, title tracks the active tab).
   await expect(activeTab(win)).toHaveText('N')
-  await expect(activeTab(win)).toHaveAttribute('title', path.join(vault, 'Notes', 'N.md'))
+  await expect(activeTab(win)).toHaveAttribute('title', path.join(vault, 'notes', 'N.md'))
   await expect(editorOf(win)).toContainText(N_BODY)
   await expect.poll(() => win.title()).toContain('N')
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
@@ -249,10 +261,10 @@ test('step 6 — drag a file row onto a folder row: the file moves there, bare l
 
   // A MOVE keeps the name, so it stays SILENT (⚡ YAZ-888): no sheet, ever, on a drag.
   await expect(confirmSheet(win)).toHaveCount(0)
-  await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'M.md'))).toContain(M_BODY)
+  await expect.poll(() => readWhenReady(path.join(vault, 'notes', 'M.md'))).toContain(M_BODY)
   await expect(readFile(path.join(vault, 'Target', 'M.md'), 'utf8')).rejects.toThrow()
-  // S.md pinned WHOLE: [[Target/M]] → [[Notes/M]]; the bare [[M]] still resolves — unchanged.
-  await expect.poll(() => readWhenReady(path.join(vault, 'S.md'))).toBe('# S\n\nSee [[Notes/M]] and [[M]] here.\n')
+  // S.md pinned WHOLE: [[Target/M]] → [[notes/M]]; the bare [[M]] still resolves — unchanged.
+  await expect.poll(() => readWhenReady(path.join(vault, 'S.md'))).toBe('# S\n\nSee [[notes/M]] and [[M]] here.\n')
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
   await shoot(win, 'rename-07-drag-move')
 })
@@ -266,10 +278,10 @@ test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a pa
   // ago — the counted set depends on how far the 300ms-debounced refetch has caught up.
   await expect(confirmSheet(win).locator('.confirm__text')).toContainText("Rename 'Target' to 'Notes'?")
   await confirmRename(win)
-  await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "Notes" already exists')
+  await expect(win.locator('.link-notice')).toHaveText('Can\'t change the title: "Notes" already exists')
   // Both folders untouched.
   expect((await stat(path.join(vault, 'Target'))).isDirectory()).toBe(true)
-  expect(await readFile(path.join(vault, 'Notes', 'N.md'), 'utf8')).toContain(N_BODY)
+  expect(await readFile(path.join(vault, 'notes', 'N.md'), 'utf8')).toContain(N_BODY)
   await expect(dirRow(win, 'Target')).toBeVisible()
   await shoot(win, 'rename-08-folder-decline')
   await quitApp(app)

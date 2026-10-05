@@ -1,5 +1,3 @@
-import { basename } from '../lib/paths'
-
 /** One "show this row in Files" gesture: a tab's menu, or a folder search row. */
 export interface SidebarRevealRequest {
   id: number
@@ -8,8 +6,8 @@ export interface SidebarRevealRequest {
 
 export const SIDEBAR_REVEAL_MS = 3000
 
-export const revealMissingMessage = (path: string): string =>
-  `Can't show "${basename(path)}" in Files — it is no longer there`
+export const revealMissingMessage = (name: string): string =>
+  `Can't show "${name}" in Files — it is no longer there`
 
 /** Flash every visible occurrence of `path`; the caller owns replacement/unmount cleanup. */
 export function flashTreeRows(host: ParentNode, path: string): (() => void) | null {

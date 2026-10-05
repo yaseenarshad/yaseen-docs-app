@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
-import { type ViewResult, basenameKey, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename } from './engine'
+import { type ViewResult, basenameKey, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename, targetKey } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -50,7 +50,7 @@ describe('runView: rows and values (GRO-2133)', () => {
     expect(r.total).toBe(8)
     expect(r.groups).toBe(null)
     expect(r.errors).toEqual([])
-    expect(r.rows[0].values).toEqual({ 'file.name': 'Agentic Agency.md' })
+    expect(r.rows[0].values).toEqual({ 'file.name': 'Agentic Agency' })
     expect(r.rows[0].file).toBeInstanceOf(FileValue)
     expect(r.rows[0].record).toBe(TEST_RECORDS[0])
     expect(r.summaries).toEqual({})
@@ -71,7 +71,7 @@ describe('runView: rows and values (GRO-2133)', () => {
       { formulas: { ppu: 'priority * 2', bad: '1 +', rel: 'file("Agentic Agency").properties.priority' } },
     )
     const v = r.rows[0].values
-    expect(v['file.name']).toBe('Agentic Agency.md')
+    expect(v['file.name']).toBe('Agentic Agency')
     expect(v.status).toBe('idea')
     expect(v['note.priority']).toBe(2)
     expect(v['formula.ppu']).toBe(4)
@@ -287,7 +287,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 
   it('fan-out edges: duplicates count once, empty elements drop, an all-empty list is No value', () => {
-    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties: { k } })
     const recs = [
       rec('dup', ['a', 'a']),
       rec('mixed', ['a', null, '']),
@@ -303,7 +303,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 
   it('a row in two groups is counted in both; the footer stays de-duplicated (YAZ-671 D2)', () => {
-    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties: { k } })
     const recs = [rec('both', ['a', 'b']), rec('onlyA', ['a'])]
     const g = runView(
       { views: [] },
@@ -318,7 +318,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 
   it('links fan out per target and group by exact target (YAZ-673 Q1)', () => {
-    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties: { k } })
     const recs = [rec('spans', ['[[Lead Gen]]', '[[Sales]]']), rec('one', ['[[Lead Gen]]'])]
     const g = runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'k' } }, recs, {})
     expect(labels(g)).toEqual(['[[Lead Gen]]', '[[Sales]]'])
@@ -336,7 +336,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
 
 describe('runView: nested group by (YAZ-745)', () => {
   const rec = (name: string, properties: Record<string, unknown>) =>
-    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties }) as IndexRecord
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties }) as IndexRecord
   const T = (groupBy: ViewDef['groupBy'], recs: IndexRecord[], extra: Partial<ViewDef> = {}, def: Partial<ViewSet> = {}, opts: Parameters<typeof runView>[3] = {}) =>
     runView({ views: [], ...def }, { type: 'table', name: 'T', groupBy, ...extra }, recs, opts)
 
@@ -503,7 +503,7 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(defaultLabel('file.name')).toBe('Name')
     // the file fields have their own table (YAZ-1549)
     expect(['file.basename', 'file.path', 'file.folder', 'file.ext', 'file.size', 'file.ctime', 'file.mtime', 'file.tags', 'file.links', 'file.embeds'].map(defaultLabel)).toEqual([
-      'Base name', 'Path', 'Folder', 'Extension', 'Size', 'Created', 'Modified', 'Tags', 'Links', 'Embeds',
+      'File name', 'Path', 'Folder', 'Extension', 'Size', 'Created', 'Modified', 'Tags', 'Links', 'Embeds',
     ])
     expect(defaultLabel('file.unknown')).toBe('Unknown')
     expect(defaultLabel('note.kpi_category')).toBe('Kpi category')
@@ -513,6 +513,42 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     // an already-capitalised or non-letter start is left alone
     expect(defaultLabel('note.KPIs')).toBe('KPIs')
     expect(defaultLabel('note.2024_goals')).toBe('2024 goals')
+  })
+})
+
+describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', () => {
+  const note = (file: string, title: string, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${file}.md`, name: `${file}.md`, basename: file, title, folder: '', properties })
+  /** In path order; by title the two swap. */
+  const records = [note('a-zebra-7tq2m8vd4xhn', 'Zebra'), note('up-001-abdul-k3m9x2pq7abc', 'UP-001 - Abdul')]
+  const table = (view: Partial<ViewDef>, def: Partial<ViewSet> = {}): ViewResult => {
+    const v: ViewDef = { type: 'table', name: 'T', ...view }
+    return runView({ views: [v], ...def }, v, records)
+  }
+  const titles = (r: ViewResult): string[] => r.rows.map(row => row.record.title)
+
+  it('F: the Name column holds the title, and a view sorted by Name is in title order', () => {
+    const r = table({ order: ['file.name'], sort: [{ property: 'file.name', direction: 'ASC' }] })
+    expect(r.rows.map(row => row.values['file.name'])).toEqual(['UP-001 - Abdul', 'Zebra'])
+  })
+
+  it('F: a filter on Name reads the title', () => {
+    expect(titles(table({ filters: 'file.name.contains("UP-001 -")' }))).toEqual(['UP-001 - Abdul'])
+  })
+
+  it('F: a view that adds `file.basename` shows the file name, under "File name"', () => {
+    const r = table({ order: ['file.name', 'file.basename'] })
+    expect(r.rows.map(row => row.values['file.basename'])).toEqual(['a-zebra-7tq2m8vd4xhn', 'up-001-abdul-k3m9x2pq7abc'])
+    expect(defaultLabel('file.basename')).toBe('File name')
+  })
+
+  it('a file value sorts by its title', () => {
+    expect(titles(table({ sort: [{ property: 'formula.self', direction: 'ASC' }] }, { formulas: { self: 'file' } }))).toEqual(['UP-001 - Abdul', 'Zebra'])
+  })
+
+  it('F: `title` is never a default column, and is one when the view\'s order names it', () => {
+    const titled = [note('up-001-abdul-k3m9x2pq7abc', 'UP-001 - Abdul', { title: 'UP-001 - Abdul', status: 'idea' })]
+    expect(propertyKeys(yasin, yasin.views[1], titled)).toEqual(['file.name', 'note.status'])
+    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.title'] }, titled)).toEqual(['file.name', 'note.title'])
   })
 })
 
@@ -527,7 +563,7 @@ describe('targetBasename (YAZ-2241)', () => {
       for (const [j, folder] of folders.entries()) {
         const ext = (i + j) % 3 === 0 ? '.markdown' : (i + j) % 3 === 1 ? '.MD' : '.md'
         const rel = folder === '' ? `${name}${ext}` : `${folder}/${name}${ext}`
-        records.push({ ...TEST_RECORDS[0], path: `/vault/${rel}`, name: `${name}${ext}`, basename: name, folder, aliases: ['Alias'] })
+        records.push({ ...TEST_RECORDS[0], path: `/vault/${rel}`, name: `${name}${ext}`, basename: name, title: name, folder, aliases: ['Alias'] })
       }
     }
     const resolve = makeResolver(records.map(r => new FileValue(r)), '/vault', { aliases: false })
@@ -540,7 +576,9 @@ describe('targetBasename (YAZ-2241)', () => {
     for (const r of records) {
       for (const target of spellings(r)) {
         const hit = resolve(target)
-        if (hit === null) continue
+        // The one spelling outside the rule since a note answers to its TITLE (YAZ-2420 D17): the note
+        // named `x.MD` is found as `[[x.MD]]`, which `targetBasename` reads as a file `x` and its extension.
+        if (hit === null || targetKey(target) === 'x.md') continue
         resolved++
         expect(targetBasename(target), `${target} → ${hit.record.path}`).toBe(basenameKey(hit.record.basename))
       }
@@ -679,6 +717,7 @@ describe('makeResolver: note ids (YAZ-2293 D5)', () => {
     path: `/vault/${basename}.md`,
     name: `${basename}.md`,
     basename,
+    title: basename,
     folder: '',
     aliases: [],
     ...(id === undefined ? {} : { id }),
@@ -721,9 +760,118 @@ describe('makeResolver: note ids (YAZ-2293 D5)', () => {
   })
 })
 
+describe('makeResolver: titles (YAZ-2420 D17)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const note = (rel: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+    const basename = rel.slice(rel.lastIndexOf('/') + 1)
+    return { ...TEST_RECORDS[0], path: `/vault/${rel}.md`, name: `${basename}.md`, basename, title: basename, folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', aliases: [], ...over }
+  }
+  const abdul = (over: Partial<IndexRecord> = {}) => note(`candidates/up-001-abdul-${ID}`, { title: 'UP-001 - Abdul', id: ID, ...over })
+  const resolve = (...records: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault')
+
+  it('E: a hand-typed `[[Title]]` is the note with that title, and the note still answers to its file name', () => {
+    const r = resolve(abdul(), note('Other'))
+    expect(r('UP-001 - Abdul')?.record.id).toBe(ID)
+    expect(r('[[up-001 - abdul|Abdul]]')?.record.id).toBe(ID)
+    expect(r(`up-001-abdul-${ID}`)?.record.id).toBe(ID)
+    expect(r('Other')?.record.basename).toBe('Other') // a note with no title: its file name, as before
+  })
+
+  it('an id comes before a title', () => {
+    expect(resolve(note('a/named-like-an-id', { title: ID }), abdul())(ID)?.record.title).toBe('UP-001 - Abdul')
+  })
+
+  it('a path comes before a title', () => {
+    const r = resolve(note('Plan'), note('a/b/Plan'), note('roadmap', { title: 'a/b/Plan' }))
+    expect(r('a/b/Plan')?.record.path).toBe('/vault/a/b/Plan.md')
+    expect(r('/vault/a/b/Plan.md')?.record.path).toBe('/vault/a/b/Plan.md')
+  })
+
+  it('a title comes before a file name, whatever their depths', () => {
+    // `a/Plan.md` is titled Roadmap, so only its file name is Plan; the deeper note is TITLED Plan.
+    const r = resolve(note('a/Plan', { title: 'Roadmap' }), note('x/y/plan-7tq2m8vd4xhn', { title: 'Plan' }))
+    expect(r('Plan')?.record.path).toBe('/vault/x/y/plan-7tq2m8vd4xhn.md')
+    expect(r('Roadmap')?.record.path).toBe('/vault/a/Plan.md')
+  })
+
+  it('a title comes before an alias', () => {
+    const r = resolve(note('a/aliased', { aliases: ['UP-001 - Abdul'] }), abdul({ path: `/vault/x/y/up-001-abdul-${ID}.md`, folder: 'x/y' }))
+    expect(r('UP-001 - Abdul')?.record.id).toBe(ID)
+  })
+
+  it('two notes with one title: the shallowest, and of two as deep the first in the given order', () => {
+    const titled = (rel: string) => note(rel, { title: 'Standup' })
+    expect(resolve(titled('a/b/one'), titled('z/two'))('Standup')?.record.path).toBe('/vault/z/two.md')
+    expect(resolve(titled('a/one'), titled('b/two'))('Standup')?.record.path).toBe('/vault/a/one.md')
+  })
+})
+
+describe('makeResolver: a path of titles (YAZ-2478, YAZ-2420 D17)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const note = (rel: string, title: string): IndexRecord => {
+    const basename = rel.slice(rel.lastIndexOf('/') + 1)
+    return { ...TEST_RECORDS[0], path: `/vault/${rel}.md`, name: `${basename}.md`, basename, title, folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', aliases: [] }
+  }
+  /** A folder's settings record, titled by its own name when it has no `title:` — as the index titles it. */
+  const folder = (rel: string, title = rel.slice(rel.lastIndexOf('/') + 1)): IndexRecord => note(`${rel}/.folder`, title)
+  const resolve = (records: IndexRecord[], folders: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault', { folders })
+
+  it('E: `[[Sub/Page]]` is the note titled Page in the folder titled Sub (`sub/page-<id>.md`), whatever its directory is called', () => {
+    const records = [note(`my-folder/page-7tq2m8vd4xhn`, 'Page'), note(`sub/page-${ID}`, 'Page')]
+    const r = resolve(records, [folder('my-folder', 'My Folder'), folder('sub', 'Sub')])
+    expect(r('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    expect(r('[[/sub/page#Rates|shown]]')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    expect(r('My Folder/Page')?.record.path).toBe('/vault/my-folder/page-7tq2m8vd4xhn.md')
+    expect(r('My Folder/Other')).toBe(null)
+    expect(r('Other Folder/Page')).toBe(null)
+  })
+
+  it('a folder NAMED `Sub`, with no title or with no settings file yet, is found by its directory name', () => {
+    const records = [note(`Sub/page-${ID}`, 'Page')]
+    expect(resolve(records, [folder('Sub')])('sub/Page')?.record.path).toBe(`/vault/Sub/page-${ID}.md`)
+    expect(resolve(records, [])('Sub/Page')?.record.path).toBe(`/vault/Sub/page-${ID}.md`)
+  })
+
+  it('two levels, `[[A/B/Page]]`: each segment is a folder\'s title, else its directory name', () => {
+    const r = resolve([note(`alpha/beta/page-${ID}`, 'Page')], [folder('alpha', 'A'), folder('alpha/beta', 'B')])
+    for (const typed of ['A/B/Page', 'A/beta/Page', 'alpha/B/Page', 'alpha/beta/Page']) expect(r(typed)?.record.path, typed).toBe(`/vault/alpha/beta/page-${ID}.md`)
+    expect(r('B/Page')).toBe(null) // root-relative, as a path of file names is
+  })
+
+  it('a folder\'s title comes before another\'s directory name; the vault root answers to no name', () => {
+    const records = [note('page-root', 'Page'), note('sub/page-one', 'Page'), note('x/page-two', 'Page')]
+    const r = resolve(records, [folder('', 'Vault'), folder('sub', 'Archive'), folder('x', 'Sub')])
+    expect(r('Sub/Page')?.record.path).toBe('/vault/x/page-two.md')
+    expect(r('Archive/Page')?.record.path).toBe('/vault/sub/page-one.md')
+    expect(r('Vault/Page')).toBe(null)
+  })
+
+  it('an exact root-relative file path still wins, and so does a note whose whole title is the target', () => {
+    const records = [note('roadmap', 'Docs/Page'), note('sub/Page', 'Other'), note(`sub/page-${ID}`, 'Page')]
+    const r = resolve(records, [folder('sub', 'Sub'), folder('docs', 'Docs')])
+    expect(r('sub/Page')?.record.path).toBe('/vault/sub/Page.md')
+    expect(r('Docs/Page')?.record.path).toBe('/vault/roadmap.md')
+  })
+
+  it('a path of titles comes before an alias', () => {
+    const aliased = { ...note('aliased', 'Aliased'), aliases: ['Sub/Page'] }
+    expect(resolve([aliased, note(`sub/page-${ID}`, 'Page')], [folder('sub', 'Sub')])('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+  })
+
+  it('with no folders handed in, a path is a path of file names as before; `resolverFor` keeps one resolver per folder list', () => {
+    const records = [note(`sub/page-${ID}`, 'Page')]
+    const folders = [folder('sub', 'Sub')]
+    expect(makeResolver(records.map(r => new FileValue(r)), '/vault')('Sub/Page')).toBe(null)
+    expect(resolverFor(records, '/vault')('Sub/Page')).toBe(null)
+    expect(resolverFor(records, '/vault', { folders })('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    expect(resolverFor(records, '/vault', { folders })).toBe(resolverFor(records, '/vault', { folders }))
+    expect(resolverFor(records, '/vault', { folders: [...folders] })).not.toBe(resolverFor(records, '/vault', { folders }))
+  })
+})
+
 describe('runView: an id link orders and labels by what is shown (YAZ-2293 D8)', () => {
   const note = (basename: string, extra: Partial<IndexRecord> = {}): IndexRecord => ({
-    ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, folder: '', properties: {}, ...extra,
+    ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, title: basename, folder: '', properties: {}, ...extra,
   })
   /** The ids sort AGAINST the titles on purpose: `1…` is Zed, `9…` is Alpha. */
   const ZED = '1aaaaaaaaaaa'

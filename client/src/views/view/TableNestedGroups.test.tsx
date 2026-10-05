@@ -50,6 +50,7 @@ const rec = (name: string, properties: Record<string, unknown>): IndexRecord => 
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties,
 })
 
@@ -134,7 +135,7 @@ function setValue(el: HTMLInputElement, value: string): void {
   draw()
 }
 
-const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__link')].map((b) => b.textContent ?? '')
+const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent ?? '')
 const headers = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table__group')]
 const headerTexts = (el: ParentNode): string[] => headers(el).map((h) => q(h, '.view-group__value').textContent ?? '')
 const toggles = (el: ParentNode, label: string): HTMLElement[] => [...el.querySelectorAll<HTMLElement>(`[aria-label="Toggle group ${label}"]`)]

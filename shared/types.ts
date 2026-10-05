@@ -153,6 +153,8 @@ export interface IndexRecord {
   name: string
   /** File name without extension. */
   basename: string
+  /** What the app shows (YAZ-2420 🔒 D14): the frontmatter `title`, else `basename` — for a folder's settings file, the folder's own name. */
+  title: string
   /** Root-relative folder, '/' separators, '' at the root. */
   folder: string
   /** 'md' | 'markdown' (no dot). */
@@ -335,7 +337,14 @@ export interface FileWriteResponse {
   size: number
 }
 
-// ---------- createDir(path) ----------
+// ---------- createDir(req) ----------
+
+/** `createDir` takes `{ path, title }`: the title its `.folder.md` is born holding (YAZ-2420 🔒 D6). */
+export interface CreateDirRequest {
+  path: string
+  /** The folder's title; omitted → a `.folder.md` holding only its `id`. */
+  title?: string
+}
 
 export interface CreateDirResponse {
   path: string
@@ -387,6 +396,19 @@ export interface RenameFileResponse {
   newPath: string
   /** What moved: a single file, or a directory (E1b — renderers then remap by prefix). */
   kind: 'file' | 'dir'
+}
+
+// ---------- file.retitle(req) (YAZ-2420) ----------
+
+/**
+ * A title edit (🔒 D16), for a note or a folder: `title` is written to its frontmatter (a folder's
+ * `.folder.md`), then it is renamed to the name built from that title. Answers as a rename does,
+ * with `newPath` equal to `oldPath` when the built name is the one it has; a path that changed is
+ * repaired and pushed exactly as `file.rename`'s is.
+ */
+export interface RetitleRequest {
+  path: string
+  title: string
 }
 
 /** Pushed to EVERY window after a successful in-app rename; renderers remap their own tabs (a `dir` event remaps every tab under the old prefix). */
@@ -576,6 +598,8 @@ export interface SettingsState {
    * cog — a one-way switch would leave hand-editing `yaseendocs.json` as the only way back.
    */
   confirmDelete: boolean
+  /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
+  confirmRename: boolean
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
 }
@@ -621,6 +645,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteLocation: 'current',
   newNoteFolder: '',
   confirmDelete: true,
+  confirmRename: true,
   commentsOrder: 'oldest',
 }
 

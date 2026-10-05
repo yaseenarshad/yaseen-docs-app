@@ -1,39 +1,36 @@
 /**
  * THE PAGE TITLE (⚡ YAZ-888) — block ZERO of the note's own scroller, above `.editor-mount`.
  *
- * 🔒 The title IS the file name (`stripExt(basename(path))`), never a frontmatter `title`: the
- * whole link system resolves pages by NAME, and aliases already cover alternate display names.
- * So this is React-side chrome and never a ProseMirror node — the note's markdown round-trips
- * byte-identically past it, and an in-document `# Heading` is a block of the note like any other
- * (syncing the two is deliberately out of scope).
+ * It shows the page's TITLE (YAZ-2420 🔒 D14, `pageLabel`) and edits it (🔒 D16): the name on
+ * disk is built from the title, never typed. It is React-side chrome and never a ProseMirror
+ * node — the note's markdown round-trips byte-identically past it, and an in-document
+ * `# Heading` is a block of the note like any other (syncing the two is deliberately out of scope).
  *
- * Editing copies `RenameInline`'s patterns, because a title edit IS a rename: click swaps the
- * heading for an input prefilled with the current name, and LEAVING the field commits
- * (YAZ-1553) — click-away, Enter, ArrowDown and Cmd-Tab all go through the one `onBlur` door;
- * Escape is the only discard. ArrowDown then hands focus to the editor below. The commit builds
- * the new path with the sidebar's own `renamedPath` and hands it to App's ONE rename door, which
- * asks first (the name changed) and routes every failure to the passive notice — so nothing
- * here duplicates that.
+ * Editing copies `RenameInline`'s patterns: click swaps the heading for an input prefilled with
+ * the current title, and LEAVING the field commits (YAZ-1553) — click-away, Enter, ArrowDown and
+ * Cmd-Tab all go through the one `onBlur` door; Escape is the only discard. ArrowDown then hands
+ * focus to the editor below. The commit hands the title typed — free text — to App's ONE rename
+ * door, which asks first (the name changes with it) and routes every failure to the passive
+ * notice — so nothing here duplicates that.
  */
 import { useRef, useState } from 'react'
-import { pageLabel } from '../lib/pageLabel'
-import { renamedPath, validateEntryName } from '../sidebar/createEntry'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 
 interface PageTitleProps {
-  /** The open note; its file name minus the extension IS the title. */
+  /** The open page; its title is what the field edits. */
   path: string
-  /** Commit: the renamed absolute path, straight to App's rename door (which confirms). */
-  onRename: (newPath: string) => void
-  /** The app's passive notice — any name the sidebar's rules reject. */
-  onNotice?: (message: string) => void
+  /** The window's titles (YAZ-2420 🔒 D14): the heading shows the page's title. */
+  titles: PathTitles
+  /** Commit: the new title, straight to App's rename door (which confirms). */
+  onRetitle: (title: string) => void
   /** ArrowDown out of the title: focus the editor below it. */
   onArrowDown?: () => void
-  /** `dir` = a folder's title (YAZ-2290 D9): its whole name, no extension logic, and the commit renames the directory. */
+  /** `dir` = a folder's title (YAZ-2290 D9). */
   kind?: 'file' | 'dir'
 }
 
-export function PageTitle({ path, onRename, onNotice, onArrowDown, kind = 'file' }: PageTitleProps) {
-  const name = pageLabel(path, kind === 'dir')
+export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file' }: PageTitleProps) {
+  const title = pageLabel(path, kind === 'dir', titles)
   const [editing, setEditing] = useState(false)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
@@ -48,33 +45,27 @@ export function PageTitle({ path, onRename, onNotice, onArrowDown, kind = 'file'
     setEditing(false)
   }
 
-  /** The one door: the name the user left behind, whichever way they left. */
+  /** The one door: the title the user left behind, whichever way they left. */
   const leave = (value: string): void => {
     if (settled.current) return
     settled.current = true
     setEditing(false)
     const next = value.trim()
-    // An empty/whitespace name never commits, and the same name is not a rename at all.
-    if (next === '' || next === name) return
-    const invalid = validateEntryName(next)
-    if (invalid !== null) {
-      onNotice?.(invalid)
-      return
-    }
-    onRename(renamedPath(path, next, kind))
+    // An empty/whitespace title never commits, and the same title is not an edit at all.
+    if (next !== '' && next !== title) onRetitle(next)
   }
 
   if (editing) {
     return (
       <div className="page-title">
-        {/* A textarea, not an input (YAZ-918): a long name WRAPS at the title's own size while
-            edited — `field-sizing: content` grows it to the text; a file name has no newlines,
+        {/* A textarea, not an input (YAZ-918): a long title WRAPS at the title's own size while
+            edited — `field-sizing: content` grows it to the text; a title has no newlines,
             so Enter stays commit. */}
         <textarea
           autoFocus
           rows={1}
           className="page-title__input"
-          defaultValue={name}
+          defaultValue={title}
           spellCheck={false}
           onFocus={(e) => e.currentTarget.select()}
           onKeyDown={(e) => {
@@ -113,7 +104,7 @@ export function PageTitle({ path, onRename, onNotice, onArrowDown, kind = 'file'
           open()
         }}
       >
-        {name}
+        {title}
       </h1>
     </div>
   )

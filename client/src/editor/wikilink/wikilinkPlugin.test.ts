@@ -13,6 +13,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { EditorState, TextSelection } from '@milkdown/kit/prose/state'
 import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
+import type { IndexRecord } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { random } from '../testRandom'
 import {
@@ -288,6 +289,19 @@ describe("wikilink decorations: an id link shows the note's current title (YAZ-2
     expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(0)
     expect(viewOf(crepe).state.doc.textContent).toBe(`pad [[${ID}]] tail`)
     expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('E: an id link shows the title its note\'s record holds, not its file name — and a folder\'s; a title edit redraws it (YAZ-2420 D14)', async () => {
+    const NOTE = '/vault/Projects/up-001-abdul-k3m9x2pq7abc.md'
+    const resolve = (target: string) => (target === ID ? NOTE : target === DEAD ? '/vault/upwork-2026' : null)
+    const snapshot = (title: string) => [{ path: NOTE, id: ID, title } as IndexRecord]
+    const folders = [{ path: '/vault/upwork-2026/.folder.md', id: DEAD, title: 'Upwork 2026' } as IndexRecord]
+    const source = createWikilinkResolveSource()
+    source.update(resolve, snapshot('UP-001 - Abdul'), folders)
+    const { root } = await mount(`pad [[${ID}]] and [[${DEAD}]] tail\n`, source)
+    expect(links(root)).toEqual(['UP-001 - Abdul', 'Upwork 2026'])
+    source.update(resolve, snapshot('UP-001 - Abdul R'), folders)
+    expect(links(root)).toEqual(['UP-001 - Abdul R', 'Upwork 2026'])
   })
 
   it('an id no note has stays the raw id, dimmed — exactly an unresolved name link', async () => {

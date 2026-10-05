@@ -9,7 +9,7 @@
  */
 import { _electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { createHash } from 'node:crypto'
-import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowBounds } from '../../shared/types'
@@ -164,6 +164,24 @@ export async function copyVault(src: string): Promise<string> {
   await cp(src, dest, { recursive: true })
   return dest
 }
+
+// ---------- a note on disk (YAZ-2420): the app builds its name as `<kebab-title>-<id>.md` ----------
+
+/** A note id as a pattern, for finding a file whose name the app built. */
+export const NOTE_ID = '[0-9a-hjkmnp-tv-z]{12}'
+
+/** The one file in `dir` whose name matches, or '' while there is none or more than one. */
+export async function only(dir: string, pattern: RegExp): Promise<string> {
+  const hits = (await readdir(dir).catch(() => [])).filter((name) => pattern.test(name))
+  return hits.length === 1 ? hits[0] : ''
+}
+
+/** The one note in `dir` the app named for a title whose kebab-case is `kebab`, or '' (`only`). */
+export const builtNote = (dir: string, kebab: string): Promise<string> => only(dir, new RegExp(`^${kebab}-${NOTE_ID}\\.md$`))
+
+export const idOf = (content: string) => /^id: (\S+)$/m.exec(content)?.[1] ?? ''
+/** The `title:` line's text; YAML may quote it (a colon, or a value that was quoted before). */
+export const titleOf = (content: string) => (/^title: (.*)$/m.exec(content)?.[1] ?? '').replace(/^(['"])(.*)\1$/, '$2').replace(/''/g, "'")
 
 // ---------- app state ----------
 
