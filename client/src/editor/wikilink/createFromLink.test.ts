@@ -1,12 +1,13 @@
 /**
  * Create-on-click for unresolved wiki links (Links C, GRO-2192): `planLinkCreation`'s pure
- * path rules (base folder for BARE targets from the "default location for new notes"
- * setting — C2-, GRO-2240 — pathed targets always root-relative, `.md` appended like the
- * sidebar's `entryPath`, per-segment name validation), `newNoteBase`'s setting → base
- * mapping, and `createFromLink`'s bridge flow (parent dirs level by level, benign
- * ALREADY_EXISTS races, failures as messages for the passive notice — never a dialog).
+ * rules (base folder for BARE targets from the "default location for new notes"
+ * setting — C2-, GRO-2240 — pathed targets always root-relative, the last segment the note's
+ * title, per-segment folder-name validation), `newNoteBase`'s setting → base
+ * mapping, and `createFromLink`'s bridge flow (parent dirs level by level, the note born titled
+ * under its built name, failures as messages for the passive notice — never a dialog).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { isNoteId } from '@shared/noteId'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { createFromLink, newNoteBase, planLinkCreation } from './createFromLink'
@@ -14,7 +15,7 @@ import { createFromLink, newNoteBase, planLinkCreation } from './createFromLink'
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   api: {
-    createDir: vi.fn(async (path: string) => ({ path })),
+    createDir: vi.fn(),
     createFile: vi.fn(),
     readFile: vi.fn(),
   },
@@ -26,58 +27,55 @@ const readFile = vi.mocked(api.readFile)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  createDir.mockImplementation(async (path: string) => ({ path }))
+  createDir.mockImplementation(async (req) => ({ path: typeof req === 'string' ? req : req.path }))
   createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
 })
 
-describe('planLinkCreation (pure path rules)', () => {
-  it('a bare target creates at the VAULT ROOT with .md appended (the locked default)', () => {
-    expect(planLinkCreation('/vault', 'New page')).toEqual({ folder: '', path: '/vault/New page.md' })
+describe('planLinkCreation (pure rules)', () => {
+  it('a bare target is the note’s title, at the VAULT ROOT (the locked default)', () => {
+    expect(planLinkCreation('New page')).toEqual({ folder: '', titled: false, title: 'New page' })
   })
 
-  it('an already-markdown name keeps its extension (mirror of entryPath)', () => {
-    expect(planLinkCreation('/vault', 'note.md')).toEqual({ folder: '', path: '/vault/note.md' })
-    expect(planLinkCreation('/vault', 'note.MARKDOWN')).toEqual({ folder: '', path: '/vault/note.MARKDOWN' })
-    // Any other dot-suffix is part of the name, exactly like the sidebar's create flow.
-    expect(planLinkCreation('/vault', 'v1.2')).toEqual({ folder: '', path: '/vault/v1.2.md' })
+  it('B: the title is the text as typed — a dot-suffix, a leading dot, `:` and `?` are part of it (YAZ-2420 D20)', () => {
+    expect(planLinkCreation('v1.2')).toEqual({ folder: '', titled: false, title: 'v1.2' })
+    expect(planLinkCreation('.hidden: why?')).toEqual({ folder: '', titled: false, title: '.hidden: why?' })
   })
 
-  it('a pathed target is root-relative: folder split off, segments trimmed', () => {
-    expect(planLinkCreation('/vault', 'Sub/Page')).toEqual({ folder: 'Sub', path: '/vault/Sub/Page.md' })
-    expect(planLinkCreation('/vault', 'a/b/c')).toEqual({ folder: 'a/b', path: '/vault/a/b/c.md' })
-    expect(planLinkCreation('/vault', ' Sub / Page ')).toEqual({ folder: 'Sub', path: '/vault/Sub/Page.md' })
+  it('a pathed target is root-relative: the last segment is the title, the ones before it the folders it names, segments trimmed', () => {
+    expect(planLinkCreation('Sub/Page')).toEqual({ folder: 'Sub', titled: true, title: 'Page' })
+    expect(planLinkCreation('a/b/c')).toEqual({ folder: 'a/b', titled: true, title: 'c' })
+    expect(planLinkCreation(' Sub / Page ')).toEqual({ folder: 'Sub', titled: true, title: 'Page' })
   })
 
   it('a leading slash is tolerated (the resolver accepts it too): still root-relative', () => {
-    expect(planLinkCreation('/vault', '/Sub/Page')).toEqual({ folder: 'Sub', path: '/vault/Sub/Page.md' })
+    expect(planLinkCreation('/Sub/Page')).toEqual({ folder: 'Sub', titled: true, title: 'Page' })
   })
 
-  it('empty segments (trailing slash, //) are unusable', () => {
-    expect(planLinkCreation('/vault', 'Sub/')).toEqual({ error: 'Can\'t create "Sub/": empty name' })
-    expect(planLinkCreation('/vault', 'a//b')).toEqual({ error: 'Can\'t create "a//b": empty name' })
+  it('B: an empty title, and any empty segment (trailing slash, //), is not accepted', () => {
+    expect(planLinkCreation('Sub/')).toEqual({ error: 'Can\'t create "Sub/": empty name' })
+    expect(planLinkCreation('a//b')).toEqual({ error: 'Can\'t create "a//b": empty name' })
   })
 
-  it('every segment passes the sidebar name rules: dot-names and NUL are rejected with the human reason', () => {
-    expect(planLinkCreation('/vault', '.hidden')).toEqual({ error: 'Can\'t create ".hidden": Names starting with "." are hidden' })
-    expect(planLinkCreation('/vault', 'a/.git/b')).toEqual({ error: 'Can\'t create "a/.git/b": Names starting with "." are hidden' })
-    expect(planLinkCreation('/vault', 'bad\0name')).toEqual({ error: 'Can\'t create "bad\0name": Name contains an invalid character' })
+  it('every FOLDER segment passes the sidebar name rules: dot-names and NUL are rejected with the human reason', () => {
+    expect(planLinkCreation('a/.git/b')).toEqual({ error: 'Can\'t create "a/.git/b": Names starting with "." are hidden' })
+    expect(planLinkCreation('bad\0name/b')).toEqual({ error: 'Can\'t create "bad\0name/b": Name contains an invalid character' })
   })
 
-  it('a BARE target lands under the base folder from the location setting (C2-, GRO-2240)', () => {
-    expect(planLinkCreation('/vault', 'Page', 'Notes')).toEqual({ folder: 'Notes', path: '/vault/Notes/Page.md' })
-    expect(planLinkCreation('/vault', 'Page', 'Notes/Inbox')).toEqual({ folder: 'Notes/Inbox', path: '/vault/Notes/Inbox/Page.md' })
-    expect(planLinkCreation('/vault', 'Page', '')).toEqual({ folder: '', path: '/vault/Page.md' })
+  it('a BARE target lands under the base folder from the location setting, a path as it is on disk (C2-, GRO-2240)', () => {
+    expect(planLinkCreation('Page', 'Notes')).toEqual({ folder: 'Notes', titled: false, title: 'Page' })
+    expect(planLinkCreation('Page', 'Notes/Inbox')).toEqual({ folder: 'Notes/Inbox', titled: false, title: 'Page' })
+    expect(planLinkCreation('Page', '')).toEqual({ folder: '', titled: false, title: 'Page' })
   })
 
   it('a PATHED target ignores the base: an explicit path is an explicit aim, root-relative (Obsidian)', () => {
-    expect(planLinkCreation('/vault', 'Sub/Page', 'Notes')).toEqual({ folder: 'Sub', path: '/vault/Sub/Page.md' })
+    expect(planLinkCreation('Sub/Page', 'Notes')).toEqual({ folder: 'Sub', titled: true, title: 'Page' })
     // A leading slash is the explicit vault-root form — pathed, so the base never applies.
-    expect(planLinkCreation('/vault', '/Page', 'Notes')).toEqual({ folder: '', path: '/vault/Page.md' })
+    expect(planLinkCreation('/Page', 'Notes')).toEqual({ folder: '', titled: true, title: 'Page' })
   })
 
   it('base segments pass the same name rules; the error names the full effective path', () => {
-    expect(planLinkCreation('/vault', 'Page', '.drafts')).toEqual({ error: 'Can\'t create ".drafts/Page": Names starting with "." are hidden' })
+    expect(planLinkCreation('Page', '.drafts')).toEqual({ error: 'Can\'t create ".drafts/Page": Names starting with "." are hidden' })
   })
 })
 
@@ -104,25 +102,32 @@ describe('newNoteBase (setting → base folder for bare targets, C2- GRO-2240)',
 })
 
 describe('createFromLink (bridge flow)', () => {
+  const ID = 'k3m9x2pq7abc'
+  /** The one note the flow made. */
+  const born = () => createFile.mock.calls[0][0] as { path: string; content: string; id: string }
+
   it('strips |alias and #heading/#^block from the raw inner text before creating', async () => {
-    await expect(createFromLink('/vault', 'Page#Heading|shown')).resolves.toEqual({ status: 'created', path: '/vault/Page.md' })
-    expect(createFile).toHaveBeenCalledWith({ path: '/vault/Page.md', content: '' })
+    await expect(createFromLink('/vault', 'Page#Heading|shown', '', ID)).resolves.toEqual({ status: 'created', path: `/vault/page-${ID}.md` })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/page-${ID}.md`, content: '---\ntitle: Page\n---\n', id: ID })
     expect(createDir).not.toHaveBeenCalled()
   })
 
   it('the page is born like any note in that folder: with its `.template.md` (YAZ-2290 E3)', async () => {
     readFile.mockResolvedValueOnce({ path: '/vault/Notes/.template.md', content: '---\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
-    await createFromLink('/vault', 'Page', 'Notes')
+    await createFromLink('/vault', 'Page', 'Notes', ID)
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/Notes/.template.md')
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Notes/Page.md', content: '---\nstatus: 1-Backlog\n---\n## Notes\n' })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/Notes/page-${ID}.md`, content: '---\nstatus: 1-Backlog\ntitle: Page\n---\n## Notes\n', id: ID })
   })
 
-  it('an id handed in is the id the page is born with; without one main mints it (YAZ-2293)', async () => {
-    await expect(createFromLink('/vault', 'Page', 'Notes', 'k3m9x2pq7abc')).resolves.toEqual({ status: 'created', path: '/vault/Notes/Page.md' })
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Notes/Page.md', content: '', id: 'k3m9x2pq7abc' })
+  it('B: the typed text is the title — of the `[[` picker’s Create row, born with the id handed in, and of a clicked name link, born with one of its own; the path that comes back is the one created (YAZ-2420 D20)', async () => {
+    await expect(createFromLink('/vault', 'UP-001 - Abdul Rehman R', 'Notes', ID)).resolves.toEqual({ status: 'created', path: `/vault/Notes/up-001-abdul-rehman-r-${ID}.md` })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/Notes/up-001-abdul-rehman-r-${ID}.md`, content: '---\ntitle: UP-001 - Abdul Rehman R\n---\n', id: ID })
     createFile.mockClear()
-    await createFromLink('/vault', 'Page', 'Notes')
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Notes/Page.md', content: '' })
+    const clicked = await createFromLink('/vault', 'UP-001 - Abdul Rehman R', 'Notes')
+    expect(isNoteId(born().id)).toBe(true)
+    expect(born().id).not.toBe(ID)
+    expect(clicked).toEqual({ status: 'created', path: `/vault/Notes/up-001-abdul-rehman-r-${born().id}.md` })
+    expect(born()).toEqual({ path: `/vault/Notes/up-001-abdul-rehman-r-${born().id}.md`, content: '---\ntitle: UP-001 - Abdul Rehman R\n---\n', id: born().id })
   })
 
   it('an empty page name ([[#h]] — the same-file form) is a no-op: nothing created', async () => {
@@ -131,32 +136,37 @@ describe('createFromLink (bridge flow)', () => {
     expect(createFile).not.toHaveBeenCalled()
   })
 
-  it('a pathed target creates missing parents level by level, then the file', async () => {
-    await expect(createFromLink('/vault', 'a/b/Page')).resolves.toEqual({ status: 'created', path: '/vault/a/b/Page.md' })
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/a', '/vault/a/b'])
-    expect(createFile).toHaveBeenCalledWith({ path: '/vault/a/b/Page.md', content: '' })
+  it('C: a typed `Folder/Name` still means "in that folder": each folder it names is made as one made in the app — kebab-case, holding its title — and the note goes into the directory that was made (YAZ-2420 D6)', async () => {
+    await expect(createFromLink('/vault', 'Upwork 2026/10_04- Standup/Day One', '', ID)).resolves.toEqual({ status: 'created', path: `/vault/upwork-2026/10-04-standup/day-one-${ID}.md` })
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([
+      { path: '/vault/upwork-2026', title: 'Upwork 2026' },
+      { path: '/vault/upwork-2026/10-04-standup', title: '10_04- Standup' },
+    ])
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/upwork-2026/10-04-standup/.template.md')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/upwork-2026/10-04-standup/day-one-${ID}.md`, content: '---\ntitle: Day One\n---\n', id: ID })
   })
 
   it('existing parent folders are tolerated (ALREADY_EXISTS from createDir)', async () => {
     createDir.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'exists'))
-    await expect(createFromLink('/vault', 'Sub/Page')).resolves.toEqual({ status: 'created', path: '/vault/Sub/Page.md' })
+    await expect(createFromLink('/vault', 'Sub/Page', '', ID)).resolves.toEqual({ status: 'created', path: `/vault/sub/page-${ID}.md` })
   })
 
-  it('ALREADY_EXISTS on the file is a benign race: resolves `exists`, caller just opens it', async () => {
-    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'exists'))
-    await expect(createFromLink('/vault', 'Page')).resolves.toEqual({ status: 'exists', path: '/vault/Page.md' })
+  it('C: a folder segment with no letter or digit is refused with the notice, and no note is created (YAZ-2420 D25)', async () => {
+    await expect(createFromLink('/vault', '—/Page')).resolves.toEqual({ status: 'error', message: 'Can\'t create "—/Page": A folder name needs a letter or a digit' })
+    expect(createDir).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
   })
 
-  it('an invalid name is an error message for the passive notice — no bridge call at all', async () => {
-    await expect(createFromLink('/vault', '.hidden')).resolves.toEqual({
+  it('an invalid folder name is an error message for the passive notice — no bridge call at all', async () => {
+    await expect(createFromLink('/vault', '.hidden/Page')).resolves.toEqual({
       status: 'error',
-      message: 'Can\'t create ".hidden": Names starting with "." are hidden',
+      message: 'Can\'t create ".hidden/Page": Names starting with "." are hidden',
     })
     expect(createFile).not.toHaveBeenCalled()
     expect(createDir).not.toHaveBeenCalled()
   })
 
-  it('any other bridge failure becomes an error message (never a dialog, never a throw)', async () => {
+  it('any bridge failure becomes an error message (never a dialog, never a throw)', async () => {
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk on fire'))
     await expect(createFromLink('/vault', 'Page')).resolves.toEqual({
       status: 'error',
@@ -164,14 +174,14 @@ describe('createFromLink (bridge flow)', () => {
     })
   })
 
-  it('a bare target with a base creates the base folders level by level, then the file (C2-, GRO-2240)', async () => {
-    await expect(createFromLink('/vault', 'Page', 'Notes/Inbox')).resolves.toEqual({ status: 'created', path: '/vault/Notes/Inbox/Page.md' })
+  it('a bare target with a base creates the base folders level by level, as the path they are, then the file (C2-, GRO-2240)', async () => {
+    await expect(createFromLink('/vault', 'Page', 'Notes/Inbox', ID)).resolves.toEqual({ status: 'created', path: `/vault/Notes/Inbox/page-${ID}.md` })
     expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
-    expect(createFile).toHaveBeenCalledWith({ path: '/vault/Notes/Inbox/Page.md', content: '' })
+    expect(createFile).toHaveBeenCalledWith({ path: `/vault/Notes/Inbox/page-${ID}.md`, content: '---\ntitle: Page\n---\n', id: ID })
   })
 
   it('a pathed target keeps root-relative creation even with a base (explicit aim wins)', async () => {
-    await expect(createFromLink('/vault', 'Sub/Page', 'Notes')).resolves.toEqual({ status: 'created', path: '/vault/Sub/Page.md' })
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Sub'])
+    await expect(createFromLink('/vault', 'Sub/Page', 'Notes', ID)).resolves.toEqual({ status: 'created', path: `/vault/sub/page-${ID}.md` })
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/sub', title: 'Sub' }])
   })
 })

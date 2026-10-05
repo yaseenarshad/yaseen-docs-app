@@ -132,12 +132,11 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               else
                 void createFromLink(nav.root, inner, nav.createFolder()).then((result) => {
                   if (result.status === 'error') nav.onNotice(result.message)
-                  else if (result.status !== 'noop') {
+                  else if (result.status === 'created') {
                     open(result.path)
                     // A ⌘-click's freshly CREATED page landed in a background tab (locked I3
-                    // ruling — never activated), so name what just appeared (GRO-2197). Losing
-                    // the creation race ('exists') created nothing and stays silent.
-                    if (background && result.status === 'created') nav.onNotice(`Created "${page}" in a background tab`)
+                    // ruling — never activated), so name what just appeared (GRO-2197).
+                    if (background) nav.onNotice(`Created "${page}" in a background tab`)
                   }
                 })
               return true

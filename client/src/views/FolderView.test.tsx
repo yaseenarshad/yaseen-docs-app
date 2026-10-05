@@ -13,6 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
+import { noteFileName } from '@shared/noteName'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { DEFAULT_COLUMNS } from './folderSettings'
 import { fetchTree } from '../lib/treeFeed'
@@ -57,6 +58,11 @@ const writeFile = vi.mocked(api.writeFile)
 const createFile = vi.mocked(api.createFile)
 /** The atomic content-at-create form is the only one this path uses (`createNote`). */
 const created = (call: number): CreateFileRequest => createFile.mock.calls[call][0] as CreateFileRequest
+/** What a create from a view is expected to have sent (YAZ-2420 D20): the note titled `title` in `dir`, under its built name, holding `properties` and then its title. */
+const born = (call: number, dir: string, properties = '', title = 'Untitled'): CreateFileRequest => {
+  const id = created(call).id!
+  return { path: `${dir}/${noteFileName(title, id)}`, content: `---\n${properties}title: ${title}\n---\n`, id }
+}
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -467,21 +473,13 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, STAGES_ID, [{ key: 'order', value: 1, prevRaw: 3 }], expect.any(Function))
   })
 
-  it('"New" creates the note DIRECTLY in the opened folder; its name-clash check looks only at notes directly in it, not at rows from subfolders', async () => {
+  it('"New" creates the note DIRECTLY in the opened folder, whatever rows its subfolders show', async () => {
     const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/archive/Untitled.md')])
     selectView(el, 'Table')
     expect(rowNames(el)).toContain('Untitled') // a row here, from the subfolder
     click(byLabel(el, 'New note'))
     await flush()
-    expect(created(0).path).toBe('/vault/stages/Untitled.md')
-  })
-
-  it('New steps past the names of the notes that live here, never a shortcut’s', async () => {
-    const records = vault().map((r) => (r.path === OTHER ? { ...r, path: '/vault/Untitled.md', name: 'Untitled.md', basename: 'Untitled', properties: { also_in: [STAGES_ID] } } : r))
-    const el = await mount(SETTINGS, records)
-    click(byLabel(el, 'New note'))
-    await flush()
-    expect(created(0).path).toBe('/vault/stages/Untitled.md')
+    expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
 })
 
@@ -1001,15 +999,27 @@ describe('cell editing writes the NOTE, in the folder’s block, typed by the fo
 })
 
 describe('New births a note in the folder (D4/E1/E3)', () => {
-  it('creates it IN the folder with no frontmatter at all — no empty column keys — and opens it', async () => {
+  it('creates it IN the folder holding its `title` and nothing else — no empty column keys — and opens it', async () => {
     const el = await mount()
     click(byLabel(el, 'New note'))
     await flush()
 
     expect(readFile.mock.calls).toEqual([[SETTINGS_FILE], ['/vault/stages/.template.md']]) // the page's own bytes (D9), then E3: the folder's own hidden template
     expect(createFile).toHaveBeenCalledTimes(1)
-    expect(created(0)).toEqual({ path: '/vault/stages/Untitled.md', content: '' })
-    expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/Untitled.md')
+    expect(created(0)).toEqual(born(0, '/vault/stages'))
+    expect(created(0).path).toMatch(/^\/vault\/stages\/untitled-[0-9a-z]{12}\.md$/)
+    expect(onOpenFile).toHaveBeenCalledWith(created(0).path)
+  })
+
+  it('B: "New" titles the note `Untitled` every time — no `Untitled 2`: two clicks are two notes of one title, kept apart by their ids (YAZ-2420 D20)', async () => {
+    const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/Untitled.md')])
+    click(byLabel(el, 'New note'))
+    await flush()
+    click(byLabel(el, 'New note'))
+    await flush()
+    expect([created(0), created(1)]).toEqual([born(0, '/vault/stages'), born(1, '/vault/stages')])
+    expect(created(0).path).not.toBe(created(1).path)
+    expect(onOpenFile.mock.calls).toEqual([[created(0).path], [created(1).path]])
   })
 
   it('"New" from a folder’s `.template.md`: the template is copied as written — its own fields, its `in:` blocks and its body', async () => {
@@ -1018,14 +1028,14 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     const el = await mount()
     click(byLabel(el, 'New note'))
     await flush()
-    expect(created(0).content).toBe(template)
+    expect(created(0).content).toBe(`---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n  z8y7x6w5v4t3:\n    status: 2-Todo\ntitle: Untitled\n---\n## Notes\n`)
   })
 
   it('a board column\'s "+" writes the one real seed — that column\'s value, in this folder\'s block — and nothing else', async () => {
     const el = await mount({ columns: DEFAULT_COLUMNS, views: [{ ...BOARD, groupBy: { property: 'note.status' } }] }, [...vault(), rec('/vault/stages/Done one.md', held({ status: '4-Done' }))])
     click(byLabel(el, 'New note in group 4-Done'))
     await flush()
-    expect(created(0)).toEqual({ path: '/vault/stages/Untitled.md', content: `---\nin:\n  ${STAGES_ID}:\n    status: 4-Done\n---\n` })
+    expect(created(0)).toEqual(born(0, '/vault/stages', `in:\n  ${STAGES_ID}:\n    status: 4-Done\n`))
   })
 
   it.each(['table', 'board', 'cards', 'list'])('the "+" on a group header when a %s is grouped by Folder (`file.folder`) creates the note in that group’s folder', async (type) => {
@@ -1033,13 +1043,13 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/Untitled.md')])
     click(byLabel(el, 'New note in group stages/archive'))
     await flush()
-    // Born in the subfolder, from ITS template, and named past ITS notes alone: `stages/Untitled` is no clash there.
+    // Born in the subfolder, from ITS template.
     expect(readFile.mock.calls.at(-1)).toEqual(['/vault/stages/archive/.template.md'])
-    expect(created(0)).toEqual({ path: '/vault/stages/archive/Untitled.md', content: '' })
-    expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/archive/Untitled.md')
+    expect(created(0)).toEqual(born(0, '/vault/stages/archive'))
+    expect(onOpenFile).toHaveBeenCalledWith(created(0).path)
     click(byLabel(el, 'New note in group stages'))
     await flush()
-    expect(created(1).path).toBe('/vault/stages/Untitled 2.md')
+    expect(created(1)).toEqual(born(1, '/vault/stages'))
   })
 
   it('the "+" under a group-by-Folder group that is not under the opened folder (a shortcut’s home) creates in the opened folder', async () => {
@@ -1047,27 +1057,29 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, records)
     click(byLabel(el, 'New note in group Sub'))
     await flush()
-    expect(created(0).path).toBe('/vault/stages/Untitled.md')
+    expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
 
-  it('a TYPED name (YAZ-943) lands in the folder under that name and dedups like Untitled', async () => {
+  it('B: a card name typed on a board (YAZ-943) is the note’s title, a title another note here has included; the path that comes back is the one created (YAZ-2420 D20)', async () => {
     await mount()
-    await expect(captured.folder!.create({ properties: {} }, 'Ship it')).resolves.toBe('/vault/stages/Ship it.md')
-    // A note's basename is taken → the typed base steps to " 2", same scheme as Untitled.
-    await expect(captured.folder!.create({ properties: {} }, 'Lead Gen')).resolves.toBe('/vault/stages/Lead Gen 2.md')
+    const paths = [await captured.folder!.create({ properties: {} }, 'Ship it'), await captured.folder!.create({ properties: {} }, 'Lead Gen')]
+    expect([created(0), created(1)]).toEqual([born(0, '/vault/stages', '', 'Ship it'), born(1, '/vault/stages', '', 'Lead Gen')])
+    expect(paths).toEqual([created(0).path, created(1).path])
+    expect(paths[1]).toMatch(/^\/vault\/stages\/lead-gen-[0-9a-z]{12}\.md$/)
   })
 
-  it('a second add of the same name before the index has the first steps to " 2" instead of failing', async () => {
+  it('B: a typed title keeps its `/` — it is text, not a path; whitespace-only falls back to Untitled (YAZ-2420 D20)', async () => {
     await mount()
-    await captured.folder!.create({ properties: {} }, 'Ship it')
-    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'file exists')) // on disk, not yet in the snapshot
-    await expect(captured.folder!.create({ properties: {} }, 'Ship it')).resolves.toBe('/vault/stages/Ship it 2.md')
+    expect(await captured.folder!.create({ properties: {} }, 'a/b')).toBe(`/vault/stages/a-b-${created(0).id}.md`)
+    expect(created(0).content).toBe('---\ntitle: a/b\n---\n')
+    expect(await captured.folder!.create({ properties: {} }, '   ')).toBe(born(1, '/vault/stages').path)
   })
 
-  it('a typed name with path separators is tamed (slashes become spaces); whitespace-only falls back to Untitled', async () => {
+  it('a create the disk refuses is not retried under another name (YAZ-2420 D20)', async () => {
     await mount()
-    await expect(captured.folder!.create({ properties: {} }, 'a/b')).resolves.toBe('/vault/stages/a b.md')
-    await expect(captured.folder!.create({ properties: {} }, '   ')).resolves.toBe('/vault/stages/Untitled.md')
+    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'file exists'))
+    await expect(captured.folder!.create({ properties: {} }, 'Ship it')).rejects.toThrow('file exists')
+    expect(createFile).toHaveBeenCalledTimes(1)
   })
 
   it('a create failure is reported in place, never thrown at the tab', async () => {
@@ -1226,10 +1238,10 @@ describe('each folder has its own properties (D19)', () => {
     const el = await mount({ ...SETTINGS, views: [view] }, [rec(LEAD, held({ kind: 'task', order: 2 }))])
     click(byLabel(el, 'New note'))
     await flush()
-    expect(created(0)).toEqual({ path: '/vault/stages/Untitled.md', content: `---\nin:\n  ${STAGES_ID}:\n    kind: task\n---\n` }) // the filter's seed
+    expect(created(0)).toEqual(born(0, '/vault/stages', `in:\n  ${STAGES_ID}:\n    kind: task\n`)) // the filter's seed
     click(byLabel(el, 'New note in group 2'))
     await flush()
-    expect(created(1).content).toBe(`---\nin:\n  ${STAGES_ID}:\n    kind: task\n    order: 2\n---\n`) // and the group's
+    expect(created(1).content).toBe(`---\nin:\n  ${STAGES_ID}:\n    kind: task\n    order: 2\ntitle: Untitled\n---\n`) // and the group's
   })
 
   it('"New" seeds beside what the folder’s template already holds: its block gains the seed, its other fields stay', async () => {
@@ -1237,7 +1249,7 @@ describe('each folder has its own properties (D19)', () => {
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'Table', order: ['file.name'], filters: 'kind == "task"' }] })
     click(byLabel(el, 'New note'))
     await flush()
-    expect(created(0).content).toBe(`---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n    kind: task\n  ${ARCHIVE_ID}:\n    status: 2-Todo\n---\n## Notes\n`)
+    expect(created(0).content).toBe(`---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n    kind: task\n  ${ARCHIVE_ID}:\n    status: 2-Todo\ntitle: Untitled\n---\n## Notes\n`)
   })
 
   it('a group "+" under group-by-Folder still creates in that group’s folder; a seeded value goes to the OPENED folder’s block', async () => {
@@ -1245,7 +1257,7 @@ describe('each folder has its own properties (D19)', () => {
     const el = await mount({ ...SETTINGS, views: [view] }, [rec(LEAD, held({ kind: 'task' })), rec(DEEP, held({ kind: 'task' }))])
     click(byLabel(el, 'New note in group stages/archive'))
     await flush()
-    expect(created(0)).toEqual({ path: '/vault/stages/archive/Untitled.md', content: `---\nin:\n  ${STAGES_ID}:\n    kind: task\n---\n` })
+    expect(created(0)).toEqual(born(0, '/vault/stages/archive', `in:\n  ${STAGES_ID}:\n    kind: task\n`))
   })
 
   it('a `file.hasTag` filter seeds the note’s OWN tags, at the top level — a tag is no folder’s value', async () => {
@@ -1253,7 +1265,7 @@ describe('each folder has its own properties (D19)', () => {
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'Table', order: ['file.name'], filters: { and: ['file.hasTag("hiring")', 'kind == "task"'] } }] }, [tagged])
     click(byLabel(el, 'New note'))
     await flush()
-    expect(created(0).content).toBe(`---\nin:\n  ${STAGES_ID}:\n    kind: task\ntags:\n  - hiring\n---\n`)
+    expect(created(0).content).toBe(`---\nin:\n  ${STAGES_ID}:\n    kind: task\ntags:\n  - hiring\ntitle: Untitled\n---\n`)
   })
 
   it('A folder with nothing saved: its default columns, Status included, are its own', async () => {
@@ -1406,7 +1418,7 @@ describe('each folder has its own properties (D19)', () => {
       await flush()
       const id = idOf(disk.get(SETTINGS_FILE)!)
       expect(disk.get(SETTINGS_FILE)).toBe(`---\nowner: me\nid: ${id}\n---\n`)
-      expect(created(0).content).toBe(`---\nin:\n  ${id}:\n    kind: task\n---\n`)
+      expect(created(0).content).toBe(`---\nin:\n  ${id}:\n    kind: task\ntitle: Untitled\n---\n`)
     })
   })
 })

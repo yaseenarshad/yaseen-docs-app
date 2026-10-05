@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -40,7 +40,7 @@ export const CONTRACT = {
   readPdf: invoke<[path: string], PdfResponse>('fs:read-pdf', 1),
   readImage: invoke<[path: string], ImageResponse>('fs:read-image', 1),
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
-  createDir: invoke<[path: string], CreateDirResponse>('fs:create-dir', 1),
+  createDir: invoke<[req: string | CreateDirRequest], CreateDirResponse>('fs:create-dir', 1),
   createFile: invoke<[req: string | CreateFileRequest], CreateFileResponse>('fs:create-file', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),

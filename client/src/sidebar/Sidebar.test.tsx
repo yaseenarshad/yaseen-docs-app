@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
@@ -49,10 +50,10 @@ function installBridge() {
     // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
     index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
     // The inline-create flow (GRO-2022).
-    createFile: vi.fn(async (req: string | { path: string; content?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
+    createFile: vi.fn(async (req: string | { path: string; content?: string; id?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
     // A note is born from its folder's hidden `.template.md` (YAZ-2290 E3): no folder has one by default.
     readFile: vi.fn((path: string): Promise<{ path: string; content: string; mtime: number; size: number }> => Promise.reject({ code: 'NOT_FOUND', message: `no such file: ${path}` })),
-    createDir: vi.fn(async (path: string) => ({ path })),
+    createDir: vi.fn(async (req: string | { path: string; title?: string }) => ({ path: typeof req === 'string' ? req : req.path })),
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
@@ -2337,6 +2338,12 @@ describe('New note (GRO-2022)', () => {
   }
   const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
   const errorText = (el: HTMLElement) => el.querySelector('.create-inline__error')?.textContent ?? null
+  /** The one create the flow made: the note titled `Growth`, wherever it landed, born holding `properties` and then its title. */
+  const growthIn = (bridge: Awaited<ReturnType<typeof mount>>['bridge'], dir: string, properties = '', body = '') => {
+    const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `${dir}/growth-${id}.md`, content: `---\n${properties}title: Growth\n---\n${body}`, id })
+    return `${dir}/growth-${id}.md`
+  }
   /** Type a name into the open inline input and commit it with Enter. */
   const commit = async (el: HTMLElement, name: string) => {
     const field = input(el)!
@@ -2361,13 +2368,14 @@ describe('New note (GRO-2022)', () => {
     expect(input(el)?.placeholder).toBe('New note')
   })
 
-  it('committing a name creates the note in the right-clicked folder — empty, with no template there — then opens it', async () => {
+  it('B: committing a title creates the note in the right-clicked folder — its `title` and nothing else, with no template there, under its built name — then opens it (YAZ-2420 D20)', async () => {
     const { el, bridge, props } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New note')?.click())
     await commit(el, 'Growth')
     expect(bridge.readFile).toHaveBeenCalledExactlyOnceWith('/v/sub/.template.md')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '' })
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
+    const path = growthIn(bridge, '/v/sub')
+    expect(path).toMatch(/^\/v\/sub\/growth-[0-9a-z]{12}\.md$/)
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
     expect(input(el)).toBeNull() // the input is done
   })
 
@@ -2375,12 +2383,12 @@ describe('New note (GRO-2022)', () => {
     const onFile = await openOn('.tree__row--file')
     act(() => itemByLabel(onFile.el, 'New note')?.click())
     await commit(onFile.el, 'Growth')
-    expect(onFile.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '' })
+    growthIn(onFile.bridge, '/v')
 
     const onBlank = await openOn('.sidebar__body')
     act(() => itemByLabel(onBlank.el, 'New note')?.click())
     await commit(onBlank.el, 'Growth')
-    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '' })
+    growthIn(onBlank.bridge, '/v')
   })
 
   /** The folder `dir` holds this `.template.md`; every other folder holds none. */
@@ -2394,8 +2402,7 @@ describe('New note (GRO-2022)', () => {
     withTemplate(bridge, '/v/sub', '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n')
     act(() => itemByLabel(el, 'New note')?.click())
     await commit(el, 'Growth')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n' })
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(growthIn(bridge, '/v/sub', 'owner: me\nstatus: 1-Backlog\n', '## Notes\n'))
   })
 
   it('the vault root follows the same rule: its own `.template.md`, and never a subfolder\'s', async () => {
@@ -2403,13 +2410,13 @@ describe('New note (GRO-2022)', () => {
     withTemplate(onBlank.bridge, '/v', '---\nkind: inbox\n---\n')
     act(() => itemByLabel(onBlank.el, 'New note')?.click())
     await commit(onBlank.el, 'Growth')
-    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nkind: inbox\n---\n' })
+    growthIn(onBlank.bridge, '/v', 'kind: inbox\n')
 
     const onDir = await openOn('.tree__row--dir')
     withTemplate(onDir.bridge, '/v', '---\nkind: inbox\n---\n')
     act(() => itemByLabel(onDir.el, 'New note')?.click())
     await commit(onDir.el, 'Growth')
-    expect(onDir.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '' })
+    growthIn(onDir.bridge, '/v/sub')
   })
 
   it('writes no empty column keys (YAZ-2290 E1): the columns the folder declares are not stamped into the note, with a template or without', async () => {
@@ -2418,14 +2425,14 @@ describe('New note (GRO-2022)', () => {
     bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
     act(() => itemByLabel(bare.el, 'New note')?.click())
     await commit(bare.el, 'Growth')
-    expect(bare.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '' })
+    growthIn(bare.bridge, '/v/sub')
 
     const templated = await openOn('.tree__row--dir')
     templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
     withTemplate(templated.bridge, '/v/sub', '---\nowner: me\n---\n')
     act(() => itemByLabel(templated.el, 'New note')?.click())
     await commit(templated.el, 'Growth')
-    expect(templated.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '---\nowner: me\n---\n' })
+    growthIn(templated.bridge, '/v/sub', 'owner: me\n')
   })
 
   it('a template that cannot be read is an error in the box, and nothing is created', async () => {
@@ -2438,13 +2445,23 @@ describe('New note (GRO-2022)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('an invalid name shows the error and writes nothing', async () => {
+  it('B: a title is free text — `/`, `:`, `?`, quotes and a leading dot are accepted, and the title is what was typed (YAZ-2420 D20)', async () => {
+    const { el, bridge, props } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, '.a/b: "c"?')
+    expect(errorText(el)).toBeNull()
+    const born = bridge.createFile.mock.calls[0][0] as { path: string; content: string; id: string }
+    expect(born.path).toBe(`/v/sub/a-b-c-${born.id}.md`)
+    expect(parseFrontmatter(born.content).properties).toEqual({ title: '.a/b: "c"?' })
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(born.path)
+  })
+
+  it('B: an empty title is not accepted: nothing is created and the box stays open (YAZ-2420 D20)', async () => {
     const { el, bridge } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New note')?.click())
-    await commit(el, 'a/b')
-    expect(errorText(el)).not.toBeNull()
+    await commit(el, '   ')
     expect(bridge.createFile).not.toHaveBeenCalled()
-    expect(input(el)).not.toBeNull() // the input stays open to fix the name
+    expect(input(el)).not.toBeNull()
   })
 })
 
@@ -2472,8 +2489,9 @@ describe('New dated note (YAZ-2242)', () => {
         input(el)!.value = '09_29- Launch'
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
-      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/09_29- Launch.md', content: '' })
-      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/09_29- Launch.md')
+      const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id}.md`, content: '---\ntitle: 09_29- Launch\n---\n', id })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id}.md`)
     } finally {
       vi.useRealTimers()
     }
@@ -2493,8 +2511,9 @@ describe('New dated note (YAZ-2242)', () => {
         input(el)!.value = '09_29- Launch'
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
-      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/09_29- Launch.md', content: template })
-      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/09_29- Launch.md')
+      const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id}.md`, content: '---\nowner: me\ntitle: 09_29- Launch\n---\n## Notes\n', id })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id}.md`)
     } finally {
       vi.useRealTimers()
     }
@@ -2512,6 +2531,7 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
     return m
   }
   const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+  const errorText = (el: HTMLElement) => el.querySelector('.create-inline__error')?.textContent ?? null
   const commit = async (el: HTMLElement, name: string) => {
     await act(async () => {
       input(el)!.value = name
@@ -2519,14 +2539,33 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
     })
   }
 
-  it('New folder creates a directory inside the right-clicked folder and opens nothing', async () => {
+  it('C: New folder, titled `Upwork 2026`, creates the directory `upwork-2026` inside the right-clicked folder, sends its title along, and opens nothing (YAZ-2420 D6)', async () => {
     const { el, bridge, props } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New folder')?.click())
     expect(input(el)?.placeholder).toBe('New folder')
-    await commit(el, 'Later')
-    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/sub/Later')
+    await commit(el, 'Upwork 2026')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/upwork-2026', title: 'Upwork 2026' })
     expect(bridge.createFile).not.toHaveBeenCalled()
     expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('C: a folder title with no letter or digit is refused with a notice in the box, and nothing is created (YAZ-2420 D25)', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New folder')?.click())
+    await commit(el, '—')
+    expect(errorText(el)).toBe('A folder name needs a letter or a digit')
+    expect(bridge.createDir).not.toHaveBeenCalled()
+    expect(input(el)).not.toBeNull() // the input stays open to fix the title
+  })
+
+  it('C: a title whose kebab-case name a folder beside it already has is refused as a duplicate name is — no `-2` (YAZ-2420 D25)', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    bridge.createDir.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'path already exists' })
+    act(() => itemByLabel(el, 'New folder')?.click())
+    await commit(el, 'Upwork, 2026!')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/upwork-2026', title: 'Upwork, 2026!' })
+    expect(errorText(el)).toBe('path already exists')
+    expect(input(el)).not.toBeNull()
   })
 
   it('New dated folder opens the create box pre-filled with today\'s `MM_DD- ` in that folder (YAZ-1604)', async () => {
@@ -2537,7 +2576,7 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
       act(() => itemByLabel(el, 'New dated folder')?.click())
       expect(input(el)?.value).toBe('06_22- ')
       await commit(el, '06_22- Launch')
-      expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/sub/06_22- Launch')
+      expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/06-22-launch', title: '06_22- Launch' }) // C: a dated folder (YAZ-2420 D6)
     } finally {
       vi.useRealTimers()
     }

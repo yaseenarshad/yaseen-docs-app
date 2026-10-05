@@ -39,8 +39,8 @@ export interface FolderHost {
   resolveLink: ResolveLink
   /**
    * Birth in the folder (YAZ-2290 D4): create a note from `seed` and resolve its path.
-   * The `Untitled` scheme is the DEFAULT name; the board's inline add (YAZ-943) already knows what
-   * the card is called, and that typed name rides the optional argument.
+   * `Untitled` is the DEFAULT title (YAZ-2420 🔒 D20); the board's inline add (YAZ-943) already knows
+   * what the card is called, and that typed title rides the optional argument.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
   /** Save one definition against the captured base; reject concurrent changes to that property. */

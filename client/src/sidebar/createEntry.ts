@@ -10,20 +10,13 @@ import { dirname } from '../lib/paths'
 /** What the inline input creates: a markdown note or a folder. */
 export type EntryKind = 'file' | 'dir'
 
-/** Human-readable reason the name is unusable, or null when fine. Callers trim first via entryPath. */
+/** Human-readable reason the name is unusable, or null when fine. */
 export function validateEntryName(name: string): string | null {
   const trimmed = name.trim()
   if (trimmed.includes('/')) return 'Name cannot contain "/"'
   if (trimmed.includes('\0')) return 'Name contains an invalid character'
   if (trimmed.startsWith('.')) return 'Names starting with "." are hidden'
   return null
-}
-
-/** Absolute path for the new entry; notes get `.md` unless already markdown. */
-export function entryPath(parentDir: string, name: string, kind: EntryKind): string {
-  let final = name.trim()
-  if (kind === 'file' && !/\.(md|markdown)$/i.test(final)) final += '.md'
-  return `${parentDir}/${final}`
 }
 
 /** Seed for "New dated folder" (YAZ-1604) and "New dated note" (YAZ-2242): `09_14- ` — today's MM_DD, then `- ` so the title lands one space after the dash. */

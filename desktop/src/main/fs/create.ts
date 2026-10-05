@@ -1,8 +1,9 @@
 import { mkdir, stat } from 'node:fs/promises'
-import { folderSettingsPath, type CreateDirResponse, type CreateFileRequest, type CreateFileResponse } from '@shared/types'
+import { folderSettingsPath, type CreateDirRequest, type CreateDirResponse, type CreateFileRequest, type CreateFileResponse } from '@shared/types'
 import { isMarkdown } from '@shared/fileKind'
 import { FrontmatterWriteError, setFrontmatterProperty } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
+import { TITLE_KEY } from '@shared/noteName'
 import { BridgeFailure, createDurable, fsCall, requireAbsPath } from './fsUtils'
 
 /**
@@ -18,13 +19,19 @@ import { BridgeFailure, createDurable, fsCall, requireAbsPath } from './fsUtils'
  * replaced. A seed whose frontmatter will not parse is created as given, without one: the id
  * never blocks a creation, and the index gives the note one once the YAML is fixed.
  *
- * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding only a fresh `id`. A
- * folder whose file could not be written stands without one, and the id sweep gives it one.
+ * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding a fresh `id` and, when
+ * the request carries one, the folder's `title` (YAZ-2420 🔒 D6). A folder whose file could not be
+ * written stands without one, and the id sweep gives it one.
  */
-export async function createDir(path: string): Promise<CreateDirResponse> {
-  const p = requireAbsPath(path, 'path')
+export async function createDir(req: string | CreateDirRequest): Promise<CreateDirResponse> {
+  const raw: unknown = req
+  const isReq = typeof raw === 'object' && raw !== null
+  const p = requireAbsPath(isReq ? (raw as Record<string, unknown>).path : raw, 'path')
+  const title = isReq ? (raw as Record<string, unknown>).title : undefined
+  if (title !== undefined && typeof title !== 'string') throw new BridgeFailure('BAD_REQUEST', "'title' must be a string", { path: p })
   await fsCall(p, () => mkdir(p))
-  await createDurable(folderSettingsPath(p), setFrontmatterProperty('', NOTE_ID_KEY, mintNoteId())).catch(() => undefined)
+  const born = setFrontmatterProperty('', NOTE_ID_KEY, mintNoteId())
+  await createDurable(folderSettingsPath(p), title === undefined ? born : setFrontmatterProperty(born, TITLE_KEY, title)).catch(() => undefined)
   return { path: p }
 }
 
