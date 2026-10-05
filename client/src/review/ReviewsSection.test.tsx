@@ -42,6 +42,7 @@ const rec = (over: Partial<IndexRecord> = {}): IndexRecord => ({
   path: PATH,
   name: 'Card.md',
   basename: 'Card',
+  title: 'Card',
   folder: '',
   ext: 'md',
   size: 1,

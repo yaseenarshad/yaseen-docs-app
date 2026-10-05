@@ -20,6 +20,7 @@ const rec = (basename: string, folder = ''): IndexRecord => ({
   path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`,
   name: `${basename}.md`,
   basename,
+  title: basename,
   folder,
   ext: 'md',
   size: 1,

@@ -1168,7 +1168,7 @@ describe('App tabs (I2, GRO-2234)', () => {
   it('a tab\'s menu offers "Copy ID" off the window\'s index: under "Copy path" for the note that has an id, absent for a note with none, a PDF and an image (YAZ-2293, scenario E1, E2)', async () => {
     const note = (path: string, id?: string): IndexRecord => {
       const name = path.slice(path.lastIndexOf('/') + 1)
-      return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+      return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
     }
     const tabs = ['/v/a.md', '/v/b.md', '/v/report.PDF', '/v/photo.PNG']
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs }, {}, (b) =>
@@ -1334,7 +1334,7 @@ describe('App right-panel shell (YAZ-1272)', () => {
 describe('App external-rename banner (Links E1c, GRO-2242)', () => {
   const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
-    return { path, name, basename: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+    return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
   /** A references B; B2 is the externally renamed B — the post-rename index snapshot. */
   const records = [record('/v/A.md', { links: ['B'], size: 20, mtime: 5 }), record('/v/B2.md')]
@@ -1408,7 +1408,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     const rel = path.slice('/v/'.length)
-    return { path, name, basename: name.replace(/\.md$/i, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+    return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
   /** A references B by name; R references Docs/N by path — one file case, one folder case. */
   const records = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')]
@@ -1917,7 +1917,7 @@ describe('opening a vault creates no file (YAZ-2290)', () => {
 describe('App upkeep review (YAZ-2322)', () => {
   /** A note last changed in 1970: in review by default, and long overdue. */
   const due = (name: string, folder = ''): IndexRecord => ({
-    path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
+    path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
     properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
   })
   const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>

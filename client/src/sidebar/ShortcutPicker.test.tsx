@@ -17,7 +17,7 @@ const PROJECTS_ID = 'k3m9x2pq7abc'
 const rec = (path: string, properties: Record<string, unknown> = {}, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const rel = path.slice('/v/'.length)
-  return { path, name, basename: name.replace(/\.md$/, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases, tags: [], links: [], embeds: [] }
+  return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases, tags: [], links: [], embeds: [] }
 }
 
 /** Path order, as the index gives them: two notes the folder already shows — one living there, one a shortcut — and three it does not. */

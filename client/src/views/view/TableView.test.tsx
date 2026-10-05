@@ -205,6 +205,7 @@ function manyRecords(n = 600): IndexRecord[] {
       path: `/vault/${basename}.md`,
       name: `${basename}.md`,
       basename,
+      title: basename,
       folder: '',
       ext: 'md',
       size: 0,

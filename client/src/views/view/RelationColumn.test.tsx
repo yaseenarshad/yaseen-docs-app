@@ -30,6 +30,7 @@ const rec = (path: string, properties: Record<string, unknown>): IndexRecord => 
     path,
     name,
     basename: name.replace(/\.md$/, ''),
+    title: name.replace(/\.md$/, ''),
     folder: path.slice(7, path.lastIndexOf('/')),
     ext: 'md',
     size: 0,

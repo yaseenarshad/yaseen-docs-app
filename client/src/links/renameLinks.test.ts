@@ -219,7 +219,7 @@ function rec(path: string, over: Partial<IndexRecord> = {}): IndexRecord {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const basename = name.replace(/\.(md|markdown)$/i, '')
   const folder = path.slice('/v/'.length, path.lastIndexOf('/')).replace(/\/$/, '')
-  return { path, name, basename, folder: folder === name ? '' : folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+  return { path, name, basename, title: basename, folder: folder === name ? '' : folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
 }
 
 function installBridge(files: Record<string, { content: string; mtime: number }>) {

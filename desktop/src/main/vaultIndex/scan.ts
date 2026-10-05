@@ -4,6 +4,7 @@ import { COMMENTS_KEY } from '@shared/comments'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { titleOf } from '@shared/noteName'
 import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
 import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
@@ -153,10 +154,13 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const st = await fsCall(absPath, () => stat(absPath))
   const name = path.basename(absPath)
   const ext = path.extname(name)
+  const basename = name.slice(0, name.length - ext.length)
   const record: IndexRecord = {
     path: absPath,
     name,
-    basename: name.slice(0, name.length - ext.length),
+    basename,
+    // Untitled, a folder's settings file reads as the folder it is in.
+    title: name === FOLDER_SETTINGS_FILE ? path.basename(path.dirname(absPath)) : basename,
     folder: path.relative(root, path.dirname(absPath)).split(path.sep).join('/'),
     ext: ext.slice(1).toLowerCase(),
     size: st.size,
@@ -179,5 +183,6 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   if (error !== undefined) record.frontmatterError = error
   const id = properties[NOTE_ID_KEY]
   if (isNoteId(id)) record.id = id
+  record.title = titleOf(properties, record.title)
   return { ...record, ...extractBody(properties, body), ...(reviews.length > 0 && { reviews }), text: textFingerprint(body) }
 }

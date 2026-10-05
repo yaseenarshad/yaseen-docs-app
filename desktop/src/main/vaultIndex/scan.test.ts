@@ -146,6 +146,7 @@ describe('scanFile', () => {
       path: note('1. Agentic Agency', 'Agentic Agency.md'),
       name: 'Agentic Agency.md',
       basename: 'Agentic Agency',
+      title: 'Agentic Agency',
       folder: 'Content Pillars/1. Agentic Agency',
       ext: 'md',
       properties: { pillar: 'Agentic Agency', status: 'idea', priority: 2, tags: ['agentic', 'pillar'], published: false, date: '2026-08-01' },
@@ -197,6 +198,38 @@ describe('scanFile', () => {
     expect((await scanFile(root, withId)).id).toBe('k3m9x2pq7abc')
     expect('id' in (await scanFile(root, foreign))).toBe(false)
     expect('id' in (await scanFile(root, path.join(root, 'VSL-v1.md')))).toBe(false)
+  })
+
+  it('`title` is the frontmatter title, else the file name without its extension (YAZ-2420 D14)', async () => {
+    const titled = path.join(root, 'up-001-abdul-k3m9x2pq7abc.md')
+    await writeFile(titled, '---\nid: k3m9x2pq7abc\ntitle: "  UP-001 - Abdul  "\n---\nbody\n')
+    expect((await scanFile(root, titled)).title).toBe('UP-001 - Abdul')
+    expect((await scanFile(root, path.join(root, 'VSL-v1.md'))).title).toBe('VSL-v1')
+    const year = path.join(root, 'a-year.md')
+    await writeFile(year, '---\ntitle: 2026\n---\nbody\n') // an agent's unquoted number is still the title it meant
+    expect((await scanFile(root, year)).title).toBe('2026')
+  })
+
+  it('a `title` that is empty, or not text, leaves the file name as the title (YAZ-2420 D14)', async () => {
+    for (const [name, value] of [['Empty title', "''"], ['Blank title', "'   '"], ['List title', '[a, b]'], ['Map title', '{a: b}'], ['Null title', '']]) {
+      const file = path.join(root, `${name}.md`)
+      await writeFile(file, `---\ntitle: ${value}\n---\nbody\n`)
+      expect((await scanFile(root, file)).title).toBe(name)
+    }
+    const broken = path.join(root, 'Broken title.md')
+    await writeFile(broken, '---\ntitle: [unclosed\n---\nbody\n')
+    expect((await scanFile(root, broken)).title).toBe('Broken title')
+  })
+
+  it("a folder's record is titled by its `.folder.md`, else by the folder's own name (YAZ-2420 D6)", async () => {
+    const titled = path.join(root, 'upwork-2026')
+    const plain = path.join(root, 'candidates')
+    await mkdir(titled)
+    await mkdir(plain)
+    await writeFile(path.join(titled, '.folder.md'), '---\nid: p7c2m5xv9kq3\ntitle: Upwork 2026\n---\n')
+    await writeFile(path.join(plain, '.folder.md'), '---\nid: d9r3f6bz2nw8\n---\n')
+    expect((await scanFile(root, path.join(titled, '.folder.md'))).title).toBe('Upwork 2026')
+    expect((await scanFile(root, path.join(plain, '.folder.md'))).title).toBe('candidates')
   })
 
   it('string `tags:` is split', async () => {

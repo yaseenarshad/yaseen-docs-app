@@ -7,6 +7,7 @@ const record = (folder: string, basename: string, properties: Record<string, unk
   path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`,
   name: `${basename}.md`,
   basename,
+  title: basename,
   folder,
   ext: 'md',
   size: 1,

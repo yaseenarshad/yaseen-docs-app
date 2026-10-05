@@ -505,6 +505,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       path,
       name,
       basename: name.replace(/\.(md|base)$/, ''),
+      title: name.replace(/\.(md|base)$/, ''),
       folder: '',
       ext: 'md',
       size: 1,

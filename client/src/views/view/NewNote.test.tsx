@@ -67,6 +67,7 @@ const created = (path: string, properties: Record<string, unknown>): IndexRecord
   path,
   name: path.split('/').pop()!,
   basename: path.split('/').pop()!.replace(/\.md$/, ''),
+  title: path.split('/').pop()!.replace(/\.md$/, ''),
   folder: path.slice('/vault/'.length, path.lastIndexOf('/')),
   ext: 'md',
   size: 0,
@@ -340,6 +341,7 @@ const listRec = (name: string, status: unknown): IndexRecord => ({
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties: { status },
 })
 

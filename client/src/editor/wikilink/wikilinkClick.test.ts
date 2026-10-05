@@ -364,7 +364,7 @@ describe('wikilink click: id links (YAZ-2293)', () => {
 describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
   const FOLDER_ID = 'f7n2w8rt4xyz'
   const settings: IndexRecord = {
-    path: '/vault/Projects/.folder.md', name: '.folder.md', basename: '.folder', folder: 'Projects', ext: 'md',
+    path: '/vault/Projects/.folder.md', name: '.folder.md', basename: '.folder', title: '.folder', folder: 'Projects', ext: 'md',
     size: 1, ctime: 1, mtime: 1, id: FOLDER_ID, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   }
   /** THE resolver the bridge feeds: no note at all, one folder, and its settings file's id. */

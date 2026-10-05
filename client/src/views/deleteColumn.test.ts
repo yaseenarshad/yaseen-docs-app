@@ -27,7 +27,7 @@ import { deleteColumn, filterMentions, notesHolding, pruneColumnFromViews, prune
 const rec = (path: string, properties: Record<string, unknown>): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const folder = path.slice('/vault/'.length, Math.max('/vault/'.length, path.lastIndexOf('/')))
-  return { path, name, basename: name.replace(/\.md$/, ''), folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }
+  return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }
 }
 
 /** The folder deleting, and another that shows the same notes. */
