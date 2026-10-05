@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, notesAt, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -193,5 +193,21 @@ describe('favoriteRoots (YAZ-1766 D4)', () => {
   it('a path the tree no longer holds yields no row, and no favorites yields nothing', () => {
     expect(favoriteRoots(tree, ['/v/Gone.md', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes'])
     expect(favoriteRoots(tree, [])).toEqual([])
+  })
+})
+
+describe('notesAt (YAZ-2420 3E1)', () => {
+  const file = (path: string, kind: 'markdown' | 'pdf' = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'a', path: '/v/a', children: [{ type: 'dir', name: 'b', path: '/v/a/b', children: [file('/v/a/b/deep.md'), file('/v/a/b/scan.pdf', 'pdf')] }, file('/v/a/one.md')] },
+    { type: 'dir', name: 'ab', path: '/v/ab', children: [file('/v/ab/other.md')] },
+    file('/v/top.md'),
+  ]
+
+  it('a note is itself; a folder is every note under it at any depth, never a file that is no note nor a sibling whose name it begins', () => {
+    expect(notesAt(tree, '/v/top.md')).toEqual(['/v/top.md'])
+    expect(notesAt(tree, '/v/a')).toEqual(['/v/a/b/deep.md', '/v/a/one.md'])
+    expect(notesAt(tree, '/v/a/b/scan.pdf')).toEqual([])
+    expect(notesAt(tree, '/v/gone')).toEqual([])
   })
 })

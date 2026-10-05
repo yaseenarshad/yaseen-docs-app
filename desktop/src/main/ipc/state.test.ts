@@ -65,6 +65,7 @@ describe('registerStateIpc', () => {
     expect(store.get().settings).toEqual(next)
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, lineSpacing: 'big' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, contentWidth: 'wide' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, confirmRename: 'no' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { lineSpacing: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().settings).toEqual(next)

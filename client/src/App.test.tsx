@@ -1444,6 +1444,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
   const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
   const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+  /** "Ask before renaming" switched off (YAZ-2420 3C1). */
+  const askOff = (): AppState => ({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } })
 
   it('a NAME change asks first, with the honest count — and confirming runs the whole pipeline', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
@@ -1456,6 +1458,16 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
     expect(files['/v/A.md'].content).toBe('See [[B2]].\n') // links ALWAYS follow on confirm (locked)
     expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('"Ask before renaming" off: a file rename runs with no sheet, and the links still follow with their notice (YAZ-2420 3C1)', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el } = await mount(askOff(), identity(), files, feed)
+    await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(files['/v/A.md'].content).toBe('See [[B2]].\n')
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
   })
 
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
@@ -1570,6 +1582,13 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
     })
 
+    it('"Ask before renaming" off: a move that would clear values still asks (YAZ-2420 3C1)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), moved(), (b) => b.bridge.index.mockResolvedValue(snapshot()))
+      await drag(NOOR, '/v/Team/Archive/Noor.md')
+      expect(sheetText(el)).toBe("Move 'Noor' to 'Archive'? Its values for Hiring will be cleared.")
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+    })
+
     it('a pending move is dropped when the window root changes (the vault folder moved)', async () => {
       const { bridge, el, emitFileRenamed } = await mountTeam()
       await drag(NOOR, '/v/Team/Archive/Noor.md')
@@ -1604,6 +1623,16 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.file.rename).not.toHaveBeenCalled()
       expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
       expect(files['/v/ById.md'].content).toBe(`See [[${ID}]].\n`)
+      expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+    })
+
+    it('"Ask before renaming" off: a title edit runs with no sheet, and the links that spelled the old title still follow (YAZ-2420 3C1)', async () => {
+      const files = notes()
+      const { bridge, el } = await mount(askOff(), identity(), files, feedTitled)
+      await act(async () => await captured.sidebar?.onRetitle(ABDUL, 'UP-001 - Abdul', 'file'))
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
+      expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
       expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
     })
 

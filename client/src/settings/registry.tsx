@@ -230,6 +230,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            id: 'confirmRename',
+            label: 'Ask before renaming',
+            hint: 'Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.',
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.confirmRename} onChange={(confirmRename) => onChange({ ...settings, confirmRename })} ariaLabel="Ask before renaming" />
+            ),
+          },
+          {
             id: 'newNoteLocation',
             label: 'Default location for new notes',
             keywords: ['folder', 'wikilink'],

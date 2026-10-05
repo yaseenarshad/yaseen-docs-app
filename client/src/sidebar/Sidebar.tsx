@@ -922,7 +922,7 @@ export function Sidebar({
         />
       )}
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
+      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (
         <ConfirmMove
           shortcut={confirmingShortcut}

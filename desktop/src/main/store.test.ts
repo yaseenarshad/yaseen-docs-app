@@ -139,6 +139,16 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
   })
 
+  it('confirmRename: a file without the key sanitizes to on; off survives; junk falls back (YAZ-2420 3C1)', async () => {
+    const { confirmRename: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ confirmRename: true })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, confirmRename: false } }))
+    expect(createStore(file).get().settings).toMatchObject({ confirmRename: false })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, confirmRename: 'no' } }))
+    expect(createStore(file).get().settings).toMatchObject({ confirmRename: true })
+  })
+
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
     // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
     const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS

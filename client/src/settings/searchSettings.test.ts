@@ -35,6 +35,7 @@ describe('settingCandidates', () => {
       'threadColor',
       'commentsOrder',
       'confirmDelete',
+      'confirmRename',
       'newNoteLocation',
       'hotkeys-keyboard',
       'hotkeys-views',
@@ -86,7 +87,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'newNoteLocation'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation'])
   })
 
   it('matches on the group title: "threading" finds the three threading rows', () => {
