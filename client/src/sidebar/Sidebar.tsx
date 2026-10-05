@@ -516,11 +516,12 @@ export function Sidebar({
         reviewDir: upkeep && node?.type === 'dir' ? node.path : null,
         reviewPath: inReview === null ? null : filePath,
         reviewIsOn: inReview === true,
-        shortcutDir: plural === null && node?.type === 'dir' ? node.path : null,
+        // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
+        shortcutDir: indexSource.ids && plural === null && node?.type === 'dir' ? node.path : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
       })
     },
-    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState],
+    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState, indexSource],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice, indexSource)
@@ -546,7 +547,7 @@ export function Sidebar({
     [root],
   )
 
-  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, dispatch)
+  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, dispatch, indexSource)
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
@@ -615,8 +616,8 @@ export function Sidebar({
       // The index is only needed for the count, so it rides in asynchronously and the sheet
       // opens immediately. Failure leaves the line out; it never blocks or spins.
       api.index(root).then(
-        ({ records, folders }) => {
-          const n = countLinkReferences({ root, oldPath: path, kind, records, folders, dirs })
+        ({ records, folders, ids }) => {
+          const n = countLinkReferences({ ids, root, oldPath: path, kind, records, folders, dirs })
           setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
         },
         () => undefined,

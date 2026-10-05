@@ -178,6 +178,14 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
     expect(found(`[[${ID}]] and [[7tq2m8vd4xhn]]`).map(([, label]) => label)).toEqual(['UP-001 - Abdul', 'Plan'])
   })
 
+  it('in a vault that does not use IDs nothing is found by id: its index hands out no id, so an id pasted is searched as any text is (YAZ-2523 V5)', () => {
+    // The same note and folder as such a vault's index hands them out: no `id`, the file name as the title.
+    const plain = [...folderCandidates('/vault', ['/vault/candidates'], [rec('/vault/candidates/.folder.md', [], 'candidates')]), ...searchCandidates([{ ...rec('/vault/candidates/Abdul.md', ['Abdul R']), properties: { id: ID } }])]
+    for (const pasted of [ID, `[[${ID}|Abdul]]`, 'see f7n2w8rt4xyz']) expect(searchRows(plain, pasted)).toEqual([])
+    expect(searchRows(plain, 'abdul')).toEqual(searchTitles(plain, 'abdul'))
+    expect(searchRows(plain, 'abdul').map((c) => c.label)).toEqual(['Abdul', 'Abdul R — Abdul'])
+  })
+
   it('D: text that holds no id of this vault is the ordinary search: part of an id matches nothing by id, and a title sharing its letters is found as any title is', () => {
     expect(found('k3m9').map(([, label]) => label)).toEqual(['k3m9 abdul notes'])
     expect(found(ID.slice(0, 11))).toEqual([])

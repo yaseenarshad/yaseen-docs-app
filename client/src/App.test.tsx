@@ -8,7 +8,8 @@ import { LINK_NOTICE_MS, type NoticeKind } from './lib/notice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
+import { IDS_FILE } from '@shared/noteId'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type SidebarLens, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -131,7 +132,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const bridge = {
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
-    index: vi.fn(async (root: string): Promise<{ root: string; records: IndexRecord[]; folders: IndexRecord[]; generatedAt: number }> => ({ root, records: [], folders: [], generatedAt: 1 })),
+    index: vi.fn(async (root: string): Promise<IndexResponse> => ({ root, records: [], folders: [], generatedAt: 1, ids: true })),
     // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
     coldDiff: vi.fn(async () => null),
     readFile: vi.fn(async (path: string) => {
@@ -1180,7 +1181,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     }
     const tabs = ['/v/a.md', '/v/b.md', '/v/report.PDF', '/v/photo.PNG']
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs }, {}, (b) =>
-      b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/a.md', 'k3m9x2pq7abc'), note('/v/b.md')], folders: [], generatedAt: 1 }),
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/a.md', 'k3m9x2pq7abc'), note('/v/b.md')], folders: [], generatedAt: 1, ids: true }),
     )
     const menuOf = (path: string) => {
       const tab = el.querySelector<HTMLElement>(`[role="tab"][title="${path}"]`)?.closest<HTMLElement>('.tabbar__tab')
@@ -1203,7 +1204,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       defaultAppState(),
       { id: 'w1', root: '/v', file: ABDUL, tabs: [ABDUL, '/v/b.md'], rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' } },
       {},
-      (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/b.md', 'b'), note('/v/c.md', 'Side Note'), note(ABDUL, 'UP-001 - Abdul')], folders: [], generatedAt: 1 }),
+      (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/b.md', 'b'), note('/v/c.md', 'Side Note'), note(ABDUL, 'UP-001 - Abdul')], folders: [], generatedAt: 1, ids: true }),
     )
     expect(document.title).toBe('UP-001 - Abdul — v')
     expect(stripLabels(el)).toEqual(['UP-001 - Abdul', 'b'])
@@ -1381,7 +1382,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
   it('the cold-start feed banners passively: names root-relative, N from the engine, no rewrite before confirmation', async () => {
     const files = { '/v/A.md': { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 } }
     const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
-    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
+    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
     b.bridge.coldDiff.mockResolvedValue(coldDiff as never)
     await storage.init()
     container = document.createElement('div')
@@ -1408,7 +1409,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
   it('Dismiss drops the hypothesis: no repair, no rewrite, banner gone', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
-    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
+    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
     b.bridge.coldDiff.mockResolvedValue(coldDiff as never)
     await storage.init()
     container = document.createElement('div')
@@ -1441,7 +1442,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   /** A references B by name; R references Docs/N by path — one file case, one folder case. */
   const records = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')]
   const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
-  const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
+  const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
   const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
   /** "Ask before renaming" switched off (YAZ-2420 3C1). */
@@ -1490,6 +1491,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       records: [record(NOOR, { properties: noor }), record('/v/Team/Hiring/Plain.md'), record('/v/Team/Hiring/Lost.md', { properties: { in: { [GONE]: { Rank: 1 } } } })],
       folders: [record('/v/Team/.folder.md', { id: TEAM, title: 'Team' }), record('/v/Team/Archive/.folder.md', { id: ARCHIVE, title: 'Archive' }), record('/v/Team/Hiring/.folder.md', { id: HIRING, title: 'Hiring' })],
       generatedAt: 1,
+      ids: true,
     })
     // The disk as it is once the rename has landed: the note is at its new place.
     const moved = () => ({ '/v/Team/Archive/Noor.md': { content: held, mtime: 1 }, '/v/Team/Archive/Plain.md': { content: 'Body\n', mtime: 1 } })
@@ -1545,6 +1547,22 @@ describe('App rename door (⚡ YAZ-888)', () => {
       }
       // A note that holds nothing stale is not read at all.
       expect(bridge.readFile).not.toHaveBeenCalled()
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+    })
+
+    // The ID vault's half is every other test of this block.
+    it('in a vault that does not use IDs a move and a rename ask nothing about values and write nothing: every `in:` block stays byte for byte (YAZ-2523 V13)', async () => {
+      // As such a vault's index hands them out: `in` is a property like any other, and no folder has an id.
+      const plain = { ...snapshot(), folders: snapshot().folders.map(({ id: _id, ...folder }) => folder), ids: false }
+      const places = ['/v/Team/Archive/Noor.md', '/v/Noor.md', '/v/Team/Hiring/Noor Khan.md']
+      const files = Object.fromEntries(places.map((place) => [place, { content: held, mtime: 1 }]))
+      const { bridge, el } = await mount(askOff(), identity(), files, (b) => b.bridge.index.mockResolvedValue(plain))
+      for (const place of places) {
+        await drag(NOOR, place)
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: NOOR, newPath: place })
+        expect(files[place].content).toBe(held)
+      }
       expect(bridge.writeFile).not.toHaveBeenCalled()
     })
 
@@ -1606,7 +1624,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const RENAMED = `/v/up-001-abdul-${ID}.md`
     const titled = [record('/v/A.md', { links: ['Abdul'] }), record('/v/ById.md', { links: [ID] }), record(ABDUL, { id: ID, title: 'Abdul', properties: { id: ID, title: 'Abdul' } })]
     const feedTitled = (b: ReturnType<typeof installBridge>) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: titled, folders: [], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: titled, folders: [], generatedAt: 1, ids: true })
       b.bridge.file.retitle.mockResolvedValue({ oldPath: ABDUL, newPath: RENAMED, kind: 'file' })
     }
     const notes = () => ({ '/v/A.md': { content: 'See [[Abdul]].\n', mtime: 1 }, '/v/ById.md': { content: `See [[${ID}]].\n`, mtime: 1 } })
@@ -1673,6 +1691,86 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(el.querySelector('.link-notice')?.textContent).toBe(notice)
       expect(files['/v/A.md'].content).toBe('See [[Abdul]].\n')
+    })
+  })
+
+  /** The same four surfaces, the same door, in a vault that does not use IDs (YAZ-2523 V3). The ID vault's half is `a title edit`, above. */
+  describe('a name typed in a vault that does not use IDs is the file\u2019s name (YAZ-2523 V3)', () => {
+    const feedPlain = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: false })
+
+    it('from the sidebar: a note is renamed to `<dir>/<typed>.md` through the same sheet and pipeline, the links that named it follow, and no title is written', async () => {
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feedPlain)
+      await act(async () => void captured.sidebar?.onRetitle('/v/B.md', 'Meeting notes', 'file'))
+      expect(sheetText(el)).toBe("Rename 'B' to 'Meeting notes'? Links in 1 note will be updated.")
+      expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/Meeting notes.md' })
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+      expect(files['/v/A.md'].content).toBe('See [[Meeting notes]].\n')
+    })
+
+    it('from a note\u2019s page title and a table\u2019s Name cell, the editor\u2019s door: the same rename, in the note\u2019s own folder', async () => {
+      const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const { bridge, el } = await mount(askOff(), { ...identity(), file: '/v/Docs/N.md', tabs: ['/v/Docs/N.md'] }, files, feedPlain)
+      await act(async () => await captured.editorRetitle?.('/v/Docs/N.md', 'v1.2', 'file'))
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs/N.md', newPath: '/v/Docs/v1.2.md' })
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+      expect(files['/v/R.md'].content).toBe('See [[Docs/v1.2]].\n')
+    })
+
+    it('a note stays a note: a name typed with another file’s suffix is the note `talk.pdf.md`, as "New note" makes it', async () => {
+      const { bridge } = await mount(askOff(), identity(), {}, feedPlain)
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'talk.pdf', 'file'))
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/talk.pdf.md' })
+    })
+
+    it.each([
+      ['the sidebar', () => captured.sidebar?.onRetitle('/v/Docs', 'Notes 2026', 'dir')],
+      ['its page title', () => captured.editorRetitle?.('/v/Docs', 'Notes 2026', 'dir')],
+    ])('a folder, from %s: a directory rename to the name typed, the links through it follow, and no title is written', async (_, retitle) => {
+      const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const { bridge } = await mount(askOff(), identity(), files, feedPlain)
+      bridge.file.rename.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/Notes 2026', kind: 'dir' } as never)
+      await act(async () => await retitle())
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs', newPath: '/v/Notes 2026' })
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+      expect(files['/v/R.md'].content).toBe('See [[Notes 2026/N]].\n')
+    })
+
+    it('a name typed before the vault’s index has landed renames nothing and says so: its kind is not known yet (YAZ-2523)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, (b) => b.bridge.index.mockReturnValue(new Promise(() => undefined)))
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'Meeting notes', 'file'))
+      expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      [false, "Rename 'B' to 'C'? Links in 1 note will be updated.", 'See [[C]].\n'],
+      [true, "Rename 'B' to 'C'? No other notes link to it.", 'See [[B]].\n'],
+    ])('a note that holds `title: B`, renamed with IDs %s: `[[B]]` is counted and rewritten only where the title is an ordinary property (YAZ-2523 V12)', async (ids, asked, after) => {
+      const held = [record('/v/A.md', { links: ['B'] }), record('/v/B.md', { properties: { title: 'B' } })]
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const { el } = await mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: held, folders: [], generatedAt: 1, ids }))
+      await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
+      expect(sheetText(el)).toBe(asked)
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(files['/v/A.md'].content).toBe(after)
+    })
+
+    it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, feedPlain)
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'B.md', 'file'))
+      expect(el.querySelector('.link-notice')).toBeNull()
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'a/b', 'file'))
+      expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t rename: Name cannot contain "/"')
+      await act(async () => await captured.editorRetitle?.('/v/Docs', '.hidden', 'dir'))
+      expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t rename: Names starting with "." are hidden')
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
     })
   })
 
@@ -1745,7 +1843,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const count = vi.spyOn(renameLinks, 'countLinkReferences')
     try {
       const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1, ids: true })
         b.bridge.tree.mockImplementation(async () => ({
           root: '/v',
           tree: [{ type: 'file', name: 'photo.png', path: '/v/photo.png', kind: 'image', size: 1, mtime: 1 }] as TreeNode[],
@@ -1784,7 +1882,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     let release!: () => void
     const pending = new Promise<TreeResponse>((r) => (release = () => r({ root: '/v', tree: [], generatedAt: 0 })))
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1, ids: true })
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
         if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
         rootReads++
@@ -1816,7 +1914,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     let release!: () => void
     const pending = new Promise<TreeResponse>((r) => (release = () => r({ root: '/v', tree: [], generatedAt: 0 })))
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1, ids: true })
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
         if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
         rootReads++
@@ -1851,6 +1949,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         records: [record('/v/A.md', { links: ['Projects'] }), record('/v/Projects/Plan.md')],
         folders: [record('/v/Team/.folder.md', { properties: { folder_settings: outline } })],
         generatedAt: 1,
+        ids: true,
       })
       b.bridge.tree.mockResolvedValue({
         root: '/v',
@@ -1872,7 +1971,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
     const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1, ids: true })
       b.bridge.tree.mockResolvedValue({
         root: '/v',
         tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [] }],
@@ -1929,11 +2028,12 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const count = vi.spyOn(renameLinks, 'countLinkReferences')
     try {
       const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
-        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 }),
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1, ids: true }),
       )
       await act(async () => void captured.sidebar?.onRenameFile('/v/Archive.json', '/v/Renamed.json', 'dir'))
 
       expect(count).toHaveBeenCalledWith({
+        ids: true,
         root: '/v',
         oldPath: '/v/Archive.json',
         kind: 'dir',
@@ -2056,7 +2156,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
   })
   const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>
-    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
+    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true })
   /** The vault's `review.json` turns upkeep on, and the index holds `records`. */
   const upkeepOn = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) => {
     b.bridge.vaultConfig.read.mockResolvedValue({ enabled: true })
@@ -2315,5 +2415,152 @@ describe('App upkeep review (YAZ-2322)', () => {
       expect(activeLabel(el)).toBe('b')
       expect(bridge.writeFile).not.toHaveBeenCalled()
     })
+  })
+})
+
+/**
+ * The box that asks (YAZ-2523 🔒 V2, V11): a vault with no answer is asked once per window before
+ * any note is given an ID. Each answer is saved in the vault's `ids.json`; Esc saves nothing.
+ */
+describe('App asks before a vault\u2019s notes are given IDs (YAZ-2523 V2)', () => {
+  const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
+  const ASK = { notes: 3, folders: 1, foreign: 0 }
+  const TEXT = "Give this vault's notes IDs? The app would write an ID into 3 notes and add a hidden settings file to 1 folder. With IDs, links keep working when a note is renamed or moved, and the app names the file of a note you make or retitle. Without them, the app leaves every file exactly as it is."
+  /** The index's answer for every root: `ask` only while the vault has not answered. */
+  const feed = (ids: boolean, ask?: IndexResponse['ask']) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockImplementation(async (root) => ({ root, records: [], folders: [], generatedAt: 1, ids, ask }))
+  const mountAsked = () => mount(defaultAppState(), VAULT, {}, feed(false, ASK))
+  const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+  const press = (key: string) => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+  /** The vault's `ids.json` changed, as main says it: the index is fetched again. */
+  const refetch = (bridge: ReturnType<typeof installBridge>['bridge']) =>
+    act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: '/v', name: IDS_FILE })))
+
+  it('a vault that has not answered: the box says what a yes would write, and nothing is written', async () => {
+    const { bridge, el } = await mountAsked()
+    expect(sheetText(el)).toBe(TEXT)
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Not for this vault', 'Give IDs'])
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+  })
+
+  it('an empty folder is asked too (V11)', async () => {
+    const { el } = await mount(defaultAppState(), VAULT, {}, feed(false, { notes: 0, folders: 0, foreign: 0 }))
+    expect(sheetText(el)).toBe("Should this vault's notes have IDs? With IDs, the app names each note's file and links keep working when a note is renamed or moved. Without them, notes are plain files named as you type them, and the app writes nothing extra.")
+  })
+
+  it('a vault that answered, yes or no, is not asked', async () => {
+    const yes = await mount(defaultAppState(), VAULT, {}, feed(true))
+    expect(yes.el.querySelector('.confirm')).toBeNull()
+    act(() => root?.unmount())
+    const no = await mount(defaultAppState(), VAULT, {}, feed(false))
+    expect(no.el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('"Give IDs" saves yes in the vault and the box closes', async () => {
+    const { bridge, el } = await mountAsked()
+    await act(async () => sheetBtn(el, 'Give IDs')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: true })
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('"Not for this vault" saves no in the vault and the box closes', async () => {
+    const { bridge, el } = await mountAsked()
+    await act(async () => sheetBtn(el, 'Not for this vault')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false })
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('Enter chooses neither answer: the box stays and nothing is saved', async () => {
+    const { bridge, el } = await mountAsked()
+    press('Enter')
+    expect(sheetText(el)).toBe(TEXT)
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+  })
+
+  it('Esc saves nothing and a later snapshot that still asks does not reopen the box; opening the vault again does', async () => {
+    const { bridge, el, emitOpenRoot } = await mountAsked()
+    press('Escape')
+    expect(el.querySelector('.confirm')).toBeNull()
+    const fetched = bridge.index.mock.calls.length
+    await refetch(bridge)
+    expect(bridge.index.mock.calls.length).toBeGreaterThan(fetched)
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+
+    act(() => captured.sidebar?.onRootMissing())
+    expect(el.querySelector('.confirm')).toBeNull()
+    await act(async () => emitOpenRoot('/v'))
+    expect(sheetText(el)).toBe(TEXT)
+  })
+
+  it('a click outside is Esc: nothing is saved', async () => {
+    const { bridge, el } = await mountAsked()
+    expect(sheetText(el)).toBe(TEXT)
+    act(() => void el.querySelector('.confirm-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+  })
+
+  it('an answer whose save lands after the window moved to another vault closes nothing there: that vault is still asked', async () => {
+    const { bridge, el, emitFileRenamed } = await mountAsked()
+    let saved!: (answer: undefined) => void
+    bridge.vaultConfig.write.mockReturnValueOnce(new Promise<undefined>((resolve) => void (saved = resolve)))
+    await act(async () => sheetBtn(el, 'Give IDs')?.click())
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+    expect(sheetText(el)).toBe(TEXT)
+    await act(async () => saved(undefined))
+    expect(sheetText(el)).toBe(TEXT)
+  })
+
+  it('a save that fails says so in the notice and leaves the box to be answered again', async () => {
+    const { bridge, el } = await mountAsked()
+    bridge.vaultConfig.write.mockRejectedValueOnce(new Error('disk full'))
+    await act(async () => sheetBtn(el, 'Give IDs')?.click())
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: disk full")
+    expect(sheetText(el)).toBe(TEXT)
+    await act(async () => sheetBtn(el, 'Not for this vault')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', IDS_FILE, { enabled: false })
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+})
+
+/** The Settings switch (YAZ-2523 🔒 V4, V13) reads the vault's answer off the snapshot and saves through the same door as the box. */
+describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4)', () => {
+  const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
+  const note = (id?: string): IndexRecord => ({ path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(id === undefined ? {} : { id }) })
+  const feed = (ids: boolean, records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids })
+  const idsButtons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="ids"] button')]
+  const pressed = (el: HTMLElement) => idsButtons(el).map((b) => b.getAttribute('aria-pressed'))
+
+  it('with no vault open there is no row', async () => {
+    const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    act(() => emitSettings())
+    expect(el.querySelector('.settings-dialog')).not.toBeNull()
+    expect(el.querySelector('[data-setting="ids"]')).toBeNull()
+  })
+
+  it('a vault that does not use IDs reads Off, and On saves yes', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
+    act(() => emitSettings())
+    expect(pressed(el)).toEqual(['false', 'true'])
+    await act(async () => idsButtons(el)[0].click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: true })
+  })
+
+  it('a vault whose notes hold IDs reads On, and Off asks before it saves no', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [note('k3m9x2pq7abc')]))
+    act(() => emitSettings())
+    expect(pressed(el)).toEqual(['true', 'false'])
+    act(() => idsButtons(el)[1].click())
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Turn off')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false })
+  })
+
+  it('an ID vault with no note holding one yet: Off saves no at once', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, []))
+    act(() => emitSettings())
+    await act(async () => idsButtons(el)[1].click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false })
   })
 })

@@ -72,8 +72,8 @@ export interface TableViewProps {
   wikilinks?: WikilinkResolveSource
   /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
-  /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. */
-  deleteColumn: (key: string) => Promise<void>
+  /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
+  deleteColumn?: (key: string) => Promise<void>
   /** `FolderHost.valueCount`: the number that confirm states. */
   valueCount: (key: string) => number
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
@@ -639,11 +639,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             columns={settings.columns}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
-            onDeleteColumn={setConfirmDelete}
+            onDeleteColumn={deleteColumn && setConfirmDelete}
             onClose={() => setHeaderMenu(null)}
           />
         )}
-        {confirmDelete !== null && (
+        {confirmDelete !== null && deleteColumn && (
           <ConfirmDeleteColumn
             columnKey={confirmDelete}
             def={def}

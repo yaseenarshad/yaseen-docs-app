@@ -41,7 +41,7 @@ function installBridge() {
   const files: Record<string, { content: string; mtime: number }> = {}
   const bridge = {
     coldDiff: vi.fn(async (): Promise<ColdStartDiffResponse | null> => null),
-    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], folders: [] as IndexRecord[], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], folders: [] as IndexRecord[], generatedAt: 1, ids: true })),
     tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
     readFile: vi.fn(async (path: string) => {
       const f = files[path]
@@ -83,8 +83,8 @@ async function mount(root: string | null = '/v') {
 }
 
 const banner = () => container?.querySelector('[data-banner]')?.textContent ?? null
-const snapshot = async (records: IndexRecord[], folders: IndexRecord[] = []) => {
-  act(() => captured.ext?.onSnapshot(records, folders))
+const snapshot = async (records: IndexRecord[], folders: IndexRecord[] = [], ids = true) => {
+  act(() => captured.ext?.onSnapshot(records, folders, ids))
   await act(async () => {}) // settle the cold-diff read (first snapshot) / queue updates
 }
 
@@ -142,6 +142,17 @@ describe('useExternalRenames — the while-running feed', () => {
     expect(banner()).toBeNull()
     await snapshot(postRename)
     expect(banner()).toBe('/v/B.md|/v/B2.md|1')
+  })
+
+  it.each([
+    [false, { properties: { title: 'deploy' } }, '/v/deploy.md|/v/release.md|1'],
+    [true, { properties: { title: 'deploy' }, title: 'deploy' }, null],
+  ])('a renamed note holding `title: deploy`, with IDs %s: `[[deploy]]` is a link by file name only where the vault does not use IDs (YAZ-2523 🔒 V12)', async (ids, titled, shown) => {
+    const linker = rec('/v/A.md', { links: ['deploy'], size: 20, mtime: 5 })
+    await mount()
+    await snapshot([linker, rec('/v/deploy.md', titled)], [], ids)
+    await snapshot([linker, rec('/v/release.md', titled)], [], ids)
+    expect(banner()).toBe(shown)
   })
 
   it('a burst of renames nobody links to never builds a count per rename; the one that IS linked still banners (YAZ-2241)', async () => {
@@ -247,7 +258,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
   it('Update repairs the app, rewrites the referencing note through the engine and shows the summary notice', async () => {
     const { bridge, files } = await mount()
     files['/v/A.md'] = { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 }
-    bridge.index.mockResolvedValue({ root: '/v', records: postRename, folders: [], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: postRename, folders: [], generatedAt: 2, ids: true })
     await snapshot(preRename)
     await snapshot(postRename)
     expect(bridge.writeFile).not.toHaveBeenCalled() // NOTHING before the confirmation (locked)
@@ -269,7 +280,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
     const after = [rec('/v/B2.md')]
     const { bridge, files } = await mount()
     files[settings.path] = { content: '---\nfolder_settings:\n  views:\n    - type: table\n      name: T\n      order:\n        - "[[B]]"\n---\n', mtime: 1 }
-    bridge.index.mockResolvedValue({ root: '/v', records: after, folders: [settings], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: after, folders: [settings], generatedAt: 2, ids: true })
     await snapshot(before, [settings])
     await snapshot(after, [settings])
     expect(banner()).toBe('/v/B.md|/v/B2.md|1')

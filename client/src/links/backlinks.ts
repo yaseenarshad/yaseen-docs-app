@@ -192,6 +192,7 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
  * order. None when it links only by a view's `order` or a column's `target`.
  */
 export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink, titles: PathTitles, limit?: number): MentionSnippet[] {
-  const bullets = folderSettings(settings).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
+  // The vault's kind decides only the views of a folder that saved none, and those hold no outline.
+  const bullets = folderSettings(settings, false).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
   return mentionSnippets(bullets.join('\n'), target, resolve, titles, limit)
 }

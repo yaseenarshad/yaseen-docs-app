@@ -5,6 +5,9 @@ import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import { REVIEWS_KEY } from '@shared/reviews'
 
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY])
+const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
+
 /**
  * The frontmatter keys the app OWNS on a note (YAZ-1513/1549), spelled from the real constants —
  * never a local literal: the comments store, the note id (YAZ-2293 — editing it would orphan every
@@ -16,5 +19,9 @@ import { REVIEWS_KEY } from '@shared/reviews'
  * shows them as "Reserved" with no editor — `in` as no row at all: its blocks are the panel's
  * folder rows. A folder's settings block is the app's only in the folder's own `.folder.md`, whose
  * panel hides it; on a note that key is an ordinary property.
+ *
+ * Where the vault does not use IDs (YAZ-2523 🔒 V12) only the comments store and the review log are
+ * the app's: `id`, `title`, `also_in` and `in` are ordinary properties there. A column is deleted
+ * only where the vault uses IDs (🔒 V11), so `deleteColumn.ts` asks for that vault's keys.
  */
-export const RESERVED_KEYS: ReadonlySet<string> = new Set([COMMENTS_KEY, NOTE_ID_KEY, TITLE_KEY, REVIEWS_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
+export const reservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT : PLAIN)

@@ -337,7 +337,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
-  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), opts.wikilinkNav))
+  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   // Images (YAZ-1656): the node view takes the options directly; the ctx slice carries the SAME
   // object to `clipboardPaste`, which has no constructor of its own. Injected on every editor (null
@@ -357,7 +357,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
-  crepe.editor.use(createWikilinkPickerKeymap(opts.wikilinkNav))
+  crepe.editor.use(createWikilinkPickerKeymap(wikilinks, opts.wikilinkNav))
   // YAZ-1734, also before `outlinerKeymap`: ⇧↑/⇧↓ whole lines; ⌫/Delete/Enter over a fold-spanning
   // range first delete the visible pieces (Enter re-presses itself, D7). The outliner's
   // Backspace/Enter require an empty selection, so nothing else moves.

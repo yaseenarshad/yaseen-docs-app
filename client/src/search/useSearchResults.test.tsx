@@ -34,7 +34,7 @@ const rec = (basename: string, folder = ''): IndexRecord => ({
 })
 
 function installBridge(records: IndexRecord[], folders: IndexRecord[]) {
-  const bridge = { index: vi.fn(async (root: string) => ({ root, records, folders, generatedAt: 1 })) }
+  const bridge = { index: vi.fn(async (root: string) => ({ root, records, folders, generatedAt: 1, ids: true })) }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
 }
@@ -111,7 +111,7 @@ describe('useSearchResults (YAZ-803)', () => {
     bridge.index.mockClear()
     await rerender('') // back to no query: the records stay, nothing is refetched
     expect(bridge.index).not.toHaveBeenCalled()
-    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 2, ids: true })
     await fire({ type: 'add', path: '/v/Anchor.md', mtime: 1 }) // still subscribed while the bar is empty
     await rerender('a')
     expect(labels()).toEqual(['Alpha', 'Anchor'])
@@ -119,7 +119,7 @@ describe('useSearchResults (YAZ-803)', () => {
 
   it('a structural watch event refetches the index; the new snapshot is searchable', async () => {
     const { bridge, fire } = await mount([rec('Alpha')], 'a')
-    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 2, ids: true })
     await fire({ type: 'add', path: '/v/Anchor.md', mtime: 1 })
     expect(labels()).toEqual(['Alpha', 'Anchor'])
   })
@@ -151,8 +151,8 @@ describe('useSearchResults (YAZ-803)', () => {
   it('a stale answer is never applied over a newer one (YAZ-2191)', async () => {
     const { bridge, emit } = await mount([rec('Alpha')], 'a')
     let answerOld!: () => void
-    bridge.index.mockImplementationOnce((root: string) => new Promise((r) => (answerOld = () => r({ root, records: [rec('Alpha')], folders: [], generatedAt: 2 }))))
-    bridge.index.mockResolvedValueOnce({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 3 })
+    bridge.index.mockImplementationOnce((root: string) => new Promise((r) => (answerOld = () => r({ root, records: [rec('Alpha')], folders: [], generatedAt: 2, ids: true }))))
+    bridge.index.mockResolvedValueOnce({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 3, ids: true })
     act(() => emit({ type: 'ready', root: '/v' }))
     await act(async () => emit({ type: 'ready', root: '/v' }))
     expect(labels()).toEqual(['Alpha', 'Anchor'])

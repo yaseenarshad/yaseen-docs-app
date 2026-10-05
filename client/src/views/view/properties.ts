@@ -10,7 +10,9 @@ import { canonicalKey } from './keys'
  * (YAZ-895 — a DECLARED column is offerable before any note carries a value for it; since
  * YAZ-1549 `propertyKeys` itself shows it by default), then "File name" (`file.basename`,
  * YAZ-2420 🔒 D18) and the formulas; de-duplicated by canonical key.
- * Never the note's own keys (`id` and the rest): the rows hold a folder's values (D19), not those.
+ * Where the vault uses IDs never the note's own keys (`id` and the rest): the rows hold a folder's
+ * values (D19), not those. In a vault that does not use IDs the rows are the notes' own properties
+ * (YAZ-2523 🔒 V12).
  */
 export function allPropertyKeys(
   def: ViewSet,

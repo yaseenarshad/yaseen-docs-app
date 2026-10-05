@@ -20,8 +20,8 @@ import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
-import { getColdStartDiff, getIndex, sweepIndexed } from '../vaultIndex'
-import { adoptVault } from '../vaultIndex/idSweep'
+import { getColdStartDiff, getIndex } from '../vaultIndex'
+import { givesIds } from '../vaultIndex/idSweep'
 import type { WindowLookup } from '../windows'
 import { broadcastAll, rootsOf } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
@@ -40,16 +40,19 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
   handle(CONTRACT.writeFile, writeFile)
-  // Creating a note or a folder in a window's folder is what makes that folder a vault (🔒 YAZ-2293):
-  // from then on the app may give an id to a note or a folder it did not create, starting with those there.
-  const adopting = async <T extends { path: string }>(e: IpcMainInvokeEvent, created: T): Promise<T> => {
-    const senderId = windows.idFor(e.sender)
-    const root = store.get().windows.find((w) => w.id === senderId)?.root
-    if (root != null && created.path.startsWith(`${root}${path.sep}`) && (await adoptVault(root))) sweepIndexed(root)
-    return created
+  /** The vault the calling window is on; null or undefined when it has none. */
+  const rootOf = (e: IpcMainInvokeEvent): string | null | undefined => store.get().windows.find((w) => w.id === windows.idFor(e.sender))?.root
+  /**
+   * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when the calling window has a vault, the
+   * path is in it and the vault said yes. A create, a title edit and a paste each ask once, here.
+   */
+  const usesIds = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<boolean> => {
+    const root = rootOf(e)
+    const p = typeof req === 'string' ? req : (req as Record<string, unknown> | null)?.[key]
+    return root != null && typeof p === 'string' && (p === root || p.startsWith(`${root}${path.sep}`)) && givesIds(root)
   }
-  handleWithEvent(CONTRACT.createDir, async (e, p) => adopting(e, await createDir(p)))
-  handleWithEvent(CONTRACT.createFile, async (e, req) => adopting(e, await createFile(req)))
+  handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await usesIds(e, req)))
+  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await usesIds(e, req)))
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle
@@ -90,8 +93,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     // identity then means), out of E1b's scope. ANOTHER window rooted at a subfolder of
     // this vault is fine: `store.renamePath` below remaps its `WindowEntry.root`.
     const oldPath = typeof (req as { oldPath?: unknown } | null)?.oldPath === 'string' ? path.resolve((req as { oldPath: string }).oldPath) : null
-    const senderId = windows.idFor(e.sender)
-    const senderRoot = store.get().windows.find((w) => w.id === senderId)?.root
+    const senderRoot = rootOf(e)
     if (oldPath !== null && senderRoot != null && senderRoot === oldPath) {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be renamed', { path: oldPath })
     }
@@ -101,9 +103,10 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // then takes the rename handler's downstream (`afterRename`). One that kept its name moved
   // nothing, so there is nothing to repair or push: the index reads the new title off the watcher.
   handleWithEvent(CONTRACT.file.retitle, async (e, req: unknown) => {
-    const senderId = windows.idFor(e.sender)
-    const root = store.get().windows.find((w) => w.id === senderId)?.root
+    const root = rootOf(e)
     if (root == null) throw new BridgeFailure('BAD_REQUEST', 'no vault is open in this window')
+    // Only a vault that uses IDs has titles (YAZ-2523 🔒 V3): where it does not, a name changes by `fs:rename`.
+    if (!(await usesIds(e, req))) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs')
     const res = await retitle(root, req)
     return res.newPath === res.oldPath ? res : afterRename(res)
   })
@@ -124,8 +127,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     // window rooted inside the deleted folder IS allowed; it falls through to that window's
     // existing onRootMissing probe, which also drops the dead MRU entry.
     const target = typeof (req as { path?: unknown } | null)?.path === 'string' ? path.resolve((req as { path: string }).path) : null
-    const senderId = windows.idFor(e.sender)
-    const senderRoot = store.get().windows.find((w) => w.id === senderId)?.root
+    const senderRoot = rootOf(e)
     if (target !== null && senderRoot != null && senderRoot === target) {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be deleted', { path: target })
     }
@@ -166,7 +168,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.file.clipState, async () => fileClip.state())
   // Paste (D2–D4). Per entry, in clipboard order, and one bad entry never stops the rest:
   //  - a COPY is `copyEntry` (a note or a folder under its own built name, YAZ-2420 🔒 D21; any
-  //    other file `fs.cp` under Finder's next free name, D3/D4) with deliberately NO
+  //    other file, and every entry where the target's vault does not use IDs (YAZ-2523 🔒 V3),
+  //    `fs.cp` under Finder's next free name, D3/D4) with deliberately NO
   //    store repair and NO broadcast — nothing moved and nothing went, so there is nothing to
   //    remap or retire; the tree learns of the new entry from the watcher's add/addDir echo,
   //    exactly like any add made outside the app, and the client's refresh() is idempotent;
@@ -177,11 +180,12 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // A cut pastes ONCE: the clipboard clears when at least one entry landed (a cut whose every
   // entry failed stays, so the user can fix the cause and paste again); a copy is kept and
   // pastes again and again (D2).
-  handle(CONTRACT.file.paste, async (req: unknown) => {
+  handleWithEvent(CONTRACT.file.paste, async (e, req: unknown) => {
     const clip = fileClip.get()
     if (clip === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
+    const ids = await usesIds(e, req, 'targetDir')
     const res = await pasteEntries(clip, req, {
-      copy: copyEntry,
+      copy: (from, toDir) => copyEntry(from, toDir, ids),
       move: async (from, to) => {
         const r = await renameFile({ oldPath: from, newPath: to })
         store.renamePath(r.oldPath, r.newPath)

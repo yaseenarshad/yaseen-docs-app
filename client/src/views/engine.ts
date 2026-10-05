@@ -1,6 +1,3 @@
-import { ALSO_IN_KEY } from '@shared/alsoIn'
-import { NOTE_ID_KEY } from '@shared/noteId'
-import { TITLE_KEY } from '@shared/noteName'
 import { type IndexRecord, inFolder } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
@@ -390,15 +387,14 @@ export function folderAt(folder: string, page: string, depth: number): string {
 /**
  * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
  * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
- * a column before any note carries it, so a new folder shows its `status` at once. Two keys
- * the app writes and nobody reads as a value are never default columns: the note's `id`
- * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2). Nor is its `title`, which `file.name`
- * already is (YAZ-2420 🔒 D18).
+ * a column before any note carries it, so a new folder shows its `status` at once. Every key
+ * the rows hold is one: a folder's values where the vault uses IDs, and where it does not the
+ * notes' own properties — `id`, `title` and `also_in` like the rest (YAZ-2523 🔒 V12).
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
-  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== NOTE_ID_KEY && k !== ALSO_IN_KEY && k !== TITLE_KEY) keys.add(`note.${k}`)
+  for (const r of records) for (const k of Object.keys(r.properties)) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 

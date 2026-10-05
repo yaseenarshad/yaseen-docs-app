@@ -5,7 +5,7 @@
  *  - ROWS (D4): the notes under the folder, at any depth — never a subfolder itself — plus its
  *    SHORTCUTS (D2, `links/shortcuts.ts`). Their links resolve through the whole vault.
  *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`. Born holding only the folder's id (D13),
- *    or missing where the vault is not adopted: either way the defaults (`folderSettings`) until
+ *    or missing where the vault does not use IDs: either way the defaults (`folderSettings`) until
  *    the first change, and opening writes NOTHING.
  *  - THE ADAPTER (🔒 D3, YAZ-819): ViewsPane stays ONE component. This host builds a def in memory
  *    from the settings' views and turns every def change back into ONE settings write
@@ -14,7 +14,9 @@
  *    the folder's id (`shared/folderValues.ts`). This host is the one seam: the views get rows
  *    whose `properties` ARE this folder's block, and every value they write comes back through
  *    `writeValues` into it. A column is never stamped into a note (E1). That write is also where a
- *    note drops the values of the folders that no longer show it (D20).
+ *    note drops the values of the folders that no longer show it (D20). Where the vault does not
+ *    use IDs (YAZ-2523 🔒 V6) there is no block: the rows are the notes' own properties, a value is
+ *    written at the top of its note, and no column is deleted.
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -26,7 +28,7 @@ import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
 import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type PropertiesResponse } from '@shared/types'
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
@@ -41,10 +43,10 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { dropStaleFolderValues, folderId, folderRecord, folderRows } from '../links/shortcuts'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
-import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
+import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { createNote } from './scaffold'
-import { writeFolderValues } from './writeProperty'
+import { writeFolderValues, writeProperties } from './writeProperty'
 import { ViewFolder } from './view/GroupHeader'
 import './views.css'
 import './folderView.css'
@@ -86,13 +88,13 @@ export interface FolderViewProps {
  * LABELS ride in the same way (YAZ-1513): `def.properties` is what every header reads, and the
  * Properties menu's pencil and the table header's rename both edit it through `onUpdate`.
  */
-function folderViewSet({ views, formulas, properties, defaultView }: FolderSettings): ParsedViews {
+function folderViewSet({ views, formulas, properties, defaultView }: FolderSettings, ids: boolean): ParsedViews {
   try {
     return parseViews(stringify({ formulas, properties, views, defaultView })) // `stringify` skips undefined keys
   } catch {
     // Report-don't-block: a hand-edited view YAML cannot take the folder's tab down with it —
     // the folder still renders, on the defaults it would have had with no settings at all.
-    return parseViews(stringify({ views: DEFAULT_VIEWS.map((view) => ({ ...view })) }))
+    return parseViews(stringify({ views: folderSettings(undefined, ids).views }))
   }
 }
 
@@ -121,6 +123,8 @@ export function FolderView({
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
+  /** Does the vault use IDs (YAZ-2523 🔒 V5)? Everything ID-only below asks this, and nothing under the host does. */
+  const ids = source.ids
 
   /** Where the settings live (D1) — and the file every write below goes to, created by the first one. */
   const file = folderSettingsPath(path)
@@ -129,12 +133,12 @@ export function FolderView({
   const record = useMemo(() => folderRecord(feed.folders, path), [feed.folders, path])
   /** null = no snapshot yet: a folder with no settings file is the defaults, so only the index can say which this is. */
   const indexed = feed.resolve !== null
-  const settings = useMemo(() => (indexed ? folderSettings(record) : null), [indexed, record])
+  const settings = useMemo(() => (indexed ? folderSettings(record, ids) : null), [indexed, record, ids])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
   /** The folder's id: the name of its block in a note. None until its `.folder.md` holds one — then every value reads as empty. */
   const id = record?.id
-  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note. */
-  const shown = useMemo(() => rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })), [rows, id])
+  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. */
+  const shown = useMemo(() => (ids ? rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : rows), [rows, id, ids])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -180,7 +184,7 @@ export function FolderView({
     [root, file, newNoteFolderFor, onOpenFile, onOpenFileBackground, onNotice],
   )
 
-  const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings)))
+  const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
 
@@ -231,7 +235,7 @@ export function FolderView({
     }
     pending.current = [] // a real external edit outranks every unechoed local write: disk wins
     seen.current = stamp
-    setParsed(settings === null ? null : folderViewSet(settings))
+    setParsed(settings === null ? null : folderViewSet(settings, ids))
   }, [stamp, settings])
 
   const resolveLink = feed.resolve
@@ -280,25 +284,40 @@ export function FolderView({
     // Wherever it is born, the seeded values are THIS folder's — its view is the one being satisfied — and a
     // folder with no id is given one first (`folderId`). It is titled `Untitled`, every time (YAZ-2420 🔒 D20: the
     // ids keep the files apart), unless the caller knows what it is called (YAZ-943's inline board add types one).
+    // In a vault that does not use IDs (YAZ-2523 🔒 V3) the folder is given no id and a seeded value is the note's own
+    // property; only the name keeps two notes apart, so an untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
-      const block = Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
-      const seeded = (template: Record<string, unknown>): Record<string, unknown> => ({
-        ...(block === undefined ? template : withFolderValues(template, block, seed.properties)),
-        ...(seed.tags !== undefined && { tags: seed.tags }),
-      })
+      const dir = into === folder ? path : absFrom(root, into)
+      const block = !ids || Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
+      // No seed when the view seeds nothing: the note is then its folder's template as it is.
+      const seeded =
+        Object.keys(seed.properties).length === 0 && seed.tags === undefined
+          ? undefined
+          : (template: Record<string, unknown>): Record<string, unknown> => ({
+              ...(block === undefined ? { ...template, ...seed.properties } : withFolderValues(template, block, seed.properties)),
+              ...(seed.tags !== undefined && { tags: seed.tags }),
+            })
       const typed = (name ?? '').trim()
-      return createNote(into === folder ? path : absFrom(root, into), typed === '' ? 'Untitled' : typed, seeded)
+      if (ids || typed !== '') return createNote(dir, typed === '' ? 'Untitled' : typed, ids, seeded)
+      for (let n = 1; ; n += 1) {
+        try {
+          return await createNote(dir, n === 1 ? 'Untitled' : `Untitled ${n}`, false, seeded)
+        } catch (err) {
+          if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
+        }
+      }
     },
     // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
     // The same save drops the note's values for the folders that no longer show it (D20).
-    writeValues: async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)),
+    // Where the vault does not use IDs the value is the note's own property, and that is all the write is.
+    writeValues: ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties,
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {
       const before = aheadRef.current
       setAhead({ ...liveSettings.columns, [key]: next })
-      return writeFolderColumn(file, key, next, base).catch((err: unknown) => {
+      return writeFolderColumn(file, key, next, base, ids).catch((err: unknown) => {
         setAhead(before)
         throw err
       })
@@ -317,16 +336,19 @@ export function FolderView({
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
     // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
     // strips report into the column banner, no rollback. They reach every indexed note holding
-    // the field in this folder's block.
-    deleteColumn: (key) =>
-      deleteColumnEverywhere(key, {
-        columns: liveSettings.columns,
-        def: parsed.def,
-        records: feed.records,
-        folderId: id,
-        writeSettings: commitSettings,
-      }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
-    valueCount: (key) => notesHolding(feed.records, id, key).length,
+    // the field in this folder's block. Not offered where the vault does not use IDs (YAZ-2523 🔒 V11):
+    // a column there is the notes' own property, and is hidden instead.
+    ...(ids && {
+      deleteColumn: (key: string) =>
+        deleteColumnEverywhere(key, {
+          columns: liveSettings.columns,
+          def: parsed.def,
+          records: feed.records,
+          folderId: id,
+          writeSettings: commitSettings,
+        }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
+    }),
+    valueCount: (key: string) => notesHolding(feed.records, id, key).length,
     retitle: (note, title) => onRetitle(note, title, 'file'),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,

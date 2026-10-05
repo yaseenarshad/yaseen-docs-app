@@ -9,7 +9,7 @@ import path from 'node:path'
  * app's, now EMPTY: ⚡ YAZ-815 deleted the `types.json` it used to carry along with every read
  * of it). Caller removes it via `cleanup`.
  *
- * It is an UN-ADOPTED folder on purpose — no `.yaseendocs` — so the id sweep (YAZ-2293,
+ * It has NOT said yes to IDs on purpose — no `.yaseendocs/ids.json` — so the id sweep (YAZ-2293,
  * `vaultIndex/idSweep.ts`) writes nothing here and every index test sees exactly these bytes.
  *
  * Named `basesFixture` / `makeBasesFixture` until YAZ-861 renamed it for the surface it actually

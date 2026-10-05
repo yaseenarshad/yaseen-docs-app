@@ -16,7 +16,7 @@ import { WikilinkIndexBridge } from './WikilinkIndexBridge'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
-  api: { index: vi.fn(), tree: vi.fn() },
+  api: { index: vi.fn(), tree: vi.fn(), vaultConfig: { onChange: vi.fn(() => () => undefined) } },
 }))
 
 import { api } from '../../api'
@@ -47,7 +47,7 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
   }
 }
 
-const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), folders: [], generatedAt: 1 })
+const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), folders: [], generatedAt: 1, ids: true })
 const viewNode = (path: string, kind: 'text' | 'pdf' | 'image'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
 const dirNode = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 const treeResponse = (...nodes: TreeNode[]): TreeResponse => ({ root: '/vault', tree: nodes, generatedAt: 1 })
@@ -195,12 +195,49 @@ describe('WikilinkIndexBridge', () => {
     expect(source.resolve?.('New')).toBe('/vault/New.md')
   })
 
+  it('the vault’s kind rides the same feed (YAZ-2523): no IDs until the first snapshot, then the snapshot’s `ids` on the source, and `ids` and `ask` to `onSnapshot`', async () => {
+    const onSnapshot = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<WikilinkIndexBridge root="/vault" watch={watch} source={source} onSnapshot={onSnapshot} />))
+    expect(source.ids).toBe(false)
+    await flush()
+    expect(source.ids).toBe(true)
+    expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, true, undefined)
+    const ask = { notes: 2, folders: 1, foreign: 0 }
+    indexFn.mockResolvedValue({ ...response('/vault/Note.md'), ids: false, ask })
+    await emitPastDebounce({ type: 'change', path: '/vault/Note.md', mtime: 2 })
+    expect(source.ids).toBe(false)
+    expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, false, ask)
+  })
+
+  it('a switch of root forgets the old vault at once (YAZ-2523): no resolver, no records and no `ids` until the new vault’s index lands', async () => {
+    let resolveNext!: (response: IndexResponse) => void
+    indexFn.mockImplementation((vault) => (vault === '/next' ? new Promise((resolve) => { resolveNext = resolve }) : Promise.resolve(response('/vault/Note.md'))))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const render = (vault: string) => act(() => root?.render(<WikilinkIndexBridge root={vault} watch={watch} source={source} />))
+    render('/vault')
+    await flush()
+    expect(source.ids).toBe(true)
+    render('/next')
+    await flush()
+    expect([source.resolve, source.records, source.folders, source.ids]).toEqual([null, [], [], false])
+    resolveNext({ root: '/next', records: [rec('/next/New.md')], folders: [], generatedAt: 2, ids: true })
+    await flush()
+    expect(source.resolve?.('New')).toBe('/next/New.md')
+    expect(source.ids).toBe(true)
+  })
+
   it('aliases ride the same feed: the resolver dims nothing for `[[CAC]]` and the picker offers a piped row (E2, GRO-2214)', async () => {
     indexFn.mockResolvedValue({
       root: '/vault',
       records: [rec('/vault/Customer Acquisition Cost.md', ['CAC'])],
       folders: [],
       generatedAt: 1,
+      ids: true,
     })
     mount()
     await flush()
@@ -216,7 +253,7 @@ describe('WikilinkIndexBridge', () => {
     ])
 
     // Dropping the alias from the frontmatter unresolves `[[CAC]]` again on the next snapshot.
-    indexFn.mockResolvedValue({ root: '/vault', records: [rec('/vault/Customer Acquisition Cost.md')], folders: [], generatedAt: 2 })
+    indexFn.mockResolvedValue({ root: '/vault', records: [rec('/vault/Customer Acquisition Cost.md')], folders: [], generatedAt: 2, ids: true })
     await emitPastDebounce({ type: 'change', path: '/vault/Customer Acquisition Cost.md', mtime: 2 })
     expect(source.resolve?.('CAC')).toBeNull()
     expect(candidates.candidates.map((c) => c.label)).toEqual(['Customer Acquisition Cost', 'data.json', 'report.PDF'])
@@ -224,7 +261,7 @@ describe('WikilinkIndexBridge', () => {
 
   it('ids ride the same feed (YAZ-2293): nothing resolves before the index is ready, then the id follows its note through a rename and names nothing once it is deleted', async () => {
     const ID = 'k3m9x2pq7abc'
-    const withId = (path: string): IndexResponse => ({ root: '/vault', records: [{ ...rec(path), id: ID }, rec('/vault/Zed.md')], folders: [], generatedAt: 1 })
+    const withId = (path: string): IndexResponse => ({ root: '/vault', records: [{ ...rec(path), id: ID }, rec('/vault/Zed.md')], folders: [], generatedAt: 1, ids: true })
     indexFn.mockResolvedValue(withId('/vault/Road Map.md'))
     mount()
     expect(source.resolve).toBeNull() // D13: no resolver yet, so an id link has no title to show
@@ -245,7 +282,7 @@ describe('WikilinkIndexBridge', () => {
   })
 
   it('the picker links a note by its id and a PDF, a text file or an image by its name, as before (YAZ-2293, scenario D12)', async () => {
-    indexFn.mockResolvedValue({ root: '/vault', records: [{ ...rec('/vault/Road Map.md', ['Plan']), id: 'k3m9x2pq7abc' }, rec('/vault/Zed.md')], folders: [], generatedAt: 1 })
+    indexFn.mockResolvedValue({ root: '/vault', records: [{ ...rec('/vault/Road Map.md', ['Plan']), id: 'k3m9x2pq7abc' }, rec('/vault/Zed.md')], folders: [], generatedAt: 1, ids: true })
     treeFn.mockResolvedValue(treeResponse(viewNode('/vault/data.json', 'text'), viewNode('/vault/deep/report.PDF', 'pdf'), viewNode('/vault/photo.PNG', 'image')))
     mount()
     await flush()
@@ -332,7 +369,7 @@ describe('WikilinkIndexBridge', () => {
       ? new Promise((resolve) => { resolveNextTree = resolve })
       : Promise.resolve(treeResponse()))
     indexFn.mockImplementation(async (vault) => vault === '/next'
-      ? { root: vault, records: [rec('/next/New.md')], folders: [], generatedAt: 2 }
+      ? { root: vault, records: [rec('/next/New.md')], folders: [], generatedAt: 2, ids: true }
       : response('/vault/Note.md'))
 
     renderBridge('/next')
@@ -370,7 +407,7 @@ describe('WikilinkIndexBridge', () => {
     expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['tool.py'])
     expect(candidates.candidates.map((candidate) => candidate.insert)).not.toContain('Old')
 
-    resolveNextIndex({ root: '/next', records: [rec('/next/New.md')], folders: [], generatedAt: 2 })
+    resolveNextIndex({ root: '/next', records: [rec('/next/New.md')], folders: [], generatedAt: 2, ids: true })
     await flush()
     expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['New', 'tool.py'])
   })
@@ -383,6 +420,7 @@ describe('WikilinkIndexBridge', () => {
       records: paths.map((p) => rec(p)),
       folders: [{ ...rec('/trees/Work/Projects/.folder.md'), id: FOLDER_ID, title: 'Client Projects' }],
       generatedAt: 1,
+      ids: true,
     })
     const tree = (...extra: TreeNode[]): TreeResponse => ({
       root: '/trees',

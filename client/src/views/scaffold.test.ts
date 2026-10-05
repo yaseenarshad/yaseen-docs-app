@@ -42,7 +42,7 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('B: a note titled `UP-001 - Abdul Rehman R` is `up-001-abdul-rehman-r-<id>.md`, born with that id and its `title`; its path is what comes back (YAZ-2420 D20)', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await expect(createNote('/v/Projects', 'UP-001 - Abdul Rehman R', undefined, ID)).resolves.toBe(`/v/Projects/up-001-abdul-rehman-r-${ID}.md`)
+    await expect(createNote('/v/Projects', 'UP-001 - Abdul Rehman R', true, undefined, ID)).resolves.toBe(`/v/Projects/up-001-abdul-rehman-r-${ID}.md`)
 
     expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/up-001-abdul-rehman-r-${ID}.md`, content: '---\ntitle: UP-001 - Abdul Rehman R\n---\n', id: ID }]])
   })
@@ -50,7 +50,7 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('B: with no id handed in, one is made here and is the id in the name; two notes of one title are two files (YAZ-2420 D20)', async () => {
     readFile.mockRejectedValue(notFound())
 
-    const [a, b] = [await createNote('/v/Projects', 'Untitled'), await createNote('/v/Projects', 'Untitled')]
+    const [a, b] = [await createNote('/v/Projects', 'Untitled', true), await createNote('/v/Projects', 'Untitled', true)]
 
     const ids = createFile.mock.calls.map((c) => (c[0] as { id: string }).id)
     expect(ids.every(isNoteId)).toBe(true)
@@ -62,8 +62,8 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
     readFile.mockRejectedValue(notFound())
     const title = 'Q3/Q4: "what" now?'
 
-    await expect(createNote('/v', title, undefined, ID)).resolves.toBe(`/v/q3-q4-what-now-${ID}.md`)
-    await expect(createNote('/v', '—', undefined, ID)).resolves.toBe(`/v/${ID}.md`)
+    await expect(createNote('/v', title, true, undefined, ID)).resolves.toBe(`/v/q3-q4-what-now-${ID}.md`)
+    await expect(createNote('/v', '—', true, undefined, ID)).resolves.toBe(`/v/${ID}.md`)
 
     expect(createFile.mock.calls.map((c) => parseFrontmatter((c[0] as { content: string }).content).properties)).toEqual([{ title }, { title: '—' }])
   })
@@ -71,7 +71,7 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('no template: the seed and the title alone — no column is stamped', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await createNote('/v/Projects', 'A', (template) => ({ ...template, status: '2-Todo' }), ID)
+    await createNote('/v/Projects', 'A', true, (template) => ({ ...template, status: '2-Todo' }), ID)
 
     expect(readFile).toHaveBeenCalledWith('/v/Projects/.template.md') // hidden, in the folder itself
     expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/a-${ID}.md`, content: '---\nstatus: 2-Todo\ntitle: A\n---\n', id: ID }]])
@@ -81,8 +81,8 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('the template gives its frontmatter and body; the seed is handed its properties and what it returns is the note’s', async () => {
     readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
 
-    await createNote('/v/Projects', 'A', (template) => ({ ...template, status: '2-Todo' }), ID)
-    await createNote('/v/Projects', 'B', undefined, ID)
+    await createNote('/v/Projects', 'A', true, (template) => ({ ...template, status: '2-Todo' }), ID)
+    await createNote('/v/Projects', 'B', true, undefined, ID)
 
     expect(createFile.mock.calls.map((c) => (c[0] as { content: string }).content)).toEqual([
       '---\nowner: me\nstatus: 2-Todo\ntitle: A\n---\n## Notes\n',
@@ -93,19 +93,75 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('B: in a folder with a `.template.md`, the template’s properties come first and the typed title replaces its `title` (YAZ-2420 D20)', async () => {
     readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\ntitle: Template\nstatus: 1-Backlog\n---\n', mtime: 1, size: 1 })
 
-    await createNote('/v/Projects', 'Typed', (template) => ({ ...template, title: 'Seeded' }), ID)
+    await createNote('/v/Projects', 'Typed', true, (template) => ({ ...template, title: 'Seeded' }), ID)
 
     expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/typed-${ID}.md`, content: '---\ntitle: Typed\nstatus: 1-Backlog\n---\n', id: ID }]])
   })
 
   it('a read failure other than a missing template, and a create failure, propagate', async () => {
     readFile.mockRejectedValueOnce(new BridgeRequestError('FORBIDDEN', 'permission denied'))
-    await expect(createNote('/v/Projects', 'A')).rejects.toThrow('permission denied')
+    await expect(createNote('/v/Projects', 'A', true)).rejects.toThrow('permission denied')
     expect(createFile).not.toHaveBeenCalled()
 
     readFile.mockRejectedValue(notFound())
     createFile.mockRejectedValue(new Error('parent folder does not exist'))
-    await expect(createNote('/v/Projects', 'A')).rejects.toThrow('parent folder does not exist')
+    await expect(createNote('/v/Projects', 'A', true)).rejects.toThrow('parent folder does not exist')
+  })
+})
+
+// The ID vault's half of each row is `createNote (YAZ-2290 E1/E3)`, above.
+describe('createNote in a vault that does not use IDs (YAZ-2523 V3)', () => {
+  beforeEach(() => {
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+  })
+
+  it('a note named `Meeting notes` is `Meeting notes.md`, empty: no id is made, and no `title` or `id` is sent', async () => {
+    readFile.mockRejectedValue(notFound())
+
+    await expect(createNote('/v/Projects', 'Meeting notes', false)).resolves.toBe('/v/Projects/Meeting notes.md')
+
+    expect(createFile.mock.calls).toEqual([[{ path: '/v/Projects/Meeting notes.md', content: '' }]])
+  })
+
+  it('a name typed with its `.md` is that file, not `Name.md.md`', async () => {
+    readFile.mockRejectedValue(notFound())
+
+    await expect(createNote('/v', 'README.md', false)).resolves.toBe('/v/README.md')
+  })
+
+  it('the folder\u2019s `.template.md` is the note as it is, comments and its own `title` and `id` lines included', async () => {
+    const template = '---\n# who owns it\nowner: me\ntitle: Template\nid: k3m9x2pq7abc\n---\n## Notes\n'
+    readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: template, mtime: 1, size: 1 })
+
+    await createNote('/v/Projects', 'A', false)
+
+    expect(createFile.mock.calls).toEqual([[{ path: '/v/Projects/A.md', content: template }]])
+  })
+
+  it('a seed is applied to the template\u2019s properties, and no `title` is added to what it returns', async () => {
+    readFile.mockResolvedValueOnce({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
+    readFile.mockRejectedValue(notFound())
+
+    await createNote('/v/Projects', 'A', false, (template) => ({ ...template, status: '2-Todo' }))
+    await createNote('/v/Projects', 'B', false, (template) => template)
+
+    expect(createFile.mock.calls).toEqual([
+      [{ path: '/v/Projects/A.md', content: '---\nowner: me\nstatus: 2-Todo\n---\n## Notes\n' }],
+      [{ path: '/v/Projects/B.md', content: '' }],
+    ])
+  })
+
+  it('a name a file cannot hold is refused with the reason, before anything is read or made', async () => {
+    await expect(createNote('/v', 'Q3/Q4', false)).rejects.toThrow('Name cannot contain "/"')
+    await expect(createNote('/v', '.hidden', false)).rejects.toThrow('Names starting with "." are hidden')
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+  })
+
+  it('a name that is taken is refused as the bridge refuses it', async () => {
+    readFile.mockRejectedValue(notFound())
+    createFile.mockRejectedValue(alreadyExists())
+    await expect(createNote('/v', 'Taken', false)).rejects.toThrow('path already exists')
   })
 })
 
@@ -150,7 +206,14 @@ describe('ensureFolder', () => {
 
 describe('folderPath (YAZ-2420 D6)', () => {
   it('C: a folder titled `Upwork 2026` stands at `upwork-2026`; a dated one, `10_04- Standup`, at `10-04-standup`', () => {
-    expect(folderPath('/v', 'Upwork 2026')).toBe('/v/upwork-2026')
-    expect(folderPath('/v/sub', '10_04- Standup')).toBe('/v/sub/10-04-standup')
+    expect(folderPath('/v', 'Upwork 2026', true)).toBe('/v/upwork-2026')
+    expect(folderPath('/v/sub', '10_04- Standup', true)).toBe('/v/sub/10-04-standup')
+  })
+
+  it('in a vault that does not use IDs a folder named `Q3 Plans` stands at `Q3 Plans`; a name a folder cannot hold is refused (YAZ-2523 V3)', () => {
+    expect(folderPath('/v', 'Q3 Plans', false)).toBe('/v/Q3 Plans')
+    expect(folderPath('/v/sub', '10_04- Standup', false)).toBe('/v/sub/10_04- Standup')
+    expect(() => folderPath('/v', '.git', false)).toThrow('Names starting with "." are hidden')
+    expect(() => folderPath('/v', 'a/b', false)).toThrow('Name cannot contain "/"')
   })
 })

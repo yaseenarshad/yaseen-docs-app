@@ -13,7 +13,8 @@
  * are created level by level (`ensureFolder` — the bridge's `createDir` does not recurse).
  * What was typed is the note's TITLE (YAZ-2420 🔒 D20) — the last segment of a pathed target,
  * whose earlier segments are the titles of the folders it names (🔒 D6), each a folder that is
- * there before it is one to make (YAZ-2478); `base` is a path on disk.
+ * there before it is one to make (YAZ-2478); `base` is a path on disk. In a vault that does not
+ * use IDs (YAZ-2523 🔒 V3) every segment is a name on disk, and the page is `<typed>.md`.
  * Invalid names and create failures come back as `error` for the caller's passive notice
  * (App's link-notice).
  */
@@ -55,35 +56,36 @@ export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'n
  * `newNoteBase`), a path on disk; a PATHED one ignores it — an explicit path is an explicit aim
  * (module doc) — and its folder is `titled`: typed text, each segment a folder's title, free text
  * as the note's is (YAZ-2478) and only has to be there. The base's segments pass the sidebar's
- * `validateEntryName` rules. Errors name the full effective path.
+ * `validateEntryName` rules. Errors name the full effective path. Without `ids` no segment is a
+ * title: all of them pass those rules, the note's too, and the folder is never `titled`.
  */
-export function planLinkCreation(target: string, base = ''): { folder: string; titled: boolean; title: string } | { error: string } {
+export function planLinkCreation(target: string, ids: boolean, base = ''): { folder: string; titled: boolean; title: string } | { error: string } {
   const titled = target.includes('/')
   const effective = base !== '' && !titled ? `${base}/${target}` : target
   const segments = effective.replace(/^\/+/, '').split('/').map((s) => s.trim())
   for (const [i, segment] of segments.entries()) {
     if (segment === '') return { error: `Can't create "${effective}": empty name` }
-    const reason = titled || i === segments.length - 1 ? null : validateEntryName(segment)
+    const reason = ids && (titled || i === segments.length - 1) ? null : validateEntryName(segment)
     if (reason !== null) return { error: `Can't create "${effective}": ${reason}` }
   }
-  return { folder: segments.slice(0, -1).join('/'), titled, title: segments[segments.length - 1] }
+  return { folder: segments.slice(0, -1).join('/'), titled: ids && titled, title: segments[segments.length - 1] }
 }
 
 /**
  * Create the page behind raw `[[inner]]` under `root` — bare targets under `base` — and resolve where to open (see module doc).
- * It is born like every note in that folder (`createNote`): with the folder's `.template.md`.
+ * It is born like every note in that folder (`createNote`): with the folder's `.template.md`, and as the vault's kind (`ids`) has it.
  * `id` is for the picker's Create row (YAZ-2293), which has already written `[[id]]` and needs the
  * page born with it; a click on a name link passes none and one is made for it. `folders` are the
  * index's, for a pathed target's folders; a caller that holds none has them read.
  */
-export async function createFromLink(root: string, inner: string, base = '', id?: string, folders?: readonly IndexRecord[]): Promise<CreateFromLinkResult> {
+export async function createFromLink(root: string, inner: string, ids: boolean, base = '', id?: string, folders?: readonly IndexRecord[]): Promise<CreateFromLinkResult> {
   const target = linkPageName(inner)
   if (target === '') return { status: 'noop' }
-  const planned = planLinkCreation(target, base)
+  const planned = planLinkCreation(target, ids, base)
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
     const dir = await ensureFolder(root, planned.folder, planned.titled ? folders ?? (await api.index(root)).folders : undefined)
-    return { status: 'created', path: await createNote(dir, planned.title, undefined, id) }
+    return { status: 'created', path: await createNote(dir, planned.title, ids, undefined, id) }
   } catch (err) {
     return { status: 'error', message: `Can't create "${target}": ${err instanceof Error ? err.message : String(err)}` }
   }
