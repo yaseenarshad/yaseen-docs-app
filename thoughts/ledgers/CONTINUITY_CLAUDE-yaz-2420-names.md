@@ -29,27 +29,25 @@ The record is the comment "Decision and scenario record, final" (D1 to D30). Rea
 ## State
 
 - Done:
-  - [x] Scope, decisions D1 to D30, and the sub-issue tree (YAZ-2423 to YAZ-2450, YAZ-2457)
-  - [x] 3A: `shared/noteName.ts` (`kebabTitle`, `noteFileName`) with 9 tests, commit `ee09431`
-- Now: [→] Waiting for YAZ-2375 to reach `main`. Its session ("1-Notecard Updates into Docs") sends one message when it merges.
-- Next: 1A (YAZ-2424): rebase this branch onto `main`, re-pin every line reference in the sub-issues.
+  - [x] Scope, decisions D1 to D33, and the sub-issue tree
+  - [x] Phase 1: 1A re-pin to `main` (1B parked with phase 4, D33)
+  - [x] Phase 2: 2A index record, 2B every screen, 2C name links, 2D tables, 2E command line, 2F search by ID
+  - [x] Phase 3: 3A builder, 3B new notes, 3B1 typed path links, 3C retitle, 3D folders, 3E copies, 3F one copy item, 3G another tool's `id`
+  - [x] Phase 5: 5A an independent review (33 items), 5B applied (30 of them)
+  - [x] Phase 6: 6A unit tests and the whole Playwright suite (229), 6B walk-through on the real app (`desktop/e2e/names.spec.ts`), 6C docs
+- Now: [→] 6D: pull request #89 is open and waits for Yaseen's OK on two size ceilings (Q1 in "Questions for Yaseen" on YAZ-2420). No merge, no release until then.
+- Next: on his OK, set the two rows of `tools/perf/budget.json` to the measured values in one commit, merge #89, cut the release (smallest bump), write its notes. Do NOT install the build over his app (D33).
 - Remaining:
-  - [ ] Phase 1: 1A re-pin, 1B the vault's rename table for Yaseen
-  - [ ] Phase 2: 2A index record, 2B every screen, 2C name links, 2D tables, 2E command line
-  - [ ] Phase 3: 3B new notes, 3C retitle, 3D folders, 3E copies, 3F remove "Copy for Agent", 3G another tool's `id`
-  - [ ] Phase 4: 4A instructions, 4B a copy, 4C and 4D (YAZ-2398, YAZ-2399), 4E the renames
-  - [ ] Phase 5: 5A scope the polish, 5B apply it
-  - [ ] Phase 6: 6A scenario tests, 6B hand walk-through, 6C docs, 6D merge and close out
+  - [ ] 6D merge and close out (handoff comments, project update, remove the worktree and branch)
+  - [ ] Phase 4 and 1B: parked until Yaseen asks (the old vault)
 
 ## Open Questions
 
-- UNCONFIRMED: the name and file of the function that moves a copied folder's `in:` blocks (YAZ-2455). 3E must call it. Comes with the merge message.
-- UNCONFIRMED: which `in:` blocks a note keeps when it is copied into a different folder (YAZ-2375 D20). Ask at the merge.
-- UNCONFIRMED: every line reference in the sub-issues. They were read at `fb78c31`; that branch has moved to `7666355` and keeps moving.
+- Q1 (size ceilings), Q2 (which per-folder values a note copied into another folder keeps), Q3 (skip the "Rename?" sheet when a title edit has nothing to rewrite): all in the comment "Questions for Yaseen" on YAZ-2420, each with the option taken meanwhile.
 
 ## Working Set
 
-- Branch `yaz-2420-names` (pushed), worktree `.claude/worktrees/yaz-2420-names`, branched from the YAZ-2375 branch at `fb78c31`.
-- `node_modules` in this worktree is a symlink to the main checkout's; it is listed in `.git/info/exclude`.
-- One test file: `npx vitest run --project desktop desktop/src/main/noteName.test.ts`
+- Branch `yaz-2420-names` (pushed), worktree `.claude/worktrees/yaz-2420-names`, rebased onto `main`; pull request #89.
+- `npm ci` was run inside this worktree. Do not borrow the main checkout's `node_modules` through a link: two test files then fail to load.
+- Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. The walk-through: `npm run build -w desktop && npx playwright test --config desktop/e2e/playwright.config.ts names.spec.ts` (Playwright only when Yaseen allows it for that run).
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; issue writing follows `growprofitai/_code-wiki/Linear-Simpler`.
