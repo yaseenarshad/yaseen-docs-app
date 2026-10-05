@@ -32,6 +32,7 @@ vi.mock('../../api', async (importOriginal) => ({
   api: {
     createDir: vi.fn(),
     createFile: vi.fn(),
+    index: vi.fn(),
     readFile: vi.fn(),
   },
 }))
@@ -101,6 +102,7 @@ beforeEach(() => {
   createDir.mockImplementation(async (req) => ({ path: typeof req === 'string' ? req : req.path }))
   createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
   vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
+  vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: [], generatedAt: 0 })
 })
 
 afterEach(async () => {
@@ -293,12 +295,32 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(nav.openBackground).not.toHaveBeenCalled()
   })
 
-  it('an invalid folder name notices without touching the bridge', async () => {
-    const { root, nav } = await mount('pad [[.hidden/Page]] tail\n', () => null)
-    mousedown(linkSpan(root, '.hidden/Page'))
-    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledWith('Can\'t create ".hidden/Page": Names starting with "." are hidden'))
-    expect(createFile).not.toHaveBeenCalled()
-    expect(nav.openCurrent).not.toHaveBeenCalled()
+  it('clicking a dead `[[Sub/Page]]` twice quickly makes ONE note; once the index holds it the link resolves to it, and a click opens it (YAZ-2478)', async () => {
+    const { root, nav, source } = await mount('go [[Sub/Page]] now\n', linkResolver([], '/vault', [], []))
+    mousedown(linkSpan(root, 'Sub/Page'))
+    mousedown(linkSpan(root, 'Sub/Page'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(createFile).toHaveBeenCalledTimes(1)
+    expect(born().path).toBe(`/vault/sub/page-${born().id}.md`)
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
+    // The index echo: the note, titled Page, and the folder it was put in, titled Sub.
+    const record = (path: string, title: string, folder: string): IndexRecord => ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: '', title, folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
+    source.update(linkResolver([record(born().path, 'Page', 'sub')], '/vault', ['/vault/sub'], [record('/vault/sub/.folder.md', 'Sub', 'sub')]))
+    expect(linkSpan(root, 'Sub/Page').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
+    mousedown(linkSpan(root, 'Sub/Page'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.openCurrent.mock.calls).toEqual([[born().path], [born().path]])
+    expect(createFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a dead link whose note could not be made can be clicked again', async () => {
+    createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk on fire'))
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalled())
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born(1).path))
   })
 
   it('after creation the index update flips the unresolved styling live (A-\'s restyle, no remount)', async () => {

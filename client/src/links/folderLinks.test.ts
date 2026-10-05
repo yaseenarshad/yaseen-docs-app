@@ -107,6 +107,14 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(linkResolver([rec('/vault/Notes/legacy-k3m9x2pq7abc.md', { title: 'Legacy' })], '/vault', DIRS, folders)('Legacy')).toBe('/vault/Notes/legacy-k3m9x2pq7abc.md')
   })
 
+  it('E: `[[My Folder/Page]]` is the note titled Page in the folder titled My Folder, for a link and for a view alike (YAZ-2478)', () => {
+    const records = [rec('/vault/my-folder/page-k3m9x2pq7abc.md', { title: 'Page' })]
+    const folders = [rec('/vault/my-folder/.folder.md', { title: 'My Folder' })]
+    const link = linkResolver(records, '/vault', ['/vault/my-folder'], folders)
+    expect(link('My Folder/Page')).toBe('/vault/my-folder/page-k3m9x2pq7abc.md')
+    expect(pageResolver(records, folders, '/vault', link)('[[My Folder/Page]]')?.record).toBe(records[0])
+  })
+
   it('two folders with one title: the shallowest', () => {
     const folders = [rec('/vault/Archive/Old/.folder.md', { title: 'Clients' }), rec('/vault/Work/.folder.md', { title: 'Clients' })]
     expect(linkResolver([], '/vault', DIRS, folders)('Clients')).toBe('/vault/Work')

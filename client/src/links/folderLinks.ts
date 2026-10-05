@@ -64,11 +64,11 @@ export function folderResolver(root: string, dirs: readonly string[], folders: r
 
 /**
  * THE path-level resolver every wikilink surface shares (`ResolveLink`): a note first — id,
- * path, title, name, alias (`resolverFor`) — and a folder only when none answers, so a note or
- * alias of the same name always wins.
+ * path, title, name, a path of titles (YAZ-2478), alias (`resolverFor`) — and a folder only when
+ * none answers, so a note or alias of the same name always wins.
  */
 export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = []): ResolveLink {
-  const note = resolverFor(records, root)
+  const note = resolverFor(records, root, { folders })
   const folder = folderResolver(root, dirs, folders)
   return (target) => note(target)?.record.path ?? folder(target)
 }
@@ -99,7 +99,7 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
  * sorts and groups under its name.
  */
 export function pageResolver(records: readonly IndexRecord[], folders: readonly IndexRecord[], root: string | undefined, link: ResolveLink | null): Resolver {
-  const note = resolverFor(records, root)
+  const note = resolverFor(records, root, { folders })
   if (link === null) return note
   return (target) => {
     const hit = note(target)

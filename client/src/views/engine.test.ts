@@ -806,6 +806,69 @@ describe('makeResolver: titles (YAZ-2420 D17)', () => {
   })
 })
 
+describe('makeResolver: a path of titles (YAZ-2478, YAZ-2420 D17)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const note = (rel: string, title: string): IndexRecord => {
+    const basename = rel.slice(rel.lastIndexOf('/') + 1)
+    return { ...TEST_RECORDS[0], path: `/vault/${rel}.md`, name: `${basename}.md`, basename, title, folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', aliases: [] }
+  }
+  /** A folder's settings record, titled by its own name when it has no `title:` — as the index titles it. */
+  const folder = (rel: string, title = rel.slice(rel.lastIndexOf('/') + 1)): IndexRecord => note(`${rel}/.folder`, title)
+  const resolve = (records: IndexRecord[], folders: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault', { folders })
+
+  it('E: `[[Sub/Page]]` is the note titled Page in the folder titled Sub (`sub/page-<id>.md`), whatever its directory is called', () => {
+    const records = [note(`my-folder/page-7tq2m8vd4xhn`, 'Page'), note(`sub/page-${ID}`, 'Page')]
+    const r = resolve(records, [folder('my-folder', 'My Folder'), folder('sub', 'Sub')])
+    expect(r('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    expect(r('[[/sub/page#Rates|shown]]')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    expect(r('My Folder/Page')?.record.path).toBe('/vault/my-folder/page-7tq2m8vd4xhn.md')
+    expect(r('My Folder/Other')).toBe(null)
+    expect(r('Other Folder/Page')).toBe(null)
+  })
+
+  it('a folder NAMED `Sub`, with no title or with no settings file yet, is found by its directory name', () => {
+    const records = [note(`Sub/page-${ID}`, 'Page')]
+    expect(resolve(records, [folder('Sub')])('sub/Page')?.record.path).toBe(`/vault/Sub/page-${ID}.md`)
+    expect(resolve(records, [])('Sub/Page')?.record.path).toBe(`/vault/Sub/page-${ID}.md`)
+  })
+
+  it('two levels, `[[A/B/Page]]`: each segment is a folder\'s title, else its directory name', () => {
+    const r = resolve([note(`alpha/beta/page-${ID}`, 'Page')], [folder('alpha', 'A'), folder('alpha/beta', 'B')])
+    for (const typed of ['A/B/Page', 'A/beta/Page', 'alpha/B/Page', 'alpha/beta/Page']) expect(r(typed)?.record.path, typed).toBe(`/vault/alpha/beta/page-${ID}.md`)
+    expect(r('B/Page')).toBe(null) // root-relative, as a path of file names is
+  })
+
+  it('a folder\'s title comes before another\'s directory name; the vault root answers to no name', () => {
+    const records = [note('page-root', 'Page'), note('sub/page-one', 'Page'), note('x/page-two', 'Page')]
+    const r = resolve(records, [folder('', 'Vault'), folder('sub', 'Archive'), folder('x', 'Sub')])
+    expect(r('Sub/Page')?.record.path).toBe('/vault/x/page-two.md')
+    expect(r('Archive/Page')?.record.path).toBe('/vault/sub/page-one.md')
+    expect(r('Vault/Page')).toBe(null)
+  })
+
+  it('an exact root-relative file path still wins, and so does a note whose whole title is the target', () => {
+    const records = [note('roadmap', 'Docs/Page'), note('sub/Page', 'Other'), note(`sub/page-${ID}`, 'Page')]
+    const r = resolve(records, [folder('sub', 'Sub'), folder('docs', 'Docs')])
+    expect(r('sub/Page')?.record.path).toBe('/vault/sub/Page.md')
+    expect(r('Docs/Page')?.record.path).toBe('/vault/roadmap.md')
+  })
+
+  it('a path of titles comes before an alias', () => {
+    const aliased = { ...note('aliased', 'Aliased'), aliases: ['Sub/Page'] }
+    expect(resolve([aliased, note(`sub/page-${ID}`, 'Page')], [folder('sub', 'Sub')])('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+  })
+
+  it('with no folders handed in, a path is a path of file names as before; `resolverFor` keeps one resolver per folder list', () => {
+    const records = [note(`sub/page-${ID}`, 'Page')]
+    const folders = [folder('sub', 'Sub')]
+    expect(makeResolver(records.map(r => new FileValue(r)), '/vault')('Sub/Page')).toBe(null)
+    expect(resolverFor(records, '/vault')('Sub/Page')).toBe(null)
+    expect(resolverFor(records, '/vault', { folders })('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    expect(resolverFor(records, '/vault', { folders })).toBe(resolverFor(records, '/vault', { folders }))
+    expect(resolverFor(records, '/vault', { folders: [...folders] })).not.toBe(resolverFor(records, '/vault', { folders }))
+  })
+})
+
 describe('runView: an id link orders and labels by what is shown (YAZ-2293 D8)', () => {
   const note = (basename: string, extra: Partial<IndexRecord> = {}): IndexRecord => ({
     ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, title: basename, folder: '', properties: {}, ...extra,
