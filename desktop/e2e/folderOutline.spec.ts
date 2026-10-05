@@ -97,8 +97,8 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
-const rowNames = (scope: Locator) => scope.locator('.view-table__link')
+/** The name cell shows the page TITLE: for a fixture note, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
+const rowNames = (scope: Locator) => scope.locator('.view-table__name')
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 

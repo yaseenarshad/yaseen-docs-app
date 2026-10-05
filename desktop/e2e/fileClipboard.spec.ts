@@ -7,7 +7,8 @@
  * window A on vault A must label and land a Paste in window B on vault B (🔒 D1). Unit tests prove
  * the clipboard, the menu data and `fs/copy.ts` each in isolation; only two live windows on two
  * vaults prove that the push, the label ("Paste 1 item" in a window that never copied anything),
- * the `fs.cp` under Finder's free name (`Ideas.md` → `Ideas copy.md` → `Ideas copy 2.md`, 🔒 D3)
+ * the copy that is its own note (a fresh id, `title: Ideas copy`, the name built from both — as
+ * often as it is pasted, YAZ-2420 🔒 D21)
  * and the cut's ride through the rename pipeline (source gone, bytes identical, clipboard cleared
  * after the one paste, 🔒 D2) all happen together, with the real watcher echoing the tree.
  *
@@ -19,10 +20,10 @@
  * vault seeded as two windows (`multiWindowState`), `fileClipboard-` screenshots; serial by design.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, md5, multiWindowState, quitApp, shoot } from './helpers'
+import { NOTE_ID, appWindow, buildFixtureVault, copyVault, dirRow, fileRow, idOf, launchApp, md5, multiWindowState, quitApp, shoot, titleOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -47,6 +48,12 @@ const menuItem = (w: Page, label: string) => menu(w).getByRole('menuitem', { nam
 const notice = (w: Page) => w.locator('.link-notice')
 
 const exists = async (p: string): Promise<boolean> => stat(p).then(() => true, () => false)
+
+/** The folder of vault B every paste lands in. */
+const projects = () => path.join(vaultB, 'Projects')
+/** The copies of Ideas in it: each is its own note, `ideas-copy-<its id>.md` (YAZ-2420 🔒 D21). */
+const copies = async (): Promise<string[]> =>
+  (await readdir(projects())).filter((name) => new RegExp(`^ideas-copy-${NOTE_ID}\\.md$`).test(name)).map((name) => path.join(projects(), name))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'fileclip-userdata-'))
@@ -103,35 +110,41 @@ test('step 1 — Copy in window A (vault A) pastes into a folder of window B (va
   await menuItem(winB, 'Paste 1 item').click()
   await expect(notice(winB)).toContainText('Pasted 1 item')
 
-  const pasted = path.join(vaultB, 'Projects', 'Ideas.md')
-  await expect.poll(() => exists(pasted)).toBe(true)
-  expect(await md5(pasted)).toBe(await md5(path.join(vaultA, 'Ideas.md')))
+  // The copy is its own note: a fresh id, the source's title with ` copy`, the name built from
+  // both, and the source's body whole.
+  await expect.poll(async () => (await copies()).length).toBe(1)
+  const [pasted] = await copies()
+  const copy = await readFile(pasted, 'utf8')
+  expect(titleOf(copy)).toBe('Ideas copy')
+  expect(path.basename(pasted)).toBe(`ideas-copy-${idOf(copy)}.md`)
+  expect(copy).toContain('# Ideas\n\nsynthetic-idea-body\n')
   expect(await exists(path.join(vaultA, 'Ideas.md'))).toBe(true) // a copy leaves the source alone
   // The paste opens its target folder and refreshes the tree: the new row is on screen.
   await expect(rowAt(winB, pasted)).toBeVisible()
   await shoot(winB, 'fileClipboard-01c-pasted-in-b')
 })
 
-test('step 2 — ⌘V pastes into the SELECTED folder, again and again, under Finder\'s free names', async () => {
+test('step 2 — ⌘V pastes into the SELECTED folder, again and again: every copy is its own note', async () => {
   // A plain click on the folder row selects it (D9; it also toggles the folder, which is fine —
   // the paste re-opens its target). ⌘V then targets THAT folder (`pasteTargetDir`).
   await dirRow(winB, 'Projects').click()
   await expect(dirRow(winB, 'Projects')).toHaveClass(/tree__row--selected/)
 
-  // A copy pastes as often as you like (🔒 D2), and a clash takes the next free name (🔒 D3).
-  const copy1 = path.join(vaultB, 'Projects', 'Ideas copy.md')
+  // A copy pastes as often as you like (🔒 D2), and nothing clashes: each paste is `Ideas copy`
+  // again under its own id (YAZ-2420 🔒 D21).
   await winB.keyboard.press('Meta+v')
-  await expect.poll(() => exists(copy1)).toBe(true)
-  await expect(rowAt(winB, copy1)).toBeVisible()
-
-  const copy2 = path.join(vaultB, 'Projects', 'Ideas copy 2.md')
+  await expect.poll(async () => (await copies()).length).toBe(2)
   await winB.keyboard.press('Meta+v')
-  await expect.poll(() => exists(copy2)).toBe(true)
-  await expect(rowAt(winB, copy2)).toBeVisible()
+  await expect.poll(async () => (await copies()).length).toBe(3)
 
-  const source = await md5(path.join(vaultA, 'Ideas.md'))
-  expect(await md5(copy1)).toBe(source)
-  expect(await md5(copy2)).toBe(source)
+  const pasted = await copies()
+  const contents = await Promise.all(pasted.map((file) => readFile(file, 'utf8')))
+  for (const [i, file] of pasted.entries()) {
+    await expect(rowAt(winB, file)).toBeVisible()
+    expect(titleOf(contents[i])).toBe('Ideas copy')
+    expect(contents[i]).toContain('# Ideas\n\nsynthetic-idea-body\n')
+  }
+  expect(new Set(contents.map(idOf)).size).toBe(3)
   await shoot(winB, 'fileClipboard-02-copy-copy2')
 })
 
