@@ -1,8 +1,9 @@
 /**
  * The rename confirm (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): a rename
  * triggers a chain — the file on disk, then links across the vault — so a NAME change asks first,
- * with the honest count from `countLinkReferences`. Moves stay silent (a confirm on every drag
- * would be hostile, and bare links keep resolving). The sheet itself lands with YAZ-888; the
+ * with the honest count from `countLinkReferences`. A move never asks THIS (a confirm on every
+ * drag would be hostile, and bare links keep resolving); one that would clear a folder's values
+ * asks through `ConfirmMove` (D21). The sheet itself lands with YAZ-888; the
  * LOCKED copy lives here first, `deleteConfirmMessage`'s idiom, so the component stays trivial.
  */
 import { pageLabel } from '../lib/pageLabel'
@@ -17,7 +18,7 @@ export function renameConfirmMessage(oldName: string, newName: string, count: nu
 
 /**
  * THE RULE (⚡ YAZ-888), asked at App's one rename door and nowhere else: a changed NAME asks,
- * a MOVE stays silent. Both gestures reach that door as (oldPath, newPath), and the whole
+ * a MOVE never asks this. Both gestures reach that door as (oldPath, newPath), and the whole
  * difference between them is the last segment — a drag-move keeps it, a rename replaces it.
  */
 export const isNameChange = (oldPath: string, newPath: string): boolean => basename(oldPath) !== basename(newPath)

@@ -15,18 +15,18 @@ describe('createFileClip (YAZ-1674, D1)', () => {
     expect(clip.state()).toBeNull()
   })
 
-  it('set() stores the ordered paths and the op; state() is count + op, never the paths', () => {
+  it('set() stores the ordered paths and the op; state() is the count, the op and those paths', () => {
     const clip = createFileClip()
     clip.set({ op: 'cut', paths: ['/v/b.md', '/v/a.md', '/v/Zeta'] })
     expect(clip.get()).toEqual({ op: 'cut', paths: ['/v/b.md', '/v/a.md', '/v/Zeta'] })
-    expect(clip.state()).toEqual({ count: 3, op: 'cut' })
+    expect(clip.state()).toEqual({ count: 3, op: 'cut', paths: ['/v/b.md', '/v/a.md', '/v/Zeta'] })
   })
 
   it('de-duplicates to the first position and resolves each path', () => {
     const clip = createFileClip()
     clip.set({ op: 'copy', paths: ['/v/a.md', '/v/sub/../a.md', '/v/b.md/', '/v/a.md'] })
     expect(clip.get()?.paths).toEqual(['/v/a.md', '/v/b.md'])
-    expect(clip.state()).toEqual({ count: 2, op: 'copy' })
+    expect(clip.state()).toEqual({ count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] })
   })
 
   it('a later set() REPLACES the clipboard (a cut after a copy is just a cut)', () => {
@@ -79,12 +79,12 @@ describe('createFileClip (YAZ-1674, D1)', () => {
     const offA = clip.onChange(a)
     clip.onChange(b)
     clip.set({ op: 'copy', paths: ['/v/a.md', '/v/b.md'] })
-    expect(a).toHaveBeenCalledExactlyOnceWith({ count: 2, op: 'copy' })
-    expect(b).toHaveBeenCalledExactlyOnceWith({ count: 2, op: 'copy' })
+    expect(a).toHaveBeenCalledExactlyOnceWith({ count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] })
+    expect(b).toHaveBeenCalledExactlyOnceWith({ count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] })
     offA()
     clip.set({ op: 'cut', paths: ['/v/c.md'] })
     expect(a).toHaveBeenCalledTimes(1)
-    expect(b).toHaveBeenLastCalledWith({ count: 1, op: 'cut' })
+    expect(b).toHaveBeenLastCalledWith({ count: 1, op: 'cut', paths: ['/v/c.md'] })
   })
 
   it('a rejected set() notifies nobody', () => {

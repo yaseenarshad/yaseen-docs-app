@@ -3164,14 +3164,15 @@ describe('settings cog (YAZ-1679)', () => {
  * reads the `clip:changed` push, so a copy in ANOTHER window labels this one's menu.
  */
 describe('Cut / Copy / Paste (YAZ-1674)', () => {
-  type ClipState = { count: number; op: 'copy' | 'cut' } | null
+  /** The clipboard as main tells it: these paths, counted, under this verb. */
+  const clipOf = (op: 'copy' | 'cut', ...paths: string[]): FileClipState => ({ count: paths.length, op, paths })
   const MULTI_TREE: TreeNode[] = [
     { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
     { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
     { type: 'file', name: 'c.md', path: '/v/c.md', size: 1, mtime: 1, kind: 'markdown' },
   ]
   /** The bridge's clipboard push, captured so a test can play "another window just copied". */
-  let pushClip: ((state: ClipState) => void) | null = null
+  let pushClip: ((state: FileClipState) => void) | null = null
   const withClipboard = (bridge: ReturnType<typeof installBridge>) => {
     bridge.tree.mockResolvedValue({ root: '/v', tree: MULTI_TREE, generatedAt: 1 })
     bridge.file.onClipChanged.mockImplementation((listener) => {
@@ -3236,7 +3237,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const { el, bridge, props } = await mount({}, withClipboard)
     bridge.file.paste.mockResolvedValue({ pasted: [{ from: '/w/x.md', to: '/v/sub/x.md', kind: 'file' }, { from: '/w/y.md', to: '/v/sub/y.md', kind: 'file' }], failed: [] })
     const treeReads = bridge.tree.mock.calls.length
-    act(() => pushClip?.({ count: 2, op: 'copy' }))
+    act(() => pushClip?.(clipOf('copy', '/w/x.md', '/w/y.md')))
     rightClick(rowByPath(el, '/v/sub'))
     const paste = itemByLabel(el, 'Paste 2 items')
     expect(paste?.disabled).toBe(false)
@@ -3249,7 +3250,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('a FILE row pastes into its PARENT (the "New note" rule), and per-entry failures are counted and named', async () => {
     const { el, bridge, props } = await mount({}, withClipboard)
     bridge.file.paste.mockResolvedValue({ pasted: [{ from: '/w/x.md', to: '/v/x.md', kind: 'file' }], failed: [{ from: '/w/Note.md', code: 'ALREADY_EXISTS', message: 'already exists' }] })
-    act(() => pushClip?.({ count: 2, op: 'cut' }))
+    act(() => pushClip?.(clipOf('cut', '/w/x.md', '/w/Note.md')))
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
@@ -3259,7 +3260,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('nothing pasted → "Couldn\'t paste: …"; a rejected paste → a notice, never a throw', async () => {
     const { el, bridge, props } = await mount({}, withClipboard)
     bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/w/Note.md', code: 'NOT_FOUND', message: 'gone' }] })
-    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     rightClick(body(el))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
     expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: Note.md — gone", 'error')
@@ -3272,7 +3273,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('a window opened AFTER a clip reads the clipboard ONCE on mount: Paste is labelled and enabled from the start', async () => {
     const { el, bridge } = await mount({}, (bridge) => {
       withClipboard(bridge)
-      bridge.file.clipState.mockResolvedValue({ count: 2, op: 'copy' })
+      bridge.file.clipState.mockResolvedValue(clipOf('copy', '/w/x.md', '/w/y.md'))
     })
     expect(bridge.file.clipState).toHaveBeenCalled()
     rightClick(rowByPath(el, '/v/sub'))
@@ -3280,14 +3281,14 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   })
 
   it('a push that lands while the mount read is in flight WINS over the read', async () => {
-    let settle: ((state: { count: number; op: 'copy' | 'cut' } | null) => void) | null = null
+    let settle: ((state: FileClipState) => void) | null = null
     const { el, bridge } = await mount({}, (bridge) => {
       withClipboard(bridge)
       bridge.file.clipState.mockImplementation(() => new Promise((resolve) => (settle = resolve)))
     })
     expect(bridge.file.clipState).toHaveBeenCalled()
-    act(() => pushClip?.({ count: 3, op: 'cut' }))
-    await act(async () => settle?.({ count: 1, op: 'copy' }))
+    act(() => pushClip?.(clipOf('cut', '/w/x.md', '/w/y.md', '/w/z.md')))
+    await act(async () => settle?.(clipOf('copy', '/w/x.md')))
     rightClick(rowByPath(el, '/v/sub'))
     expect(itemByLabel(el, 'Paste 3 items')).toBeDefined()
   })
@@ -3323,7 +3324,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     const { el, bridge } = await mount({ clipboardRef }, withClipboard)
     expect(verb(clipboardRef, 'paste')).toBe(false)
     expect(bridge.file.paste).not.toHaveBeenCalled()
-    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     await act(async () => void verb(clipboardRef, 'paste'))
     expect(bridge.file.paste).toHaveBeenLastCalledWith({ targetDir: '/v' })
     shiftClickRow(rowByPath(el, '/v/sub'))
@@ -3339,7 +3340,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('an open context menu owns the verbs: both answer false while it stands', async () => {
     const clipboardRef = box()
     const { el, bridge } = await mount({ clipboardRef }, withClipboard)
-    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     shiftClickRow(rowByPath(el, '/v/a.md'))
     rightClick(rowByPath(el, '/v/a.md'))
     expect(verb(clipboardRef, 'copy')).toBe(false)
@@ -3371,7 +3372,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('D9: a plain click on a FOLDER selects it, so paste goes INTO it', async () => {
     const clipboardRef = box()
     const { el, bridge } = await mount({ clipboardRef }, withClipboard)
-    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     act(() => rowByPath(el, '/v/sub')?.click())
     await act(async () => void verb(clipboardRef, 'paste'))
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/sub' })
@@ -3381,7 +3382,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('a plain LEFT click on BLANK SPACE clears the selection, so paste goes to the ROOT; a right-click there keeps it (YAZ-1337)', async () => {
     const clipboardRef = box()
     const { el, bridge } = await mount({ clipboardRef }, withClipboard)
-    act(() => pushClip?.({ count: 1, op: 'copy' }))
+    act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     act(() => rowByPath(el, '/v/sub')?.click())
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(1)
     act(() => void body(el)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 })))
@@ -3534,6 +3535,8 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
   const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
   const rightClick = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
   const picker = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a note"]')
+  const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
   const mountLinked = async (alsoIn?: unknown, over: Partial<SidebarProps> = {}, tweak?: (bridge: ReturnType<typeof installBridge>) => unknown) => {
     vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects'])
@@ -3673,28 +3676,192 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(writeFile).toHaveBeenCalledTimes(1)
     })
 
-    it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move; a Copy removes nothing (D20)', async () => {
-      const ALPHA = `---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n---\nBody\n`
-      let pushClip: ((state: { count: number; op: 'copy' | 'cut' } | null) => void) | null = null
-      const { el, disk, indexSource, bridge, writeFile } = await mountLinked(undefined, {}, (b) =>
-        b.file.onClipChanged.mockImplementation((listener) => {
-          pushClip = listener
-          return () => undefined
-        }),
-      )
-      act(() => indexSource.update(() => null, records().map((r) => (r.path === '/v/Projects/Alpha.md' ? { ...r, properties: { in: { [PROJECTS_ID]: { order: 1 } } } } : r)), FOLDERS))
-      disk.set('/v/Areas/Alpha.md', ALPHA) // where the paste lands it
-      bridge.file.paste.mockResolvedValue({ pasted: [{ from: '/v/Projects/Alpha.md', to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
-      const paste = async (op: 'copy' | 'cut'): Promise<void> => {
-        act(() => pushClip?.({ count: 1, op }))
-        rightClick(row(el, '/v/Areas'))
-        await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    describe('the app asks before a removal that clears values (D21)', () => {
+      const HELD = `---\nalso_in:\n  - ${PROJECTS_ID}\nin:\n  ${PROJECTS_ID}:\n    order: 1\n---\nBody\n`
+      /** Health is a shortcut in Projects and, by the window's snapshot, holds values for it. */
+      const mountHolding = async () => {
+        const mounted = await mountLinked([PROJECTS_ID])
+        mounted.disk.set(HEALTH, HELD)
+        act(() => mounted.indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, properties: { ...r.properties, in: { [PROJECTS_ID]: { order: 1 } } } } : r)), FOLDERS))
+        return mounted
       }
-      await paste('copy')
-      expect(bridge.file.paste).toHaveBeenCalledTimes(1)
-      expect(writeFile).not.toHaveBeenCalled()
-      await paste('cut')
-      expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
+      const askToRemove = async (el: HTMLElement) => {
+        rightClick(shortcutRow(el))
+        await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
+      }
+
+      it('"Remove shortcut", and the note holds values for a folder that will no longer show it: a sheet asks first — Cancel, Remove, the focus on Cancel', async () => {
+        const { el, writeFile } = await mountHolding()
+        await askToRemove(el)
+        expect(el.querySelector('.confirm__text')?.textContent).toBe("Remove the shortcut from 'Projects'? The values of 'Health' for Projects will be cleared.")
+        expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Remove'])
+        expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
+        expect(sheetBtn(el, 'Remove')?.classList.contains('confirm__btn--danger')).toBe(true)
+        expect(writeFile).not.toHaveBeenCalled()
+      })
+
+      it('Cancel: nothing is written, and the shortcut stays', async () => {
+        const { el, disk, writeFile } = await mountHolding()
+        await askToRemove(el)
+        await act(async () => sheetBtn(el, 'Cancel')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(writeFile).not.toHaveBeenCalled()
+        expect(disk.get(HEALTH)).toBe(HELD)
+        expect(shortcutRow(el)).not.toBeNull()
+      })
+
+      it('Remove: the removal runs as it does today, and the values are cleared in that one write (D20)', async () => {
+        const { el, disk, writeFile } = await mountHolding()
+        await askToRemove(el)
+        expect(writeFile).not.toHaveBeenCalled()
+        await act(async () => sheetBtn(el, 'Remove')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
+        expect(writeFile).toHaveBeenCalledTimes(1)
+      })
+
+      it('"Remove shortcut" with no such values: no sheet, as today', async () => {
+        const { el, disk, writeFile } = await mountLinked([PROJECTS_ID])
+        await askToRemove(el)
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
+        expect(writeFile).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    /** A Cut is a move: pasting one that would clear a folder's values asks first (D21), on the paths main's clipboard holds. */
+    describe('Cut, then Paste (D20, D21)', () => {
+      const ALPHA = '/v/Projects/Alpha.md'
+      const ZETA = '/v/Projects/Zeta.md'
+      const SUB = '/v/Projects/Sub'
+      const HELD = `---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n---\nBody\n`
+      const holding = (r: IndexRecord): IndexRecord => ({ ...r, properties: { in: { [PROJECTS_ID]: { order: 1 } } } })
+      /** LINKED, and a folder under Projects holding one note. */
+      const WITH_SUB = LINKED.map((node) => (node.path === '/v/Projects' && node.type === 'dir' ? { ...node, children: [{ type: 'dir' as const, name: 'Sub', path: SUB, children: [file(`${SUB}/Deep.md`)] }, ...node.children] } : node))
+
+      /** By the window's snapshot Alpha, Zeta and Sub/Deep hold values for Projects; `paste` plays main's clipboard push — a cut made in ANY window — then Paste on a folder row. */
+      const mountCut = async (over: Partial<SidebarProps> = {}) => {
+        let pushClip: ((state: FileClipState) => void) | null = null
+        const mounted = await mountLinked(undefined, over, (b) => {
+          b.tree.mockResolvedValue({ root: '/v', tree: WITH_SUB, generatedAt: 1 })
+          b.file.onClipChanged.mockImplementation((listener) => {
+            pushClip = listener
+            return () => undefined
+          })
+        })
+        const { el, indexSource } = mounted
+        act(() => indexSource.update(() => null, [...records().map((r) => (r.path === ALPHA || r.path === ZETA ? holding(r) : r)), holding(indexRecord(`${SUB}/Deep.md`))], FOLDERS))
+        const clip = (op: 'copy' | 'cut', ...paths: string[]) => act(() => pushClip?.({ count: paths.length, op, paths }))
+        const paste = async (op: 'copy' | 'cut', paths: string[], into = '/v/Areas'): Promise<void> => {
+          clip(op, ...paths)
+          rightClick(row(el, into))
+          await act(async () => itemByLabel(el, paths.length === 1 ? 'Paste 1 item' : `Paste ${paths.length} items`)?.click())
+        }
+        return { ...mounted, clip, paste }
+      }
+
+      it('Cut, then Paste into a folder: the same sheet, before the paste — the cut may be any window’s', async () => {
+        const { el, bridge, paste } = await mountCut()
+        await paste('cut', [ALPHA])
+        expect(sheetText(el)).toBe("Move 'Alpha' to 'Areas'? Its values for Projects will be cleared.")
+        expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Move'])
+        expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
+        expect(sheetBtn(el, 'Move')?.classList.contains('confirm__btn--danger')).toBe(true)
+        expect(bridge.file.paste).not.toHaveBeenCalled()
+        expect(bridge.file.clip).not.toHaveBeenCalled() // this window cut nothing: the paths are main's
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+      })
+
+      it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move; a Copy removes nothing (D20)', async () => {
+        const { el, disk, bridge, writeFile, paste } = await mountCut()
+        disk.set('/v/Areas/Alpha.md', HELD) // where the paste lands it
+        bridge.file.paste.mockResolvedValue({ pasted: [{ from: ALPHA, to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
+        await paste('copy', [ALPHA])
+        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
+        expect(writeFile).not.toHaveBeenCalled()
+        await paste('cut', [ALPHA])
+        expect(writeFile).not.toHaveBeenCalled()
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
+      })
+
+      it('several items: ONE sheet for all of them', async () => {
+        const { el, bridge, paste } = await mountCut()
+        await paste('cut', [ALPHA, ZETA, '/v/top.md'])
+        expect(el.querySelectorAll('.confirm')).toHaveLength(1)
+        expect(sheetText(el)).toBe("Move 3 items to 'Areas'? 2 notes will lose their values for Projects.")
+        expect(bridge.file.paste).not.toHaveBeenCalled()
+        await act(async () => sheetBtn(el, 'Move')?.click())
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+      })
+
+      it('Cancel: nothing is pasted and the cut stays on the clipboard', async () => {
+        const { el, bridge, writeFile, paste } = await mountCut()
+        await paste('cut', [ALPHA])
+        await act(async () => sheetBtn(el, 'Cancel')?.click())
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).not.toHaveBeenCalled()
+        expect(bridge.file.clip).not.toHaveBeenCalled()
+        expect(writeFile).not.toHaveBeenCalled()
+        rightClick(row(el, '/v/Areas'))
+        expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
+      })
+
+      it('Copy, then Paste: never asks', async () => {
+        const { el, bridge, paste } = await mountCut()
+        await paste('copy', [ALPHA, ZETA, SUB])
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+      })
+
+      it('a folder is moved (Cut then Paste) and notes under it would lose values', async () => {
+        const { el, bridge, paste } = await mountCut()
+        await paste('cut', [SUB])
+        expect(sheetText(el)).toBe("Move 'Sub' to 'Areas'? 1 note will lose its values for Projects.")
+        expect(bridge.file.paste).not.toHaveBeenCalled()
+      })
+
+      it('a cut that clears nothing pastes at once: a note with no values, a move under the same folders, an item already in that folder', async () => {
+        const { el, bridge, paste } = await mountCut()
+        await paste('cut', ['/v/top.md'])
+        await paste('cut', [ALPHA], SUB) // Projects still shows it
+        await paste('cut', [ALPHA], '/v/Projects') // where it already is: main skips it, so it is no move
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste.mock.calls).toEqual([[{ targetDir: '/v/Areas' }], [{ targetDir: SUB }], [{ targetDir: '/v/Projects' }]])
+      })
+
+      it('an item already in the folder is not counted among the moves', async () => {
+        const { el, paste } = await mountCut()
+        await paste('cut', [ALPHA, HEALTH]) // Health lives in Areas
+        expect(sheetText(el)).toBe("Move 'Alpha' to 'Areas'? Its values for Projects will be cleared.")
+      })
+
+      it('a cut from outside this window’s vault never asks: the index cannot speak for those notes', async () => {
+        const { el, bridge, paste } = await mountCut()
+        await paste('cut', ['/w/Projects/Alpha.md'])
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
+      })
+
+      it('⌘V asks through the same door', async () => {
+        const clipboardRef: SidebarProps['clipboardRef'] = { current: null }
+        const { el, bridge, clip } = await mountCut({ clipboardRef })
+        clip('cut', ALPHA)
+        act(() => row(el, '/v/Areas')?.click()) // the selected folder is ⌘V's target
+        await act(async () => void clipboardRef.current?.paste())
+        expect(sheetText(el)).toBe("Move 'Alpha' to 'Areas'? Its values for Projects will be cleared.")
+        expect(bridge.file.paste).not.toHaveBeenCalled()
+      })
+
+      it('the clipboard changes under the sheet: the question is dropped, nothing is pasted', async () => {
+        const { el, bridge, clip, paste } = await mountCut()
+        await paste('cut', [ALPHA])
+        clip('copy', ZETA)
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.paste).not.toHaveBeenCalled()
+      })
     })
 
     it('a refused removal says so through the notice', async () => {

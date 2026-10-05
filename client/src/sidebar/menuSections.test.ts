@@ -341,7 +341,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     [7, 'Paste 7 items'],
   ])('with %i clipped it reads "%s", enabled, and selects the paste', (count, label) => {
     const onPaste = vi.fn()
-    const sections = build({ clip: { count, op: 'copy' } }, { onPaste })
+    const sections = build({ clip: { count, op: 'copy', paths: Array.from({ length: count }, (_, i) => `/v/${i}.md`) } }, { onPaste })
     expect(itemOf(sections, 'Paste')).toBeUndefined()
     const paste = leafOf(sections, label)
     expect(paste?.disabled).toBeUndefined()
@@ -569,7 +569,7 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
   })
 
   it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items', () => {
-    expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy' } }))).toEqual([
+    expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
       ['Copy path', 'Copy for Agent'],
       ['New note', 'New folder'],
       ['New dated note', 'New dated folder'],

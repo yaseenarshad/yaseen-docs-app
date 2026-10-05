@@ -11,7 +11,7 @@ import type { NoticeKind } from '../../lib/notice'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
-import { dropFolderValuesAfterMove } from '../../links/shortcuts'
+import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
 import { createNote } from '../../views/scaffold'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
@@ -161,12 +161,16 @@ export function useFileClipboard(
   index: WikilinkResolveSource,
 ) {
   /**
-   * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op }` or null, pushed to every window on
-   * every change, so a menu opened here can label "Paste N items" for a copy made in another
-   * window on another vault. Session-only, never persisted. A window opened AFTER a clip reads the
-   * current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
+   * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
+   * window on every change, so a menu opened here can label "Paste N items" for a copy made in
+   * another window on another vault. Session-only, never persisted. A window opened AFTER a clip
+   * reads the current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
    */
   const [clip, setClip] = useState<FileClipState>(null)
+  // The paste of a Cut that would clear values, waiting on its sheet (D21); null when it is closed.
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; moves: Move[]; lost: LeftBehind } | null>(null)
+  // The sheet speaks for the clipboard it was asked about: another one ends the question.
+  useEffect(() => setPendingPaste(null), [clip])
   useEffect(() => {
     // Subscribe FIRST, then read: a push that lands while the read is in flight is newer than the
     // read and must win — the read only fills a window nothing has pushed to yet.
@@ -212,7 +216,7 @@ export function useFileClipboard(
    * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
    * it left behind (D20), judged on the index as it stood before the paste.
    */
-  const pasteInto = useCallback(
+  const runPaste = useCallback(
     async (dir: string) => {
       try {
         const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
@@ -233,6 +237,35 @@ export function useFileClipboard(
     },
     [root, refresh, onNotice, clip, index],
   )
+
+  /**
+   * Paste's one door, the menu's and ⌘V's: a Cut that would clear a folder's values asks first
+   * (D21), by the window's own snapshot; anything else pastes at once. The moves are the clipboard's
+   * paths into `dir` — one already there is no move (main skips it, D2), and a folder is one the
+   * tree holds as a folder. A path outside this vault matches no record, so it never asks: the
+   * index cannot speak for it.
+   */
+  const pasteInto = useCallback(
+    (dir: string) => {
+      if (clip?.op === 'cut') {
+        const moves = clip.paths.flatMap((oldPath): Move[] => {
+          const newPath = `${dir}/${basename(oldPath)}`
+          return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
+        })
+        const lost = valuesLeftBehind({ root, moves, records: index.records, folders: index.folders })
+        if (lost.folders.length > 0) return setPendingPaste({ dir, moves, lost })
+      }
+      void runPaste(dir)
+    },
+    [root, clip, dirs, index, runPaste],
+  )
+
+  /** The sheet's Move: the paste runs as it does unasked. Its Cancel only closes it — the Cut stays on the clipboard. */
+  const confirmPaste = useCallback(() => {
+    if (pendingPaste === null) return
+    setPendingPaste(null)
+    void runPaste(pendingPaste.dir)
+  }, [pendingPaste, runPaste])
 
   /**
    * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
@@ -260,7 +293,7 @@ export function useFileClipboard(
       },
       paste: () => {
         if (menu !== null || clip === null) return false
-        void pasteInto(pasteTargetDir())
+        pasteInto(pasteTargetDir())
         return true
       },
     }
@@ -269,7 +302,7 @@ export function useFileClipboard(
     }
   }, [clipboardRef, menu, selectedPaths, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir])
 
-  return { clip, clipTo, pasteInto }
+  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null) }
 }
 
 export function useInlineEdits(

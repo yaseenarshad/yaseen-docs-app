@@ -18,7 +18,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
-import { dropFolderValuesAfterMove } from './links/shortcuts'
+import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind } from './links/shortcuts'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -38,6 +38,7 @@ import { windowTitle } from './lib/windowTitle'
 import { isFolderPath } from './lib/pageLabel'
 import { onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
+import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { useReview } from './review/useReview'
@@ -583,14 +584,15 @@ export function App() {
    * gesture in the app arrives here as (oldPath, newPath, kind) — the sidebar's inline rename, its
    * drag-move, and the page title — so the rule is asked ONCE, here, and no surface reimplements
    * it: a changed NAME confirms first (the rename chains into the file on disk and then into
-   * every note that links to it), a MOVE runs silently exactly as it always has (a confirm on
+   * every note that links to it); a MOVE asks only when it would clear a folder's values (D21,
+   * `valuesLeftBehind` over the window's own snapshot) and otherwise runs silently (a confirm on
    * every drag would be hostile, and bare links keep resolving across a move anyway).
    *
    * Markdown-only renames still count synchronously. A ready lightweight catalog may prove a
    * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
    * The chosen snapshot is pinned through confirmation, and a root change cancels the request.
    */
-  const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; newPath: string; kind: 'file' | 'dir'; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
+  const [pendingRename, setPendingRename] = useState<({ root: string; oldPath: string; newPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null } & ({ count: number } | { lost: LeftBehind })) | null>(null)
   const renameRootGeneration = useRef(0)
   useLayoutEffect(() => {
     renameRootGeneration.current++
@@ -628,7 +630,12 @@ export function App() {
       if (root === null) return
       const catalog = await catalogForRename(oldPath, kind)
       if (catalog === undefined) return
-      if (!isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath, catalog)
+      if (!isNameChange(oldPath, newPath)) {
+        const lost = valuesLeftBehind({ root, moves: [{ oldPath, newPath, kind }], records: wikilinks.records, folders: wikilinks.folders })
+        if (lost.folders.length === 0) return renameFile(oldPath, newPath, catalog)
+        setPendingRename({ root, oldPath, newPath, kind, lost, viewOnlyCatalog: catalog })
+        return
+      }
       const records = wikilinks.records
       const hasMovedViewFile = catalog?.entries.some((entry) =>
         kind === 'file' ? entry.path === oldPath : entry.path.startsWith(`${oldPath}/`),
@@ -974,17 +981,21 @@ export function App() {
         </button>
       )}
       {/* The name-change confirm (⚡ YAZ-888): App's, not the sidebar's, because the door is
-          App's — the title and the tree both reach it, and one sheet answers for both. */}
-      {pendingRename !== null && (
-        <ConfirmRename
-          oldPath={pendingRename.oldPath}
-          newPath={pendingRename.newPath}
-          kind={pendingRename.kind}
-          count={pendingRename.count}
-          onConfirm={confirmRename}
-          onCancel={() => setPendingRename(null)}
-        />
-      )}
+          App's — the title and the tree both reach it, and one sheet answers for both. A move
+          that would clear a folder's values asks through its own sheet (D21). */}
+      {pendingRename !== null &&
+        ('lost' in pendingRename ? (
+          <ConfirmMove moves={[pendingRename]} lost={pendingRename.lost} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
+        ) : (
+          <ConfirmRename
+            oldPath={pendingRename.oldPath}
+            newPath={pendingRename.newPath}
+            kind={pendingRename.kind}
+            count={pendingRename.count}
+            onConfirm={confirmRename}
+            onCancel={() => setPendingRename(null)}
+          />
+        ))}
     </div>
   )
 }

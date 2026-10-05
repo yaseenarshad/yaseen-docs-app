@@ -31,7 +31,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, rowsByFolder } from './shortcuts'
+import { addShortcut, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, rowsByFolder, valuesLeftBehind, valuesLeftByShortcut, type Move } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -68,7 +68,7 @@ const NESTED = [...FOLDERS, settings('Projects/Deep', DEEP_ID), settings('Projec
 const pathsIn = (records: readonly IndexRecord[], folder: string, folders: readonly IndexRecord[] = FOLDERS): string[] =>
   folderRows(records, folders, folder).map((r) => r.path)
 
-describe('what a folder shows (YAZ-2290 D4)', () => {
+describe('what a folder shows (YAZ-2375 D4)', () => {
   it('a note directly in the folder is a row; another folder’s note is not', () => {
     const records = [rec('/vault/Other.md'), rec('/vault/Projects/A.md'), rec('/vault/Projects-old/X.md'), rec('/vault/Projects/C.md')]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Projects/A.md', '/vault/Projects/C.md'])
@@ -466,5 +466,89 @@ describe('a folder’s values leave the note when the note leaves the folder (D2
       await removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')
       expect(api.writeFile).not.toHaveBeenCalled()
     })
+  })
+})
+
+/**
+ * The app asks before a move that clears values (D21). What the sheet says is answered here, from
+ * a snapshot, by D20's own rule: the notes that would lose a block, and the folders — as their
+ * directories — whose values would go.
+ */
+describe('what a move would clear, from a snapshot (D21)', () => {
+  const holding = (path: string, ...ids: string[]): IndexRecord => rec(path, ids.length === 0 ? {} : { in: Object.fromEntries(ids.map((id) => [id, { order: 1 }])) })
+  const file = (oldPath: string, newPath: string): Move => ({ oldPath, newPath, kind: 'file' })
+  const dir = (oldPath: string, newPath: string): Move => ({ oldPath, newPath, kind: 'dir' })
+  const left = (moves: Move[], records: IndexRecord[], folders = NESTED) => valuesLeftBehind({ root: '/vault', moves, records, folders })
+  const NOTHING = { notes: 0, folders: [] }
+
+  beforeEach(() => {
+    disk.clear()
+    vi.mocked(api.readFile).mockClear()
+  })
+
+  it('a note is moved in the app to a place where a folder that shows it now will not show it, and the note holds values for that folder: one note, and those folders', () => {
+    const records = [holding('/vault/Projects/Deep/N.md', DEEP_ID, PROJECTS_ID, AREAS_ID)]
+    // Deep stops showing it; Projects, above its new place, still does; Areas never did, and its block goes too (D20).
+    expect(left([file('/vault/Projects/Deep/N.md', '/vault/Projects/N.md')], records)).toEqual({ notes: 1, folders: ['/vault/Projects/Deep', '/vault/Areas'] })
+  })
+
+  it('a move that clears nothing: the same folders show the note before and after; or the note holds no values for the folders it leaves; or its only such block is for a folder the app cannot find', () => {
+    expect(left([file('/vault/Projects/Deep/N.md', '/vault/Projects/Deep/Deeper/N.md')], [holding('/vault/Projects/Deep/N.md', DEEP_ID, PROJECTS_ID)])).toEqual(NOTHING)
+    expect(left([file('/vault/Projects/N.md', '/vault/Areas/N.md')], [rec('/vault/Projects/N.md', { also_in: [PROJECTS_ID], in: { [PROJECTS_ID]: { order: 1 } } })])).toEqual(NOTHING)
+    expect(left([file('/vault/Projects/N.md', '/vault/Areas/N.md')], [holding('/vault/Projects/N.md')])).toEqual(NOTHING)
+    expect(left([file('/vault/Projects/N.md', '/vault/Areas/N.md')], [holding('/vault/Projects/N.md', NOBODY_ID)])).toEqual(NOTHING)
+  })
+
+  it('a folder is moved and notes under it would lose values: the notes are counted, and the folders that move with them are not named', () => {
+    const records = [holding('/vault/Projects/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID), holding('/vault/Projects/Deep/M.md', DEEP_ID), holding('/vault/Projects/Deep/K.md', PROJECTS_ID), holding('/vault/Projects/Stay.md', PROJECTS_ID, AREAS_ID)]
+    expect(left([dir('/vault/Projects/Deep', '/vault/Areas/Deep')], records)).toEqual({ notes: 2, folders: ['/vault/Projects'] })
+    expect(left([dir('/vault/Projects/Deep', '/vault/Projects/Shallow')], records)).toEqual(NOTHING) // a folder renamed
+  })
+
+  it('Cut, then Paste into a folder, several items: ONE answer for all of them — each note once, each move judged as D20 judges it', () => {
+    const records = [holding('/vault/Projects/Deep/N.md', DEEP_ID), holding('/vault/Projects/M.md', PROJECTS_ID), holding('/vault/Projects/Plain.md')]
+    const moves = [file('/vault/Projects/Deep/N.md', '/vault/Areas/N.md'), file('/vault/Projects/M.md', '/vault/Areas/M.md'), file('/vault/Projects/Plain.md', '/vault/Areas/Plain.md')]
+    expect(left(moves, records)).toEqual({ notes: 2, folders: ['/vault/Projects/Deep', '/vault/Projects'] })
+    expect(left([], records)).toEqual(NOTHING)
+  })
+
+  it('the folders named: nearest to the note first, whatever the order of its blocks — the folder it lives in, the folders above it, then the ones it is a shortcut in; across several notes the union, in the order first met', () => {
+    const near = rec('/vault/Projects/Deep/Deeper/N.md', { also_in: [AREAS_ID], in: Object.fromEntries([AREAS_ID, PROJECTS_ID, DEEPER_ID, DEEP_ID].map((id) => [id, { order: 1 }])) })
+    expect(left([file(near.path, '/vault/N.md')], [near]).folders).toEqual(['/vault/Projects/Deep/Deeper', '/vault/Projects/Deep', '/vault/Projects'])
+    const records = [holding('/vault/Projects/A.md', PROJECTS_ID), holding('/vault/Projects/Deep/B.md', PROJECTS_ID, DEEP_ID)]
+    expect(left([dir('/vault/Projects', '/vault/Areas/Projects')], records)).toEqual(NOTHING) // Projects still shows both
+    expect(left([file('/vault/Projects/A.md', '/vault/Areas/A.md'), file('/vault/Projects/Deep/B.md', '/vault/Areas/B.md')], records).folders).toEqual(['/vault/Projects', '/vault/Projects/Deep'])
+  })
+
+  it('a move out of the vault’s top level: the root’s own folder is named by the vault’s directory', () => {
+    const folders = [...FOLDERS, { ...rec('/vault/.folder.md'), id: DEEP_ID }]
+    expect(left([file('/vault/N.md', '/vault/Areas/N.md')], [holding('/vault/N.md', DEEP_ID)], folders)).toEqual({ notes: 1, folders: ['/vault'] })
+  })
+
+  it('"Remove shortcut", and the note holds values for a folder that will no longer show it: the folders its shortcut alone made show it', () => {
+    const note = rec('/vault/Areas/Health.md', { also_in: [DEEP_ID], in: Object.fromEntries([AREAS_ID, PROJECTS_ID, DEEP_ID, NOBODY_ID].map((id) => [id, { order: 1 }])) })
+    expect(valuesLeftByShortcut('/vault/Projects/Deep', note.path, [note], NESTED)).toEqual({ notes: 1, folders: ['/vault/Projects/Deep', '/vault/Projects'] })
+    // Removed from the folder above: the entry naming the folder under it goes with it.
+    expect(valuesLeftByShortcut('/vault/Projects', note.path, [note], NESTED)).toEqual({ notes: 1, folders: ['/vault/Projects/Deep', '/vault/Projects'] })
+  })
+
+  it('"Remove shortcut" with no such values: nothing — no block, a block only for a folder that still shows it, or a note the snapshot does not hold', () => {
+    const plain = rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] })
+    expect(valuesLeftByShortcut('/vault/Projects', plain.path, [plain], NESTED)).toEqual(NOTHING)
+    const twice = rec('/vault/Areas/Health.md', { also_in: [DEEP_ID, PROJECTS_ID], in: { [PROJECTS_ID]: { order: 1 }, [AREAS_ID]: { order: 1 } } })
+    expect(valuesLeftByShortcut('/vault/Projects/Deep', twice.path, [twice], NESTED)).toEqual(NOTHING)
+    expect(valuesLeftByShortcut('/vault/Projects', '/vault/Areas/Other.md', [twice], NESTED)).toEqual(NOTHING)
+  })
+
+  it('the index is behind: the answer is the snapshot’s alone and reads nothing — and it counts exactly the notes D20 then reads', async () => {
+    const records = [holding('/vault/Projects/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID), holding('/vault/Projects/Deep/M.md', DEEP_ID), holding('/vault/Projects/Deep/K.md', PROJECTS_ID), holding('/vault/Projects/Stay.md', PROJECTS_ID)]
+    expect(left([file('/vault/Projects/Deep/M.md', '/vault/Areas/M.md')], [])).toEqual(NOTHING) // not in the snapshot yet
+    for (const move of [dir('/vault/Projects/Deep', '/vault/Areas/Deep'), dir('/vault/Projects/Deep', '/vault/Projects/Other'), file('/vault/Projects/Deep/M.md', '/vault/Projects/M.md'), file('/vault/Projects/Stay.md', '/vault/Stay.md')]) {
+      const asked = left([move], records).notes
+      expect(api.readFile).not.toHaveBeenCalled()
+      await dropFolderValuesAfterMove({ root: '/vault', ...move, records, folders: NESTED })
+      expect(vi.mocked(api.readFile).mock.calls).toHaveLength(asked)
+      vi.mocked(api.readFile).mockClear()
+    }
   })
 })
