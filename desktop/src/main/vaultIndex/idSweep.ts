@@ -3,7 +3,7 @@ import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, noteIdFrom } from '@shared/noteId'
+import { NOTE_ID_KEY, isNoteId, noteIdFrom } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
@@ -22,7 +22,8 @@ function inTurn<T>(write: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The id sweep (YAZ-2293 D3, D4). Each note in `among` with no id is given one. Of the indexed
+ * The id sweep (YAZ-2293 D3, D4). Each note in `among` with no id is given one, and an `id` that
+ * is not one of this app's is none: the app's is written over it (YAZ-2420 🔒 D30). Of the indexed
  * notes sharing an id only the KEEPER keeps it — the one the index knew to hold it (`knew`), else
  * the first in path order, the same on every device — and any other in `among` is given a fresh
  * one. Each folder in `dirs` (never the vault root) with no `.folder.md` is given one holding only
@@ -129,10 +130,11 @@ export const readPage = (file: string): Promise<{ content: string; mtime?: numbe
   })
 
 /**
- * The file's id becomes a fresh one, but only while it still is `held` (undefined: it has none),
- * and never one that is `taken`. Resolves to the id written, undefined when nothing was. The
- * `yaseendocs id` command calls this too, so the command and the sweep give a note the same
- * id — it has no index to ask what is taken, and the sweep's keeper rule covers that.
+ * The file's id becomes a fresh one, but only while it still is `held` (undefined: it has none,
+ * or another tool's, YAZ-2420 🔒 D30), and never one that is `taken`. Resolves to the id written,
+ * undefined when nothing was. The `yaseendocs id` command calls this too, so the command and the
+ * sweep give a note the same id — it has no index to ask what is taken, and the sweep's keeper
+ * rule covers that.
  *
  * A folder's settings file that is not there reads as empty and is CREATED, never written over:
  * one that appears before the write stays as it is (D13).
@@ -143,7 +145,8 @@ export const readPage = (file: string): Promise<{ content: string; mtime?: numbe
 export async function giveId(root: string, file: string, held: string | undefined, taken?: (id: string) => boolean, first?: (id: string) => Promise<void>): Promise<string | undefined> {
   const holds = (content: string): boolean => {
     const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
-    return error === undefined && properties[NOTE_ID_KEY] === held
+    const id = properties[NOTE_ID_KEY]
+    return error === undefined && (isNoteId(id) ? id : undefined) === held
   }
   let { content, mtime } = await readPage(file)
   if (!holds(content)) return
@@ -171,6 +174,9 @@ export async function giveId(root: string, file: string, held: string | undefine
  *
  * The copy is remembered while the app runs: a long copy is still arriving when its folder is given
  * its id, and the sweep carries each note that reaches `dir` afterwards.
+ *
+ * The app's own copy calls this too, once the folder it made holds its fresh id (`fs/copy.ts`,
+ * YAZ-2420 🔒 D21): its notes were written holding their values under the original's.
  */
 export async function carryFolderValues(dir: string, from: string, to: string): Promise<void> {
   if (!carried.some((copy) => copy.dir === dir && copy.from === from && copy.to === to)) carried.push({ dir, from, to })

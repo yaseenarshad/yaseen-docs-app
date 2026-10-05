@@ -9,18 +9,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { PathTitles } from '../lib/pageLabel'
 import { ConfirmRename, isNameChange, renameConfirmMessage } from './ConfirmRename'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('renameConfirmMessage (⚡ YAZ-888) — the LOCKED copy', () => {
   it('names both spellings and the count, plural and singular', () => {
-    expect(renameConfirmMessage('Old Note', 'New Note', 3)).toBe("Rename 'Old Note' to 'New Note'? Links in 3 notes will be updated.")
-    expect(renameConfirmMessage('Old Note', 'New Note', 1)).toBe("Rename 'Old Note' to 'New Note'? Links in 1 note will be updated.")
+    expect(renameConfirmMessage('Old Note', 'New Note', 3, false)).toBe("Rename 'Old Note' to 'New Note'? Links in 3 notes will be updated.")
+    expect(renameConfirmMessage('Old Note', 'New Note', 1, false)).toBe("Rename 'Old Note' to 'New Note'? Links in 1 note will be updated.")
   })
 
   it('a page nobody links to says so instead of promising an update of nothing', () => {
-    expect(renameConfirmMessage('Old Note', 'New Note', 0)).toBe("Rename 'Old Note' to 'New Note'? No other notes link to it.")
+    expect(renameConfirmMessage('Old Note', 'New Note', 0, false)).toBe("Rename 'Old Note' to 'New Note'? No other notes link to it.")
+  })
+
+  it('a title edit with nothing to rewrite says only that: notes may still link to the page by its id (YAZ-2420 D16)', () => {
+    expect(renameConfirmMessage('Old Note', 'New Note', 0, true)).toBe("Rename 'Old Note' to 'New Note'? No links need updating.")
+    expect(renameConfirmMessage('Old Note', 'New Note', 2, true)).toBe("Rename 'Old Note' to 'New Note'? Links in 2 notes will be updated.")
   })
 })
 
@@ -48,13 +54,13 @@ afterEach(() => {
 const OLD = '/v/Old Note.md'
 const NEW = '/v/New Note.md'
 
-function mount(count: number, kind: 'file' | 'dir' = 'file') {
+function mount(count: number, kind: 'file' | 'dir' = 'file', titles: PathTitles = new Map()) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmRename oldPath={OLD} newPath={NEW} kind={kind} count={count} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmRename oldPath={OLD} newPath={NEW} kind={kind} count={count} titles={titles} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -66,6 +72,11 @@ describe('ConfirmRename', () => {
   it('renders the LOCKED copy over PAGE names — basenames minus the extension, never file names', () => {
     const { el } = mount(2)
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note' to 'New Note'? Links in 2 notes will be updated.")
+  })
+
+  it('E: the rename sheet names the page by its title (YAZ-2420 D14)', () => {
+    const { el } = mount(0, 'file', new Map([[OLD, 'UP-001 - Abdul']]))
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'New Note'? No other notes link to it.")
   })
 
   it('names a FOLDER whole: one called `Old Note.md` keeps its `.md` (YAZ-2290)', () => {

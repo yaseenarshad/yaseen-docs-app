@@ -5,25 +5,18 @@
  * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
 import { fileKind } from '@shared/fileKind'
-import { dirname } from '../lib/paths'
+import { basename, dirname } from '../lib/paths'
 
 /** What the inline input creates: a markdown note or a folder. */
 export type EntryKind = 'file' | 'dir'
 
-/** Human-readable reason the name is unusable, or null when fine. Callers trim first via entryPath. */
+/** Human-readable reason the name is unusable, or null when fine. */
 export function validateEntryName(name: string): string | null {
   const trimmed = name.trim()
   if (trimmed.includes('/')) return 'Name cannot contain "/"'
   if (trimmed.includes('\0')) return 'Name contains an invalid character'
   if (trimmed.startsWith('.')) return 'Names starting with "." are hidden'
   return null
-}
-
-/** Absolute path for the new entry; notes get `.md` unless already markdown. */
-export function entryPath(parentDir: string, name: string, kind: EntryKind): string {
-  let final = name.trim()
-  if (kind === 'file' && !/\.(md|markdown)$/i.test(final)) final += '.md'
-  return `${parentDir}/${final}`
 }
 
 /** Seed for "New dated folder" (YAZ-1604) and "New dated note" (YAZ-2242): `09_14- ` — today's MM_DD, then `- ` so the title lands one space after the dash. */
@@ -52,27 +45,14 @@ export function targetDirFor(node: MenuRow | null, root: string): string {
   return dirname(node.path)
 }
 
-/** Rename-field prefill: Markdown hides its suffix; view-only files show their full filename. */
-export function renameInputName(fileName: string): string {
-  const name = fileName.slice(fileName.lastIndexOf('/') + 1)
-  if (fileKind(name) !== 'markdown') return name
-  return name.slice(0, name.lastIndexOf('.'))
-}
-
 /**
- * Absolute path for the sidebar's inline rename (Links E1, GRO-2194; folders E1b, GRO-2241):
- * same parent directory. Markdown keeps only an explicit Markdown suffix; any other visible name
- * inherits the old Markdown suffix. View-only files keep any explicit supported suffix and append
- * the old exact suffix only when none is recognized. Directories have no extension logic.
+ * Absolute path for the sidebar's inline rename of a view-only FILE (Links E1, GRO-2194): same
+ * parent directory. An explicit supported suffix is kept as typed; the old exact suffix is
+ * appended only when none is recognized. A note or a folder is retitled instead (YAZ-2420 🔒 D16).
  */
-export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'dir' = 'file'): string {
-  const dir = dirname(oldPath)
+export function renamedPath(oldPath: string, newName: string): string {
   let final = newName.trim()
-  if (kind === 'dir') return `${dir}/${final}`
-  const oldName = oldPath.slice(oldPath.lastIndexOf('/') + 1)
-  if (final === renameInputName(oldName)) return oldPath
-  const oldKind = fileKind(oldPath)
-  const newKind = fileKind(final)
-  if (oldKind === 'markdown' ? newKind !== 'markdown' : newKind === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
-  return `${dir}/${final}`
+  if (final === basename(oldPath)) return oldPath
+  if (fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
+  return `${dirname(oldPath)}/${final}`
 }

@@ -25,6 +25,7 @@ const rec = (path: string): IndexRecord => ({
   path,
   name: path.slice(path.lastIndexOf('/') + 1),
   basename: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
+  title: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
   folder: '',
   ext: 'md',
   size: 1,

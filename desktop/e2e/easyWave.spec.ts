@@ -35,7 +35,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_DEFAULT_W } from '../../shared/types'
-import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, openFolder, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
+import { activeTab, appWindow, builtNote, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, openFolder, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -287,9 +287,12 @@ test('step 8 — (d) renaming a page BEHIND the current one: Back lands on the n
   await expect(win.locator('.link-notice')).toContainText('Updated links in')
   await expect.poll(() => gone(path.join(vault, 'KPIs', 'Win Rate.md'))).toBe(true)
 
-  // The stack followed the file: Back opens the renamed page, by its new name and new path.
+  // The stack followed the file: Back opens the renamed page, by its new title and the path
+  // built from it (YAZ-2420 🔒 D16).
   await step(win, 'back', RENAMED, 'Closed-won as a share of closed pipeline')
-  await expect.poll(() => decodeURI(win.url())).toContain(`${RENAMED}.md`)
+  const renamed = await builtNote(path.join(vault, 'KPIs'), 'deal-win-rate')
+  expect(renamed).not.toBe('')
+  await expect.poll(() => decodeURI(win.url())).toContain(`KPIs/${renamed}`)
   await expect(backBtn(win)).toBeEnabled()
   await shoot(win, 'easy-history-renamed')
   await step(win, 'back', 'Head of Sales', 'Owns quota attainment')

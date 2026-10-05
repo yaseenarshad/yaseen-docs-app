@@ -1,52 +1,122 @@
-import { cp, stat } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { PasteResponse, RenameFileResponse } from '@shared/types'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
+import { TITLE_KEY, kebabTitle, noteFileName, titleOf } from '@shared/noteName'
+import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type RenameFileResponse } from '@shared/types'
 import type { FileClip } from '../fileClip'
-import { BridgeFailure, fsCall, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
+import { carryFolderValues } from '../vaultIndex/idSweep'
+import { BridgeFailure, createDurable, createFolderSettings, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
 /** One entry that landed: the shape `PasteResponse.pasted` carries. */
 type PastedEntry = PasteResponse['pasted'][number]
 
+/** Whether anything sits at `dir/name`: asked of the filesystem (a `stat`), so a case-insensitive volume answers case-insensitively — the same answer `fs.cp`'s `errorOnExist` would give. */
+const taken = async (dir: string, name: string): Promise<boolean> => (await stat(path.join(dir, name)).catch(() => null)) !== null
+
 /**
- * Finder's clash rule (YAZ-1674, D3): `Note.md` → `Note copy.md` → `Note copy 2.md` → … The
- * name itself is returned when nothing sits at `dir/name`. Files split at the LAST extension
- * (`archive.tar.gz` → `archive.tar copy.gz`, exactly Finder); folders keep the whole name
- * (`Notes` → `Notes copy`) — a dot in a folder name is not an extension. A source that already
- * ends in ` copy` / ` copy N` counts on from N rather than becoming `Note copy copy.md`, which is
- * also Finder. Existence is asked of the filesystem per candidate (a `stat`), so a case-insensitive
- * volume answers case-insensitively — the same answer `fs.cp`'s `errorOnExist` would give.
+ * Finder's clash rule for a file (YAZ-1674, D3): `Note.md` → `Note copy.md` → `Note copy 2.md` → …
+ * The name itself is returned when nothing sits at `dir/name`. Split at the LAST extension
+ * (`archive.tar.gz` → `archive.tar copy.gz`, exactly Finder). A source that already ends in
+ * ` copy` / ` copy N` counts on from N rather than becoming `Note copy copy.md`, which is also Finder.
  */
-export async function freeName(dir: string, name: string, kind: 'file' | 'dir'): Promise<string> {
+export async function freeName(dir: string, name: string): Promise<string> {
   return fsCall(dir, async () => {
-    const taken = async (candidate: string) => (await stat(path.join(dir, candidate)).catch(() => null)) !== null
-    if (!(await taken(name))) return name
-    const ext = kind === 'file' ? path.extname(name) : ''
+    if (!(await taken(dir, name))) return name
+    const ext = path.extname(name)
     const stem = name.slice(0, name.length - ext.length)
     const m = /^(.*) copy(?: (\d+))?$/.exec(stem)
     const base = m === null ? stem : m[1]
     let n = m === null ? 1 : Number(m[2] ?? '1') + 1
     for (;;) {
       const candidate = `${base} copy${n === 1 ? '' : ` ${n}`}${ext}`
-      if (!(await taken(candidate))) return candidate
+      if (!(await taken(dir, candidate))) return candidate
       n += 1
     }
   })
 }
 
 /**
- * Copies one entry INTO `toDir` under a free name (YAZ-1674, D4). `fs.cp` with `recursive` (a
- * folder comes whole — hidden dirs inside it included, exactly what Finder would carry),
- * `errorOnExist` + `force: false` (never overwrites: the free name is pre-picked, and a racer
- * landing on it in between still gets `ALREADY_EXISTS`, not a clobber) and `preserveTimestamps`
- * (bytes AND mtimes faithful). Copying into the entry's OWN folder is Duplicate for free.
+ * A copied folder's title (YAZ-2420 🔒 D21): `<title> copy`, counting on (`<title> copy 2`, …)
+ * while something in `dir` holds the name built from it — a folder's name carries no id to keep
+ * two copies apart. A title too long for the count to reach the name is refused, as two folders
+ * that would share a name are (🔒 D25).
+ */
+async function freeTitle(dir: string, title: string): Promise<string> {
+  let name = ''
+  for (let n = 1; ; n += 1) {
+    const candidate = `${title} copy${n === 1 ? '' : ` ${n}`}`
+    if (kebabTitle(candidate) === name) throw new BridgeFailure('ALREADY_EXISTS', "this folder's name is too long to copy beside it", { path: path.join(dir, name) })
+    name = kebabTitle(candidate)
+    if (!(await taken(dir, name))) return candidate
+  }
+}
+
+/** `content`'s properties and `content` holding a fresh `id`; undefined when they do not parse: it can hold neither an id nor a title, and is copied as it is. */
+function reborn(content: string): { properties: Record<string, unknown>; id: string; content: string } | undefined {
+  const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  if (error !== undefined) return
+  const id = mintNoteId()
+  return { properties, id, content: setFrontmatterProperty(content, NOTE_ID_KEY, id) }
+}
+
+/** A byte copy, whole and never over anything: an errno from it belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`). */
+const copyBytes = (src: string, to: string): Promise<void> => fsCall(to, () => cp(src, to, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true }))
+
+/**
+ * The note `src` born again in `dir` (YAZ-2420 🔒 D21): a fresh `id`, its title with `suffix`, and
+ * the name built from both. Resolves to where it landed; undefined, and nothing written, for a
+ * file that is no note or a note whose properties do not parse.
+ */
+async function copyNote(src: string, dir: string, suffix = ''): Promise<string | undefined> {
+  const born = isMarkdown(src) ? reborn(await readFile(src, 'utf8')) : undefined
+  if (born === undefined) return
+  const title = titleOf(born.properties, path.parse(src).name) + suffix
+  const to = path.join(dir, noteFileName(title, born.id))
+  await fsCall(to, () => createDurable(to, setFrontmatterProperty(born.content, TITLE_KEY, title)))
+  return to
+}
+
+/**
+ * The folder `src` copied into `dir` (YAZ-2420 🔒 D21); resolves to where it landed. The one the
+ * user `picked` is titled `<title> copy` under the kebab-case of that (`freeTitle`), and its
+ * `.folder.md` is made when it has none; a folder inside it keeps its name and title. The
+ * `.folder.md` comes first, holding a fresh `id`. Every note is born again under its own title, a
+ * folder is copied the same way, and anything else — a hidden entry, a file that is no note —
+ * comes as it is. Last, the notes carry their values for the original to the copy's id
+ * (`carryFolderValues`, YAZ-2375 D19).
+ */
+async function copyFolder(src: string, dir: string, picked = false): Promise<string> {
+  const settings = await readFile(folderSettingsPath(src), 'utf8').catch(() => (picked ? '' : undefined))
+  const born = settings === undefined ? undefined : reborn(settings)
+  const title = picked ? await freeTitle(dir, titleOf(born?.properties ?? {}, path.basename(src))) : undefined
+  const to = path.join(dir, title === undefined ? path.basename(src) : kebabTitle(title))
+  await fsCall(to, () => mkdir(to))
+  if (born !== undefined) await createFolderSettings(to, title === undefined ? born.content : setFrontmatterProperty(born.content, TITLE_KEY, title))
+  for (const entry of await readdir(src, { withFileTypes: true })) {
+    const from = path.join(src, entry.name)
+    if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
+    if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to)
+    else if (!entry.isFile() || isSkipped(entry.name) || (await copyNote(from, to)) === undefined) await copyBytes(from, path.join(to, entry.name))
+  }
+  const held = born?.properties[NOTE_ID_KEY]
+  if (born !== undefined && isNoteId(held)) await carryFolderValues(to, held, born.id)
+  return to
+}
+
+/**
+ * Copies one entry INTO `toDir` (YAZ-1674, D4), never over anything. Copying into the entry's OWN
+ * folder is Duplicate for free.
+ *
+ * A note and a folder are born again (YAZ-2420 🔒 D21: `copyNote`, `copyFolder`); any other file,
+ * and a note whose properties do not parse, is `fs.cp` under Finder's next free name (`freeName`).
  *
  * Guards borrowed from rename/remove, and only where they transfer: a source the tree hides
  * (`isSkipped`: dot-entries, node_modules) is refused `BAD_REQUEST` — the UI never showed it,
  * so it cannot be copied through the UI; a folder into itself or a descendant is refused
  * `BAD_REQUEST` (an infinite copy); a missing source is `NOT_FOUND`. The target folder is
- * `pasteEntries`'s to check (ONE door: it is this function's only production caller). No
- * extension rules: nothing is renamed, the copy keeps its name and kind.
+ * `pasteEntries`'s to check (ONE door: it is this function's only production caller).
  *
  * Nothing downstream: no store repair (nothing moved or went) and no push (the watcher's
  * `add`/`addDir` echo fills the tree, and the client refreshes anyway — idempotent).
@@ -64,9 +134,11 @@ export async function copyEntry(from: unknown, toDir: unknown): Promise<PastedEn
     if (kind === 'dir' && (dir === src || dir.startsWith(`${src}${path.sep}`))) {
       throw new BridgeFailure('BAD_REQUEST', 'a folder cannot be copied inside itself', { path: dir })
     }
-    const to = path.join(dir, await freeName(dir, path.basename(src), kind))
-    // An errno from the copy itself belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`).
-    await fsCall(to, () => cp(src, to, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true }))
+    if (kind === 'dir') return { from: src, to: await copyFolder(src, dir, true), kind }
+    const copied = await copyNote(src, dir, ' copy')
+    if (copied !== undefined) return { from: src, to: copied, kind }
+    const to = path.join(dir, await freeName(dir, path.basename(src)))
+    await copyBytes(src, to)
     return { from: src, to, kind }
   })
 }
@@ -97,7 +169,8 @@ function failureOf(from: string, err: unknown): PasteResponse['failed'][number] 
  * target itself is a whole-call failure — it must be absolute, exist and be a folder (`NOT_FOUND`
  * / `NOT_A_DIRECTORY`, attributed to it); it is never created.
  *
- * `copy` → `ops.copy(from, targetDir)` (a clash takes the next free name, D3).
+ * `copy` → `ops.copy(from, targetDir)` (a note or a folder under its built name, any other file
+ * under the next free one, D3).
  * `cut` → `ops.move(from, targetDir/basename)`: the EXISTING rename pipeline per entry, so a
  * clash is `ALREADY_EXISTS` (never overwrites) and an entry already IN the target folder is
  * skipped silently — drag-drop's "nothing to do" — neither pasted nor failed. A rename across

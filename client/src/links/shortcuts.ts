@@ -14,7 +14,7 @@ import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValue
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
 import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
-import { dirname, relTo } from '../lib/paths'
+import { basename, dirname, relTo } from '../lib/paths'
 import { transformFile, type ContentTransform } from '../views/writeProperty'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
@@ -22,6 +22,12 @@ export function folderRecord(folders: readonly IndexRecord[], dir: string): Inde
   const path = folderSettingsPath(dir)
   return folders.find((r) => r.path === path)
 }
+
+/** A folder's title (YAZ-2420 🔒 D14): its settings record's, else, while it has no `.folder.md`, its directory's name. */
+export const folderTitle = (folders: readonly IndexRecord[], dir: string): string => folderRecord(folders, dir)?.title ?? basename(dir)
+
+/** The settings records by the directory each is the folder of. */
+export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))
 
 /** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`
@@ -96,19 +102,16 @@ const propertiesOf = (content: string): Record<string, unknown> => parseFrontmat
 /**
  * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): a
  * folder with no `.folder.md` gets one holding just its id (that write creates the file,
- * `readForWrite`), and a file with no id is given a fresh one. Asked of the file's own bytes, never
- * the index: a snapshot one write behind would mint a second id over the first, and every shortcut
- * and value naming the first would be lost.
+ * `readForWrite`), and a file with no id, or another tool's (YAZ-2420 🔒 D30), is given a fresh one.
+ * Asked of the file's own bytes, never the index: a snapshot one write behind would mint a second
+ * id over the first, and every shortcut and value naming the first would be lost.
  */
 export async function folderId(dir: string): Promise<string> {
   const fresh = mintNoteId()
   const { content } = await transformFile(folderSettingsPath(dir), (bytes) =>
-    propertiesOf(bytes)[NOTE_ID_KEY] == null ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes,
+    isNoteId(propertiesOf(bytes)[NOTE_ID_KEY]) ? bytes : setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh),
   )
-  const id = propertiesOf(content)[NOTE_ID_KEY]
-  // Someone else's value (`shared/noteId.ts`): never an id, never overwritten.
-  if (!isNoteId(id)) throw new Error(`the id in ${folderSettingsPath(dir)} is not a page id`)
-  return id
+  return propertiesOf(content)[NOTE_ID_KEY] as string
 }
 
 /**

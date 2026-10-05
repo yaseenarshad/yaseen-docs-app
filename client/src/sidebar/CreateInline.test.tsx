@@ -58,4 +58,11 @@ describe('CreateInline seed (YAZ-1604)', () => {
     await enter(field)
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith('06_22- Launch')
   })
+
+  it.each(['Q3/Q4', '.hidden'])('a folder\'s title is free text: %s is submitted, the name rules guard no title (YAZ-2420 D6)', async (title) => {
+    const { field, onSubmit } = mount()
+    field.value = title
+    await enter(field)
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(title)
+  })
 })

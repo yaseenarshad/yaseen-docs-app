@@ -155,7 +155,7 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
     expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance', 'settings-editor', 'settings-files', 'settings-review', 'settings-sync'])
-    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'newNoteLocation', 'enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
+    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'confirmRename', 'newNoteLocation', 'enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
     for (const r of el.querySelectorAll<HTMLElement>('.setting')) expect(r.dataset.setting).toBeTruthy()
     expect(el.querySelector('[data-setting^="hotkeys"]')).toBeNull()
   })
@@ -272,6 +272,15 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   it('Confirm before deleting carries its hint in the row', () => {
     const { el } = mount()
     expect(row(el, 'confirmDelete')?.querySelector('.setting__hint')?.textContent).toBe('Deleted notes and folders move to the Trash either way.')
+  })
+
+  it('Ask before renaming is on by default, says what it shows, and Off writes the whole object with only it flipped (YAZ-2420 3C1)', () => {
+    const { el, onChange } = mount()
+    expect(row(el, 'confirmRename')?.querySelector('.setting__label')?.textContent).toBe('Ask before renaming')
+    expect(row(el, 'confirmRename')?.querySelector('.setting__hint')?.textContent).toBe('Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.')
+    expect(rowButtons(el, 'confirmRename').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    act(() => rowButtons(el, 'confirmRename')[1].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
   })
 
   it('Default location: a dropdown of the three Obsidian options, writing the whole object with only the location flipped; the folder input and the wide row appear only for the third', () => {

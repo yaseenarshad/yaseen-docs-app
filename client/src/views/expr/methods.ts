@@ -20,8 +20,9 @@ const needString = (fn: string, v: Value | undefined): string => {
 }
 const optNumber = (fn: string, v: Value | undefined): number | undefined => (v == null ? undefined : needNumber(fn, v))
 
+/** `name` is the record's title (YAZ-2420 🔒 D18); the file name, less its extension, is `basename`. */
 const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
-  name: r => r.name,
+  name: r => r.title,
   basename: r => r.basename,
   path: r => r.path,
   folder: r => r.folder,
@@ -167,7 +168,7 @@ const LINK: Table<LinkValue> = {
 const trimSlashes = (s: string) => s.replace(/^\/+|\/+$/g, '')
 
 const FILE: Table<FileValue> = {
-  asLink: (f, [d]) => new LinkValue(f.record.basename, d == null ? undefined : render(d)),
+  asLink: (f, [d]) => new LinkValue(f.record.id ?? f.record.title, d == null ? undefined : render(d)),
   hasProperty: (f, [n]) => Object.hasOwn(f.record.properties, needString('hasProperty', n)),
   hasTag: (f, tags) =>
     tags.some(t => {

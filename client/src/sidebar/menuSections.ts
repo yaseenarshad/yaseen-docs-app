@@ -1,6 +1,5 @@
 import type { FileClipState } from '@shared/types'
 import type { MenuTargets } from './Sidebar'
-import { copyNoteId } from '../lib/copyNoteId'
 
 /**
  * The sidebar context menu's items AS DATA (🔒 D8, YAZ-1674). Every gating rule that used to be a
@@ -82,7 +81,6 @@ export interface MenuHandlers {
    * `PageContextMenu` reports it — a copy that quietly did nothing is the worst kind of no-op.
    */
   onNotice: (message: string) => void
-  onCopyForAgent: (path: string) => void
   onNewNote: () => void
   /** "New dated note" (YAZ-2242): a note born with today's `MM_DD- ` seed. Never hidden, same as `onNewNote`. */
   onNewDatedNote: () => void
@@ -216,28 +214,6 @@ const copyPath: Leaf = (t, h) => {
       )
     },
   }
-}
-
-/**
- * "Copy ID" (YAZ-2293) — directly under Copy path: the note's permanent `id`, exactly, which is
- * what a `[[id]]` link names. A NOTE row that has one only — a note with no id, a PDF, a folder
- * and blank space have nothing to copy, and a 2+ selection offers none. No hint: there is no chord.
- */
-const copyId: Leaf = (t, h) => {
-  const id = t.noteId
-  if (id === null) return null
-  return {
-    id: 'copy-id',
-    label: 'Copy ID',
-    onSelect: () => copyNoteId(id, h.onNotice),
-  }
-}
-
-/** Right under Copy path (YAZ-1617 🔒 D2): a PAGE row only — a Markdown file, or a folder (YAZ-2290 D9) — the page's path, plus the handshake an agent needs. */
-const copyForAgent: Leaf = (t, h) => {
-  const path = t.agentPath
-  if (path === null) return null
-  return { id: 'copy-agent', label: 'Copy for Agent', onSelect: () => h.onCopyForAgent(path) }
 }
 
 // ---- (3) Create and (3b) More create: births BESIDE the right-clicked row — both target a DIRECTORY, never the row.
@@ -386,7 +362,7 @@ const removeShortcut: Leaf = (t, h) => {
 }
 
 const OPEN_GROUP: readonly Item[] = [open, openInNewTabs, focus]
-const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath, copyId, copyForAgent]
+const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]

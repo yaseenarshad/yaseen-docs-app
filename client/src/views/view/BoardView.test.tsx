@@ -100,6 +100,7 @@ const rec = (name: string, properties: Record<string, unknown>): IndexRecord => 
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties,
 })
 
@@ -273,6 +274,21 @@ describe('board columns', () => {
   })
 })
 
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a board card\'s title shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(BOARD_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-board__title')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
+  })
+
+  it('E: a card that shows no Name is still named by its note\'s title', () => {
+    const { el } = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    expect([...el.querySelectorAll('.view-board__card')].map((card) => card.getAttribute('aria-label'))).toContain('UP-001 - Abdul')
+  })
+})
+
 describe('an id link (YAZ-2293 D8)', () => {
   it('a column header and a card property both read as the title of the note the id names', () => {
     const ID = 'k3m9x2pq7abc'
@@ -374,7 +390,7 @@ describe('cards', () => {
     })
     const emptyCard = q<HTMLElement>(empty.el, '.view-board__card')
     expect(emptyCard.getAttribute('role')).toBeNull()
-    expect(emptyCard.getAttribute('aria-label')).toBe('The Levels of an Agency.md')
+    expect(emptyCard.getAttribute('aria-label')).toBe('The Levels of an Agency')
     modClick(emptyCard, { altKey: true })
     expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
     expect(openRight).toHaveBeenCalledTimes(4)
@@ -490,15 +506,13 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a card whose note has an id offers "Copy ID" directly under "Copy path" (YAZ-2293) and copies exactly that id', () => {
+  it('a card whose note has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31)', () => {
     const records = TEST_RECORDS.map((r) => (r.path === agenticPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
     const { el } = mount(BOARD_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
     const labels = menuItems(el).map((item) => item.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    click(itemNamed(el, 'Copy ID')!)
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(labels).toContain('Copy path')
+    expect(labels).not.toContain('Copy ID')
   })
 
   it('opens in the background, copies, and reveals the exact absolute card path, closing after every action', () => {
@@ -531,7 +545,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     click(itemNamed(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
 
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency.md" — it is no longer there`)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency" — it is no longer there`)
   })
 
   it('retargets to the latest card and dismisses on Escape or an outside press', () => {

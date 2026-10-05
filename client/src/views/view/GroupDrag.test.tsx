@@ -172,7 +172,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
       current = q(tr, '.view-group__value').textContent ?? ''
       out[current] = []
     } else if (!tr.classList.contains('view-table__spacer')) {
-      out[current]?.push(q(tr, '.view-table__link').textContent ?? '')
+      out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
     }
   }
   return out
@@ -180,7 +180,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
 
 /** Grouped table row by its name-cell text. */
 function rowOf(el: ParentNode, name: string): HTMLElement {
-  const btn = [...el.querySelectorAll<HTMLElement>('.view-table__link')].find((b) => b.textContent === name)
+  const btn = [...el.querySelectorAll<HTMLElement>('.view-table__name')].find((b) => b.textContent === name)
   const tr = btn?.closest<HTMLElement>('tr')
   if (!tr) throw new Error(`missing row ${name}`)
   return tr
@@ -334,6 +334,7 @@ const listRec = (name: string, status: unknown): IndexRecord => ({
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties: { status },
 })
 

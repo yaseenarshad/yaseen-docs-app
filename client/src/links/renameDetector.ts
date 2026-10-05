@@ -18,6 +18,7 @@
  *    rewriting (the E1b engine already handles bare-stays / pathed-rewrites).
  */
 import { fileKind } from '@shared/fileKind'
+import { titleOf } from '@shared/noteName'
 import { isFolderSettingsPath, type DiffFileStat, type IndexRecord } from '@shared/types'
 import { basename, stripExt } from '../lib/paths'
 
@@ -88,5 +89,5 @@ export function preRenameRecords(records: readonly IndexRecord[], root: string, 
   const oldName = basename(oldPath)
   const oldRel = oldPath.startsWith(`${root}/`) ? oldPath.slice(root.length + 1) : oldPath
   const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : ''
-  return records.map((r) => (r.path === newPath ? { ...r, path: oldPath, name: oldName, basename: stripExt(oldName), folder } : r))
+  return records.map((r) => (r.path === newPath ? { ...r, path: oldPath, name: oldName, basename: stripExt(oldName), title: titleOf(r.properties, stripExt(oldName)), folder } : r))
 }

@@ -173,6 +173,6 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   )
   if (failed.length === 0) return
   throw new Error(
-    `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ note, why }) => `${note.basename} (${why})`).join('; ')}`,
+    `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ note, why }) => `${note.title} (${why})`).join('; ')}`,
   )
 }

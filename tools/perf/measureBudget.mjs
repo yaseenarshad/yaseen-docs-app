@@ -146,7 +146,7 @@ function checkApp(app) {
   const verify = spawnSync('codesign', ['--verify', '--deep', '--strict', app])
   if (verify.status !== 0) fails.push(`codesign --verify --deep --strict failed: ${verify.stderr.toString().slice(0, 300)}`)
   const bin = statSync(join(app, 'Contents/Resources/bin/yaseendocs'), { throwIfNoEntry: false })
-  if (!bin || !(bin.mode & 0o111)) fails.push('Resources/bin/yaseendocs missing or not executable (the command Copy for Agent advertises)')
+  if (!bin || !(bin.mode & 0o111)) fails.push('Resources/bin/yaseendocs missing or not executable (the command line agents run)')
   const inAsar = new Set(asarFiles(join(app, 'Contents/Resources/app.asar')))
   for (const p of REQUIRED_OUT) if (!inAsar.has(`out/${p}`)) fails.push(`asar: missing out/${p}`)
   return fails

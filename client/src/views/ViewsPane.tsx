@@ -11,7 +11,7 @@ import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeView
 import { type Group, type Row, propertyKeys, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderSettings } from './folderSettings'
-import { type NewNoteSeed, deriveSeed, freeName } from './newNote'
+import { type NewNoteSeed, deriveSeed } from './newNote'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -39,8 +39,8 @@ export interface FolderHost {
   resolveLink: ResolveLink
   /**
    * Birth in the folder (YAZ-2290 D4): create a note from `seed` and resolve its path.
-   * The `Untitled` scheme is the DEFAULT name; the board's inline add (YAZ-943) already knows what
-   * the card is called, and that typed name rides the optional argument.
+   * `Untitled` is the DEFAULT title (YAZ-2420 🔒 D20); the board's inline add (YAZ-943) already knows
+   * what the card is called, and that typed title rides the optional argument.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
   /** Save one definition against the captured base; reject concurrent changes to that property. */
@@ -67,6 +67,8 @@ export interface FolderHost {
    * host knows where a note keeps them (D19: its block of `in`).
    */
   writeValues: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>
+  /** A row's title edited in a table's Name cell (YAZ-2420 🔒 D19): the one title edit, through App's rename door. */
+  retitle: (path: string, title: string) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -137,6 +139,12 @@ function seedGroup(seed: NewNoteSeed, group: Group, view: ViewDef, level: number
  * for unknown view types. Only the active tab and the search text are component state —
  * everything else is the file.
  */
+/** The first free name for a new view: `base`, `base 2`, `base 3`… (`taken` = the views' names). */
+export function freeName(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
+}
+
 export function ViewsPane({ parsed, onChange, root, folderPath, records, properties = null, onOpenFile, folder }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
@@ -184,7 +192,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
   // notes (D10), so a link to a folder reads, sorts and groups as that folder's name.
   const vaultRecords = folder.vaultRecords
   const vaultFolders = folder.vaultFolders
-  const resolve = useMemo(() => pageResolver(vaultRecords, root, folder.resolveLink), [vaultRecords, root, folder.resolveLink])
+  const resolve = useMemo(() => pageResolver(vaultRecords, vaultFolders, root, folder.resolveLink), [vaultRecords, vaultFolders, root, folder.resolveLink])
   /**
    * The folder's OUTLINE (YAZ-820) is a free-form DOCUMENT, not rows. `propertyKeys` reads
    * `view.order` and nothing else, so `view.outline`, a string, can not reach the value pass
@@ -442,6 +450,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           deleteColumn={folder.deleteColumn}
           valueCount={folder.valueCount}
           onWriteValue={writeValue}
+          onRetitle={folder.retitle}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -516,7 +525,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           {rows.map((row) => (
             <li key={row.record.path} className="view-row">
               <button type="button" className="view-row__link" onClick={() => onOpenFile(row.record.path)}>
-                {nameKey === undefined ? row.record.name : render(row.values[nameKey], resolve)}
+                {row.record.title}
               </button>
               {rest.length > 0 && <span className="view-row__values">{rest.map((k) => render(row.values[k], resolve)).join(' · ')}</span>}
             </li>

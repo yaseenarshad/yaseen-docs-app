@@ -164,11 +164,12 @@ describe('primary line', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('a right-click on a row opens the page menu: "Copy ID" directly under "Copy path" when its note has an id', () => {
+  it('a right-click on a row opens the page menu: "Copy path", and no "Copy ID" though its note has an id (YAZ-2420 D31)', () => {
     const { el } = mount(LIST_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
     act(() => void items(el)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+    expect(labels).toContain('Copy path')
+    expect(labels).not.toContain('Copy ID')
   })
 
   it('no order at all defaults the primary line to the file.name link', () => {
@@ -185,7 +186,7 @@ describe('primary line', () => {
     const primaries = [...el.querySelectorAll('.view-list__primary')].map((s) => s.textContent)
     expect(primaries[0]).toBe('idea')
     // file.name is second in order, so it renders as a plain inline value, not the primary link
-    expect(inlineOf(items(el)[0])).toBe('Agentic Agency.md') // the VALUE keeps its extension; only a TITLE is the basename (YAZ-1549)
+    expect(inlineOf(items(el)[0])).toBe('Agentic Agency') // the VALUE is the title too (YAZ-2420 D18)
   })
 
   it('empty values are skipped in the inline run — a bare note renders no inline span', () => {
@@ -193,6 +194,16 @@ describe('primary line', () => {
     const attribution = items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'Attribution')
     expect(attribution).toBeDefined()
     expect(inlineOf(attribution!)).toBeNull()
+  })
+})
+
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a list row\'s primary line shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(LIST_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-list__title')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
   })
 })
 

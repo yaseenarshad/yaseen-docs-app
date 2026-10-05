@@ -30,8 +30,9 @@ import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './view
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   api: {
-    createDir: vi.fn(async (path: string) => ({ path })),
+    createDir: vi.fn(),
     createFile: vi.fn(),
+    index: vi.fn(),
     readFile: vi.fn(),
   },
 }))
@@ -98,9 +99,10 @@ beforeEach(() => {
   // this jsdom lifetime so a full parallel suite cannot execute them after teardown.
   vi.useFakeTimers()
   vi.clearAllMocks()
-  createDir.mockImplementation(async (path: string) => ({ path }))
+  createDir.mockImplementation(async (req) => ({ path: req.path }))
   createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
   vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
+  vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: [], generatedAt: 0 })
 })
 
 afterEach(async () => {
@@ -228,69 +230,61 @@ describe('wikilink click: navigation-only view files (YAZ-1310)', () => {
 })
 
 describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
-  it('plain click creates <root>/<name>.md at the VAULT ROOT (locked default) and opens it in the current tab', async () => {
+  /** What the create at `call` sent. */
+  const born = (call = 0) => createFile.mock.calls[call][0] as { path: string; content: string; id: string }
+
+  it('B: a plain click on a name link that points at nothing creates the note titled by it — `<root>/<kebab-title>-<id>.md`, at the VAULT ROOT (locked default) — and opens that path in the current tab (YAZ-2420 D20)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     expect(mousedown(linkSpan(root, 'Missing'))).toBe(false) // default prevented
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Missing.md'))
-    expect(createFile).toHaveBeenCalledWith({ path: '/vault/Missing.md', content: '' })
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    expect(born().path).toMatch(/^\/vault\/missing-[0-9a-z]{12}\.md$/)
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${born().id}.md`, content: '---\ntitle: Missing\n---\n', id: born().id })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
     expect(nav.onNotice).not.toHaveBeenCalled()
   })
 
   it('⌘-click on an unresolved link creates it and opens it in a BACKGROUND tab (same gesture after create)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     mousedown(linkSpan(root, 'Missing'), { metaKey: true })
-    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledWith('/vault/Missing.md'))
+    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalled())
+    expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith(born().path)
     expect(nav.openCurrent).not.toHaveBeenCalled()
   })
 
   it('a ⌘-click that CREATES notices too, naming the note — the background tab is invisible (GRO-2197)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     mousedown(linkSpan(root, 'Missing'), { metaKey: true })
-    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledWith('/vault/Missing.md'))
+    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalled())
     expect(nav.onNotice).toHaveBeenCalledWith('Created "Missing" in a background tab')
   })
 
-  it("a ⌘-click LOSING the creation race stays silent — nothing was freshly created (and plain-click creates open visibly, so they never notice)", async () => {
-    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'exists'))
-    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
-    mousedown(linkSpan(root, 'Missing'), { metaKey: true })
-    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledWith('/vault/Missing.md'))
-    expect(nav.onNotice).not.toHaveBeenCalled()
-  })
-
-  it('a pathed target creates parents and the file root-relatively', async () => {
-    const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null)
-    mousedown(linkSpan(root, 'Sub/Page'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Sub/Page.md'))
-    expect(createDir).toHaveBeenCalledWith('/vault/Sub')
-    expect(createFile).toHaveBeenCalledWith({ path: '/vault/Sub/Page.md', content: '' })
+  it('C: a pathed target creates the folders it names and the note in them, root-relatively (YAZ-2420 D6)', async () => {
+    const { root, nav } = await mount('go [[Sub Folder/Page]] now\n', () => null)
+    mousedown(linkSpan(root, 'Sub Folder/Page'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    expect(createDir).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub-folder', title: 'Sub Folder' })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/sub-folder/page-${born().id}.md`, content: '---\ntitle: Page\n---\n', id: born().id })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
   })
 
   it("a bare target creates under nav.createFolder() — the Files & Links setting's folder, read at CLICK time (C2-, GRO-2240)", async () => {
     let base = 'Notes/Inbox'
-    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown, () => base)
+    const { root, nav } = await mount('pad [[Missing]] and [[Other]] tail\n', resolveKnown, () => base)
     mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Notes/Inbox/Missing.md'))
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/Notes/Inbox/missing-${born().id}.md`))
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/Notes' }, { path: '/vault/Notes/Inbox' }])
     // The getter is live: a settings change lands on the NEXT click without any remount.
     base = ''
-    mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Missing.md'))
+    mousedown(linkSpan(root, 'Other'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/other-${born(1).id}.md`))
   })
 
   it('a PATHED target stays root-relative whatever the base — an explicit path is an explicit aim (Obsidian)', async () => {
     const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null, () => 'Notes')
     mousedown(linkSpan(root, 'Sub/Page'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Sub/Page.md'))
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Sub'])
-  })
-
-  it('ALREADY_EXISTS (creation race) still opens the page — the race is benign', async () => {
-    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'exists'))
-    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
-    mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Missing.md'))
-    expect(nav.onNotice).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/sub/page-${born().id}.md`))
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/sub', title: 'Sub' }])
+    expect(api.index).not.toHaveBeenCalled() // the folders are the ones the editor's index source holds
   })
 
   it('a create failure surfaces as a passive notice — nothing opens, never a dialog', async () => {
@@ -302,21 +296,51 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(nav.openBackground).not.toHaveBeenCalled()
   })
 
-  it('an invalid name notices without touching the bridge', async () => {
-    const { root, nav } = await mount('pad [[.hidden]] tail\n', () => null)
-    mousedown(linkSpan(root, '.hidden'))
-    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledWith('Can\'t create ".hidden": Names starting with "." are hidden'))
-    expect(createFile).not.toHaveBeenCalled()
-    expect(nav.openCurrent).not.toHaveBeenCalled()
+  it('clicking a dead `[[Sub/Page]]` twice quickly makes ONE note; once the index holds it the link resolves to it, and a click opens it (YAZ-2478)', async () => {
+    const { root, nav, source } = await mount('go [[Sub/Page]] now\n', linkResolver([], '/vault', [], []))
+    mousedown(linkSpan(root, 'Sub/Page'))
+    mousedown(linkSpan(root, 'Sub/Page'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(createFile).toHaveBeenCalledTimes(1)
+    expect(born().path).toBe(`/vault/sub/page-${born().id}.md`)
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
+    // The index echo: the note, titled Page, and the folder it was put in, titled Sub.
+    const record = (path: string, title: string, folder: string): IndexRecord => ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: '', title, folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
+    source.update(linkResolver([record(born().path, 'Page', 'sub')], '/vault', ['/vault/sub'], [record('/vault/sub/.folder.md', 'Sub', 'sub')]))
+    expect(linkSpan(root, 'Sub/Page').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
+    mousedown(linkSpan(root, 'Sub/Page'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.openCurrent.mock.calls).toEqual([[born().path], [born().path]])
+    expect(createFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a repeat click after the note was made, before the index holds it, opens that note and makes no second one (YAZ-2478)', async () => {
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    mousedown(linkSpan(root, 'Missing'), { metaKey: true })
+    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith(born().path))
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
+    expect(createFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a dead link whose note could not be made can be clicked again', async () => {
+    createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk on fire'))
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalled())
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born(1).path))
   })
 
   it('after creation the index update flips the unresolved styling live (A-\'s restyle, no remount)', async () => {
     const { root, nav, source } = await mount('pad [[Missing]] tail\n', resolveKnown)
     expect(linkSpan(root, 'Missing').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
     mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Missing.md'))
-    // The watcher-driven index refetch delivers a resolver that now knows the new file.
-    source.update((target) => (target === 'Missing' ? '/vault/Missing.md' : resolveKnown(target)))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    // The watcher-driven index refetch delivers a resolver that now knows the new file, by its title.
+    source.update((target) => (target === 'Missing' ? born().path : resolveKnown(target)))
     expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(0)
     expect(linkSpan(root, 'Missing')).toBeDefined()
   })
@@ -364,7 +388,7 @@ describe('wikilink click: id links (YAZ-2293)', () => {
 describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
   const FOLDER_ID = 'f7n2w8rt4xyz'
   const settings: IndexRecord = {
-    path: '/vault/Projects/.folder.md', name: '.folder.md', basename: '.folder', folder: 'Projects', ext: 'md',
+    path: '/vault/Projects/.folder.md', name: '.folder.md', basename: '.folder', title: '.folder', folder: 'Projects', ext: 'md',
     size: 1, ctime: 1, mtime: 1, id: FOLDER_ID, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   }
   /** THE resolver the bridge feeds: no note at all, one folder, and its settings file's id. */
@@ -394,8 +418,10 @@ describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
   it('an unresolved link beside it still creates a NOTE', async () => {
     const { root, nav } = await mount('pad [[Projects]] and [[Missing]] tail\n', resolveFolder)
     mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Missing.md'))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Missing.md', content: '' })
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    const { id } = createFile.mock.calls[0][0] as { id: string }
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${id}.md`, content: '---\ntitle: Missing\n---\n', id })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(`/vault/missing-${id}.md`)
   })
 })
 

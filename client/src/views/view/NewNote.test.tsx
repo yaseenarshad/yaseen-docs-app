@@ -67,6 +67,7 @@ const created = (path: string, properties: Record<string, unknown>): IndexRecord
   path,
   name: path.split('/').pop()!,
   basename: path.split('/').pop()!.replace(/\.md$/, ''),
+  title: path.split('/').pop()!.replace(/\.md$/, ''),
   folder: path.slice('/vault/'.length, path.lastIndexOf('/')),
   ext: 'md',
   size: 0,
@@ -163,7 +164,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
       current = q(tr, '.view-group__value').textContent ?? ''
       out[current] = []
     } else if (!tr.classList.contains('view-table__spacer')) {
-      out[current]?.push(q(tr, '.view-table__link').textContent ?? '')
+      out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
     }
   }
   return out
@@ -184,7 +185,7 @@ describe('toolbar New', () => {
   })
 
   // The note is born in the folder being viewed, and the toolbar's New passes no name, so
-  // `createInFolder` keeps the `Untitled` scheme (`FolderView.test.tsx`).
+  // the host titles it `Untitled` (`FolderView.test.tsx`).
   it('a file.inFolder filter seeds nothing and never places the note', async () => {
     const { el } = mount(FOLDER_TABLE)
 
@@ -340,6 +341,7 @@ const listRec = (name: string, status: unknown): IndexRecord => ({
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties: { status },
 })
 

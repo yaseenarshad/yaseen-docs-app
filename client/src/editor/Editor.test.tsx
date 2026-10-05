@@ -123,14 +123,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
   await settle()
   await settle()
   return container
@@ -242,7 +242,7 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     const subscribe = vi.spyOn(source, 'subscribe')
     const split = vi.spyOn(frontmatter, 'splitFrontmatter')
     const rename = vi.fn()
-    const el = await mount('---\nstatus: idea\n---\nraw\r\n\ttext\r\n', 1, { path: '/vault/data.JSON', wikilinks: source, onRenameFile: rename })
+    const el = await mount('---\nstatus: idea\n---\nraw\r\n\ttext\r\n', 1, { path: '/vault/data.JSON', wikilinks: source, onRetitle: rename })
 
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/data.JSON')
     expect(createCrepeMock).not.toHaveBeenCalled()
@@ -505,6 +505,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       path,
       name,
       basename: name.replace(/\.(md|base)$/, ''),
+      title: name.replace(/\.(md|base)$/, ''),
       folder: '',
       ext: 'md',
       size: 1,
@@ -537,6 +538,17 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
   })
 
+  it('E: the page title shows the note\'s title once the index has it (YAZ-2420 D14)', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(BODY, 1, { wikilinks: source })
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('note')
+    feed(source, [{ ...record(PATH), title: 'UP-001 - Abdul' }])
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('UP-001 - Abdul')
+    // The outline-zoom breadcrumb's first crumb reads the same title; the file name is only its history key.
+    const zoom = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.zoom
+    expect([zoom?.title(), zoom?.fileName]).toEqual(['UP-001 - Abdul', 'note.md'])
+  })
+
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
     const source = createWikilinkResolveSource()
     const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: { ...DEFAULT_REVIEW_SETTINGS, enabled: true } })
@@ -567,11 +579,25 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<Editor root={vault} path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    act(() => root?.render(<Editor root={vault} path={path} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
     await settle()
     await settle()
     return container
   }
+
+  it('E: a folder\'s page is titled with the folder\'s title (YAZ-2420 D14)', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/upwork-2026`)], generatedAt: 1 }))
+    readFile.mockResolvedValue({ path: '/titled/upwork-2026/.folder.md', content: '---\ntitle: Upwork 2026\n---\n', mtime: 1, size: 27 })
+    const source = createWikilinkResolveSource()
+    act(() => source.update(() => null, [], [{ path: '/titled/upwork-2026/.folder.md', folder: 'upwork-2026', title: 'Upwork 2026', mtime: 1, properties: {} } as IndexRecord]))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Editor root="/titled" path="/titled/upwork-2026" watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    await settle()
+    await settle()
+    expect(container.querySelector('.page-title__text')?.textContent).toBe('Upwork 2026')
+  })
 
   it.each(['Projects', 'Notes.md', 'v1.2'])('a folder named %s renders the folder view — nothing is read as a file, no editor mounts', async (name) => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/${name}`, [file(`${r}/${name}/a.md`)])], generatedAt: 1 }))
@@ -874,8 +900,8 @@ describe('document magnification (YAZ-1410)', () => {
     const links = createWikilinkResolveSource()
     const render = (active: string, firstOpen = true) => {
       act(() => root!.render(<>
-        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>}
-        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>
+        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>}
+        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>
       </>))
     }
     render(PATH); await settle(); await settle()

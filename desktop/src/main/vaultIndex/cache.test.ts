@@ -29,6 +29,7 @@ const record = (p: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     path: p,
     name,
     basename: name.replace(/\.md$/, ''),
+    title: name.replace(/\.md$/, ''),
     folder: '',
     ext: 'md',
     size: 10,
@@ -220,6 +221,9 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'corrupt' })
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/vault', records: [{ ...record('/vault/a.md'), tags: 'oops' }] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'corrupt' })
+    // A record with no `title` (YAZ-2420 D14) is not a record: every screen reads it.
+    await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/vault', records: [{ ...record('/vault/a.md'), title: undefined }] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'corrupt' })
   })
 
   it('another version → version-mismatch', async () => {
@@ -274,11 +278,13 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 6,
+    cacheVersion: 7,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
-    recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'reviews', 'size', 'tags', 'text'],
+    recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'reviews', 'size', 'tags', 'text', 'title'],
     extraction: {
+      // The frontmatter `title` is lifted onto the record and stays a property too (YAZ-2420 🔒 D14).
+      title: 'Canonical',
       properties: {
         id: 'k3m9x2pq7abc',
         title: 'Canonical',
@@ -316,7 +322,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         cacheVersion: CACHE_VERSION,
         maxFileBytes: MAX_FILE_BYTES,
         recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored)])].sort(),
-        extraction: { properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds, reviews: record.reviews, text: record.text },
+        extraction: { title: record.title, properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds, reviews: record.reviews, text: record.text },
       }
       expect(actual, BUMP_MSG).toEqual(FINGERPRINT)
     } finally {

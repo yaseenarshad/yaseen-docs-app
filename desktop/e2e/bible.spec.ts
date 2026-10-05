@@ -38,6 +38,7 @@ import path from 'node:path'
 import {
   activeTab,
   appWindow,
+  builtNote,
   contents,
   copyVault,
   dirCount,
@@ -52,6 +53,7 @@ import {
   seededState,
   shoot,
   tabsOf,
+  titleOf,
   topLabels,
   viewTabs,
 } from './helpers'
@@ -85,9 +87,11 @@ const RENAMED = 'Deal Win Rate'
  */
 const ROLES = 'Roles'
 const ROLES_RENAMED = 'Buyer Roles'
+/** The directory that title gives the folder: its kebab-case (YAZ-2420 🔒 D6). */
+const ROLES_RENAMED_DIR = 'buyer-roles'
 /** The notes in it, alphabetically. */
 const ROLE_MEMBERS = ['CEO', 'Head of Sales', 'RevOps Lead']
-const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED]
+const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED_DIR]
 
 let userData: string
 let vault: string
@@ -105,11 +109,11 @@ const expandBacklinks = async (w: Page): Promise<void> => {
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 /**
- * What the name column shows. The clickable title cell is keyed to `file.name` (TableView's
- * `nameCol`), and since YAZ-1513 it reads the page TITLE — the basename, never `CAC.md`
- * (`file.name`'s VALUE keeps the extension for sort and filter; the eye never sees it).
+ * What the name column shows. The Name cell is keyed to `file.name` (TableView's `nameCol`), and
+ * it reads the page TITLE as plain text (YAZ-2420 🔒 D18, D26): a note's `title:`, or, for a note
+ * that has none, its file name without the extension — never `CAC.md`.
  */
-const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
+const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__name')
 
 /** The name-change confirm (⚡ YAZ-888): every rename below passes it, and its count is the rewrite's own. */
 async function confirmRename(w: Page, message: string): Promise<void> {
@@ -146,9 +150,10 @@ async function walk(dir: string, dirs: string[] = []): Promise<{ files: string[]
 /**
  * Every wiki link in every note AND every folder settings file — frontmatter relation values and
  * column targets as much as body prose and `![[…]]` embeds — whose target names nothing in the
- * vault: no file, by basename or by root-relative path, with or without extension, and no FOLDER
+ * vault: no file, by basename or by root-relative path, with or without extension, no FOLDER
  * either, by name or by path (a link resolves to a folder when no note has the name, YAZ-2290
- * D10). The durable result GRO-2203 asks for is that this is `[]` both before and after a rename.
+ * D10), and no page by its `title:` (YAZ-2420 🔒 D17 — a note's own, or a folder's in its settings
+ * file). The durable result GRO-2203 asks for is that this is `[]` both before and after a rename.
  */
 async function brokenLinks(root: string): Promise<string[]> {
   const { files, dirs } = await walk(root)
@@ -164,11 +169,16 @@ async function brokenLinks(root: string): Promise<string[]> {
     known.add(path.basename(d))
     known.add(path.relative(root, d))
   }
+  const pages = await Promise.all(files.filter((x) => x.endsWith('.md')).map(async (f) => ({ rel: path.relative(root, f), text: await readFile(f, 'utf8') })))
+  for (const page of pages) {
+    const title = titleOf(page.text)
+    if (title !== '') known.add(title)
+  }
   const broken: string[] = []
-  for (const f of files.filter((x) => x.endsWith('.md'))) {
-    for (const m of maskCode(await readFile(f, 'utf8')).matchAll(WIKILINK)) {
+  for (const page of pages) {
+    for (const m of maskCode(page.text).matchAll(WIKILINK)) {
       const t = targetOf(m[1])
-      if (!known.has(t)) broken.push(`${path.relative(root, f)} → [[${t}]]`)
+      if (!known.has(t)) broken.push(`${page.rel} → [[${t}]]`)
     }
   }
   return broken
@@ -311,11 +321,12 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
 
   // And it still lives where it lived: a note belongs to a folder by BEING in it, so renaming
   // the note is nothing the folder has to be told about — it is the same row, under its new
-  // name, in the path order that name now sorts to.
-  expect(await read(path.join('KPIs', `${RENAMED}.md`))).toContain('unit: percent')
+  // title, in the path order its built name (`deal-win-rate-<id>.md`, YAZ-2420 🔒 D3) now sorts
+  // to: after the capitalised names of the notes made outside the app.
+  expect(await read(path.join('KPIs', await builtNote(path.join(vault, 'KPIs'), 'deal-win-rate')))).toContain('unit: percent')
   await openFolder(win, path.join(vault, KPIS))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(['CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'])
+  await expect(rowNames(contents(win))).toHaveText(['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', RENAMED])
   await expect(dirCount(win, KPIS)).toHaveText('5')
 
   // The durable result: not one dangling wiki link anywhere in the vault.
@@ -347,16 +358,17 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follo
   await expect.poll(() => read(problems)).toContain(`target: "[[${ROLES_RENAMED}]]"`)
   expect(await read(problems)).toContain('target: "[[KPIs]]"')
   expect(await read(problems)).toContain('required: true')
-  // … the renamed folder's OWN self-target, written at its new path …
-  const renamedSettings = path.join(ROLES_RENAMED, '.folder.md')
+  // … the renamed folder's OWN self-target, written at its new path, beside the title it now holds …
+  const renamedSettings = path.join(ROLES_RENAMED_DIR, '.folder.md')
   await expect.poll(() => read(renamedSettings).catch(() => '')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
+  expect(titleOf(await read(renamedSettings))).toBe(ROLES_RENAMED)
   expect(await read(renamedSettings)).toContain('kind: link')
-  // … and the notes moved with their folder, their own bare links untouched.
-  expect(await read(path.join(ROLES_RENAMED, 'Head of Sales.md'))).toContain('reports_to: "[[CEO]]"')
+  // … and the notes moved with their folder, their names and their own bare links untouched.
+  expect(await read(path.join(ROLES_RENAMED_DIR, 'Head of Sales.md'))).toContain('reports_to: "[[CEO]]"')
 
   // And everything still browses: the folder opens under its new name, holding the same three
   // notes — on the first of the default views, since its settings list none.
-  await openFolder(win, path.join(vault, ROLES_RENAMED))
+  await openFolder(win, path.join(vault, ROLES_RENAMED_DIR))
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
   await expect(rowNames(contents(win))).toHaveText(ROLE_MEMBERS)
   await expect(dirCount(win, ROLES_RENAMED)).toHaveText('3')

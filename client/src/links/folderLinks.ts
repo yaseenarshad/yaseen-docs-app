@@ -14,10 +14,10 @@ import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, relTo } from '../lib/paths'
 import { latestTree } from '../lib/treeFeed'
 import { allDirs } from '../lib/treeState'
-import { resolverFor, targetKey } from '../views/engine'
+import { resolverFor, targetKey, typedFolders } from '../views/engine'
 import { FileValue, type Resolver } from '../views/expr'
-import { basenameCandidates, nameCandidate, type LinkCandidate } from './completion'
-import { folderLabel, folderRows, foldersById } from './shortcuts'
+import { nameCandidate, titleCandidates, type LinkCandidate } from './completion'
+import { folderLabel, folderRows, folderTitle, foldersByDir, foldersById } from './shortcuts'
 
 const dirsOf = new WeakMap<TreeResponse, readonly string[]>()
 
@@ -32,53 +32,67 @@ export function vaultDirs(root: string): readonly string[] {
 
 /**
  * Link target → the folder it names, as its directory path, or null: the id of the folder's
- * settings file (`folders`, YAZ-2293), its root-relative path, then its bare name — duplicates
- * resolve to the SHALLOWEST, equal depth to the first in `dirs` order, the rule notes use
- * (`makeResolver`). Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
+ * settings file (`folders`, YAZ-2293; none with `ids: false`, the rename engine's probe), its
+ * root-relative path, its title (`folders`, YAZ-2420 🔒 D17), then its bare name — duplicates of
+ * either resolve to the SHALLOWEST, equal depth to the first in order, the rule notes use
+ * (`makeResolver`) — or, pathed, a path of titles as a note's is (`typedFolders`, YAZ-2478).
+ * Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  */
-export function folderResolver(root: string, dirs: readonly string[], folders: readonly IndexRecord[] = []): ResolveLink {
+export function folderResolver(root: string, dirs: readonly string[], folders: readonly IndexRecord[] = [], opts: { ids?: boolean } = {}): ResolveLink {
   const byRel = new Map<string, string>()
+  const byTitle = new Map<string, { dir: string; depth: number }>()
   const byName = new Map<string, { dir: string; depth: number }>()
+  const shallowest = (map: Map<string, { dir: string; depth: number }>, key: string, dir: string, depth: number) => {
+    const prev = map.get(key)
+    if (prev === undefined || depth < prev.depth) map.set(key, { dir, depth })
+  }
   for (const dir of dirs) {
     const rel = relTo(root, dir).toLowerCase()
     if (!byRel.has(rel)) byRel.set(rel, dir)
-    const name = rel.slice(rel.lastIndexOf('/') + 1)
-    const depth = rel.split('/').length
-    const prev = byName.get(name)
-    if (prev === undefined || depth < prev.depth) byName.set(name, { dir, depth })
+    shallowest(byName, rel.slice(rel.lastIndexOf('/') + 1), dir, rel.split('/').length)
   }
-  const byId = foldersById(folders)
+  for (const settings of folders) {
+    const dir = byRel.get(settings.folder.toLowerCase())
+    if (dir !== undefined) shallowest(byTitle, settings.title.toLowerCase(), dir, settings.folder.split('/').length)
+  }
+  const byId = opts.ids === false ? new Map<string, IndexRecord>() : foldersById(folders)
+  const typed = typedFolders(folders)
+  const titledPath = (key: string): string | null => {
+    let dir = ''
+    for (const segment of key.split('/')) dir = typed(dir, segment)?.toLowerCase() ?? (dir === '' ? segment : `${dir}/${segment}`)
+    return byRel.get(dir) ?? null
+  }
   return (target) => {
     const key = targetKey(target).replace(/^\/+|\/+$/g, '')
-    return byRel.get(byId.get(key)?.folder.toLowerCase() ?? key) ?? (key.includes('/') ? null : byName.get(key)?.dir ?? null)
+    return byRel.get(byId.get(key)?.folder.toLowerCase() ?? key) ?? byTitle.get(key)?.dir ?? (key.includes('/') ? titledPath(key) : byName.get(key)?.dir ?? null)
   }
 }
 
 /**
  * THE path-level resolver every wikilink surface shares (`ResolveLink`): a note first — id,
- * path, name, alias (`resolverFor`) — and a folder only when none answers, so a note or alias
- * of the same name always wins.
+ * path, title, name, a path of titles (YAZ-2478), alias (`resolverFor`) — and a folder only when
+ * none answers, so a note or alias of the same name always wins.
  */
 export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = []): ResolveLink {
-  const note = resolverFor(records, root)
+  const note = resolverFor(records, root, { folders })
   const folder = folderResolver(root, dirs, folders)
   return (target) => note(target)?.record.path ?? folder(target)
 }
 
 /**
  * The `[[` picker's folder rows (`folderLabel`). A folder with an id (`folders`) is inserted by
- * it, under the shortest name that tells it from the other folders. One with no id is inserted by
- * name — by its root-relative path when `resolve` gives the name to something else — and has no
- * row when neither reaches it.
+ * it, under its title (YAZ-2420 🔒 D17) — its root-relative path when another folder takes the
+ * title. One with no id is inserted by that title or path, whichever `resolve` gives to it, and
+ * has no row when neither reaches it.
  */
 export function folderLinkCandidates(root: string, dirs: readonly string[], resolve: ResolveLink, folders: readonly IndexRecord[]): LinkCandidate[] {
-  const ids = new Map(folders.map((settings) => [dirname(settings.path), settings.id]))
-  const folder = folderResolver(root, dirs)
+  const settings = foldersByDir(folders)
+  const folder = folderResolver(root, dirs, folders)
   return dirs.flatMap((dir) => {
-    const held = ids.get(dir)
+    const held = settings.get(dir)
     // Of two folders still sharing an id, only the one it names is linked by it.
-    const id = held !== undefined && resolve(held) === dir ? held : undefined
-    const name = [basename(dir), relTo(root, dir)].find((spelling) => (id === undefined ? resolve : folder)(spelling) === dir)
+    const id = held?.id !== undefined && resolve(held.id) === dir ? held.id : undefined
+    const name = [folderTitle(folders, dir), relTo(root, dir)].find((spelling) => (id === undefined ? resolve : folder)(spelling) === dir)
     return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: folderLabel(name) }]
   })
 }
@@ -86,18 +100,19 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
 /**
  * The resolver a view reads its links through (`Resolver`), folders included (D10): the note,
  * else the folder the window's link resolver (`link`) gives the target, standing in as a file named
- * like the folder. So `[[<folder id>]]` reads as the folder's name wherever an id link reads as its
- * note's title (YAZ-2293 D8), and sorts and groups under that name.
+ * like the folder and titled as the folder is (`folders`, YAZ-2420 🔒 D14). So `[[<folder id>]]`
+ * reads as the folder's title wherever an id link reads as its note's title (YAZ-2293 D8), and
+ * sorts and groups under its name.
  */
-export function pageResolver(records: readonly IndexRecord[], root: string | undefined, link: ResolveLink | null): Resolver {
-  const note = resolverFor(records, root)
+export function pageResolver(records: readonly IndexRecord[], folders: readonly IndexRecord[], root: string | undefined, link: ResolveLink | null): Resolver {
+  const note = resolverFor(records, root, { folders })
   if (link === null) return note
   return (target) => {
     const hit = note(target)
     const dir = hit === null ? link(target) : null
     if (dir === null) return hit
     const name = basename(dir)
-    return new FileValue({ path: dir, name, basename: name, folder: dirname(relTo(root ?? '', dir)), ext: '', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
+    return new FileValue({ path: dir, name, basename: name, title: folderTitle(folders, dir), folder: dirname(relTo(root ?? '', dir)), ext: '', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
   }
 }
 
@@ -105,13 +120,13 @@ export function pageResolver(records: readonly IndexRecord[], root: string | und
  * Picker candidates for a belongs-to column (🔒 Q2, YAZ-815): the notes in the FOLDER `target`
  * names (YAZ-2290 D10) — by the window's link resolver (`resolve`), so a note of that name wins
  * and narrows nothing, and the folder is found by its id, path or name — falling back to ALL
- * basenames when the target is no folder or the folder holds none. Report-don't-block: the picker
+ * notes when the target is no folder or the folder holds none. Report-don't-block: the picker
  * narrows when it can and never goes empty. What a folder holds is what its page shows
  * (`folderRows`): the notes under it, and its shortcuts. Candidates rather than bare
- * strings since YAZ-2293: a page is offered by basename, written by id.
+ * strings since YAZ-2293: a page is offered by title, written by id.
  */
-export function belongsToBasenames(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink, root: string, target: string): LinkCandidate[] {
+export function belongsToTitles(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink, root: string, target: string): LinkCandidate[] {
   const hit = resolve(target)
   const matches = hit === null ? [] : folderRows(records, folders, relTo(root, hit))
-  return basenameCandidates(matches.length > 0 ? matches : records)
+  return titleCandidates(matches.length > 0 ? matches : records)
 }

@@ -162,7 +162,7 @@ function rightClick(el: EventTarget, clientX = 0, clientY = 0): MouseEvent {
 }
 
 const headers = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table th:not(.view-table__gutter)')].map((t) => t.textContent ?? '')
-const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__link')].map((b) => b.textContent ?? '')
+const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent ?? '')
 /** Data rows only (spacers excluded). */
 const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer)')]
 const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.querySelectorAll<HTMLTableCellElement>('td:not(.view-table__gutter)')]
@@ -205,6 +205,7 @@ function manyRecords(n = 600): IndexRecord[] {
       path: `/vault/${basename}.md`,
       name: `${basename}.md`,
       basename,
+      title: basename,
       folder: '',
       ext: 'md',
       size: 0,
@@ -237,6 +238,30 @@ describe('table structure', () => {
   it('header labels use displayName when set', () => {
     const { el } = mount(`${TYPED_BASE}properties:\n  priority:\n    displayName: Rank\n`)
     expect(headers(el)[1]).toBe('Rank')
+  })
+})
+
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a table\'s Name cell shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(TYPED_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-table__name')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
+  })
+
+  it('E: a link chip and a file chip show the title of the note they name', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = TEST_RECORDS.map((r, i) => ({ ...r, ...(i === 0 ? { id: ID, title: 'UP-001 - Abdul' } : {}), properties: { ...r.properties, related: `[[${ID}]]` } }))
+    const { el } = mount(`formulas:\n  me: file\nviews:\n  - type: table\n    name: T\n    order: [note.related, formula.me]\n`, { records, folder: testFolderHost({ vaultRecords: records }) })
+    const chips = [...el.querySelectorAll('.view-table__chip--link')].map((chip) => chip.textContent)
+    expect(chips.slice(0, 2)).toEqual(['UP-001 - Abdul', 'UP-001 - Abdul'])
+    expect(chips).toContain('Attribution')
+  })
+
+  it('E: the placeholder list of an unknown view type names each note by its title', () => {
+    const { el } = mount('views:\n  - type: bogus\n    name: L\n', { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    expect([...el.querySelectorAll('.view-row__link')].map((row) => row.textContent).slice(0, 2)).toEqual(['UP-001 - Abdul', 'The Levels of an Agency'])
   })
 })
 
@@ -322,27 +347,64 @@ describe('editable cell activation', () => {
   })
 })
 
-describe('file.name link', () => {
-  it('clicking the name cell link opens the note', () => {
+describe('the Name cell (YAZ-2420 D26, table F)', () => {
+  const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
+  const nameCell = (el: ParentNode) => q<HTMLTableCellElement>(el, '.view-table__name')
+  const typeTitle = (cell: HTMLElement, title: string, key = 'Enter') => {
+    const input = byLabel<HTMLInputElement>(cell, 'Edit title')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, title)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    press(input, key)
+  }
+
+  it('F: a click on a Name cell selects the cell, as with any other cell: it is plain text and no longer opens the note', () => {
     const { el, onOpenFile, onChange } = mount(TYPED_BASE)
-    click(q(el, '.view-table__link'))
-    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    expect(nameCell(el).textContent).toBe('Agentic Agency')
+    expect(nameCell(el).querySelector('button')).toBeNull()
+    click(nameCell(el))
+    expect(document.activeElement).toBe(nameCell(el))
+    expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('⌘-click opens a background tab, ⌥-click the right panel, ⇧-click nothing (YAZ-1557)', () => {
+  it('F: ⌘-click on a Name cell opens the note in a background tab, ⌥-click to the right; ⇧-click opens nothing', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
     const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openRight, openBackground }) })
-    const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
-    modClick(q(el, '.view-table__link'), { metaKey: true })
+    modClick(nameCell(el), { metaKey: true })
     expect(openBackground).toHaveBeenCalledExactlyOnceWith(agentic)
-    modClick(q(el, '.view-table__link'), { altKey: true })
+    modClick(nameCell(el), { altKey: true })
     expect(openRight).toHaveBeenCalledExactlyOnceWith(agentic)
-    modClick(q(el, '.view-table__link'), { shiftKey: true })
+    modClick(nameCell(el), { shiftKey: true })
+    modClick(nameCell(el), { shiftKey: true, metaKey: true })
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(openBackground).toHaveBeenCalledOnce()
     expect(openRight).toHaveBeenCalledOnce()
+  })
+
+  it('F: a double-click on a Name cell edits the title in place; committing runs the one title edit, and the cell takes the focus back', () => {
+    const retitle = vi.fn()
+    const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) })
+    doubleClick(nameCell(el))
+    expect(byLabel<HTMLInputElement>(nameCell(el), 'Edit title').value).toBe('Agentic Agency')
+    typeTitle(nameCell(el), '  Agentic: the "agency"/2026  ')
+    expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic: the "agency"/2026')
+    expect(nameCell(el).querySelector('input')).toBeNull()
+    expect(document.activeElement).toBe(nameCell(el))
+    expect(onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('Escape discards the edit, and an empty title or the title it has commits nothing', () => {
+    const retitle = vi.fn()
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) })
+    for (const [title, key] of [['Discarded', 'Escape'], ['   ', 'Enter'], ['Agentic Agency', 'Enter']]) {
+      doubleClick(nameCell(el))
+      typeTitle(nameCell(el), title, key)
+      expect(nameCell(el).textContent).toBe('Agentic Agency')
+    }
+    expect(retitle).not.toHaveBeenCalled()
   })
 })
 
@@ -369,15 +431,24 @@ describe('table-row context menu (YAZ-1053)', () => {
     const openBackground = vi.fn()
     const { el, onOpenFile, onChange } = mount(TYPED_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const cell = q<HTMLTableCellElement>(el, '[data-cell="0:0"]')
-    const event = rightClick(q(cell, '.view-table__link'), 120, 42)
+    const event = rightClick(cell, 120, 42)
 
     expect(event.defaultPrevented).toBe(true)
     expect(document.activeElement).toBe(cell)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('F: "Open", the first item, opens the exact row in the current tab (YAZ-2420 D26)', () => {
+    const { el, onOpenFile } = mount(TYPED_BASE)
+    rightClick(q(el, '[data-cell="0:1"]'))
+    click(itemNamed(el, 'Open')!)
+
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(expectedPath)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
   it('opens the exact row in the right panel without replacing the current page', () => {
@@ -409,15 +480,13 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a row whose note has an id offers "Copy ID" directly under "Copy path" (YAZ-2293) and copies exactly that id', () => {
+  it('a row whose note has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31, table F)', () => {
     const records = TEST_RECORDS.map((r) => (r.path === expectedPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
     const { el } = mount(TYPED_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     rightClick(q(el, '[data-cell="0:1"]'))
     const labels = menuItems(el).map((item) => item.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    click(itemNamed(el, 'Copy ID')!)
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(labels).toContain('Copy path')
+    expect(labels).not.toContain('Copy ID')
   })
 
   it('copies and reveals the row absolute path, closing after either command', () => {
@@ -441,7 +510,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     click(itemNamed(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
 
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency.md" — it is no longer there`)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency" — it is no longer there`)
   })
 
   it('retargets to the latest row and dismisses on Escape or an outside press', () => {
@@ -476,7 +545,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     const event = rightClick(checkbox)
 
     expect(event.defaultPrevented).toBe(true)
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
   })
 
   it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
@@ -505,7 +574,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   it('keeps the exact record target when one page is fanned out into repeated grouped rows', () => {
     const openRight = vi.fn()
     const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folder: testFolderHost({ openRight }) })
-    const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__link')].filter((link) => link.textContent === 'Agentic Agency')
+    const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__name')].filter((link) => link.textContent === 'Agentic Agency')
     expect(repeated).toHaveLength(2)
 
     rightClick(repeated[1])
@@ -885,6 +954,7 @@ describe('preview mode (YAZ-1244)', () => {
     rightClick(q(target, 'td[data-cell]'))
     expect(card()).toBeNull()
     expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual([
+      'Open',
       'Open in new tab',
       'Copy path',
       'Reveal in Finder',

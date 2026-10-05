@@ -20,8 +20,6 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   openTabPaths: null,
   clipPaths: null,
   newWindowPath: null,
-  agentPath: null,
-  noteId: null,
   renamePath: null,
   deletePath: null,
   revealPath: null,
@@ -54,7 +52,6 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onCopy: vi.fn(),
   onPaste: vi.fn(),
   onNotice: vi.fn(),
-  onCopyForAgent: vi.fn(),
   onNewNote: vi.fn(),
   onNewDatedNote: vi.fn(),
   onNewFolder: vi.fn(),
@@ -109,7 +106,6 @@ const FILE_ROW: Partial<MenuSectionTargets> = {
   copyPath: '/v/Note.md',
   clipPaths: ['/v/Note.md'],
   newWindowPath: '/v/Note.md',
-  agentPath: '/v/Note.md',
   renamePath: '/v/Note.md',
   deletePath: '/v/Note.md',
   revealPath: '/v/Note.md',
@@ -130,7 +126,7 @@ describe('the seven groups (🔒 D7, amended)', () => {
     // The Open group is EMPTY on one file row (no plural open, nothing to focus), so the clipboard
     // group leads; the OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
     expect(groupsOf(build(FILE_ROW))).toEqual([
-      ['Cut', 'Copy', 'Paste', 'Copy path', 'Copy for Agent'],
+      ['Cut', 'Copy', 'Paste', 'Copy path'],
       ['New note', 'New folder'],
       ['New dated note', 'New dated folder'],
       ['Rename'],
@@ -353,10 +349,9 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
 /**
  * The text clipboard: "Copy path" (GRO-2273, the root on blank space), "Copy N paths" (🔒 D5,
  * YAZ-1337 — the whole ordered selection, newline-joined), each confirming through the one notice
- * (YAZ-1341) and REPORTING a refused clipboard; "Copy for Agent" (YAZ-1617 🔒 D2) directly under —
- * with "Copy ID" (YAZ-2293) between the two on a note that has one.
+ * (YAZ-1341) and REPORTING a refused clipboard. They are the only copy items (YAZ-2420 🔒 D22, D31).
  */
-describe('Copy path / Copy N paths / Copy ID / Copy for Agent', () => {
+describe('Copy path / Copy N paths', () => {
   it('Copy path writes the exact path and confirms; absent without one', async () => {
     const writeText = installClipboard()
     const onNotice = vi.fn()
@@ -395,39 +390,8 @@ describe('Copy path / Copy N paths / Copy ID / Copy for Agent', () => {
     expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy paths: denied")
   })
 
-  it('Copy for Agent is absent when agentPath is null; present it sits directly after Copy path and hands the exact path', () => {
-    const onCopyForAgent = vi.fn()
-    expect(itemOf(build({ copyPath: '/v/folder' }), 'Copy for Agent')).toBeUndefined()
-    const sections = build({ copyPath: '/v/Note.md', agentPath: '/v/Note.md' }, { onCopyForAgent })
-    const labels = labelsOf(sections)
-    expect(labels.indexOf('Copy for Agent')).toBe(labels.indexOf('Copy path') + 1)
-    select(sections, 'Copy for Agent')
-    expect(onCopyForAgent).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
-  })
-
-  it('Copy ID writes exactly the id and confirms; absent when the row has none', async () => {
-    const writeText = installClipboard()
-    const onNotice = vi.fn()
-    expect(itemOf(build({ copyPath: '/v/Note.md', noteId: null }), 'Copy ID')).toBeUndefined()
-    select(build({ copyPath: '/v/Note.md', noteId: 'k3m9x2pq7abc' }, { onNotice }), 'Copy ID')
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    await Promise.resolve()
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
-  })
-
-  it('Copy ID reports a clipboard the OS refused', async () => {
-    installClipboard(new Error('denied'))
-    const onNotice = vi.fn()
-    select(build({ noteId: 'k3m9x2pq7abc' }, { onNotice }), 'Copy ID')
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy ID: denied")
-  })
-
-  it('Copy ID sits directly under Copy path and above Copy for Agent, with no shortcut hint', () => {
-    const sections = build({ ...FILE_ROW, noteId: 'k3m9x2pq7abc' })
-    expect(sections[1].map((i) => i.label)).toEqual(['Cut', 'Copy', 'Paste', 'Copy path', 'Copy ID', 'Copy for Agent'])
-    expect(itemOf(sections, 'Copy ID')?.hint).toBeUndefined()
+  it('"Copy path" is the one item of a row that copies text: beside the file clipboard\'s Copy, nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', () => {
+    expect(labelsOf(build(FILE_ROW)).filter((label) => label.startsWith('Copy'))).toEqual(['Copy', 'Copy path'])
   })
 })
 
@@ -570,7 +534,7 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
 
   it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items', () => {
     expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
-      ['Copy path', 'Copy for Agent'],
+      ['Copy path'],
       ['New note', 'New folder'],
       ['New dated note', 'New dated folder'],
       ['Open in'],

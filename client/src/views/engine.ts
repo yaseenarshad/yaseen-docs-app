@@ -1,5 +1,6 @@
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { NOTE_ID_KEY } from '@shared/noteId'
+import { TITLE_KEY } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
@@ -123,13 +124,41 @@ export interface ResolverOptions {
    * engine's probe too: an id link names the note itself, not its place, so no rename rewrites it.
    */
   ids?: boolean
+  /**
+   * The snapshot's folder settings records (YAZ-2478). Given, a pathed target no file path answers
+   * is read as a path of TITLES: `Sub/Page` is the note titled Page in the folder `Sub` names
+   * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the note's id.
+   */
+  folders?: readonly IndexRecord[]
+}
+
+/**
+ * The folder a typed segment names inside `parent` (YAZ-2478): the one there with that title, else
+ * the one in that directory, else undefined. Folders are as the index names them (root-relative,
+ * '' the root, which no segment names) and come off their settings records; case-insensitive.
+ */
+export function typedFolders(folders: readonly IndexRecord[]): (parent: string, segment: string) => string | undefined {
+  const byTitle = new Map<string, string>()
+  const byName = new Map<string, string>()
+  for (const { folder, title } of folders) {
+    if (folder === '') continue
+    const typed = `${folder.slice(0, folder.lastIndexOf('/') + 1)}${title}`.toLowerCase()
+    if (!byTitle.has(typed)) byTitle.set(typed, folder)
+    byName.set(folder.toLowerCase(), folder)
+  }
+  return (parent, segment) => {
+    const typed = `${parent === '' ? '' : `${parent}/`}${segment}`.toLowerCase()
+    return byTitle.get(typed) ?? byName.get(typed)
+  }
 }
 
 /**
  * Link target → note: the note's own id (YAZ-2293 — first, so a note merely NAMED like an id
  * never captures it), absolute path, root-relative path (with or without `.md` / leading slash),
- * bare basename — duplicates resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
- * GRO-2190), equal depth to the first in the given (path-sorted) order — and finally a
+ * TITLE (YAZ-2420 🔒 D17 — a note with no `title:` is titled by its file name), bare basename —
+ * duplicates of either resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
+ * GRO-2190), equal depth to the first in the given (path-sorted) order — a pathed target as a
+ * path of TITLES (YAZ-2478, `ResolverOptions.folders`), and finally a
  * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
  * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  */
@@ -137,8 +166,12 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
   const byId = new Map<string, FileValue>()
   const byPath = new Map<string, FileValue>()
   const byRel = new Map<string, FileValue>()
+  const byTitle = new Map<string, { file: FileValue; depth: number }>()
   const byBase = new Map<string, { file: FileValue; depth: number }>()
   const byAlias = new Map<string, { file: FileValue; depth: number }>()
+  /** `<folder>/<title>`, the folder as the index names it, to the first note of that title there; empty with no `folders`. */
+  const byFolderTitle = new Map<string, FileValue>()
+  const typedFolder = typedFolders(opts.folders ?? [])
   const shallowest = (map: Map<string, { file: FileValue; depth: number }>, key: string, file: FileValue, depth: number) => {
     const prev = map.get(key)
     if (prev === undefined || depth < prev.depth) map.set(key, { file, depth })
@@ -150,10 +183,23 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
     const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
     if (!byRel.has(rel)) byRel.set(rel, f)
     const depth = r.folder === '' ? 0 : r.folder.split('/').length
+    shallowest(byTitle, r.title.toLowerCase(), f, depth)
     shallowest(byBase, r.basename.toLowerCase(), f, depth)
+    if (opts.folders !== undefined) {
+      const titled = `${r.folder}/${r.title}`.toLowerCase()
+      if (!byFolderTitle.has(titled)) byFolderTitle.set(titled, f)
+    }
     if (opts.aliases !== false) for (const alias of r.aliases) shallowest(byAlias, alias.toLowerCase(), f, depth)
   }
   const rootKey = root ? `${root.replace(/\/+$/, '').toLowerCase()}/` : null
+  /** A path of titles: its last segment a note's title, the ones before it its folders, from the root down. */
+  const titledPath = (rel: string): FileValue | null => {
+    const segments = rel.split('/')
+    const title = segments.pop()
+    let dir = ''
+    for (const segment of segments) dir = typedFolder(dir, segment)?.toLowerCase() ?? (dir === '' ? segment : `${dir}/${segment}`)
+    return byFolderTitle.get(`${dir}/${title}`) ?? null
+  }
   const cache = new Map<string, FileValue | null>()
   return target => {
     const hit = cache.get(target)
@@ -164,7 +210,7 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
       found = byId.get(key) ?? byPath.get(key) ?? null
       if (!found) {
         const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
-        found = byRel.get(rel) ?? (rel.includes('/') ? null : byBase.get(rel)?.file ?? null)
+        found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)
       }
       // Aliases last: a page named `CAC` always wins the target `CAC` over one merely aliased so.
       if (!found) found = byAlias.get(key)?.file ?? null
@@ -183,18 +229,23 @@ function fileValuesFor(records: readonly IndexRecord[]): FileValue[] {
   return files
 }
 
-const resolverCache = new WeakMap<readonly IndexRecord[], Map<string, Resolver>>()
+const NO_FOLDERS: readonly IndexRecord[] = []
+
+const resolverCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], Map<string, Resolver>>>()
 
 /**
- * Memoized `makeResolver` per records array identity (and per root, per alias mode): `runView`
+ * Memoized `makeResolver` per records array identity (and per `folders`, root, alias mode): `runView`
  * and the editor's wikilink decorations (GRO-2190) both resolve on every run/render, so one
  * index snapshot must not rebuild the lookup maps each time. A refetched index is a NEW array
  * and gets a fresh resolver; the WeakMap lets dropped snapshots be collected. The per-instance
  * target cache inside `makeResolver` is unchanged.
  */
 export function resolverFor(records: readonly IndexRecord[], root?: string, opts: ResolverOptions = {}): Resolver {
-  let byRoot = resolverCache.get(records)
-  if (byRoot === undefined) resolverCache.set(records, (byRoot = new Map()))
+  const folders = opts.folders ?? NO_FOLDERS
+  let byFolders = resolverCache.get(records)
+  if (byFolders === undefined) resolverCache.set(records, (byFolders = new WeakMap()))
+  let byRoot = byFolders.get(folders)
+  if (byRoot === undefined) byFolders.set(folders, (byRoot = new Map()))
   const key = `${opts.aliases === false ? 'names:' : ''}${opts.ids === false ? 'noids:' : ''}${root ?? ''}`
   let resolver = byRoot.get(key)
   if (resolver === undefined) byRoot.set(key, (resolver = makeResolver(fileValuesFor(records), root, opts)))
@@ -293,7 +344,7 @@ const rank = (v: Value): number => {
 /**
  * Type-aware comparison: numbers numeric, dates/durations by ms, strings natural and
  * case-insensitive, booleans false < true, links by what they read as (`linkText` — through
- * `resolve`, an id link by its note's title, YAZ-2293 D8), files by basename; mixed types by
+ * `resolve`, an id link by its note's title, YAZ-2293 D8), files by title; mixed types by
  * rank. Missing (null / undefined / error) always sorts last whatever the direction.
  */
 function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
@@ -312,7 +363,7 @@ function compareValues(a: Value | undefined, b: Value | undefined, direction: 'A
   else if (typeof x === 'string') c = collator.compare(x, y as string)
   else if (typeof x === 'boolean') c = Number(x) - Number(y)
   else if (x instanceof LinkValue) c = collator.compare(linkText(x, resolve), linkText(y as LinkValue, resolve))
-  else if (x instanceof FileValue) c = collator.compare(x.record.basename, (y as FileValue).record.basename)
+  else if (x instanceof FileValue) c = collator.compare(x.record.title, (y as FileValue).record.title)
   return sign * c
 }
 
@@ -329,12 +380,13 @@ const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof 
  * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
  * a column before any note carries it, so a new folder shows its `status` at once. Two keys
  * the app writes and nobody reads as a value are never default columns: the note's `id`
- * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2).
+ * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2). Nor is its `title`, which `file.name`
+ * already is (YAZ-2420 🔒 D18).
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]
   const keys = new Set<string>(declared.map((k) => `note.${k}`))
-  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== NOTE_ID_KEY && k !== ALSO_IN_KEY) keys.add(`note.${k}`)
+  for (const r of records) for (const k of Object.keys(r.properties)) if (k !== NOTE_ID_KEY && k !== ALSO_IN_KEY && k !== TITLE_KEY) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 
@@ -354,7 +406,7 @@ export function defaultLabel(key: string): string {
 /** The `file.*` fields' labels (YAZ-1549) — the ones sentence case would get wrong or leave terse. */
 const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.name': 'Name',
-  'file.basename': 'Base name',
+  'file.basename': 'File name',
   'file.path': 'Path',
   'file.folder': 'Folder',
   'file.ext': 'Extension',

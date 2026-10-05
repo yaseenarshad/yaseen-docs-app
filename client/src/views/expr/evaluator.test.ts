@@ -7,6 +7,7 @@ const record: FileRecordLike = {
   path: 'Required Reading/Textbook Notes.md',
   name: 'Textbook Notes.md',
   basename: 'Textbook Notes',
+  title: 'Textbook Notes',
   folder: 'Required Reading',
   ext: 'md',
   size: 1234,
@@ -57,8 +58,23 @@ describe('literals and scope', () => {
     expect(ev('missing.lower()')).toBe(null)
   })
 
+  it('F: `file.name` is the title; `file.basename` stays the file name without its extension (YAZ-2420 D18)', () => {
+    const titled = scope({}, { file: new FileValue({ ...record, name: 'up-001-abdul-k3m9x2pq7abc.md', basename: 'up-001-abdul-k3m9x2pq7abc', title: 'UP-001 - Abdul' }) })
+    expect(ev('file.name', titled)).toBe('UP-001 - Abdul')
+    expect(ev('file.basename', titled)).toBe('up-001-abdul-k3m9x2pq7abc')
+  })
+
+  it('E: a file value links by its id and reads as its title: `file.asLink()`, `link(file)` and its text (YAZ-2420 D14)', () => {
+    const titled = scope({}, { file: new FileValue({ ...record, id: 'k3m9x2pq7abc', name: 'up-001-abdul-k3m9x2pq7abc.md', basename: 'up-001-abdul-k3m9x2pq7abc', title: 'UP-001 - Abdul' }) })
+    expect(ev('file.asLink()', titled)).toEqual(new LinkValue('k3m9x2pq7abc'))
+    expect(ev('link(file, "Him")', titled)).toEqual(new LinkValue('k3m9x2pq7abc', 'Him'))
+    expect(ev('file.toString()', titled)).toBe('[[UP-001 - Abdul]]')
+    // One with no id yet links by its title.
+    expect(ev('file.asLink()', scope({}, { file: new FileValue({ ...record, basename: 'plan-file', title: 'Plan' }) }))).toEqual(new LinkValue('Plan'))
+  })
+
   it('file fields', () => {
-    expect(ev('file.name')).toBe('Textbook Notes.md')
+    expect(ev('file.name')).toBe('Textbook Notes')
     expect(ev('file.basename')).toBe('Textbook Notes')
     expect(ev('file.path')).toBe(record.path)
     expect(ev('file.folder')).toBe('Required Reading')
@@ -77,7 +93,7 @@ describe('literals and scope', () => {
   it('file without a scope file is null; this mirrors file', () => {
     expect(ev('file', scope({}, { file: null }))).toBe(null)
     expect(ev('file.name', scope({}, { file: null }))).toBe(null)
-    expect(ev('this.name', scope({}, { this: new FileValue({ ...record, name: 'Me.md' }) }))).toBe('Me.md')
+    expect(ev('this.name', scope({}, { this: new FileValue({ ...record, title: 'Me' }) }))).toBe('Me')
     expect(ev('this')).toBe(null)
   })
 
@@ -581,7 +597,7 @@ describe('file resolution (GRO-2132)', () => {
   const mk = (path: string, links: string[] = []): FileRecordLike => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
-    return { ...record, path: `/v/${path}`, name, basename: name.replace(/\.md$/, ''), folder, links, tags: [], embeds: [] }
+    return { ...record, path: `/v/${path}`, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder, links, tags: [], embeds: [] }
   }
   const notes = [mk('A/Foo.md', ['Foo', 'B/Foo']), mk('B/Foo.md'), mk('Bar.md', ['A/Foo'])].map(r => new FileValue(r))
   /** Minimal resolver: absolute path, root-relative (± .md), else first basename match. */
@@ -597,7 +613,7 @@ describe('file resolution (GRO-2132)', () => {
   const rs = (file: FileValue, extra: Partial<Scope> = {}): Scope => scope({}, { file, resolve, ...extra })
 
   it('file(path) and link.asFile() resolve through the scope resolver', () => {
-    expect(ev('file("A/Foo").name', rs(notes[2]))).toBe('Foo.md')
+    expect(ev('file("A/Foo").name', rs(notes[2]))).toBe('Foo')
     expect(ev('file("A/Foo.md").path', rs(notes[2]))).toBe('/v/A/Foo.md')
     expect(ev('file("/v/B/Foo.md").folder', rs(notes[2]))).toBe('B')
     expect(ev('file("Foo").path', rs(notes[2]))).toBe('/v/A/Foo.md')

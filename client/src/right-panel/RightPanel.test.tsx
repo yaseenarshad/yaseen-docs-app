@@ -19,6 +19,7 @@ let container: HTMLElement | null = null
 
 const base = (): RightPanelProps => ({
   root: '/v',
+  titles: new Map(),
   items: ['/v/Alpha.md', '/v/Beta.md'],
   expanded: '/v/Alpha.md',
   width: 440,
@@ -63,6 +64,12 @@ describe('RightPanel', () => {
     expect(el.querySelector<HTMLButtonElement>('[aria-label="Forward in right panel"]')?.disabled).toBe(true)
     expect(el.querySelectorAll('[data-viewer]')).toHaveLength(1)
     expect(el.querySelector('[role="separator"]')?.getAttribute('aria-valuenow')).toBe('440')
+  })
+
+  it('E: a page is headed with its title; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
+    const el = mount({ ...base(), items: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/Beta.md'], expanded: null, titles: new Map([['/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul']]) })
+    expect([...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)).toEqual(['UP-001 - Abdul', 'Beta'])
+    expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {

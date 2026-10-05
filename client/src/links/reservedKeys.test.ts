@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
+import { TITLE_KEY } from '@shared/noteName'
 import { REVIEW_KEY, REVIEWS_KEY } from '@shared/reviews'
 import { RESERVED_KEYS } from './reservedKeys'
 
@@ -17,5 +18,12 @@ describe('reserved keys: review (YAZ-2322)', () => {
 
   it('the on/off flag is an ordinary property, the user\'s to edit', () => {
     expect(RESERVED_KEYS.has(REVIEW_KEY)).toBe(false)
+  })
+})
+
+describe('reserved keys: the title (YAZ-2420 D14)', () => {
+  it('`title` is Reserved: edited through the page title, never added as a property or deleted as a column', () => {
+    expect(TITLE_KEY).toBe('title')
+    expect(RESERVED_KEYS.has(TITLE_KEY)).toBe(true)
   })
 })

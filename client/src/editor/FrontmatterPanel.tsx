@@ -8,14 +8,14 @@ import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderValues, setFolderValue } from '@shared/folderValues'
-import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { TITLE_KEY } from '@shared/noteName'
 import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
-import { basenameCandidates } from '../links/completion'
+import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
-import { absFrom, basename, dirname, relTo } from '../lib/paths'
+import { absFrom, dirname, relTo } from '../lib/paths'
 import { RESERVED_KEYS } from '../links/reservedKeys'
-import { dropStaleFolderValues, folderId, folderRecord, foldersById, foldersShowing } from '../links/shortcuts'
+import { dropStaleFolderValues, folderId, folderRecord, folderTitle, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY, folderSettings, hasFolderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
@@ -88,8 +88,8 @@ const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, 
 function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderSettings | null = null): Row[] {
   const inFolder = folder !== null
   const held = Object.entries(properties).map(([key, raw]): Row => {
-    // The app's keys are the NOTE's; an `id` that is no note id is the user's own value, not the app's.
-    if (!inFolder && RESERVED_KEYS.has(key) && (key !== NOTE_ID_KEY || isNoteId(raw))) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
+    // The app's keys are the NOTE's; an `id` that is no note id is the app's too, which writes its own over it (YAZ-2420 🔒 D30).
+    if (!inFolder && RESERVED_KEYS.has(key)) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
     if (isOpaque(raw)) return { key, folder: inFolder, raw, editor: null, chip: 'yaml' }
     // Existing human-readable keys can have a folder-local declaration.
     return { key, folder: inFolder, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
@@ -159,9 +159,9 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   // own writes (which run ahead of it) do not read as an external change and bounce back.
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content, draft: snap.draft })
 
-  const basenames = useMemo(() => basenameCandidates(wikilinks?.records ?? NO_RECORDS), [wikilinks?.records])
+  const titles = useMemo(() => titleCandidates(wikilinks?.records ?? NO_RECORDS), [wikilinks?.records])
   /** What a value's id link reads its title through (YAZ-2293 D8): the note's, or the folder's (D10). */
-  const resolve = useMemo(() => pageResolver(wikilinks?.records ?? NO_RECORDS, root ?? undefined, wikilinks?.resolve ?? null), [wikilinks?.records, root, wikilinks?.resolve])
+  const resolve = useMemo(() => pageResolver(wikilinks?.records ?? NO_RECORDS, wikilinks?.folders ?? NO_RECORDS, root ?? undefined, wikilinks?.resolve ?? null), [wikilinks?.records, wikilinks?.folders, root, wikilinks?.resolve])
 
   const disk = interiorOf(snap.content)
   const text = snap.draft ?? disk
@@ -230,15 +230,17 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(chosenRecord)), [chosen, chosenRecord])
   /** The chosen folder's id names its block; none until its `.folder.md` holds one — then its values read as empty. */
   const chosenId = chosenRecord?.id
-  /** The note's values for the chosen folder, and its own fields: everything at the top level but `in`. */
+  /**
+   * The note's values for the chosen folder, and its own fields: everything at the top level but
+   * `in` — and `title`, a note's or a folder's, which the page title above shows (YAZ-2420 🔒 D27).
+   */
   const block = useMemo(() => folderValues(parsed, chosenId), [parsed, chosenId])
-  const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== FOLDER_VALUES_KEY)), [parsed])
-  /** `also_in` as the eye reads it: each folder id as that folder's name; an entry no folder has stays as written. */
+  const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== FOLDER_VALUES_KEY && key !== TITLE_KEY)), [parsed])
+  /** A folder as the panel names it: its title (YAZ-2420 🔒 D14). */
+  const folderName = (folder: string): string => folderTitle(folders, folder)
+  /** `also_in` as the eye reads it: each folder id as that folder's title; an entry no folder has stays as written. */
   const folderNames = (raw: unknown): unknown => {
-    const name = (entry: unknown): unknown => {
-      const folder = typeof entry === 'string' ? byId.get(entry) : undefined
-      return folder === undefined ? entry : basename(dirname(folder.path))
-    }
+    const name = (entry: unknown): unknown => (typeof entry === 'string' ? byId.get(entry)?.title : undefined) ?? entry
     return Array.isArray(raw) ? raw.map(name) : name(raw)
   }
   const hidden = own && Object.prototype.hasOwnProperty.call(parsed, FOLDER_SETTINGS_KEY)
@@ -326,7 +328,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
               value={fromYaml(row.raw)}
               editor={row.editor}
               options={columnTyping(row.key, NO_RECORDS, decls, definition)?.options}
-              basenames={basenames}
+              titles={titles}
               resolve={resolve}
               onCommit={(next) => commit(row.key, next, row.folder)}
             />
@@ -349,7 +351,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
-          <p className="frontmatter-property-menu__scope">In {basename(chosen)}</p>
+          <p className="frontmatter-property-menu__scope">In {folderName(chosen)}</p>
           <fieldset disabled={saving} className="property-settings-fields">
           <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(menuValue) ? menuValue.map(String) : menuValue == null ? [] : [String(menuValue)]} />
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
@@ -394,10 +396,10 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
                   {shown.filter((row) => !row.folder).map(rowItem)}
                   {chosen !== undefined && (
                     <li className="frontmatter-property-context">
-                      {dirs.length === 1 ? `Properties from ${basename(chosen)}` : (
+                      {dirs.length === 1 ? `Properties from ${folderName(chosen)}` : (
                         <label>Properties from <select className="view-select" value={chosen} onChange={(e) => { setPicked(e.target.value); setPropertyMenu(null) }}>
                           {/* A name two choices share reads as each one's path from the root. */}
-                          {dirs.map((d) => <option key={d} value={d}>{vault !== undefined && dirs.some((o) => o !== d && basename(o) === basename(d)) ? relTo(vault, d) : basename(d)}</option>)}
+                          {dirs.map((d) => <option key={d} value={d}>{vault !== undefined && dirs.some((o) => o !== d && folderName(o) === folderName(d)) ? relTo(vault, d) : folderName(d)}</option>)}
                         </select></label>
                       )}
                     </li>

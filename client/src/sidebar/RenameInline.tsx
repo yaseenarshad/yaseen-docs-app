@@ -2,8 +2,10 @@ import { useRef, useState } from 'react'
 import { validateEntryName } from './createEntry'
 
 interface RenameInlineProps {
-  /** The current name minus its extension — the prefill (the extension re-appends on commit). */
+  /** The prefill: a note's or a folder's title, any other file's full name. */
   initial: string
+  /** The box edits a TITLE (YAZ-2420 🔒 D16): free text, where a file's name is held to the name rules. */
+  title: boolean
   /** Left padding so the input lines up with the file row it replaces. */
   indent: number
   /** Called with the validated, non-empty name; rejects with a message to keep editing. */
@@ -14,11 +16,11 @@ interface RenameInlineProps {
 /**
  * Inline rename input replacing a file row's label (Links E1, GRO-2194). ONE door (YAZ-1553):
  * LEAVING the field commits — click-away, Enter, Cmd-Tab all reach `onBlur` — and Escape is the
- * only discard. An empty name cancels (nothing to commit); a `validateEntryName` error keeps the
- * input open so the typing is not lost. Bridge failures never land here: the submit handler
- * routes them to the passive notice.
+ * only discard. An empty name, or the one the box opened with, cancels (nothing to commit); a
+ * `validateEntryName` error keeps the input open so the typing is not lost. Bridge failures
+ * never land here: the submit handler routes them to the passive notice.
  */
-export function RenameInline({ initial, indent, onSubmit, onCancel }: RenameInlineProps) {
+export function RenameInline({ initial, title, indent, onSubmit, onCancel }: RenameInlineProps) {
   const [error, setError] = useState<string | null>(null)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
@@ -34,8 +36,8 @@ export function RenameInline({ initial, indent, onSubmit, onCancel }: RenameInli
   const leave = async (value: string) => {
     if (settled.current) return
     const name = value.trim()
-    if (name === '') return discard()
-    const invalid = validateEntryName(name)
+    if (name === '' || name === initial) return discard()
+    const invalid = title ? null : validateEntryName(name)
     if (invalid !== null) {
       setError(invalid)
       return

@@ -14,6 +14,8 @@ export const rec = (path: string, properties: Record<string, unknown> = {}, mtim
     path,
     name,
     basename: name.replace(/\.md$/, ''),
+    // A folder's settings file is titled with the folder's own name, as the scan titles it.
+    title: name === '.folder.md' ? path.split('/').at(-2)! : name.replace(/\.md$/, ''),
     folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
     ext: 'md',
     size: 0,
@@ -35,7 +37,7 @@ export function renderFolderView(props: Pick<FolderViewProps, 'path' | 'source' 
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<FolderView root="/vault" commentsOrder="oldest" onChangeCommentsOrder={() => undefined} {...props} />))
+  act(() => root?.render(<FolderView root="/vault" onRetitle={() => undefined} commentsOrder="oldest" onChangeCommentsOrder={() => undefined} {...props} />))
   return container
 }
 

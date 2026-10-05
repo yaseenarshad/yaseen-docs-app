@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react'
-import { validateEntryName, type EntryKind } from './createEntry'
+import type { EntryKind } from './createEntry'
 
-/** Placeholder per entry kind; the extension is implied (added by `entryPath`). */
+/** Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20). */
 const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', dir: 'New folder' }
 
 interface CreateInlineProps {
   kind: EntryKind
   /** Left padding so the input lines up with rows at its depth. */
   indent: number
-  /** Called with the validated, non-empty name; rejects with a message to keep editing. */
+  /** Called with the non-empty title, free text; rejects with a message to keep editing. */
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
   /** Text the box starts with (YAZ-1604); the caret lands at its end. Default empty, as today. */
@@ -23,11 +23,6 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
   const submit = async (value: string) => {
     const name = value.trim()
     if (name === '' || name === seed.trim() || submitting.current) return
-    const invalid = validateEntryName(name)
-    if (invalid !== null) {
-      setError(invalid)
-      return
-    }
     submitting.current = true
     try {
       await onSubmit(name)

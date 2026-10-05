@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { PathTitles } from '../lib/pageLabel'
 import type { Move } from '../links/shortcuts'
 import { ConfirmMove, folderList, moveConfirmMessage, removeShortcutConfirmMessage } from './ConfirmMove'
 
@@ -28,6 +29,12 @@ describe('the LOCKED copy (D21)', () => {
   it('Cut, then Paste into a folder: several items are ONE sheet for all of them', () => {
     expect(moveConfirmMessage([note, folder, note], 'z.ARCHIVE', { notes: 2, folders: TWO })).toBe("Move 3 items to 'z.ARCHIVE'? 2 notes will lose their values for Fiverr and ENG PIPELINE.")
     expect(moveConfirmMessage([note, note], 'z.ARCHIVE', { notes: 1, folders: ['Fiverr'] })).toBe("Move 2 items to 'z.ARCHIVE'? 1 note will lose its values for Fiverr.")
+  })
+
+  it('a copy into another folder (YAZ-2420 3E1): a note\'s values "will not be copied"; a folder or several items count the notes that will not keep theirs', () => {
+    expect(moveConfirmMessage([note], 'z.ARCHIVE', { notes: 1, folders: TWO }, true)).toBe("Copy 'FV-001 - Zain Shah' to 'z.ARCHIVE'? Its values for Fiverr and ENG PIPELINE will not be copied.")
+    expect(moveConfirmMessage([folder], 'z.ARCHIVE', { notes: 54, folders: TWO }, true)).toBe("Copy 'candidates' to 'z.ARCHIVE'? 54 notes will not keep their values for Fiverr and ENG PIPELINE.")
+    expect(moveConfirmMessage([note, folder], 'z.ARCHIVE', { notes: 1, folders: ['Fiverr'] }, true)).toBe("Copy 2 items to 'z.ARCHIVE'? 1 note will not keep its values for Fiverr.")
   })
 
   it('"Remove shortcut", and the note holds values for a folder that will no longer show it', () => {
@@ -55,13 +62,13 @@ afterEach(() => {
 const NOTE: Move = { oldPath: '/v/Hiring/Fiverr/Zain Shah.md', newPath: '/v/z.ARCHIVE/Zain Shah.md', kind: 'file' }
 const LOST = { notes: 1, folders: ['/v/Hiring/Fiverr', '/v/Hiring'] }
 
-function mount(ask: { moves: readonly Move[] } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST) {
+function mount(ask: { moves: readonly Move[]; copy?: boolean } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST, titles: PathTitles = new Map()) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmMove {...ask} lost={lost} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmMove {...ask} lost={lost} titles={titles} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -74,6 +81,13 @@ describe('ConfirmMove', () => {
   it('names the note without its `.md`, and the destination and the folders by their directory names', () => {
     const { el } = mount()
     expect(text(el)).toBe("Move 'Zain Shah' to 'z.ARCHIVE'? Its values for Fiverr and Hiring will be cleared.")
+  })
+
+  it('E: the move sheet names the note, the destination and the folders by their titles (YAZ-2420 D14)', () => {
+    const titles = new Map([[NOTE.oldPath, 'FV-001 - Zain Shah'], ['/v/z.ARCHIVE', 'Archive'], ['/v/Hiring/Fiverr', 'Fiverr 2026']])
+    expect(text(mount(undefined, undefined, titles).el)).toBe("Move 'FV-001 - Zain Shah' to 'Archive'? Its values for Fiverr 2026 and Hiring will be cleared.")
+    act(() => root?.unmount())
+    expect(text(mount({ shortcut: { path: NOTE.oldPath, dir: '/v/z.ARCHIVE' } }, { notes: 1, folders: ['/v/z.ARCHIVE'] }, titles).el)).toBe("Remove the shortcut from 'Archive'? The values of 'FV-001 - Zain Shah' for Archive will be cleared.")
   })
 
   it('names a FOLDER whole: one called `2026.md` keeps its `.md`', () => {
@@ -89,7 +103,7 @@ describe('ConfirmMove', () => {
   it('a move to the vault’s top level: the destination is named by the vault’s name — and so is the root’s own folder', () => {
     const { el } = mount({ moves: [{ ...NOTE, newPath: '/v/Zain Shah.md' }] })
     expect(text(el)).toBe("Move 'Zain Shah' to 'v'? Its values for Fiverr and Hiring will be cleared.")
-    act(() => root?.render(<ConfirmMove moves={[{ oldPath: '/v/Top.md', newPath: '/v/Hiring/Top.md', kind: 'file' }]} lost={{ notes: 1, folders: ['/v'] }} onConfirm={() => undefined} onCancel={() => undefined} />))
+    act(() => root?.render(<ConfirmMove moves={[{ oldPath: '/v/Top.md', newPath: '/v/Hiring/Top.md', kind: 'file' }]} lost={{ notes: 1, folders: ['/v'] }} titles={new Map()} onConfirm={() => undefined} onCancel={() => undefined} />))
     expect(text(el)).toBe("Move 'Top' to 'Hiring'? Its values for v will be cleared.")
   })
 
@@ -98,6 +112,12 @@ describe('ConfirmMove', () => {
     expect(text(el)).toBe("Remove the shortcut from 'ENG PIPELINE'? The values of '_PIPELINE-CONTEXT' for ENG PIPELINE will be cleared.")
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Remove'])
     expect(btn(el, 'Remove')?.classList.contains('confirm__btn--danger')).toBe(true)
+  })
+
+  it('a pasted Copy (YAZ-2420 3E1): the same sheet in the copy wording, offering Cancel and Copy', () => {
+    const { el } = mount({ moves: [NOTE], copy: true })
+    expect(text(el)).toBe("Copy 'Zain Shah' to 'z.ARCHIVE'? Its values for Fiverr and Hiring will not be copied.")
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Copy'])
   })
 
   it('offers exactly Cancel and Move', () => {

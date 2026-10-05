@@ -21,6 +21,7 @@
  */
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import { pathTitles, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import { folderSettings } from '../views/folderSettings'
 import { parseOutline } from '../views/outlineDoc'
@@ -34,7 +35,7 @@ function referencing(path: string, records: readonly IndexRecord[], folders: rea
   const mentions = (target: string): boolean => resolve(target) === path
   return [
     ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
-    ...folders.filter((f) => dirname(f.path) !== path && ([...referenceTargets(f)].some(mentions) || folderMentionSnippets(f, path, resolve, 1).length > 0)),
+    ...folders.filter((f) => dirname(f.path) !== path && ([...referenceTargets(f)].some(mentions) || folderMentionSnippets(f, path, resolve, pathTitles(records, folders), 1).length > 0)),
   ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
 }
 
@@ -166,8 +167,9 @@ function lineSnippet(
  * through the rename engine's length-preserving `maskCode` — the same fence/inline-span
  * discipline the index's link extraction uses, so a snippet can only highlight a link the index
  * actually counted. Frontmatter is scanned like any other line (the index reads links there too).
+ * `titles` names the note an id link points at (`idLinkTitle`).
  */
-export function mentionSnippets(content: string, target: string, resolve: ResolveLink, limit = MAX_SNIPPETS): MentionSnippet[] {
+export function mentionSnippets(content: string, target: string, resolve: ResolveLink, titles: PathTitles, limit = MAX_SNIPPETS): MentionSnippet[] {
   const masked = maskCode(content)
   const matches = [...masked.matchAll(WIKILINK_RE)]
   const isMention = (m: RegExpExecArray): boolean => {
@@ -177,7 +179,7 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
   const out: MentionSnippet[] = []
   for (let i = 0; i < matches.length && out.length < limit; i++) {
     if (!isMention(matches[i])) continue
-    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve))
+    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve, titles))
     out.push(snippet)
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
   }
@@ -189,7 +191,7 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
  * link to `target`, each as the page shows it — `mentionSnippets` over the bullets' text, in view
  * order. None when it links only by a view's `order` or a column's `target`.
  */
-export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink, limit?: number): MentionSnippet[] {
+export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink, titles: PathTitles, limit?: number): MentionSnippet[] {
   const bullets = folderSettings(settings).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
-  return mentionSnippets(bullets.join('\n'), target, resolve, limit)
+  return mentionSnippets(bullets.join('\n'), target, resolve, titles, limit)
 }

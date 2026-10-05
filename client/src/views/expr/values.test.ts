@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, RegexValue, fromYaml, isTruthy, linkText, render } from './index'
 
 const rec = {
-  path: 'Notes/Foo.md', name: 'Foo.md', basename: 'Foo', folder: 'Notes', ext: 'md', size: 10,
+  path: 'Notes/Foo.md', name: 'Foo.md', basename: 'Foo', title: 'Foo', folder: 'Notes', ext: 'md', size: 10,
   ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [],
 }
 
@@ -93,6 +93,11 @@ describe('render', () => {
     expect(linkText(new LinkValue('k3m9x2pq7abc#Section'), resolve)).toBe('Foo#Section')
     expect(linkText(new LinkValue('7tq2m8vd4xhn#Section'), resolve)).toBe('7tq2m8vd4xhn#Section')
     expect(render(new LinkValue('k3m9x2pq7abc#Section'), resolve)).toBe('[[Foo#Section]]')
+  })
+
+  it('E: linkText reads the title its note\'s record holds, not its file name (YAZ-2420 D14)', () => {
+    const titled = new FileValue({ ...rec, name: 'up-001-abdul-k3m9x2pq7abc.md', basename: 'up-001-abdul-k3m9x2pq7abc', title: 'UP-001 - Abdul' })
+    expect(linkText(new LinkValue('k3m9x2pq7abc#Scope'), () => titled)).toBe('UP-001 - Abdul#Scope')
   })
 })
 

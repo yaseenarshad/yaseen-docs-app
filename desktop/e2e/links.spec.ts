@@ -15,11 +15,14 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  NOTE_ID,
   activeTab,
   appWindow,
   buildFixtureVault,
+  builtNote,
   copyVault,
   editorOf,
+  idOf,
   launchApp,
   quitApp,
   seededState,
@@ -126,15 +129,22 @@ test('step 5 — click an UNRESOLVED link: the note is created beside the hub (a
   await expect(tabsOf(win)).toHaveText([FRESH, 'Ideas']) // …so the count is unchanged
   // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
   // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
-  // Born with its id and nothing else (YAZ-2293): a new note is no longer zero bytes.
-  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8')).toMatch(/^---\nid: [0-9a-hjkmnp-tv-z]{12}\n---\n$/)
+  // Born with its id and its title, the link's own text, and nothing else, under the name built
+  // from the two (YAZ-2420, table B).
+  await expect.poll(() => builtNote(vault, 'fresh-note')).not.toBe('')
+  const fresh = await builtNote(vault, 'fresh-note')
+  const born = await readFile(path.join(vault, fresh), 'utf8')
+  expect(born).toMatch(new RegExp(`^---\\ntitle: ${FRESH}\\nid: ${NOTE_ID}\\n---\\n$`))
+  expect(fresh).toBe(`fresh-note-${idOf(born)}.md`)
   await shoot(win, 'links-05-create-on-click')
 })
 
 test('step 6 — an ALIAS-form link renders resolved and opens the aliased page (E2)', async () => {
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
-  await expect(win.locator('.wikilink--unresolved')).toHaveText(FRESH) // index gate: only Fresh note dims
+  // Step 5 made the note, and `[[Fresh note]]` finds it by its title (YAZ-2420 🔒 D17): nothing dims now.
+  await expect(linkIn(win, FRESH)).not.toHaveClass(/wikilink--unresolved/)
+  await expect(win.locator('.wikilink--unresolved')).toHaveCount(0)
   await expect(linkIn(win, ALIAS)).not.toHaveClass(/wikilink--unresolved/) // `[[CAC]]` found Metrics.md
   await linkIn(win, ALIAS).click()
   await expect(activeTab(win)).toHaveText('Metrics')

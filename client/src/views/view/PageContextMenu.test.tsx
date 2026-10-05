@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
+import { api, BridgeRequestError } from '../../api'
 import { PageContextMenu } from './PageContextMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -19,6 +20,7 @@ it('exports reusable page actions through PageContextMenu', () => {
         x={12}
         y={34}
         path="/vault/note.md"
+        title="note"
         onOpenRight={onOpenRight}
         onOpenBackground={onOpenBackground}
         onClose={onClose}
@@ -40,7 +42,7 @@ it('exports reusable page actions through PageContextMenu', () => {
 
   act(() => {
     root.render(
-      <PageContextMenu x={12} y={34} path="/vault/note.md" onOpenBackground={onOpenBackground} onClose={onClose} />,
+      <PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpenBackground={onOpenBackground} onClose={onClose} />,
     )
   })
   expect([...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
@@ -52,6 +54,22 @@ it('exports reusable page actions through PageContextMenu', () => {
   expect(onOpenBackground).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
   expect(onClose).toHaveBeenCalledTimes(2)
 
+  act(() => root.unmount())
+  host.remove()
+})
+
+it('"Open" leads the menu of a surface that hands one: it opens the page in the current tab (YAZ-2420 D26)', () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const onOpen = vi.fn()
+  const onClose = vi.fn()
+  act(() => root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onOpen={onOpen} onOpenBackground={vi.fn()} onClose={onClose} />))
+  const items = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+  expect(items.map((item) => item.textContent)).toEqual(['Open', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
+  act(() => items[0].click())
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  expect(onClose).toHaveBeenCalledOnce()
   act(() => root.unmount())
   host.remove()
 })
@@ -68,7 +86,7 @@ it('reports a clipboard rejection passively without leaving an unhandled promise
 
   try {
     act(() => {
-      root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" onNotice={onNotice} onClose={onClose} />)
+      root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" title="note" onNotice={onNotice} onClose={onClose} />)
     })
     const copy = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy path')
     act(() => copy?.click())
@@ -85,37 +103,23 @@ it('reports a clipboard rejection passively without leaving an unhandled promise
   }
 })
 
-it('offers "Copy ID" under "Copy path" for a note with an id (YAZ-2293): exactly the id, confirmed — or the refusal reported', async () => {
-  const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
-  const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('clipboard permission denied'))
-  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+it('E: a page that is gone is named by its title in the notice (YAZ-2420 D14)', async () => {
+  const reveal = vi.spyOn(api.shell, 'reveal').mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'gone'))
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
   const onNotice = vi.fn()
-  const onClose = vi.fn()
-  const copyId = () => [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy ID')
 
   try {
-    // A page with no id (the first test's menu) has no such item; this one sits directly under Copy path.
     act(() => {
-      root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" noteId="k3m9x2pq7abc" onNotice={onNotice} onClose={onClose} />)
+      root.render(<PageContextMenu x={12} y={34} path="/vault/up-001-abdul-k3m9x2pq7abc.md" title="UP-001 - Abdul" onNotice={onNotice} onClose={vi.fn()} />)
     })
-    expect([...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual(['Copy path', 'Copy ID', 'Reveal in Finder'])
-
-    act(() => copyId()?.click())
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Reveal in Finder')?.click())
     await act(async () => Promise.resolve())
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(onClose).toHaveBeenCalledOnce()
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
-
-    act(() => copyId()?.click())
-    await act(async () => Promise.resolve())
-    expect(onNotice).toHaveBeenLastCalledWith("Can't copy ID: clipboard permission denied")
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t reveal "UP-001 - Abdul" — it is no longer there')
   } finally {
     act(() => root.unmount())
     host.remove()
-    if (descriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
-    else Object.defineProperty(navigator, 'clipboard', descriptor)
+    reveal.mockRestore()
   }
 })

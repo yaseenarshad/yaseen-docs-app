@@ -219,7 +219,7 @@ function rec(path: string, over: Partial<IndexRecord> = {}): IndexRecord {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const basename = name.replace(/\.(md|markdown)$/i, '')
   const folder = path.slice('/v/'.length, path.lastIndexOf('/')).replace(/\/$/, '')
-  return { path, name, basename, folder: folder === name ? '' : folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+  return { path, name, basename, title: basename, folder: folder === name ? '' : folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
 }
 
 function installBridge(files: Record<string, { content: string; mtime: number }>) {
@@ -647,6 +647,189 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     expect(files['/v/A.md'].content).toBe('[[k3m9x2pq7abc]] and [[Moved/B]]\n')
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(files['/v/ById.md']).toEqual({ content: '[[k3m9x2pq7abc]]\n', mtime: 1 })
+  })
+})
+
+describe('a link that spells a title (YAZ-2420 D17)', () => {
+  const root = '/v'
+  const ABDUL = '/v/candidates/up-001-abdul-k3m9x2pq7abc.md'
+  const abdul = rec(ABDUL, { title: 'UP-001 - Abdul', properties: { title: 'UP-001 - Abdul' } })
+
+  it('E: renaming or moving a note with a title leaves `[[Its Title]]` as written and out of the count; a link spelling its file name is rewritten', async () => {
+    const records = [rec('/v/ByFile.md', { links: ['up-001-abdul-k3m9x2pq7abc'] }), rec('/v/ByTitle.md', { links: ['UP-001 - Abdul'] }), abdul]
+    const files = {
+      '/v/ByFile.md': { content: '[[up-001-abdul-k3m9x2pq7abc]]\n', mtime: 1 },
+      '/v/ByTitle.md': { content: '[[UP-001 - Abdul]] and [[up-001 - abdul|him]]\n', mtime: 1 },
+    }
+    const { readFile } = installBridge(files)
+    expect(countLinkReferences({ root, oldPath: ABDUL, records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: ABDUL, newPath: '/v/hired/abdul-k3m9x2pq7abc.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/ByFile.md'].content).toBe('[[abdul-k3m9x2pq7abc]]\n')
+    expect(files['/v/ByTitle.md'].content).toBe('[[UP-001 - Abdul]] and [[up-001 - abdul|him]]\n')
+    expect(readFile).not.toHaveBeenCalledWith('/v/ByTitle.md')
+  })
+
+  it('a note with no title is renamed as before, and its new file name is its title from then on: `[[Old]]` becomes a bare `[[New]]` beside a deeper note titled New', async () => {
+    const records = [rec('/v/A.md', { links: ['Old'] }), rec('/v/Sub/Old.md'), rec('/v/x/y/z/new-7tq2m8vd4xhn.md', { title: 'New', properties: { title: 'New' } })]
+    const files = { '/v/A.md': { content: '[[Old]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(countLinkReferences({ root, oldPath: '/v/Sub/Old.md', records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Sub/Old.md', newPath: '/v/Sub/New.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[New]]\n')
+  })
+})
+
+describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells the new one', () => {
+  const root = '/v'
+  const ID = 'k3m9x2pq7abc'
+  const OLD = `/v/candidates/abdul-${ID}.md`
+  const NEW = `/v/candidates/up-001-abdul-${ID}.md`
+  const abdul = rec(OLD, { id: ID, title: 'Abdul', properties: { id: ID, title: 'Abdul' } })
+
+  it('`[[Old title]]` is rewritten to `[[New title]]` and counted; a link by file name or by path follows the new file; an id link is neither rewritten nor counted', async () => {
+    const records = [rec('/v/ById.md', { links: [ID] }), rec('/v/ByName.md', { links: [`abdul-${ID}`, `candidates/abdul-${ID}`] }), rec('/v/ByTitle.md', { links: ['Abdul', 'abdul'] }), abdul]
+    const files = {
+      '/v/ById.md': { content: `[[${ID}]]\n`, mtime: 1 },
+      '/v/ByName.md': { content: `[[abdul-${ID}]] and [[candidates/abdul-${ID}]]\n`, mtime: 1 },
+      '/v/ByTitle.md': { content: '[[Abdul]], [[abdul|him]] and [[Abdul#Rates]]\n', mtime: 1 },
+    }
+    const { readFile } = installBridge(files)
+    expect(countLinkReferences({ root, oldPath: OLD, records, title: 'UP-001 - Abdul' })).toBe(2)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: NEW, records, title: 'UP-001 - Abdul' })).toEqual({ updated: 2, skipped: 0 })
+    expect(files['/v/ByTitle.md'].content).toBe('[[UP-001 - Abdul]], [[UP-001 - Abdul|him]] and [[UP-001 - Abdul#Rates]]\n')
+    expect(files['/v/ByName.md'].content).toBe(`[[up-001-abdul-${ID}]] and [[candidates/up-001-abdul-${ID}]]\n`)
+    expect(readFile).not.toHaveBeenCalledWith('/v/ById.md')
+  })
+
+  it('a title edit that keeps the file name still rewrites the links that spelled the old title', async () => {
+    const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul]
+    const files = { '/v/A.md': { content: '[[Abdul]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: OLD, records, title: 'Abdul!' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Abdul!]]\n')
+  })
+
+  it('a note with no `title:` is titled by its file name: its first title edit turns `[[Plan]]` into `[[Big Plan]]`', async () => {
+    const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md', { id: ID })]
+    const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(countLinkReferences({ root, oldPath: '/v/Plan.md', records, title: 'Big Plan' })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Plan.md', newPath: `/v/big-plan-${ID}.md`, records, title: 'Big Plan' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Big Plan]]\n')
+  })
+
+  it('a new title a link cannot spell (`A | B`) is linked by the note\u2019s id instead, its `|label` and `#heading` kept (YAZ-2478)', async () => {
+    const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul]
+    const files = { '/v/A.md': { content: '[[Abdul]], [[Abdul|him]] and [[Abdul#Rates]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]], [[${ID}|him]] and [[${ID}#Rates]]\n`)
+  })
+
+  it('a new title another note already has is linked by the note\u2019s id instead (YAZ-2478)', async () => {
+    const other = rec('/v/ali-7tq2m8vd4xhn.md', { id: '7tq2m8vd4xhn', title: 'Ali', properties: { title: 'Ali' } })
+    const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul, other]
+    const files = { '/v/A.md': { content: '[[Abdul]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/ali-${ID}.md`, records, title: 'Ali' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
+  })
+
+  it('a note with no id is still linked by its new file name when the new title cannot be spelled', async () => {
+    const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md')]
+    const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Plan.md', newPath: `/v/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[a-b-${ID}]]\n`)
+  })
+
+  it('a typed path of titles that reached the note (`[[Candidates/Abdul]]`) is counted and rewritten to its id, on its own title edit and on its folder\u2019s (YAZ-2478)', async () => {
+    const folders = [rec('/v/candidates/.folder.md', { title: 'Candidates', properties: { title: 'Candidates' } })]
+    const records = [rec('/v/A.md', { links: ['Candidates/Abdul'] }), abdul]
+    const files = { '/v/A.md': { content: '[[Candidates/Abdul]] and [[candidates/abdul|him]]\n', mtime: 1 } }
+    installBridge(files)
+    const note = { root, oldPath: OLD, newPath: NEW, records, folders, title: 'UP-001 - Abdul' }
+    expect(countLinkReferences(note)).toBe(1)
+    expect(await updateLinksAfterRename(note)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]] and [[${ID}|him]]\n`)
+
+    files['/v/A.md'] = { content: '[[Candidates/Abdul]]\n', mtime: 1 }
+    const folder = { root, oldPath: '/v/candidates', newPath: '/v/hired', kind: 'dir' as const, records, folders, dirs: ['/v/candidates'], title: 'Hired' }
+    expect(countLinkReferences(folder)).toBe(1)
+    expect(await updateLinksAfterRename(folder)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
+  })
+
+  it('a title edit of one note leaves a link that spells ANOTHER note\u2019s title alone', async () => {
+    const other = rec('/v/other-7tq2m8vd4xhn.md', { title: 'Other', properties: { title: 'Other' } })
+    const records = [rec('/v/A.md', { links: ['Other'] }), abdul, other]
+    const { readFile } = installBridge({ '/v/A.md': { content: '[[Other]]\n', mtime: 1 } })
+    expect(countLinkReferences({ root, oldPath: OLD, records, title: 'UP-001 - Abdul' })).toBe(0)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: NEW, records, title: 'UP-001 - Abdul' })).toEqual({ updated: 0, skipped: 0 })
+    expect(readFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
+  const root = '/v'
+  const FOLDER_ID = 'f7n2w8rt4xyz'
+  const upwork = rec('/v/upwork/.folder.md', { id: FOLDER_ID, title: 'Upwork', properties: { id: FOLDER_ID, title: 'Upwork' } })
+
+  it('a folder\u2019s title edit rewrites `[[Old folder title]]` to `[[New folder title]]` and counts it; a pathed link follows the folder, an id link is left as written', async () => {
+    const records = [rec('/v/A.md', { links: ['Upwork', 'upwork/Plan', FOLDER_ID] }), rec('/v/ById.md', { links: [FOLDER_ID] }), rec('/v/upwork/Plan.md')]
+    const files = { '/v/A.md': { content: `[[Upwork]], [[upwork/Plan]] and [[${FOLDER_ID}]]\n`, mtime: 1 }, '/v/ById.md': { content: `[[${FOLDER_ID}]]\n`, mtime: 1 } }
+    const { readFile } = installBridge(files)
+    const opts = { root, oldPath: '/v/upwork', newPath: '/v/upwork-2026', kind: 'dir' as const, records, folders: [upwork], dirs: ['/v/upwork'], title: 'Upwork 2026' }
+    expect(countLinkReferences(opts)).toBe(1)
+    expect(await updateLinksAfterRename(opts)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[Upwork 2026]], [[upwork-2026/Plan]] and [[${FOLDER_ID}]]\n`)
+    expect(readFile).not.toHaveBeenCalledWith('/v/ById.md')
+  })
+
+  it('a folder\u2019s new title a link cannot spell, or that a note already has, is linked by the folder\u2019s id instead; a folder with no id by its new name (YAZ-2478)', async () => {
+    const files = { '/v/A.md': { content: '[[Upwork]] and [[Upwork|jobs]]\n', mtime: 1 } }
+    installBridge(files)
+    const opts = { root, oldPath: '/v/upwork', newPath: '/v/a-b', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] }), rec('/v/Jobs.md')], folders: [upwork], dirs: ['/v/upwork'] }
+    expect(await updateLinksAfterRename({ ...opts, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${FOLDER_ID}]] and [[${FOLDER_ID}|jobs]]\n`)
+
+    files['/v/A.md'] = { content: '[[Upwork]]\n', mtime: 1 }
+    expect(await updateLinksAfterRename({ ...opts, newPath: '/v/jobs', title: 'Jobs' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${FOLDER_ID}]]\n`)
+
+    files['/v/A.md'] = { content: '[[Upwork]]\n', mtime: 1 }
+    expect(await updateLinksAfterRename({ ...opts, folders: [rec('/v/upwork/.folder.md', { title: 'Upwork', properties: { title: 'Upwork' } })], title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[a-b]]\n')
+  })
+
+  it('a folder with no `title:` is titled by its name: its first title edit turns `[[Projects]]` into `[[Upwork 2026]]`', async () => {
+    const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
+    installBridge(files)
+    const opts = { root, oldPath: '/v/Projects', newPath: '/v/upwork-2026', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] })], folders: [rec('/v/Projects/.folder.md', { title: 'Projects' })], dirs: ['/v/Projects'], title: 'Upwork 2026' }
+    expect(await updateLinksAfterRename(opts)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Upwork 2026]]\n')
+  })
+
+  it.each([
+    ['renaming', undefined],
+    ['retitling', 'Work'],
+  ])('%s a folder whose DIRECTORY is named Projects leaves a `[[Projects]]` that reaches ANOTHER folder by its title alone, and out of the count', async (_how, title) => {
+    const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
+    const { readFile } = installBridge(files)
+    const titled = rec('/v/client-work/.folder.md', { title: 'Projects', properties: { title: 'Projects' } })
+    const opts = { root, oldPath: '/v/Deep/Projects', newPath: '/v/Deep/work', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] })], folders: [titled, rec('/v/Deep/Projects/.folder.md', { title: 'Projects' })], dirs: ['/v/Deep', '/v/Deep/Projects', '/v/client-work'], ...(title === undefined ? {} : { title }) }
+    expect(countLinkReferences(opts)).toBe(0)
+    expect(await updateLinksAfterRename(opts)).toEqual({ updated: 0, skipped: 0 })
+    expect(readFile).not.toHaveBeenCalled()
+  })
+
+  it('renaming or moving a folder with a title leaves `[[Its Title]]` as written and out of the count: the title travels in its `.folder.md`', async () => {
+    const files = { '/v/A.md': { content: '[[Upwork]]\n', mtime: 1 } }
+    const { readFile } = installBridge(files)
+    const opts = { root, oldPath: '/v/upwork', newPath: '/v/Archive/upwork', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] })], folders: [upwork], dirs: ['/v/Archive', '/v/upwork'] }
+    expect(countLinkReferences(opts)).toBe(0)
+    expect(await updateLinksAfterRename(opts)).toEqual({ updated: 0, skipped: 0 })
+    expect(readFile).not.toHaveBeenCalled()
   })
 })
 
