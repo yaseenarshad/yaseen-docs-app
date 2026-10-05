@@ -181,7 +181,7 @@ test('step 3b — leaving the inline box commits (YAZ-1553): click another row a
   await expect(confirmSheet(win)).toBeVisible()
   await shoot(win, 'rename-03b-clickaway-sheet')
   await expect(activeTab(win)).toHaveText('B2')
-  await confirmRename(win, "Rename 'D' to 'D2'? No other notes link to it.")
+  await confirmRename(win, "Rename 'D' to 'D2'? No links need updating.")
   await expect.poll(() => builtNote(vault, 'd2')).not.toBe('')
   const d2 = path.join(vault, await builtNote(vault, 'd2'))
   expect(await readFile(d2, 'utf8')).toContain(D_BODY)
@@ -209,7 +209,7 @@ test('step 4 — renaming onto an existing title is allowed: the ids keep the tw
   await startRename(win, 'A')
   await win.locator('.create-inline__input').fill('C')
   await win.keyboard.press('Enter')
-  await confirmRename(win, "Rename 'A' to 'C'? No other notes link to it.")
+  await confirmRename(win, "Rename 'A' to 'C'? No links need updating.")
   // Two notes may share a title (YAZ-2420, table B): A takes the name built from the title and
   // its own id, and C.md is what it was.
   await expect.poll(() => builtNote(vault, 'c')).not.toBe('')
@@ -278,7 +278,7 @@ test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a pa
   // ago — the counted set depends on how far the 300ms-debounced refetch has caught up.
   await expect(confirmSheet(win).locator('.confirm__text')).toContainText("Rename 'Target' to 'Notes'?")
   await confirmRename(win)
-  await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "Notes" already exists')
+  await expect(win.locator('.link-notice')).toHaveText('Can\'t change the title: "Notes" already exists')
   // Both folders untouched.
   expect((await stat(path.join(vault, 'Target'))).isDirectory()).toBe(true)
   expect(await readFile(path.join(vault, 'notes', 'N.md'), 'utf8')).toContain(N_BODY)
