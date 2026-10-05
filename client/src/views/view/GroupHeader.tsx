@@ -119,7 +119,8 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
           <path d="m4 6 4 4 4-4" />
         </svg>
       </button>
-      <span className={`view-group__value${groupKey === null ? ' view-group__value--none' : ''}`}>
+      {/* A text name too long for the header is cut; the tooltip holds the rest, as a chip's does. */}
+      <span className={`view-group__value${groupKey === null ? ' view-group__value--none' : ''}`} title={typeof groupKey === 'string' ? label : undefined}>
         {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
       </span>
       <span className="view-group__count">{rows.length}</span>

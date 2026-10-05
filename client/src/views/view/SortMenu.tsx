@@ -21,13 +21,15 @@ export interface SortMenuProps {
 
 const EMPTY_SORT: SortSpec[] = []
 
+/** Folder (YAZ-2541): a place to sort and group by, never a column — and the one property that may group twice, the second level being the next folder down. */
+const FOLDER = 'file.folder'
+
 const flip = (d: string | undefined): 'ASC' | 'DESC' => (d === 'DESC' ? 'ASC' : 'DESC')
 
 /** Sort menu (GRO-2135): `view.sort` rows (property, direction, order, remove) and `view.groupBy` beneath. */
 export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, properties }: SortMenuProps) {
-  // Folder is a place to sort and group by, not a column (YAZ-2541): it joins this menu's list only.
   const listed = allPropertyKeys(def, view, records, settings.columns)
-  const keys = listed.includes('file.folder') ? listed : [...listed, 'file.folder']
+  const keys = listed.includes(FOLDER) ? listed : [...listed, FOLDER]
   const sort = view.sort ?? EMPTY_SORT
   const [groupBy, thenBy] = groupByLevels(view)
   const nextId = useRef(sort.length)
@@ -75,7 +77,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
   // except Folder (YAZ-2541): Folder then Folder IS one, the second being the next folder down.
   const writeGroup = (outer: GroupBySpec | null, inner: GroupBySpec | null) =>
     onUpdate((d) => {
-      const second = outer !== null && inner !== null && (inner.property === 'file.folder' || canonicalKey(inner.property) !== canonicalKey(outer.property)) ? inner : null
+      const second = outer !== null && inner !== null && (inner.property === FOLDER || canonicalKey(inner.property) !== canonicalKey(outer.property)) ? inner : null
       if (outer === null) delete d.views[viewIndex].groupBy
       else d.views[viewIndex].groupBy = second === null ? outer : [outer, second]
     })
@@ -172,7 +174,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, settings, pr
             label="Then group by"
             value={thenBy ? canonicalKey(thenBy.property) : ''}
             onChange={(value) => writeGroup(groupBy, value ? { property: value, direction: thenBy?.direction === 'DESC' ? 'DESC' : 'ASC' } : null)}
-           options={[{value: '', label: 'None'}, ...options(thenBy?.property, groupBy.property === 'file.folder' ? undefined : canonicalKey(groupBy.property))]} />
+           options={[{value: '', label: 'None'}, ...options(thenBy?.property, groupBy.property === FOLDER ? undefined : canonicalKey(groupBy.property))]} />
           {thenBy && (
             <button type="button" className="view-chip" aria-label="Then group direction" title="Toggle direction" onClick={() => writeGroup(groupBy, { property: canonicalKey(thenBy.property), direction: flip(thenBy.direction) })}>
               {groupDirectionLabel(thenBy)}

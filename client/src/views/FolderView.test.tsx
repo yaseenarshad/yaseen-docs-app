@@ -367,6 +367,7 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
     await flush()
     expect(groupedNames(el)).toEqual({ 'Pipeline stages': ['Lead Gen', 'Sales'], 'The archive': ['Old', 'Older'] })
+    expect(el.querySelector('.view-group__value')?.getAttribute('title')).toBe('Pipeline stages') // a cut-off name is whole in its tooltip
   })
 
   it('Folder then Folder (YAZ-2541): the inner groups are the next folder down, a subfolder’s own notes directly under it', async () => {

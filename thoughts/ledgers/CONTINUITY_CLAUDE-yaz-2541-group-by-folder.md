@@ -17,7 +17,7 @@ Issue: https://linear.app/growprofit/issue/YAZ-2541/group-a-table-by-folder-fold
 
 ## Key Decisions
 
-TENTATIVE. Yaseen, 2026-10-05: "all approved" and "im down with what u have said but before we lock it in lets do this", meaning the demo first. Not locked, not in Linear.
+LOCKED 2026-10-05 after the demo. The Linear record on YAZ-2541 is the source of truth; this is a copy.
 
 - **D1, what Folder groups by: option 3.** A Folder level groups by the folders one step below the page; deeper notes roll up into that folder. "Then group by: Folder" gives the next folder down as inner groups. Folders three or more steps down roll up into their second-step folder. Cost: Folder then Folder uses both grouping levels.
   - Rejected: 1, flat (one group per folder holding notes, path names). 2, one level only.
@@ -40,23 +40,24 @@ Design, as proposed in chat:
 
 ## State
 
+Decisions LOCKED by Yaseen 2026-10-05 ("approved, lock it in"). Record: comment `57da44d2` on YAZ-2541, plus "Amendment 1" (B4: shortcut homes after the page's own folders; B1 built). He gave leave to commit, push and merge to main. No release unless he asks. No Playwright.
+
 - Done:
-  - [x] Scoped off main `d73a532`; six decisions brought to chat with diffs
-  - [x] Yaseen approved all six, tentatively
-  - [x] Prototype built in this worktree, uncommitted: typecheck clean, `npx vitest run` 5232 passed, 2 skipped
-  - [x] Demo vault and isolated profile built; dev app launched on them (HMR, debugging port 9341)
-- Now: [→] Yaseen stress tests the demo and gives feedback
-- Next: he says "approved, lock it in" or changes things
+  - [x] YAZ-2542 1- Scope (findings posted)
+  - [x] YAZ-2543 2- Engine: YAZ-2544 2A, YAZ-2545 2B, YAZ-2546 2C (commit `bad7c8a`, pushed)
+  - [x] YAZ-2547 3- Menus and headers: YAZ-2548 3A, YAZ-2549 3B, YAZ-2550 3C (same commit)
+  - [x] YAZ-2552 4A- Polish list posted (six items)
+- Now: [→] YAZ-2553 4B- Apply the polish pass: all six items are edited on disk, UNCOMMITTED; typecheck + `npx vitest run` must pass, then commit and push, comment, Done (and YAZ-2551 Done)
+- Next: YAZ-2554 5- Verify: gates (`npm run build`, `npm run perf:budget:ci`), scenarios A to Q read off the dev app with `scratchpad/drive.mjs` (debug port 9341; a folder page opens on a DOUBLE click)
 - Remaining:
-  - [ ] Post the findings and the locked decisions as one comment on YAZ-2541
-  - [ ] Create the sub-issues from his sub-issue prompt (proposed: scope, engine, menus and headers, verify, polish and anti-slop)
-  - [ ] Delete the demo vault and its profile
+  - [ ] PR to main, merge (fetch main first; YAZ-2523's worktree also edits `FolderView.test.tsx`, not yet on main)
+  - [ ] Closeout: `📦 Handoff` comment on the parent and every sub-issue, project update on "Yaseen Docs App", YAZ-2541 Done
+  - [ ] Stop the dev app, delete the demo vault and profile, remove this worktree and branch
+  - [ ] Update memory: flow notes from this run
 
 ## Open Questions
 
-- UNCONFIRMED: his question "you'll put like 'group by Folder (Metrics)' or something right?" The picker says "Folder"; the page's own group is headed by the page's title. He may want the picker or a header worded differently once he sees it.
-- UNCONFIRMED: a shortcut whose home is the vault root lands in "No value". Bug-level, to settle in the scoping sub-issue.
-- UNCONFIRMED: retitling a folder renames its directory, so that group's collapsed state resets.
+- None open. Settled: the picker says "Folder" (he saw it and asked for no change); a root-home shortcut gets the vault's group (2C); collapse state stays keyed by path (B3).
 
 ## Working Set
 
