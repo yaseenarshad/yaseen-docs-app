@@ -628,6 +628,16 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
+  it('The vault’s top level has no page: the root path, as a tab, is never opened as a folder page — whatever its folders — and nothing is read', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Projects`, [file(`${r}/Projects/a.md`)]), file(`${r}/b.md`)], generatedAt: 1 }))
+    const el = await open('/toplevel', '/toplevel')
+    expect(el.querySelector('.folder-view')).toBeNull()
+    expect(el.querySelector('.page-title__text')).toBeNull()
+    expect(el.querySelector('.editor-msg--error')?.textContent).toBe('Unsupported file type.') // what the pane says instead: the root is no folder of its own tree
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
   it('a FILE of the tree with no viewer still says so', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'file', name: 'a.zip', path: `${r}/a.zip`, size: 1, mtime: 1, kind: null }], generatedAt: 1 }))
     const el = await open('/zips', '/zips/a.zip')

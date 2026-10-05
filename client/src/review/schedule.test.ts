@@ -22,6 +22,22 @@ describe('dueAt (30 / 2 / 365)', () => {
     expect(days(CHANGED, dueAt(card([]), S))).toBe(30)
   })
 
+  it('a write that changes only the frontmatter of a never-reviewed note restarts the base wait: its only clock is when the file last changed', () => {
+    // The body, so its fingerprint, is as it was; the file's modified time is the write's.
+    const written = CHANGED + 10 * DAY
+    expect(days(CHANGED, dueAt({ ...card([]), mtime: written }, S))).toBe(40) // 30 days after the write, not after the body last changed
+    // The same write to a note whose last review saw this body moves nothing: that date hangs on the review.
+    const reviewed = card([keep(at(0))])
+    expect(dueAt({ ...reviewed, mtime: written }, S)).toBe(dueAt(reviewed, S))
+  })
+
+  it('a review log entry with an unknown `rating` counts as a check: it lengthens the wait as a "Still relevant" does', () => {
+    const graded = (at: string): ReviewEntry => ({ ...keep(at), rating: 'good' }) // another algorithm's grade, carried by the index
+    expect(days(Date.parse(at(0)), dueAt(card([graded(at(0))]), S))).toBe(60)
+    expect(days(Date.parse(at(60)), dueAt(card([graded(at(0)), keep(at(60))]), S))).toBe(120) // and it stays in the streak under a later "keep"
+    expect(dueAt(card([graded(at(0)), graded(at(60))]), S)).toBe(dueAt(card([keep(at(0)), keep(at(60))]), S))
+  })
+
   it('each review in a row on the same text doubles the wait, up to the longest', () => {
     const waits = [1, 2, 3, 4, 5].map((n) => {
       const reviews = Array.from({ length: n }, (_, i) => keep(at(i)))

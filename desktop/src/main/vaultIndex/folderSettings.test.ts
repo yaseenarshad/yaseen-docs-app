@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
@@ -10,6 +10,8 @@ import { _evictAll, getIndex } from './index'
 // rides `IndexResponse.folders`, never `records`, so no row, search or completion has to filter it.
 
 const SETTINGS = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n'
+/** A note of the model YAZ-2290 removed: flagged a folder page, listed on others, holding that page's views. */
+const OLD_MODEL = '---\nfolder_page: true\nfolder_pages:\n  - "[[Idea]]"\nfolder_page_settings:\n  views:\n    - type: board\n      name: Board\n---\n# Old hub\n'
 
 const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
   const t0 = Date.now()
@@ -37,6 +39,7 @@ describe('folder settings in the index', () => {
     await mkdir(path.join(root, '.obsidian'), { recursive: true })
     await writeFile(path.join(root, 'Projects', FOLDER_SETTINGS_FILE), SETTINGS)
     await writeFile(path.join(root, 'Projects', 'Idea.md'), '# Idea\n')
+    await writeFile(path.join(root, 'Projects', 'Old hub.md'), OLD_MODEL)
     // Dot-entries that must stay invisible: another dot-file, and a settings file inside a dot-dir.
     await writeFile(path.join(root, 'Projects', '.hidden.md'), '# hidden\n')
     await writeFile(path.join(root, '.obsidian', FOLDER_SETTINGS_FILE), SETTINGS)
@@ -53,6 +56,19 @@ describe('folder settings in the index', () => {
     expect(index.folders[0].properties).toHaveProperty('folder_settings')
     expect(index.records.some((r) => r.name === FOLDER_SETTINGS_FILE)).toBe(false)
     expect(index.records.some((r) => r.name === 'Idea.md')).toBe(true)
+  })
+
+  it('A note still carrying `folder_page`, `folder_pages` or `folder_page_settings` (the old model’s keys) is an ordinary note to the index: a record, never a folder’s settings, its properties as written — nothing is rewritten and nothing is lost', async () => {
+    const file = path.join(root, 'Projects', 'Old hub.md')
+    const index = await getIndex(root)
+    expect(index.folders.some((r) => r.path === file)).toBe(false)
+    expect(index.records.find((r) => r.path === file)).toMatchObject({
+      name: 'Old hub.md',
+      folder: 'Projects',
+      properties: { folder_page: true, folder_pages: ['[[Idea]]'], folder_page_settings: { views: [{ type: 'board', name: 'Board' }] } },
+      links: ['Idea'], // a whole-value link, counted as any property's is
+    })
+    expect(await readFile(file, 'utf8')).toBe(OLD_MODEL)
   })
 
   it('every other dot-entry stays invisible', async () => {

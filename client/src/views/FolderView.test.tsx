@@ -206,6 +206,24 @@ describe('a folder with no settings file', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
+  it('Empty folder: opens with empty views — the default Table, then Board, no rows, "0 items" — and opening writes NOTHING', async () => {
+    const el = await mount(null, [rec(OTHER), rec(OUTSIDER), rec('/vault/kpis/CAC.md')]) // notes elsewhere; none under the folder
+    await flush()
+    expect(q(el, 'h1').textContent).toBe('stages')
+    expect(texts(el, '.view-tab__btn')).toEqual(['Table', 'Board'])
+    expect(rowNames(el)).toEqual([])
+    expect(el.querySelectorAll('.view-table tbody tr')).toHaveLength(0)
+    expect(q(el, '.view-toolbar__count').textContent).toBe('0 items')
+    selectView(el, 'Board')
+    expect(el.querySelectorAll('.view-board__card')).toHaveLength(0)
+    expect(q(el, '.view-toolbar__count').textContent).toBe('0 items')
+    expect(write).not.toHaveBeenCalled()
+    expect(writeValues).not.toHaveBeenCalled()
+    expect(transform).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
   it('the FIRST change writes the whole block into `.folder.md` — the default columns stated with it (E2)', async () => {
     const el = await mount(null)
     click(byLabel(el, 'Add view'))
@@ -293,6 +311,39 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     // spellings never meet. The row shows because the resolver came from the whole snapshot.
     const el = await mount({ views: [{ type: 'table', name: 'T', order: ['file.name'], filters: 'owner == link("Outsider")' }] })
     expect(rowNames(el)).toEqual(['Lead Gen'])
+  })
+
+  /** One table per filter, over the folder's two direct notes and the one in its subfolder `archive`. */
+  const filtered = (name: string, filters?: string): Record<string, unknown> => ({ type: 'table', name, order: ['file.name'], ...(filters === undefined ? {} : { filters }) })
+
+  it('Filter Folder to this folder (the exact-match operator, `file.folder == "<folder>"` / "is any of"): only the notes directly in it — while the folder page with no filter shows every note under it at any depth', async () => {
+    const el = await mount({ views: [filtered('All'), filtered('Exact', 'file.folder == "stages"'), filtered('Any of', '["stages"].contains(file.folder)')] })
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old']) // no filter: the subfolder's note is a row
+    selectView(el, 'Exact')
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
+    selectView(el, 'Any of')
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
+  })
+
+  it('the OTHER Folder operator, "in folder" (`file.inFolder("<folder>")`), is not exact: it matches the notes under that folder at any depth', async () => {
+    const el = await mount({ views: [filtered('Under', 'file.inFolder("stages")'), filtered('Under the subfolder', 'file.inFolder("stages/archive")')] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Older']) // the folder's own notes and every depth below
+    selectView(el, 'Under the subfolder')
+    expect(rowNames(el)).toEqual(['Old', 'Older']) // the subfolder's own note and the one below it; not its parent's
+  })
+
+  it('Group by Folder: each note sits in the group of the folder it lives in — a subfolder’s notes under the subfolder’s group, the direct notes under the folder’s own', async () => {
+    const el = await mount({ views: [{ type: 'table', name: 'By folder', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
+    /** Each group header's label → the names of the rows under it, read down the table body. */
+    const groups: Record<string, string[]> = {}
+    let under: string[] | null = null
+    for (const row of el.querySelectorAll('.view-table tbody tr')) {
+      const header = row.querySelector('.view-group__value')
+      if (header !== null) under = groups[header.textContent ?? ''] = []
+      else under?.push(...texts(row, '.view-table__link'))
+    }
+    expect(groups).toEqual({ stages: ['Lead Gen', 'Sales'], 'stages/archive': ['Old'], 'stages/archive/2019': ['Older'] })
+    expect(texts(el, '.view-group__count')).toEqual(['2', '1', '1'])
   })
 })
 

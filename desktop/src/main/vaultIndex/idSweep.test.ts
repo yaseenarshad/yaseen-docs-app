@@ -168,6 +168,31 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(a).not.toBe(b)
   })
 
+  it('two notes at different places, or with different contents, are given different ids; the same note (same place, same bytes) is given the same id on every device', async () => {
+    /** The id a device that holds only this note, at `rel` with these bytes, gives it. */
+    const givenOn = async (rel: string, content: string): Promise<string> => {
+      const device = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-device-'))
+      try {
+        const file = path.join(device, rel)
+        await mkdir(path.join(device, VAULT_CONFIG_DIR))
+        await mkdir(path.dirname(file), { recursive: true })
+        await writeFile(file, content)
+        const record = await scanFile(device, file)
+        await sweepIds(device, new Map([[file, record]]), [record], () => undefined)
+        const id = /^id: (.+)$/m.exec(await readFile(file, 'utf8'))?.[1]
+        expect(isNoteId(id)).toBe(true)
+        return id!
+      } finally {
+        await rm(device, { recursive: true, force: true })
+      }
+    }
+    const id = await givenOn('Inbox/idea.md', 'an idea\n')
+    expect(await givenOn('Inbox/idea.md', 'an idea\n')).toBe(id) // another device: same place, same bytes
+    expect(await givenOn('Inbox/idea.md', 'another idea\n')).not.toBe(id) // same place, different contents
+    expect(await givenOn('Archive/idea.md', 'an idea\n')).not.toBe(id) // same contents, another folder
+    expect(await givenOn('Inbox/idea 2.md', 'an idea\n')).not.toBe(id) // same contents, another name
+  })
+
   it('never writes an id another note holds: a note dropped where one stood, with the same bytes, is given the next id — the same one on every device (YAZ-2378)', async () => {
     await sweep(await vault({ 'Inbox/idea.md': 'an idea\n' }))
     const held = (await idIn('Inbox', 'idea.md'))!
