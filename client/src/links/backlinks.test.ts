@@ -307,6 +307,16 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
     expect(marked(snippet)).toEqual(['Road Map', 'Road Map > Scope', 'the plan'])
   })
 
+  it('a link in a folder’s value counts as a linked mention of its target, exactly as a top-level whole-value link does', () => {
+    // The index puts a folder value's link in the record's `links` (`scan.test.ts`); the snippet is the value's own line.
+    const content = `---\nin:\n  3y7505rsr6fd:\n    Status: Interview\n    owner: "[[${ID}]]"\n---\nBody\n`
+    const holder = { ...rec('/vault/Hiring/Noor.md', { links: [ID] }), properties: { in: { '3y7505rsr6fd': { Status: 'Interview', owner: `[[${ID}]]` } } } }
+    const all = [holder, { ...rec(ROAD), id: ID }]
+    const over = resolverOver(all)
+    expect(backlinksFor(ROAD, all, over, []).map((r) => r.path)).toEqual(['/vault/Hiring/Noor.md'])
+    expect(mentionSnippets(content, ROAD, over).map((s) => s.text)).toEqual(['owner: "Road Map"'])
+  })
+
   it('an id no note has reads as the raw id, as the editor shows it', () => {
     const [snippet] = mentionSnippets(`gone [[zzzzzzzzzzz9]] but [[${ID}]]\n`, ROAD, resolve)
     expect(snippet.text).toBe('gone zzzzzzzzzzz9 but Road Map')

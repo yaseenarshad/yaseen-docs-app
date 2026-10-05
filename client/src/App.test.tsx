@@ -1437,6 +1437,31 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
   })
 
+  it('a note moved to another folder IN THE APP leaves the old folder’s values behind in that move; a folder that showed it before and still does keeps its block (D20)', async () => {
+    const HIRING = '3y7505rsr6fd'
+    const TEAM = 'mzf9cjhn02vm'
+    const ARCHIVE = 'a1b2c3d4e5f6'
+    const held = `---\nin:\n  ${TEAM}:\n    Rank: 2\n  ${HIRING}:\n    Status: Interview\n---\nBody\n`
+    // The disk as it is once the rename has landed: the note is at its new place.
+    const files = { '/v/Team/Archive/Noor.md': { content: held, mtime: 1 }, '/v/Team/Archive/Plain.md': { content: 'Body\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) =>
+      b.bridge.index.mockResolvedValue({
+        root: '/v',
+        records: [record('/v/Team/Hiring/Noor.md', { properties: { in: { [TEAM]: { Rank: 2 }, [HIRING]: { Status: 'Interview' } } } }), record('/v/Team/Hiring/Plain.md')],
+        folders: [record('/v/Team/.folder.md', { id: TEAM }), record('/v/Team/Archive/.folder.md', { id: ARCHIVE }), record('/v/Team/Hiring/.folder.md', { id: HIRING })],
+        generatedAt: 1,
+      }),
+    )
+    await act(async () => await captured.sidebar?.onRenameFile('/v/Team/Hiring/Noor.md', '/v/Team/Archive/Noor.md', 'file'))
+    expect(el.querySelector('.confirm')).toBeNull() // a move: silent
+    expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+    // A note that holds nothing for the folder it left is not read at all.
+    bridge.readFile.mockClear()
+    await act(async () => await captured.sidebar?.onRenameFile('/v/Team/Hiring/Plain.md', '/v/Team/Archive/Plain.md', 'file'))
+    expect(bridge.readFile).not.toHaveBeenCalled()
+    expect(files['/v/Team/Archive/Plain.md'].content).toBe('Body\n')
+  })
+
   it('Cancel renames nothing and rewrites nothing', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)

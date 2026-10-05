@@ -15,7 +15,7 @@ import { basenameCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
 import { absFrom, basename, dirname, relTo } from '../lib/paths'
 import { RESERVED_KEYS } from '../links/reservedKeys'
-import { folderId, folderRecord, foldersById, foldersShowing } from '../links/shortcuts'
+import { dropStaleFolderValues, folderId, folderRecord, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY, folderSettings, hasFolderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
@@ -25,7 +25,7 @@ import { EditableCell } from '../views/view/EditableCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { cellContent } from '../views/view/GroupHeader'
 import { PropertiesIcon } from '../views/view/icons'
-import { readForWrite, trackFileWrite, writeFolderValues, writeProperty, type ContentTransform } from '../views/writeProperty'
+import { readForWrite, trackFileWrite, transformFile, writeFolderValues, type ContentTransform } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import '../views/views.css'
 
@@ -202,14 +202,16 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
    * disk moves the SAME way, so the raw fallback can never show a block a typed edit left behind
    * and a later raw Save cannot silently revert it. A folder's row is written to that folder's
    * block of `in` (D19); a folder with no id is given one first, the path its first shortcut uses.
+   * Either row's save also drops the note's values for the folders that no longer show it (D20).
    */
   const commit = async (key: string, value: unknown, folder: boolean): Promise<void> => {
-    let change: ContentTransform = (content) => setFrontmatterProperty(content, key, value)
+    const tidy: ContentTransform = vault === undefined ? (content) => content : dropStaleFolderValues(vault, file.path, folders)
+    let change: ContentTransform = (content) => tidy(setFrontmatterProperty(content, key, value))
     if (folder && chosen !== undefined) {
       const id = chosenId ?? (await folderId(chosen))
-      change = (content) => setFolderValue(content, id, key, value)
-      await writeFolderValues(file.path, id, [{ key, value }])
-    } else await writeProperty(file.path, key, value)
+      change = (content) => tidy(setFolderValue(content, id, key, value))
+      await writeFolderValues(file.path, id, [{ key, value }], tidy)
+    } else await transformFile(file.path, change)
     setSnap((s) => ({ seen: s.seen, content: applied(s.content, change), draft: null }))
     setError(null)
   }

@@ -336,7 +336,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     const input = byLabel<HTMLInputElement>(el, 'Edit order')
     setValue(input, '9')
     press(input, 'Enter')
-    expect(writeValues).toHaveBeenCalledExactlyOnceWith(OTHER, STAGES_ID, [{ key: 'order', value: 9 }]) // in this folder's block of it
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(OTHER, STAGES_ID, [{ key: 'order', value: 9 }], expect.any(Function)) // in this folder's block of it
   })
 
   /** The snapshot with a second settings file beside the folder's own: `dir`'s, saving `columns`. */
@@ -358,7 +358,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     const input = byLabel<HTMLInputElement>(el, 'Edit order')
     setValue(input, '9')
     press(input, 'Enter')
-    expect(writeValues).toHaveBeenCalledExactlyOnceWith(OTHER, STAGES_ID, [{ key: 'order', value: 9 }]) // a number: stages' own declaration
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(OTHER, STAGES_ID, [{ key: 'order', value: 9 }], expect.any(Function)) // a number: stages' own declaration
   })
 
   it('Delete a column from a folder: that field is removed from THAT folder’s block in every indexed note that has it — a note under it at any depth, a shortcut, and a note it no longer shows', async () => {
@@ -403,7 +403,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     const input = byLabel<HTMLInputElement>(el, 'Edit order')
     setValue(input, '9')
     press(input, 'Enter')
-    expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, STAGES_ID, [{ key: 'order', value: 9 }])
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, STAGES_ID, [{ key: 'order', value: 9 }], expect.any(Function))
   })
 
   it('a board drag on a row from a subfolder writes that note, in the OPENED folder’s block', async () => {
@@ -413,7 +413,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     const column = [...el.querySelectorAll('.view-board__col')].find((col) => q(col, '.view-group__value').textContent === '1')!
     fire(old, 'dragstart')
     fire(column, 'drop')
-    expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, STAGES_ID, [{ key: 'order', value: 1, prevRaw: 3 }])
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, STAGES_ID, [{ key: 'order', value: 1, prevRaw: 3 }], expect.any(Function))
   })
 
   it('"New" creates the note DIRECTLY in the opened folder; its name-clash check looks only at notes directly in it, not at rows from subfolders', async () => {
@@ -944,7 +944,7 @@ describe('cell editing writes the NOTE, in the folder’s block, typed by the fo
     click(q(el, '[role="option"]')) // completes to [[CAC]]
     press(byLabel(el, 'Edit related'), 'Enter') // adds the chip
     press(byLabel(el, 'Edit related'), 'Enter') // empty input commits the list
-    expect(writeValues).toHaveBeenCalledExactlyOnceWith(LEAD, STAGES_ID, [{ key: 'related', value: ['[[CAC]]'] }])
+    expect(writeValues).toHaveBeenCalledExactlyOnceWith(LEAD, STAGES_ID, [{ key: 'related', value: ['[[CAC]]'] }], expect.any(Function))
     expect(write).not.toHaveBeenCalled()
   })
 })
@@ -1255,6 +1255,60 @@ describe('each folder has its own properties (D19)', () => {
     selectView(el, 'Table')
     expect([cell(el, 'Lead Gen', 1).textContent, cell(el, 'Lead Gen', 2).textContent]).toEqual(['Empty', 'Empty'])
     expect(cell(el, 'Sales', 1).textContent).toBe('1')
+  })
+
+  describe('a folder’s values leave the note when the note leaves the folder (D20)', () => {
+    const GONE_ID = 'n0f01der0000' // a block for a folder no settings record has
+    const settings = { columns: { order: { kind: 'number' } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'note.order'] }, ORDER_BOARD] }
+    const folders = [
+      { ...rec('/vault/Sub/.folder.md', { folder_settings: settings }), id: SUB_ID },
+      { ...rec(SETTINGS_FILE, { folder_settings: settings }), id: STAGES_ID },
+      { ...rec(`${ARCHIVE}/.folder.md`, { folder_settings: settings }), id: ARCHIVE_ID },
+    ]
+    /** `Old` lives in stages/archive: moved there from Sub outside the app, so it still holds Sub's values — and a deleted folder's. */
+    const values = { [SUB_ID]: { order: 70 }, [GONE_ID]: { order: 5 }, [STAGES_ID]: { order: 3 }, [ARCHIVE_ID]: { order: 30 } }
+    const MOVED = `---\ntitle: mine\nin:\n  ${SUB_ID}:\n    order: 70\n  ${GONE_ID}:\n    order: 5\n  ${STAGES_ID}:\n    order: 3\n  ${ARCHIVE_ID}:\n    order: 30\n---\nBody\n`
+    const records = [rec(SALES, held({ order: 1 })), rec(DEEP, { title: 'mine', in: values })]
+    const open = async (): Promise<HTMLElement> => {
+      disk.set(DEEP, MOVED)
+      const el = renderFolderView({ path: STAGES, source, onOpenFile })
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+      await flush()
+      return el
+    }
+    const withoutSub = (content: string): string => content.replace(`  ${SUB_ID}:\n    order: 70\n`, '')
+
+    it('a note was moved OUTSIDE the app: nothing happens then — opening the folder that shows it writes nothing', async () => {
+      await open()
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(disk.get(DEEP)).toBe(MOVED)
+    })
+
+    it('the next time the user changes that note’s values in a cell, the blocks of folders that exist and do not show it are removed in the SAME save; a folder that still shows it keeps its block, and a block for a folder the app cannot find is kept', async () => {
+      const el = await open()
+      editNumber(el, 'Old', 1, 'Edit order', '9')
+      await flush()
+      expect(disk.get(DEEP)).toBe(withoutSub(MOVED).replace('    order: 3\n', '    order: 9\n'))
+      expect(writeFile).toHaveBeenCalledTimes(1)
+    })
+
+    it('a board drag does the same, in its one save', async () => {
+      const el = await open()
+      selectView(el, 'Board')
+      fire(card(el, 'Old'), 'dragstart')
+      fire(columnHolding(el, 'Sales'), 'drop') // the column of `order: 1`
+      await flush()
+      expect(disk.get(DEEP)).toBe(withoutSub(MOVED).replace('    order: 3\n', '    order: 1\n'))
+      expect(writeFile).toHaveBeenCalledTimes(1)
+    })
+
+    it('the write the removal rides on is refused: nothing is removed', async () => {
+      const el = await open()
+      writeFile.mockRejectedValueOnce(new Error('disk full'))
+      editNumber(el, 'Old', 1, 'Edit order', '9')
+      await flush()
+      expect(disk.get(DEEP)).toBe(MOVED)
+    })
   })
 
   describe('A folder with no id (its `.folder.md` is missing or has none)', () => {

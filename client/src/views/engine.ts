@@ -329,8 +329,7 @@ const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof 
  * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
  * a column before any note carries it, so a new folder shows its `status` at once. Two keys
  * the app writes and nobody reads as a value are never default columns: the note's `id`
- * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2). A view can still add either
- * (`allPropertyKeys` offers them).
+ * (YAZ-2293) and its shortcuts, `also_in` (YAZ-2290 D2).
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]

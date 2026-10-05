@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { COMMENTS_KEY } from '@shared/comments'
+import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
@@ -115,14 +116,14 @@ function bodyWikilinks(body: string, embed: boolean): string[] {
 }
 
 /**
- * Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then body
- * `[[links]]` outside code; embeds excluded. `aliases` is skipped whatever it holds (GRO-2214):
- * its values are this note's own NAMES, never outgoing links.
+ * Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then the same
+ * in each folder's block of `in` (D19), then body `[[links]]` outside code; embeds excluded.
+ * `aliases` is skipped whatever it holds (GRO-2214): its values are this note's own NAMES, never
+ * outgoing links.
  */
 export function extractLinks(props: Record<string, unknown>, body: string): string[] {
   const out: string[] = []
-  for (const [key, v] of Object.entries(props)) {
-    if (key === ALIASES_KEY) continue
+  const take = (v: unknown): void => {
     for (const item of Array.isArray(v) ? v : [v]) {
       const m = typeof item === 'string' ? EXACT_WIKILINK_RE.exec(item.trim()) : null
       if (m === null) continue
@@ -130,6 +131,8 @@ export function extractLinks(props: Record<string, unknown>, body: string): stri
       if (target !== '') out.push(target)
     }
   }
+  for (const [key, v] of Object.entries(props)) if (key !== ALIASES_KEY) take(v)
+  for (const [, block] of folderBlocks(props)) Object.values(block).forEach(take)
   return unique([...out, ...bodyWikilinks(body, false)])
 }
 

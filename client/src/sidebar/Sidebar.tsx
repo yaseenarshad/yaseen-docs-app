@@ -528,7 +528,7 @@ export function Sidebar({
     [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState],
   )
 
-  const { clip, clipTo, pasteInto } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice)
+  const { clip, clipTo, pasteInto } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice, indexSource)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -910,7 +910,7 @@ export function Sidebar({
               onAddShortcut: setPickingShortcut,
               // The row goes when the index says so, as it came; only a refusal is said.
               onRemoveShortcut: (path, dir) =>
-                void removeShortcut(dir, path, indexSource.folders).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')),
+                void removeShortcut(dir, path, indexSource.folders, root).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')),
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })),
               onDelete: askDelete,
             },

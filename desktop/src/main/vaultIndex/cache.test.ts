@@ -252,6 +252,10 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     "tags: [alpha, '#beta']",
     'link: "[[Ref|shown]]"',
     "aliases: [Canon, ' Spaced Alias ', '[[Not A Link]]']",
+    'in:',
+    '  3y7505rsr6fd:',
+    '    owner: "[[Folder Ref]]"',
+    '    note: see [[Not A Link In Text]]',
     'comments:',
     '  - id: c0ffee00',
     '    at: 2026-09-11T18:22:31Z',
@@ -270,7 +274,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 5,
+    cacheVersion: 6,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'reviews', 'size', 'tags', 'text'],
@@ -283,13 +287,15 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         tags: ['alpha', '#beta'],
         link: '[[Ref|shown]]',
         aliases: ['Canon', ' Spaced Alias ', '[[Not A Link]]'],
+        in: { '3y7505rsr6fd': { owner: '[[Folder Ref]]', note: 'see [[Not A Link In Text]]' } },
         // No `comments`: the note's own comment stream is dropped at scan time (YAZ-1472, 🔒 D5).
         // No `reviews`: the note's own review log is lifted onto the record (YAZ-2322, 🔒 D1).
       },
       aliases: ['Canon', 'Spaced Alias', '[[Not A Link]]'],
       tags: ['alpha', 'beta', 'gamma', 'tag/nested'],
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
-      links: ['Ref', 'Note One', 'Note Two'],
+      // A whole-value link in a folder's block of `in` is a link (D19).
+      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two'],
       embeds: ['img.png'],
       reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }],
       text: '3f08025c',

@@ -6,10 +6,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useState, type Dispatch, type RefObject } from 'react'
 import type { FileClipState, SidebarLens, TreeNode, TreeResponse } from '@shared/types'
 import { api } from '../../api'
+import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { NoticeKind } from '../../lib/notice'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
+import { dropFolderValuesAfterMove } from '../../links/shortcuts'
 import { createNote } from '../../views/scaffold'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
@@ -156,6 +158,7 @@ export function useFileClipboard(
   dispatch: Dispatch<TreeAction>,
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
+  index: WikilinkResolveSource,
 ) {
   /**
    * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op }` or null, pushed to every window on
@@ -206,14 +209,17 @@ export function useFileClipboard(
    * notice counts both halves and names the first failure. The target opens (the synthetic-child
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
-   * (`refresh` is idempotent).
+   * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
+   * it left behind (D20), judged on the index as it stood before the paste.
    */
   const pasteInto = useCallback(
     async (dir: string) => {
       try {
+        const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir })
         if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
         refresh()
+        if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root, oldPath: from, newPath: to, kind, ...before })
         const first = res.failed[0]
         if (first === undefined) {
           // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
@@ -225,7 +231,7 @@ export function useFileClipboard(
         onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [root, refresh, onNotice],
+    [root, refresh, onNotice, clip, index],
   )
 
   /**

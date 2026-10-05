@@ -92,6 +92,17 @@ describe('help and usage', () => {
     }
   })
 
+  it('says, in at most three lines, that a folder’s values for a note are under `in:` in the block named by the folder’s id, and that a folder’s id is the `id` in `<folder>/.folder.md`', () => {
+    const lines = HELP.split('\n')
+    const first = lines.findIndex((line) => line.includes('`in:`'))
+    expect(first).toBeGreaterThan(-1)
+    const said = lines.slice(first, first + 3).join(' ')
+    expect(said).toContain("named by the folder's id")
+    expect(said).toContain('`id` in `<folder>/.folder.md`')
+    // Nowhere else: those three lines are the whole of it.
+    expect(lines.filter((line, i) => (i < first || i >= first + 3) && /`in:`|\.folder\.md/.test(line))).toEqual([])
+  })
+
   it('usage errors exit 2 with the reason and the usage block on stderr, nothing on stdout', async () => {
     const p = await page('a.md', '')
     for (const [argv, reason] of [
@@ -373,18 +384,41 @@ describe('links (YAZ-2293)', () => {
     })
   })
 
-  it('--json prints the same rows; a page with no ids says so', async () => {
+  it('--json prints the same rows under `links`; a page with no ids says so', async () => {
     const root = await mine()
     const r = await run(['links', path.join(root, 'Home.md'), '--json'])
-    expect(JSON.parse(r.out)).toEqual([
-      { id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' },
-      { id: DEAD, kind: 'missing' },
-      { id: FOLDER, kind: 'folder', path: 'Areas' },
-    ])
-    expect(r.out).toContain('\n  {\n    "id"') // 2-space indented, as `comments --json` is
+    expect(JSON.parse(r.out)).toEqual({
+      links: [
+        { id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' },
+        { id: DEAD, kind: 'missing' },
+        { id: FOLDER, kind: 'folder', path: 'Areas' },
+      ],
+      in: [],
+    })
+    expect(r.out).toContain('\n    {\n      "id"') // 2-space indented, as `comments --json` is
     const plain = path.join(root, 'Plain.md')
     expect(await run(['links', plain])).toEqual({ code: 0, out: `no ids on ${plain}\n`, err: '' })
-    expect(JSON.parse((await run(['links', plain, '--json'])).out)).toEqual([])
+    expect(JSON.parse((await run(['links', plain, '--json'])).out)).toEqual({ links: [], in: [] })
+  })
+
+  it('also lists the folders of the note’s `in:` block, each by id and current name, in a group of their own (and under `in` in --json); a block whose id no folder has is listed by id with no name', async () => {
+    const root = await mine()
+    const held = path.join(root, 'Held.md')
+    // A link in a folder's value is a link of the page; a note's id names no folder.
+    await writeFile(held, `---\nin:\n  ${FOLDER}:\n    Status: Interview\n    owner: "[[${NOTE}]]"\n  ${DEAD}:\n    Status: Old\n  ${NOTE}:\n    Status: x\n---\n`, 'utf8')
+    expect(await run(['links', held])).toEqual({
+      code: 0,
+      err: '',
+      out: `${NOTE}  Projects/Alpha/Kickoff notes.md\n\nin:\n${FOLDER}  Areas/\n${DEAD}\n${NOTE}\n`,
+    })
+    expect(JSON.parse((await run(['links', held, '--json'])).out)).toEqual({
+      links: [{ id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' }],
+      in: [{ id: FOLDER, path: 'Areas' }, { id: DEAD }, { id: NOTE }],
+    })
+    // Values and no ids: the links say so, and the folders are still listed.
+    const only = path.join(root, 'Only.md')
+    await writeFile(only, `---\nin:\n  ${FOLDER}:\n    Status: Interview\n---\n`, 'utf8')
+    expect((await run(['links', only])).out).toBe(`no ids on ${only}\n\nin:\n${FOLDER}  Areas/\n`)
   })
 
   it('a scalar `also_in` is one entry, as the app reads it', async () => {
