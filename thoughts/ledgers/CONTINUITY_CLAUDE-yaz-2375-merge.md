@@ -36,6 +36,7 @@
 - D19 each folder has its own properties: a folder's values for a note are in the note under `in:`, in the block named by the folder's id. The top level is the note's own fields.
 - D20 a folder's values leave the note when the note leaves the folder (in-app move, removed shortcut, or the user's next change of a note moved outside the app); a block for a folder the app cannot find is kept; never on read.
 - D21 a move, a Cut then Paste or "Remove shortcut" that would clear a folder's values asks first; one that clears nothing stays silent (amends YAZ-888 and YAZ-2290 E5).
+- D22, replaced by D23: the properties panel is the search bar, "Note fields" (the note's own), a line, then "Properties from <folder>" directly over that folder's fields.
 - D12's keep-rule is gone (D19): deleting a column removes that folder's values only.
 - The conversion table is approved (YAZ-2383): each page becomes the folder that holds its members; 2 shortcuts, 5 nestings, 2 relations dropped.
 
@@ -54,15 +55,20 @@ Linear is the record: every sub-issue has a "Done" comment, and YAZ-2375 has "St
   - [x] A value write changes only its own line of `in` (`3779e1f`, found in the walk-through)
   - [x] 5C: the Playwright specs the merge made false are deleted (`458a717`); a new suite is YAZ-2459
   - [x] 6B: the hand walk-through on the converted copy, through the app's DevTools port (no Playwright)
-- Now: [→] 3Q (YAZ-2460): the app asks before a move that clears a folder's values (D21); 6A the scenario-test map
-- Next: 6C docs check, then 6D: merge to `main`, push, open the demo app for Yaseen (no install, no release)
-- Remaining:
-  - [ ] Close-out: handoff comments, project update, remove worktree and branch, archive the fork repo, the message owed below
+  - [x] 3Q: the app asks before a move that clears a folder's values, D21 (`847d200`)
+  - [x] 3R: the properties panel's layout, D22 then D23 (`959e35e`, `70fe5a3`): search bar, "Note fields", a line, "Properties from <folder>"
+  - [x] 6A: every scenario row mapped to its proof on YAZ-2404; the gaps a test could close are closed (`5466ed9`, `0014be0`)
+  - [x] 6C docs; 6D merged to `main` by pull request #87 (`552ac88`), Yaseen approved the demo on 2026-10-04
+- Now: closed. YAZ-2375 and every sub-issue are Done in Linear. No release, no install over the app (D18).
+- Next (other issues, not this ledger): YAZ-2420 builds from `main`; the real vault's sitting (convert or rebuild, Yaseen decides); YAZ-2459 a new end-to-end suite; YAZ-2410 the vault's top level as a page.
 
-## Owed at the merge
+The full handoff (goal, decisions D1 to D23, files, Yaseen's words, gotchas, next steps) is the last handoff comment on YAZ-2375 and the Linear project update of 2026-10-04.
 
-- Send the session "2-ID in Copy Path" (YAZ-2420) ONE message once YAZ-2375 is on `main`: the commit on `main`; the name and file of the function that moves a copied folder's `in:` blocks to the copy's ID (YAZ-2455, its YAZ-2437 must call it); the name of the function that removes stale `in:` blocks (D20, YAZ-2458); everything locked after D19 on the rename, move or copy path; and what is unfinished or Future in the files it shares (FrontmatterPanel.tsx, Sidebar.tsx, menuSections.ts, the link picker, folderLinks.ts, engine.ts, renameLinks.ts, scan.ts, idSweep.ts, create.ts, copy.ts, cli.ts, docs/CONTRACTS.md, docs/REGRESSION.md).
-- Do NOT install the new build over `/Applications/Yaseen Docs.app` (D18). The real vault is converted in one sitting with YAZ-2420's run; YAZ-2398 and YAZ-2399 live under YAZ-2420.
+## Standing notes for whoever picks this up
+
+- Hand checks run on a fresh demo vault, never on the real vault or a copy of it (Yaseen, 2026-10-04). No Playwright.
+- The message owed to the YAZ-2420 session was sent at the merge. `carryFolderValues` (`desktop/src/main/vaultIndex/idSweep.ts`) is the function its copy-at-copy-time work must call.
+- The fork repo `yaseen-notecards-app` is finished with; everything it built is on `main`.
 
 ## Open Questions
 
