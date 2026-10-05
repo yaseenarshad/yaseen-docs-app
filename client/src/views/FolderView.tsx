@@ -9,8 +9,11 @@
  *    the first change, and opening writes NOTHING.
  *  - THE ADAPTER (🔒 D3, YAZ-819): ViewsPane stays ONE component. This host builds a def in memory
  *    from the settings' views and turns every def change back into ONE settings write
- *    (`writeFolderSettings`). Which view is active is session state, never written. A cell edit
- *    writes the NOTE's own frontmatter, and a column is never stamped into one (E1).
+ *    (`writeFolderSettings`). Which view is active is session state, never written.
+ *  - VALUES (D19): a folder's values for a note are in the NOTE, under `in`, in the block named by
+ *    the folder's id (`shared/folderValues.ts`). This host is the one seam: the views get rows
+ *    whose `properties` ARE this folder's block, and every value they write comes back through
+ *    `writeValues` into it. A column is never stamped into a note (E1).
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -20,6 +23,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
+import { folderValues, withFolderValues } from '@shared/folderValues'
 import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -31,13 +35,14 @@ import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { folderRecord, folderRows } from '../links/shortcuts'
+import { folderId, folderRecord, folderRows } from '../links/shortcuts'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
-import { deleteColumn as deleteColumnEverywhere } from './deleteColumn'
-import { freeName, type NewNoteSeed } from './newNote'
+import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
+import { freeName } from './newNote'
 import { createNote } from './scaffold'
+import { writeFolderValues } from './writeProperty'
 import { ViewFolder } from './view/GroupHeader'
 import './views.css'
 import './folderView.css'
@@ -123,6 +128,10 @@ export function FolderView({
   const indexed = feed.resolve !== null
   const settings = useMemo(() => (indexed ? folderSettings(record) : null), [indexed, record])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
+  /** The folder's id: the name of its block in a note. None until its `.folder.md` holds one — then every value reads as empty. */
+  const id = record?.id
+  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note. */
+  const shown = useMemo(() => rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })), [rows, id])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -264,10 +273,19 @@ export function FolderView({
     vaultFolders: feed.folders,
     resolveLink,
     // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
-    create: (seed, name) => {
+    // Wherever it is born, the seeded values are THIS folder's — its view is the one being satisfied — and a
+    // folder with no id is given one first (`folderId`).
+    create: async (seed, name) => {
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
-      return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => r.folder === into), seed, name)
+      const block = Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
+      const seeded = (template: Record<string, unknown>): Record<string, unknown> => ({
+        ...(block === undefined ? template : withFolderValues(template, block, seed.properties)),
+        ...(seed.tags !== undefined && { tags: seed.tags }),
+      })
+      return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => r.folder === into), seeded, name)
     },
+    // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
+    writeValues: (note, writes) => (id !== undefined ? writeFolderValues(note, id, writes) : folderId(path).then((given) => writeFolderValues(note, given, writes))),
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {
@@ -291,17 +309,17 @@ export function FolderView({
     },
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
     // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
-    // strips report into the column banner, no rollback. They reach every row no other folder
-    // showing it has a column of that name for.
+    // strips report into the column banner, no rollback. They reach every indexed note holding
+    // the field in this folder's block.
     deleteColumn: (key) =>
       deleteColumnEverywhere(key, {
         columns: liveSettings.columns,
         def: parsed.def,
-        rows,
-        folder,
-        folders: feed.folders,
+        records: feed.records,
+        folderId: id,
         writeSettings: commitSettings,
       }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
+    valueCount: (key) => notesHolding(feed.records, id, key).length,
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,
@@ -333,7 +351,7 @@ export function FolderView({
             onChange={onChange}
             root={root}
             folderPath={path}
-            records={rows}
+            records={shown}
             properties={properties}
             onOpenFile={onOpenFile}
             folder={host}
@@ -349,7 +367,7 @@ export function FolderView({
 
 /**
  * Birth in a folder (YAZ-2290 D4): the note lands DIRECTLY in `dir`, born like every note
- * (`createNote`) under the seed; `rows` are the notes already there, whose names are taken.
+ * (`createNote`) with what `seed` makes of its template; `rows` are the notes already there, whose names are taken.
  *
  * The name is the `Untitled` scheme by default — EXCEPT when the caller already knows what the
  * note is called (YAZ-943's inline board add types one). A typed name is tamed first: a '/'
@@ -358,13 +376,13 @@ export function FolderView({
  * runs over the folder's basenames, so a typed collision steps to " 2" like everything else — and
  * past a name the disk holds but the index does not yet (a second inline add of the same name).
  */
-async function createInFolder(dir: string, rows: readonly IndexRecord[], seed: NewNoteSeed, name?: string): Promise<string> {
+async function createInFolder(dir: string, rows: readonly IndexRecord[], seed: (template: Record<string, unknown>) => Record<string, unknown>, name?: string): Promise<string> {
   const taken = new Set(rows.map((r) => r.basename))
   const tamed = (name ?? '').replaceAll('/', ' ').trim()
   for (;;) {
     const free = freeName(tamed === '' ? 'Untitled' : tamed, taken)
     try {
-      await createNote(`${dir}/${free}.md`, seed.properties)
+      await createNote(`${dir}/${free}.md`, seed)
       return `${dir}/${free}.md`
     } catch (err) {
       if (!(err instanceof BridgeRequestError) || err.code !== 'ALREADY_EXISTS') throw err

@@ -4,14 +4,16 @@ import { type Expr, compile } from './expr'
 /**
  * The toolbar's "New" (5D, GRO-2144): a note pre-filled so it satisfies the current view.
  * `deriveSeed` is pure over the filter ASTs (def + view): equality filters `note.x == <literal>`
- * seed `x` with the literal's YAML type, and `file.hasTag("t")` seeds `tags: [t]`. Only
+ * seed `x` with the literal's YAML type, and `file.hasTag("t")` seeds the note's own tag `t`. Only
  * and-reachable rules count — seeding an `or`/`not` branch would not (or would anti-) satisfy the
  * view. Non-equality rules are ignored by design (locked kickoff decision on the issue).
  */
 
 export interface NewNoteSeed {
-  /** Bare frontmatter keys → raw YAML values. */
+  /** Bare keys → raw YAML values: the values the VIEW's rows are read by, so the host's to place (`FolderHost.create`). */
   properties: Record<string, unknown>
+  /** The note's own tags (`file.hasTag`): a tag is the note's, whichever folder shows it. */
+  tags?: string[]
   /** The folder of the group whose "+" was pressed, when the view is grouped by Folder: root-relative. */
   folder?: string
 }
@@ -64,13 +66,7 @@ export function deriveSeed(def: ViewSet, view: ViewDef): NewNoteSeed {
     }
   }
 
-  if (tags.length > 0) {
-    const existing = properties.tags
-    if (Array.isArray(existing)) properties.tags = [...existing, ...tags.filter((t) => !existing.includes(t))]
-    else if (existing === undefined) properties.tags = tags
-  }
-
-  return { properties }
+  return tags.length > 0 ? { properties, tags } : { properties }
 }
 
 /** First free name in the locked scheme: `base`, `base 2`, `base 3`… (`taken` = basenames in the folder). */

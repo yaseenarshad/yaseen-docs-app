@@ -1,3 +1,4 @@
+import { setFolderValue } from '@shared/folderValues'
 import { setFrontmatterProperty } from '@shared/frontmatter'
 import { isFolderSettingsPath, type FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
@@ -82,4 +83,12 @@ export async function writeProperties(path: string, writes: readonly PropertyWri
 /** Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). */
 export async function writeProperty(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
   return writeProperties(path, [{ key, value }])
+}
+
+/**
+ * Change fields of ONE folder's block of a note (D19, `shared/folderValues.ts`) in one guarded
+ * whole-file transformation: every value a folder's views or the panel's folder rows write.
+ */
+export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[]): Promise<{ mtime: number }> {
+  return transformFile(path, (content) => writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content))
 }

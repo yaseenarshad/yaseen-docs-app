@@ -82,7 +82,7 @@ export async function createFromLink(root: string, inner: string, base = '', id?
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
     if (planned.folder !== '') await ensureFolder(root, planned.folder)
-    await createNote(planned.path, {}, id)
+    await createNote(planned.path, undefined, id)
     return { status: 'created', path: planned.path }
   } catch (err) {
     if (err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS') return { status: 'exists', path: planned.path }

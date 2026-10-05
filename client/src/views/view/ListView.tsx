@@ -45,6 +45,8 @@ export interface ListViewProps {
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
+  /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
+  onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -72,7 +74,7 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
@@ -109,7 +111,6 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
     if (bare === null) return cellContent(row.values[key], resolve)
     return (
       <EditableCell
-        path={row.record.path}
         propKey={bare}
         raw={row.record.properties[bare]}
         value={row.values[key]}
@@ -117,6 +118,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                         options={typings.get(key)?.options}
         basenames={linkNames.get(key) ?? basenames}
         resolve={resolve}
+        onCommit={(next) => onWriteValue(row.record.path, bare, next)}
       />
     )
   }

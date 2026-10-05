@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
-import { writeProperty } from '../writeProperty'
 import { cellContent } from './GroupHeader'
 import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
@@ -10,11 +9,9 @@ import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 
 export interface EditableCellProps {
-  /** Absolute path of the note this cell belongs to. */
-  path: string
-  /** Bare frontmatter key (no `note.` prefix), as `writeProperty` wants it. */
+  /** Bare key (no `note.` prefix): the cell's accessible name. */
   propKey: string
-  /** The note's current raw YAML value for `propKey`; undefined when the key is absent. */
+  /** The current raw YAML value for `propKey`; undefined when it is absent. */
   raw: unknown
   /** The engine value, displayed while not editing. */
   value: Value
@@ -24,12 +21,11 @@ export interface EditableCellProps {
   /** Index basenames for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the basename (`basenameCandidates`). */
   basenames: readonly LinkCandidate[]
   /**
-   * Replaces the default `writeProperty(path, propKey, next)` commit (⚡ YAZ-884). The properties
-   * panel passes its own writer — the SAME dance, plus the panel's own belief of disk moving with
-   * it — so its raw fallback can never show a block that a typed edit has already left behind.
-   * Same contract as the default: resolves on success, rejects with the message to show.
+   * The ONE write: the host's own. A folder's views write its block of the note
+   * (`FolderHost.writeValues`, D19); the properties panel writes the row's group and moves its
+   * belief of disk with it (⚡ YAZ-884). Resolves on success, rejects with the message to show.
    */
-  onCommit?: (next: unknown) => Promise<unknown>
+  onCommit: (next: unknown) => Promise<unknown>
   /**
    * The vault's resolver (YAZ-2293 D8): the display — and the chips editor's chips — read an id
    * link as its note's title. Display ONLY: the editors' text and every commit stay the stored form.
@@ -41,13 +37,12 @@ export interface EditableCellProps {
  * One editable property cell (5B, GRO-2142), shared by table cells and card/list property
  * chips: cards/lists open the typed display directly, while the table host delegates double-click
  * or Enter through `[data-edit]` after a single click only selects the cell. Enter/blur commit
- * through `writeProperty` (or the
- * host's own `onCommit`, the properties panel's seam — ⚡ YAZ-884), Esc
+ * through the host's `onCommit`, Esc
  * cancels. Commits are optimistic: the committed raw value renders immediately and stays
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ path, propKey, raw, value, editor, basenames, onCommit, options = [], resolve }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, basenames, onCommit, options = [], resolve }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -90,7 +85,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
     setPending({ v: next })
     const turn = ++revision.current
     echoes.current.push({ revision: turn, value: JSON.stringify(next ?? null) })
-    const write = () => onCommit === undefined ? writeProperty(path, propKey, next) : onCommit(next)
+    const write = () => onCommit(next)
     // Immediate feedback, ordered disk writes: a slow earlier choice cannot win last.
     const request = writes.current === null ? write() : writes.current.then(write)
     const settled = request.then(() => {}, (err: unknown) => {

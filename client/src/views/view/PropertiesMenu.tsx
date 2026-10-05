@@ -333,8 +333,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
           <ConfirmDeleteColumn
             columnKey={deleting}
             def={def}
-            records={records}
-            folders={folder.vaultFolders}
+            count={folder.valueCount}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {
               const gone = deleting

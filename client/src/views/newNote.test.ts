@@ -31,9 +31,9 @@ describe('deriveSeed', () => {
     expect(s.properties).toEqual({ pillar: 'Agentic', status: 'idea' })
   })
 
-  it('file.hasTag seeds a tags list, merged across rules', () => {
-    const s = seed({ and: ['file.hasTag("agentic")', 'file.hasTag("pillar")'] })
-    expect(s.properties).toEqual({ tags: ['agentic', 'pillar'] })
+  it('file.hasTag seeds the note’s own tags, merged across rules — beside the values, never among them', () => {
+    const s = seed({ and: ['file.hasTag("agentic")', 'file.hasTag("pillar")', 'tags == "a column of that name"'] })
+    expect(s).toEqual({ properties: { tags: 'a column of that name' }, tags: ['agentic', 'pillar'] })
   })
 
   it('ignores non-equality filters', () => {

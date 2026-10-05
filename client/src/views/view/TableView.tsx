@@ -73,6 +73,10 @@ export interface TableViewProps {
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. */
   deleteColumn: (key: string) => Promise<void>
+  /** `FolderHost.valueCount`: the number that confirm states. */
+  valueCount: (key: string) => number
+  /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
+  onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
 }
 
 const DEFAULT_WIDTH = 150
@@ -131,7 +135,7 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview, wikilinks)
   /** The name link and Enter on its cell share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
@@ -510,7 +514,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                           </>
                         ) : bares[c] !== null ? (
                           <EditableCell
-                            path={line.row.record.path}
                             propKey={bares[c]}
                             raw={line.row.record.properties[bares[c]]}
                             value={v}
@@ -518,6 +521,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                             options={typings[c]?.options}
                             basenames={linkNames[c] ?? basenames}
                             resolve={resolve}
+                            onCommit={(next) => onWriteValue(line.row.record.path, bares[c]!, next)}
                           />
                         ) : (
                           cellContent(v, resolve)
@@ -612,8 +616,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           <ConfirmDeleteColumn
             columnKey={confirmDelete}
             def={def}
-            records={records}
-            folders={vaultFolders}
+            count={valueCount}
             onCancel={() => setConfirmDelete(null)}
             onConfirm={() => {
               const gone = confirmDelete
