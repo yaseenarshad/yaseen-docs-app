@@ -171,7 +171,7 @@ describe('retitle: a folder (table C)', () => {
 
   it('a `.folder.md` whose properties do not parse: refused, and nothing is written or renamed (D24)', async () => {
     await note(`upwork/${FOLDER_SETTINGS_FILE}`, '---\nid: [unclosed\n---\n')
-    expect((await failure(retitle(root, { path: at('upwork'), title: 'Upwork 2026' }))).message).toMatch(/properties .*not parse/)
+    expect((await failure(retitle(root, { path: at('upwork'), title: 'Upwork 2026' }))).message).toBe("this folder's settings do not parse")
     expect(await read('upwork', FOLDER_SETTINGS_FILE)).toBe('---\nid: [unclosed\n---\n')
     expect(await readdir(root)).toEqual(['upwork'])
   })

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
-import { folderSettingsPath, type RenameFileResponse } from '@shared/types'
+import { folderSettingsPath, isFolderSettingsPath, type RenameFileResponse } from '@shared/types'
 import { giveId, readPage } from '../vaultIndex/idSweep'
 import { writeFile } from './file'
 import { BridgeFailure, createDurable, fsCall, requireAbsPath, requireMarkdownFile } from './fsUtils'
@@ -52,7 +52,7 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
   return newPath === p ? { oldPath: p, newPath, kind: src.isDirectory() ? 'dir' : 'file' } : renameFile({ oldPath: p, newPath })
 }
 
-const unparsed = (file: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', "this note's properties do not parse", { path: file })
+const unparsed = (file: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', isFolderSettingsPath(file) ? "this folder's settings do not parse" : "this note's properties do not parse", { path: file })
 
 /** The id the note at `file` holds, when it is one of this app's. Properties that do not parse refuse the edit (🔒 D24). */
 const idOf = (file: string, content: string): string | undefined => {
