@@ -108,6 +108,11 @@ describe('rewriteNoteLinks inside a folder’s values (`in`, D19)', () => {
     )
   })
 
+  it('only the link’s own line changes: the block’s other fields keep their quoting and layout', () => {
+    const note = '---\nin:\n  3y7505rsr6fd:\n    Status: "Interview" # by Sam\n    on: \'2026-09-07\'\n    owner: "[[B]]"\n  mzf9cjhn02vm:\n    tags: [a, "b"]\n---\n'
+    expect(rewriteNoteLinks(note, resolvesB, toC)).toBe(note.replace('"[[B]]"', '"[[C]]"'))
+  })
+
   it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link: nothing to write', () => {
     expect(rewriteNoteLinks('---\nin:\n  3y7505rsr6fd:\n    note: see [[B]] inline\n---\n', resolvesB, toC)).toBeNull()
   })

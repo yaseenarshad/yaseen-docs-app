@@ -23,7 +23,7 @@
  * Frontmatter follows the index's link extraction: whole-value exact `[[…]]` strings only
  * (top-level and inside lists), rewritten through `setFrontmatterProperty` so everything
  * else in the block survives byte-for-byte. A folder's values (`in`, D19) hold the same links by
- * the same rule; `in` goes back as the WHOLE key.
+ * the same rule, each rewritten where it stands (`setFrontmatterIn`).
  *
  * ONE key is walked deeper than that (YAZ-864): `folder_settings`, the single reserved key
  * with app-defined link semantics (Q1, YAZ-815). Its `views[].order` entries and
@@ -52,8 +52,8 @@
  *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
  */
-import { FOLDER_VALUES_KEY, folderBlocks, withFolderValues } from '@shared/folderValues'
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { FOLDER_VALUES_KEY, folderBlocks } from '@shared/folderValues'
+import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
@@ -192,15 +192,13 @@ export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTa
         const next = rewriteLinkValue(value, resolves, newTarget)
         if (next !== undefined) out = setFrontmatterProperty(out, key, next)
       }
-      // A folder's values (D19): each block's links by the same rule, `in` written back whole.
-      let held = properties
+      // A folder's values (D19): each block's links by the same rule, each written where it stands.
       for (const [id, block] of folderBlocks(properties)) {
         for (const [key, value] of Object.entries(block)) {
           const next = rewriteLinkValue(value, resolves, newTarget)
-          if (next !== undefined) held = withFolderValues(held, id, { [key]: next })
+          if (next !== undefined) out = setFrontmatterIn(out, [FOLDER_VALUES_KEY, id, key], next)
         }
       }
-      if (held !== properties) out = setFrontmatterProperty(out, FOLDER_VALUES_KEY, held[FOLDER_VALUES_KEY])
       // The nested leaves go back as the WHOLE key — the one door's own write shape
       // (`writeFolderSettings`), so nothing about that block is serialised two ways.
       const settings = mapFolderSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))

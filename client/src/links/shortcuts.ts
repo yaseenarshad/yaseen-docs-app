@@ -11,7 +11,7 @@
  */
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValues'
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
 import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
@@ -162,7 +162,11 @@ export function dropStaleFolderValues(root: string, path: string, folders: reado
     if (rel === path) return content
     const properties = propertiesOf(content)
     const kept = withoutLeftFolders(properties, dirname(rel), folders)
-    return kept === properties ? content : setFrontmatterProperty(content, FOLDER_VALUES_KEY, kept[FOLDER_VALUES_KEY])
+    if (kept === properties) return content
+    // Each stale block goes where it stands, so the blocks that stay are not laid out again.
+    const stay = Object.keys((kept[FOLDER_VALUES_KEY] as object | undefined) ?? {})
+    if (stay.length === 0) return setFrontmatterProperty(content, FOLDER_VALUES_KEY, undefined)
+    return Object.keys(properties[FOLDER_VALUES_KEY] as object).reduce((next, id) => (stay.includes(id) ? next : setFrontmatterIn(next, [FOLDER_VALUES_KEY, id], undefined)), content)
   }
 }
 

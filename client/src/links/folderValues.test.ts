@@ -77,6 +77,23 @@ describe('setFolderValue: ONE field of ONE folder’s block, in a whole file’s
     expect(setFolderValue(NOTE, HIRING, 'Status', 'Offer')).toBe(NOTE.replace('Status: Interview', 'Status: Offer'))
   })
 
+  // Written by hand, by an agent or by the one-time conversion: not the layout the app would choose.
+  const STYLED = `---\nid: "k3m9x2pq7abc"\nin:\n  ${HIRING}:\n    Status: "Interview"\n    reviewed_on: '2026-09-07' # by Sam\n    Notes: "a: b"\n  ${TASKS}:\n    Status: "2-Todo"\n    tags: [a, "b"]\n---\nBody\n`
+
+  it('touches only its own line: every other field of every block keeps its quoting, comments and layout', () => {
+    expect(setFolderValue(STYLED, HIRING, 'Status', 'Offer')).toBe(STYLED.replace('Status: "Interview"', 'Status: "Offer"'))
+    expect(setFolderValue(STYLED, TASKS, 'Due', 3)).toBe(STYLED.replace('    tags: [a, "b"]\n', '    tags: [a, "b"]\n    Due: 3\n'))
+    expect(setFolderValue(STYLED, HIRING, 'Notes', undefined)).toBe(STYLED.replace('    Notes: "a: b"\n', ''))
+    // A whole block, and then `in`, go the same way: nothing else is laid out again.
+    const one = setFolderValue(setFolderValue(STYLED, TASKS, 'Status', undefined), TASKS, 'tags', undefined)
+    expect(one).toBe(STYLED.replace(`  ${TASKS}:\n    Status: "2-Todo"\n    tags: [a, "b"]\n`, ''))
+  })
+
+  it('an `in`, or a block, written with no value takes the first one', () => {
+    expect(setFolderValue('---\nin:\n---\n', HIRING, 'Status', 'Offer')).toBe(`---\nin:\n  ${HIRING}:\n    Status: Offer\n---\n`)
+    expect(setFolderValue(`---\nin:\n  ${HIRING}:\n---\n`, HIRING, 'Status', 'Offer')).toBe(`---\nin:\n  ${HIRING}:\n    Status: Offer\n---\n`)
+  })
+
   it('a top-level field of the same name is the note’s own and is left alone', () => {
     const own = `---\nStatus: mine\n---\n`
     expect(setFolderValue(own, HIRING, 'Status', 'Interview')).toBe(`---\nStatus: mine\nin:\n  ${HIRING}:\n    Status: Interview\n---\n`)
