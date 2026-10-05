@@ -35,15 +35,16 @@ The record is the comment "Decision and scenario record, final" (D1 to D30). Rea
   - [x] Phase 3: 3A builder, 3B new notes, 3B1 typed path links, 3C retitle, 3D folders, 3E copies, 3F one copy item, 3G another tool's `id`
   - [x] Phase 5: 5A an independent review (33 items), 5B applied (30 of them)
   - [x] Phase 6: 6A unit tests and the whole Playwright suite (229), 6B walk-through on the real app (`desktop/e2e/names.spec.ts`), 6C docs
-- Now: [→] 6D: pull request #89 is open and waits for Yaseen's OK on two size ceilings (Q1 in "Questions for Yaseen" on YAZ-2420). No merge, no release until then.
-- Next: on his OK, set the two rows of `tools/perf/budget.json` to the measured values in one commit, merge #89, cut the release (smallest bump), write its notes. Do NOT install the build over his app (D33).
+  - [x] 3E1 a copy into another folder leaves behind values it does not show, after asking; 3C1 the "Ask before renaming" setting
+  - [x] 6D: merged as pull request #89 (`0472906`), with the two size ceilings set to the measured values on Yaseen's OK; released as v0.9.33
+- Now: closed. Not installed over Yaseen's app, by his choice (D33).
 - Remaining:
-  - [ ] 6D merge and close out (handoff comments, project update, remove the worktree and branch)
   - [ ] Phase 4 and 1B: parked until Yaseen asks (the old vault)
+  - [ ] `desktop/e2e/links.spec.ts` step 7 has a timing race (it picks a note before the app has given it its ID); harden it the next time Playwright is allowed
 
 ## Open Questions
 
-- Q1 (size ceilings), Q2 (which per-folder values a note copied into another folder keeps), Q3 (skip the "Rename?" sheet when a title edit has nothing to rewrite): all in the comment "Questions for Yaseen" on YAZ-2420, each with the option taken meanwhile.
+- None. Q1 (yes), Q2 (D34) and Q3 (D35) were answered on 2026-10-05; see "Yaseen's answers to Q1, Q2 and Q3" on YAZ-2420.
 
 ## Working Set
 
