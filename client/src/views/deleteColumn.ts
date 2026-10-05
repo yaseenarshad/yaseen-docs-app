@@ -7,25 +7,24 @@
  *      `summaries`, `columnSize`, `cardStyle`, a cards `image`, and every filter leaf that names
  *      it — and its label under `properties`, so nothing dangles (a `frozenColumns` prefix follows
  *      the shortened order through the one order writer, `withOrder`),
- *  (c) the key from the frontmatter of every note the folder SHOWS that carries it — under it at
- *      any depth, or a shortcut — unless another folder showing that note has a column of that
- *      name, saved or default (`notesCarrying`).
+ *  (c) the field from THIS folder's block (D19, `shared/folderValues.ts`) in every indexed note
+ *      that holds it there (`notesHolding`). Nothing else in a note is touched: not its own field
+ *      of that name, not another folder's.
  *
  * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder
  * host's echo guard (YAZ-1234/1241) — and they land FIRST and are AWAITED: settings are the source
  * of truth, and if that write is refused nothing else moves (YAZ-1549). (c) is per note, against
- * fresh file bytes, byte-preserving every other key; a note whose record shows the key but whose
+ * fresh file bytes, byte-preserving every other key; a note whose record shows the field but whose
  * disk no longer does is simply not written. Strip failures are aggregated — one error for the
  * banner, successes committed, no rollback.
  *
  * Built-in columns are never deletable — `file.*`, `formula.*` and the reserved keys — only
  * hidden. `undeletableReason` is the one rule both menus disable their item by.
  */
-import { setFrontmatterProperty } from '@shared/frontmatter'
+import { folderValues, setFolderValue } from '@shared/folderValues'
 import type { IndexRecord } from '@shared/types'
 import { RESERVED_KEYS } from '../links/reservedKeys'
-import { foldersById, foldersShowing } from '../links/shortcuts'
-import { folderSettings, type ColumnDecl } from './folderSettings'
+import type { ColumnDecl } from './folderSettings'
 import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'
 import { groupByLevels, type FilterNode, type ViewDef, type ViewSet } from './viewSchema'
@@ -40,29 +39,12 @@ export function undeletableReason(key: string): string | null {
 }
 
 /**
- * The rows of `folder` whose frontmatter carries the key, by what a delete does to each — the
- * confirm sheet's two counts, the strip's list. `strip` lose the value; `keep` hold it, because
- * another folder showing the note has a column of that name: one it saved, or the default one.
- * With no folder (null — no folder host) nothing is kept.
+ * The indexed notes holding the field in the block of the folder with this id — the notes a
+ * delete strips, and the confirm sheet's count. A folder with no id holds no values.
  */
-export function notesCarrying(rows: readonly IndexRecord[], key: string, folder: string | null, folders: readonly IndexRecord[]): { strip: IndexRecord[]; keep: IndexRecord[] } {
+export function notesHolding(records: readonly IndexRecord[], folderId: string | undefined, key: string): IndexRecord[] {
   const bare = bareOf(key)
-  const byId = foldersById(folders)
-  const settings = new Map(folders.map((record) => [record.folder, record]))
-  const declared = new Map<string, boolean>()
-  const declares = (other: string): boolean => {
-    let has = declared.get(other)
-    if (has === undefined) declared.set(other, (has = Object.prototype.hasOwnProperty.call(folderSettings(settings.get(other)).columns, bare)))
-    return has
-  }
-  const strip: IndexRecord[] = []
-  const keep: IndexRecord[] = []
-  for (const row of rows) {
-    if (!Object.prototype.hasOwnProperty.call(row.properties, bare)) continue
-    const kept = folder !== null && foldersShowing(row.folder, row.properties, byId).some((other) => other !== folder && declares(other))
-    ;(kept ? keep : strip).push(row)
-  }
-  return { strip, keep }
+  return records.filter((record) => Object.prototype.hasOwnProperty.call(folderValues(record.properties, folderId), bare))
 }
 
 /** Every `"…"` / `'…'` literal blanked (escapes honoured), so a key spelled INSIDE a string is not a reference. */
@@ -161,10 +143,9 @@ export interface DeleteColumnHost {
   columns: Readonly<Record<string, ColumnDecl>>
   /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
   def: ViewSet
-  /** The folder's rows, the folder as the index names it, and every folder's settings record: what `notesCarrying` decides the strip by. */
-  rows: readonly IndexRecord[]
-  folder: string
-  folders: readonly IndexRecord[]
+  /** The WHOLE index snapshot and the folder's id: whose block the strip reads and rewrites (`notesHolding`). */
+  records: readonly IndexRecord[]
+  folderId: string | undefined
   /** The host's one settings door: declarations, views and labels in ONE write. Resolves when it landed; rejects when it did not. */
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
 }
@@ -183,10 +164,10 @@ export async function deleteColumn(key: string, host: DeleteColumnHost): Promise
   delete columns[bare]
   await host.writeSettings(columns, pruneColumnFromViews(host.def.views, key), pruneColumnLabel(host.def.properties, key))
 
-  const { strip } = notesCarrying(host.rows, key, host.folder, host.folders)
-  const results = await Promise.allSettled(
-    strip.map((note) => transformFile(note.path, (content) => setFrontmatterProperty(content, bare, undefined))),
-  )
+  const { folderId } = host
+  if (folderId === undefined) return // no id, no values
+  const strip = notesHolding(host.records, folderId, key)
+  const results = await Promise.allSettled(strip.map((note) => transformFile(note.path, (content) => setFolderValue(content, folderId, bare, undefined))))
   const failed = results.flatMap((result, index) =>
     result.status === 'rejected' ? [{ note: strip[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
   )

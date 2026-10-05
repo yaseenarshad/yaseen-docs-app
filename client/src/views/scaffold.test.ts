@@ -1,6 +1,6 @@
 /**
- * A note is born from its folder's template and the seed alone (YAZ-2290 E1/E3), in one
- * atomic content-at-create call (GRO-2202). `api` mocked like writeProperty.test.ts.
+ * A note is born from its folder's template and what the seed makes of it (YAZ-2290 E1/E3), in
+ * one atomic content-at-create call (GRO-2202). `api` mocked like writeProperty.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNote, ensureFolder } from './scaffold'
@@ -32,7 +32,7 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('no template: the seed alone — no column is stamped — and an empty seed is an empty file', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await createNote('/v/Projects/A.md', { status: '2-Todo' })
+    await createNote('/v/Projects/A.md', (template) => ({ ...template, status: '2-Todo' }))
     await createNote('/v/Projects/B.md')
 
     expect(readFile).toHaveBeenCalledWith('/v/Projects/.template.md') // hidden, in the folder itself
@@ -40,12 +40,16 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
     expect(api.writeFile).not.toHaveBeenCalled() // ONE atomic create, never a follow-up write
   })
 
-  it('the template gives its frontmatter and body; the seed wins a key they share', async () => {
+  it('the template gives its frontmatter and body; the seed is handed its properties and what it returns is the note’s', async () => {
     readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
 
-    await createNote('/v/Projects/A.md', { status: '2-Todo' })
+    await createNote('/v/Projects/A.md', (template) => ({ ...template, status: '2-Todo' }))
+    await createNote('/v/Projects/B.md')
 
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Projects/A.md', content: '---\nowner: me\nstatus: 2-Todo\n---\n## Notes\n' })
+    expect(createFile.mock.calls).toEqual([
+      [{ path: '/v/Projects/A.md', content: '---\nowner: me\nstatus: 2-Todo\n---\n## Notes\n' }],
+      [{ path: '/v/Projects/B.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n' }], // no seed: the template as written
+    ])
   })
 
   it('a read failure other than a missing template, and a create failure, propagate', async () => {

@@ -214,7 +214,7 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.view-table__gutter')).toBeNull()
   })
 
-  it('Delete column…: asks first — the sheet names the label, the key and the carrying-member count; Cancel deletes nothing', () => {
+  it('Delete column…: asks first — the sheet names the label, the key and the count of notes holding a value; Cancel deletes nothing', () => {
     const { el, deleteColumn, onChange } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Delete column…'))
@@ -229,11 +229,11 @@ describe('the header menu (YAZ-1513)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('the confirm sheet’s copy: how many notes lose the value and — only when some do — how many keep it because another folder uses it', () => {
+  it('Delete a column from a folder: the confirm sheet’s copy is `Delete "<label>"? This removes the column from this folder and the "<key>" value from N notes.` — and nothing more', () => {
     const lost = (notes: string): string => `Delete "Status"? This removes the column from this folder and the "status" value from ${notes}.`
-    expect(deleteColumnMessage('Status', 'status', 1, 0)).toBe(lost('1 note'))
-    expect(deleteColumnMessage('Status', 'status', 3, 1)).toBe(`${lost('3 notes')} 1 note keeps it because another folder uses it.`)
-    expect(deleteColumnMessage('Status', 'status', 0, 2)).toBe(`${lost('0 notes')} 2 notes keep it because another folder uses it.`)
+    expect(deleteColumnMessage('Status', 'status', 1)).toBe(lost('1 note'))
+    expect(deleteColumnMessage('Status', 'status', 3)).toBe(lost('3 notes'))
+    expect(deleteColumnMessage('Status', 'status', 0)).toBe(lost('0 notes'))
   })
 
   it('Delete column…: confirming hands the key to FolderHost.deleteColumn — the ONE function — and closes the sheet', () => {

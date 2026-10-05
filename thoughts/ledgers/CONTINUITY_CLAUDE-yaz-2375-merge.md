@@ -50,6 +50,11 @@
   - [ ] Phase 5: Polish and anti-slop
   - [ ] Phase 6: Verify, merge, install, close out
 
+## Owed at the merge
+
+- Send the session "2-ID in Copy Path" (YAZ-2420) ONE message once YAZ-2375 is on `main`: the commit on `main`; the name and file of the function that moves a copied folder's `in:` blocks to the copy's ID (YAZ-2455, its YAZ-2437 must call it); the name of the function that removes stale `in:` blocks (D20, YAZ-2458); everything locked after D19 on the rename, move or copy path; and what is unfinished or Future in the files it shares (FrontmatterPanel.tsx, Sidebar.tsx, menuSections.ts, the link picker, folderLinks.ts, engine.ts, renameLinks.ts, scan.ts, idSweep.ts, create.ts, copy.ts, cli.ts, docs/CONTRACTS.md, docs/REGRESSION.md).
+- Do NOT install the new build over `/Applications/Yaseen Docs.app` (D18). The real vault is converted in one sitting with YAZ-2420's run; YAZ-2398 and YAZ-2399 live under YAZ-2420.
+
 ## Open Questions
 
 - None blocking. Shortcuts and links to folders are both in the ported code.

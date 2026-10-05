@@ -12,7 +12,7 @@ import { type Group, type Row, propertyKeys, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderSettings } from './folderSettings'
 import { type NewNoteSeed, deriveSeed, freeName } from './newNote'
-import { writeProperties, writeProperty } from './writeProperty'
+import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
@@ -54,11 +54,19 @@ export interface FolderHost {
    */
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[], labels?: { properties: ViewSet['properties'] }) => void
   /**
-   * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the key on
-   * every note that lives in the folder — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
+   * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the folder's
+   * value for it on every note holding one — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
    * the host reports failures in its own banner.
    */
   deleteColumn: (key: string) => Promise<void>
+  /** How many notes hold the folder's value for a column — the number that delete's confirm states. */
+  valueCount: (key: string) => number
+  /**
+   * The ONE door a view writes a row's values through — a cell edit, a board or section drop — in
+   * one guarded write of that note. `records` ARE the folder's values for each row, and only the
+   * host knows where a note keeps them (D19: its block of `in`).
+   */
+  writeValues: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -89,7 +97,7 @@ export interface ViewsPaneProps {
   root: string
   /** Absolute path of the folder the views belong to: it keys the collapse state. */
   folderPath: string
-  /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault. */
+  /** The notes the views query (YAZ-2290 D4) — the folder's own rows, never the whole vault — each with the FOLDER's values for it as its `properties` (D19). */
   records: IndexRecord[]
   /**
    * The vault-wide property declarations (5E, GRO-2217; `useProperties`) — typing rung 2, fed
@@ -242,8 +250,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
     configuredGroups === null ? [] : configuredGroups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
-  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, then 5B writes
-  // every changed key in one guarded transformation; a failure drops the move (the card snaps back)
+  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, then the host writes
+  // every changed key in one guarded transformation (`FolderHost.writeValues`); a failure drops the move (the card snaps back)
   // and flags the card instead. `drop` names
   // the LEVEL the row landed on (YAZ-1101) and may carry the outer's write — inner first, then the
   // outer, both optimistic as ONE unit so either failing snaps the whole move back (🔒 YAZ-745).
@@ -266,8 +274,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
     if (drop?.outer !== undefined) writes.push({ ...drop.outer, prevRaw: props?.[drop.outer.key] })
     setMoveError(null)
     setMoves((m) => ({ ...m, [path]: writes }))
-    const commit = writes.length === 1 ? writeProperty(path, writes[0].key, writes[0].value) : writeProperties(path, writes)
-    commit.catch((err: unknown) => {
+    folder.writeValues(path, writes).catch((err: unknown) => {
       setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
       setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
     })
@@ -294,6 +301,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
       })
       .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
+
+  const writeValue = (path: string, key: string, value: unknown) => folder.writeValues(path, [{ key, value }])
 
   const keys = propertyKeys(def, view, records, Object.keys(folder.settings.columns))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
@@ -431,6 +440,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           wikilinks={folder.wikilinks}
           declareColumn={folder.setColumns}
           deleteColumn={folder.deleteColumn}
+          valueCount={folder.valueCount}
+          onWriteValue={writeValue}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -475,6 +486,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           vaultFolders={vaultFolders}
           resolve={resolve}
           resolveLink={folder.resolveLink}
+          onWriteValue={writeValue}
         />
       ) : view.type === 'list' ? (
         <ListView
@@ -497,6 +509,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           vaultFolders={vaultFolders}
           resolve={resolve}
           resolveLink={folder.resolveLink}
+          onWriteValue={writeValue}
         />
       ) : (
         <ul className="view-rows">

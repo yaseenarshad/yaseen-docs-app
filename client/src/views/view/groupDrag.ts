@@ -11,7 +11,7 @@ import { groupKeyOf, nestedGroupKeyOf } from './GroupHeader'
  * sections. The views own the transient HTML5 drag state through `useGroupDrag`; ViewsPane owns
  * the optimistic moves (`PendingMove`, applied to the records BEFORE the engine runs, so the
  * card lands in its target group with sort/summaries/values all consistent) and commits them
- * through 5A's `writeProperty`.
+ * through the host's writer (`FolderHost.writeValues`).
  */
 
 /**

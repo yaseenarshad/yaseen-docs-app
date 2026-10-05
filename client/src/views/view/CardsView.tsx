@@ -47,6 +47,8 @@ export interface CardsViewProps {
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
+  /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
+  onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
 }
 
 // ---------- covers ----------
@@ -132,7 +134,7 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: CardsViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
@@ -190,7 +192,6 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                       cellContent(row.values[key], resolve)
                     ) : (
                       <EditableCell
-                        path={row.record.path}
                         propKey={bare}
                         raw={row.record.properties[bare]}
                         value={row.values[key]}
@@ -198,6 +199,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                         options={typings.get(key)?.options}
                         basenames={linkNames.get(key) ?? basenames}
                         resolve={resolve}
+                        onCommit={(next) => onWriteValue(row.record.path, bare, next)}
                       />
                     )}
                   </span>

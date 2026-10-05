@@ -8,7 +8,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { ConfirmDeleteComment } from '../comments/ConfirmDeleteComment'
 import { ConfirmDelete } from '../sidebar/ConfirmDelete'
 import { ConfirmRename } from '../sidebar/ConfirmRename'
-import { TEST_RECORDS } from '../views/testRecords'
 import { ConfirmDeleteColumn } from '../views/view/ConfirmDeleteColumn'
 import { ConfirmDeleteView } from '../views/view/ConfirmDeleteView'
 
@@ -47,7 +46,7 @@ const SHEETS: Array<[string, () => ReactElement]> = [
   ['ConfirmDelete', () => <ConfirmDelete target={{ path: '/v/Projects', kind: 'dir', children: { notes: 3, folders: 1 }, backlinks: 2 }} {...cb} />],
   ['ConfirmRename', () => <ConfirmRename oldPath="/v/Old.md" newPath="/v/New.md" kind="file" count={2} {...cb} />],
   ['ConfirmDeleteComment', () => <ConfirmDeleteComment label="#3" replies={2} {...cb} />],
-  ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} records={TEST_RECORDS} folders={[]} {...cb} />],
+  ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} count={() => 5} {...cb} />],
   ['ConfirmDeleteView', () => <ConfirmDeleteView view={{ type: 'table', name: 'All notes' }} {...cb} />],
 ]
 
