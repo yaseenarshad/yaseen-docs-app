@@ -226,6 +226,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                   view={view}
                   columns={keys}
                   groupKey={g.key}
+                  label={g.label}
                   rows={g.rows}
                   collapsed={isCollapsed}
                   onToggle={() => onToggleGroup(gk)}
