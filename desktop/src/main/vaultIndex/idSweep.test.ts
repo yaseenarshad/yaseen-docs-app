@@ -447,6 +447,44 @@ describe('a copied folder’s notes carry their values to the copy (YAZ-2455)', 
     expect(await mtimes()).toEqual(before)
   })
 
+  it('the copy’s folder takes its id LAST: while its notes are being carried it still holds the original’s', async () => {
+    const records = await vault({ ...under('Hiring'), ...under('Hiring copy') })
+    const seen: (string | undefined)[] = []
+    race.afterRead = async (file) => {
+      if (file === at('Hiring copy', 'Noor.md')) seen.push(await idIn('Hiring copy', FOLDER_SETTINGS_FILE))
+    }
+    await sweep(records, (p) => (p.startsWith(at('Hiring') + path.sep) ? records.get(p)?.id : undefined))
+    race.afterRead = undefined
+    // The first read of the note is the carry's (the folder's file is swept before its notes).
+    expect(seen[0]).toBe(HIRING)
+    await expectCarried('Hiring copy')
+  })
+
+  it('a carry cut short (the app quit part-way) is finished by the next sweep: the folder has not taken its id yet, so it is found again and given the same one', async () => {
+    const knewOriginal = (records: Map<string, IndexRecord>) => (p: string) => (p.startsWith(at('Hiring') + path.sep) ? records.get(p)?.id : undefined)
+    const first = await vault({ ...under('Hiring'), ...under('Hiring copy') })
+    await sweep(first, knewOriginal(first))
+    const given = (await idIn('Hiring copy', FOLDER_SETTINGS_FILE))!
+    const noor = await read('Hiring copy', 'Noor.md')
+    // The state a quit leaves: one note carried, the next not, the folder still holding the original's id.
+    const cut = await vault({ [`Hiring copy/${FOLDER_SETTINGS_FILE}`]: HIRING_FILES[FOLDER_SETTINGS_FILE], 'Hiring copy/Stages/Deep/Sam.md': HIRING_FILES['Stages/Deep/Sam.md'].replace('sam000000001', (await idIn('Hiring copy', 'Stages', 'Deep', 'Sam.md'))!) })
+    const records = new Map([...first].map(([file]) => [file, first.get(file)!]))
+    for (const file of first.keys()) records.set(file, await scanFile(root, file))
+    for (const [file, record] of cut) records.set(file, record)
+    await sweepIds(root, records, [...cut.values()], knewOriginal(records))
+    expect(await idIn('Hiring copy', FOLDER_SETTINGS_FILE)).toBe(given)
+    expect(await read('Hiring copy', 'Noor.md')).toBe(noor)
+    expect(((await valuesIn('Hiring copy', 'Stages', 'Deep', 'Sam.md')) as Record<string, unknown>)[given]).toEqual({ Status: 'Offer' })
+  })
+
+  it('a note that changed under the carry’s write is read again and carried', async () => {
+    await vault({ 'Copy/Noor.md': HIRING_FILES['Noor.md'] })
+    writesAfterTheRead(`${HIRING_FILES['Noor.md']}edited elsewhere\n`)
+    await carryFolderValues(at('Copy'), HIRING, 'c0pyh1r1ng01')
+    expect(await read('Copy', 'Noor.md')).toMatch(/edited elsewhere\n$/)
+    expect(await valuesIn('Copy', 'Noor.md')).toEqual({ c0pyh1r1ng01: { Status: 'Interview', owner: '[[Sam]]' }, [ELSEWHERE]: { Rank: 2 } })
+  })
+
   it('a note that reaches the copy after its folder was given its id (a long copy still arriving) carries its values too', async () => {
     const records = await vault({ ...under('Hiring'), [`Hiring copy/${FOLDER_SETTINGS_FILE}`]: HIRING_FILES[FOLDER_SETTINGS_FILE] })
     const knew = (p: string): string | undefined => (p.startsWith(at('Hiring') + path.sep) ? records.get(p)?.id : undefined)

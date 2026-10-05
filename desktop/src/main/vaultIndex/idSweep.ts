@@ -27,7 +27,7 @@ function inTurn<T>(write: () => Promise<T>): Promise<T> {
  * the first in path order, the same on every device — and any other in `among` is given a fresh
  * one. Each folder in `dirs` (never the vault root) with no `.folder.md` is given one holding only
  * its id (D13). A folder's settings file given a fresh id is a COPIED folder's: the notes under it
- * carry their values for it to that id (`carryFolderValues`).
+ * carry their values for it to that id first (`carryFolderValues`), then the folder takes it.
  *
  * 🔒 Only in an ADOPTED vault (`.yaseendocs/` exists, YAZ-797): the app writes nothing into a
  * folder it was only pointed at. Creating a note or a folder there adopts it (`adoptVault`).
@@ -63,10 +63,15 @@ export async function sweepIds(
   // An id some indexed note holds is never written (YAZ-2378): the same next one on every device.
   const taken = (id: string): boolean => holders.has(id)
   for (const r of stale) {
-    const id = await inTurn(() => giveId(root, r.path, r.id, taken)).catch(() => undefined)
-    if (isFolderSettingsPath(r.path)) {
-      if (id !== undefined && r.id !== undefined) await carryFolderValues(path.dirname(r.path), r.id, id)
-    } else for (const copy of carried) if (r.path.startsWith(copy.dir + path.sep)) await carryNote(r.path, copy.from, copy.to)
+    const from = r.id
+    if (isFolderSettingsPath(r.path) && from !== undefined) {
+      // A copied folder takes its id LAST, after its notes hold their values under it: a carry cut
+      // short (the app quit) leaves the folder still stale, so the next sweep finds and finishes it.
+      await giveId(root, r.path, from, taken, (to) => carryFolderValues(path.dirname(r.path), from, to)).catch(() => undefined)
+      continue
+    }
+    await inTurn(() => giveId(root, r.path, from, taken)).catch(() => undefined)
+    for (const copy of carried) if (r.path.startsWith(copy.dir + path.sep)) await carryNote(r.path, copy.from, copy.to)
   }
   for (const file of bare) await giveId(root, file, undefined, taken).catch(() => undefined)
 }
@@ -131,13 +136,24 @@ export const readPage = (file: string): Promise<{ content: string; mtime?: numbe
  *
  * A folder's settings file that is not there reads as empty and is CREATED, never written over:
  * one that appears before the write stays as it is (D13).
+ *
+ * `first` is what must hold under the new id before the file takes it; the file is read again
+ * after it, and takes the id only if it still holds `held`.
  */
-export async function giveId(root: string, file: string, held: string | undefined, taken?: (id: string) => boolean): Promise<string | undefined> {
-  const { content, mtime } = await readPage(file)
-  const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
-  if (error !== undefined || properties[NOTE_ID_KEY] !== held) return
+export async function giveId(root: string, file: string, held: string | undefined, taken?: (id: string) => boolean, first?: (id: string) => Promise<void>): Promise<string | undefined> {
+  const holds = (content: string): boolean => {
+    const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+    return error === undefined && properties[NOTE_ID_KEY] === held
+  }
+  let { content, mtime } = await readPage(file)
+  if (!holds(content)) return
   const place = path.relative(root, file).split(path.sep).join('/')
   const id = noteIdFrom((bytes) => createHash('sha256').update(bytes ?? `${place}\0${content}`).digest(), taken)
+  if (first !== undefined) {
+    await first(id)
+    ;({ content, mtime } = await readPage(file))
+    if (!holds(content)) return
+  }
   const given = setFrontmatterProperty(content, NOTE_ID_KEY, id)
   if (mtime === undefined) await createDurable(file, given)
   else await writeFile({ path: file, content: given, expectedMtime: mtime })
@@ -150,7 +166,8 @@ export async function giveId(root: string, file: string, held: string | undefine
  * their values under — becomes the block of `to`, the copy's own (`moveFolderValues`). The
  * directory is walked as the index walks it; the index itself is not asked. On the sweep's terms:
  * each write a compare-and-set, never throws, and a second run writes nothing — a note that will
- * not parse, already holds a block for `to`, or changed under the write is left as it is.
+ * not parse or already holds a block for `to` is left as it is, and one that changed under the
+ * write is read again, once.
  *
  * The copy is remembered while the app runs: a long copy is still arriving when its folder is given
  * its id, and the sweep carries each note that reaches `dir` afterwards.
@@ -165,9 +182,10 @@ export async function carryFolderValues(dir: string, from: string, to: string): 
 const carried: { dir: string; from: string; to: string }[] = []
 
 function carryNote(file: string, from: string, to: string): Promise<void> {
-  return inTurn(async () => {
+  const carry = async (): Promise<void> => {
     const { content, mtime } = await readFile(file)
     const moved = moveFolderValues(content, from, to)
     if (moved !== content) await writeFile({ path: file, content: moved, expectedMtime: mtime })
-  }).catch(() => undefined)
+  }
+  return inTurn(() => carry().catch(carry)).catch(() => undefined)
 }
