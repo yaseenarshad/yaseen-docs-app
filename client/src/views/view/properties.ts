@@ -1,4 +1,3 @@
-import { NOTE_ID_KEY } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderSettings'
@@ -10,6 +9,7 @@ import { canonicalKey } from './keys'
  * `view.order` round-trips), then `file.name` + every note key seen or declared on the folder
  * (YAZ-895 — a DECLARED column is offerable before any note carries a value for it; since
  * YAZ-1549 `propertyKeys` itself shows it by default), then the formulas; de-duplicated by canonical key.
+ * Never the note's own keys (`id` and the rest): the rows hold a folder's values (D19), not those.
  */
 export function allPropertyKeys(
   def: ViewSet,
@@ -28,8 +28,6 @@ export function allPropertyKeys(
   const declared = Object.keys(columns)
   for (const k of propertyKeys(def, view, records, declared)) add(k)
   for (const k of propertyKeys(def, { ...view, order: undefined }, records, declared)) add(k)
-  // Not a default column (`propertyKeys`), but one a view may show: offered when notes carry it.
-  if (records.some((r) => r.id !== undefined)) add(`note.${NOTE_ID_KEY}`)
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out
 }

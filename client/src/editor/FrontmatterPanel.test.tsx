@@ -155,7 +155,7 @@ const LOCAL_NOTE = `---\nin:\n  ${FOLDER_ID}:\n    Status: Ready\n---\nOriginal 
 /** The window's feed after its first snapshot; `columns` undefined = the folder has no settings file. */
 const folderFeed = (columns?: Record<string, PropertyDecl>) => {
   const source = createWikilinkResolveSource()
-  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', id: FOLDER_ID, properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
+  const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', folder: '', id: FOLDER_ID, properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
   source.update(() => null, [{ ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work' }], settings)
   return source
 }
@@ -1304,6 +1304,48 @@ Body
     const el = mountNote(one)
     await removeRow(row(folderRows(el), 'score'))
     expect(written()).toBe('---\ntitle: Noor\n---\nBody\n')
+  })
+
+  describe('a folder’s values leave the note when the note leaves the folder (D20)', () => {
+    const ARCHIVE_ID = 'a7ch1ve00001'
+    const GONE_ID = 'n0f01der0000'
+    /** Noor was moved into Hiring outside the app: it still holds Archive's values, and a deleted folder's. */
+    const STALE = `  ${ARCHIVE_ID}:\n    Status: Old\n`
+    const MOVED = CONTENT.replace('\nin:\n', `\nin:\n${STALE}  ${GONE_ID}:\n    Status: Lost\n`)
+    const feedD20 = () => feedOf(folderMd('/vault/Archive', { id: ARCHIVE_ID }), folderMd('/vault/Hiring', { columns: HIRING, id: HIRING_ID }), folderMd('/vault/Tasks', { columns: TASKS, id: TASKS_ID }))
+
+    it('reading a note, or opening its panel, never removes a block: nothing is written', async () => {
+      const el = mountNote(MOVED, NOOR, feedD20())
+      setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Tasks')
+      await flush()
+      expect(writeFile).not.toHaveBeenCalled()
+      toRaw(el)
+      expect(area(el)?.value).toContain(STALE)
+    })
+
+    it('a properties-panel edit of a folder value removes, in the SAME save, the blocks of folders that exist and do not show the note; the folders that show it, and one the app cannot find, keep theirs', async () => {
+      const el = mountNote(MOVED, NOOR, feedD20())
+      await edit(row(folderRows(el), 'score'), '8')
+      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: MOVED.replace(STALE, '').replace('    old_field: left behind\n', '    old_field: left behind\n    score: 8\n'), expectedMtime: 100 })
+      // The panel's own belief of disk moved with it.
+      toRaw(el)
+      expect(area(el)?.value).not.toContain(ARCHIVE_ID)
+    })
+
+    it('an edit of one of the note’s own fields does the same', async () => {
+      const el = mountNote(MOVED, NOOR, feedD20())
+      await edit(row(ownRows(el), 'Status'), 'yours')
+      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: MOVED.replace(STALE, '').replace('Status: mine', 'Status: yours'), expectedMtime: 100 })
+    })
+
+    it('the write the removal rides on is refused: nothing is removed, and the panel says so', async () => {
+      const el = mountNote(MOVED, NOOR, feedD20())
+      writeFile.mockRejectedValueOnce(new Error('disk full'))
+      await edit(row(ownRows(el), 'Status'), 'yours')
+      toRaw(el)
+      expect(area(el)?.value).toContain(STALE)
+      expect(area(el)?.value).toContain('Status: mine')
+    })
   })
 
   it('The `in` key itself: reserved — not a row, and not addable as a property name', () => {

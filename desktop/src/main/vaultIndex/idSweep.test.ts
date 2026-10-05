@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { setFrontmatterProperty } from '@shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { copyEntry } from '../fs/copy'
@@ -11,7 +11,7 @@ import { renameFile } from '../fs/rename'
 import { tree } from '../fs/tree'
 import { subscribe } from '../fs/watchers'
 import { _resetIndexCache } from './cache'
-import { sweepIds } from './idSweep'
+import { carryFolderValues, sweepIds } from './idSweep'
 import { _evictAll, flushIndexCache, getColdStartDiff, getIndex, initIndexCache } from './index'
 import { scanFile, walk } from './scan'
 
@@ -71,6 +71,31 @@ async function vault(files: Record<string, string>): Promise<Map<string, IndexRe
 /** The cold-start call: every record is swept, and the index knew nothing before. */
 const sweep = (records: Map<string, IndexRecord>, knew: (path: string) => string | undefined = () => undefined) =>
   sweepIds(root, records, [...records.values()], knew)
+
+// A copied folder (YAZ-2455): `Hiring` with a subfolder that has its own id, each note holding the
+// values of the folders that show it — and of one elsewhere, which no copy touches.
+const HIRING = '3y7505rsr6fd'
+const STAGES = 'mzf9cjhn02vm'
+const ELSEWHERE = 'a1b2c3d4e5f6'
+const HIRING_FILES: Record<string, string> = {
+  [FOLDER_SETTINGS_FILE]: `---\nid: ${HIRING}\n---\n`,
+  'Noor.md': `---\nid: n00r00000001\nin:\n  ${HIRING}:\n    Status: Interview\n    owner: "[[Sam]]"\n  ${ELSEWHERE}:\n    Rank: 2\n---\nbody\n`,
+  'Plain.md': '---\nid: p1a1n0000001\n---\nbody\n',
+  [`Stages/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${STAGES}\n---\n`,
+  'Stages/Deep/Sam.md': `---\nid: sam000000001\nin:\n  ${HIRING}:\n    Status: Offer\n  ${STAGES}:\n    Step: 2\n---\nbody\n`,
+}
+const under = (dir: string): Record<string, string> => Object.fromEntries(Object.entries(HIRING_FILES).map(([name, content]) => [`${dir}/${name}`, content]))
+/** A note's `in` as it is on disk. */
+const valuesIn = async (...p: string[]): Promise<unknown> => parseFrontmatter(splitFrontmatter(await read(...p)).frontmatter).properties.in
+/** What the copy's notes must hold once its two folders have the ids `hiring` and `stages`. */
+const expectCarried = async (dir: string): Promise<void> => {
+  const hiring = (await idIn(dir, FOLDER_SETTINGS_FILE))!
+  const stages = (await idIn(dir, 'Stages', FOLDER_SETTINGS_FILE))!
+  expect(new Set([HIRING, STAGES, hiring, stages]).size).toBe(4)
+  expect(await valuesIn(dir, 'Noor.md')).toEqual({ [hiring]: { Status: 'Interview', owner: '[[Sam]]' }, [ELSEWHERE]: { Rank: 2 } })
+  expect(await valuesIn(dir, 'Stages', 'Deep', 'Sam.md')).toEqual({ [hiring]: { Status: 'Offer' }, [stages]: { Step: 2 } })
+  expect(await valuesIn(dir, 'Plain.md')).toBeUndefined()
+}
 
 describe('sweepIds: a note with no id gets one (D3)', () => {
   it('sets `id` and leaves every other byte alone', async () => {
@@ -366,6 +391,84 @@ describe('sweepIds: two notes, one id (D4)', () => {
   })
 })
 
+describe('a copied folder’s notes carry their values to the copy (YAZ-2455)', () => {
+  /** A copy made while the app was closed: the index knew the original's ids, and meets both on launch. */
+  const copiedWhileClosed = async (): Promise<void> => {
+    const records = await vault({ ...under('Hiring'), ...under('Hiring copy') })
+    await sweep(records, (p) => (p.startsWith(at('Hiring') + path.sep) ? records.get(p)?.id : undefined))
+  }
+
+  it('a folder is copied, the app not running: when the sweep gives the copy’s `.folder.md` its fresh id, every note under the copy, at any depth, that has a block for the old id has it moved to the new id', async () => {
+    await copiedWhileClosed()
+    await expectCarried('Hiring copy')
+  })
+
+  it('the original folder and its notes are untouched', async () => {
+    await copiedWhileClosed()
+    for (const [name, content] of Object.entries(under('Hiring'))) expect(await read(name)).toBe(content)
+  })
+
+  it('a copied folder that contains a subfolder with its own `.folder.md`: each re-IDed folder carries its own blocks — the parent’s for every note under the parent, the subfolder’s for the notes under the subfolder', async () => {
+    await vault(under('Copy'))
+    await carryFolderValues(at('Copy'), HIRING, 'c0pyh1r1ng01')
+    expect(await valuesIn('Copy', 'Noor.md')).toEqual({ c0pyh1r1ng01: { Status: 'Interview', owner: '[[Sam]]' }, [ELSEWHERE]: { Rank: 2 } })
+    expect(await valuesIn('Copy', 'Stages', 'Deep', 'Sam.md')).toEqual({ c0pyh1r1ng01: { Status: 'Offer' }, [STAGES]: { Step: 2 } })
+    await carryFolderValues(at('Copy', 'Stages'), STAGES, 'c0pystages01')
+    expect(await valuesIn('Copy', 'Stages', 'Deep', 'Sam.md')).toEqual({ c0pyh1r1ng01: { Status: 'Offer' }, c0pystages01: { Step: 2 } })
+    expect(await valuesIn('Copy', 'Noor.md')).toEqual({ c0pyh1r1ng01: { Status: 'Interview', owner: '[[Sam]]' }, [ELSEWHERE]: { Rank: 2 } })
+  })
+
+  it('a note in the copy that already has a block for the new id is left as it is', async () => {
+    const both = `---\nin:\n  ${HIRING}:\n    Status: Interview\n  c0pyh1r1ng01:\n    Status: Offer\n---\n`
+    await vault({ 'Copy/Both.md': both })
+    await carryFolderValues(at('Copy'), HIRING, 'c0pyh1r1ng01')
+    expect(await read('Copy', 'Both.md')).toBe(both)
+  })
+
+  it('a note that cannot be written (invalid YAML, changed under the sweep) is left for a later pass; nothing throws', async () => {
+    const broken = `---\nStatus: [unclosed\nin:\n  ${HIRING}:\n    Status: x\n---\n`
+    await vault({ 'Copy/Broken.md': broken })
+    await expect(carryFolderValues(at('Copy'), HIRING, 'c0pyh1r1ng01')).resolves.toBeUndefined()
+    expect(await read('Copy', 'Broken.md')).toBe(broken)
+    await vault({ 'Other/Noor.md': HIRING_FILES['Noor.md'] })
+    writesAfterTheRead('edited elsewhere\n')
+    await expect(carryFolderValues(at('Other'), HIRING, 'c0pyh1r1ng01')).resolves.toBeUndefined()
+    expect(await read('Other', 'Noor.md')).toBe('edited elsewhere\n') // the mtime guard: nothing of the stale read
+    // A folder that is not there, too.
+    await expect(carryFolderValues(at('Gone'), HIRING, 'c0pyh1r1ng01')).resolves.toBeUndefined()
+  })
+
+  it('running it again writes nothing', async () => {
+    await vault(under('Copy'))
+    await carryFolderValues(at('Copy'), HIRING, 'c0pyh1r1ng01')
+    const mtimes = () => Promise.all(Object.keys(HIRING_FILES).map(async (name) => (await stat(at('Copy', name))).mtimeMs))
+    const before = await mtimes()
+    await carryFolderValues(at('Copy'), HIRING, 'c0pyh1r1ng01')
+    expect(await mtimes()).toEqual(before)
+  })
+
+  it('a note that reaches the copy after its folder was given its id (a long copy still arriving) carries its values too', async () => {
+    const records = await vault({ ...under('Hiring'), [`Hiring copy/${FOLDER_SETTINGS_FILE}`]: HIRING_FILES[FOLDER_SETTINGS_FILE] })
+    const knew = (p: string): string | undefined => (p.startsWith(at('Hiring') + path.sep) ? records.get(p)?.id : undefined)
+    await sweep(records, knew)
+    const hiring = (await idIn('Hiring copy', FOLDER_SETTINGS_FILE))!
+    expect(hiring).not.toBe(HIRING)
+    const late = await vault({ 'Hiring copy/Noor.md': HIRING_FILES['Noor.md'] })
+    for (const [file, record] of late) records.set(file, record)
+    await sweepIds(root, records, [...late.values()], knew)
+    expect(await idIn('Hiring copy', 'Noor.md')).not.toBe('n00r00000001')
+    expect(await valuesIn('Hiring copy', 'Noor.md')).toEqual({ [hiring]: { Status: 'Interview', owner: '[[Sam]]' }, [ELSEWHERE]: { Rank: 2 } })
+    expect(await read('Hiring', 'Noor.md')).toBe(HIRING_FILES['Noor.md'])
+  })
+
+  it('the sweep itself never removes a block: a note given its id keeps the values of every folder, showing it or not', async () => {
+    const held = `---\nin:\n  ${HIRING}:\n    Status: Interview\n  ${ELSEWHERE}:\n    Rank: 2\n---\nbody\n`
+    await sweep(await vault({ [`Hiring/${FOLDER_SETTINGS_FILE}`]: HIRING_FILES[FOLDER_SETTINGS_FILE], [`Else/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${ELSEWHERE}\n---\n`, 'Loose.md': held }))
+    expect(isNoteId(await idIn('Loose.md'))).toBe(true)
+    expect(await valuesIn('Loose.md')).toEqual({ [HIRING]: { Status: 'Interview' }, [ELSEWHERE]: { Rank: 2 } })
+  })
+})
+
 describe('sweepIds, wired into the live index', () => {
   const until = async (pred: () => Promise<boolean>, ms = 5000) => {
     const t0 = Date.now()
@@ -591,6 +694,51 @@ describe('sweepIds, wired into the live index', () => {
     })
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
     expect(await idsUnder('Notes')).toEqual(HELD)
+  })
+
+  it.each([
+    ['in the app (`copyEntry`)', (from: string, to: string) => copyEntry(from, path.dirname(to))],
+    ['in Finder', (from: string, to: string) => cp(from, to, { recursive: true, preserveTimestamps: true })],
+  ])('a folder is copied %s, the app running: the copy’s table shows the same values as the original’s, and the original is untouched', async (_by, copy) => {
+    // Enough notes that the sweep's own id writes are still landing while the values are carried.
+    const many = Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`Hiring/N${i}.md`, `---\nid: n${String(i).padStart(11, '0')}\nin:\n  ${HIRING}:\n    Rank: ${i}\n---\n`]))
+    const original = { ...under('Hiring'), ...many }
+    await vault(original)
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await until(async () => (await getIndex(root)).folders.length === 3) // `Stages/Deep` has been given its own file
+    await copy(at('Hiring'), at('Hiring copy'))
+    await until(async () => {
+      const ids = (await getIndex(root)).records.filter((r) => r.path.startsWith(at('Hiring copy') + path.sep)).map((r) => r.id)
+      const originals = new Set(Object.values(original).map((content) => /^id: (.+)$/m.exec(content)![1]))
+      const hiring = await idIn('Hiring copy', FOLDER_SETTINGS_FILE)
+      const stages = await idIn('Hiring copy', 'Stages', FOLDER_SETTINGS_FILE)
+      return ids.length === Object.keys(original).length - 2 && ids.every((id) => isNoteId(id) && !originals.has(id)) && hiring !== HIRING && stages !== STAGES
+    })
+    await new Promise((r) => setTimeout(r, 300)) // every write the sweep makes has landed
+    await expectCarried('Hiring copy')
+    const hiring = await idIn('Hiring copy', FOLDER_SETTINGS_FILE)
+    for (let i = 0; i < 24; i++) expect(await valuesIn('Hiring copy', `N${i}.md`)).toEqual({ [hiring!]: { Rank: i } })
+    for (const [name, content] of Object.entries(original)) expect(await read(name)).toBe(content)
+  })
+
+  it.each([
+    ["the app's own rename", (from: string, to: string) => renameFile({ oldPath: from, newPath: to })],
+    ['a move outside the app', (from: string, to: string) => rename(from, to)],
+  ])('a folder that was moved or renamed by %s, not copied: nothing — its id did not change, and no note is written', async (_by, move) => {
+    await vault(under('Hiring'))
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await until(async () => (await getIndex(root)).folders.length === 3) // `Stages/Deep` has been given its own file
+    await move(at('Hiring'), at('People'))
+    await until(async () => {
+      const paths = (await getIndex(root)).records.map((r) => r.path)
+      return paths.filter((p) => p.startsWith(at('People') + path.sep)).length === 3 && !paths.some((p) => p.startsWith(at('Hiring') + path.sep))
+    })
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
+    for (const [name, content] of Object.entries(under('People'))) expect(await read(name)).toBe(content)
   })
 
   it('a note renamed outside the app keeps its id, byte for byte (C2)', async () => {

@@ -16,6 +16,12 @@ export function folderValues(properties: Record<string, unknown>, folderId: stri
   return isMap(block) ? block : {}
 }
 
+/** EVERY folder's block, by folder id, as written: what the index and the rename read a note's folder values through. Tolerant as `folderValues` is. */
+export function folderBlocks(properties: Record<string, unknown>): [string, Record<string, unknown>][] {
+  const blocks = properties[FOLDER_VALUES_KEY]
+  return isMap(blocks) ? Object.entries(blocks).filter((entry): entry is [string, Record<string, unknown>] => isMap(entry[1])) : []
+}
+
 /** A map to write into, or a refusal: an `in` or a block that is no map is someone else's value, never overwritten. */
 function writable(value: unknown, what: string): Record<string, unknown> {
   if (value == null) return {}
@@ -49,4 +55,31 @@ export function setFolderValue(content: string, folderId: string, key: string, v
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error === undefined && value === undefined && !Object.prototype.hasOwnProperty.call(folderValues(properties, folderId), key)) return content
   return setFrontmatterProperty(content, FOLDER_VALUES_KEY, withFolderValues(properties, folderId, { [key]: value })[FOLDER_VALUES_KEY])
+}
+
+/**
+ * A whole file's content with the block of the folder `from` named `to` instead, where it stood: a
+ * copied folder's values, under the copy's id. The same string when the note holds no block for
+ * `from`, already holds one for `to` (never overwritten), or its frontmatter will not parse.
+ */
+export function moveFolderValues(content: string, from: string, to: string): string {
+  const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  const blocks = properties[FOLDER_VALUES_KEY]
+  if (error !== undefined || !isMap(blocks) || !Object.hasOwn(blocks, from) || Object.hasOwn(blocks, to)) return content
+  return setFrontmatterProperty(content, FOLDER_VALUES_KEY, Object.fromEntries(Object.entries(blocks).map(([id, block]) => [id === from ? to : id, block])))
+}
+
+/**
+ * A folder's values leave the note when the note leaves the folder (D20): `properties` without the
+ * blocks of the folders that are `known` — some settings record has that id — and not among the
+ * ones `showing` the note. A block for an id the app does not know (a folder deleted, or not synced
+ * yet) is kept. The same object when nothing goes; `in` goes with its last block.
+ */
+export function withoutStaleFolderValues(properties: Record<string, unknown>, showing: ReadonlySet<string>, known: ReadonlySet<string>): Record<string, unknown> {
+  const blocks = properties[FOLDER_VALUES_KEY]
+  if (!isMap(blocks)) return properties
+  const kept = Object.entries(blocks).filter(([id]) => showing.has(id) || !known.has(id))
+  if (kept.length === Object.keys(blocks).length) return properties
+  const { [FOLDER_VALUES_KEY]: _, ...own } = properties
+  return kept.length === 0 ? own : { ...own, [FOLDER_VALUES_KEY]: Object.fromEntries(kept) }
 }

@@ -31,7 +31,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, rowsByFolder } from './shortcuts'
+import { addShortcut, dropFolderValuesAfterMove, dropStaleFolderValues, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, rowsByFolder } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -288,45 +288,178 @@ describe('removing a shortcut (YAZ-2290 E5)', () => {
 
   it('takes the folder’s id out of the note’s `also_in` and leaves every other entry, and byte, alone', async () => {
     disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
+    await removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')
     expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - Old Folder\ntitle: Health\n---\nBody\n`)
   })
 
   it('"Remove shortcut" removes the entries naming the folder OR any folder under it, and never deletes the note', async () => {
     disk.set(NOTE, `---\nalso_in:\n  - ${DEEPER_ID}\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\n  - ${DEEP_ID}\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects/Deep', NOTE, NESTED)
+    await removeShortcut('/vault/Projects/Deep', NOTE, NESTED, '/vault')
     expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, NESTED)
+    await removeShortcut('/vault/Projects', NOTE, NESTED, '/vault')
     expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\ntitle: Health\n---\nBody\n`)
   })
 
   it('a folder with no `.folder.md` of its own still removes the entries naming the folders under it', async () => {
     disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\n  - ${AREAS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, [settings('Projects/Deep', DEEP_ID), settings('Projects-old', AREAS_ID)])
+    await removeShortcut('/vault/Projects', NOTE, [settings('Projects/Deep', DEEP_ID), settings('Projects-old', AREAS_ID)], '/vault')
     expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
   })
 
   it('the key goes with its last entry — list or scalar: an emptied list is no list', async () => {
     disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\ntitle: Health\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
+    await removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')
     expect(disk.get(NOTE)).toBe('---\ntitle: Health\n---\nBody\n')
     disk.set(NOTE, `---\nalso_in: ${PROJECTS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
+    await removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')
     expect(disk.get(NOTE)).toBe('---\n---\nBody\n') // the one-key writer's own empty block
   })
 
   it('a folder with no `.folder.md`, or one that holds no id, names nothing: the note is not written', async () => {
     vi.mocked(api.writeFile).mockClear()
     disk.set(NOTE, `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, [])
-    await removeShortcut('/vault/Projects', NOTE, [settings('Projects')])
+    await removeShortcut('/vault/Projects', NOTE, [], '/vault')
+    await removeShortcut('/vault/Projects', NOTE, [settings('Projects')], '/vault')
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 
   it('a note that does not name the folder is not written', async () => {
     vi.mocked(api.writeFile).mockClear()
     disk.set(NOTE, `---\nalso_in:\n  - ${AREAS_ID}\n---\nBody\n`)
-    await removeShortcut('/vault/Projects', NOTE, FOLDERS)
+    await removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')
     expect(api.writeFile).not.toHaveBeenCalled()
+  })
+})
+
+/** A note's `in`, written: one block per id, each holding `order`. */
+const blocks = (...ids: string[]): string => `in:\n${ids.map((id) => `  ${id}:\n    order: 1\n`).join('')}`
+const inOf = (path: string): string[] => Object.keys((parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter).properties.in as Record<string, unknown> | undefined) ?? {})
+
+describe('a folder’s values leave the note when the note leaves the folder (D20)', () => {
+  const GONE_ID = NOBODY_ID // a block for a folder no settings record has: deleted, or not synced yet
+
+  beforeEach(() => {
+    disk.clear()
+    vi.mocked(api.readFile).mockClear()
+    vi.mocked(api.writeFile).mockClear()
+  })
+
+  describe('in the bytes being written (`dropStaleFolderValues`)', () => {
+    const tidy = (path: string, content: string, folders = NESTED): string => dropStaleFolderValues('/vault', path, folders)(content)
+
+    it('"shows it" is asked of the note’s CURRENT folder and the `also_in` in the bytes: the folder it lives in, the folders above it and the ones it is a shortcut in keep their blocks; every other folder that exists loses its block', () => {
+      const note = `---\nalso_in:\n  - ${AREAS_ID}\n${blocks(DEEPER_ID, DEEP_ID, PROJECTS_ID, AREAS_ID)}title: x\n---\nBody\n`
+      expect(tidy('/vault/Projects/Deep/Deeper/N.md', note)).toBe(note)
+      expect(tidy('/vault/Projects/Deep/N.md', note)).toBe(note.replace(`  ${DEEPER_ID}:\n    order: 1\n`, ''))
+      expect(tidy('/vault/N.md', note)).toBe(`---\nalso_in:\n  - ${AREAS_ID}\n${blocks(AREAS_ID)}title: x\n---\nBody\n`)
+      // Without the shortcut the last block goes, and `in` with it.
+      expect(tidy('/vault/N.md', `---\n${blocks(PROJECTS_ID, AREAS_ID)}title: x\n---\n`)).toBe('---\ntitle: x\n---\n')
+    })
+
+    it('a block for a folder the app cannot find is kept, always', () => {
+      const note = `---\n${blocks(GONE_ID, PROJECTS_ID)}---\n`
+      expect(tidy('/vault/Areas/N.md', note)).toBe(`---\n${blocks(GONE_ID)}---\n`)
+      expect(tidy('/vault/Areas/N.md', note, [])).toBe(note) // no folder is known: nothing goes
+    })
+
+    it('a folder that still shows the note keeps its block — of two folders still sharing an id, either', () => {
+      const twins = [settings('Projects', PROJECTS_ID), settings('Projects copy', PROJECTS_ID)]
+      const note = `---\n${blocks(PROJECTS_ID)}---\n`
+      expect(tidy('/vault/Projects copy/N.md', note, twins)).toBe(note)
+      expect(tidy('/vault/Projects/N.md', note, twins)).toBe(note)
+    })
+
+    it('a note outside the vault, and one whose frontmatter will not parse, are left as they are', () => {
+      const note = `---\n${blocks(PROJECTS_ID)}---\n`
+      expect(tidy('/elsewhere/N.md', note)).toBe(note)
+      const broken = `---\nStatus: [unclosed\n${blocks(PROJECTS_ID)}---\n`
+      expect(tidy('/vault/Areas/N.md', broken)).toBe(broken)
+    })
+  })
+
+  describe('a move in the app (`dropFolderValuesAfterMove`)', () => {
+    const move = (oldPath: string, newPath: string, kind: 'file' | 'dir', records: IndexRecord[], folders = NESTED): Promise<void> =>
+      dropFolderValuesAfterMove({ root: '/vault', oldPath, newPath, kind, records, folders })
+    const holding = (path: string, ...ids: string[]): IndexRecord => rec(path, { in: Object.fromEntries(ids.map((id) => [id, { order: 1 }])) })
+    const put = (path: string, ...ids: string[]): void => void disk.set(path, `---\n${blocks(...ids)}---\nBody\n`)
+
+    it('a note is moved to another folder in the app: in that move, the block of each folder that no longer shows it is removed; the folders above its new place that showed it before keep theirs; the new folder’s columns start empty', async () => {
+      put('/vault/Projects/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID, GONE_ID)
+      await move('/vault/Projects/Deep/Deeper/N.md', '/vault/Projects/N.md', 'file', [holding('/vault/Projects/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID, GONE_ID)])
+      expect(inOf('/vault/Projects/N.md')).toEqual([PROJECTS_ID, GONE_ID])
+      expect(api.writeFile).toHaveBeenCalledTimes(1)
+      put('/vault/Areas/M.md', PROJECTS_ID)
+      await move('/vault/Projects/M.md', '/vault/Areas/M.md', 'file', [holding('/vault/Projects/M.md', PROJECTS_ID)])
+      expect(disk.get('/vault/Areas/M.md')).toBe('---\n---\nBody\n') // nothing for Projects, nothing yet for Areas
+    })
+
+    it('a note moved out of a folder and back: that folder’s columns are empty for it', async () => {
+      put('/vault/Areas/N.md', PROJECTS_ID)
+      await move('/vault/Projects/N.md', '/vault/Areas/N.md', 'file', [holding('/vault/Projects/N.md', PROJECTS_ID)])
+      const out = disk.get('/vault/Areas/N.md')!
+      disk.set('/vault/Projects/N.md', out)
+      await move('/vault/Areas/N.md', '/vault/Projects/N.md', 'file', [rec('/vault/Areas/N.md')])
+      expect(inOf('/vault/Projects/N.md')).toEqual([])
+    })
+
+    it('a note is moved by a folder move in the app: nothing is removed for the folders that move with it — their ids are unchanged — and a folder left behind that no longer shows the note loses its block', async () => {
+      // `Projects/Deep` moves under Areas: Deep and Deeper go with their notes, Projects stays behind.
+      put('/vault/Areas/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID)
+      put('/vault/Areas/Deep/M.md', DEEP_ID)
+      const records = [holding('/vault/Projects/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID), holding('/vault/Projects/Deep/M.md', DEEP_ID), holding('/vault/Projects/Stay.md', PROJECTS_ID, AREAS_ID)]
+      await move('/vault/Projects/Deep', '/vault/Areas/Deep', 'dir', records)
+      expect(inOf('/vault/Areas/Deep/Deeper/N.md')).toEqual([DEEPER_ID, DEEP_ID])
+      // Only the note that holds a stale block is read or written: decided on the snapshot.
+      expect(vi.mocked(api.readFile).mock.calls.map(([path]) => path)).toEqual(['/vault/Areas/Deep/Deeper/N.md'])
+      expect(vi.mocked(api.writeFile).mock.calls.map(([req]) => req.path)).toEqual(['/vault/Areas/Deep/Deeper/N.md'])
+    })
+
+    it('a pure rename, or a move under the same folders above, writes NOTHING — and reads nothing', async () => {
+      const records = [holding('/vault/Projects/Deep/Deeper/N.md', DEEPER_ID, DEEP_ID, PROJECTS_ID), holding('/vault/Projects/Deep/M.md', DEEP_ID, PROJECTS_ID)]
+      await move('/vault/Projects/Deep', '/vault/Projects/Shallow', 'dir', records) // a folder renamed
+      await move('/vault/Projects/Deep/Deeper', '/vault/Projects/Deep/Other', 'dir', records)
+      await move('/vault/Projects', '/vault/Work', 'dir', records)
+      await move('/vault/Projects/Deep/M.md', '/vault/Projects/Deep/Renamed.md', 'file', records) // a note renamed
+      expect(api.readFile).not.toHaveBeenCalled()
+      expect(api.writeFile).not.toHaveBeenCalled()
+    })
+
+    it('a note that cannot be written keeps its blocks, and the move goes on to the next note', async () => {
+      put('/vault/Areas/Deep/B.md', PROJECTS_ID) // `A.md` is not on disk at its new path
+      await move('/vault/Projects/Deep', '/vault/Areas/Deep', 'dir', [holding('/vault/Projects/Deep/A.md', PROJECTS_ID), holding('/vault/Projects/Deep/B.md', PROJECTS_ID)])
+      expect(inOf('/vault/Areas/Deep/B.md')).toEqual([])
+    })
+  })
+
+  describe('"Remove shortcut"', () => {
+    const NOTE = '/vault/Areas/Health.md'
+
+    it('a shortcut is removed in the app: in the same write that removes the `also_in` entry, the blocks of the folders that no longer show the note are removed', async () => {
+      disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\ntitle: Health\n${blocks(AREAS_ID, PROJECTS_ID, DEEP_ID, GONE_ID)}---\nBody\n`)
+      await removeShortcut('/vault/Projects/Deep', NOTE, NESTED, '/vault')
+      // The shortcut in Deep showed it in Projects too: both go. Its own folder's block and the unknown one stay.
+      expect(disk.get(NOTE)).toBe(`---\ntitle: Health\n${blocks(AREAS_ID, GONE_ID)}---\nBody\n`)
+      expect(api.writeFile).toHaveBeenCalledTimes(1)
+    })
+
+    it('a folder that still shows the note keeps its block: another shortcut under the same folder above', async () => {
+      disk.set(NOTE, `---\nalso_in:\n  - ${DEEP_ID}\n  - ${PROJECTS_ID}\n${blocks(PROJECTS_ID, DEEP_ID)}---\n`)
+      await removeShortcut('/vault/Projects/Deep', NOTE, NESTED, '/vault')
+      expect(disk.get(NOTE)).toBe(`---\nalso_in:\n  - ${PROJECTS_ID}\n${blocks(PROJECTS_ID)}---\n`)
+    })
+
+    it('the write the removal rides on is refused: nothing is removed', async () => {
+      const note = `---\nalso_in:\n  - ${PROJECTS_ID}\n${blocks(PROJECTS_ID)}---\n`
+      disk.set(NOTE, note)
+      vi.mocked(api.writeFile).mockRejectedValueOnce(new Error('disk full'))
+      await expect(removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')).rejects.toThrow('disk full')
+      expect(disk.get(NOTE)).toBe(note)
+    })
+
+    it('a note that does not name the folder is not written, whatever blocks it holds', async () => {
+      disk.set(NOTE, `---\n${blocks(PROJECTS_ID)}---\n`)
+      await removeShortcut('/vault/Projects', NOTE, FOLDERS, '/vault')
+      expect(api.writeFile).not.toHaveBeenCalled()
+    })
   })
 })

@@ -3664,6 +3664,39 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('2')
     })
 
+    it('"Remove shortcut" also removes, in that one write, the values of the folders that no longer show the note (D20)', async () => {
+      const { el, disk, writeFile } = await mountLinked([PROJECTS_ID])
+      disk.set(HEALTH, `---\nalso_in:\n  - ${PROJECTS_ID}\nin:\n  ${PROJECTS_ID}:\n    order: 1\n  n0f01der0000:\n    order: 2\n---\nBody\n`)
+      rightClick(shortcutRow(el))
+      await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
+      expect(disk.get(HEALTH)).toBe('---\nin:\n  n0f01der0000:\n    order: 2\n---\nBody\n') // a folder the app cannot find keeps its block
+      expect(writeFile).toHaveBeenCalledTimes(1)
+    })
+
+    it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move; a Copy removes nothing (D20)', async () => {
+      const ALPHA = `---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n---\nBody\n`
+      let pushClip: ((state: { count: number; op: 'copy' | 'cut' } | null) => void) | null = null
+      const { el, disk, indexSource, bridge, writeFile } = await mountLinked(undefined, {}, (b) =>
+        b.file.onClipChanged.mockImplementation((listener) => {
+          pushClip = listener
+          return () => undefined
+        }),
+      )
+      act(() => indexSource.update(() => null, records().map((r) => (r.path === '/v/Projects/Alpha.md' ? { ...r, properties: { in: { [PROJECTS_ID]: { order: 1 } } } } : r)), FOLDERS))
+      disk.set('/v/Areas/Alpha.md', ALPHA) // where the paste lands it
+      bridge.file.paste.mockResolvedValue({ pasted: [{ from: '/v/Projects/Alpha.md', to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
+      const paste = async (op: 'copy' | 'cut'): Promise<void> => {
+        act(() => pushClip?.({ count: 1, op }))
+        rightClick(row(el, '/v/Areas'))
+        await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+      }
+      await paste('copy')
+      expect(bridge.file.paste).toHaveBeenCalledTimes(1)
+      expect(writeFile).not.toHaveBeenCalled()
+      await paste('cut')
+      expect(disk.get('/v/Areas/Alpha.md')).toBe('---\n---\nBody\n')
+    })
+
     it('a refused removal says so through the notice', async () => {
       const { el, writeFile, props } = await mountLinked([PROJECTS_ID])
       writeFile.mockRejectedValue({ code: 'IO_ERROR', message: 'disk full' })

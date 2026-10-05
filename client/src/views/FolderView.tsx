@@ -13,7 +13,8 @@
  *  - VALUES (D19): a folder's values for a note are in the NOTE, under `in`, in the block named by
  *    the folder's id (`shared/folderValues.ts`). This host is the one seam: the views get rows
  *    whose `properties` ARE this folder's block, and every value they write comes back through
- *    `writeValues` into it. A column is never stamped into a note (E1).
+ *    `writeValues` into it. A column is never stamped into a note (E1). That write is also where a
+ *    note drops the values of the folders that no longer show it (D20).
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -35,7 +36,7 @@ import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { folderId, folderRecord, folderRows } from '../links/shortcuts'
+import { dropStaleFolderValues, folderId, folderRecord, folderRows } from '../links/shortcuts'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
@@ -285,7 +286,8 @@ export function FolderView({
       return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => r.folder === into), seeded, name)
     },
     // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
-    writeValues: (note, writes) => (id !== undefined ? writeFolderValues(note, id, writes) : folderId(path).then((given) => writeFolderValues(note, given, writes))),
+    // The same save drops the note's values for the folders that no longer show it (D20).
+    writeValues: async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)),
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {

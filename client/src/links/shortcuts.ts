@@ -10,11 +10,12 @@
  * entry no folder has is ignored.
  */
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
+import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
 import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
-import { dirname } from '../lib/paths'
-import { transformFile } from '../views/writeProperty'
+import { dirname, relTo } from '../lib/paths'
+import { transformFile, type ContentTransform } from '../views/writeProperty'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
 export function folderRecord(folders: readonly IndexRecord[], dir: string): IndexRecord | undefined {
@@ -125,13 +126,62 @@ export async function addShortcut(dir: string, path: string): Promise<void> {
 /**
  * Take the note at `path` out of the folder at `dir` (E5): the ids of that folder and of every
  * folder under it leave its `also_in`, and the key goes with its last entry — an emptied list is
- * no list, the comments store's rule (`shared/comments.ts`). The note itself stays where it lives.
+ * no list, the comments store's rule (`shared/comments.ts`). The note itself stays where it lives,
+ * and in the same write drops the values of the folders that no longer show it (D20).
  */
-export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[]): Promise<unknown> {
+export function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[], root: string): Promise<unknown> {
   const ids = new Set<unknown>(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
+  const tidy = dropStaleFolderValues(root, path, folders)
   return transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
     const kept = list.filter((entry) => !ids.has(entry))
-    return kept.length === list.length ? content : setFrontmatterProperty(content, ALSO_IN_KEY, kept.length === 0 ? undefined : kept)
+    return kept.length === list.length ? content : tidy(setFrontmatterProperty(content, ALSO_IN_KEY, kept.length === 0 ? undefined : kept))
   })
+}
+
+/** The properties of a note living in `folder` without its stale blocks (D20): what shows it is asked of these properties' own `also_in`. */
+function withoutLeftFolders(properties: Record<string, unknown>, folder: string, folders: readonly IndexRecord[]): Record<string, unknown> {
+  if (properties[FOLDER_VALUES_KEY] === undefined) return properties
+  const byId = foldersById(folders)
+  const showing = new Set(foldersShowing(folder, properties, byId))
+  // By the folder, never back through `byId`: of two folders still sharing an id, either may be the one showing it.
+  const ids = folders.flatMap((record) => (record.id !== undefined && showing.has(record.folder) ? [record.id] : []))
+  return withoutStaleFolderValues(properties, new Set(ids), new Set(byId.keys()))
+}
+
+/**
+ * A folder's values leave the note when the note leaves the folder (D20), as a change to the bytes
+ * about to be written: the note at `path` without the blocks of the folders that exist (`folders`,
+ * the index's settings records) and do not show it. Only ever part of a write the user caused —
+ * a move, "Remove shortcut", a value — never a pass of its own. A note outside the vault, which
+ * the index cannot speak for, and one that will not parse are left as they are.
+ */
+export function dropStaleFolderValues(root: string, path: string, folders: readonly IndexRecord[]): ContentTransform {
+  const rel = relTo(root, path)
+  return (content) => {
+    if (rel === path) return content
+    const properties = propertiesOf(content)
+    const kept = withoutLeftFolders(properties, dirname(rel), folders)
+    return kept === properties ? content : setFrontmatterProperty(content, FOLDER_VALUES_KEY, kept[FOLDER_VALUES_KEY])
+  }
+}
+
+/**
+ * After an in-app move or rename of a note or a folder (D20): each note that moved drops the
+ * values of the folders it left. `records` and `folders` are the PRE-move snapshot; the folders
+ * that moved keep their ids, so they are asked at their new place. Which notes hold a stale block
+ * is decided on the snapshot — a rename, or a move under the same folders, reads and writes
+ * nothing. A note that cannot be written keeps its blocks until a value of it is next written.
+ */
+export async function dropFolderValuesAfterMove({ root, oldPath, newPath, kind, records, folders }: { root: string; oldPath: string; newPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; folders: readonly IndexRecord[] }): Promise<void> {
+  const moved = (path: string): string => (path === oldPath || (kind === 'dir' && path.startsWith(`${oldPath}/`)) ? newPath + path.slice(oldPath.length) : path)
+  const after = folders.map((folder) => {
+    const path = moved(folder.path)
+    return path === folder.path ? folder : { ...folder, path, folder: dirname(relTo(root, path)) }
+  })
+  for (const record of records) {
+    const path = moved(record.path)
+    if (path === record.path || withoutLeftFolders(record.properties, dirname(relTo(root, path)), after) === record.properties) continue
+    await transformFile(path, dropStaleFolderValues(root, path, after)).catch(() => undefined)
+  }
 }

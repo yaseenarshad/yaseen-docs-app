@@ -25,6 +25,7 @@ import {
   type PageComment,
 } from '@shared/comments'
 import { alsoIn } from '@shared/alsoIn'
+import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
@@ -74,6 +75,10 @@ as the app would, and only inside a vault (a folder holding \`.yaseendocs/\`). \
 every id on a page — its links, and the folders it is also in — with the page or folder that id
 names now, or \`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the
 vault for \`id: <id>\`.
+
+A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
+named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
+those folders after the links, each by id and the folder it names now.
 
 \`due\` prints the day a page is next up for review. The app works that date out from the page's
 \`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
@@ -305,9 +310,10 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       const { links, properties } = await scanFile(root, page)
       const linked = links.filter(isNoteId)
       const ids = [...new Set([...linked, ...alsoIn(properties)])]
+      const held = folderBlocks(properties).map(([id]) => id)
       // The vault as the app's index sees it (the same walk, the same scan). In path order, so of two pages sharing an id — a copy the sweep has not met — the one named is the sweep's first choice too.
       const files: string[] = []
-      if (ids.length > 0) await walk(root, files)
+      if (ids.length > 0 || held.length > 0) await walk(root, files)
       const records = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
       const rows = ids.map((id): { id: string; kind: 'note' | 'folder' | 'missing'; path?: string } => {
         const r = records.find((o) => o.id === id)
@@ -318,7 +324,14 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       })
       const line = (r: (typeof rows)[number]) =>
         `${r.id}  ${r.kind === 'missing' ? '(missing)' : r.kind === 'note' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`
-      io.stdout(flags.has('--json') ? `${JSON.stringify(rows, null, 2)}\n` : rows.length === 0 ? `no ids on ${page}\n` : `${rows.map(line).join('\n')}\n`)
+      // The folders the page holds values for (`in`, D19), apart from its links: a block whose id no folder has is its id alone.
+      const blocks = held.map((id): { id: string; path?: string } => {
+        const folder = records.find((o) => o.id === id && isFolderSettingsPath(o.path))
+        return folder === undefined ? { id } : { id, path: folder.folder }
+      })
+      const listed = rows.length === 0 ? `no ids on ${page}\n` : `${rows.map(line).join('\n')}\n`
+      const values = blocks.length === 0 ? '' : `\nin:\n${blocks.map((b) => (b.path === undefined ? b.id : `${b.id}  ${b.path}/`)).join('\n')}\n`
+      io.stdout(flags.has('--json') ? `${JSON.stringify({ links: rows, in: blocks }, null, 2)}\n` : listed + values)
       return
     }
     default:

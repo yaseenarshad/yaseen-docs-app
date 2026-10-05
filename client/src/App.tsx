@@ -18,6 +18,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
+import { dropFolderValuesAfterMove } from './links/shortcuts'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -557,6 +558,8 @@ export function App() {
         notify(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
+      // A note that left a folder leaves that folder's values behind (D20).
+      await dropFolderValuesAfterMove({ root: r, oldPath, newPath, kind, records, folders })
       const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
         kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
       ) ?? false

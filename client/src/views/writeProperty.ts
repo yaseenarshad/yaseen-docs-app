@@ -87,8 +87,10 @@ export async function writeProperty(path: string, key: string, value: unknown): 
 
 /**
  * Change fields of ONE folder's block of a note (D19, `shared/folderValues.ts`) in one guarded
- * whole-file transformation: every value a folder's views or the panel's folder rows write.
+ * whole-file transformation: every value a folder's views or the panel's folder rows write. In the
+ * same write the note drops the values of the folders that no longer show it (D20): `tidy`,
+ * `dropStaleFolderValues` for this note.
  */
-export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[]): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content))
+export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[], tidy: ContentTransform): Promise<{ mtime: number }> {
+  return transformFile(path, (content) => tidy(writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content)))
 }

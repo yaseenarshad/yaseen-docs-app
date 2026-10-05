@@ -76,6 +76,47 @@ describe('rewriteNoteLinks', () => {
   })
 })
 
+describe('rewriteNoteLinks inside a folder’s values (`in`, D19)', () => {
+  const NOTE = [
+    '---',
+    '# who this is',
+    'id: n0tead000001',
+    'aliases: [Noor]',
+    'in:',
+    '  3y7505rsr6fd:',
+    '    Status: Interview',
+    '    owner: "[[B]]"',
+    '    team:',
+    '      - "[[B|Bee]]"',
+    '      - "[[Sub/B#Scope]]"',
+    '      - "[[A]]"',
+    '    ref: "[[k3m9x2pq7abc]]"',
+    '    note: see [[B]] inline',
+    '  mzf9cjhn02vm:',
+    '    Status: 2-Todo',
+    '    lead: "[[A]]"',
+    'pillar: "[[A]]"',
+    '---',
+    '',
+    'Body.',
+    '',
+  ].join('\n')
+
+  it('renaming the target of a NAME link held in a folder’s value rewrites it there by the top-level rules; an ID link and every other byte, the other blocks included, stay', () => {
+    expect(rewriteNoteLinks(NOTE, resolvesB, toC)).toBe(
+      NOTE.replace('owner: "[[B]]"', 'owner: "[[C]]"').replace('"[[B|Bee]]"', '"[[C|Bee]]"').replace('"[[Sub/B#Scope]]"', '"[[Sub/C#Scope]]"'),
+    )
+  })
+
+  it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link: nothing to write', () => {
+    expect(rewriteNoteLinks('---\nin:\n  3y7505rsr6fd:\n    note: see [[B]] inline\n---\n', resolvesB, toC)).toBeNull()
+  })
+
+  it('a note whose folder values name nobody renamed is null — `in` is never re-serialised for nothing', () => {
+    expect(rewriteNoteLinks('---\nin: {3y7505rsr6fd: {owner: "[[A]]"}}\n---\n', resolvesB, toC)).toBeNull()
+  })
+})
+
 // ---------- YAZ-864: the ONE reserved key is walked INTO ----------
 
 describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
@@ -578,6 +619,18 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     expect(files['/v/ByName.md'].content).toBe('see [[C]]\n')
     expect(files['/v/ById.md']).toEqual({ content: byId, mtime: 1 })
     expect(files['/v/C.md']).toEqual({ content: renamed, mtime: 1 })
+  })
+
+  it('a NAME link held in a folder’s value is rewritten on disk; the note holding only an ID link there is never read (D19)', async () => {
+    const byName = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[B]]"\n---\n'
+    const byId = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[k3m9x2pq7abc]]"\n---\n'
+    const records = [rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/ByName.md', { links: ['B'] }), B]
+    const files = { '/v/ById.md': { content: byId, mtime: 1 }, '/v/ByName.md': { content: byName, mtime: 1 } }
+    const { readFile } = installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/ByName.md'].content).toBe(byName.replace('[[B]]', '[[C]]'))
+    expect(readFile.mock.calls.map(([path]) => path)).toEqual(['/v/ByName.md'])
+    expect(files['/v/ById.md']).toEqual({ content: byId, mtime: 1 })
   })
 
   it('a FOLDER move leaves the id links to the notes inside it alone too, while a pathed name link is rewritten', async () => {

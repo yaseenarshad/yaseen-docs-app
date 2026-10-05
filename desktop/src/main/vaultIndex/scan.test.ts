@@ -110,6 +110,17 @@ describe('extractLinks / extractEmbeds', () => {
     expect(extractAliases({ aliases: ['[[X]]'] })).toEqual(['[[X]]'])
   })
 
+  it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the note’s links, exactly as a top-level whole-value link is', () => {
+    const props = { related: '[[Top]]', in: { '3y7505rsr6fd': { owner: '[[k3m9x2pq7abc]]', Status: 'Interview', team: ['[[Sam|S]]', 'plain', 7] }, mzf9cjhn02vm: { lead: '[[Road#Scope]]' } } }
+    expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam', 'Road', 'Body'])
+  })
+
+  it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link', () => {
+    expect(extractLinks({ in: { '3y7505rsr6fd': { note: 'see [[x]] later', list: ['ask [[y]]'] } } }, '')).toEqual([])
+    // A block that is no map holds no values.
+    expect(extractLinks({ in: { '3y7505rsr6fd': '[[x]]' } }, '')).toEqual([])
+  })
+
   it('de-duplicates: frontmatter first, then first appearance', () => {
     expect(extractLinks({ a: '[[B]]' }, '[[A]] [[B]] [[A]]')).toEqual(['B', 'A'])
     expect(extractEmbeds('![[a]] ![[b]] ![[a]]')).toEqual(['a', 'b'])
@@ -211,6 +222,16 @@ describe('scanFile', () => {
     expect(r.properties).toEqual({ status: 'draft', tags: ['x'] })
     expect(r.frontmatterError).toBeUndefined()
     expect(r.links).toEqual([])
+  })
+
+  it('indexing a note never removes a block of `in`: the record carries every folder’s values as written, their links counted, and the file is left byte for byte', async () => {
+    const held = path.join(root, 'held.md')
+    const content = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[Sam]]"\n  mzf9cjhn02vm:\n    Status: 2-Todo\n---\nbody\n'
+    await writeFile(held, content)
+    const r = await scanFile(root, held)
+    expect(r.properties).toEqual({ in: { '3y7505rsr6fd': { owner: '[[Sam]]' }, mzf9cjhn02vm: { Status: '2-Todo' } } })
+    expect(r.links).toEqual(['Sam'])
+    expect(await readFile(held, 'utf8')).toBe(content)
   })
 
   it('frontmatter `reviews` land on the record in time order and are never a property (YAZ-2322)', async () => {

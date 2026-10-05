@@ -22,7 +22,8 @@
  * and an explicit `.md` extension stays explicit. `![[embeds]]` get the same treatment.
  * Frontmatter follows the index's link extraction: whole-value exact `[[…]]` strings only
  * (top-level and inside lists), rewritten through `setFrontmatterProperty` so everything
- * else in the block survives byte-for-byte.
+ * else in the block survives byte-for-byte. A folder's values (`in`, D19) hold the same links by
+ * the same rule; `in` goes back as the WHOLE key.
  *
  * ONE key is walked deeper than that (YAZ-864): `folder_settings`, the single reserved key
  * with app-defined link semantics (Q1, YAZ-815). Its `views[].order` entries and
@@ -51,6 +52,7 @@
  *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
  */
+import { FOLDER_VALUES_KEY, folderBlocks, withFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
@@ -148,6 +150,19 @@ function rewriteExactLink(value: string, resolves: ResolvesToOld, newTarget: New
   return inner === null ? undefined : `[[${inner}]]`
 }
 
+/** A frontmatter VALUE — a whole-value link, or a list holding some — rewritten, else undefined. */
+function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: NewTarget): unknown {
+  if (typeof value === 'string') return rewriteExactLink(value, resolves, newTarget)
+  if (!Array.isArray(value)) return undefined
+  let changed = false
+  const next = value.map((item: unknown) => {
+    const r = typeof item === 'string' ? rewriteExactLink(item, resolves, newTarget) : undefined
+    if (r !== undefined) changed = true
+    return r ?? item
+  })
+  return changed ? next : undefined
+}
+
 /**
  * The same string's TARGET (`|alias` / `#heading` stripped), or null — what `rewriteInner`
  * decides on, exposed for the probe. The probe asks `resolves`, not "would this be rewritten":
@@ -174,19 +189,18 @@ export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTa
     const { properties, error } = parseFrontmatter(frontmatter)
     if (error === undefined) {
       for (const [key, value] of Object.entries(properties)) {
-        if (typeof value === 'string') {
-          const next = rewriteExactLink(value, resolves, newTarget)
-          if (next !== undefined) out = setFrontmatterProperty(out, key, next)
-        } else if (Array.isArray(value)) {
-          let changed = false
-          const next = value.map((item) => {
-            const r = typeof item === 'string' ? rewriteExactLink(item, resolves, newTarget) : undefined
-            if (r !== undefined) changed = true
-            return r ?? (item as unknown)
-          })
-          if (changed) out = setFrontmatterProperty(out, key, next)
+        const next = rewriteLinkValue(value, resolves, newTarget)
+        if (next !== undefined) out = setFrontmatterProperty(out, key, next)
+      }
+      // A folder's values (D19): each block's links by the same rule, `in` written back whole.
+      let held = properties
+      for (const [id, block] of folderBlocks(properties)) {
+        for (const [key, value] of Object.entries(block)) {
+          const next = rewriteLinkValue(value, resolves, newTarget)
+          if (next !== undefined) held = withFolderValues(held, id, { [key]: next })
         }
       }
+      if (held !== properties) out = setFrontmatterProperty(out, FOLDER_VALUES_KEY, held[FOLDER_VALUES_KEY])
       // The nested leaves go back as the WHOLE key — the one door's own write shape
       // (`writeFolderSettings`), so nothing about that block is serialised two ways.
       const settings = mapFolderSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))
