@@ -1017,6 +1017,50 @@ describe('sort menu', () => {
     chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
   })
+
+  /** The values of an open picker's options. */
+  const optionValues = (pop: ParentNode, label: string): (string | undefined)[] => {
+    const trigger = byLabel<HTMLButtonElement>(pop, label)
+    if (trigger.getAttribute('aria-expanded') !== 'true') click(trigger)
+    return [...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)
+  }
+
+  it('Folder is offered — once — as a Sort property, a Group by and a Then group by, and nowhere else: the Properties menu has no "Show Folder" (YAZ-2541)', () => {
+    const { el } = mount()
+    const pop = openMenu(el, 'Sort')
+    expect(optionValues(pop, 'Sort property').filter((v) => v === 'file.folder')).toHaveLength(1)
+    expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
+    chooseColumn(pop, 'Group by', 'note.status')
+    expect(optionValues(pop, 'Then group by').filter((v) => v === 'file.folder')).toHaveLength(1)
+    expect(openMenu(el, 'Properties').querySelector('[aria-label="Show Folder"]')).toBeNull()
+  })
+
+  it('a view whose hand-written `order` already names `file.folder` still lists Folder once (YAZ-2541)', () => {
+    const pop = openMenu(mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - file.folder\n').el, 'Sort')
+    expect(optionValues(pop, 'Group by').filter((v) => v === 'file.folder')).toHaveLength(1)
+  })
+
+  it('Folder twice IS a grouping (YAZ-2541): Then group by still offers Folder under a Folder outer, and both levels are written; any other property is still offered and kept once', () => {
+    const { el, def } = mount()
+    const pop = openMenu(el, 'Sort')
+    chooseColumn(pop, 'Group by', 'file.folder')
+    expect(optionValues(pop, 'Then group by')).toContain('file.folder')
+    chooseColumn(pop, 'Then group by', 'file.folder')
+    expect(def().views[0].groupBy).toEqual([
+      { property: 'file.folder', direction: 'ASC' },
+      { property: 'file.folder', direction: 'ASC' },
+    ])
+    chooseColumn(pop, 'Group by', 'note.status')
+    expect(def().views[0].groupBy).toEqual([
+      { property: 'note.status', direction: 'ASC' },
+      { property: 'file.folder', direction: 'ASC' },
+    ])
+    expect(optionValues(pop, 'Then group by')).not.toContain('note.status') // a non-folder outer is still kept out of the inner list
+    chooseColumn(pop, 'Group by', 'file.folder')
+    chooseColumn(pop, 'Then group by', 'note.status')
+    chooseColumn(pop, 'Group by', 'note.status') // the outer moved onto a non-folder inner still collapses to one level
+    expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
+  })
 })
 
 describe('collapse all groups', () => {

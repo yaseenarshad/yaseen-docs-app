@@ -479,6 +479,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       view={view}
                       columns={keys}
                       groupKey={line.header.key}
+                      label={line.header.label}
                       rows={line.header.rows}
                       collapsed={collapsedSet.has(line.gk)}
                       onToggle={() => onToggleGroup(line.gk)}

@@ -352,9 +352,8 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     expect(rowNames(el)).toEqual(['Old', 'Older']) // the subfolder's own note and the one below it; not its parent's
   })
 
-  it('Group by Folder: each note sits in the group of the folder it lives in — a subfolder’s notes under the subfolder’s group, the direct notes under the folder’s own', async () => {
-    const el = await mount({ views: [{ type: 'table', name: 'By folder', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
-    /** Each group header's label → the names of the rows under it, read down the table body. */
+  /** Each group header's label → the names of the rows under it, read down the table body. */
+  const groupedNames = (el: ParentNode): Record<string, string[]> => {
     const groups: Record<string, string[]> = {}
     let under: string[] | null = null
     for (const row of el.querySelectorAll('.view-table tbody tr')) {
@@ -362,8 +361,33 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
       if (header !== null) under = groups[header.textContent ?? ''] = []
       else under?.push(...texts(row, '.view-table__name'))
     }
-    expect(groups).toEqual({ stages: ['Lead Gen', 'Sales'], 'stages/archive': ['Old'], 'stages/archive/2019': ['Older'] })
-    expect(texts(el, '.view-group__count')).toEqual(['2', '1', '1'])
+    return groups
+  }
+  const BY_FOLDER = { type: 'table', name: 'By folder', order: ['file.name'], groupBy: { property: 'file.folder' } }
+
+  it('Group by Folder (YAZ-2541): one group per folder ONE step below this one, a deeper note rolled up into it, the direct notes under the folder’s own group; a subfolder with no settings file is headed by its directory name', async () => {
+    const el = await mount({ views: [BY_FOLDER] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
+    expect(groupedNames(el)).toEqual({ stages: ['Lead Gen', 'Sales'], archive: ['Old', 'Older'] })
+    expect(texts(el, '.view-group__count')).toEqual(['2', '2'])
+  })
+
+  it('a Folder group is headed by the folder’s TITLE when it has a settings record (YAZ-2541)', async () => {
+    const el = renderFolderView({ path: STAGES, source, onOpenFile })
+    const records = [...vault(), rec('/vault/stages/archive/2019/Older.md')]
+    const folders = [
+      { ...rec(SETTINGS_FILE, { folder_settings: { ...SETTINGS, views: [BY_FOLDER] } }), id: STAGES_ID, title: 'Pipeline stages' },
+      { ...rec('/vault/stages/archive/.folder.md'), id: 'z8y7x6w5v4t3', title: 'The archive' },
+    ]
+    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+    await flush()
+    expect(groupedNames(el)).toEqual({ 'Pipeline stages': ['Lead Gen', 'Sales'], 'The archive': ['Old', 'Older'] })
+    expect(el.querySelector('.view-group__value')?.getAttribute('title')).toBe('Pipeline stages') // a cut-off name is whole in its tooltip
+  })
+
+  it('Folder then Folder (YAZ-2541): the inner groups are the next folder down, a subfolder’s own notes directly under it', async () => {
+    const el = await mount({ views: [{ ...BY_FOLDER, groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }] }] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
+    expect(groupedNames(el)).toEqual({ stages: ['Lead Gen', 'Sales'], archive: ['Old'], '2019': ['Older'] })
+    expect(texts(el, '.view-group__count')).toEqual(['2', '2', '1'])
   })
 })
 
@@ -1052,10 +1076,10 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     expect(created(0)).toEqual(born(0, '/vault/stages', `in:\n  ${STAGES_ID}:\n    status: 4-Done\n`))
   })
 
-  it.each(['table', 'board', 'cards', 'list'])('the "+" on a group header when a %s is grouped by Folder (`file.folder`) creates the note in that group’s folder', async (type) => {
+  it.each(['table', 'board', 'cards', 'list'])('the "+" on a group header when a %s is grouped by Folder (`file.folder`) creates the note in that group’s folder — the subfolder one step down, not the deeper folder rolled up into it (YAZ-2541)', async (type) => {
     const view = { type, name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }
-    const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/Untitled.md')])
-    click(byLabel(el, 'New note in group stages/archive'))
+    const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/Untitled.md'), rec('/vault/stages/archive/2019/Older.md')])
+    click(byLabel(el, 'New note in group archive'))
     await flush()
     // Born in the subfolder, from ITS template.
     expect(readFile.mock.calls.at(-1)).toEqual(['/vault/stages/archive/.template.md'])
@@ -1064,6 +1088,27 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     click(byLabel(el, 'New note in group stages'))
     await flush()
     expect(created(1)).toEqual(born(1, '/vault/stages'))
+  })
+
+  it.each(['table', 'board'])('Folder then Folder on a %s (YAZ-2541): the "+" on an INNER group creates in the inner folder, the one on its outer in the outer’s', async (type) => {
+    const view = { type, name: 'View', order: ['file.name'], groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }] }
+    const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
+    click(byLabel(el, 'New note in group 2019'))
+    await flush()
+    expect(created(0)).toEqual(born(0, '/vault/stages/archive/2019'))
+    click(byLabel(el, 'New note in group archive'))
+    await flush()
+    expect(created(1)).toEqual(born(1, '/vault/stages/archive'))
+  })
+
+  it('a shortcut that lives in the vault root sits in a group named after the VAULT, after the folder’s own groups; its "+" creates in the opened folder (YAZ-2541)', async () => {
+    const records = vault().map((r) => (r.path === OTHER ? { ...r, properties: { also_in: [STAGES_ID] } } : r))
+    const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, records)
+    expect(texts(el, '.view-group__value').at(-1)).toBe('vault')
+    expect(texts(el, '.view-group__value')).not.toContain('No value')
+    click(byLabel(el, 'New note in group vault'))
+    await flush()
+    expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
 
   it('the "+" under a group-by-Folder group that is not under the opened folder (a shortcut’s home) creates in the opened folder', async () => {
@@ -1316,7 +1361,7 @@ describe('each folder has its own properties (D19)', () => {
   it('a group "+" under group-by-Folder still creates in that group’s folder; a seeded value goes to the OPENED folder’s block', async () => {
     const view = { type: 'table', name: 'Table', order: ['file.name'], filters: 'kind == "task"', groupBy: { property: 'file.folder' } }
     const el = await mount({ ...SETTINGS, views: [view] }, [rec(LEAD, held({ kind: 'task' })), rec(DEEP, held({ kind: 'task' }))])
-    click(byLabel(el, 'New note in group stages/archive'))
+    click(byLabel(el, 'New note in group archive')) // headed by the subfolder's name (YAZ-2541), born in its path
     await flush()
     expect(created(0)).toEqual(born(0, '/vault/stages/archive', `in:\n  ${STAGES_ID}:\n    kind: task\n`))
   })
