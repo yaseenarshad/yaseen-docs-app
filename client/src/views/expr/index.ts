@@ -5,5 +5,5 @@ export { evaluate } from './evaluator'
 export { ExprSyntaxError, parse } from './parser'
 export {
   DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, RegexValue, type Resolver, type Scope, type Value,
-  type ValueType, equals, fromYaml, isEmpty, isTruthy, render, stripBrackets, typeOf,
+  type ValueType, equals, fromYaml, isEmpty, isTruthy, linkText, render, stripBrackets, typeOf,
 } from './values'

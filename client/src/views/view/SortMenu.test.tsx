@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SortMenu } from './SortMenu'
 import type { Mutate, SortSpec, ViewSet, ViewDef } from '../viewSchema'
-import type { FolderPageSettings } from '../folderPageSettings'
+import type { FolderSettings } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -16,7 +16,7 @@ const INITIAL: SortSpec[] = [
   { property: 'note.priority', direction: 'DESC' },
 ]
 
-function mount(view: ViewDef = { name: 'Table', type: 'table', sort: structuredClone(INITIAL) }, folderPage?: FolderPageSettings, records = TEST_RECORDS) {
+function mount(view: ViewDef = { name: 'Table', type: 'table', sort: structuredClone(INITIAL) }, settings: FolderSettings = { columns: {}, views: [], problems: [] }, records = TEST_RECORDS) {
   let def: ViewSet = { views: [view] }
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -26,7 +26,7 @@ function mount(view: ViewDef = { name: 'Table', type: 'table', sort: structuredC
     mutate(def)
     render()
   })
-  const render = () => root!.render(<SortMenu def={def} view={def.views[0]} viewIndex={0} records={records} onUpdate={onUpdate} folderPage={folderPage} />)
+  const render = () => root!.render(<SortMenu def={def} view={def.views[0]} viewIndex={0} records={records} onUpdate={onUpdate} settings={settings} />)
   act(render)
   const el = container
   const grip = (index: number, label: string) => el.querySelector<HTMLButtonElement>(`[aria-label="Reorder sort ${index}: ${label}"]`)!
@@ -94,7 +94,7 @@ describe('SortMenu external settings refresh', () => {
 
 
 describe('Board option group direction', () => {
-  const folder: FolderPageSettings = { columns: { status: { kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' }, tags: { kind: 'multi-select', options: ['B', 'A'] } }, views: [], problems: [] }
+  const folder: FolderSettings = { columns: { status: { kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' }, tags: { kind: 'multi-select', options: ['B', 'A'] } }, views: [], problems: [] }
   it('labels select grouping as option order and its reversal without changing stored direction semantics', () => {
     const { el, onUpdate } = mount({ name: 'Board', type: 'board', groupBy: [{ property: 'note.status' }, { property: 'note.tags', direction: 'DESC' }] }, folder)
     const outer = el.querySelector<HTMLButtonElement>('[aria-label="Group direction"]')!
@@ -115,7 +115,7 @@ describe('Board option group direction', () => {
 
 
 it('offers a declared-only property for Board grouping with zero records', () => {
-  const folder: FolderPageSettings = { columns: { Stage: { kind: 'select', options: ['Inbox', 'Ready'] } }, views: [{ type: 'table', name: 'Table', order: ['note.Stage'] }], problems: [] }
+  const folder: FolderSettings = { columns: { Stage: { kind: 'select', options: ['Inbox', 'Ready'] } }, views: [{ type: 'table', name: 'Table', order: ['note.Stage'] }], problems: [] }
   const { el, view } = mount({ type: 'board', name: 'Board' }, folder, [])
   act(() => el.querySelector<HTMLButtonElement>('[aria-label="Group by"]')!.click())
   const choice = el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.Stage"]')

@@ -1,7 +1,8 @@
 import type { VaultConfigChange } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
+import { BridgeFailure } from '../fs/fsUtils'
 import type { Store } from '../store'
-import { readConfig, subscribeConfig, writeConfig } from '../vaultConfig'
+import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
 import { broadcastAll, syncPerRoot } from './broadcast'
 import { handle } from './envelope'
 
@@ -10,7 +11,11 @@ const broadcast = (change: VaultConfigChange): void => broadcastAll(CONTRACT.vau
 
 /** The `vaultConfig.*` half of `window.yaseenDocs` (Desktop J, GRO-2188). */
 export function registerVaultConfigIpc(store: Store): void {
-  handle(CONTRACT.vaultConfig.read, readConfig)
+  handle(CONTRACT.vaultConfig.read, async (root, name) => {
+    const res = await readConfigDetailed(root, name)
+    if (res.state === 'malformed') throw new BridgeFailure('INVALID_CONFIG', `${name} is not valid JSON`, { path: res.file })
+    return res.state === 'ok' ? res.value : null
+  })
   handle(CONTRACT.vaultConfig.write, writeConfig)
   syncPerRoot(store, (root) => subscribeConfig(root, broadcast))
 }

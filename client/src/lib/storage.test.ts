@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_TOPICS_EXPANDED_PAGES, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
 /** A fake `window.yaseenDocs` with just the state / window halves the storage module talks to. */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'>>
 
 function installBridge(state: AppState, identity: IdentityFixture) {
   let listener: ((s: AppState) => void) | null = null
@@ -30,9 +30,8 @@ function installBridge(state: AppState, identity: IdentityFixture) {
         ...identity,
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
-        sidebarLens: identity.sidebarLens ?? 'topics',
+        sidebarLens: identity.sidebarLens ?? 'favorites',
         focusDirs: identity.focusDirs ?? [],
-        focusTopics: identity.focusTopics ?? [],
         focusFavorites: identity.focusFavorites ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
@@ -77,7 +76,7 @@ describe('storage.init', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'], name: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -97,7 +96,6 @@ describe('storage.init', () => {
     expect(storage.getLastFile('/v')).toBe('/v/a.md')
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['k1'])
     expect(storage.getViewGroups('/v', '/v/b.md::T')).toEqual(['v:idea'])
-    expect(storage.getTopicsExpanded('/v')).toEqual(['/v/Metrics.md'])
   })
 
   it('reads fall back to defaults before init / when the bridge is unavailable', async () => {
@@ -111,7 +109,6 @@ describe('storage.init', () => {
     expect(fresh.getLastFile('/r')).toBeNull()
     expect(fresh.getFolds('/r', '/r/a.md')).toEqual([])
     expect(fresh.getViewGroups('/r', '/r/a.md::T')).toEqual([])
-    expect(fresh.getTopicsExpanded('/r')).toEqual([])
     expect(fresh.getSidebarCollapsed()).toBe(false)
     expect(fresh.getSettings()).toEqual(DEFAULT_SETTINGS)
     await expect(fresh.init()).rejects.toBeDefined()
@@ -131,7 +128,7 @@ describe('storage', () => {
     expect(storage.getRoot()).toBeNull()
     storage.setRoot('/notes')
     expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
     storage.setWorkspace('/notes', ['/notes/a.md'], '/notes/a.md', defaultRightPanelIdentity())
     storage.setRoot('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
@@ -139,7 +136,7 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual(['/notes/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
     expect(storage.getFile()).toBeNull()
     expect(storage.getTabs()).toEqual([])
   })
@@ -242,7 +239,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [], name: null } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, name: null } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -294,25 +291,6 @@ describe('storage', () => {
     expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r2', '/r2/a.md::T', many)
   })
 
-  it('topicsExpanded is per root, capped, and rides the SAME setFolder patch as expanded (YAZ-848)', () => {
-    storage.setTopicsExpanded('/r1', ['/r1/Metrics.md', '/r1/Home.md'])
-    storage.setTopicsExpanded('/r2', ['/r2/Other.md'])
-    expect(storage.getTopicsExpanded('/r1')).toEqual(['/r1/Metrics.md', '/r1/Home.md'])
-    expect(storage.getTopicsExpanded('/r2')).toEqual(['/r2/Other.md'])
-    expect(storage.getTopicsExpanded('/r3')).toEqual([])
-    expect(b.bridge.state.setFolder).toHaveBeenCalledWith('/r1', { topicsExpanded: ['/r1/Metrics.md', '/r1/Home.md'] })
-    // The FILE tree's own bucket is untouched by a Topics write, and vice versa.
-    storage.setExpanded('/r1', ['/r1/dir'])
-    expect(storage.getTopicsExpanded('/r1')).toEqual(['/r1/Metrics.md', '/r1/Home.md'])
-    storage.setTopicsExpanded('/r1', [])
-    expect(storage.getTopicsExpanded('/r1')).toEqual([])
-    expect(storage.getExpanded('/r1')).toEqual(['/r1/dir'])
-    const many = Array.from({ length: MAX_TOPICS_EXPANDED_PAGES + 50 }, (_, i) => `/r2/p${i}.md`)
-    storage.setTopicsExpanded('/r2', many)
-    expect(storage.getTopicsExpanded('/r2')).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
-    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r2', { topicsExpanded: many.slice(0, MAX_TOPICS_EXPANDED_PAGES) })
-  })
-
   it('vaultName falls back to the folder name; setVaultName cleans, stores the folder name as null, and rides setFolder (YAZ-1974 D3)', () => {
     expect(storage.vaultName('/v/business-wiki-MASTER')).toBe('business-wiki-MASTER')
     storage.setVaultName('/v/business-wiki-MASTER', '  Business Wiki ')
@@ -337,38 +315,38 @@ describe('storage', () => {
     b.emit({ ...defaultAppState(), sidebarWidth: 333 })
     expect(storage.getFocusFavorites()).toEqual(['/r1/a'])
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
     expect(storage.getFocusFavorites()).toEqual([])
   })
 
-  it('focusDirs / focusTopics are this window identity (YAZ-1628): one list per lens through window.setIdentity, deaf to state broadcasts, cleared by a root change', async () => {
+  it('focusDirs / focusFavorites are this window identity (YAZ-1628): one list per lens through window.setIdentity, deaf to state broadcasts, cleared by a root change', async () => {
     b = installBridge(defaultAppState(), { id: 'w1', root: '/r1', file: null, tabs: [], focusDirs: ['/r1/restored'] })
     await storage.init()
     expect(storage.getFocusDirs()).toEqual(['/r1/restored']) // restored from main at boot, like sidebarCollapsed
-    expect(storage.getFocusTopics()).toEqual([])
+    expect(storage.getFocusFavorites()).toEqual([])
     storage.setFocusDirs(['/r1/a', '/r1/b'])
-    storage.setFocusTopics(['/r1/Admin.md'])
+    storage.setFocusFavorites(['/r1/fav'])
     expect(storage.getFocusDirs()).toEqual(['/r1/a', '/r1/b'])
-    expect(storage.getFocusTopics()).toEqual(['/r1/Admin.md'])
+    expect(storage.getFocusFavorites()).toEqual(['/r1/fav'])
     expect(b.bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: ['/r1/a', '/r1/b'] })
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusTopics: ['/r1/Admin.md'] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusFavorites: ['/r1/fav'] })
     expect(b.bridge.state.setFolder).not.toHaveBeenCalled() // never the per-vault bucket
     // One lens' exit never touches the other lens' focus.
     storage.setFocusDirs([])
     expect(storage.getFocusDirs()).toEqual([])
-    expect(storage.getFocusTopics()).toEqual(['/r1/Admin.md'])
+    expect(storage.getFocusFavorites()).toEqual(['/r1/fav'])
     // Another window's write lands as a state broadcast; it cannot move THIS window's focus.
     b.emit({ ...defaultAppState(), sidebarWidth: 333 })
     expect(storage.getSidebarWidth()).toBe(333)
-    expect(storage.getFocusTopics()).toEqual(['/r1/Admin.md'])
+    expect(storage.getFocusFavorites()).toEqual(['/r1/fav'])
     // Re-setting the same root keeps both lists; a different root clears them in the root write itself.
     storage.setRoot('/r1')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r1' })
-    expect(storage.getFocusTopics()).toEqual(['/r1/Admin.md'])
+    expect(storage.getFocusFavorites()).toEqual(['/r1/fav'])
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
     expect(storage.getFocusDirs()).toEqual([])
-    expect(storage.getFocusTopics()).toEqual([])
+    expect(storage.getFocusFavorites()).toEqual([])
   })
 
   it('sidebarCollapsed is this window identity and round-trips through window.setIdentity', () => {
@@ -382,13 +360,13 @@ describe('storage', () => {
   })
 
   it('sidebarLens is this window identity (YAZ-847, per window since YAZ-1628): restored at boot, written through window.setIdentity, deaf to state broadcasts, reset to Files by a root change (YAZ-1846 D2)', async () => {
-    expect(storage.getSidebarLens()).toBe('topics')
+    expect(storage.getSidebarLens()).toBe('favorites')
     storage.setSidebarLens('files')
     expect(storage.getSidebarLens()).toBe('files')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarLens: 'files' })
-    storage.setSidebarLens('topics')
-    expect(storage.getSidebarLens()).toBe('topics')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarLens: 'topics' })
+    storage.setSidebarLens('favorites')
+    expect(storage.getSidebarLens()).toBe('favorites')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarLens: 'favorites' })
     // Restored from main at boot, like sidebarCollapsed.
     b = installBridge(defaultAppState(), { id: 'w1', root: '/r1', file: null, tabs: [], sidebarLens: 'files' })
     await storage.init()
@@ -398,13 +376,13 @@ describe('storage', () => {
     expect(storage.getSidebarWidth()).toBe(333)
     expect(storage.getSidebarLens()).toBe('files')
     // Re-setting the SAME root keeps it.
-    storage.setSidebarLens('topics')
+    storage.setSidebarLens('favorites')
     storage.setRoot('/r1')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r1' })
-    expect(storage.getSidebarLens()).toBe('topics')
+    expect(storage.getSidebarLens()).toBe('favorites')
     // A root CHANGE lands on Files (YAZ-1846 D2) — in the same single identity write.
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusTopics: [], focusFavorites: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
     expect(storage.getSidebarLens()).toBe('files')
   })
 
@@ -422,13 +400,13 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, topicsExpanded: [], name: null } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, name: null } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)
     expect(storage.getSettings().threadWidth).toBe(3)
     expect(storage.getSidebarCollapsed()).toBe(false) // another window's global-state broadcast cannot change this identity
-    expect(storage.getSidebarLens()).toBe('topics') // nor the lens (YAZ-1628)
+    expect(storage.getSidebarLens()).toBe('favorites') // nor the lens (YAZ-1628)
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['z'])
     off()
     b.emit(defaultAppState())

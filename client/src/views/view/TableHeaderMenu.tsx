@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { defaultLabel, propertyLabel } from '../engine'
 import { undeletableReason } from '../deleteColumn'
-import type { ColumnDecl } from '../folderPageSettings'
+import type { ColumnDecl } from '../folderSettings'
 import type { Mutate, ViewDef, ViewSet } from '../viewSchema'
 import { AddColumn } from './AddColumn'
 import { displayNameOf, setDisplayName } from './columnLabel'
@@ -19,12 +19,12 @@ export interface TableHeaderMenuProps {
   viewIndex: number
   /** The view's shown keys, in order — what a hide or an insert edits. */
   keys: readonly string[]
-  /** Every key the folder page already offers, declared columns included — "Add column" refuses a repeat. Asked only once the form opens. */
+  /** Every key the folder already offers, declared columns included — "Add column" refuses a repeat. Asked only once the form opens. */
   takenKeys: () => readonly string[]
-  /** The folder page's own declarations, spread under the new one. */
+  /** The folder's own declarations, spread under the new one. */
   columns: Record<string, ColumnDecl>
   onUpdate: Mutate
-  /** `FolderPageMode.setColumns`: declare on the folder page AND show, one write. */
+  /** `FolderHost.setColumns`: declare on the folder AND show, one write. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
   /** "Delete column…" (YAZ-1513): hands the key to the table, which asks first (`ConfirmDeleteColumn`). */
   onDeleteColumn: (key: string) => void

@@ -62,7 +62,7 @@ export const CONTRACT = {
     pushRecent: invoke<[path: string], void>('state:push-recent', 1),
     /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
     removeRecent: invoke<[path: string], void>('state:remove-recent', 1),
-    /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped and `name` cleaned main-side (YAZ-848, YAZ-1974). */
+    /** Merge into `folders[root]`; missing root entries are created with defaults. `name` is cleaned main-side (YAZ-1974). */
     setFolder: invoke<[root: string, patch: FolderPatch], void>('state:set-folder', 2),
     /** Replace the fold keys for one file; an empty list removes the entry. The preload sends a copy of `keys`. */
     setFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-folds', 3),
@@ -132,7 +132,7 @@ export const CONTRACT = {
     clip: invoke<[req: FileClipRequest], void>('fs:clip', 1),
     /** Paste INTO `targetDir` (YAZ-1674, D2–D4): per entry, a copy takes a free name, a cut moves through the rename pipeline; read `failed` for the notices. */
     paste: invoke<[req: PasteRequest], PasteResponse>('fs:paste', 1),
-    /** The clipboard now, for a window that mounted after a clip: `{ count, op }`, or null when empty. Never fails. */
+    /** The clipboard now, for a window that mounted after a clip: `{ count, op, paths }`, or null when empty. Never fails. */
     clipState: invoke<[], FileClipState>('fs:clip-state', 0),
     /** Fired in every window after every clipboard change (its own included); null = empty. */
     onClipChanged: push<FileClipState>('clip:changed'),
@@ -156,7 +156,7 @@ export const CONTRACT = {
   },
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188): created lazily on first write; reading never creates it. */
   vaultConfig: {
-    /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing or the JSON is malformed. */
+    /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing; malformed JSON rejects `INVALID_CONFIG`. */
     read: invoke<[root: string, name: string], unknown>('vaultConfig:read', 2),
     /** Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`. */
     write: invoke<[root: string, name: string, value: unknown], void>('vaultConfig:write', 3),

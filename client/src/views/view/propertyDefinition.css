@@ -107,36 +107,6 @@
   cursor: pointer;
 }
 
-.frontmatter-property-context {
-  padding: 9px 0 13px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 9px;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
-.frontmatter-property-context label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.frontmatter-property-context select {
-  max-width: 220px;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px;
-  font: inherit;
-}
-
-.frontmatter-property-context small {
-  display: block;
-  margin-top: 6px;
-  font-size: 10px;
-}
-
 /* Shared value treatment across note properties, table cells and board cards. */
 .property-empty {
   color: var(--fg-muted);
@@ -230,6 +200,19 @@
 }
 .frontmatter-property-menu__heading strong {
   font-weight: 500;
+}
+/* The two headings of a note's panel (D23): "Note fields" over the note's own rows, "Properties
+   from" over the chosen folder's. A line parts the groups: "Properties from"'s top edge, drawn
+   only under a note field. */
+.frontmatter-property-context,
+.frontmatter-panel__own {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.frontmatter-panel__row + .frontmatter-property-context {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 .frontmatter-property-menu__scope {
   padding: 0 9px;

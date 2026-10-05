@@ -7,9 +7,9 @@
  * 🔒 THE CLAIM RULE (locked in YAZ-967, visibility amendment in YAZ-970) is why CMD+F is a WINDOW
  * CAPTURE listener, one per bar and with no coordinator between them: an `outline` bar claims the
  * key while focus stands inside its own host, the `note` bar claims it whenever focus is NOT inside
- * any `.view-outline-editor` — and a HIDDEN editor never claims. A folder page (YAZ-919) hides the
- * note mount entirely, its outline being the document, so there CMD+F belongs to the outline even
- * from the sidebar or the title. Exactly one bar answers; the other declines.
+ * any `.view-outline-editor` — and a HIDDEN editor never claims. A folder's tab has no note mount
+ * at all, so there CMD+F belongs to the outline even from the sidebar or the title. Exactly one
+ * bar answers; the other declines.
  *
  * Focus: the input does not exist yet on the CMD+F that OPENS the bar, so that focus lands in a
  * layout effect on the open; a CMD+F on an already-open bar has an input to focus and refocuses it

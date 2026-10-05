@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ipcMain } from 'electron'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { CONTRACT, type Envelope } from '@shared/ipc'
@@ -42,6 +42,13 @@ describe('shell:agent-prompt', () => {
       value: `This file is a page in Yaseen Docs: ${page}\nThe app has a command line for working with its pages. Run it first to see what it can do:\n"/Applications/Yaseen Docs.app/Contents/Resources/bin/yaseendocs" --help`,
     })
     for (const verb of ['comment', 'edit', 'delete']) expect((env as { value: string }).value).not.toContain(verb)
+  })
+
+  it("a folder's settings file not yet created is still a page — the folder stands for it (YAZ-2290 D1); a folder that is gone rejects NOT_FOUND", async () => {
+    await mkdir(path.join(dir, 'Projects'))
+    const page = path.join(dir, 'Projects', '.folder.md')
+    expect(await invoke({ path: page })).toMatchObject({ ok: true, value: expect.stringContaining(`This file is a page in Yaseen Docs: ${page}\n`) })
+    expect(await invoke({ path: path.join(dir, 'Gone', '.folder.md') })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
   })
 
   it('a page that is no longer there rejects NOT_FOUND; a non-Markdown file UNSUPPORTED_EXTENSION; a bad request BAD_REQUEST / NOT_ABSOLUTE', async () => {

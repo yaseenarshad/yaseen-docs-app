@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 /**
- * THE CONFIRM SHEET (YAZ-2201): the app's own sheet, never a native dialog — the eight confirm
+ * THE CONFIRM SHEET (YAZ-2201): the app's own sheet, never a native dialog — the confirm
  * dialogs each carried a copy of this shell. Initial focus on CANCEL, so a stray Enter arriving
  * from the tree or an input confirms nothing; Esc cancels, Enter confirms, click-away cancels;
  * `role="dialog"` + `aria-modal` labelled by its own text. The confirm button is `--danger` only

@@ -7,12 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource, type WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { usePreview, _resetPreviewCache } from './PreviewCard'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const CONTENT = '---\ntitle: Alpha\n---\n\n# Hello preview\n\nthe preview body\n'
+const CONTENT = '---\ntitle: Alpha\n---\n\n# Hello preview\n\nthe preview body links [[k3m9x2pq7abc]]\n'
 
 vi.mock('../../api', () => ({
   api: { readFile: vi.fn(async (path: string) => ({ path, content: CONTENT, mtime: 1, size: CONTENT.length })) },
@@ -29,8 +30,8 @@ afterEach(() => {
   _resetPreviewCache()
 })
 
-function Harness({ record }: { record: IndexRecord }) {
-  const { rowProps, card } = usePreview(true)
+function Harness({ record, wikilinks }: { record: IndexRecord; wikilinks?: WikilinkResolveSource }) {
+  const { rowProps, card } = usePreview(true, wikilinks)
   return (
     <div>
       <div data-row {...rowProps(record)} />
@@ -68,5 +69,17 @@ describe('the real Crepe preview', () => {
     await waitFor(() => pm.getAttribute('contenteditable') === 'false')
     // The frontmatter never shows.
     expect(document.body.querySelector('.view-preview')!.textContent).not.toContain('title: Alpha')
+  })
+
+  it("an id link shows the note's title, resolved through the window's source (YAZ-2293)", async () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((target) => (target === 'k3m9x2pq7abc' ? '/vault/Projects/Road Map.md' : null))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Harness record={TEST_RECORDS[0]!} wikilinks={wikilinks} />))
+    act(() => void container!.querySelector('[data-row]')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    await waitFor(() => document.body.querySelector('.view-preview .wikilink') !== null)
+    expect(document.body.querySelector('.view-preview .wikilink')!.textContent).toBe('Road Map')
   })
 })

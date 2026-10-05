@@ -39,8 +39,8 @@ export interface RenameBannerItem {
 export interface ExternalRenames {
   /** The hypothesis on show (oldest first), or null — App renders the banner from this. */
   banner: RenameBannerItem | null
-  /** Feed one READY index snapshot (WikilinkIndexBridge calls this once per snapshot). */
-  onSnapshot: (records: IndexRecord[]) => void
+  /** Feed one READY index snapshot and its folder settings records (WikilinkIndexBridge calls this once per snapshot). */
+  onSnapshot: (records: IndexRecord[], folders: readonly IndexRecord[]) => void
   /** An in-app rename happened (`file:renamed`): its watcher echo must never banner. */
   suppress: (oldPath: string, newPath: string, kind: 'file' | 'dir') => void
   /** Confirm the shown hypothesis: repair the app, rewrite the links, notify. */
@@ -92,14 +92,14 @@ export function useExternalRenames(root: string | null, notify: (message: string
 
   /** Vet + enqueue: suppressed and already-queued pairs drop; N is computed here, N === 0 drops. */
   const offer = useCallback(
-    (hypotheses: RenameHypothesis[], records: IndexRecord[], r: string) => {
+    (hypotheses: RenameHypothesis[], records: IndexRecord[], folders: readonly IndexRecord[], r: string) => {
       if (hypotheses.length === 0) return
       const additions: RenameBannerItem[] = []
-      const linked = linkedBasenames(records)
+      const linked = linkedBasenames([...records, ...folders])
       for (const h of hypotheses) {
         if (isSuppressed(h)) continue
         if (!linked.has(basenameKey(stripExt(basename(h.oldPath))))) continue // no link names it: N is 0 (YAZ-2241)
-        const count = countLinkReferences({ root: r, oldPath: h.oldPath, records: preRenameRecords(records, r, h.oldPath, h.newPath) })
+        const count = countLinkReferences({ root: r, oldPath: h.oldPath, records: preRenameRecords(records, r, h.oldPath, h.newPath), folders })
         if (count === 0) continue // nothing to repair → no banner, nothing at all (locked)
         additions.push({ oldPath: h.oldPath, newPath: h.newPath, count })
       }
@@ -113,7 +113,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
   )
 
   const onSnapshot = useCallback(
-    (records: IndexRecord[]) => {
+    (records: IndexRecord[], folders: readonly IndexRecord[]) => {
       if (root === null) return
       const before = prev.current
       prev.current = records
@@ -124,7 +124,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
           .then((diff) => {
             if (rootRef.current !== root) return // the vault changed while the read was in flight
             if (diff === null || diff.root !== root || diff.cacheStatus !== 'hit') return // the hit gate (locked)
-            offer(detectRenames(diff.removed, diff.added), records, root)
+            offer(detectRenames(diff.removed, diff.added), records, folders, root)
           })
           .catch(() => undefined) // no diff, no banner — never an error surface
         return
@@ -139,7 +139,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
       const carriedRemoved = carry.current.removed.filter((f) => !paths.has(f.path))
       const carriedAdded = carry.current.added.filter((f) => paths.has(f.path))
       const hypotheses = detectRenames([...carriedRemoved, ...removed], [...carriedAdded, ...added])
-      offer(hypotheses, records, root)
+      offer(hypotheses, records, folders, root)
       // Carry ONLY this generation's unmatched entries forward (never the already-carried
       // ones): exactly one generation of second chance, bounded memory.
       const matched = new Set(hypotheses.flatMap((h) => [h.oldPath, h.newPath]))
@@ -188,18 +188,15 @@ export function useExternalRenames(root: string | null, notify: (message: string
       }
       // (2) Rewrite the referencing notes through the E1/E1b engine, against FRESH snapshots
       // re-pathed to the pre-rename view (the engine's referencing set needs the index as it was).
-      let records: IndexRecord[] = []
-      try {
-        records = (await api.index(r)).records
-      } catch {
-        records = [] // no index snapshot → the repair stands, links stay as they are
-      }
+      // No index snapshot → the repair stands, links stay as they are.
+      const { records, folders } = await api.index(r).catch(() => ({ records: [] as IndexRecord[], folders: [] as IndexRecord[] }))
       const summary = await updateLinksAfterRename({
         root: r,
         oldPath: item.oldPath,
         newPath: item.newPath,
         kind: 'file', // the detector only pairs markdown FILES
         records: preRenameRecords(records, r, item.oldPath, item.newPath),
+        folders,
       })
       // The user explicitly asked — always answer (unlike the in-app flow's silent no-op case).
       notify(renameNotice(summary))

@@ -4,6 +4,26 @@ import type { WatchSource } from '../../hooks/useWatch'
 import type { SearchCandidate } from '../../search/searchCandidates'
 import { useSearchResults } from '../../search/useSearchResults'
 
+/**
+ * A result list driven from its input (YAZ-803), shared by the search bar and the shortcut picker:
+ * the highlighted row and the keys that move and activate it. Every reader clamps, since an index
+ * refresh can shrink the list under the keyboard's index (YAZ-808); ↑/↓ stop at both ends, never
+ * wrapping — the `[[` picker's rule.
+ */
+export function useResultKeys<T>(results: readonly T[], activate: (hit: T, e: KeyboardEvent) => void) {
+  const [selected, setSelected] = useState(0)
+  const sel = Math.max(0, Math.min(selected, results.length - 1))
+  const onKeys = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (results.length === 0) return
+    if (e.key === 'ArrowDown') setSelected(Math.min(sel + 1, results.length - 1))
+    else if (e.key === 'ArrowUp') setSelected(Math.max(sel - 1, 0))
+    else if (e.key === 'Enter') activate(results[sel], e)
+    else return
+    e.preventDefault()
+  }
+  return { sel, setSelected, onKeys }
+}
+
 export function useSidebarSearch(
   root: string,
   watch: WatchSource,
@@ -17,17 +37,14 @@ export function useSidebarSearch(
   // on unmount and on a root switch without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
-  const [selected, setSelected] = useState(0)
   const results = useSearchResults(root, watch, query, dirs)
+  // The bar keeps focus while the list is driven from it (YAZ-803). Opening leaves the list up.
+  const { sel, setSelected, onKeys } = useResultKeys(results, (hit, e) => activate(hit, e.metaKey))
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
   // expansion, pending create/rename, drag) lives in the Sidebar's other hooks (useVaultTree,
   // rowGestures) and is waiting untouched when it clears.
   const searching = query.trim() !== ''
-  // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
-  // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
-  const sel = Math.min(selected, results.length - 1)
 
   // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
   // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
@@ -50,23 +67,7 @@ export function useSidebarSearch(
       // Esc empties a typed query first and only gives up focus on the second press.
       if (query !== '') setQuery('')
       else e.currentTarget.blur()
-      return
-    }
-    // The bar keeps focus while the list is driven from it (YAZ-803). Clamped at both
-    // ends, never wrapping — the `[[` picker's rule. Opening leaves the list up.
-    if (results.length === 0) return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelected(Math.min(sel + 1, results.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelected(Math.max(sel - 1, 0))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const hit = results[sel]
-      if (hit === undefined) return
-      activate(hit, e.metaKey)
-    }
+    } else onKeys(e)
   }
 
   return { query, setQuery, searchInput, results, searching, sel, setSelected, changeQuery, searchKeyDown }

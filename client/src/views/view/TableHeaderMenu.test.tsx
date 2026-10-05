@@ -2,15 +2,16 @@
  * The table header's context menu (YAZ-1513): ViewsPane mounted with react-dom in jsdom over
  * `TEST_RECORDS`; a right-click on a column `<th>` offers Rename / Hide / Add-to-the-right, and
  * on the `#` header only Hide row numbers. Every write is one `onChange` (the Properties menu's own
- * rules: `setDisplayName`, `setViewOrder`) or one `setColumns` — the folder page host's door.
+ * rules: `setDisplayName`, `setViewOrder`) or one `setColumns` — the folder host's door.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { type ParsedViews, type ViewSet, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
+import { deleteColumnMessage } from './ConfirmDeleteColumn'
 import { insertAfter } from './TableHeaderMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -36,14 +37,14 @@ function mount(text = BASE, props: Partial<ViewsPaneProps> = {}) {
   })
   const setColumns = vi.fn()
   const deleteColumn = vi.fn(async () => {})
-  const folderPage = testFolderPage({ settings: { columns: { status: { kind: 'text' } }, views: [], problems: [] }, setColumns, deleteColumn })
+  const folder = testFolderHost({ settings: { columns: { status: { kind: 'text' } }, views: [], problems: [] }, setColumns, deleteColumn })
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   draw = () =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" thisFile="/vault/pillars.md" records={TEST_RECORDS} folderPage={folderPage} onOpenFile={vi.fn()} {...props} />,
+        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={folder} onOpenFile={vi.fn()} {...props} />,
       ),
     )
   draw()
@@ -213,14 +214,14 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.view-table__gutter')).toBeNull()
   })
 
-  it('Delete column…: asks first — the sheet names the label, the key and the carrying-member count; Cancel deletes nothing', () => {
+  it('Delete column…: asks first — the sheet names the label, the key and the count of notes holding a value; Cancel deletes nothing', () => {
     const { el, deleteColumn, onChange } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Delete column…'))
     expect(el.querySelector('.ctx-menu')).toBeNull() // the menu yields to the sheet
     const sheet = q<HTMLElement>(el, '.confirm[role="dialog"]')
     // TEST_RECORDS: five of the eight carry `status`
-    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this page and the "status" value from 5 notes.')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this folder and the "status" value from 5 notes.')
     expect(document.activeElement?.textContent).toBe('Cancel')
     click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
     expect(el.querySelector('.confirm')).toBeNull()
@@ -228,7 +229,14 @@ describe('the header menu (YAZ-1513)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Delete column…: confirming hands the key to FolderPageMode.deleteColumn — the ONE function — and closes the sheet', () => {
+  it('Delete a column from a folder: the confirm sheet’s copy is `Delete "<label>"? This removes the column from this folder and the "<key>" value from N notes.` — and nothing more', () => {
+    const lost = (notes: string): string => `Delete "Status"? This removes the column from this folder and the "status" value from ${notes}.`
+    expect(deleteColumnMessage('Status', 'status', 1)).toBe(lost('1 note'))
+    expect(deleteColumnMessage('Status', 'status', 3)).toBe(lost('3 notes'))
+    expect(deleteColumnMessage('Status', 'status', 0)).toBe(lost('0 notes'))
+  })
+
+  it('Delete column…: confirming hands the key to FolderHost.deleteColumn — the ONE function — and closes the sheet', () => {
     const { el, deleteColumn } = mount()
     rightClick(th(el, 1))
     click(item(el, 'Delete column…'))

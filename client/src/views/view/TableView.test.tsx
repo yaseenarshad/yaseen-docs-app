@@ -12,10 +12,14 @@ import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { type ViewSet, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
+import { createCrepe } from '../../editor/createCrepe'
+import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { TEST_RECORDS } from '../testRecords'
 import { OPEN_DELAY_MS } from './PreviewCard'
 
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
   return {
@@ -40,8 +44,8 @@ vi.mock('../../editor/createCrepe', () => ({
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const HOST = testFolderHost()
 
 /** file.name plus one column per value type, and a formula the evaluator cannot resolve. */
 const TYPED_BASE = `views:
@@ -79,15 +83,15 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { edi
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
-          root={null}
-          thisFile={null}
+          root="/vault"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />
       )
-      root?.render(options.editorHost === true ? <div className="folder-page-contents">{pane}</div> : pane)
+      root?.render(options.editorHost === true ? <div className="folder-view">{pane}</div> : pane)
     })
   draw()
   const el = container
@@ -268,15 +272,30 @@ describe('cells by type', () => {
     // missing value renders empty (related is unset on the first note)
     expect(cells(agentic)[4].textContent).toBe('Empty')
   })
+
+  it('an id link reads as the title of the note it names; a label, an unknown id and a name link read as written (YAZ-2293 D8)', () => {
+    const ID = 'k3m9x2pq7abc'
+    const related = (i: number, value: unknown): IndexRecord => ({ ...TEST_RECORDS[i], properties: { ...TEST_RECORDS[i].properties, related: value } })
+    const records = [
+      related(0, `[[${ID}]]`),
+      related(1, `[[${ID}|My label]]`),
+      { ...related(2, '[[7tq2m8vd4xhn]]'), id: ID },
+      related(3, [`[[${ID}]]`, '[[Attribution]]']),
+      ...TEST_RECORDS.slice(4),
+    ]
+    const { el } = mount(TYPED_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
+    const shown = bodyRows(el).slice(0, 4).map((row) => [...cells(row)[4].querySelectorAll('.view-table__chip--link')].map((c) => c.textContent))
+    expect(shown).toEqual([['Creator Economy'], ['My label'], ['7tq2m8vd4xhn'], ['Creator Economy', 'Attribution']])
+  })
 })
 
 describe('editable cell activation', () => {
   it('selects a declared empty property cell on click and opens its editor on double-click', () => {
-    const folderPage = testFolderPage({
+    const folder = testFolderHost({
       settings: { columns: { empty_text: { kind: 'text' } }, views: [], problems: [] },
     })
     const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.empty_text\n', {
-      folderPage,
+      folder,
     })
     const emptyCell = q<HTMLElement>(el, '[data-cell="0:1"]')
     expect(emptyCell.textContent).toBe('Empty')
@@ -314,7 +333,7 @@ describe('file.name link', () => {
   it('⌘-click opens a background tab, ⌥-click the right panel, ⇧-click nothing (YAZ-1557)', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
     modClick(q(el, '.view-table__link'), { metaKey: true })
     expect(openBackground).toHaveBeenCalledExactlyOnceWith(agentic)
@@ -348,7 +367,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   it('selects the exact right-clicked cell first, then opens the table-owned actions at the pointer', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile, onChange } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const { el, onOpenFile, onChange } = mount(TYPED_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const cell = q<HTMLTableCellElement>(el, '[data-cell="0:0"]')
     const event = rightClick(q(cell, '.view-table__link'), 120, 42)
 
@@ -363,7 +382,7 @@ describe('table-row context menu (YAZ-1053)', () => {
 
   it('opens the exact row in the right panel without replacing the current page', () => {
     const openRight = vi.fn()
-    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight }) })
+    const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openRight }) })
     rightClick(q(el, '[data-cell="0:1"]'))
     click(itemNamed(el, 'Open in right panel')!)
 
@@ -374,14 +393,14 @@ describe('table-row context menu (YAZ-1053)', () => {
 
   it('does not turn an ordinary cell click into a right-panel open', () => {
     const openRight = vi.fn()
-    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight }) })
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openRight }) })
     click(q(el, '[data-cell="0:1"]'))
     expect(openRight).not.toHaveBeenCalled()
   })
 
   it('opens the exact row in a background tab without replacing the current page', () => {
     const openBackground = vi.fn()
-    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground }) })
     rightClick(q(el, '[data-cell="0:1"]'))
     click(itemNamed(el, 'Open in new tab')!)
 
@@ -390,8 +409,19 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
+  it('a row whose note has an id offers "Copy ID" directly under "Copy path" (YAZ-2293) and copies exactly that id', () => {
+    const records = TEST_RECORDS.map((r) => (r.path === expectedPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
+    const { el } = mount(TYPED_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
+    rightClick(q(el, '[data-cell="0:1"]'))
+    const labels = menuItems(el).map((item) => item.textContent)
+    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+    click(itemNamed(el, 'Copy ID')!)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
   it('copies and reveals the row absolute path, closing after either command', () => {
-    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn() }) })
     rightClick(q(el, '[data-cell="0:1"]'))
     click(itemNamed(el, 'Copy path')!)
     expect(writeText).toHaveBeenCalledExactlyOnceWith(expectedPath)
@@ -403,10 +433,10 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('reports a stale Reveal through the folder-page notice instead of failing silently', async () => {
+  it('reports a stale Reveal through the folder notice instead of failing silently', async () => {
     const onNotice = vi.fn()
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
-    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn(), onNotice }) })
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn(), onNotice }) })
     rightClick(q(el, '[data-cell="0:0"]'))
     click(itemNamed(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
@@ -415,7 +445,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   })
 
   it('retargets to the latest row and dismisses on Escape or an outside press', () => {
-    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn() }) })
     rightClick(q(el, '[data-cell="0:0"]'))
     rightClick(q(el, '[data-cell="1:0"]'))
     click(itemNamed(el, 'Copy path')!)
@@ -431,7 +461,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   })
 
   it('leaves the native menu alone inside an active typed editor', () => {
-    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn() }) })
     const cell = q<HTMLTableCellElement>(el, '[data-cell="0:1"]')
     doubleClick(cell)
     const event = rightClick(q(cell, '.view-cell-edit__input'))
@@ -441,7 +471,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   })
 
   it('still opens on a checkbox because selecting a boolean is not typed edit mode', () => {
-    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ openBackground: vi.fn() }) })
     const checkbox = q<HTMLInputElement>(el, '[data-cell="0:2"] input[type="checkbox"]')
     const event = rightClick(checkbox)
 
@@ -451,14 +481,14 @@ describe('table-row context menu (YAZ-1053)', () => {
 
   it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
     const openRight = vi.fn()
-    const hidden = mount('views:\n  - type: table\n    name: T\n    order:\n      - note.priority\n', { folderPage: testFolderPage({ openRight }) })
+    const hidden = mount('views:\n  - type: table\n    name: T\n    order:\n      - note.priority\n', { folder: testFolderHost({ openRight }) })
     rightClick(q(hidden.el, '[data-cell="0:0"]'))
     click(itemNamed(hidden.el, 'Open in right panel')!)
     expect(openRight).toHaveBeenLastCalledWith(expectedPath)
 
     act(() => root?.unmount())
     container?.remove()
-    const grouped = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n', { folderPage: testFolderPage({ openRight }) })
+    const grouped = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n', { folder: testFolderHost({ openRight }) })
     rightClick(q(grouped.el, '[data-cell="0:0"]'))
     click(itemNamed(grouped.el, 'Open in right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
@@ -466,7 +496,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     act(() => root?.unmount())
     container?.remove()
     const windowedRecords = manyRecords()
-    const windowed = mount('views:\n  - type: table\n    name: T\n', { records: windowedRecords, folderPage: testFolderPage({ vaultRecords: windowedRecords, openRight }) })
+    const windowed = mount('views:\n  - type: table\n    name: T\n', { records: windowedRecords, folder: testFolderHost({ vaultRecords: windowedRecords, openRight }) })
     rightClick(q(windowed.el, '[data-cell="0:0"]'))
     click(itemNamed(windowed.el, 'Open in right panel')!)
     expect(openRight).toHaveBeenLastCalledWith('/vault/n000.md')
@@ -474,7 +504,7 @@ describe('table-row context menu (YAZ-1053)', () => {
 
   it('keeps the exact record target when one page is fanned out into repeated grouped rows', () => {
     const openRight = vi.fn()
-    const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folderPage: testFolderPage({ openRight }) })
+    const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folder: testFolderHost({ openRight }) })
     const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__link')].filter((link) => link.textContent === 'Agentic Agency')
     expect(repeated).toHaveLength(2)
 
@@ -484,7 +514,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   })
 
   it('does not attach the row menu to headers, summaries, or spacer rows', () => {
-    const { el } = mount('views:\n  - type: table\n    name: T\n    summaries:\n      note.priority: Sum\n', { records: manyRecords(), folderPage: testFolderPage({ vaultRecords: manyRecords(), openBackground: vi.fn() }) })
+    const { el } = mount('views:\n  - type: table\n    name: T\n    summaries:\n      note.priority: Sum\n', { records: manyRecords(), folder: testFolderHost({ vaultRecords: manyRecords(), openBackground: vi.fn() }) })
     for (const target of [q(el, 'tfoot td'), q(el, '.view-table__spacer td')]) {
       const event = rightClick(target)
       expect(event.defaultPrevented).toBe(false)
@@ -729,7 +759,7 @@ describe('keyboard navigation', () => {
   it('⌘⏎ and ⌥⏎ on a file.name cell follow the click rule: background tab, right panel (YAZ-1557)', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const cell = q<HTMLElement>(el, '[data-cell="0:0"]')
     act(() => cell.focus())
     press(cell, 'Enter', { metaKey: true })
@@ -819,6 +849,14 @@ describe('preview mode (YAZ-1244)', () => {
     expect(card()!.textContent).toContain('body of /vault/')
   })
 
+  it("the preview is handed the window's link source, so an id link in it reads as a title (YAZ-2293)", async () => {
+    const wikilinks = createWikilinkResolveSource()
+    const { el } = mount(PREVIEW_BASE, { folder: testFolderHost({ wikilinks }) })
+    hover(firstRow(el))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(vi.mocked(createCrepe).mock.lastCall?.[0].wikilinks).toBe(wikilinks)
+  })
+
   it('preview off: hovering opens nothing', async () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
     hover(firstRow(el))
@@ -838,7 +876,7 @@ describe('preview mode (YAZ-1244)', () => {
 
   it('a secondary click closes the preview and opens page actions for that exact row', async () => {
     const openBackground = vi.fn()
-    const { el } = mount(PREVIEW_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const { el } = mount(PREVIEW_BASE, { folder: testFolderHost({ openBackground }) })
     const target = firstRow(el)
     hover(target)
     await settle(OPEN_DELAY_MS + 50)

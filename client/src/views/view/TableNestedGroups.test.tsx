@@ -13,12 +13,12 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const FOLDER_PAGE = testFolderPage()
+const HOST = testFolderHost()
 
 /** In-memory stand-in for the main-owned store (same shape as TableGroups.test.tsx). */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -87,9 +87,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.md"
+          folderPath="/vault/pillars.md"
           records={NESTED_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={vi.fn()}
           {...props}
         />,

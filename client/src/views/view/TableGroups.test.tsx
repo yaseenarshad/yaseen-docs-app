@@ -12,14 +12,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord } from '@shared/types'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import { groupKeyOf } from './GroupHeader'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const HOST = testFolderHost()
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -72,9 +72,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.md"
+          folderPath="/vault/pillars.md"
           records={TEST_RECORDS}
-          folderPage={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -245,6 +245,25 @@ describe('collapse', () => {
     click(toggleOf(again.el, 'idea'))
     expect(links(again.el)).toContain('Agentic Agency')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [])
+  })
+
+  it('a group of an id link is headed by the note title but collapses under the STORED id, so a rename never reopens it (YAZ-2293 D8)', async () => {
+    const { storage } = await import('../../lib/storage')
+    const ID = 'k3m9x2pq7abc'
+    /** "Creator Economy" carries the id (under whatever title), and the first two notes are grouped under it BY that id. */
+    const vault = (title: string): IndexRecord[] =>
+      TEST_RECORDS.map((r, i) => (i === 2 ? { ...r, id: ID, basename: title, name: `${title}.md` } : i < 2 ? { ...r, properties: { ...r.properties, status: `[[${ID}]]` } } : r))
+    let records = vault('Creator Economy')
+    const { el } = mount(GROUP_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
+    expect(headerTexts(el)).toEqual(['idea', 'published', 'Creator Economy', 'No value'])
+    click(toggleOf(el, '[[Creator Economy]]'))
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [`v:[[${ID}]]`])
+
+    unmount()
+    records = vault('Renamed')
+    const again = mount(GROUP_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
+    expect(headerTexts(again.el)).toContain('Renamed')
+    expect(toggleOf(again.el, '[[Renamed]]').getAttribute('aria-expanded')).toBe('false')
   })
 
   it('the toolbar toggle collapses every group at once, the ones search hides included', async () => {

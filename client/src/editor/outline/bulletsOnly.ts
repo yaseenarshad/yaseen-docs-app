@@ -1,5 +1,5 @@
 /**
- * THE BULLETS-ONLY LOCK (YAZ-901, 🔒 F3). The folder page's outline view hosts a SECOND Milkdown
+ * THE BULLETS-ONLY LOCK (YAZ-901, 🔒 F3). A folder's outline view hosts a SECOND Milkdown
  * instance — the same `createCrepe()` the note editor uses, with the same outliner plugins and the
  * same wikilink surfaces — holding a document that is exactly ONE bullet list and can never become
  * anything else. Nothing is forked or copied here; four locks are added, cheapest first.

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { WatchEvent } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, type WatchEvent } from '@shared/types'
 import { activeWatcherRoots, subscribe } from './watchers'
 import { makeFixture, until } from './testFixture'
 
@@ -113,6 +113,25 @@ describe('shared watchers', () => {
     // A control event proves the silence: the next thing the subscriber sees is the unrelated mkdir.
     await mkdir(path.join(root, 'control-dir'))
     expect(await a.next()).toEqual({ type: 'addDir', path: path.join(root, 'control-dir') })
+  })
+
+  it("a folder's settings file is the ONE dot-entry reported, the vault root's included — never under a skipped folder (YAZ-2290 D8)", async () => {
+    const a = openWatch(root)
+    await a.next()
+    await mkdir(path.join(root, 'alpha', 'node_modules'))
+    await writeFile(path.join(root, '.yaseendocs', FOLDER_SETTINGS_FILE), 'x')
+    await writeFile(path.join(root, 'alpha', 'node_modules', FOLDER_SETTINGS_FILE), 'x')
+    await writeFile(path.join(root, 'alpha', '.other.md'), 'x')
+    // The silent writes above came first: a reported one would arrive before these.
+    const file = path.join(root, 'alpha', FOLDER_SETTINGS_FILE)
+    await writeFile(file, 'v1')
+    expect(await a.next()).toMatchObject({ type: 'add', path: file })
+    await writeFile(file, 'v2 longer')
+    expect(await a.next()).toMatchObject({ type: 'change', path: file })
+    await rm(file)
+    expect(await a.next()).toEqual({ type: 'unlink', path: file })
+    await writeFile(path.join(root, FOLDER_SETTINGS_FILE), 'v1')
+    expect(await a.next()).toMatchObject({ type: 'add', path: path.join(root, FOLDER_SETTINGS_FILE) })
   })
 
   it("a crash-left atomic-write tmp emits NOTHING; a user file with `.tmp` in its name is reported (YAZ-2179)", async () => {

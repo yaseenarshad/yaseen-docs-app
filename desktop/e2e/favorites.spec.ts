@@ -10,7 +10,7 @@
  * duplicate window is a real ⌘⇧N, and quit → relaunch reads the file cold with the ♥ lens restored
  * from `WindowEntry.sidebarLens`.
  *
- * THE DRAG is `topicsDrag.spec.ts`'s: press on the row, carry the pointer to the target's TOP HALF
+ * THE DRAG: press on the row, carry the pointer to the target's TOP HALF
  * (the `before` edge, Tree.tsx `edgeOf`), rest there — re-issuing the move — until the target
  * wears `tree__row--drop-before`, release. A synthetic HTML5 drag over CDP delivers only a fraction
  * of its `dragover`s, so the rest is what makes the drop land where a real held pointer would.

@@ -15,17 +15,20 @@ vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   api: {
     createDir: vi.fn(async (path: string) => ({ path })),
-    createFile: vi.fn(async (path: string) => ({ path, mtime: 1, size: 0 })),
+    createFile: vi.fn(),
+    readFile: vi.fn(),
   },
 }))
 
 const createDir = vi.mocked(api.createDir)
 const createFile = vi.mocked(api.createFile)
+const readFile = vi.mocked(api.readFile)
 
 beforeEach(() => {
   vi.clearAllMocks()
   createDir.mockImplementation(async (path: string) => ({ path }))
-  createFile.mockImplementation(async (req) => ({ path: req as string, mtime: 1, size: 0 }))
+  createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
+  readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
 })
 
 describe('planLinkCreation (pure path rules)', () => {
@@ -103,8 +106,23 @@ describe('newNoteBase (setting → base folder for bare targets, C2- GRO-2240)',
 describe('createFromLink (bridge flow)', () => {
   it('strips |alias and #heading/#^block from the raw inner text before creating', async () => {
     await expect(createFromLink('/vault', 'Page#Heading|shown')).resolves.toEqual({ status: 'created', path: '/vault/Page.md' })
-    expect(createFile).toHaveBeenCalledWith('/vault/Page.md')
+    expect(createFile).toHaveBeenCalledWith({ path: '/vault/Page.md', content: '' })
     expect(createDir).not.toHaveBeenCalled()
+  })
+
+  it('the page is born like any note in that folder: with its `.template.md` (YAZ-2290 E3)', async () => {
+    readFile.mockResolvedValueOnce({ path: '/vault/Notes/.template.md', content: '---\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
+    await createFromLink('/vault', 'Page', 'Notes')
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/Notes/.template.md')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Notes/Page.md', content: '---\nstatus: 1-Backlog\n---\n## Notes\n' })
+  })
+
+  it('an id handed in is the id the page is born with; without one main mints it (YAZ-2293)', async () => {
+    await expect(createFromLink('/vault', 'Page', 'Notes', 'k3m9x2pq7abc')).resolves.toEqual({ status: 'created', path: '/vault/Notes/Page.md' })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Notes/Page.md', content: '', id: 'k3m9x2pq7abc' })
+    createFile.mockClear()
+    await createFromLink('/vault', 'Page', 'Notes')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Notes/Page.md', content: '' })
   })
 
   it('an empty page name ([[#h]] — the same-file form) is a no-op: nothing created', async () => {
@@ -116,7 +134,7 @@ describe('createFromLink (bridge flow)', () => {
   it('a pathed target creates missing parents level by level, then the file', async () => {
     await expect(createFromLink('/vault', 'a/b/Page')).resolves.toEqual({ status: 'created', path: '/vault/a/b/Page.md' })
     expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/a', '/vault/a/b'])
-    expect(createFile).toHaveBeenCalledWith('/vault/a/b/Page.md')
+    expect(createFile).toHaveBeenCalledWith({ path: '/vault/a/b/Page.md', content: '' })
   })
 
   it('existing parent folders are tolerated (ALREADY_EXISTS from createDir)', async () => {
@@ -149,7 +167,7 @@ describe('createFromLink (bridge flow)', () => {
   it('a bare target with a base creates the base folders level by level, then the file (C2-, GRO-2240)', async () => {
     await expect(createFromLink('/vault', 'Page', 'Notes/Inbox')).resolves.toEqual({ status: 'created', path: '/vault/Notes/Inbox/Page.md' })
     expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
-    expect(createFile).toHaveBeenCalledWith('/vault/Notes/Inbox/Page.md')
+    expect(createFile).toHaveBeenCalledWith({ path: '/vault/Notes/Inbox/Page.md', content: '' })
   })
 
   it('a pathed target keeps root-relative creation even with a base (explicit aim wins)', async () => {

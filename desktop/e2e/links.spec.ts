@@ -5,7 +5,8 @@
  * (activation and the visible editor stay put), and a click on an UNRESOLVED link CREATES the
  * page at the vault root and opens it. Steps 6-7 add Links E2 (GRO-2214): a page declaring
  * frontmatter `aliases` is reachable by them — `[[CAC]]` renders RESOLVED and opens the aliased
- * page, and typing `[[cac` in the picker inserts the piped `[[Metrics|CAC]]` on disk.
+ * page, and typing `[[cac` in the picker links the page BY ITS ID on disk (YAZ-2293): step 5's
+ * create is what makes the fixture a vault, so by step 7 the sweep has given Metrics.md its id.
  * Same harness as tabs.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
  * `links-` step screenshots); serial by design — each step continues the previous state.
  */
@@ -125,7 +126,8 @@ test('step 5 — click an UNRESOLVED link: the note is created beside the hub (a
   await expect(tabsOf(win)).toHaveText([FRESH, 'Ideas']) // …so the count is unchanged
   // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
   // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
-  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8')).toBe('')
+  // Born with its id and nothing else (YAZ-2293): a new note is no longer zero bytes.
+  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8')).toMatch(/^---\nid: [0-9a-hjkmnp-tv-z]{12}\n---\n$/)
   await shoot(win, 'links-05-create-on-click')
 })
 
@@ -140,7 +142,7 @@ test('step 6 — an ALIAS-form link renders resolved and opens the aliased page 
   await shoot(win, 'links-06-alias-resolved')
 })
 
-test('step 7 — the picker suggests the page by alias and inserts the PIPED form on disk (E2)', async () => {
+test('step 7 — the picker suggests the page by alias and links it by its id on disk (E2, YAZ-2293)', async () => {
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
   // Type at the end of the hub's link paragraph (never Enter — see smoke.spec step 3).
@@ -151,8 +153,11 @@ test('step 7 — the picker suggests the page by alias and inserts the PIPED for
   await expect(suggestion).toHaveText([`${ALIAS} — Metrics`]) // alias row, disambiguated by page name
   await shoot(win, 'links-07-alias-suggestion')
   await win.keyboard.press('Enter')
+  // The alias is only how the page was FOUND: the link is the plain id, with no label.
+  const metricsId = /^id: (.+)$/m.exec(await readFile(path.join(vault, METRICS_FILE), 'utf8'))?.[1]
+  expect(metricsId).toMatch(/^[0-9a-hjkmnp-tv-z]{12}$/)
   await expect
-    .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`[[Metrics|${ALIAS}]]`), { timeout: 10_000 })
+    .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`[[${metricsId}]]`), { timeout: 10_000 })
     .toBe(true)
   await quitApp(app)
 })

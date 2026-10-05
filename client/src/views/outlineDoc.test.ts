@@ -1,22 +1,10 @@
 /**
  * The outline document model (YAZ-900): 🔒 D2 — one markdown bullet list, free-form. Each case
- * pins a locked rule: depth is RELATIVE indentation (tabs = 4 spaces), the link rule is the click
- * rule and no second rule, and a rename rewrites exact-wikilink LINES only, byte-for-byte
- * elsewhere. Resolution is handed IN, keyed exactly like the real resolver (`makeResolver`,
- * `views/engine.ts`), same as folderPageSettings.test.ts.
+ * pins a locked rule: depth is RELATIVE indentation (tabs = 4 spaces), and a rename rewrites
+ * exact-wikilink LINES only, byte-for-byte elsewhere.
  */
 import { describe, expect, it } from 'vitest'
-import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { stripBrackets } from './expr'
-import { dropOutlineLinks, escapeBlockStart, escapeOutlineMarkdown, fromOrder, lineTarget, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
-
-/** Basename → path, keyed like `makeResolver`: `stripBrackets`, `#`/`|` tail dropped, trimmed, lowered. */
-const resolverOver = (basenames: string[]): ResolveLink => {
-  const byBase = new Map(basenames.map((b) => [b.toLowerCase(), `/vault/${b}.md`]))
-  return (target) => byBase.get(stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()) ?? null
-}
-
-const resolve = resolverOver(['CAC', 'LTV', 'Sub Note'])
+import { escapeBlockStart, escapeOutlineMarkdown, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
 
 describe('parseOutline: depth is relative indentation', () => {
   it('reads four spaces, two spaces and tabs all as one level down', () => {
@@ -100,49 +88,6 @@ describe('serializeOutline: one canonical spelling, round-tripping byte-for-byte
   })
 })
 
-describe('lineTarget: the click rule, and no second rule', () => {
-  it('a line that trims to EXACTLY one wikilink resolves like a click — alias and heading forms included', () => {
-    expect(lineTarget('[[CAC]]', resolve)).toBe('/vault/CAC.md')
-    expect(lineTarget('  [[cac]]  ', resolve)).toBe('/vault/CAC.md')
-    expect(lineTarget('[[CAC|nice name]]', resolve)).toBe('/vault/CAC.md')
-    expect(lineTarget('[[CAC#Heading]]', resolve)).toBe('/vault/CAC.md')
-    expect(lineTarget('[[Sub Note]]', resolve)).toBe('/vault/Sub Note.md')
-  })
-
-  it('prose, a mid-text wikilink, a bare name and an unresolved link are all TEXT', () => {
-    expect(lineTarget('see [[CAC]] for more', resolve)).toBeNull()
-    expect(lineTarget('[[CAC]] [[LTV]]', resolve)).toBeNull()
-    expect(lineTarget('CAC', resolve)).toBeNull()
-    expect(lineTarget('[[Gone]]', resolve)).toBeNull()
-    expect(lineTarget('', resolve)).toBeNull()
-  })
-
-  it('does NOT ask whether the target is a folder page — belonging is not parsing', () => {
-    expect(lineTarget('[[LTV]]', resolve)).toBe('/vault/LTV.md')
-  })
-})
-
-describe('fromOrder: the lazy-migration builder', () => {
-  it('places the order entries first at depth 0, verbatim, then unlisted members as [[basename]] alphabetically', () => {
-    expect(fromOrder(['[[CAC]]', '[[LTV|nice]]'], ['Zulu', 'alpha', 'Beta'])).toEqual([
-      { depth: 0, text: '[[CAC]]' },
-      { depth: 0, text: '[[LTV|nice]]' },
-      { depth: 0, text: '[[alpha]]' },
-      { depth: 0, text: '[[Beta]]' },
-      { depth: 0, text: '[[Zulu]]' },
-    ])
-  })
-
-  it('no order at all is all-alphabetical; no members at all is just the order; neither is empty', () => {
-    expect(fromOrder(undefined, ['b', 'a'])).toEqual([
-      { depth: 0, text: '[[a]]' },
-      { depth: 0, text: '[[b]]' },
-    ])
-    expect(fromOrder(['[[CAC]]'], [])).toEqual([{ depth: 0, text: '[[CAC]]' }])
-    expect(fromOrder(undefined, [])).toEqual([])
-  })
-})
-
 describe('mapOutlineLinks: a rename reaches exact-wikilink LINES only', () => {
   const toC = (link: string) => (link === '[[B]]' ? '[[C]]' : undefined)
 
@@ -223,20 +168,5 @@ describe('escapeBlockStart: footnote definitions — the one GFM dropper the sca
     expect(escapeBlockStart('[^long-name]: see below')).toBe('\\[^long-name]: see below')
     // A plain link-reference-style line survives the editor as literal text already — untouched.
     expect(escapeBlockStart('[x]: /url')).toBe('[x]: /url')
-  })
-})
-
-describe('dropOutlineLinks: a member leaving from outside the editor (YAZ-1364, 🔒 D4)', () => {
-  const resolve = (target: string): string | null => {
-    const name = target.replace(/^\[\[|\]\]$/g, '').replace(/[#|].*$/, '').trim().toLowerCase()
-    return name === 'alex hormozi' ? '/vault/Alex Hormozi.md' : name === 'sam' ? '/vault/Sam.md' : null
-  }
-  it('drops every line resolving to the page, however spelled, and keeps every other byte', () => {
-    const outline = '- [[Sam]]\n- [[Alex Hormozi]]\n    - a child line stays\n- see [[Alex Hormozi]] in prose\n- [[alex hormozi|Alex]]\n'
-    expect(dropOutlineLinks(outline, '/vault/Alex Hormozi.md', resolve)).toBe('- [[Sam]]\n    - a child line stays\n- see [[Alex Hormozi]] in prose\n')
-  })
-  it('is undefined when no line names the page', () => {
-    expect(dropOutlineLinks('- [[Sam]]\n- prose about Alex', '/vault/Alex Hormozi.md', resolve)).toBeUndefined()
-    expect(dropOutlineLinks('', '/vault/Alex Hormozi.md', resolve)).toBeUndefined()
   })
 })

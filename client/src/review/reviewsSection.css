@@ -1,0 +1,20 @@
+/*
+ * "Reviews" (YAZ-2322) — owned by ReviewsSection.tsx. The frame and the header are the backlinks'
+ * own rules (backlinks.css names `.reviews` beside them) and the buttons and the error line are
+ * the comments', so only the log itself is laid out here: a table, for its columns.
+ */
+
+.reviews__body {
+  padding: 4px 0 0 20px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.reviews__body table {
+  border-collapse: collapse;
+}
+
+.reviews__body td {
+  padding: 2px 16px 2px 0;
+  white-space: nowrap;
+}

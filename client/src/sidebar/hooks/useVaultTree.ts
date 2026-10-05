@@ -1,19 +1,17 @@
 /**
  * The vault as this panel holds it (YAZ-2202, moved out of `Sidebar.tsx` as-is): the tree and its
- * watcher refresh, both expansions, the three Focus Mode lists, the Favorites list, and the checks
+ * watcher refresh, its expansion, the two Focus Mode lists, the Favorites list, and the checks
  * that close a tab whose file is gone.
  */
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { SidebarLens, TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
-import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../../hooks/useWatch'
 import type { NoticeKind } from '../../lib/notice'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, onTree } from '../../lib/treeFeed'
-import { allDirs, favoriteRoots, findDirNode, focusRoots, treeHasFile, treeReducer } from '../../lib/treeState'
-import { isFolderPage } from '../../links/folderPages'
+import { allDirs, favoriteRoots, findDirNode, focusRoots, treeHasPath, treeReducer } from '../../lib/treeState'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -22,7 +20,6 @@ export function useVaultTree(
   watch: WatchSource,
   activeFile: string | null,
   lens: SidebarLens,
-  indexSource: WikilinkResolveSource,
   onRootMissing: () => void,
   onFileMissing: () => void,
   onNotice: (message: string, kind?: NoticeKind) => void,
@@ -30,18 +27,12 @@ export function useVaultTree(
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  // The TOPICS tree's open pages (🔒 D4), lifted here by ⚡ YAZ-873 so the lens row's one button
-  // can read and replace them; the tree itself is controlled. PAGE PATHS, restored from the
-  // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
-  // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
-  const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
-  // Focus Mode (YAZ-1605): one path LIST per lens — dirs for Files, folder pages for Topics; empty
-  // is no focus. Per WINDOW since YAZ-1628 (`sidebarCollapsed`'s rule), unlike the two per-vault
-  // expansions above: restored from this window's identity and written back the same way, so it
+  // Focus Mode (YAZ-1605): one path LIST of dirs per lens; empty
+  // is no focus. Per WINDOW since YAZ-1628 (`sidebarCollapsed`'s rule), unlike the per-vault
+  // expansion above: restored from this window's identity and written back the same way, so it
   // survives a lens switch and a restart and follows its own rename, ⌘⇧N inherits it, and another
   // window on the same vault is never affected.
   const [focusDirs, setFocusDirs] = useState<readonly string[]>(storage.getFocusDirs)
-  const [focusTopics, setFocusTopics] = useState<readonly string[]>(storage.getFocusTopics)
   const [focusFavorites, setFocusFavorites] = useState<readonly string[]>(storage.getFocusFavorites)
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): the vault's pinned files and folders in the
   // user's order, read from `.yaseendocs/favorites.json` through main (absolute paths). Another
@@ -63,7 +54,6 @@ export function useVaultTree(
   // in STORED order, off the live tree; nesting and redundancy are kept (`favoriteRoots`, not `focusRoots`).
   const favoriteNodes = useMemo(() => (tree === null ? [] : favoriteRoots(tree.tree, focusFavorites.length > 0 ? focusFavorites : favorites)), [tree, favorites, focusFavorites])
   const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
-  const topicRecords = useSyncExternalStore(indexSource.subscribe, () => indexSource.records)
 
   // The window's one tree feed (YAZ-2191): every answer lands here, whoever asked — this panel,
   // its active-file probe, the view-only catalog. A failure is only this panel's to report when it
@@ -106,22 +96,18 @@ export function useVaultTree(
   }, [watch, refresh])
 
   useEffect(() => {
-    // Idempotent like its Topics twin below (⚡ YAZ-874): the first render holds exactly what was
+    // Idempotent (⚡ YAZ-874): the first render holds exactly what was
     // just read, and re-sending it would make the main process commit, write and broadcast for nothing.
     if (sameList(storage.getExpanded(root), expanded)) return
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
-  // Focus Mode's write-back (YAZ-1605), idempotent like `expanded`'s above and the Topics one
-  // below — into this window's identity (YAZ-1628), not the vault bucket.
+  // Focus Mode's write-back (YAZ-1605), idempotent like `expanded`'s above
+  // — into this window's identity (YAZ-1628), not the vault bucket.
   useEffect(() => {
     if (sameList(storage.getFocusDirs(), focusDirs)) return
     storage.setFocusDirs(focusDirs)
   }, [focusDirs])
-  useEffect(() => {
-    if (sameList(storage.getFocusTopics(), focusTopics)) return
-    storage.setFocusTopics(focusTopics)
-  }, [focusTopics])
   useEffect(() => {
     if (sameList(storage.getFocusFavorites(), focusFavorites)) return
     storage.setFocusFavorites(focusFavorites)
@@ -160,16 +146,6 @@ export function useVaultTree(
     [root, onNotice],
   )
 
-  // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
-  // state in ⚡ YAZ-873, unchanged. Idempotent: the first render after a mount holds exactly what
-  // was just read, and re-sending it would make the main process commit, write and broadcast for
-  // nothing — including on every Files-lens mount, where the tree is not even on screen.
-  useEffect(() => {
-    const next = [...topicsExpanded]
-    if (sameList(storage.getTopicsExpanded(root), next)) return
-    storage.setTopicsExpanded(root, next)
-  }, [root, topicsExpanded])
-
   // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
   // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
   const restoredFile = useRef(activeFile)
@@ -179,20 +155,15 @@ export function useVaultTree(
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
 
-  // Focus Mode (YAZ-1605): a focus target that left the vault DROPS OUT — deleted, moved out, or a
-  // topic that lost its flag — and the last one leaving ends the focus: never an empty tree under a
+  // Focus Mode (YAZ-1605): a focus target that left the vault DROPS OUT — deleted or moved out
+  // — and the last one leaving ends the focus: never an empty tree under a
   // lit eye. The store repairs the FILE on delete; this component holds its own copy, so it prunes
-  // against the live tree / index itself, as `useSelection` (rowGestures.ts) does for the selection.
+  // against the live tree itself, as `useSelection` (rowGestures.ts) does for the selection.
   useEffect(() => {
     if (tree === null || focusDirs.length === 0) return
     const kept = focusDirs.filter((dir) => findDirNode(tree.tree, dir) !== null)
     if (kept.length !== focusDirs.length) setFocusDirs(kept)
   }, [tree, focusDirs])
-  useEffect(() => {
-    if (focusTopics.length === 0 || topicRecords.length === 0) return // the empty pre-index snapshot must not clear a restored focus
-    const kept = focusTopics.filter((page) => topicRecords.some((r) => r.path === page && isFolderPage(r)))
-    if (kept.length !== focusTopics.length) setFocusTopics(kept)
-  }, [topicRecords, focusTopics])
   useEffect(() => {
     if (tree === null || focusFavorites.length === 0) return
     const kept = focusFavorites.filter((dir) => findDirNode(tree.tree, dir) !== null)
@@ -206,11 +177,13 @@ export function useVaultTree(
   // IN-APP delete never reaches here, it closes tabs through the `file:deleted` broadcast
   // which retires the editor first (GRO-2272); do not unify the two. Files OUTSIDE the
   // root (opened via a pasted `#/abs/path.md` URL, GRO-2069) are never in the tree — skip them.
+  // A tab may be a FOLDER (YAZ-2290 D3), so both checks ask `treeHasPath`: a folder still in the
+  // tree survives, one that left it closes like a file.
   const validated = useRef(false)
   useEffect(() => {
     if (tree === null || validated.current) return
     validated.current = true
-    if (activeFile !== null && activeFile.startsWith(`${root.replace(/\/+$/, '')}/`) && !treeHasFile(tree.tree, activeFile))
+    if (activeFile !== null && activeFile.startsWith(`${root.replace(/\/+$/, '')}/`) && !treeHasPath(tree.tree, activeFile))
       onFileMissing()
   }, [tree, activeFile, root, onFileMissing])
 
@@ -229,11 +202,11 @@ export function useVaultTree(
     if (activeFile === lastActive.current) return
     lastActive.current = activeFile
     if (activeFile === null || !activeFile.startsWith(`${root.replace(/\/+$/, '')}/`)) return
-    if (treeRef.current !== null && treeHasFile(treeRef.current.tree, activeFile)) return
+    if (treeRef.current !== null && treeHasPath(treeRef.current.tree, activeFile)) return
     let cancelled = false // the activation moved on (or the sidebar unmounted): the probe's verdict is stale
     fetchTree(root).then(
       (res) => {
-        if (!cancelled && !treeHasFile(res.tree, activeFile)) onFileMissing()
+        if (!cancelled && !treeHasPath(res.tree, activeFile)) onFileMissing()
       },
       () => undefined, // a root-level failure is refresh()'s problem, not this probe's
     )
@@ -244,30 +217,25 @@ export function useVaultTree(
 
   /**
    * Focus Mode (YAZ-1605): narrow `inLens` — the menu's pinned lens, FILES for a search row (🔒 D1,
-   * YAZ-2050) — to these folders / topics, REPLACING any focus,
+   * YAZ-2050) — to these folders, REPLACING any focus,
    * one or many — and OPEN each row (the synthetic-child idiom `startCreate` uses), so the tree
    * never lands on closed chevrons.
    */
   const focusOn = useCallback(
     (paths: string[], inLens: SidebarLens) => {
-      if (inLens === 'topics') {
-        setFocusTopics(paths)
-        setTopicsExpanded((prev) => (paths.every((p) => prev.has(p)) ? prev : new Set([...prev, ...paths])))
-      } else {
-        // Favorites keeps its OWN list (YAZ-1766 D5); both disk lenses share the one expansion (D7).
-        if (inLens === 'favorites') setFocusFavorites(paths)
-        else setFocusDirs(paths)
-        for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
-      }
+      // Favorites keeps its OWN list (YAZ-1766 D5); both lenses share the one expansion (D7).
+      if (inLens === 'favorites') setFocusFavorites(paths)
+      else setFocusDirs(paths)
+      for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
     },
     [root],
   )
-  const focused = lens === 'topics' ? focusTopics.length > 0 : lens === 'favorites' ? focusFavorites.length > 0 : focusNodes.length > 0
-  const exitFocus = useCallback(() => (lens === 'topics' ? setFocusTopics([]) : lens === 'favorites' ? setFocusFavorites([]) : setFocusDirs([])), [lens])
+  const focused = lens === 'favorites' ? focusFavorites.length > 0 : focusNodes.length > 0
+  const exitFocus = useCallback(() => (lens === 'favorites' ? setFocusFavorites([]) : setFocusDirs([])), [lens])
 
   /**
    * The favorite toggle (YAZ-1766 D3/D6): remove every path, or append the ones not yet pinned —
-   * insertion order, no duplicates. `isOn` arrives with the paths (the folder-page toggle's idiom).
+   * insertion order, no duplicates. `isOn` arrives with the paths.
    * The toast confirms with its own glyph; `saveFavorites` persists.
    */
   const toggleFavorite = useCallback(
@@ -284,5 +252,5 @@ export function useVaultTree(
   const expandedSet = useMemo(() => new Set(expanded), [expanded])
   const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
 
-  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, topicsExpanded, setTopicsExpanded, focusDirs, setFocusDirs, focusTopics, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs, topicRecords }
+  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs }
 }

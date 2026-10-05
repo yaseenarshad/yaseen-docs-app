@@ -1,4 +1,6 @@
-import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { setFolderValue } from '@shared/folderValues'
+import { setFrontmatterProperty } from '@shared/frontmatter'
+import { isFolderSettingsPath, type FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 
 export type ContentTransform = (content: string) => string
@@ -41,8 +43,23 @@ export function trackFileWrite<T>(write: Promise<T>): Promise<T> {
   return write
 }
 
+/**
+ * A folder's settings file that is not there yet (an un-adopted vault, or the id sweep has not
+ * reached the folder — D13) is created by its first change (YAZ-2290 D1) — here, so every writer
+ * gets it: a missing one reads as empty and the write creates it, so a change that comes to nothing
+ * or is refused leaves no file. Another writer creating it first is a CONFLICT (`expectedMtime: 0`).
+ */
+export async function readForWrite(path: string): Promise<Pick<FileResponse, 'content' | 'mtime'>> {
+  try {
+    return await api.readFile(path)
+  } catch (err) {
+    if (!(err instanceof BridgeRequestError) || err.code !== 'NOT_FOUND' || !isFolderSettingsPath(path)) throw err
+    return { content: '', mtime: 0 }
+  }
+}
+
 async function runTransform(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
-  let file = await api.readFile(path)
+  let file = await readForWrite(path)
   let retried = false
 
   for (;;) {
@@ -69,17 +86,11 @@ export async function writeProperty(path: string, key: string, value: unknown): 
 }
 
 /**
- * Add one frontmatter key only when it is absent from the LATEST file bytes (YAZ-999). Index
- * records may lag the disk, so presence is checked again after the read and after a conflict.
- * Every present value wins — including null/falsy values and a value whose type disagrees with
- * the declaration asking for the backfill.
+ * Change fields of ONE folder's block of a note (D19, `shared/folderValues.ts`) in one guarded
+ * whole-file transformation: every value a folder's views or the panel's folder rows write. In the
+ * same write the note drops the values of the folders that no longer show it (D20): `tidy`,
+ * `dropStaleFolderValues` for this note.
  */
-export async function writePropertyIfMissing(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => {
-    const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
-    if (Object.prototype.hasOwnProperty.call(parsed.properties, key)) return content
-    // On broken frontmatter this is also the authoritative validation step: it throws the same
-    // FrontmatterWriteError as every other one-key write, and the file stays untouched.
-    return setFrontmatterProperty(content, key, value)
-  })
+export function writeFolderValues(path: string, folderId: string, writes: readonly PropertyWrite[], tidy: ContentTransform): Promise<{ mtime: number }> {
+  return transformFile(path, (content) => tidy(writes.reduce((next, { key, value }) => setFolderValue(next, folderId, key, value), content)))
 }

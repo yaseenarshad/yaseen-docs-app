@@ -2,8 +2,8 @@
  * The sidebar's multi-select, pure (YAZ-1336, 🔒 D1) — `treeState.ts`'s sibling: the Sidebar owns
  * the state, this owns the rules. A selection is a set of PATHS — files and, since YAZ-1578,
  * folders (a folder is itself, never its contents) — so ONE path is ONE entry however many rows
- * draw it (🔒 D3: the Topics lens stands one page under every parent that claims it, and all of
- * those rows are the same selected thing).
+ * draw it (🔒 D3: the Favorites tab shows a favorited file at its root AND inside its favorited
+ * folder, and both rows are the same selected thing).
  */
 
 /** The one empty selection: an untouched sidebar and a cleared one are then the SAME value. */
@@ -53,8 +53,8 @@ export function selectionReducer(sel: ReadonlySet<string>, action: SelectionActi
  *
  * ⚡ Fable's ruling on YAZ-1338: THE SELECTION IS THE TRUTH, THE DOM IS ONLY THE ORDER. So this
  * walks the rows the panel is currently drawing (`flashTreeRows`' idiom, revealRow.ts) to put the
- * on-screen paths in the order the eye reads them — deduped, because the Topics lens stands one
- * page under every parent that claims it (🔒 D3) — and then APPENDS whatever the selection still
+ * on-screen paths in the order the eye reads them — deduped, because one path can stand on two
+ * rows (🔒 D3) — and then APPENDS whatever the selection still
  * holds that has no row: a path inside a folder the user collapsed after selecting it is still
  * selected, and dropping it would make "Copy N paths" copy fewer than N. The result therefore
  * always has exactly `selected.size` entries. A null host (the sidebar is collapsed, so there is

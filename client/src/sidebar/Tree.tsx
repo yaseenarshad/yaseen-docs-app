@@ -2,11 +2,12 @@ import { memo } from 'react'
 import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
-import { renameInputName, type EntryKind } from './createEntry'
+import { renameInputName, type EntryKind, type MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
+import { ShortcutIcon } from '../views/view/icons'
 import { RenameInline } from './RenameInline'
 
-/** Inline "New note"/"New folder page"/"New folder" input pending inside the tree (GRO-2022, YAZ-841). */
+/** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
   kind: EntryKind
   seed: string
@@ -58,6 +59,9 @@ export interface TreeReorder {
   end: () => void
 }
 
+/** A level's order as main sorts it (`fs/fsUtils.ts`): by name, case-insensitively. */
+const byName = (a: TreeNode, b: TreeNode): number => a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+
 /** Which half of the hovered row the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
 const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
   const r = e.currentTarget.getBoundingClientRect()
@@ -67,8 +71,9 @@ const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
 /**
  * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
  * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
- * a page standing under two parents in Topics shows selected on BOTH of its rows. A path is a
- * file or a FOLDER (YAZ-1578): a selected folder is the folder itself, never its contents.
+ * a favorite standing at the root AND inside its favorited parent shows selected on BOTH of its
+ * rows. A path is a file or a FOLDER (YAZ-1578): a selected folder is the folder itself, never its
+ * contents.
  */
 export interface TreeSelection {
   paths: ReadonlySet<string>
@@ -93,15 +98,25 @@ interface TreeProps {
   onOpenFileBackground: (path: string) => void
   /** A row with no in-app viewer (`kind: null`, YAZ-1577 D2): hand it to the OS default app instead of a tab. */
   onOpenDefault: (path: string) => void
-  /** Right-click on a row; blank-space right-clicks are handled by the sidebar body. */
-  onNodeContextMenu: (node: TreeNode, e: React.MouseEvent) => void
+  /** Right-click on a row — a shortcut row says which folder it stands in; blank-space right-clicks are handled by the sidebar body. */
+  onNodeContextMenu: (node: MenuRow, e: React.MouseEvent) => void
   pending: PendingCreate | null
   /** The one row (file or dir) currently renamed inline (E1/E1b); null when none. */
   renaming: PendingRename | null
   /** File drag-to-move state + callbacks (E1b); owned by the Sidebar. */
   move: TreeFileMove
-  /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Topics lens. */
+  /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. */
   selection: TreeSelection
+  /** Notes each folder shows, by its path (🔒 E6, YAZ-2290) — the ones under it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
+  counts: ReadonlyMap<string, number>
+  /**
+   * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): notes that live elsewhere, drawn as
+   * file rows among the folder's own files, marked. The row IS the note — it opens it, and
+   * selection and the active highlight follow its path, so it lights with its real row (🔒 D3's
+   * rule for a favorite on two rows) — but it is no file of this folder: it never drags, and a
+   * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
+   */
+  shortcuts: ReadonlyMap<string, readonly TreeNode[]>
   /** Favorites-only (YAZ-1766 D4): root rows reorder the list instead of moving files; nested rows do not drag. */
   reorder?: TreeReorder
   depth?: number
@@ -121,10 +136,16 @@ function TreeLevel({
   renaming,
   move,
   selection,
+  counts,
+  shortcuts,
   reorder,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, reorder }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, reorder }
+  // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
+  const here = shortcuts.get(dirPath)
+  const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
+  const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
   // The reorder gesture lives on depth-0 rows alone; deeper rows of a reorderable tree drag nothing.
   const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
   // What a FILE row's drag does: move on disk (E1b) on an ordinary tree, reorder at depth 0 of a reorderable one, nothing below that.
@@ -143,9 +164,9 @@ function TreeLevel({
           />
         </li>
       )}
-      {nodes.map((node) =>
+      {rows.map((node) =>
         node.type === 'dir' ? (
-          <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)} aria-selected={selection.paths.has(node.path)}>
+          <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)} aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
             {renaming !== null && renaming.path === node.path ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, prefilled with the
               // raw name — folders have no extension logic (one could be NAMED "Notes.md").
@@ -153,7 +174,8 @@ function TreeLevel({
             ) : (
               <button
                 type="button"
-                className={`tree__row tree__row--dir${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}`}
+                // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
+                className={`tree__row tree__row--dir${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
@@ -169,6 +191,19 @@ function TreeLevel({
                   }
                   selection.set(node.path)
                   onToggle(node.path)
+                }}
+                // The folder itself is the tab (YAZ-2290 D3, overturning YAZ-1578 D3): a double
+                // click opens it. Its two clicks have selected and folded as ever; shift never opens.
+                onDoubleClick={(e) => {
+                  if (!e.shiftKey) onOpenFile(node.path)
+                }}
+                // Enter opens it too, as it opens a file row — there through the button's own click,
+                // which on this row folds. So the key is taken here and Space is left to fold.
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey) return
+                  e.preventDefault()
+                  selection.set(node.path)
+                  onOpenFile(node.path)
                 }}
                 onContextMenu={(e) => onNodeContextMenu(node, e)}
                 draggable={rowReorder !== null}
@@ -199,13 +234,16 @@ function TreeLevel({
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
                 <span className="tree__label">{node.name}</span>
+                {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}
             {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} {...recurse} />}
           </li>
-        ) : renaming !== null && renaming.path === node.path ? (
+        ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) ? (
           // Inline rename (Links E1, GRO-2194): Markdown hides its suffix and re-appends it on
           // commit; view-only files show the full filename so their extension stays explicit.
+          // The REAL row only: a second input on the note's shortcut row would take the focus,
+          // and the first one's blur is its commit (YAZ-1553).
           <li key={node.path} role="treeitem">
             <RenameInline initial={renameInputName(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
@@ -219,20 +257,20 @@ function TreeLevel({
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
                 // opens, never previews — so it is asked first, before any of the open rules.
                 if (e.shiftKey) {
-                  selection.toggle(node.path)
+                  if (!isShortcutRow(node)) selection.toggle(node.path)
                   return
                 }
                 // Every other click makes the selection THIS row (D9, YAZ-1674) — plain and ⌘
                 // alike, the external row too — before the open rules decide where it opens.
-                selection.set(node.path)
+                if (!isShortcutRow(node)) selection.set(node.path)
                 // No in-app viewer (YAZ-1577 D2): the OS default app IS the viewer, so no tab —
                 // and nothing for ⌘ to background. Asked before the open rules, after shift.
                 if (node.kind === null) {
                   onOpenDefault(node.path)
                   return
                 }
-                // First activation previews, second commits — the Topics rows' rule (YAZ-921):
-                // opening keeps focus on the row, re-activating the open page enters its text.
+                // First activation previews, second commits (YAZ-921): opening keeps focus on the
+                // row, re-activating the open page enters its text.
                 // The commit is KEYBOARD-only since D11 (YAZ-1674): Enter on the open row takes the
                 // caret in (a keyboard click has `detail === 0`); a MOUSE click on the open note
                 // just selects it, so click-then-⌘C works on every row instead of handing the key
@@ -241,11 +279,12 @@ function TreeLevel({
                 else if (node.path !== activeFile) onOpenFile(node.path)
                 else if (e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
               }}
-              onContextMenu={(e) => onNodeContextMenu(node, e)}
+              onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath } : node, e)}
               title={node.path}
               data-path={node.path}
-              draggable={fileDrag !== null}
-              onDragStart={fileDrag === null ? undefined : (e) => {
+              // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
+              draggable={fileDrag !== null && !isShortcutRow(node)}
+              onDragStart={fileDrag === null || isShortcutRow(node) ? undefined : (e) => {
                 if (e.dataTransfer) {
                   e.dataTransfer.effectAllowed = 'move'
                   e.dataTransfer.setData('text/plain', node.path)
@@ -264,6 +303,7 @@ function TreeLevel({
               }}
             >
               <span className="tree__label">{stripExt(node.name)}</span>
+              {isShortcutRow(node) && <ShortcutIcon />}
             </button>
           </li>
         ),
@@ -275,19 +315,20 @@ function TreeLevel({
 /** `path` sits somewhere below `dir`. */
 const below = (path: string | null, dir: string): boolean => path !== null && path.startsWith(`${dir}/`)
 
-/** Whether a path in one set but not the other sits below `dir`. */
-function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, dir: string): boolean {
+/** Whether a path in one set but not the other is one `drawn` says the level draws. */
+function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, drawn: (path: string) => boolean): boolean {
   if (a === b) return false
-  for (const path of a) if (!b.has(path) && below(path, dir)) return true
-  for (const path of b) if (!a.has(path) && below(path, dir)) return true
+  for (const path of a) if (!b.has(path) && drawn(path)) return true
+  for (const path of b) if (!a.has(path) && drawn(path)) return true
   return false
 }
 
 /**
  * A level re-renders only when something BELOW its own directory changed (YAZ-2194): every row it
- * draws, and every level it nests, sits below `dirPath`. So a folder toggle re-renders that folder's
- * ancestor levels, a tab switch the levels holding the old and the new active file, and a resize or
- * a save none at all. Every other prop is compared by identity, as `memo` does.
+ * draws, and every level it nests, sits below `dirPath` — or is a SHORTCUT row of a folder at or
+ * below it (YAZ-2290 D2), the one row whose path lies elsewhere. So a folder toggle re-renders that
+ * folder's ancestor levels, a tab switch the levels holding the old and the new active file, and a
+ * resize or a save none at all. Every other prop is compared by identity, as `memo` does.
  */
 function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   const keys = new Set([...Object.keys(prev), ...Object.keys(next)] as (keyof TreeProps)[])
@@ -295,9 +336,17 @@ function sameLevel(prev: TreeProps, next: TreeProps): boolean {
     if (key === 'expanded' || key === 'activeFile' || key === 'selection') continue
     if (!Object.is(prev[key], next[key])) return false
   }
-  if (prev.activeFile !== next.activeFile && (below(prev.activeFile, next.dirPath) || below(next.activeFile, next.dirPath))) return false
+  const dir = next.dirPath
+  /** The shortcut rows this level and the levels it nests draw; walked once per compare, and only if asked. */
+  let elsewhere: Set<string> | undefined
+  const drawn = (path: string | null): boolean => {
+    if (path === null || below(path, dir)) return path !== null
+    elsewhere ??= new Set([...next.shortcuts].flatMap(([folder, rows]) => (folder === dir || below(folder, dir) ? rows.map((row) => row.path) : [])))
+    return elsewhere.has(path)
+  }
+  if (prev.activeFile !== next.activeFile && (drawn(prev.activeFile) || drawn(next.activeFile))) return false
   if (prev.selection.toggle !== next.selection.toggle || prev.selection.set !== next.selection.set) return false
-  return !changedBelow(prev.expanded, next.expanded, next.dirPath) && !changedBelow(prev.selection.paths, next.selection.paths, next.dirPath)
+  return !changedBelow(prev.expanded, next.expanded, (path) => below(path, dir)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
 }
 
 export const Tree = memo(TreeLevel, sameLevel)

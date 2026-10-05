@@ -4,11 +4,14 @@
  * prefix → substring rule.
  */
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { SettingsCtx } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 
-const ctx = (sync?: SettingsCtx['sync']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync })
+const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
+const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
+const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 
 /** A synthetic candidate list where the three tiers are all present for one needle. */
@@ -43,6 +46,12 @@ describe('settingCandidates', () => {
   it('includes the Sync page only when the engine is there', () => {
     expect(ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined })))).toContain('githubSync')
     expect(ids(settingCandidates(ctx()))).not.toContain('githubSync')
+  })
+
+  it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
+    const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
+    expect(all.slice(all.indexOf('newNoteLocation'), all.indexOf('githubSync') + 1)).toEqual(['newNoteLocation', ...REVIEW_ROWS, 'githubSync'])
+    expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
@@ -93,6 +102,13 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkeys-window'])
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkeys-window'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkeys-keyboard'])
+  })
+
+  it('"review", "upkeep" and "inbox" each find every row of the Review section (YAZ-2322)', () => {
+    const candidates = settingCandidates(ctx(undefined, REVIEW))
+    for (const query of ['review', 'upkeep', 'inbox']) {
+      expect(ids(searchSettings(candidates, query).filter((h) => h.section.id === 'review')).sort()).toEqual([...REVIEW_ROWS].sort())
+    }
   })
 
   it('no match is an empty list', () => {

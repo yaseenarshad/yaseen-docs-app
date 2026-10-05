@@ -4,21 +4,18 @@
  * (a move on disk) and a favorite along its list.
  */
 import { useCallback, useEffect, useMemo, useReducer, useState, type Dispatch, type RefObject } from 'react'
-import type { FileClipState, IndexRecord, SidebarLens, TreeNode, TreeResponse } from '@shared/types'
+import type { FileClipState, SidebarLens, TreeNode, TreeResponse } from '@shared/types'
 import { api } from '../../api'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { NoticeKind } from '../../lib/notice'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
-import { FOLDER_PAGES_KEY } from '../../links/folderPages'
-import { folderPageSettings, newFolderPageProperties } from '../../views/folderPageSettings'
-import { createNewNote } from '../../views/newNote'
-import { memberFolder, newPageFromFolderPage } from '../../views/scaffold'
+import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
+import { createNote } from '../../views/scaffold'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard } from '../Sidebar'
-import type { PendingTopicCreate } from '../TopicsTree'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeResponse | null, selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
@@ -37,7 +34,7 @@ export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeRe
     dispatchSelection({ type: 'clear' })
   }, [lens, searching])
 
-  // The loaded tree is the canonical disk truth for BOTH lenses — Topics draws the same files —
+  // The loaded tree is the canonical disk truth for BOTH lenses,
   // so a path it no longer has cannot stay selected. A selected path is a file OR a folder
   // (YAZ-1578, 🔒 D1), hence `treeHasPath` here and nowhere else. Reference-stable when nothing
   // was dropped, which is every refresh that changed something else.
@@ -161,14 +158,19 @@ export function useFileClipboard(
   dispatch: Dispatch<TreeAction>,
   clipboardRef: { current: SidebarClipboard | null },
   onNotice: (message: string, kind?: NoticeKind) => void,
+  index: WikilinkResolveSource,
 ) {
   /**
-   * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op }` or null, pushed to every window on
-   * every change, so a menu opened here can label "Paste N items" for a copy made in another
-   * window on another vault. Session-only, never persisted. A window opened AFTER a clip reads the
-   * current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
+   * Main's ONE app-wide file clipboard (🔒 D1): `{ count, op, paths }` or null, pushed to every
+   * window on every change, so a menu opened here can label "Paste N items" for a copy made in
+   * another window on another vault. Session-only, never persisted. A window opened AFTER a clip
+   * reads the current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
    */
   const [clip, setClip] = useState<FileClipState>(null)
+  // The paste of a Cut that would clear values, waiting on its sheet (D21); null when it is closed.
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; moves: Move[]; lost: LeftBehind } | null>(null)
+  // The sheet speaks for the clipboard it was asked about: another one ends the question.
+  useEffect(() => setPendingPaste(null), [clip])
   useEffect(() => {
     // Subscribe FIRST, then read: a push that lands while the read is in flight is newer than the
     // read and must win — the read only fills a window nothing has pushed to yet.
@@ -211,14 +213,17 @@ export function useFileClipboard(
    * notice counts both halves and names the first failure. The target opens (the synthetic-child
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
-   * (`refresh` is idempotent).
+   * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
+   * it left behind (D20), judged on the index as it stood before the paste.
    */
-  const pasteInto = useCallback(
+  const runPaste = useCallback(
     async (dir: string) => {
       try {
+        const before = clip?.op === 'cut' ? { records: index.records, folders: index.folders } : null
         const res = await api.file.paste({ targetDir: dir })
         if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
         refresh()
+        if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root, oldPath: from, newPath: to, kind, ...before })
         const first = res.failed[0]
         if (first === undefined) {
           // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
@@ -230,8 +235,37 @@ export function useFileClipboard(
         onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
-    [root, refresh, onNotice],
+    [root, refresh, onNotice, clip, index],
   )
+
+  /**
+   * Paste's one door, the menu's and ⌘V's: a Cut that would clear a folder's values asks first
+   * (D21), by the window's own snapshot; anything else pastes at once. The moves are the clipboard's
+   * paths into `dir` — one already there is no move (main skips it, D2), and a folder is one the
+   * tree holds as a folder. A path outside this vault matches no record, so it never asks: the
+   * index cannot speak for it.
+   */
+  const pasteInto = useCallback(
+    (dir: string) => {
+      if (clip?.op === 'cut') {
+        const moves = clip.paths.flatMap((oldPath): Move[] => {
+          const newPath = `${dir}/${basename(oldPath)}`
+          return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
+        })
+        const lost = valuesLeftBehind({ root, moves, records: index.records, folders: index.folders })
+        if (lost.folders.length > 0) return setPendingPaste({ dir, moves, lost })
+      }
+      void runPaste(dir)
+    },
+    [root, clip, dirs, index, runPaste],
+  )
+
+  /** The sheet's Move: the paste runs as it does unasked. Its Cancel only closes it — the Cut stays on the clipboard. */
+  const confirmPaste = useCallback(() => {
+    if (pendingPaste === null) return
+    setPendingPaste(null)
+    void runPaste(pendingPaste.dir)
+  }, [pendingPaste, runPaste])
 
   /**
    * ⌘V's target (D6, YAZ-1674): beside the FIRST ordered selected row — a dir → into it, a file →
@@ -259,7 +293,7 @@ export function useFileClipboard(
       },
       paste: () => {
         if (menu !== null || clip === null) return false
-        void pasteInto(pasteTargetDir())
+        pasteInto(pasteTargetDir())
         return true
       },
     }
@@ -268,39 +302,7 @@ export function useFileClipboard(
     }
   }, [clipboardRef, menu, selectedPaths, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir])
 
-  return { clip, clipTo, pasteInto }
-}
-
-/**
- * Birth from a FLAGGED folder-page row in Topics (8H, ⚡ YAZ-869 — Yasin's dogfooding ruling).
- *
- * THE RULING: a right-click that says "New note" ON a topic means "a note IN this topic". Anything
- * else is the file tree leaking through a lens that is not about files — the page would be born
- * beside the folder page and belong to NOTHING, and the user would have to go and tag it by hand
- * to see the thing they just made appear where they made it.
- *
- * So "New note" travels the folder page's OWN declaration path — the SAME `newPageFromFolderPage`
- * the contents block's New and the outline's create row use (scaffold ← template ← seed, with
- * `folder_pages` forced LAST) — and parks through the SAME `memberFolder`. One rule, three
- * doorways. "New folder page" is the SUB-TOPIC case and stays 🔒 D1 of YAZ-841's birth exactly:
- * the flag and nothing else, never a template and never a settings block, with the belonging
- * stamped beside it so the new topic shows up nested under the one it was made from.
- *
- * Leaf Topics rows and every Files row keep today's create-beside behaviour untouched: there is no
- * folder page to belong to, so there is nothing to declare.
- */
-async function createInTopic(root: string, folderPage: IndexRecord, kind: 'file' | 'folderPage', name: string): Promise<string> {
-  const settings = folderPageSettings(folderPage)
-  const target = entryPath(await memberFolder(root, folderPage.path, settings), name, kind)
-  // The belonging is spelled the way the click rule reads it back — exactly a wikilink on the
-  // basename — and both keys go through the ONE source of truth, never a local literal.
-  if (kind === 'folderPage') {
-    await createNewNote(target, { ...newFolderPageProperties(), [FOLDER_PAGES_KEY]: [`[[${folderPage.basename}]]`] })
-    return target
-  }
-  const parts = await newPageFromFolderPage(root, folderPage.basename, settings)
-  await createNewNote(target, parts.properties, parts.body)
-  return target
+  return { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste: () => setPendingPaste(null) }
 }
 
 export function useInlineEdits(
@@ -309,17 +311,12 @@ export function useInlineEdits(
   setMenu: (menu: MenuTargets | null) => void,
   favoriteNodes: TreeNode[],
   onLensChange: (lens: SidebarLens) => void,
-  indexSource: WikilinkResolveSource,
   refresh: () => void,
   onOpenFile: (path: string) => void,
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   dispatch: Dispatch<TreeAction>,
 ) {
-  // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
-  // tree, where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is
-  // that same row only WHEN it is a flagged PAGE (8H, YAZ-869) — a disk folder has no record and
-  // therefore keeps plain filesystem creation. Pinned when the menu opens (GRO-2296).
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; anchor: string | null; intoFolderPage: string | null } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
 
   const startCreate = useCallback(
@@ -332,16 +329,7 @@ export function useInlineEdits(
       // the input nowhere to mount, so the create moves to Files — where the `expandTo` above has
       // already opened that dir. The reveal hop's rule (D10), applied to the other gesture that needs a row.
       if (menu.lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
-      setCreating({
-        kind,
-        seed,
-        parentDir: menu.targetDir,
-        anchor: menu.topicsAnchor,
-        // TOPICS only, and only on a row that IS a folder page (8H, YAZ-869): `topicsAnchor` is
-        // null for every Files row and for blank space, so that lens is untouched by construction,
-        // and a leaf topic has nothing to belong to. Both facts were read when the menu opened.
-        intoFolderPage: menu.topicsAnchor !== null && menu.folderPageIsOn ? menu.topicsAnchor : null,
-      })
+      setCreating({ kind, seed, parentDir: menu.targetDir })
       setMenu(null)
     },
     [menu, root, favoriteNodes, onLensChange],
@@ -350,31 +338,14 @@ export function useInlineEdits(
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
-      // A folder is never a member — belonging is a page's word about itself — so "New folder"
-      // keeps the file tree's rule even here. The record is re-read off the window's snapshot: if
-      // it has vanished since the menu opened, this falls through to the plain create rather than
-      // failing, which is the standing report-don't-block rule.
-      const topic = creating.kind === 'dir' || creating.intoFolderPage === null ? undefined : indexSource.records.find((r) => r.path === creating.intoFolderPage)
-      if (topic !== undefined) {
-        const born = await createInTopic(root, topic, creating.kind === 'folderPage' ? 'folderPage' : 'file', name)
-        setCreating(null)
-        refresh()
-        onOpenFile(born)
-        return
-      }
       const p = entryPath(creating.parentDir, name, creating.kind)
       if (creating.kind === 'dir') await api.createDir(p)
-      // Born a folder page (🔒 D4 + D1, YAZ-841): the SAME atomic content-at-create call the 5D
-      // seed uses. Since YAZ-1513 the birth carries the flag AND the default `status` column
-      // declaration — spelled by `newFolderPageProperties`, so the settings key stays the settings
-      // module's own — with no body and no `folder_pages`.
-      else if (creating.kind === 'folderPage') await createNewNote(p, newFolderPageProperties())
-      else await api.createFile(p)
+      else await createNote(p)
       setCreating(null)
       refresh()
       if (creating.kind !== 'dir') onOpenFile(p)
     },
-    [creating, refresh, onOpenFile, root, indexSource],
+    [creating, refresh, onOpenFile],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
@@ -411,15 +382,5 @@ export function useInlineEdits(
     [creating, submitCreate, cancelCreate],
   )
 
-  /**
-   * The SAME pending create, addressed the way the Topics tree can draw it: by the anchor row
-   * (YAZ-865) — or by NO row (YAZ-948), which is what a blank-space create has. A null anchor
-   * used to drop the create on the floor here: the menu item ran, the input had nowhere to
-   * render, and the gesture silently did nothing. Null now travels through and means the ROOT,
-   * which is where `targetDirFor` was sending the file all along.
-   */
-  const topicsPending: PendingTopicCreate | null =
-    creating === null ? null : { kind: creating.kind, seed: creating.seed, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
-
-  return { setRenamingEntry, startCreate, renaming, pending, topicsPending }
+  return { setRenamingEntry, startCreate, renaming, pending }
 }

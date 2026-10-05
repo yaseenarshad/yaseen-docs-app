@@ -3,7 +3,9 @@
  * a styled link via inline decorations — never a schema/serializer change. Pinned here: the hide
  * mechanics (brackets get `wikilink__syntax`, CSS `display: none`), alias/heading display, the
  * caret-adjacency reveal (boundaries inclusive), embed/code exclusion, and the live restyle when
- * the resolve source updates (meta transaction — no remount, no doc change).
+ * the resolve source updates (meta transaction — no remount, no doc change), and the id link
+ * (YAZ-2293): `[[<id>]]` hides the id too and shows the note's CURRENT title as a widget — the
+ * title follows the index, the document never changes.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -268,6 +270,110 @@ describe('wikilink decorations: live restyle on index change (no remount, no doc
   })
 })
 
+describe("wikilink decorations: an id link shows the note's current title (YAZ-2293)", () => {
+  const ID = 'k3m9x2pq7abc'
+  const DEAD = 'zzzzzzzzzzz9'
+  const resolveId = (target: string) => (target === ID ? '/vault/Projects/Road Map.md' : null)
+  const sourceOf = (resolve: (target: string) => string | null) => {
+    const source = createWikilinkResolveSource()
+    source.update(resolve)
+    return source
+  }
+
+  it('hides the id with the brackets and draws the title in its place; the document keeps every byte', async () => {
+    const md = `pad [[${ID}]] tail\n`
+    const { crepe, root } = await mount(md, sourceOf(resolveId))
+    expect(links(root)).toEqual(['Road Map'])
+    expect(syntax(root)).toBe(`[[${ID}]]`)
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(0)
+    expect(viewOf(crepe).state.doc.textContent).toBe(`pad [[${ID}]] tail`)
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('an id no note has stays the raw id, dimmed — exactly an unresolved name link', async () => {
+    const { root } = await mount(`pad [[${DEAD}]] tail\n`, sourceOf(resolveId))
+    expect(links(root)).toEqual([DEAD])
+    expect(syntax(root)).toBe('[[]]')
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(1)
+  })
+
+  it('before the index has loaded the id shows raw and undimmed', async () => {
+    const { root } = await mount(`pad [[${ID}]] tail\n`, createWikilinkResolveSource())
+    expect(links(root)).toEqual([ID])
+    expect(syntax(root)).toBe('[[]]')
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(0)
+  })
+
+  it('the index arriving turns the raw id into the title, in place: no remount, the document untouched (scenario D13)', async () => {
+    const md = `pad [[${ID}]] and [[${DEAD}]] tail\n`
+    const source = createWikilinkResolveSource()
+    const { crepe, root } = await mount(md, source)
+    const docBefore = viewOf(crepe).state.doc
+    expect(links(root)).toEqual([ID, DEAD])
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(0)
+
+    source.update(resolveId)
+    expect(links(root)).toEqual(['Road Map', DEAD])
+    expect(syntax(root)).toBe(`[[${ID}]][[]]`)
+    // Only now can a link be known to be missing: the id no note has is the one that dims.
+    expect(Array.from(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).map((el) => el.textContent)).toEqual([DEAD])
+    expect(viewOf(crepe).state.doc).toBe(docBefore)
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('[[id|label]] shows the hand-typed label, never the title', async () => {
+    const { root } = await mount(`pad [[${ID}|my label]] tail\n`, sourceOf(resolveId))
+    expect(links(root)).toEqual(['my label'])
+    expect(syntax(root)).toBe(`[[${ID}|]]`)
+  })
+
+  it('[[id#Heading]] shows Title > Heading', async () => {
+    const { root } = await mount(`pad [[${ID}#Heading]] tail\n`, sourceOf(resolveId))
+    expect(links(root)).toEqual(['Road Map', 'Heading'])
+    expect(syntax(root)).toBe(`[[${ID}#]]`)
+    const segments = root.querySelectorAll(`.${WIKILINK_CLASS}`)
+    expect(segments[0].classList.contains(WIKILINK_SUB_CLASS)).toBe(false)
+    expect(segments[1].classList.contains(WIKILINK_SUB_CLASS)).toBe(true)
+  })
+
+  it('the reveal rule drops the title with the rest: a caret touching the match shows the raw [[id]]', async () => {
+    // 'pad [[k3m9x2pq7abc]] tail' — the match spans positions 5..21.
+    const { crepe, root } = await mount(`pad [[${ID}]] tail\n`, sourceOf(resolveId))
+    const view = viewOf(crepe)
+    for (const pos of [5, 7, 13, 21]) {
+      caret(crepe, pos)
+      expect(links(root), `caret at ${pos}`).toEqual([])
+      expect(syntax(root)).toBe('')
+      expect(view.dom.textContent).toContain(`[[${ID}]]`)
+      expect(view.dom.textContent).not.toContain('Road Map')
+    }
+    caret(crepe, 4)
+    expect(links(root)).toEqual(['Road Map'])
+    caret(crepe, 22)
+    expect(links(root)).toEqual(['Road Map'])
+  })
+
+  it('a rename lands through source.update(): the same [[id]] shows the NEW title, the document untouched', async () => {
+    const md = `pad [[${ID}]] and [[${ID}#Heading]] tail\n`
+    const source = sourceOf(resolveId)
+    const { crepe, root } = await mount(md, source)
+    const view = viewOf(crepe)
+    const docBefore = view.state.doc
+    expect(links(root)).toEqual(['Road Map', 'Road Map', 'Heading'])
+
+    source.update((target) => (target === ID ? '/vault/Archive/Roadmap 2027.md' : null))
+    expect(links(root)).toEqual(['Roadmap 2027', 'Roadmap 2027', 'Heading'])
+    expect(view.state.doc).toBe(docBefore)
+    expect(getMarkdownForSave(crepe)).toBe(md)
+
+    // the note is deleted: the link falls back to its raw id, dimmed
+    source.update(() => null)
+    expect(links(root)).toEqual([ID, ID, 'Heading'])
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(3)
+    expect(view.state.doc).toBe(docBefore)
+  })
+})
+
 describe('wikilink decorations: incremental update (YAZ-2131 5C)', () => {
   const DOC = `# Heading [[Head link]]
 
@@ -288,9 +394,9 @@ Intro [[Note]] and [[a|alias]] and [[x#y#z]] and ![[embed]] and [[Missing]].
 | --- | --- |
 | [[Row]] | b |
 
-Tail [[Last]] [[|]] [[Note|]]
+Tail [[Last]] [[|]] [[Note|]] [[k3m9x2pq7abc]] [[k3m9x2pq7abc#part]]
 `
-  const SNIPPETS = ['a', ' ', '[', ']', '[[', ']]', '|', '#', '!', '[[Note]]', '[[a|b]]', '[[x#y]]', '![[img]]', '[[Missing]]', '[[', 'x]]']
+  const SNIPPETS = ['a', ' ', '[', ']', '[[', ']]', '|', '#', '!', '[[Note]]', '[[a|b]]', '[[x#y]]', '![[img]]', '[[Missing]]', '[[k3m9x2pq7abc]]', '[[', 'x]]']
 
   /** The live plugin and a normalised view of any DecorationSet it produced. */
   function wikilinkPluginOf(view: EditorView) {
@@ -298,7 +404,11 @@ Tail [[Last]] [[|]] [[Note|]]
     const normalise = (set: DecorationSet) =>
       set
         .find()
-        .map((d) => `${d.from}-${d.to} ${JSON.stringify((d as unknown as { type: { attrs: unknown } }).type.attrs)}`)
+        // An inline decoration is its attrs; the id link's title widget (YAZ-2293) is its spec (its key: the title).
+        .map((d) => {
+          const type = (d as unknown as { type: { attrs?: unknown; spec: unknown } }).type
+          return `${d.from}-${d.to} ${JSON.stringify(type.attrs ?? type.spec)}`
+        })
         .sort()
     const live = () => normalise(plugin.getState(view.state) as DecorationSet)
     /** What a from-scratch build gives for the same doc + selection (the plugin's `init`). */
@@ -325,13 +435,16 @@ Tail [[Last]] [[|]] [[Note|]]
 
   it('equals a full rebuild after every one of 300 random edits, caret moves, marks and resolver swaps', async () => {
     const source = createWikilinkResolveSource()
-    source.update((target) => (target.startsWith('M') ? null : `/v/${target}.md`))
+    // An id resolves to a note whose title is not the id, so its widget is in play from the start.
+    const titled = (title: string) => (target: string) => (target.startsWith('M') ? null : `/v/${target === 'k3m9x2pq7abc' ? title : target}.md`)
+    source.update(titled('Road Map'))
     const { crepe } = await mount(DOC, source)
     const view = viewOf(crepe)
     const { live, rebuilt } = wikilinkPluginOf(view)
     const next = random(2131)
     const int = (n: number) => Math.floor(next() * n)
     const code = view.state.schema.marks.inlineCode
+    let titledSteps = 0
     for (let step = 0; step < 300; step++) {
       const { state } = view
       const size = state.doc.content.size
@@ -359,7 +472,11 @@ Tail [[Last]] [[|]] [[Note|]]
           for (let i = first; i < Math.min(state.doc.childCount, first + 1 + int(3)); i++) to += state.doc.child(i).nodeSize
           tr.replaceWith(from, to, state.doc.slice(from, to).content)
         }
-        else source.update(next() < 0.5 ? () => null : (target) => (target.length % 2 === 0 ? null : `/v/${target}.md`))
+        else {
+          // No index entry at all, some names missing, or a rename of the id's note (a new title per step).
+          const pick = next()
+          source.update(pick < 0.4 ? () => null : pick < 0.7 ? (target) => (target.length % 2 === 0 ? null : `/v/${target}.md`) : titled(`Renamed ${step}`))
+        }
       } catch {
         continue // an edit this position cannot take (e.g. a split inside a table): skip it
       }
@@ -367,7 +484,10 @@ Tail [[Last]] [[|]] [[Note|]]
         if (!tr.docChanged && !tr.selectionSet) continue
         view.dispatch(tr)
       }
-      expect(live(), `step ${step}, op ${op}`).toEqual(rebuilt())
+      const now = live()
+      expect(now, `step ${step}, op ${op}`).toEqual(rebuilt())
+      if (now.some((d) => d.includes('"key"'))) titledSteps++
     }
+    expect(titledSteps).toBeGreaterThan(50) // the id link's title widget really was in play
   })
 })

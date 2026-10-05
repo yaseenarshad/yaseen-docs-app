@@ -231,6 +231,16 @@ describe('tabsReducer', () => {
       })
     })
 
+    it("the folder's OWN tab follows too: the folder itself is a tab (YAZ-2290 D3)", () => {
+      const s = state(['/v/Old', '/v/Old/a.md'], '/v/Old', ['/v/Old'])
+      expect(tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toEqual({
+        tabs: ['/v/New', '/v/New/a.md'],
+        active: '/v/New',
+        mounted: ['/v/New'],
+        history: {},
+      })
+    })
+
     it('is a no-op (same state object — no identity mirror) when nothing is open under the folder', () => {
       const s = state(['/v/x.md', '/v/Older/a.md'], '/v/x.md') // `/v/Older` is NOT under `/v/Old` — prefix means `/v/Old/`
       expect(tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toBe(s)
@@ -247,7 +257,7 @@ describe('tabsReducer', () => {
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics' | 'focusFavorites'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'>>
 
 function installBridge(app: AppState, identity: IdentityFixture) {
   const bridge = {
@@ -261,9 +271,8 @@ function installBridge(app: AppState, identity: IdentityFixture) {
         ...identity,
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
-        sidebarLens: identity.sidebarLens ?? 'topics',
+        sidebarLens: identity.sidebarLens ?? 'files',
         focusDirs: identity.focusDirs ?? [],
-        focusTopics: identity.focusTopics ?? [],
         focusFavorites: identity.focusFavorites ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
@@ -283,7 +292,7 @@ afterEach(() => {
 describe('bootTabs (rules 12/15)', () => {
   const seeded: AppState = {
     ...defaultAppState(),
-    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, topicsExpanded: [], name: null } },
+    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, name: null } },
   }
 
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {
@@ -667,6 +676,12 @@ describe('delete / delete-dir (GRO-2272)', () => {
     expect(next.tabs).toEqual(['/x.md'])
     expect(next.active).toBe('/x.md')
     expect(next.mounted).toEqual(['/x.md'])
+  })
+
+  it("delete-dir closes the folder's OWN tab: the folder itself is a tab (YAZ-2290 D3)", () => {
+    const next = tabsReducer(S(['/Docs', '/x.md'], '/Docs'), { type: 'delete-dir', path: '/Docs' })
+    expect(next.tabs).toEqual(['/x.md'])
+    expect(next.active).toBe('/x.md')
   })
 
   it('delete-dir empties the window when every tab was under the folder', () => {

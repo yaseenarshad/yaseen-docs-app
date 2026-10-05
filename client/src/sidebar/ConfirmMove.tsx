@@ -1,50 +1,64 @@
-import { ConfirmSheet } from '../components/ConfirmSheet'
-
 /**
- * The move sheet's copy (YAZ-991) — PURE and separately tested, exactly like
- * `views/view/ConfirmRemoveMember.tsx`'s `removeMemberMessage`, which this sheet mirrors in
- * every other respect too, so the component around it stays trivial.
- *
- * The whole reason this gesture asks: dragging a row from one topic onto another LOOKS like
- * moving a file between folders and is not one. The move rewrites ONE `folder_pages` list on the
- * dragged page's own frontmatter (YAZ-990) — the file does not leave its directory on disk, and
- * nothing is written to either topic. So the copy says what is NOT happening first, then answers
- * the multi-parent question by name: a page can belong to several folder pages, and dropping it
- * into one of them leaves the others exactly where they were.
- *
- * `from` is NULL for a row dragged out of Uncategorized (or off the root, where no parent stands
- * above the row): there is no source to name, so the sentence simply does not name one.
- *
- * Pages are named the way the TREE names them: `basename`, no extension, in single quotes — these
- * are the rows the user is looking at and the spelling the `[[…]]` entry itself carries.
+ * The move confirm (D21): a folder's values leave a note with the folder (D20), so a move — or a
+ * "Remove shortcut" — that would clear some asks first, naming what goes. One that clears nothing
+ * never asks. The LOCKED copy lives in the pure functions; the component stays trivial.
  */
-export function moveConfirmMessage(page: string, from: string | null, to: string, others: readonly string[]): string {
-  const source = from === null ? '' : ` from '${from}'`
-  const rest = others.length > 0 ? ` It also stays in: ${others.join(', ')}.` : ''
-  return `Move '${page}'${source} into '${to}'? The file stays put — only its folder pages change.${rest}`
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import { pageLabel } from '../lib/pageLabel'
+import { dirname } from '../lib/paths'
+import type { LeftBehind, Move } from '../links/shortcuts'
+
+/** The folders by name: `A`, `A and B`, `A, B and C`; past three, the first three `and N more`. */
+export function folderList(names: readonly string[]): string {
+  if (names.length > 3) return `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
-interface ConfirmMoveProps {
-  /** The dragged page, by basename. */
-  page: string
-  /** The folder page the ROW was dragged out of, by basename; null when no parent stood above it. */
-  from: string | null
-  /** The folder page it was dropped onto, by basename. */
-  to: string
-  /** Its OTHER folder pages, by basename, in entry order — the ones this move leaves alone. */
-  others: readonly string[]
+/** The LOCKED copy for a move (D21): one item is named, several are counted; a note loses "its values", a folder or several items count the notes that do. */
+export function moveConfirmMessage(items: readonly { name: string; kind: 'file' | 'dir' }[], destination: string, lost: { notes: number; folders: readonly string[] }): string {
+  const one = items.length === 1 ? items[0] : undefined
+  const folders = folderList(lost.folders)
+  const cleared = one?.kind === 'file' ? `Its values for ${folders} will be cleared.` : `${lost.notes} ${lost.notes === 1 ? 'note will lose its' : 'notes will lose their'} values for ${folders}.`
+  return `Move ${one === undefined ? `${items.length} items` : `'${one.name}'`} to '${destination}'? ${cleared}`
+}
+
+/** The LOCKED copy for "Remove shortcut" (D21): the folder the row stands in, the note, and the folders whose values go. */
+export function removeShortcutConfirmMessage(note: string, folder: string, folders: readonly string[]): string {
+  return `Remove the shortcut from '${folder}'? The values of '${note}' for ${folderList(folders)} will be cleared.`
+}
+
+type ConfirmMoveProps = {
+  /** What would be cleared (`valuesLeftBehind` / `valuesLeftByShortcut`); its folders are named by their directory. */
+  lost: LeftBehind
   onConfirm: () => void
   onCancel: () => void
-}
+} & (
+  | {
+      /** The moves asked about, all into ONE folder; only their names and the destination's reach the copy. */
+      moves: readonly Move[]
+    }
+  | {
+      /** "Remove shortcut": the note, and the folder its shortcut row stands in. */
+      shortcut: { path: string; dir: string }
+    }
+)
 
 /**
- * In-app confirm sheet for the Topics tree's drag (YAZ-991), on `ConfirmSheet` like its siblings:
- * initial focus on CANCEL so a stray Enter from the tree moves nothing.
- *
- * Same two deliberate omissions as its siblings: no "Don't ask me again" — a drop is easy to make
- * by accident, which is the whole reason this sheet exists — and the confirm button is NOT
- * `--danger`, because nothing is destroyed here and the copy says so. Buttons are Cancel / **Move**.
+ * In-app confirm sheet for a move, or a shortcut's removal, that clears values (D21), on
+ * `ConfirmSheet`. The confirm button IS `--danger`: the values are gone once it is pressed. Keys
+ * are bound to the sheet (`keys="sheet"`), `ConfirmRename`'s rule: a keystroke can open it — Enter
+ * on a menu item — and must not be the one that confirms it. Cancel takes the focus.
  */
-export function ConfirmMove({ page, from, to, others, onConfirm, onCancel }: ConfirmMoveProps) {
-  return <ConfirmSheet labelId="confirm-move-text" text={moveConfirmMessage(page, from, to, others)} confirmLabel="Move" onConfirm={onConfirm} onCancel={onCancel} />
+export function ConfirmMove({ lost, onConfirm, onCancel, ...ask }: ConfirmMoveProps) {
+  const folders = lost.folders.map((dir) => pageLabel(dir, true))
+  const text =
+    'moves' in ask
+      ? moveConfirmMessage(
+          ask.moves.map((move) => ({ name: pageLabel(move.oldPath, move.kind === 'dir'), kind: move.kind })),
+          // The vault's top level is named by the vault: the root directory's own name.
+          pageLabel(dirname(ask.moves[0].newPath), true),
+          { notes: lost.notes, folders },
+        )
+      : removeShortcutConfirmMessage(pageLabel(ask.shortcut.path, false), pageLabel(ask.shortcut.dir, true), folders)
+  return <ConfirmSheet labelId="confirm-move-text" text={text} confirmLabel={'moves' in ask ? 'Move' : 'Remove'} danger keys="sheet" onConfirm={onConfirm} onCancel={onCancel} />
 }

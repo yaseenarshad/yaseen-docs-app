@@ -242,19 +242,26 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'Bump CACHE_VERSION in vaultIndex/cache.ts and re-pin FINGERPRINT in this test — ' +
     'discard IS the migration (a version mismatch costs one full rescan, never a converter).'
 
-  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, the `comments` drop, tag/link/embed extraction, code stripping, URL skipping. */
+  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, the `comments` drop, the `reviews` lift, tag/link/embed extraction, code stripping, URL skipping, the body fingerprint. */
   const CANONICAL_NOTE = [
     '---',
+    'id: k3m9x2pq7abc',
     'title: Canonical',
     'count: 3',
     'list: [x, y]',
     "tags: [alpha, '#beta']",
     'link: "[[Ref|shown]]"',
     "aliases: [Canon, ' Spaced Alias ', '[[Not A Link]]']",
+    'in:',
+    '  3y7505rsr6fd:',
+    '    owner: "[[Folder Ref]]"',
+    '    note: see [[Not A Link In Text]]',
     'comments:',
     '  - id: c0ffee00',
     '    at: 2026-09-11T18:22:31Z',
     '    body: "[[Not A Link Either]] — a comment is the note, not a property"',
+    'reviews:',
+    '  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}',
     '---',
     '',
     'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
@@ -267,25 +274,31 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 3,
+    cacheVersion: 6,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
-    recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags'],
+    recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'reviews', 'size', 'tags', 'text'],
     extraction: {
       properties: {
+        id: 'k3m9x2pq7abc',
         title: 'Canonical',
         count: 3,
         list: ['x', 'y'],
         tags: ['alpha', '#beta'],
         link: '[[Ref|shown]]',
         aliases: ['Canon', ' Spaced Alias ', '[[Not A Link]]'],
+        in: { '3y7505rsr6fd': { owner: '[[Folder Ref]]', note: 'see [[Not A Link In Text]]' } },
         // No `comments`: the note's own comment stream is dropped at scan time (YAZ-1472, 🔒 D5).
+        // No `reviews`: the note's own review log is lifted onto the record (YAZ-2322, 🔒 D1).
       },
       aliases: ['Canon', 'Spaced Alias', '[[Not A Link]]'],
       tags: ['alpha', 'beta', 'gamma', 'tag/nested'],
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
-      links: ['Ref', 'Note One', 'Note Two'],
+      // A whole-value link in a folder's block of `in` is a link (D19).
+      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two'],
       embeds: ['img.png'],
+      reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }],
+      text: '3f08025c',
     },
   }
 
@@ -303,7 +316,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         cacheVersion: CACHE_VERSION,
         maxFileBytes: MAX_FILE_BYTES,
         recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored)])].sort(),
-        extraction: { properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds },
+        extraction: { properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds, reviews: record.reviews, text: record.text },
       }
       expect(actual, BUMP_MSG).toEqual(FINGERPRINT)
     } finally {

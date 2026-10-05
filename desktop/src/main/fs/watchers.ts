@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { WatchEvent } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, type WatchEvent } from '@shared/types'
 import { isSkipped } from './fsUtils'
 import { watchTree, type TreeWatcher } from './treeWatcher'
 
@@ -20,11 +20,13 @@ export function activeWatcherRoots(): string[] {
 
 /**
  * Dot-entries and `node_modules` at any depth; every other regular file is watched, viewer or not
- * (YAZ-1577 D1). The engine itself keeps atomic-write tmps silent (YAZ-2179).
+ * (YAZ-1577 D1). The engine itself keeps atomic-write tmps silent (YAZ-2179). A folder's settings
+ * file is the one dot-entry that is watched (YAZ-2290 D8), unless a folder above it is skipped.
  */
 function ignored(root: string, p: string): boolean {
-  const rel = path.relative(root, p)
-  return rel !== '' && rel.split(path.sep).some(isSkipped)
+  const segments = path.relative(root, p).split(path.sep)
+  if (segments.at(-1) === FOLDER_SETTINGS_FILE) segments.pop()
+  return segments.some(isSkipped)
 }
 
 function createEntry(root: string): Entry {

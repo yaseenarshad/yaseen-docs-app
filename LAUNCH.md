@@ -33,8 +33,8 @@ open "desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg"
 
 ## App state — where it lives, how to reset it
 
-- ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows, per-folder view state including which sidebar lens and which Topics rows are expanded — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile.
-- TWO things do live in the vault, both by design and both the user's own data rather than app state: a folder page's view configuration, written into that note's own frontmatter under the single `folder_page_settings` key, and the vault-wide property declarations at `<vault>/.yaseendocs/properties.json` — the `.obsidian`-style dotfolder that travels with the notes. The dotfolder is created lazily on the first write and never otherwise; reading it creates nothing. Everything else about a vault stays in the state file above.
+- ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows with their tabs and sidebar lens, per-folder view state — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile.
+- TWO things do live in the vault, both by design and both the user's own data rather than app state: a folder's settings — its views and columns under the single `folder_settings` key, with the folder's own properties and comments beside them — in a hidden `<folder>/.folder.md` (frontmatter only; created by the first change, never by opening the folder), and the vault-wide property declarations at `<vault>/.yaseendocs/properties.json` — the `.obsidian`-style dotfolder that travels with the notes. The dotfolder is created lazily on the first write and never otherwise; reading it creates nothing. Everything else about a vault stays in the state file above.
 - To reset or hand-edit: **quit the app first** (⌘Q — quitting flushes the file), then delete or edit the JSON; on the next launch a missing file gets defaults and a corrupt one is moved aside as `yaseendocs.json.corrupt-<epoch>`, never silently overwritten. To find it (the folder first appears after the app has run once against the real state):
 
 ```bash
@@ -47,8 +47,8 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 ## Verify
 
 ```bash
-npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the migration CLIs, the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
-npm run e2e       # Playwright-Electron suite (desktop/e2e/, 64 specs; the Playwright run takes ~3.8 min after the build; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
+npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the packaging checks, the budget gate and the perf harness), perf (jsdom — the budget tripwires)
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 52 specs; `docs/REGRESSION.md` maps features to specs): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out
 npm run perf:budget:ci   # the size and integrity gate on desktop/out (what CI runs, after build)

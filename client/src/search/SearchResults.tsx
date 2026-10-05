@@ -3,7 +3,7 @@
  * never a tree — the rows carry a folder label instead of a position. Presentational only:
  * selection is owned by the Sidebar, since the keyboard drives it from the search input — and so
  * is ACTIVATION (🔒 D3, YAZ-1491): a click reports the row and the ⌘ flag, and the Sidebar's one
- * rule decides whether that reveals a folder or opens a note. Folder rows look like folders
+ * rule opens the row's page, a folder's like a note's. Folder rows look like folders
  * (🔒 D4): a glyph before the label and a `, folder` suffix on the aria-label. A right-click
  * reports the row the same way (YAZ-2050): the Sidebar opens the tree row's own menu for it.
  */

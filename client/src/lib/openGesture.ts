@@ -1,5 +1,5 @@
 /**
- * The one open rule for a folder page's Table and Board (YAZ-1557), mouse and keyboard alike:
+ * The one open rule for a folder's Table and Board (YAZ-1557), mouse and keyboard alike:
  * plain → the current tab, ⌘ → a background tab (the app-wide I3 rule, GRO-2235), ⌥ → the right
  * panel. ⇧ is the selection gesture everywhere (YAZ-1336 🔒 D2) and ⌃ is unclaimed, so either
  * vetoes the open: the surface then does whatever a plain gesture does short of opening.

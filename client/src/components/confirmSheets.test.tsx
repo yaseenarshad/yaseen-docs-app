@@ -1,5 +1,5 @@
 /**
- * The 8 confirm sheets' markup, pinned (YAZ-2201): the shared shell must leave every sheet's DOM
+ * The 5 confirm sheets' markup, pinned (YAZ-2201): the shared shell must leave every sheet's DOM
  * byte-identical, plus the one mechanic every sheet shares — focus lands on Cancel.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -7,13 +7,9 @@ import { act, type ReactElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ConfirmDeleteComment } from '../comments/ConfirmDeleteComment'
 import { ConfirmDelete } from '../sidebar/ConfirmDelete'
-import { ConfirmMove } from '../sidebar/ConfirmMove'
 import { ConfirmRename } from '../sidebar/ConfirmRename'
-import { ConfirmTurnBack } from '../sidebar/ConfirmTurnBack'
-import { TEST_RECORDS } from '../views/testRecords'
 import { ConfirmDeleteColumn } from '../views/view/ConfirmDeleteColumn'
 import { ConfirmDeleteView } from '../views/view/ConfirmDeleteView'
-import { ConfirmRemoveMember } from '../views/view/ConfirmRemoveMember'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -40,24 +36,18 @@ const cb = { onConfirm: vi.fn(), onCancel: vi.fn() }
 type Keys = 'window' | 'sheet' | 'contained'
 const KEYS: Record<string, Keys> = {
   ConfirmDelete: 'window',
-  ConfirmMove: 'window',
   ConfirmRename: 'sheet',
-  ConfirmTurnBack: 'window',
   ConfirmDeleteComment: 'window',
   ConfirmDeleteColumn: 'contained',
   ConfirmDeleteView: 'window',
-  ConfirmRemoveMember: 'window',
 }
 
 const SHEETS: Array<[string, () => ReactElement]> = [
   ['ConfirmDelete', () => <ConfirmDelete target={{ path: '/v/Projects', kind: 'dir', children: { notes: 3, folders: 1 }, backlinks: 2 }} {...cb} />],
-  ['ConfirmMove', () => <ConfirmMove page="Roadmap" from="Plans" to="Archive" others={['Ideas']} {...cb} />],
-  ['ConfirmRename', () => <ConfirmRename oldPath="/v/Old.md" newPath="/v/New.md" count={2} {...cb} />],
-  ['ConfirmTurnBack', () => <ConfirmTurnBack path="/v/Home.md" {...cb} />],
+  ['ConfirmRename', () => <ConfirmRename oldPath="/v/Old.md" newPath="/v/New.md" kind="file" count={2} {...cb} />],
   ['ConfirmDeleteComment', () => <ConfirmDeleteComment label="#3" replies={2} {...cb} />],
-  ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} records={TEST_RECORDS} {...cb} />],
+  ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} count={() => 5} {...cb} />],
   ['ConfirmDeleteView', () => <ConfirmDeleteView view={{ type: 'table', name: 'All notes' }} {...cb} />],
-  ['ConfirmRemoveMember', () => <ConfirmRemoveMember page="Roadmap" folderPage="Plans" others={[]} {...cb} />],
 ]
 
 describe('the confirm sheets (YAZ-2201)', () => {

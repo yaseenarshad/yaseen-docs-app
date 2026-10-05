@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, linkCandidates, matchLinkCandidates, matchLinkNames, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, basenameCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -55,8 +55,10 @@ describe('trailingLinkFragment', () => {
   })
 })
 
-describe('matchLinkNames', () => {
+describe('matchLinkCandidates over plain names', () => {
   const names = ['Alpha', 'Beta', 'alphabet soup', 'Gamma']
+  const matchLinkNames = (candidates: string[], fragment: string): string[] =>
+    matchLinkCandidates(candidates.map(nameCandidate), fragment).map((c) => c.name)
 
   it('matches case-insensitive substrings in input order', () => {
     expect(matchLinkNames(names, 'alpha')).toEqual(['Alpha', 'alphabet soup'])
@@ -135,8 +137,7 @@ describe('linkCandidates', () => {
   })
 
   it('a name row matches, inserts and reads as itself (lower precomputed for the ranking scan, GRO-2197)', () => {
-    // `path` is the record this row names (YAZ-957): the back-pointer `linkNames` reads, so
-    // "this note's link name" needs neither a resolver nor a position match.
+    // `path` is the record this row names (YAZ-957).
     expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A', lower: 'a', path: '/vault/A.md' }])
   })
 
@@ -186,13 +187,61 @@ describe('linkCandidates', () => {
     const owners = records.flatMap((r) => Array<string>(1 + r.aliases.length).fill(r.path))
     expect(linkCandidates(records).map((c) => resolve(c.insert)?.record.path)).toEqual(owners)
   })
-
 })
 
-describe('matchLinkNames (plain-name surfaces)', () => {
-  it('is the candidate matcher over bare names', () => {
-    expect(matchLinkNames(['Alpha', 'Beta'], 'a')).toEqual(['Alpha', 'Beta'])
-    expect(matchLinkCandidates(['Alpha', 'Beta'].map(nameCandidate), 'a').map((c) => c.insert)).toEqual(['Alpha', 'Beta'])
+describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const CAC = '/vault/Customer Acquisition Cost.md'
+
+  it('the name row is still typed and read as the name, and inserts the id', () => {
+    expect(linkCandidates([{ ...rec(CAC), id: ID }])).toEqual([
+      { name: 'Customer Acquisition Cost', insert: ID, label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC },
+    ])
+  })
+
+  it('an alias row inserts the SAME plain id — no pipe — and still reads `Alias — Note`', () => {
+    expect(linkCandidates([{ ...rec(CAC, ['CAC']), id: ID }])[1]).toEqual({
+      name: 'CAC',
+      insert: ID,
+      label: 'CAC — Customer Acquisition Cost',
+      lower: 'cac',
+      path: CAC,
+    })
+  })
+
+  it('a note without an id beside one with: exactly the by-name rows it always had', () => {
+    const records = [{ ...rec('/vault/A.md'), id: ID }, rec(CAC, ['CAC'])]
+    expect(linkCandidates(records).slice(1)).toEqual([
+      { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC },
+      { name: 'CAC', insert: 'Customer Acquisition Cost|CAC', label: 'CAC — Customer Acquisition Cost', lower: 'cac', path: CAC },
+    ])
+  })
+
+  it('the id resolves to its own record, from the name row and the alias row alike', () => {
+    const records = [rec('/vault/CAC.md'), { ...rec(CAC, ['CAC']), id: ID }]
+    const resolve = resolverFor(records, '/vault')
+    expect(linkCandidates(records).map((c) => resolve(c.insert)?.record.path)).toEqual(['/vault/CAC.md', CAC, CAC])
+  })
+
+  it('duplicate basenames are still told apart in name and label, id or no id', () => {
+    const records = [rec('/vault/Note.md'), { ...rec('/vault/a/Note.md', ['N']), id: ID }, rec('/vault/b/Note.md', ['N'])]
+    expect(linkCandidates(records).map(({ name, label, insert }) => ({ name, label, insert }))).toEqual([
+      { name: 'Note', label: 'Note', insert: 'Note' },
+      { name: 'a/Note', label: 'a/Note', insert: ID },
+      { name: 'N', label: 'N — a/Note', insert: ID },
+      { name: 'b/Note', label: 'b/Note', insert: 'b/Note' },
+      { name: 'N', label: 'N — b/Note', insert: 'b/Note|N' },
+    ])
+  })
+})
+
+describe('basenameCandidates (the cell editors, YAZ-2293)', () => {
+  it('offers every note by its BASENAME — no alias row, no folder form — and writes its id when it has one', () => {
+    const records = [rec('/vault/Note.md', ['Alias']), { ...rec('/vault/a/Note.md'), id: 'k3m9x2pq7abc' }]
+    expect(basenameCandidates(records)).toEqual([
+      { name: 'Note', insert: 'Note', label: 'Note', lower: 'note' },
+      { name: 'Note', insert: 'k3m9x2pq7abc', label: 'Note', lower: 'note' },
+    ])
   })
 })
 
@@ -227,5 +276,10 @@ describe('mergeLinkCandidates (YAZ-1310)', () => {
       'data.json',
       'deep/tool.PY',
     ])
+  })
+
+  it('keeps a note NAMED like a view-only file once it links by id: the id is no view-only spelling (YAZ-2293)', () => {
+    const records = [{ ...rec('/vault/report.pdf.md', ['Q3']), id: 'k3m9x2pq7abc' }, rec('/vault/data.json.md')]
+    expect(mergeLinkCandidates(linkCandidates(records), []).map((candidate) => candidate.label)).toEqual(['report.pdf', 'Q3 — report.pdf'])
   })
 })

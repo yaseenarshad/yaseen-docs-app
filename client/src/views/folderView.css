@@ -1,0 +1,34 @@
+/*
+ * The folder view (YAZ-2290) — owned by FolderView.tsx (the feature-CSS convention). It sits in
+ * the tab's own scroller under the folder's name, and repeats `.editor-instance`'s content column
+ * (backlinks.css's rule, byte for byte) so the table lines up with a note's text. It has no chrome
+ * of its own: no hairline, no chip.
+ */
+
+.folder-view {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 0 48px;
+}
+
+/*
+ * The views pane's WHOLE geometry (YAZ-861 folded it here from views.css, where `.view-view` used
+ * to declare a main-pane column this rule then overrode line by line). The column belongs to the
+ * block above (never doubled) and the height belongs to the content — the table grows and the TAB
+ * scrolls, rather than a second scroller opening inside it.
+ */
+.folder-view .views-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 16px 0 0;
+}
+
+/*
+ * `.view-table-wrap` keeps its own `overflow: auto` from views.css on purpose: with no height to
+ * fill it takes the table's, so it never opens a second VERTICAL scroller inside the tab — while
+ * a table wider than the column still scrolls sideways in place instead of dragging the whole
+ * page with it. TableView bridges the outer vertical scroll onto the existing header without
+ * taking horizontal ownership away from this wrapper (YAZ-1151).
+ */

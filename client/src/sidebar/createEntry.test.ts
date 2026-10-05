@@ -29,12 +29,6 @@ describe('entryPath', () => {
     expect(entryPath('/r', 'note.MARKDOWN', 'file')).toBe('/r/note.MARKDOWN')
   })
 
-  it('gives a folder page the note extension — it IS a note, just born flagged (🔒 D1, YAZ-841)', () => {
-    expect(entryPath('/r', 'Growth', 'folderPage')).toBe('/r/Growth.md')
-    expect(entryPath('/r', 'Growth.md', 'folderPage')).toBe('/r/Growth.md')
-    expect(entryPath('/r', '  Growth ', 'folderPage')).toBe('/r/Growth.md')
-  })
-
   it('uses dir names as-is and trims whitespace', () => {
     expect(entryPath('/r', 'Folder', 'dir')).toBe('/r/Folder')
     expect(entryPath('/r', '  note ', 'file')).toBe('/r/note.md')
@@ -57,6 +51,10 @@ describe('targetDirFor', () => {
     expect(targetDirFor(dir('/r/sub'), '/r')).toBe('/r/sub')
     expect(targetDirFor(file('/r/sub/a.md'), '/r')).toBe('/r/sub')
     expect(targetDirFor(null, '/r')).toBe('/r')
+  })
+
+  it('a shortcut row → the folder it stands in, not the folder its note lives in (YAZ-2290 D2)', () => {
+    expect(targetDirFor({ type: 'file', path: '/r/areas/a.md', shortcutIn: '/r/sub' }, '/r')).toBe('/r/sub')
   })
 })
 

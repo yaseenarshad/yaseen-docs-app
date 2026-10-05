@@ -5,7 +5,7 @@
  * from the target group; the seed of an inner "+" carries both for the same reason. A level
  * whose property is not `note.*` (a formula outer) shows summaries but disables its own
  * "+"/drag while the other level's actions keep working. Fan-out D3/D4 hold at the inner
- * level. `writeProperty` mocked, the folder page's `create` spied, per the sibling files.
+ * level. `writeProperty` mocked, the folder host's `create` spied, per the sibling files.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -14,9 +14,11 @@ import type { IndexRecord } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import type { NewNoteSeed } from '../newNote'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 import { writeProperties, writeProperty } from '../writeProperty'
 
@@ -87,10 +89,10 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
-          root={null}
-          thisFile={null}
+          root="/vault"
+          folderPath="/vault/pillars.md"
           records={records}
-          folderPage={testFolderPage({ create })}
+          folder={testFolderHost({ create })}
           onOpenFile={vi.fn()}
           {...props}
         />,

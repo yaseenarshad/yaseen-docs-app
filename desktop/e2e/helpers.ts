@@ -75,17 +75,24 @@ export async function appWindow(app: ElectronApplication, winId: string, timeout
 export const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 /** The visible tab's note editor. */
 export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
-/** The visible tab's folder-page contents block. */
-export const contents = (w: Page) => layer(w).locator('.folder-page-contents')
+/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its notes (`section.folder-view`, FolderView.tsx). */
+export const contents = (w: Page) => layer(w).locator('.folder-view')
 export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** A file row of the sidebar tree by its exact label. */
 export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-/** A folder row of the sidebar tree by its exact label. */
-export const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
+/**
+ * A folder row of the sidebar tree by its exact label. Matched on the LABEL span, never on the
+ * row's whole text: a folder row also carries the count of the notes in it (`.tree__count`,
+ * YAZ-2290 E6), so `Projects` with one note reads `Projects1`.
+ */
+export const dirRow = (w: Page, label: string) =>
+  w.locator('.tree__row--dir').filter({ has: w.locator('.tree__label').filter({ hasText: new RegExp(`^${label}$`) }) })
+/** The note count a folder row shows; no element at all for a folder holding none. */
+export const dirCount = (w: Page, label: string) => dirRow(w, label).locator('.tree__count')
 /** The DEPTH-0 row labels of whichever tree the sidebar body draws. */
 export const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
-export const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+export const lensTab = (w: Page, label: 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
 /** An item of the sidebar's own row menu (overlay + menu) by its exact label. */
 export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 export const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
@@ -161,25 +168,22 @@ export async function copyVault(src: string): Promise<string> {
 // ---------- app state ----------
 
 /**
- * The lens every seeded window starts on (YAZ-847; per window since YAZ-1628). The app's own default is `topics` — the
- * folder-page tree since YAZ-848 — while every spec in this suite is about the FILE TREE, so the
- * seeds below pre-select `files`: the same kind of pre-configuration as the `windows[]` entry
- * that skips the native folder dialog, not a change to the default. `lenses.spec.ts` seeds its
- * own state (including a pre-847 file with no lens key at all) to pin the default and the
- * switch; `topics.spec.ts` seeds `topics` to drive the tree itself.
+ * The lens every seeded window starts on (YAZ-847; per window since YAZ-1628): `files`, the
+ * app's own default (YAZ-1846). `lenses.spec.ts` seeds its own state (including a pre-847 file
+ * with no lens key at all) to pin the default.
  */
 const SEEDED_LENS = 'files' as const
 
 /**
  * One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1).
- * No `expanded` option since YAZ-1642: both tree expansions are session lists main reads back as
+ * No `expanded` option since YAZ-1642: the tree expansion is a session list main reads back as
  * `[]`, so a spec that needs a nested row opens its dir the way a user does — `expandDirs`.
  */
 export function seededState(vault: string, file: string | null): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusTopics: [], focusFavorites: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
-  state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [], name: null } }
+  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusFavorites: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, name: null } }
   return state
 }
 
@@ -203,6 +207,17 @@ export async function expandDirs(win: Page, dirs: string[]): Promise<void> {
       })
       .toBe(true)
   }
+}
+
+/**
+ * Opens the folder `dir` (absolute path) as the CURRENT tab, by the double click a user makes on
+ * its Files row (YAZ-2290 D3; `onDoubleClick` in client/src/sidebar/Tree.tsx). The two clicks of
+ * that gesture fold and unfold the row on the way, so it ends as open or shut as it started.
+ * Resolves once the folder view is on screen. A nested folder needs `expandDirs` on its ancestors.
+ */
+export async function openFolder(win: Page, dir: string): Promise<void> {
+  await win.locator(`.tree__row--dir[data-path="${dir}"]`).dblclick()
+  await expect(contents(win)).toBeVisible()
 }
 
 export async function readState(userData: string): Promise<AppState> {
@@ -237,12 +252,11 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     sidebarCollapsed: w.sidebarCollapsed ?? false,
     sidebarLens: SEEDED_LENS,
     focusDirs: [],
-    focusTopics: [],
     focusFavorites: [],
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {
-    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [], name: null }
+    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, name: null }
   }
   return state
 }
@@ -331,7 +345,7 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
   }, winId)
 }
 
-// ---------- the folder page's OUTLINE editor (YAZ-903; harnessed in YAZ-904) ----------
+// ---------- a folder's OUTLINE view editor (YAZ-903; harnessed in YAZ-904) ----------
 
 /**
  * THE OUTLINE IS A PROSEMIRROR NOW, and driving one from Playwright is its own small craft — so
@@ -376,15 +390,6 @@ export const outlineNested = (scope: Locator) => outlineEditor(scope).locator('u
  */
 export const outlineSaid = async (scope: Locator): Promise<string[]> =>
   (await outlineLines(scope).allTextContents()).filter((line) => line !== '')
-
-/**
- * Its LINK LINES, in document order: a bullet whose whole text is one `[[wikilink]]`. Since
- * YAZ-1152 that is what a membership looks like inside the outline — adoption writes one per
- * member the text does not already name — so this is how a spec asks the DOCUMENT who belongs
- * here without caring what prose is standing above it.
- */
-export const outlineLinkLines = async (scope: Locator): Promise<string[]> =>
-  (await outlineLines(scope).allTextContents()).filter((line) => /^\[\[[^[\]]+\]\]$/.test(line))
 
 /** The `[[` picker, while it is showing (Links B). */
 export const linkPicker = (w: Page) => w.locator('.wikilink-picker[data-show="true"]')

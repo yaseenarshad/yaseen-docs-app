@@ -27,7 +27,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { SearchIcon } from '../views/view/icons'
-import { availableSections, resolveHint, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
+import { availableSections, isAvailable, resolveHint, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import './settings.css'
@@ -146,7 +146,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
     <section key={s.id} id={anchorId(s.id)} data-section={s.id} className="settings-section">
       <h2 className="settings-section__title">{s.title}</h2>
       {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
-      {s.groups.map((g, i) => group(g, g.items, i))}
+      {s.groups.map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), i))}
     </section>
   )
 
@@ -156,7 +156,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
   const matched = new Set(hits)
   const hitGroups: { section: SettingsSection; group: SettingsGroup; items: SettingDef[] }[] = []
   for (const candidate of candidates) {
-    if (!matched.has(candidate)) continue
+    if (!matched.has(candidate) || !isAvailable(candidate.item, ctx)) continue
     const last = hitGroups[hitGroups.length - 1]
     if (last?.group === candidate.group) last.items.push(candidate.item)
     else hitGroups.push({ section: candidate.section, group: candidate.group, items: [candidate.item] })

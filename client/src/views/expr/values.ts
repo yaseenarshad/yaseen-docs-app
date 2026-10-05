@@ -1,3 +1,4 @@
+import { isNoteId } from '@shared/noteId'
 import { parseIsoDate, renderDate, renderDuration } from './dates'
 
 /** Runtime value model for the Bases expression language (GRO-2131). */
@@ -24,6 +25,19 @@ export class DurationValue {
 export class LinkValue {
   constructor(readonly target: string, readonly display?: string) {}
 }
+/**
+ * What a link READS AS (YAZ-2293 D8 — the file stores a note's id, the app shows its title): the
+ * hand-typed label, else the current title of the note its id names, else the target as written.
+ * `render`, the cells' chips and the sort all ask here, so they cannot disagree. No resolver is
+ * the STORED form — what every write-back and persisted key passes.
+ */
+export function linkText(link: LinkValue, resolve?: Resolver): string {
+  if (link.display !== undefined || resolve === undefined) return link.display ?? link.target
+  // The id is the part before any `#heading`, which rides along as it does on a name.
+  const id = link.target.split('#', 1)[0]
+  const title = isNoteId(id) ? resolve(id)?.record.basename : undefined
+  return title === undefined ? link.target : title + link.target.slice(id.length)
+}
 export class RegexValue {
   constructor(readonly re: RegExp) {}
 }
@@ -34,6 +48,7 @@ export class ErrorValue {
 /** Minimal structural shape of a note record; the real IndexRecord (shared/types.ts) satisfies it. */
 export interface FileRecordLike {
   path: string
+  id?: string
   name: string
   basename: string
   folder: string
@@ -199,15 +214,18 @@ function toJson(v: Value): unknown {
   return isPrimitive(v) ? v : render(v)
 }
 
-/** Display string (`toString()` semantics). */
-export function render(v: Value): string {
+/**
+ * Display string (`toString()` semantics). With `resolve`, an unlabelled id link shows its note's
+ * title (`linkText`); WITHOUT, a link is exactly its stored `[[…]]` — the form written to a file.
+ */
+export function render(v: Value, resolve?: Resolver): string {
   if (v === null) return ''
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-  if (Array.isArray(v)) return v.map(render).join(', ')
+  if (Array.isArray(v)) return v.map(x => render(x, resolve)).join(', ')
   if (v instanceof DateValue) return renderDate(v.ms, v.hasTime)
   if (v instanceof DurationValue) return renderDuration(v.ms)
-  if (v instanceof LinkValue) return v.display === undefined ? `[[${v.target}]]` : `[[${v.target}|${v.display}]]`
+  if (v instanceof LinkValue) return v.display === undefined ? `[[${linkText(v, resolve)}]]` : `[[${v.target}|${v.display}]]`
   if (v instanceof FileValue) return `[[${v.record.basename}]]`
   if (v instanceof RegexValue) return String(v.re)
   if (v instanceof ErrorValue) return `#ERROR: ${v.message}`

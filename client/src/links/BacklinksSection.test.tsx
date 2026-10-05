@@ -72,9 +72,9 @@ const openCurrent = vi.fn()
 const openBackground = vi.fn()
 
 /** The bridge's own wrapping: THE shared resolver, unwrapped to a path. */
-function feed(records: IndexRecord[]): void {
+function feed(records: IndexRecord[], folders: IndexRecord[] = []): void {
   const resolve = resolverFor(records, '/vault')
-  act(() => source.update((target) => resolve(target)?.record.path ?? null, records))
+  act(() => source.update((target) => resolve(target)?.record.path ?? null, records, folders))
 }
 
 function mount(path = B): HTMLElement {
@@ -213,6 +213,73 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(snippets(el).map((s) => s.textContent)).toEqual(['now it says B twice: B', 'related to Bee as well'])
     expect([...snippets(el)[0].querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B', 'B'])
     CONTENT[A] = '# A\n\nSee [[B]] for the details.\n'
+  })
+
+  it('a note linking by ID is listed, and its snippet shows the linked note\'s title (YAZ-2293)', async () => {
+    const ID = 'k3m9x2pq7abc'
+    readFile.mockImplementation(async (path: string) => ({ path, content: `# A\n\nSee [[${ID}]] for the details.\n`, mtime: 1, size: 1 }))
+    const el = mount()
+    feed([rec(A, { links: [ID] }), { ...rec(B), id: ID }])
+    expect(header(el)?.textContent).toBe('Linked mentions (1)')
+    click(header(el)!)
+    await flush()
+    expect(notes(el).map((n) => n.textContent)).toEqual(['A'])
+    expect(snippets(el).map((s) => s.textContent)).toEqual(['See B for the details.'])
+    expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
+  })
+
+  describe('links from folder pages', () => {
+    const PROJECTS = '/vault/Projects'
+    /** The folder Projects, whose settings hold `folder_settings`. */
+    const folder = (folder_settings: Record<string, unknown>, mtime = 1): IndexRecord => ({ ...rec(`${PROJECTS}/.folder.md`, { mtime }), properties: { folder_settings } })
+    const OUTLINE = { views: [{ type: 'outline', name: 'Outline', outline: '- intro\n    - [[B]]' }] }
+
+    it('a folder\'s outline has a link to a note: the note\'s Linked mentions lists the folder, by its name', async () => {
+      const el = mount()
+      feed(RECORDS, [folder(OUTLINE)])
+      expect(header(el)?.textContent).toBe('Linked mentions (3)')
+      click(header(el)!)
+      await flush()
+      // Path order: the folder sorts by its settings file's path.
+      expect(notes(el).map((n) => n.textContent)).toEqual(['A', 'Projects', 'C'])
+      expect(notes(el)[1].getAttribute('title')).toBe(PROJECTS)
+    })
+
+    it('snippet for a folder entry: the line of its outline that holds the link, with no file read', async () => {
+      const el = mount()
+      feed([rec(B)], [folder(OUTLINE)])
+      click(header(el)!)
+      expect(el.querySelector('.backlinks__skeleton')).toBeNull() // the index already holds the outline
+      expect(snippets(el).map((s) => s.textContent)).toEqual(['B'])
+      expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
+      await flush()
+      expect(readFile).not.toHaveBeenCalled()
+      // The outline moved on disk: the next snapshot's settings are what the snippet reads.
+      feed([rec(B)], [folder({ views: [{ type: 'outline', name: 'Outline', outline: '- [[B]]\n- and [[B]] again, in a sentence' }] }, 2)])
+      expect(snippets(el).map((s) => s.textContent)).toEqual(['B', 'and B again, in a sentence'])
+    })
+
+    it('a folder that links by a view\'s `order` or a link column\'s `target` is listed the same way, with no snippet', async () => {
+      const el = mount()
+      feed([rec(B)], [folder({ columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'outline', name: 'Outline', order: ['[[B]]'] }] })])
+      expect(header(el)?.textContent).toBe('Linked mentions (1)')
+      click(header(el)!)
+      await flush()
+      expect(notes(el).map((n) => n.textContent)).toEqual(['Projects'])
+      expect(snippets(el)).toHaveLength(0)
+      expect(el.querySelector('.backlinks__skeleton')).toBeNull()
+    })
+
+    it('clicking a folder in Linked mentions opens the folder\'s page: plain → current tab, ⌘ → background tab (entry and snippet alike)', async () => {
+      const el = mount()
+      feed([rec(B)], [folder(OUTLINE)])
+      click(header(el)!)
+      await flush()
+      click(notes(el)[0])
+      expect(openCurrent).toHaveBeenCalledExactlyOnceWith(PROJECTS)
+      click(snippets(el)[0], { metaKey: true })
+      expect(openBackground).toHaveBeenCalledExactlyOnceWith(PROJECTS)
+    })
   })
 
   it('the header draws no hairline above it (YAZ-1680)', () => {

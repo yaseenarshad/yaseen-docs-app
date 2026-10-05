@@ -37,7 +37,7 @@ describe('perf (GRO-2133)', () => {
         },
       ],
     }
-    const go = () => runView(def, def.views[0], records, { thisFile: records[0].path, root: '/vault' })
+    const go = () => runView(def, def.views[0], records, { root: '/vault' })
     go() // warm-up (JIT)
     const t0 = performance.now()
     const r = go()
@@ -70,7 +70,7 @@ describe('perf (GRO-2133)', () => {
         },
       ],
     }
-    const go = () => runView(def, def.views[0], records, { thisFile: records[0].path, root: '/vault' })
+    const go = () => runView(def, def.views[0], records, { root: '/vault' })
     go() // warm-up (JIT)
     const t0 = performance.now()
     const r = go()

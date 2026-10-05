@@ -1,11 +1,11 @@
-import { readdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
-import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
+import { isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
+import { fsCall, isMarkdown } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
+import { restoreFolderId, sweepIds } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
 import { reconcile, type ColdStartDiff } from './reconcile'
-import { scanFile } from './scan'
+import { scanFile, walk } from './scan'
 
 interface Entry {
   records: Map<string, IndexRecord>
@@ -25,27 +25,19 @@ const entries = new Map<string, Entry>()
 const pending = new Map<string, Promise<Entry>>()
 let idleMs = DEFAULT_IDLE_MS
 
-/** Markdown files under `dir`, skipping dot-entries / node_modules; unreadable subdirs are skipped like `buildTree`. */
-async function walk(dir: string, out: string[]): Promise<void> {
-  const dirents = await readdir(dir, { withFileTypes: true })
-  await Promise.all(
-    dirents.map(async (e) => {
-      if (isSkipped(e.name)) return
-      const full = path.join(dir, e.name)
-      if (e.isDirectory()) await walk(full, out).catch(() => undefined)
-      else if (e.isFile() && isMarkdown(e.name)) out.push(full)
-    }),
-  )
-}
-
 function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   switch (ev.type) {
     case 'add':
     case 'change': {
       if (!isMarkdown(ev.path)) return
+      const held = entry.records.get(ev.path)?.id
       const scan = scanFile(root, ev.path)
         .then(
-          (record) => entry.records.set(ev.path, record),
+          (record) => {
+            entry.records.set(ev.path, record)
+            // Every other indexed note is known to hold what it holds; this one, what it held before.
+            void sweepIds(root, entry.records, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
+          },
           () => entry.records.delete(ev.path),
         )
         .finally(() => {
@@ -55,10 +47,17 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       entry.inFlight.add(scan)
       return
     }
-    case 'unlink':
+    case 'addDir':
+      // A folder that appears is given its settings file, and so its id (D13).
+      void sweepIds(root, entry.records, [], (p) => entry.records.get(p)?.id, [ev.path])
+      return
+    case 'unlink': {
+      const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
       entry.records.delete(ev.path)
       schedulePersist(root, entry.records)
+      if (id !== undefined) void restoreFolderId(root, ev.path, id)
       return
+    }
     case 'unlinkDir': {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
@@ -80,11 +79,12 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
 async function build(root: string): Promise<Entry> {
   const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set() }
   const files: string[] = []
+  const dirs: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
   // reading it early keeps the multi-MB read ahead of the watcher's initial walk that floods the
   // fs threadpool on subscribe.
-  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files))])
+  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files, dirs))])
   // A corrupt cache is an anomaly worth one line (vaultConfig idiom); `miss` and
   // `version-mismatch` are expected states (first open / semantics bump) and stay silent.
   if (cached.status === 'corrupt') console.warn(`[index-cache] cache for ${root} is corrupt; ignoring it and rescanning`)
@@ -96,6 +96,8 @@ async function build(root: string): Promise<Entry> {
     const { records, diff } = await reconcile(root, files, cached)
     entry.records = records
     entry.coldDiff = diff
+    // Not awaited: a vault of id-less notes must not hold up its first index (YAZ-2293 D3).
+    void sweepIds(root, records, [...records.values()], (p) => cached.records?.get(p)?.id, dirs)
   } catch (err) {
     entry.unsubscribe()
     throw err
@@ -140,8 +142,21 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   // Drain scans the watcher has already started: a create that beat this call is in this snapshot,
   // never invisible until the next fs event (YAZ-986) — the live twin of awaiting the first build.
   if (entry.inFlight.size > 0) await Promise.all([...entry.inFlight])
-  const records = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  return { root, records, generatedAt: Date.now() }
+  const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  // One map holds notes and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
+  const records: IndexRecord[] = []
+  const folders: IndexRecord[] = []
+  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(r)
+  return { root, records, folders, generatedAt: Date.now() }
+}
+
+/** Sweeps every note the live index holds for `root`, and every folder there now — for a vault adopted after its index was built (YAZ-2293). */
+export function sweepIndexed(root: string): void {
+  const records = entries.get(root)?.records
+  if (records === undefined) return
+  const dirs: string[] = []
+  const sweep = (): Promise<void> => sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id, dirs)
+  void walk(root, [], dirs).then(sweep, sweep)
 }
 
 /**

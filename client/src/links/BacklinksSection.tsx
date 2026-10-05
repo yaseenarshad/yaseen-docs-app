@@ -22,15 +22,17 @@
  * N recomputes live, and an entry re-reads its snippets when its own record's mtime moved — so a
  * link added or removed on disk lands here without a watcher or an IPC call of our own.
  */
-import { useEffect, useRef, useState } from 'react'
-import type { IndexRecord } from '@shared/types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { api } from '../api'
+import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
+import { basename, dirname } from '../lib/paths'
+import { backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
 import './backlinks.css'
 
 export interface BacklinksSectionProps {
-  /** The open note (absolute path): mentions OF this file are what the section lists. */
+  /** The open note (absolute path) or folder (its directory): mentions OF this page are what the section lists. */
   path: string
   /** The window's link index feed — resolver + the snapshot it came from. */
   source: WikilinkResolveSource
@@ -42,29 +44,11 @@ export interface BacklinksSectionProps {
 
 const NONE: readonly IndexRecord[] = []
 
-/** The resolver and the records it was built from, always read together (never half a snapshot). */
-interface Feed {
-  records: readonly IndexRecord[]
-  resolve: ResolveLink | null
-}
-
 export function BacklinksSection({ path, source, openCurrent, openBackground }: BacklinksSectionProps) {
-  // The same live-feed idiom the folder page's contents block uses: subscribe once, re-read
-  // the whole feed on each poke. Identical contents keep the previous object, so a snapshot that
-  // changed nothing for us costs no render.
-  const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
-  useEffect(() => {
-    const read = () =>
-      setFeed((prev) =>
-        prev.records === source.records && prev.resolve === source.resolve ? prev : { records: source.records, resolve: source.resolve },
-      )
-    read()
-    return source.subscribe(read)
-  }, [source])
-
+  const feed = useIndexFeed(source)
   const [expanded, setExpanded] = useState(false)
 
-  const entries = feed.resolve === null ? NONE : backlinksFor(path, feed.records, feed.resolve)
+  const entries = feed.resolve === null ? NONE : backlinksFor(path, feed.records, feed.resolve, feed.folders)
   if (entries.length === 0) return null
 
   return (
@@ -93,7 +77,11 @@ export function BacklinksSection({ path, source, openCurrent, openBackground }: 
   )
 }
 
-/** One referencing note: its name, then its mention lines — read from disk on mount (= on expand). */
+/**
+ * One referencing note: its name, then its mention lines — read from disk on mount (= on expand).
+ * A referencing FOLDER (`record` is its settings file's) reads as the folder's name, opens the
+ * folder's page, and shows the lines of its outlines — off the index, with no read.
+ */
 function BacklinkEntry({
   record,
   target,
@@ -113,8 +101,11 @@ function BacklinkEntry({
   // record's own mtime is what says this note's mentions may have moved.
   const resolveRef = useRef(resolve)
   resolveRef.current = resolve
+  const folder = isFolderSettingsPath(record.path)
+  const page = folder ? dirname(record.path) : record.path
 
   useEffect(() => {
+    if (folder) return
     let cancelled = false
     setSnippets(null)
     void api.readFile(record.path).then(
@@ -128,23 +119,24 @@ function BacklinkEntry({
     return () => {
       cancelled = true
     }
-  }, [record.path, record.mtime, target])
+  }, [folder, record.path, record.mtime, target])
+  const lines = useMemo(() => (folder ? folderMentionSnippets(record, target, resolve ?? (() => null)) : snippets), [folder, record, target, resolve, snippets])
 
   const open = (event: React.MouseEvent): void => {
-    if (event.metaKey && openBackground !== undefined) openBackground(record.path)
-    else openCurrent(record.path)
+    if (event.metaKey && openBackground !== undefined) openBackground(page)
+    else openCurrent(page)
   }
 
   return (
     <li className="backlinks__entry">
-      <button type="button" className="backlinks__note" title={record.path} onClick={open}>
-        {record.basename}
+      <button type="button" className="backlinks__note" title={page} onClick={open}>
+        {folder ? basename(page) : record.basename}
       </button>
-      {snippets === null ? (
+      {lines === null ? (
         <div className="backlinks__skeleton" aria-hidden />
       ) : (
-        snippets.map((snippet, i) => (
-          <button key={i} type="button" className="backlinks__snippet" title={record.path} onClick={open}>
+        lines.map((snippet, i) => (
+          <button key={i} type="button" className="backlinks__snippet" title={page} onClick={open}>
             {snippetRuns(snippet)}
           </button>
         ))

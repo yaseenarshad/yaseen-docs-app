@@ -7,14 +7,11 @@ import { isSettings, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `topicsExpanded` / `name`, each type-checked. */
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name`, each type-checked. */
 function requireFolderPatch(raw: unknown): FolderPatch {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
   const patch: FolderPatch = {}
   if (raw.expanded !== undefined) patch.expanded = requireStringArray(raw.expanded, 'expanded')
-  // The Topics tree's open pages (YAZ-848) ride the SAME patch as the file tree's open dirs —
-  // one per-root bucket of paths, one channel, capped by the store on the way in.
-  if (raw.topicsExpanded !== undefined) patch.topicsExpanded = requireStringArray(raw.topicsExpanded, 'topicsExpanded')
   if (raw.lastFile !== undefined) {
     if (raw.lastFile !== null && typeof raw.lastFile !== 'string') throw new BridgeFailure('BAD_REQUEST', "'lastFile' must be a string or null")
     patch.lastFile = raw.lastFile

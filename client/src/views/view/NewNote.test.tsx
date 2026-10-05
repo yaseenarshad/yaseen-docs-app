@@ -1,7 +1,7 @@
 /**
  * "New" button (5D, GRO-2144): ViewsPane mounted with react-dom in jsdom over `TEST_RECORDS`,
- * with the folder page's own `create` spied (the seed DERIVATION runs for real). Every New goes
- * through it since YAZ-846 amputated the plain `createFromSeed` path — a folder page births its
+ * with the folder host's own `create` spied (the seed DERIVATION runs for real). Every New goes
+ * through it since YAZ-846 amputated the plain `createFromSeed` path — a folder births its
  * members from its DECLARATION and parks them per its settings (🔒 Q5/Q6), so what this file
  * pins is the SEED that rides along and what happens to the note the create resolves. The
  * per-group "+" seeds the group's value on top (acceptance: filter `status == "idea"` grouped by
@@ -15,12 +15,12 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import type { NewNoteSeed } from '../newNote'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** The folder page's own birth (🔒 Q5): the ONE create path, spied for the seed it is handed. */
+/** The folder's own birth (🔒 Q5): the ONE create path, spied for the seed it is handed. */
 const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
 /** The seed of the nth create — `properties` is what every assertion here is about. */
 const seed = (n = 0): Record<string, unknown> => create.mock.calls[n][0].properties
@@ -58,8 +58,8 @@ const PRIORITY_BOARD = `views:
       property: note.priority
 `
 
-const FOLDER_PAGE_PATH = '/vault/Bases/Content.md'
-/** Where the folder page's settings park a new member — this test's stand-in for `createMember`. */
+const FOLDER_PATH = '/vault/Bases/Content.md'
+/** Where the folder parks a new note — this test's stand-in for `createInFolder`. */
 const PARKED = '/vault/Bases/Untitled.md'
 
 /** The created note as the next index refetch would deliver it. */
@@ -100,9 +100,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile={FOLDER_PAGE_PATH}
+          folderPath={FOLDER_PATH}
           records={records}
-          folderPage={testFolderPage({ create })}
+          folder={testFolderHost({ create })}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -172,7 +172,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
 // ---------- tests ----------
 
 describe('toolbar New', () => {
-  it('hands the filter-derived seed to the folder page\'s own create, then opens what it returns', async () => {
+  it('hands the filter-derived seed to the folder\'s own create, then opens what it returns', async () => {
     const { el, onOpenFile } = mount(IDEA_TABLE)
 
     click(byLabel(el, 'New note'))
@@ -183,16 +183,14 @@ describe('toolbar New', () => {
     expect(onOpenFile).toHaveBeenCalledWith(PARKED)
   })
 
-  // The `inFolder` seed still DERIVES (`newNote.test.ts` pins it) — it just no longer places the
-  // note: inside a folder page the settings' `folder` decides, and the toolbar's New passes no
-  // name, so `createMember` keeps the `Untitled` scheme (`FolderPageContents.test.tsx`).
-  it('a single file.inFolder filter rides along in the seed but never places the note', async () => {
+  // The note is born in the folder being viewed, and the toolbar's New passes no name, so
+  // `createInFolder` keeps the `Untitled` scheme (`FolderView.test.tsx`).
+  it('a file.inFolder filter seeds nothing and never places the note', async () => {
     const { el } = mount(FOLDER_TABLE)
 
     click(byLabel(el, 'New note'))
 
-    expect(create.mock.calls[0][0].folder).toBe('Content Pillars/1. Agentic Agency')
-    expect(create.mock.calls[0][1]).toBeUndefined()
+    expect(create.mock.calls[0]).toEqual([{ properties: {} }, undefined])
   })
 
   it('a failed create shows an inline error and opens nothing', async () => {
@@ -271,6 +269,60 @@ describe('New inside a group', () => {
   })
 })
 
+// ---------- Grouped by Folder: the group "+" is born in that folder ----------
+
+const BY_FOLDER = (type: string, inner = ''): string => `views:
+  - type: ${type}
+    name: V
+    order:
+      - file.name
+    groupBy:
+      - property: file.folder
+${inner}`
+
+const AGENTIC_FOLDER = 'Content Pillars/1. Agentic Agency'
+
+describe('the "+" on a group header when the view is grouped by Folder (`file.folder`)', () => {
+  it.each(['table', 'board', 'cards', 'list'])('a %s: the create is handed that group\'s folder, and no property is seeded', (type) => {
+    const { el } = mount(BY_FOLDER(type))
+
+    click(byLabel(el, `New note in group ${AGENTIC_FOLDER}`))
+
+    expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: AGENTIC_FOLDER }, undefined])
+  })
+
+  it('a board column\'s inline "New card" is born there too, under its typed name', () => {
+    const { el } = mount(BY_FOLDER('board'))
+    const column = [...el.querySelectorAll<HTMLElement>('.view-board__col')].find((c) => q(c, '.view-group__value').textContent === AGENTIC_FOLDER)!
+
+    click(byLabel(column, 'New card'))
+    const input = byLabel<HTMLInputElement>(column, 'New card name')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'Ship it')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+
+    expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: AGENTIC_FOLDER }, 'Ship it'])
+  })
+
+  it('an inner "+" under a Folder outer seeds its own property and is born in the outer\'s folder', () => {
+    const { el } = mount(BY_FOLDER('table', '      - property: note.status\n'))
+
+    click(q(el, '[aria-label="New note in group idea"]')) // the first `idea`: Agentic Agency's
+
+    expect(create.mock.calls[0]).toEqual([{ properties: { status: 'idea' }, folder: AGENTIC_FOLDER }, undefined])
+  })
+
+  it('the "No value" group — the vault root\'s notes — names no folder', () => {
+    const { el } = mount(BY_FOLDER('table'))
+
+    click(byLabel(el, 'New note in group No value'))
+
+    expect(create.mock.calls[0]).toEqual([{ properties: {} }, undefined])
+  })
+})
+
 // ---------- Fan-out: the group "+" seeds its own element (YAZ-671 D4) ----------
 
 const STATUS_BOARD = `views:
@@ -307,6 +359,15 @@ describe('the group "+" under fan-out (YAZ-671 D4)', () => {
 
     click(byLabel(el, 'New note in group [[Lead Gen]]'))
     expect(seed()).toEqual({ status: ['[[Lead Gen]]'] })
+  })
+
+  it('seeds an id link element as the stored `[[id]]`, though its group is headed by the title (YAZ-2293 D8)', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = [listRec('spans', [`[[${ID}]]`, '[[Sales]]']), { ...listRec('Lead Gen', []), id: ID }]
+    const { el } = mount(STATUS_BOARD, { records, folder: testFolderHost({ create, vaultRecords: records }) })
+
+    click(byLabel(el, 'New note in group [[Lead Gen]]'))
+    expect(seed()).toEqual({ status: [`[[${ID}]]`] })
   })
 
   it('the "No value" group still seeds nothing when the grouping is fanned out', () => {

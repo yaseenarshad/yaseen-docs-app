@@ -3,7 +3,7 @@
  * app menu, and the menu with the sidebar collapsed — when there is no cog to click), the nav's
  * order and its divider, search narrowing the page to hits under breadcrumbs, the two-stage
  * Escape, the three ways out, the Hotkeys page swap, and a change surviving close → reopen.
- * theme.spec.ts / contentWidth.spec.ts / sync.spec.ts each prove ONE setting's effect on the app;
+ * theme.spec.ts / contentWidth.spec.ts each prove ONE setting's effect on the app;
  * this spec proves the frame those rows sit in. Same harness as smoke.spec.ts: temp
  * `--user-data-dir`, a COPY of a generated fixture vault, `settings-` step screenshots. Serial:
  * one launch, each step continuing the last one's state.
@@ -16,8 +16,8 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 
 test.describe.configure({ mode: 'serial' })
 
-/** The nav as the registry orders it (registry.tsx): four scroll sections, a divider, the one standalone page. */
-const NAV_ORDER = ['Appearance', 'Editor', 'Files & Links', 'Sync', '—', 'Hotkeys'] as const
+/** The nav as the registry orders it (registry.tsx): five scroll sections, a divider, the one standalone page. */
+const NAV_ORDER = ['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 

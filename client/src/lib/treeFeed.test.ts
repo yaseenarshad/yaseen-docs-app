@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { STALE_FLIGHT_MS, type TreeResponse } from '@shared/types'
-import { currentTurn, fetchTree, onTree, treeSentSince } from './treeFeed'
+import { currentTurn, fetchTree, latestTree, onTree, treeSentSince } from './treeFeed'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -66,6 +66,18 @@ describe('the tree feed (YAZ-2191)', () => {
     held[2].answer(response(3))
     await nextTurn()
     expect(seen).toHaveLength(2) // unsubscribed
+  })
+
+  it('latestTree: null before the first answer, then the newest tree delivered — a failure keeps the last one (YAZ-2290 D3)', async () => {
+    expect(latestTree(root)).toBeNull()
+    const first = fetchTree(root)
+    held[0].answer(response(1))
+    await first
+    expect(latestTree(root)).toEqual(response(1))
+    const second = fetchTree(root).catch(() => undefined)
+    held[1].fail(new Error('gone'))
+    await second
+    expect(latestTree(root)).toEqual(response(1))
   })
 
   it('treeSentSince: a request sent in the turn of an event, before or after it was seen, covers it', async () => {
