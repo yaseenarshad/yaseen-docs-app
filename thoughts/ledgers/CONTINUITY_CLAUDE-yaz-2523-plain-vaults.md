@@ -38,7 +38,8 @@ The record is two comments there: "Locked decisions and the scenario record" (V1
   - [x] 7E1: every row of the record mapped to a test (294 files, 5,364 tests)
   - [x] 7E2: walk-through on the running app, driven over its debugging port; scratch vaults at `~/Desktop/yaz-2523-demo/`
   - [x] 7E3: docs (`docs/CONTRACTS.md` "Two kinds of vault", `docs/REGRESSION.md` K1 to K7, `README.md`)
-- Now: [→] 7E4: pull request, merge, close out
+  - [x] 7E4: merged as pull request #92 (`a3e3bfa`), CI green. No release cut.
+- Now: closed.
 - Remaining:
   - [ ] Yaseen's own look at the box's wording (the demo is ready; a wording change is a small follow-up)
   - [ ] Playwright was not run (not allowed). Its fixture vault needs `.yaseendocs/ids.json` saying yes, as the unit fixture got, the next time it is.
@@ -49,6 +50,7 @@ The record is two comments there: "Locked decisions and the scenario record" (V1
 
 ## Working Set
 
-- Branch `yaz-2523-plain-vaults`, worktree `.claude/worktrees/yaz-2523-plain-vaults`, from `main` at `d73a532`. `npm ci` was run inside it.
+- The branch and its worktree are removed; the work is on `main`.
+- The walk-through's scratch vaults and `open.sh` are in `~/Desktop/yaz-2523-demo/` (the dev build runs from the main checkout's `desktop/out`).
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; issue writing follows `growprofitai/_code-wiki/Linear-Simpler`.
