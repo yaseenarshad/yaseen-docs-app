@@ -7,6 +7,7 @@ const record: FileRecordLike = {
   path: 'Required Reading/Textbook Notes.md',
   name: 'Textbook Notes.md',
   basename: 'Textbook Notes',
+  title: 'Textbook Notes',
   folder: 'Required Reading',
   ext: 'md',
   size: 1234,

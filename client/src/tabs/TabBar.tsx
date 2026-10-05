@@ -4,8 +4,8 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { agentPage, copyForAgent } from '../lib/copyForAgent'
 import { copyNoteId } from '../lib/copyNoteId'
-import { pageLabel, useFolderPaths } from '../lib/pageLabel'
-import { basename } from '../lib/paths'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { pageLabel, useFolderPaths, usePathTitles } from '../lib/pageLabel'
 import { SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './tabs.css'
@@ -47,6 +47,8 @@ export interface TabBarProps {
    * note with none and for every file that is not a note, and the item is then not offered.
    */
   noteId?: (path: string) => string | undefined
+  /** The window's index snapshot (YAZ-2420 🔒 D14): a tab is labelled with its page's title. Absent, with its file name. */
+  indexSource?: WikilinkResolveSource
   /**
    * The review toggle (YAZ-2322), the sidebar row's item on a tab: whether a path is in review —
    * null for anything that is not a note in the index — and the write. App's, like the row's.
@@ -78,7 +80,7 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, noteId, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, noteId, indexSource, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -89,6 +91,8 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
   const menuId = menu?.id
   const activeRef = useRef<HTMLDivElement | null>(null)
   const isFolder = useFolderPaths(root)
+  const titles = usePathTitles(indexSource)
+  const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
 
   // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
   // tab fully into view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
@@ -193,7 +197,7 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
       >
         {tabs.map((path, i) => {
           const isActive = path === active
-          const label = pageLabel(path, isFolder(path))
+          const label = labelOf(path)
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
           if (drag !== null && drag.from === i) cls.push('tabbar__tab--dragging')
@@ -342,10 +346,10 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
               {menu.review ? 'Turn review off' : 'Turn review on'}
             </button>
           )}
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${basename(menu.path)}" — it is no longer there`, "Can't reveal")}>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${labelOf(menu.path)}" — it is no longer there`, "Can't reveal")}>
             Reveal in Finder
           </button>
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${basename(menu.path)}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${labelOf(menu.path)}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
             Open in VS Code
           </button>
         </ContextMenuSurface>

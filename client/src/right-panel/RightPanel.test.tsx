@@ -1,6 +1,8 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { RightPanel, type RightPanelProps } from './RightPanel'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
@@ -63,6 +65,14 @@ describe('RightPanel', () => {
     expect(el.querySelector<HTMLButtonElement>('[aria-label="Forward in right panel"]')?.disabled).toBe(true)
     expect(el.querySelectorAll('[data-viewer]')).toHaveLength(1)
     expect(el.querySelector('[role="separator"]')?.getAttribute('aria-valuenow')).toBe('440')
+  })
+
+  it('E: a page is headed with its title; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ path: '/v/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord])
+    const el = mount({ ...base(), items: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/Beta.md'], expanded: null, indexSource })
+    expect([...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)).toEqual(['UP-001 - Abdul', 'Beta'])
+    expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {

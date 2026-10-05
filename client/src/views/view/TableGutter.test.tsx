@@ -113,6 +113,7 @@ const rec = (name: string, properties: Record<string, unknown>): IndexRecord => 
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties,
 })
 

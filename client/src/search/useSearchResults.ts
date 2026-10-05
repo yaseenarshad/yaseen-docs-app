@@ -2,9 +2,9 @@
  * The search bar's results (YAZ-803): one index snapshot per root, kept current by the watcher,
  * ranked per keystroke by `searchTitles`. No debounce — the ranking scan is synchronous over
  * title-scale data (guarded by `searchCandidates.perf.test.ts`). Since YAZ-1491 the list also
- * carries the tree's FOLDERS (🔒 D1): `dirs` is the Sidebar's own `allDirs` memo — no second
- * feed, no extra read — spliced in FIRST so a folder sits above a note it ties with (tree order:
- * dirs before files).
+ * carries the tree's FOLDERS (🔒 D1): `dirs` is the Sidebar's own `allDirs` memo, named by the
+ * Sidebar's own `titles` (YAZ-2420 🔒 D14) — no second feed, no extra read — spliced in FIRST so a
+ * folder sits above a note it ties with (tree order: dirs before files).
  *
  * The feed is LAZY (F1 finding 1, YAZ-808). The ALWAYS-ON per-window index feed is
  * WikilinkIndexBridge's; search must not duplicate it in every window for a bar nobody typed
@@ -15,9 +15,10 @@ import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
+import type { PathTitles } from '../lib/pageLabel'
 import { folderCandidates, searchCandidates, searchTitles, type SearchCandidate } from './searchCandidates'
 
-export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[]): SearchCandidate[] {
+export function useSearchResults(root: string, watch: WatchSource, query: string, dirs: readonly string[], titles: PathTitles): SearchCandidate[] {
   const [records, setRecords] = useState<readonly IndexRecord[]>([])
   // Latched by the first non-empty query and never unlatched: after that the snapshot stays warm
   // and watch-fresh for the rest of this component's life, so clearing the bar and typing again
@@ -60,7 +61,7 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
     }
   }, [root, watch, activated])
 
-  const folderRows = useMemo(() => folderCandidates(root, dirs), [root, dirs])
+  const folderRows = useMemo(() => folderCandidates(root, dirs, titles), [root, dirs, titles])
   const noteRows = useMemo(() => searchCandidates(records), [records])
   const candidates = useMemo(() => [...folderRows, ...noteRows], [folderRows, noteRows])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the

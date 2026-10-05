@@ -5,7 +5,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IndexRecord } from '@shared/types'
 import { PageTitle } from './PageTitle'
+import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -20,7 +22,7 @@ afterEach(() => {
 
 const PATH = '/vault/Docs/Old Note.md'
 
-function mount(opts: { path?: string } = {}) {
+function mount(opts: { path?: string; kind?: 'file' | 'dir'; source?: WikilinkResolveSource } = {}) {
   const onRename = vi.fn()
   const onNotice = vi.fn()
   const onArrowDown = vi.fn()
@@ -29,7 +31,7 @@ function mount(opts: { path?: string } = {}) {
   root = createRoot(container)
   act(() =>
     root?.render(
-      <PageTitle path={opts.path ?? PATH} onRename={onRename} onNotice={onNotice} onArrowDown={onArrowDown} />,
+      <PageTitle path={opts.path ?? PATH} kind={opts.kind} source={opts.source} onRename={onRename} onNotice={onNotice} onArrowDown={onArrowDown} />,
     ),
   )
   return { el: container, onRename, onNotice, onArrowDown }
@@ -58,6 +60,14 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     const { el } = mount()
     expect(heading(el)?.textContent).toBe('Old Note')
     expect(input(el)).toBeNull()
+  })
+
+  it('E: the page title shows the note\'s title, and a folder\'s page its folder\'s (YAZ-2420 D14)', () => {
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [{ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord], [{ path: '/vault/Docs/.folder.md', title: 'Upwork 2026' } as IndexRecord])
+    expect(heading(mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', source }).el)?.textContent).toBe('UP-001 - Abdul')
+    act(() => root?.unmount())
+    expect(heading(mount({ path: '/vault/Docs', kind: 'dir', source }).el)?.textContent).toBe('Upwork 2026')
   })
 
   it('a click swaps the heading for an input prefilled with the current name', () => {

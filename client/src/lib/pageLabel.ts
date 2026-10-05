@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { basename, stripExt } from './paths'
+import type { IndexRecord } from '@shared/types'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { basename, dirname, stripExt } from './paths'
 import { fetchTree, latestTree, onTree } from './treeFeed'
 import { findDirNode, treeHasFile } from './treeState'
 
@@ -12,11 +14,56 @@ export function isFolderPath(root: string | null, path: string): boolean {
   return tree !== null && findDirNode(tree.tree, path) !== null
 }
 
+/** Every note's and folder's title by its absolute path, a folder's by its directory's (YAZ-2420 🔒 D14). */
+export type PathTitles = ReadonlyMap<string, string>
+
+const titlesCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], PathTitles>>()
+
 /**
- * A tab path as a NAME, wherever one is shown: the tab strip, the right panel, the window title.
- * A file hides Markdown's extension; a folder's label is its whole name (YAZ-2290).
+ * The index snapshot as `PathTitles`: a folder's record is its `.folder.md`, so its directory is the
+ * key. Built once per snapshot — keyed by the identity of its two arrays, as `rowsByFolder` is —
+ * because every rendered id link, each label holder and each notice asks.
  */
-export const pageLabel = (path: string, folder: boolean): string => (folder ? basename(path) : stripExt(basename(path)))
+export function pathTitles(records: readonly IndexRecord[], folders: readonly IndexRecord[]): PathTitles {
+  let byFolders = titlesCache.get(records)
+  if (byFolders === undefined) titlesCache.set(records, (byFolders = new WeakMap()))
+  let titles = byFolders.get(folders)
+  if (titles === undefined) {
+    const built = new Map<string, string>()
+    for (const record of records) built.set(record.path, record.title)
+    for (const folder of folders) built.set(dirname(folder.path), folder.title)
+    byFolders.set(folders, (titles = built))
+  }
+  return titles
+}
+
+/**
+ * A path as a NAME, wherever one is shown: its title (YAZ-2420 🔒 D14). A path the index does not
+ * hold (not loaded yet, a PDF, an image, a folder with no settings file) shows its file name: a
+ * file hides Markdown's extension; a folder's label is its whole name (YAZ-2290).
+ */
+export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : stripExt(basename(path)))
+
+const NO_TITLES: PathTitles = new Map()
+
+/**
+ * The source's `PathTitles`, live. A snapshot that changed no title keeps the Map it had, so a save
+ * elsewhere in the vault re-renders nothing that shows a name (YAZ-2194). No source is no titles.
+ */
+export function usePathTitles(source: WikilinkResolveSource | undefined): PathTitles {
+  const [titles, setTitles] = useState(() => (source === undefined ? NO_TITLES : pathTitles(source.records, source.folders)))
+  useEffect(() => {
+    if (source === undefined) return
+    const read = () =>
+      setTitles((prev) => {
+        const next = pathTitles(source.records, source.folders)
+        return next.size === prev.size && [...next].every(([path, title]) => prev.get(path) === title) ? prev : next
+      })
+    read()
+    return source.subscribe(read)
+  }, [source])
+  return titles
+}
 
 /** The subscribe half of both hooks below: a tree for `root` landed. */
 const useTreeLanded = (root: string) => useCallback((poke: () => void) => onTree(root, poke), [root])

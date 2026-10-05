@@ -17,13 +17,17 @@ import { EMPTY_SELECTION } from '../lib/selection'
 import { storage } from '../lib/storage'
 
 /**
- * File-row render counter (YAZ-2194): every file row renders its label through `stripExt`, so the
+ * File-row render counter (YAZ-2194): every file row renders its label through `pageLabel`, so the
  * REAL function behind a counting wrapper tells which rows a change re-rendered.
  */
 const labelRenders = vi.hoisted(() => ({ names: [] as string[] }))
-vi.mock('../lib/paths', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../lib/paths')>()
-  return { ...real, stripExt: (name: string) => (labelRenders.names.push(name), real.stripExt(name)) }
+vi.mock('../lib/pageLabel', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/pageLabel')>()
+  const pageLabel: typeof real.pageLabel = (path, folder, titles) => {
+    if (!folder) labelRenders.names.push(path.slice(path.lastIndexOf('/') + 1))
+    return real.pageLabel(path, folder, titles)
+  }
+  return { ...real, pageLabel }
 })
 
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
@@ -697,7 +701,7 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
 
   it('reports one passive notice when the loaded Files tree cannot show the path', async () => {
     const { props } = await mount({ revealRequest: { id: 1, path: '/v/Missing.md' } }, withDeepTree)
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing.md" in Files — it is no longer there', 'error')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing" in Files — it is no longer there', 'error')
   })
 })
 
@@ -861,6 +865,14 @@ describe('delete (GRO-2272)', () => {
     expect(itemByLabel(d.el, 'Delete')).toBeDefined()
     const b = await openOn('.sidebar__body')
     expect(itemByLabel(b.el, 'Delete')).toBeUndefined()
+  })
+
+  it('E: the confirm sheet names the note by its title (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }])
+    const { el } = await openOn('.tree__row--file', { indexSource })
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)?.querySelector('.confirm__text')?.textContent).toBe('Delete "UP-001 - Abdul"? It moves to the Trash.')
   })
 
   it('clicking Delete opens the confirm sheet and deletes NOTHING yet', async () => {
@@ -1029,6 +1041,17 @@ describe('reveal in Finder (GRO-2274)', () => {
     expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('no longer there'), 'error')
   })
 
+  it('E: the stale-row notice names the note by its title (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }])
+    const { el, bridge, props } = await mount({ indexSource })
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    bridge.shell.reveal.mockRejectedValue(Object.assign(new Error('path does not exist'), { code: 'NOT_FOUND' }))
+    await clickSubAsync(el, 'Reveal in Finder')
+    await act(async () => undefined)
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t reveal "UP-001 - Abdul" — it is no longer there', 'error')
+  })
+
   it('closes the menu after revealing', async () => {
     const { el } = await openOn('.tree__row--file')
     clickSub(el, 'Reveal in Finder')
@@ -1127,7 +1150,7 @@ describe('persistent search bar (YAZ-801)', () => {
  */
 describe('search results (YAZ-803)', () => {
   const record = (basename: string, folder = '') => ({
-    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, folder, ext: 'md',
+    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, title: basename, folder, ext: 'md',
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
@@ -1425,6 +1448,13 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(note.classList.contains('search-results__row--dir')).toBe(false)
   })
 
+  it('E: a folder is found and shown by its title, off the window\'s index (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [], [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }])
+    const { el } = await search('upwork', { indexSource })
+    expect(dirResult(el)?.getAttribute('aria-label')).toBe('Search result Upwork 2026, folder')
+  })
+
   it('Enter on a folder in the search results opens the folder\'s page as a tab, exactly as a note hit opens the note — nothing is revealed', async () => {
     const { el, input, props } = await search('sub')
     expect(dirResult(el)?.classList.contains('search-results__row--active')).toBe(true)
@@ -1536,7 +1566,7 @@ describe('folder rows in search (YAZ-1491)', () => {
  */
 describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
   const record = (basename: string, folder = '') => ({
-    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, folder, ext: 'md',
+    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, title: basename, folder, ext: 'md',
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
@@ -3254,7 +3284,18 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     rightClick(rowByPath(el, '/v/a.md'))
     await act(async () => itemByLabel(el, 'Paste 2 items')?.click())
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v' })
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note.md — already exists', 'paste')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Pasted 1 item, skipped 1: Note — already exists', 'paste')
+  })
+
+  it('E: a paste that fails names the note by its title (YAZ-2420 D14)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }])
+    const { el, bridge, props } = await mount({ indexSource }, withClipboard)
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [], failed: [{ from: '/v/a.md', code: 'ALREADY_EXISTS', message: 'already exists' }] })
+    act(() => pushClip?.(clipOf('copy', '/v/a.md')))
+    rightClick(rowByPath(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: UP-001 - Abdul — already exists", 'error')
   })
 
   it('nothing pasted → "Couldn\'t paste: …"; a rejected paste → a notice, never a throw', async () => {
@@ -3263,7 +3304,7 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     act(() => pushClip?.(clipOf('copy', '/w/x.md')))
     rightClick(body(el))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
-    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: Note.md — gone", 'error')
+    expect(props.onNotice).toHaveBeenLastCalledWith("Couldn't paste: Note — gone", 'error')
     bridge.file.paste.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'target dir is gone' })
     rightClick(body(el))
     await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
@@ -3510,6 +3551,39 @@ describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
   })
 })
 
+/** Every row is labelled with its title, looked up in the window's index (YAZ-2420 🔒 D15); the tree itself stays a directory listing. */
+describe('tree rows show the title (YAZ-2420 D15)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const ABDUL = '/v/upwork/up-001-abdul-k3m9x2pq7abc.md'
+  const TITLED: TreeNode[] = [{ type: 'dir', name: 'upwork', path: '/v/upwork', children: [file('/v/upwork/plan.md'), { type: 'file', name: 'scan.pdf', path: '/v/upwork/scan.pdf', size: 1, mtime: 1, kind: 'pdf' }, file(ABDUL)] }]
+  const RECORDS = [indexRecord('/v/upwork/plan.md'), { ...indexRecord(ABDUL), title: 'UP-001 - Abdul' }]
+  const FOLDERS = [{ ...indexRecord('/v/upwork/.folder.md'), title: 'Upwork 2026' }]
+  const labels = (el: HTMLElement) => [...el.querySelectorAll('.tree__label')].map((label) => label.textContent)
+  const mountTitled = async (indexSource = createWikilinkResolveSource()) => {
+    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/upwork'])
+    const mounted = await mount({ indexSource }, (bridge) => bridge.tree.mockResolvedValue({ root: '/v', tree: TITLED, generatedAt: 1 }))
+    return { ...mounted, indexSource }
+  }
+
+  it('E: before the index has loaded a row shows its file name, then its title — a file that is no note keeps its name', async () => {
+    const { el, indexSource } = await mountTitled()
+    expect(labels(el)).toEqual(['upwork', 'plan', 'scan.pdf', 'up-001-abdul-k3m9x2pq7abc'])
+    act(() => indexSource.update(() => null, RECORDS, FOLDERS))
+    expect(labels(el)).toEqual(['Upwork 2026', 'plan', 'scan.pdf', 'UP-001 - Abdul'])
+  })
+
+  it('a snapshot that changes no title re-renders no row; one that changes a title re-renders them', async () => {
+    const indexSource = createWikilinkResolveSource()
+    act(() => indexSource.update(() => null, RECORDS, FOLDERS))
+    await mountTitled(indexSource)
+    labelRenders.names = []
+    act(() => indexSource.update(() => null, RECORDS.map((r) => ({ ...r, mtime: 2 })), FOLDERS))
+    expect(labelRenders.names).toEqual([])
+    act(() => indexSource.update(() => null, RECORDS.map((r) => (r.path === ABDUL ? { ...r, title: 'Renamed' } : r)), FOLDERS))
+    expect([...new Set(labelRenders.names)].sort()).toEqual(['plan.md', 'scan.pdf', 'up-001-abdul-k3m9x2pq7abc.md'])
+  })
+})
+
 /**
  * Shortcuts (YAZ-2290 D2): a note lives in one folder and also appears in another — its
  * `also_in` names that folder's id, the `id` of the folder's `.folder.md`. The folder row's menu
@@ -3531,7 +3605,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
     indexRecord('/v/Projects/Zeta.md'),
     indexRecord('/v/top.md'),
   ]
-  const FOLDERS: IndexRecord[] = [{ ...indexRecord('/v/Projects/.folder.md'), id: PROJECTS_ID }]
+  const FOLDERS: IndexRecord[] = [{ ...indexRecord('/v/Projects/.folder.md'), id: PROJECTS_ID, title: 'Projects' }]
   const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
   const rightClick = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
   const picker = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Find a note"]')
@@ -3573,6 +3647,13 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(rows.map((r) => r.querySelector('.shortcut-mark') !== null)).toEqual([false, true, false])
       expect(row(el, HEALTH)?.querySelector('.shortcut-mark')).toBeNull() // where it lives, it is a plain file row
       expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('3')
+    })
+
+    it('E: shows the note\'s title, as its real row does, and still stands in file-name order (YAZ-2420 D15)', async () => {
+      const { el, indexSource } = await mountLinked([PROJECTS_ID])
+      act(() => indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, title: 'Zz Top' } : r)), FOLDERS))
+      expect(row(el, HEALTH)?.textContent).toBe('Zz Top')
+      expect([...(row(el, '/v/Projects')?.closest('li')?.querySelectorAll('.tree__row--file') ?? [])].map((r) => r.textContent)).toEqual(['Alpha', 'Zz Top', 'Zeta'])
     })
 
     it('a click opens the REAL note, exactly as a file row does', async () => {

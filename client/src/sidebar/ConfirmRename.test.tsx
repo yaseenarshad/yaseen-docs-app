@@ -9,6 +9,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { ConfirmRename, isNameChange, renameConfirmMessage } from './ConfirmRename'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -48,13 +50,13 @@ afterEach(() => {
 const OLD = '/v/Old Note.md'
 const NEW = '/v/New Note.md'
 
-function mount(count: number, kind: 'file' | 'dir' = 'file') {
+function mount(count: number, kind: 'file' | 'dir' = 'file', indexSource?: WikilinkResolveSource) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmRename oldPath={OLD} newPath={NEW} kind={kind} count={count} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmRename oldPath={OLD} newPath={NEW} kind={kind} count={count} indexSource={indexSource} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -66,6 +68,13 @@ describe('ConfirmRename', () => {
   it('renders the LOCKED copy over PAGE names — basenames minus the extension, never file names', () => {
     const { el } = mount(2)
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note' to 'New Note'? Links in 2 notes will be updated.")
+  })
+
+  it('E: the rename sheet names the page by its title (YAZ-2420 D14)', () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ path: OLD, title: 'UP-001 - Abdul' } as IndexRecord])
+    const { el } = mount(0, 'file', indexSource)
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'New Note'? No other notes link to it.")
   })
 
   it('names a FOLDER whole: one called `Old Note.md` keeps its `.md` (YAZ-2290)', () => {

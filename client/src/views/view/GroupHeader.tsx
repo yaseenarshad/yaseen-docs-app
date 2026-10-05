@@ -41,7 +41,7 @@ export function summaryKindOf(view: ViewDef, key: string): string | undefined {
 /** One value inside a list / link cell (shared with TableView's cells); through `resolve`, an id link reads as its note's title (`linkText`, YAZ-2293 D8). */
 export function chip(v: Value, key?: number, resolve?: Resolver) {
   const link = v instanceof LinkValue || v instanceof FileValue
-  const text = v instanceof LinkValue ? linkText(v, resolve) : v instanceof FileValue ? v.record.basename : render(v, resolve)
+  const text = v instanceof LinkValue ? linkText(v, resolve) : v instanceof FileValue ? v.record.title : render(v, resolve)
   return (
     <span key={key} className={`view-table__chip${link ? ' view-table__chip--link' : ''}`} title={text}>
       {text}
@@ -50,11 +50,11 @@ export function chip(v: Value, key?: number, resolve?: Resolver) {
 }
 
 /**
- * The page's TITLE wherever a skin shows its `file.name` column (YAZ-1513/1549): the basename, never
- * the file name — one spelling for the table's name cell, the board's card title, the card's title
- * and the list's primary. `file.name`'s VALUE keeps its extension for sort and filter; only what
- * the eye reads is the name. A row that is in the folder by a SHORTCUT (YAZ-2290 D2) wears the mark
- * after it — here, so every skin marks it alike.
+ * The page's TITLE wherever a skin shows its `file.name` column (YAZ-1513/1549): the record's
+ * `title` (YAZ-2420 🔒 D14), never the file name — one spelling for the table's name cell, the
+ * board's card title, the card's title and the list's primary. `file.name`'s VALUE keeps its
+ * extension for sort and filter; only what the eye reads is the name. A row that is in the folder
+ * by a SHORTCUT (YAZ-2290 D2) wears the mark after it — here, so every skin marks it alike.
  */
 export const rowTitle = (row: Row): ReactNode => <RowTitle row={row} />
 
@@ -65,7 +65,7 @@ function RowTitle({ row }: { row: Row }) {
   const folder = useContext(ViewFolder)
   return (
     <>
-      {row.record.basename}
+      {row.record.title}
       {folder !== null && isShortcut(row.record, folder) && <ShortcutIcon />}
     </>
   )

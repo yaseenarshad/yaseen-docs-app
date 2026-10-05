@@ -12,6 +12,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, WatchEvent } from '@shared/types'
 import type { WatchSource } from '../hooks/useWatch'
+import { pathTitles, type PathTitles } from '../lib/pageLabel'
 import { useSearchResults } from './useSearchResults'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -47,8 +48,10 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 /** The Sidebar's own `dirs` (🔒 D1, YAZ-1491): folder rows need no index read at all. */
 const NO_DIRS: readonly string[] = []
 
-function Harness({ watch, query, dirs = NO_DIRS }: { watch: WatchSource; query: string; dirs?: readonly string[] }) {
-  const results = useSearchResults('/v', watch, query, dirs)
+const NO_TITLES = pathTitles([], [])
+
+function Harness({ watch, query, dirs = NO_DIRS, titles = NO_TITLES }: { watch: WatchSource; query: string; dirs?: readonly string[]; titles?: PathTitles }) {
+  const results = useSearchResults('/v', watch, query, dirs, titles)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 

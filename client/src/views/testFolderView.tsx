@@ -14,7 +14,8 @@ export const rec = (path: string, properties: Record<string, unknown> = {}, mtim
     path,
     name,
     basename: name.replace(/\.md$/, ''),
-    title: name.replace(/\.md$/, ''),
+    // A folder's settings file is titled with the folder's own name, as the scan titles it.
+    title: name === '.folder.md' ? path.split('/').at(-2)! : name.replace(/\.md$/, ''),
     folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
     ext: 'md',
     size: 0,

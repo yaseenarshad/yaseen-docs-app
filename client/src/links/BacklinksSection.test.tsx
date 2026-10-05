@@ -229,10 +229,24 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B'])
   })
 
+  it('E: a referencing note and folder are listed by their titles, and the snippet shows the linked note\'s title (YAZ-2420 D14)', async () => {
+    const ID = 'k3m9x2pq7abc'
+    readFile.mockImplementation(async (path: string) => ({ path, content: `See [[${ID}]] for the details.\n`, mtime: 1, size: 1 }))
+    const el = mount()
+    feed(
+      [{ ...rec(A, { links: [ID] }), title: 'UP-001 - Abdul' }, { ...rec(B), id: ID, title: 'Bee Plan' }],
+      [{ ...rec('/vault/upwork-2026/.folder.md'), title: 'Upwork 2026', properties: { folder_settings: { views: [{ type: 'outline', name: 'Outline', outline: `- [[${ID}]]` }] } } }],
+    )
+    click(header(el)!)
+    await flush()
+    expect(notes(el).map((n) => n.textContent)).toEqual(['UP-001 - Abdul', 'Upwork 2026'])
+    expect(snippets(el).map((s) => s.textContent)).toEqual(['See Bee Plan for the details.', 'Bee Plan'])
+  })
+
   describe('links from folder pages', () => {
     const PROJECTS = '/vault/Projects'
     /** The folder Projects, whose settings hold `folder_settings`. */
-    const folder = (folder_settings: Record<string, unknown>, mtime = 1): IndexRecord => ({ ...rec(`${PROJECTS}/.folder.md`, { mtime }), properties: { folder_settings } })
+    const folder = (folder_settings: Record<string, unknown>, mtime = 1): IndexRecord => ({ ...rec(`${PROJECTS}/.folder.md`, { mtime }), title: 'Projects', properties: { folder_settings } })
     const OUTLINE = { views: [{ type: 'outline', name: 'Outline', outline: '- intro\n    - [[B]]' }] }
 
     it('a folder\'s outline has a link to a note: the note\'s Linked mentions lists the folder, by its name', async () => {

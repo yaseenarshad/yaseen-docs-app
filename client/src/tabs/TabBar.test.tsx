@@ -8,6 +8,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { TabBar, type TabBarProps } from './TabBar'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
@@ -54,6 +56,14 @@ describe('TabBar', () => {
     const tabsEls = [...el.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
     expect(tabsEls.map((t) => t.textContent)).toEqual(['Note', 'Plan'])
     expect(tabsEls.map((t) => t.title)).toEqual(['/v/Note.md', '/v/sub/Plan.markdown'])
+  })
+
+  it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ path: '/v/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord], [{ path: '/v/upwork/.folder.md', title: 'Upwork 2026' } as IndexRecord])
+    const el = mount({ tabs: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/upwork', '/v/scan.pdf'], active: '/v/scan.pdf', indexSource, ...noop, ...noNav })
+    expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['UP-001 - Abdul', 'Upwork 2026', 'scan.pdf'])
+    expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })
 
   it('a FOLDER tab is labelled with the folder name, dots and all (YAZ-2290 D3)', () => {
@@ -550,5 +560,19 @@ describe('tab menu OS actions (YAZ-963)', () => {
     })
     expect(onNotice).toHaveBeenCalledTimes(1)
     expect(String(onNotice.mock.calls[0][0])).toMatch(/no longer there|Can't reveal/i)
+  })
+
+  it('E: the stale-tab notice names the note by its title (YAZ-2420 D14)', async () => {
+    reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
+    const onNotice = vi.fn()
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ path: '/vault/A.md', title: 'UP-001 - Abdul' } as IndexRecord])
+    const el = mountWith({ onNotice, indexSource })
+    rightClick(tabAt(el, 0))
+    act(() => itemNamed(el, 'Reveal in Finder')?.click())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t reveal "UP-001 - Abdul" — it is no longer there')
   })
 })

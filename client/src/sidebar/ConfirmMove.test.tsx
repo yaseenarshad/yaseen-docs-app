@@ -6,6 +6,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IndexRecord } from '@shared/types'
+import { createWikilinkResolveSource, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { Move } from '../links/shortcuts'
 import { ConfirmMove, folderList, moveConfirmMessage, removeShortcutConfirmMessage } from './ConfirmMove'
 
@@ -55,13 +57,13 @@ afterEach(() => {
 const NOTE: Move = { oldPath: '/v/Hiring/Fiverr/Zain Shah.md', newPath: '/v/z.ARCHIVE/Zain Shah.md', kind: 'file' }
 const LOST = { notes: 1, folders: ['/v/Hiring/Fiverr', '/v/Hiring'] }
 
-function mount(ask: { moves: readonly Move[] } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST) {
+function mount(ask: { moves: readonly Move[] } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST, indexSource?: WikilinkResolveSource) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmMove {...ask} lost={lost} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmMove {...ask} lost={lost} indexSource={indexSource} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -74,6 +76,15 @@ describe('ConfirmMove', () => {
   it('names the note without its `.md`, and the destination and the folders by their directory names', () => {
     const { el } = mount()
     expect(text(el)).toBe("Move 'Zain Shah' to 'z.ARCHIVE'? Its values for Fiverr and Hiring will be cleared.")
+  })
+
+  it('E: the move sheet names the note, the destination and the folders by their titles (YAZ-2420 D14)', () => {
+    const indexSource = createWikilinkResolveSource()
+    const titled = (path: string, title: string) => ({ path, title }) as IndexRecord
+    indexSource.update(() => null, [titled(NOTE.oldPath, 'FV-001 - Zain Shah')], [titled('/v/z.ARCHIVE/.folder.md', 'Archive'), titled('/v/Hiring/Fiverr/.folder.md', 'Fiverr 2026')])
+    expect(text(mount(undefined, undefined, indexSource).el)).toBe("Move 'FV-001 - Zain Shah' to 'Archive'? Its values for Fiverr 2026 and Hiring will be cleared.")
+    act(() => root?.unmount())
+    expect(text(mount({ shortcut: { path: NOTE.oldPath, dir: '/v/z.ARCHIVE' } }, { notes: 1, folders: ['/v/z.ARCHIVE'] }, indexSource).el)).toBe("Remove the shortcut from 'Archive'? The values of 'FV-001 - Zain Shah' for Archive will be cleared.")
   })
 
   it('names a FOLDER whole: one called `2026.md` keeps its `.md`', () => {

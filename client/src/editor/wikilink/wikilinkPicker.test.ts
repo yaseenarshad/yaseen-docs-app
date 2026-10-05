@@ -504,7 +504,7 @@ describe('wikilink picker: folders, by id (scenario K)', () => {
   /** The bridge's own composition: a note and a folder both named Projects, each with its id. */
   async function mountVault() {
     const records = [record('/vault/Projects.md', NOTE_ID)]
-    const folders = [record('/vault/Projects/.folder.md', FOLDER_ID)]
+    const folders = [{ ...record('/vault/Projects/.folder.md', FOLDER_ID), title: 'Projects' }]
     const resolve = linkResolver(records, '/vault', ['/vault/Projects'], folders)
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update(resolve, records, folders)

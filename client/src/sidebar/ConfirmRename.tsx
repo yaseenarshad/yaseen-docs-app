@@ -6,7 +6,8 @@
  * asks through `ConfirmMove` (D21). The sheet itself lands with YAZ-888; the
  * LOCKED copy lives here first, `deleteConfirmMessage`'s idiom, so the component stays trivial.
  */
-import { pageLabel } from '../lib/pageLabel'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { pageLabel, usePathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 
@@ -32,6 +33,8 @@ interface ConfirmRenameProps {
   kind: 'file' | 'dir'
   /** The honest N: `countLinkReferences` over the window's own index snapshot. */
   count: number
+  /** The window's index snapshot (YAZ-2420 🔒 D14): what the copy names, it names by title. Absent, by file name. */
+  indexSource?: WikilinkResolveSource
   onConfirm: () => void
   onCancel: () => void
 }
@@ -52,11 +55,12 @@ interface ConfirmRenameProps {
  * confirms before the user has read a word (the e2e caught exactly that). Bound here, the sheet
  * only ever hears keys from inside itself, which is where focus is: Cancel takes it on mount.
  */
-export function ConfirmRename({ oldPath, newPath, kind, count, onConfirm, onCancel }: ConfirmRenameProps) {
+export function ConfirmRename({ oldPath, newPath, kind, count, indexSource, onConfirm, onCancel }: ConfirmRenameProps) {
+  const titles = usePathTitles(indexSource)
   return (
     <ConfirmSheet
       labelId="confirm-rename-text"
-      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir'), pageLabel(newPath, kind === 'dir'), count)}
+      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), pageLabel(newPath, kind === 'dir', titles), count)}
       confirmLabel="Rename"
       keys="sheet"
       onConfirm={onConfirm}

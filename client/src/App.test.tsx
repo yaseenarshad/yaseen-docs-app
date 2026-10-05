@@ -28,6 +28,7 @@ interface SidebarStubProps {
   onFileMissing: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
+  onDeleteFile: (path: string) => Promise<void>
   pendingSearchFocus: boolean
   /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
   switcherOpenRequest: number
@@ -1187,6 +1188,28 @@ describe('App tabs (I2, GRO-2234)', () => {
     }
   })
 
+  it('E: the window title, the tab strip, the right panel, the rename sheet and a notice all name a page by its title, off the window\'s index (YAZ-2420 D14)', async () => {
+    const ABDUL = '/v/up-001-abdul-k3m9x2pq7abc.md'
+    const note = (path: string, title: string): IndexRecord => {
+      const name = path.slice(path.lastIndexOf('/') + 1)
+      return { path, name, basename: name.replace(/\.md$/i, ''), title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+    }
+    const { el, bridge } = await mount(
+      defaultAppState(),
+      { id: 'w1', root: '/v', file: ABDUL, tabs: [ABDUL, '/v/b.md'], rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' } },
+      {},
+      (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/b.md', 'b'), note('/v/c.md', 'Side Note'), note(ABDUL, 'UP-001 - Abdul')], folders: [], generatedAt: 1 }),
+    )
+    expect(document.title).toBe('UP-001 - Abdul — v')
+    expect(stripLabels(el)).toEqual(['UP-001 - Abdul', 'b'])
+    expect(el.querySelector('.right-panel__label')?.textContent).toBe('Side Note')
+    await act(async () => void captured.sidebar?.onRenameFile(ABDUL, '/v/renamed.md', 'file'))
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'renamed'? No other notes link to it.")
+    bridge.file.delete.mockRejectedValueOnce(new Error('boom'))
+    await act(async () => void captured.sidebar?.onDeleteFile(ABDUL))
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t move "UP-001 - Abdul" to the Trash — nothing was deleted')
+  })
+
   it('the active file vanishing on disk closes its tab; the neighbour takes over', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     act(() => captured.sidebar?.onFileMissing())
@@ -1448,7 +1471,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const snapshot = (noor: Record<string, unknown> = { in: { [TEAM]: { Rank: 2 }, [HIRING]: { Status: 'Interview' } } }) => ({
       root: '/v',
       records: [record(NOOR, { properties: noor }), record('/v/Team/Hiring/Plain.md'), record('/v/Team/Hiring/Lost.md', { properties: { in: { [GONE]: { Rank: 1 } } } })],
-      folders: [record('/v/Team/.folder.md', { id: TEAM }), record('/v/Team/Archive/.folder.md', { id: ARCHIVE }), record('/v/Team/Hiring/.folder.md', { id: HIRING })],
+      folders: [record('/v/Team/.folder.md', { id: TEAM, title: 'Team' }), record('/v/Team/Archive/.folder.md', { id: ARCHIVE, title: 'Archive' }), record('/v/Team/Hiring/.folder.md', { id: HIRING, title: 'Hiring' })],
       generatedAt: 1,
     })
     // The disk as it is once the rename has landed: the note is at its new place.

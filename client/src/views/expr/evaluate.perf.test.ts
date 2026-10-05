@@ -14,6 +14,7 @@ function record(i: number): FileRecordLike {
     path: `Library/${i % 7}/Note ${i}.md`,
     name: `Note ${i}.md`,
     basename: `Note ${i}`,
+    title: `Note ${i}`,
     folder: `Library/${i % 7}`,
     ext: i % 13 === 0 ? 'markdown' : 'md',
     size: i * 10,

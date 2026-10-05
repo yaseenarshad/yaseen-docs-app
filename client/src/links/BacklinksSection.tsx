@@ -27,7 +27,8 @@ import { isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { api } from '../api'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { basename, dirname } from '../lib/paths'
+import { pathTitles, type PathTitles } from '../lib/pageLabel'
+import { dirname } from '../lib/paths'
 import { backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
 import './backlinks.css'
 
@@ -67,6 +68,7 @@ export function BacklinksSection({ path, source, openCurrent, openBackground }: 
               record={record}
               target={path}
               resolve={feed.resolve}
+              titles={pathTitles(feed.records, feed.folders)}
               openCurrent={openCurrent}
               openBackground={openBackground}
             />
@@ -78,20 +80,23 @@ export function BacklinksSection({ path, source, openCurrent, openBackground }: 
 }
 
 /**
- * One referencing note: its name, then its mention lines — read from disk on mount (= on expand).
- * A referencing FOLDER (`record` is its settings file's) reads as the folder's name, opens the
+ * One referencing note: its title, then its mention lines — read from disk on mount (= on expand).
+ * A referencing FOLDER (`record` is its settings file's) reads as the folder's title, opens the
  * folder's page, and shows the lines of its outlines — off the index, with no read.
  */
 function BacklinkEntry({
   record,
   target,
   resolve,
+  titles,
   openCurrent,
   openBackground,
 }: {
   record: IndexRecord
   target: string
   resolve: ResolveLink | null
+  /** The snapshot's titles: what an id link in a snippet reads as. */
+  titles: PathTitles
   openCurrent: (path: string) => void
   openBackground?: (path: string) => void
 }) {
@@ -101,6 +106,8 @@ function BacklinkEntry({
   // record's own mtime is what says this note's mentions may have moved.
   const resolveRef = useRef(resolve)
   resolveRef.current = resolve
+  const titlesRef = useRef(titles)
+  titlesRef.current = titles
   const folder = isFolderSettingsPath(record.path)
   const page = folder ? dirname(record.path) : record.path
 
@@ -110,7 +117,7 @@ function BacklinkEntry({
     setSnippets(null)
     void api.readFile(record.path).then(
       (file) => {
-        if (!cancelled) setSnippets(mentionSnippets(file.content, target, resolveRef.current ?? (() => null)))
+        if (!cancelled) setSnippets(mentionSnippets(file.content, target, resolveRef.current ?? (() => null), titlesRef.current))
       },
       () => {
         if (!cancelled) setSnippets([]) // unreadable (gone, too large, …): the entry stands alone
@@ -120,7 +127,7 @@ function BacklinkEntry({
       cancelled = true
     }
   }, [folder, record.path, record.mtime, target])
-  const lines = useMemo(() => (folder ? folderMentionSnippets(record, target, resolve ?? (() => null)) : snippets), [folder, record, target, resolve, snippets])
+  const lines = useMemo(() => (folder ? folderMentionSnippets(record, target, resolve ?? (() => null), titles) : snippets), [folder, record, target, resolve, titles, snippets])
 
   const open = (event: React.MouseEvent): void => {
     if (event.metaKey && openBackground !== undefined) openBackground(page)
@@ -130,7 +137,7 @@ function BacklinkEntry({
   return (
     <li className="backlinks__entry">
       <button type="button" className="backlinks__note" title={page} onClick={open}>
-        {folder ? basename(page) : record.basename}
+        {record.title}
       </button>
       {lines === null ? (
         <div className="backlinks__skeleton" aria-hidden />

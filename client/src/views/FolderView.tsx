@@ -337,7 +337,7 @@ export function FolderView({
     // the table's sticky header finds the scroller it bridges to (YAZ-1151).
     <div className="editor-host">
       <div className="page-header">
-        <PageTitle path={path} kind="dir" onRename={(newPath) => onRenameFile?.(path, newPath, 'dir')} onNotice={onNotice} />
+        <PageTitle path={path} kind="dir" source={source} onRename={(newPath) => onRenameFile?.(path, newPath, 'dir')} onNotice={onNotice} />
         {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} />}
       </div>
       <section className="folder-view">

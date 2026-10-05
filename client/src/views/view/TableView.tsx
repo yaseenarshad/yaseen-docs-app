@@ -146,7 +146,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string; title: string; noteId: string | undefined } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -314,7 +314,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     })
 
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
-  const openRowMenu = (path: string, noteId: string | undefined) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
+  const openRowMenu = ({ path, title, id: noteId }: IndexRecord) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
@@ -322,7 +322,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     event.preventDefault()
     close()
     cell.focus()
-    setRowMenu({ x: event.clientX, y: event.clientY, path, noteId })
+    setRowMenu({ x: event.clientX, y: event.clientY, path, title, noteId })
   }
 
   /**
@@ -485,7 +485,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
                   // rather than replacing it (YAZ-1244): a card must never hang over a drag.
                   onDragStartCapture={close}
-                  onContextMenu={openRowMenu(line.row.record.path, line.row.record.id)}
+                  onContextMenu={openRowMenu(line.row.record)}
                 >
                   {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
                   {numbered && <td className="view-table__gutter">{line.n}</td>}
@@ -589,6 +589,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             x={rowMenu.x}
             y={rowMenu.y}
             path={rowMenu.path}
+            title={rowMenu.title}
             noteId={rowMenu.noteId}
             onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}
