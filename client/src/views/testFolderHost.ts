@@ -22,6 +22,7 @@ export function testFolderHost(over: Partial<FolderHost> = {}): FolderHost {
     settings: { columns: {}, views: [], problems: [] },
     vaultRecords: TEST_RECORDS,
     vaultFolders: [],
+    vaultName: 'vault',
     resolveLink: (target) => linkResolver(over.vaultRecords ?? TEST_RECORDS, '/vault', vaultDirs('/vault'), over.vaultFolders ?? [])(target),
     create: () => Promise.reject(new Error('this test did not expect a create')),
     setColumn: () => Promise.reject(new Error('this test did not expect a column definition write')),
