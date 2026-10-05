@@ -282,19 +282,21 @@ const BY_FOLDER = (type: string, inner = ''): string => `views:
 ${inner}`
 
 const AGENTIC_FOLDER = 'Content Pillars/1. Agentic Agency'
+/** The group's header (YAZ-2541): the folder is not under this page (`FOLDER_PATH`), so it keeps its own path as the key, headed by its directory name. */
+const AGENTIC_GROUP = '1. Agentic Agency'
 
 describe('the "+" on a group header when the view is grouped by Folder (`file.folder`)', () => {
   it.each(['table', 'board', 'cards', 'list'])('a %s: the create is handed that group\'s folder, and no property is seeded', (type) => {
     const { el } = mount(BY_FOLDER(type))
 
-    click(byLabel(el, `New note in group ${AGENTIC_FOLDER}`))
+    click(byLabel(el, `New note in group ${AGENTIC_GROUP}`))
 
     expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: AGENTIC_FOLDER }, undefined])
   })
 
   it('a board column\'s inline "New card" is born there too, under its typed name', () => {
     const { el } = mount(BY_FOLDER('board'))
-    const column = [...el.querySelectorAll<HTMLElement>('.view-board__col')].find((c) => q(c, '.view-group__value').textContent === AGENTIC_FOLDER)!
+    const column = [...el.querySelectorAll<HTMLElement>('.view-board__col')].find((c) => q(c, '.view-group__value').textContent === AGENTIC_GROUP)!
 
     click(byLabel(column, 'New card'))
     const input = byLabel<HTMLInputElement>(column, 'New card name')
@@ -315,12 +317,12 @@ describe('the "+" on a group header when the view is grouped by Folder (`file.fo
     expect(create.mock.calls[0]).toEqual([{ properties: { status: 'idea' }, folder: AGENTIC_FOLDER }, undefined])
   })
 
-  it('the "No value" group — the vault root\'s notes — names no folder', () => {
+  it('the vault root\'s notes are the VAULT\'s group, not "No value" (YAZ-2541): its "+" hands the root, which no page is under, so the host creates in its own folder', () => {
     const { el } = mount(BY_FOLDER('table'))
 
-    click(byLabel(el, 'New note in group No value'))
+    click(byLabel(el, 'New note in group vault'))
 
-    expect(create.mock.calls[0]).toEqual([{ properties: {} }, undefined])
+    expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: '' }, undefined])
   })
 })
 

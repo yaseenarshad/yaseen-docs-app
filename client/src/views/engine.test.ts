@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
-import { type ViewResult, basenameKey, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename, targetKey } from './engine'
+import { type ViewResult, basenameKey, defaultLabel, folderAt, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename, targetKey } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -451,6 +451,104 @@ describe('runView: nested group by (YAZ-745)', () => {
     const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'extra' }], recs)
     expect(r.groups![0].children![0].label).toBe('p')
     expect(r.groups![0].children![0].children).toBeUndefined()
+  })
+})
+
+describe('folderAt (YAZ-2541): the folder a Folder level groups by', () => {
+  it('one step below the page, two steps below it; the page itself when the folder is nearer than that', () => {
+    expect(folderAt('stages/archive/2019', 'stages', 1)).toBe('stages/archive')
+    expect(folderAt('stages/archive/2019', 'stages', 2)).toBe('stages/archive/2019')
+    expect(folderAt('stages/archive/2019/q1', 'stages', 2)).toBe('stages/archive/2019')
+    expect(folderAt('stages', 'stages', 1)).toBe('stages') // the page's own folder: its direct notes
+    expect(folderAt('stages/archive', 'stages', 2)).toBe('stages/archive') // nearer than two steps
+  })
+
+  it("a folder not under the page (a shortcut's home) is itself, whatever the depth", () => {
+    expect(folderAt('Sub', 'stages', 1)).toBe('Sub')
+    expect(folderAt('Sub/deep', 'stages', 2)).toBe('Sub/deep')
+    expect(folderAt('stagesX/y', 'stages', 1)).toBe('stagesX/y') // a prefix is not an ancestor
+  })
+
+  it("the root page ('') holds every folder: its first step is the top-level folder, a root note stays ''", () => {
+    expect(folderAt('a/b/c', '', 1)).toBe('a')
+    expect(folderAt('a/b/c', '', 2)).toBe('a/b')
+    expect(folderAt('', '', 1)).toBe('')
+  })
+})
+
+describe('runView: group by Folder under a page (YAZ-2541)', () => {
+  const at = (path: string) => {
+    const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder, properties: {} } as IndexRecord
+  }
+  /** The page `stages`: two direct notes, one in `archive`, one two steps down, one in `active`, and a shortcut living in `Sub`. */
+  const recs = [
+    at('stages/Lead Gen.md'),
+    at('stages/Sales.md'),
+    at('stages/archive/Old.md'),
+    at('stages/archive/2019/Older.md'),
+    at('stages/active/Now.md'),
+    at('Sub/Outsider.md'),
+  ]
+  /** The vault's folder settings records: `stages` and `archive` are titled; `active` and `Sub` have none. */
+  const folders = [
+    { ...at('stages/.folder.md'), title: 'Stages' },
+    { ...at('stages/archive/.folder.md'), title: 'Archive' },
+  ]
+  const page = { folder: 'stages', folders, vault: 'My Vault' }
+  const T = (groupBy: ViewDef['groupBy'], opts: Parameters<typeof runView>[3] = { page }) =>
+    runView({ views: [] }, { type: 'table', name: 'T', groupBy }, recs, opts)
+  const rowsOf = (g: { rows: { record: IndexRecord }[] }) => g.rows.map(x => x.record.basename)
+
+  it('one Folder level: a group per folder ONE step below the page, deeper notes rolled up into it; the direct notes under the page\'s own; a shortcut under its home', () => {
+    const r = T({ property: 'file.folder' })
+    expect(r.groups!.map(g => g.key)).toEqual(['stages', 'stages/active', 'stages/archive', 'Sub']) // keys stay paths, in the engine's order
+    expect(r.groups!.map(rowsOf)).toEqual([['Lead Gen', 'Sales'], ['Now'], ['Old', 'Older'], ['Outsider']])
+    expect(r.groups!.every(g => g.children === undefined)).toBe(true)
+  })
+
+  it('a Folder group is headed by its folder\'s TITLE; a folder with no settings record by its directory name', () => {
+    expect(labels(T({ property: 'file.folder' }))).toEqual(['Stages', 'active', 'Archive', 'Sub'])
+  })
+
+  it('Folder then Folder: the inner groups are the NEXT folder down; a subfolder\'s own notes sit directly under it (the merge rule)', () => {
+    const r = T([{ property: 'file.folder' }, { property: 'file.folder' }])
+    expect(labels(r)).toEqual(['Stages', 'active', 'Archive', 'Sub'])
+    const [stages, active, archive, sub] = r.groups!
+    expect(stages.direct!.map(x => x.record.basename)).toEqual(['Lead Gen', 'Sales'])
+    expect(stages.children).toEqual([])
+    expect(active.direct!.map(x => x.record.basename)).toEqual(['Now'])
+    expect(archive.direct!.map(x => x.record.basename)).toEqual(['Old'])
+    expect(archive.children!.map(c => [c.key, c.label, rowsOf(c)])).toEqual([['stages/archive/2019', '2019', ['Older']]])
+    expect(sub.direct!.map(x => x.record.basename)).toEqual(['Outsider'])
+    expect(sub.children).toEqual([])
+  })
+
+  it('a Folder level under another property groups one step below the page', () => {
+    const tagged = recs.map(r => ({ ...r, properties: { status: r.basename === 'Older' || r.basename === 'Sales' ? 'done' : 'open' } }))
+    const r = runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'status' }, { property: 'file.folder' }] }, tagged, { page })
+    expect(labels(r)).toEqual(['done', 'open'])
+    expect(r.groups![0].children!.map(c => [c.label, rowsOf(c)])).toEqual([['Stages', ['Sales']], ['Archive', ['Older']]])
+    expect(r.groups![1].children!.map(c => [c.label, rowsOf(c)])).toEqual([['Stages', ['Lead Gen']], ['active', ['Now']], ['Archive', ['Old']], ['Sub', ['Outsider']]])
+  })
+
+  it("a shortcut living in the vault ROOT is grouped under the vault, by its name, not under 'No value'; the homes of shortcuts come after the page's own folders in either direction", () => {
+    const run = (direction: 'ASC' | 'DESC') =>
+      runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'file.folder', direction } }, [...recs, at('Loose.md')], { page }).groups!.map(g => [g.key, g.label])
+    expect(run('ASC')).toEqual([['stages', 'Stages'], ['stages/active', 'active'], ['stages/archive', 'Archive'], ['', 'My Vault'], ['Sub', 'Sub']])
+    expect(run('DESC')).toEqual([['stages/archive', 'Archive'], ['stages/active', 'active'], ['stages', 'Stages'], ['Sub', 'Sub'], ['', 'My Vault']])
+  })
+
+  it("off a Folder level an empty string is still 'No value'", () => {
+    const blank = recs.map(r => ({ ...r, properties: { status: '' } }))
+    expect(labels(runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'status' } }, blank, { page }))).toEqual(['No value'])
+  })
+
+  it('without `page` the engine behaves as before: one group per whole folder path, headed by the path', () => {
+    const r = T({ property: 'file.folder' }, {})
+    expect(labels(r)).toEqual(['stages', 'stages/active', 'stages/archive', 'stages/archive/2019', 'Sub'])
+    expect(r.groups!.map(rowsOf)).toEqual([['Lead Gen', 'Sales'], ['Now'], ['Old'], ['Older'], ['Outsider']])
   })
 })
 
