@@ -12,9 +12,14 @@ describe('a title in kebab-case (YAZ-2420 D3)', () => {
     expect(kebabTitle('  What/Why: a "plan"?  ')).toBe('what-why-a-plan')
   })
 
-  it('treats an underscore as punctuation', () => {
+  it('treats an underscore as punctuation, but keeps the ones a title starts with', () => {
     expect(kebabTitle('09_12 - Mental Math')).toBe('09-12-mental-math')
-    expect(kebabTitle('_synthesis')).toBe('synthesis')
+    // A leading underscore holds a note at the top of a list sorted by name, so the name keeps it.
+    expect(kebabTitle('_synthesis')).toBe('_synthesis')
+    expect(kebabTitle('_PIPELINE-CONTEXT')).toBe('_pipeline-context')
+    expect(kebabTitle('  _Messaging & Scheduling')).toBe('_messaging-scheduling')
+    expect(kebabTitle('__draft__ notes_')).toBe('__draft-notes')
+    expect(kebabTitle('_')).toBe('') // no letter or digit: still nothing to name it by
   })
 
   it('drops accents and keeps the letter', () => {
@@ -45,6 +50,10 @@ describe('a title in kebab-case (YAZ-2420 D3)', () => {
 describe("a note's file name (YAZ-2420 D3)", () => {
   it('is the kebab-case title, then the id', () => {
     expect(noteFileName('UP-001 - Abdul Rehman R', 'k3m9x2pq7abc')).toBe('up-001-abdul-rehman-r-k3m9x2pq7abc.md')
+  })
+
+  it('keeps a leading underscore in front of the kebab-case title', () => {
+    expect(noteFileName('_PIPELINE-CONTEXT', 'k3m9x2pq7abc')).toBe('_pipeline-context-k3m9x2pq7abc.md')
   })
 
   it('is the id alone when the title has no letter or digit', () => {
