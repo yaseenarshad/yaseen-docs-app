@@ -118,6 +118,21 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE))).toBe(true)
   })
 
+  it('a no that arrives while the pass is running stops it: the note being written is finished, the rest are left as they are (YAZ-2523 V4)', async () => {
+    const records = await vault({ 'a.md': 'a\n', 'b.md': 'b\n', 'c.md': 'c\n' })
+    await mkdir(at('Projects'))
+    // The other writer here is the user, saying no in Settings just as the first note is read.
+    race.afterRead = async () => {
+      race.afterRead = undefined
+      await writeConfig(root, IDS_FILE, { enabled: false })
+    }
+    await sweepIds(root, records, [...records.values()], () => undefined, [at('Projects')])
+    expect(isNoteId(await idIn('a.md'))).toBe(true)
+    expect(await read('b.md')).toBe('b\n')
+    expect(await read('c.md')).toBe('c\n')
+    expect(await readdir(at('Projects'))).toEqual([])
+  })
+
   it('writes nothing in a vault that has not said yes: one that said no, one whose `.yaseendocs/` holds no answer, and a folder with no `.yaseendocs/` (YAZ-2523 V10)', async () => {
     const files = { 'README.md': '# readme\n', 'foreign.md': '---\nid: 42\n---\n' }
     const sweepAll = async () => {

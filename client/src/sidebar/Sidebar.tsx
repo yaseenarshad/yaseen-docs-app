@@ -616,8 +616,8 @@ export function Sidebar({
       // The index is only needed for the count, so it rides in asynchronously and the sheet
       // opens immediately. Failure leaves the line out; it never blocks or spins.
       api.index(root).then(
-        ({ records, folders }) => {
-          const n = countLinkReferences({ root, oldPath: path, kind, records, folders, dirs })
+        ({ records, folders, ids }) => {
+          const n = countLinkReferences({ ids, root, oldPath: path, kind, records, folders, dirs })
           setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
         },
         () => undefined,

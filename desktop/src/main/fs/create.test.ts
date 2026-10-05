@@ -205,10 +205,18 @@ describe('in a vault that does not use IDs, a create is what Finder would make (
   })
   afterAll(() => rm(plain, { recursive: true, force: true }))
 
-  it('a new folder is a directory and nothing else: no `.folder.md`, whatever title the request carries', async () => {
+  it('a new folder is a directory and nothing else: no `.folder.md`', async () => {
     const p = path.join(plain, 'Q3 Plans')
-    expect(await createDir({ path: p, title: 'Q3 Plans' }, false)).toEqual({ path: p })
+    expect(await createDir({ path: p }, false)).toEqual({ path: p })
     expect(await readdir(p)).toEqual([])
+  })
+
+  it('a request shaped for a vault that uses IDs — a folder with a `title`, a note with an `id` — is refused, and nothing is made: a window one answer behind writes nothing here', async () => {
+    const dir = path.join(plain, 'q3-plans')
+    const note = path.join(plain, 'linked-k3m9x2pq7abc.md')
+    expect(await code(createDir({ path: dir, title: 'Q3 Plans' }, false))).toBe('BAD_REQUEST')
+    expect(await code(createFile({ path: note, content: '---\ntitle: Linked\n---\n', id: 'k3m9x2pq7abc' }, false))).toBe('BAD_REQUEST')
+    expect((await readdir(plain)).filter((name) => name === 'q3-plans' || name === path.basename(note))).toEqual([])
   })
 
   it('a new note is empty, and the answer carries no id', async () => {
@@ -225,11 +233,6 @@ describe('in a vault that does not use IDs, a create is what Finder would make (
     expect(await readFile(path.join(plain, 'From template.md'), 'utf8')).toBe(content)
   })
 
-  it('an id in the request is not written', async () => {
-    const body = await createFile({ path: path.join(plain, 'Linked.md'), id: 'k3m9x2pq7abc' }, false)
-    expect(body.id).toBeUndefined()
-    expect(await readFile(path.join(plain, 'Linked.md'), 'utf8')).toBe('')
-  })
 
   it('a name that is taken is refused, and nothing is written', async () => {
     expect(await code(createFile({ path: path.join(plain, 'Meeting notes.md'), content: 'clobber' }, false))).toBe('ALREADY_EXISTS')
@@ -241,7 +244,6 @@ describe('in a vault that does not use IDs, a create is what Finder would make (
       'Q3 Plans/': '',
       'Meeting notes.md': '',
       'From template.md': '---\nid: k3m9x2pq7abc\ntitle: From the template\nstatus: idea\n---\n# Body\n',
-      'Linked.md': '',
     })
   })
 })

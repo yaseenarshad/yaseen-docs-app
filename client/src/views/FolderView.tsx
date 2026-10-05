@@ -5,7 +5,7 @@
  *  - ROWS (D4): the notes under the folder, at any depth — never a subfolder itself — plus its
  *    SHORTCUTS (D2, `links/shortcuts.ts`). Their links resolve through the whole vault.
  *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`. Born holding only the folder's id (D13),
- *    or missing where the vault is not adopted: either way the defaults (`folderSettings`) until
+ *    or missing where the vault does not use IDs: either way the defaults (`folderSettings`) until
  *    the first change, and opening writes NOTHING.
  *  - THE ADAPTER (🔒 D3, YAZ-819): ViewsPane stays ONE component. This host builds a def in memory
  *    from the settings' views and turns every def change back into ONE settings write
@@ -42,7 +42,7 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { dropStaleFolderValues, folderId, folderRecord, folderRows } from '../links/shortcuts'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
-import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
+import { folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { createNote } from './scaffold'
 import { writeFolderValues, writeProperties } from './writeProperty'
@@ -87,13 +87,13 @@ export interface FolderViewProps {
  * LABELS ride in the same way (YAZ-1513): `def.properties` is what every header reads, and the
  * Properties menu's pencil and the table header's rename both edit it through `onUpdate`.
  */
-function folderViewSet({ views, formulas, properties, defaultView }: FolderSettings): ParsedViews {
+function folderViewSet({ views, formulas, properties, defaultView }: FolderSettings, ids: boolean): ParsedViews {
   try {
     return parseViews(stringify({ formulas, properties, views, defaultView })) // `stringify` skips undefined keys
   } catch {
     // Report-don't-block: a hand-edited view YAML cannot take the folder's tab down with it —
     // the folder still renders, on the defaults it would have had with no settings at all.
-    return parseViews(stringify({ views: DEFAULT_VIEWS.map((view) => ({ ...view })) }))
+    return parseViews(stringify({ views: folderSettings(undefined, ids).views }))
   }
 }
 
@@ -183,7 +183,7 @@ export function FolderView({
     [root, file, newNoteFolderFor, onOpenFile, onOpenFileBackground, onNotice],
   )
 
-  const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings)))
+  const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
 
@@ -234,7 +234,7 @@ export function FolderView({
     }
     pending.current = [] // a real external edit outranks every unechoed local write: disk wins
     seen.current = stamp
-    setParsed(settings === null ? null : folderViewSet(settings))
+    setParsed(settings === null ? null : folderViewSet(settings, ids))
   }, [stamp, settings])
 
   const resolveLink = feed.resolve
@@ -345,8 +345,8 @@ export function FolderView({
           folderId: id,
           writeSettings: commitSettings,
         }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
-      valueCount: (key: string) => notesHolding(feed.records, id, key).length,
     }),
+    valueCount: (key: string) => notesHolding(feed.records, id, key).length,
     retitle: (note, title) => onRetitle(note, title, 'file'),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,

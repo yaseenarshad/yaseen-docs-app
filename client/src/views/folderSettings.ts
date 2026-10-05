@@ -65,7 +65,7 @@ export const DEFAULT_COLUMNS: Readonly<Record<string, ColumnDecl>> = {
 const KINDS = new Set<string>(PROPERTY_KINDS)
 
 /** A fresh copy per read: the defaults are handed out to be edited and written back. The Table alone where the vault does not use IDs (YAZ-2523 🔒 V11). */
-const defaultViews = (ids: boolean): ViewDef[] => (ids ? DEFAULT_VIEWS : DEFAULT_VIEWS.slice(0, 1)).map((view) => ({ ...view }))
+const defaultViews = (ids: boolean): ViewDef[] => (ids ? DEFAULT_VIEWS : DEFAULT_VIEWS.filter((view) => view.type === 'table')).map((view) => ({ ...view }))
 
 /** Keys → `{ kind, target?, required? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
 function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDecl> {

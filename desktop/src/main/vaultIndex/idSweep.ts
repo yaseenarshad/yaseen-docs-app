@@ -59,10 +59,11 @@ export async function sweepIds(
   }
   // A settings file the index holds is a record like any note, swept above.
   const bare = dirs.map((dir) => path.join(dir, FOLDER_SETTINGS_FILE)).filter((file) => !records.has(file))
-  if ((stale.length === 0 && bare.length === 0) || !(await givesIds(root))) return
   // An id some indexed note holds is never written (YAZ-2378): the same next one on every device.
   const taken = (id: string): boolean => holders.has(id)
   for (const r of stale) {
+    // Asked before every write, so a no stops a pass that is running (YAZ-2523 🔒 V4).
+    if (!(await givesIds(root))) return
     const from = r.id
     if (isFolderSettingsPath(r.path) && from !== undefined) {
       // A copied folder takes its id LAST, after its notes hold their values under it: a carry cut
@@ -73,7 +74,7 @@ export async function sweepIds(
     await inTurn(() => giveId(root, r.path, from, taken)).catch(() => undefined)
     for (const copy of carried) if (r.path.startsWith(copy.dir + path.sep)) await carryNote(r.path, copy.from, copy.to)
   }
-  for (const file of bare) await giveId(root, file, undefined, taken).catch(() => undefined)
+  for (const file of bare) if (await givesIds(root)) await giveId(root, file, undefined, taken).catch(() => undefined)
 }
 
 /**

@@ -1,10 +1,9 @@
 import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { isMarkdown } from '@shared/fileKind'
 import { mintNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { validateEntryName } from '../sidebar/createEntry'
+import { plainEntryName } from '../sidebar/createEntry'
 import { typedFolders } from './engine'
 
 /** A template's content, or '' when there is none — existence = has-template. */
@@ -29,12 +28,12 @@ async function readTemplate(path: string): Promise<string> {
  * `id` is for a caller that has already written a link to the note (YAZ-2293); else one is made
  * here. Resolves the note's path.
  *
- * All of that where the vault uses IDs (`ids`). In any other (YAZ-2523 🔒 V3) `title` is the file's
- * name (`plainName`) and nothing is written about the note inside it: with no seed it is the
- * template as it is, and with one, what the seed returns and the template's body.
+ * All of that where the vault uses IDs (`ids`). In a vault that does not use IDs (YAZ-2523 🔒 V3)
+ * `title` is the file's name (`plainEntryName`) and nothing is written about the note inside it:
+ * with no seed it is the template as it is, and with one, what the seed returns and the template's body.
  */
 export async function createNote(dir: string, title: string, ids: boolean, seed?: (template: Record<string, unknown>) => Record<string, unknown>, id = mintNoteId()): Promise<string> {
-  const path = `${dir}/${ids ? noteFileName(title, id) : plainNote(title)}`
+  const path = `${dir}/${ids ? noteFileName(title, id) : plainEntryName(title, 'file')}`
   const template = await readTemplate(`${dir}/.template.md`)
   const { frontmatter, body } = splitFrontmatter(template)
   const { properties } = parseFrontmatter(frontmatter)
@@ -44,23 +43,13 @@ export async function createNote(dir: string, title: string, ids: boolean, seed?
   return path
 }
 
-/** The file of a note named `name` in a vault that does not use IDs: `.md` is added unless a Markdown suffix was typed. */
-const plainNote = (name: string): string => (isMarkdown(plainName(name)) ? name : `${name}.md`)
-
-/** `name` as a note or a folder holds it in a vault that does not use IDs (YAZ-2523 🔒 V3): as typed. One a file cannot hold is refused. */
-function plainName(name: string): string {
-  const invalid = validateEntryName(name)
-  if (invalid !== null) throw new Error(invalid)
-  return name
-}
-
 /**
  * Where the folder titled `title` stands in `parent` (YAZ-2420 🔒 D6): its name is the title in
  * kebab-case. A title with no letter or digit has no such name and is refused (🔒 D25). In a
- * vault that does not use IDs its name is the title as typed (`plainName`).
+ * vault that does not use IDs its name is the title as typed (`plainEntryName`).
  */
 export function folderPath(parent: string, title: string, ids: boolean): string {
-  if (!ids) return `${parent}/${plainName(title)}`
+  if (!ids) return `${parent}/${plainEntryName(title, 'dir')}`
   const name = kebabTitle(title)
   if (name === '') throw new Error('A folder name needs a letter or a digit')
   return `${parent}/${name}`

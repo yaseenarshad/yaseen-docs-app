@@ -21,6 +21,8 @@ export interface PendingCreate {
 export interface PendingRename {
   /** Absolute path of the row (file or dir) being renamed. */
   path: string
+  /** A note's or a folder's box edits a TITLE: the vault uses IDs. Where it does not (YAZ-2523 🔒 V3) it edits a file name, held to the name rules. */
+  title: boolean
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
 }
@@ -173,7 +175,7 @@ function TreeLevel({
             {renaming !== null && renaming.path === node.path ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, and what it edits is
               // the folder's TITLE (YAZ-2420 🔒 D16).
-              <RenameInline initial={pageLabel(node.path, true, titles)} title indent={8 + depth * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+              <RenameInline initial={pageLabel(node.path, true, titles)} title={renaming.title} indent={8 + depth * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
             ) : (
               <button
                 type="button"
@@ -248,7 +250,7 @@ function TreeLevel({
           // The REAL row only: a second input on the note's shortcut row would take the focus,
           // and the first one's blur is its commit (YAZ-1553).
           <li key={node.path} role="treeitem">
-            <RenameInline initial={pageLabel(node.path, false, titles)} title={node.kind === 'markdown'} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+            <RenameInline initial={pageLabel(node.path, false, titles)} title={renaming.title && node.kind === 'markdown'} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>

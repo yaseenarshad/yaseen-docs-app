@@ -193,7 +193,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     const choice = kind === 'select' || kind === 'multi-select'
     const linkKind = kind === 'link' || kind === 'multi-link'
     const reason = undeletableReason(key)
-    const { deleteColumn, valueCount } = folder
+    const { deleteColumn } = folder
     const style = cardStyleOf(key)
     const observed = [...new Set(records.flatMap((r) => {
       const value = r.properties[name]
@@ -332,11 +332,11 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
             </button>
           )}
         </div>
-        {deleting !== null && deleteColumn && valueCount && (
+        {deleting !== null && deleteColumn && (
           <ConfirmDeleteColumn
             columnKey={deleting}
             def={def}
-            count={valueCount}
+            count={folder.valueCount}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {
               const gone = deleting

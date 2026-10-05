@@ -376,8 +376,8 @@ const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof 
  * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
  * `note.<key>`. `declared` is the folder's own column names (YAZ-1549): a declared column is
  * a column before any note carries it, so a new folder shows its `status` at once. Every key
- * the rows hold is one: a folder's values where the vault uses IDs, and in any other the notes'
- * own properties — `id`, `title` and `also_in` like the rest (YAZ-2523 🔒 V12).
+ * the rows hold is one: a folder's values where the vault uses IDs, and where it does not the
+ * notes' own properties — `id`, `title` and `also_in` like the rest (YAZ-2523 🔒 V12).
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]

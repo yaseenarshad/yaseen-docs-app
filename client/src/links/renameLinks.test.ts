@@ -262,7 +262,7 @@ describe('updateLinksAfterRename', () => {
       rec('/v/E.md', { embeds: ['B'] }),
       rec('/v/N.md'),
     ]
-    const summary = await updateLinksAfterRename({ root, oldPath, newPath, records })
+    const summary = await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records })
     expect(summary).toEqual({ updated: 2, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('See [[C]] and [[C|Bee]].\n')
     expect(files['/v/E.md'].content).toBe('![[C]]\n')
@@ -276,13 +276,13 @@ describe('updateLinksAfterRename', () => {
     // First write attempt conflicts (mtime moved between read and write); the retry lands.
     bridge.writeFile.mockRejectedValueOnce({ code: 'CONFLICT', message: 'file changed on disk since last read', path: '/v/A.md', mtime: 11 })
     const records = [rec('/v/A.md', { links: ['B'] }), rec('/v/B.md')]
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[C]]\n')
     // Now every write conflicts: the file is skipped, its content untouched.
     const files2 = { '/v/A.md': { content: '[[B]]\n', mtime: 10 } }
     const bridge2 = installBridge(files2)
     bridge2.writeFile.mockRejectedValue({ code: 'CONFLICT', message: 'file changed on disk since last read', path: '/v/A.md', mtime: 11 })
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 0, skipped: 1 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records })).toEqual({ updated: 0, skipped: 1 })
     expect(files2['/v/A.md'].content).toBe('[[B]]\n')
   })
 
@@ -290,7 +290,7 @@ describe('updateLinksAfterRename', () => {
     const files = { '/v/C.md': { content: 'I link [[B|myself]].\n', mtime: 5 } }
     installBridge(files)
     const records = [rec('/v/B.md', { links: ['B'] })]
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/C.md'].content).toBe('I link [[C|myself]].\n')
   })
 
@@ -303,7 +303,7 @@ describe('updateLinksAfterRename', () => {
       rec('/v/B.md'),
       rec('/v/Sub/B.md', { folder: 'Sub' }),
     ]
-    const summary = await updateLinksAfterRename({ root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })
+    const summary = await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })
     expect(summary).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[B]] and [[Sub/C]]\n')
   })
@@ -314,8 +314,8 @@ describe('updateLinksAfterRename', () => {
     // B.md answers to `CAC` through frontmatter aliases: `[[CAC]]` keeps pointing at it after
     // the rename (the alias moves with the file), so only the NAME form is rewritten.
     const records = [rec('/v/A.md', { links: ['CAC', 'B'] }), rec('/v/B.md', { aliases: ['CAC'] })]
-    expect(countLinkReferences({ root, oldPath, records })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath, records })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('See [[CAC]] and [[ CAC |shown]] and [[C]].\n')
   })
 
@@ -323,8 +323,8 @@ describe('updateLinksAfterRename', () => {
     const files = { '/v/A.md': { content: 'Only [[CAC]].\n', mtime: 1 } }
     const bridge = installBridge(files)
     const records = [rec('/v/A.md', { links: ['CAC'] }), rec('/v/B.md', { aliases: ['CAC'] })]
-    expect(countLinkReferences({ root, oldPath, records })).toBe(0) // the banner's N and the rewrite agree
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 0, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath, records })).toBe(0) // the banner's N and the rewrite agree
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records })).toEqual({ updated: 0, skipped: 0 })
     expect(bridge.readFile).not.toHaveBeenCalled()
     expect(files['/v/A.md'].content).toBe('Only [[CAC]].\n')
   })
@@ -339,7 +339,7 @@ describe('updateLinksAfterRename', () => {
       rec('/v/C.md'),
       rec('/v/Sub/B.md', { folder: 'Sub' }),
     ]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Sub/C]]\n')
   })
 })
@@ -365,8 +365,8 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_set
     const records = [rec('/v/A.md'), rec('/v/B.md')]
     const folders = [settings('Cols', COLS), settings('Home', HOME), settings('Other', OTHER)]
     // The banner's N and the rewrite agree — the probe walks the same leaves the rewrite does.
-    expect(countLinkReferences({ root, oldPath, records, folders })).toBe(2)
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records, folders })).toEqual({ updated: 2, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath, records, folders })).toBe(2)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, folders })).toEqual({ updated: 2, skipped: 0 })
     expect(files['/v/Home/.folder.md'].content).toContain('- "[[C]]"')
     expect(files['/v/Home/.folder.md'].content).toContain('- "[[A]]"')
     expect(files['/v/Cols/.folder.md'].content).toContain('target: "[[C]]"')
@@ -380,8 +380,8 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_set
     installBridge(files)
     const records = [rec('/v/B.md')]
     const folders = [settings('Out', OUT)]
-    expect(countLinkReferences({ root, oldPath, records, folders })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath, records, folders })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/Out/.folder.md'].content).toContain('- [[C]]')
     expect(files['/v/Out/.folder.md'].content).toContain('- prose about [[A]]')
   })
@@ -390,7 +390,7 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_set
     const files = { '/v/Home/.folder.md': { content: HOME, mtime: 1 } }
     installBridge(files)
     const records = [rec('/v/Old/B.md', { folder: 'Old' })]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records, folders: [settings('Home', HOME)], dirs: ['/v/Home', '/v/Old'] })).toEqual({ updated: 0, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records, folders: [settings('Home', HOME)], dirs: ['/v/Home', '/v/Old'] })).toEqual({ updated: 0, skipped: 0 })
     expect(files['/v/Home/.folder.md'].content).toBe(HOME)
   })
 })
@@ -407,7 +407,7 @@ describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
       rec('/v/A.md', { links: ['Old/B', 'B'], embeds: ['Old/B'] }),
       rec('/v/Old/B.md', { folder: 'Old' }),
     ]
-    const summary = await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })
+    const summary = await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })
     expect(summary).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('See [[New/B]] and [[ B ]] and [[B|Bee]] and ![[New/B]].\n')
   })
@@ -419,7 +419,7 @@ describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
       rec('/v/Old/inner.md', { folder: 'Old', links: ['Old/B'] }),
       rec('/v/Old/B.md', { folder: 'Old' }),
     ]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/New/inner.md'].content).toBe('link [[New/B]]\n')
   })
 
@@ -431,7 +431,7 @@ describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
       rec('/v/Sub/x.md', { folder: 'Sub' }),
       rec('/v/Older/y.md', { folder: 'Older' }), // `/v/Older` is NOT under `/v/Old`
     ]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 0, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 0, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Sub/x]] and [[Older/y]]\n')
   })
 })
@@ -451,7 +451,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     const files = { '/v/A.md': { content: A, mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 }, '/v/N.md': { content: 'nothing\n', mtime: 1 } }
     const bridge = installBridge(files)
     const records = [rec('/v/A.md', { links: ['Projects', 'projects', 'Sub', FOLDER_ID] }), rec('/v/N.md'), rec('/v/Projects/Plan.md')]
-    const opts = { root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir' as const, records, folders: [team()], dirs: ['/v/Projects', '/v/Projects/Sub', '/v/Team'] }
+    const opts = { ids: true, root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir' as const, records, folders: [team()], dirs: ['/v/Projects', '/v/Projects/Sub', '/v/Team'] }
     expect(countLinkReferences(opts)).toBe(2)
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 2, skipped: 0 })
     // A bare link to a folder INSIDE the renamed one keeps resolving (LOCKED E1b); an id link names no place.
@@ -467,7 +467,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     installBridge(files)
     const records = [rec('/v/A.md', { links: ['Team/Projects', 'Projects', 'Team/Projects/Sub', 'Team/Projects/Plan'] }), rec('/v/Team/Projects/Plan.md')]
     const dirs = ['/v/Archive', '/v/Team', '/v/Team/Projects', '/v/Team/Projects/Sub']
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Team/Projects', newPath: '/v/Archive/Projects', kind: 'dir', records, dirs })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Team/Projects', newPath: '/v/Archive/Projects', kind: 'dir', records, dirs })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Archive/Projects]], [[ Projects ]], [[Archive/Projects/Sub]] and [[Archive/Projects/Plan]]\n')
   })
 
@@ -476,7 +476,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     installBridge(files)
     const dirs = ['/v/Deep', '/v/Deep/Er', '/v/Other', '/v/Other/Projects', '/v/Projects']
     const records = [rec('/v/A.md', { links: ['Projects'] })]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Projects', newPath: '/v/Deep/Er/Projects', kind: 'dir', records, dirs })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Projects', newPath: '/v/Deep/Er/Projects', kind: 'dir', records, dirs })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Deep/Er/Projects]]\n')
   })
 
@@ -486,7 +486,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
   ])('%s holds the link: the folder\u2019s rename counts and touches nothing', async (_name, holder) => {
     const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
     const bridge = installBridge(files)
-    const opts = { root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] }), holder], dirs: ['/v/Projects'] }
+    const opts = { ids: true, root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] }), holder], dirs: ['/v/Projects'] }
     expect(countLinkReferences(opts)).toBe(0)
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 0, skipped: 0 })
     expect(bridge.readFile).not.toHaveBeenCalled()
@@ -496,7 +496,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     const files = { '/v/Work/.folder.md': { content: TEAM, mtime: 1 } }
     installBridge(files)
     const own = rec('/v/Projects/.folder.md', { properties: { folder_settings: settingsOf(TEAM) } })
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir', records: [], folders: [own], dirs: ['/v/Projects'] })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Projects', newPath: '/v/Work', kind: 'dir', records: [], folders: [own], dirs: ['/v/Projects'] })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/Work/.folder.md'].content).toContain('- [[Work]]')
   })
 })
@@ -508,7 +508,7 @@ describe('updateLinksAfterRename across a cross-directory file MOVE (E1b)', () =
     const files = { '/v/A.md': { content: 'See [[ B ]] and [[Old/B]].\n', mtime: 1 } }
     installBridge(files)
     const records = [rec('/v/A.md', { links: ['B', 'Old/B'] }), rec('/v/Old/B.md', { folder: 'Old' })]
-    const summary = await updateLinksAfterRename({ root, oldPath: '/v/Old/B.md', newPath: '/v/New/B.md', records })
+    const summary = await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Old/B.md', newPath: '/v/New/B.md', records })
     expect(summary).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('See [[ B ]] and [[New/B]].\n') // padding intact — never spliced
   })
@@ -522,7 +522,7 @@ describe('updateLinksAfterRename across a cross-directory file MOVE (E1b)', () =
       rec('/v/B.md'),
       rec('/v/Sub/B.md', { folder: 'Sub' }),
     ]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/Deep/er/B.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/Deep/er/B.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Deep/er/B]] here\n')
   })
 })
@@ -541,8 +541,8 @@ describe('view-only rename references stay outside the semantic index (YAZ-1310)
     const viewOnlyCatalog = buildViewOnlyCatalog(root, [viewFile('/v/data.json')])
 
     expect(records.some((record) => record.path === '/v/data.json')).toBe(false)
-    expect(countLinkReferences({ root, oldPath: '/v/data.json', records, viewOnlyCatalog })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/data.json', newPath: '/v/data-v2.JSON', records, viewOnlyCatalog })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/data.json', records, viewOnlyCatalog })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/data.json', newPath: '/v/data-v2.JSON', records, viewOnlyCatalog })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toContain('source: "[[data-v2.JSON#meta|JSON source]]"')
     expect(files['/v/A.md'].content).toContain('[[data-v2.JSON]] [[data-v2.JSON#row|shown]] `[[data.json]]`')
     expect(files['/v/A.md'].content).toContain('```\n[[data.json]]\n```')
@@ -561,7 +561,7 @@ describe('view-only rename references stay outside the semantic index (YAZ-1310)
     installBridge(files)
     const records = [rec('/v/A.md', { links: [oldName] })]
     const viewOnlyCatalog = buildViewOnlyCatalog(root, [viewFile(oldPath, kind)])
-    expect(await updateLinksAfterRename({ root, oldPath, newPath, records, viewOnlyCatalog })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, viewOnlyCatalog })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${newName}]]\n`)
   })
 
@@ -574,6 +574,7 @@ describe('view-only rename references stay outside the semantic index (YAZ-1310)
       { type: 'dir', name: 'other', path: '/v/other', children: [viewFile('/v/other/data.JSON')] },
     ])
     expect(await updateLinksAfterRename({
+      ids: true,
       root,
       oldPath: '/v/data.json',
       newPath: '/v/z/deep/data.json',
@@ -593,8 +594,8 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
   it('a note linking only by id is not a reference: the count is 0 and nothing is read or written', async () => {
     const records = [rec('/v/A.md', { links: ['k3m9x2pq7abc'] }), B]
     const { readFile, writeFile } = installBridge({ '/v/A.md': { content: 'see [[k3m9x2pq7abc]]\n', mtime: 1 } })
-    expect(countLinkReferences({ root, oldPath: '/v/B.md', records })).toBe(0)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 0, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/B.md', records })).toBe(0)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 0, skipped: 0 })
     expect(readFile).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
   })
@@ -603,7 +604,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     const records = [rec('/v/A.md', { links: ['B', 'k3m9x2pq7abc'] }), B]
     const files = { '/v/A.md': { content: '[[B]] and [[k3m9x2pq7abc]] and [[k3m9x2pq7abc|label]]\n', mtime: 1 } }
     installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[C]] and [[k3m9x2pq7abc]] and [[k3m9x2pq7abc|label]]\n')
   })
 
@@ -617,8 +618,8 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
       '/v/C.md': { content: renamed, mtime: 1 },
     }
     const { readFile, writeFile } = installBridge(files)
-    expect(countLinkReferences({ root, oldPath: '/v/B.md', records })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/B.md', records })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(readFile.mock.calls.map(([path]) => path)).toEqual(['/v/ByName.md'])
     expect(writeFile.mock.calls.map(([req]) => req.path)).toEqual(['/v/ByName.md'])
     expect(files['/v/ByName.md'].content).toBe('see [[C]]\n')
@@ -632,7 +633,7 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     const records = [rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/ByName.md', { links: ['B'] }), B]
     const files = { '/v/ById.md': { content: byId, mtime: 1 }, '/v/ByName.md': { content: byName, mtime: 1 } }
     const { readFile } = installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/C.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/ByName.md'].content).toBe(byName.replace('[[B]]', '[[C]]'))
     expect(readFile.mock.calls.map(([path]) => path)).toEqual(['/v/ByName.md'])
     expect(files['/v/ById.md']).toEqual({ content: byId, mtime: 1 })
@@ -642,8 +643,8 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
     const records = [rec('/v/A.md', { links: ['k3m9x2pq7abc', 'Dir/B'] }), rec('/v/ById.md', { links: ['k3m9x2pq7abc'] }), rec('/v/Dir/B.md', { folder: 'Dir', id: 'k3m9x2pq7abc' })]
     const files = { '/v/A.md': { content: '[[k3m9x2pq7abc]] and [[Dir/B]]\n', mtime: 1 }, '/v/ById.md': { content: '[[k3m9x2pq7abc]]\n', mtime: 1 } }
     const { writeFile } = installBridge(files)
-    expect(countLinkReferences({ root, oldPath: '/v/Dir', kind: 'dir', records })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Dir', newPath: '/v/Moved', kind: 'dir', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/Dir', kind: 'dir', records })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Dir', newPath: '/v/Moved', kind: 'dir', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[k3m9x2pq7abc]] and [[Moved/B]]\n')
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(files['/v/ById.md']).toEqual({ content: '[[k3m9x2pq7abc]]\n', mtime: 1 })
@@ -662,8 +663,8 @@ describe('a link that spells a title (YAZ-2420 D17)', () => {
       '/v/ByTitle.md': { content: '[[UP-001 - Abdul]] and [[up-001 - abdul|him]]\n', mtime: 1 },
     }
     const { readFile } = installBridge(files)
-    expect(countLinkReferences({ root, oldPath: ABDUL, records })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath: ABDUL, newPath: '/v/hired/abdul-k3m9x2pq7abc.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: ABDUL, records })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: ABDUL, newPath: '/v/hired/abdul-k3m9x2pq7abc.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/ByFile.md'].content).toBe('[[abdul-k3m9x2pq7abc]]\n')
     expect(files['/v/ByTitle.md'].content).toBe('[[UP-001 - Abdul]] and [[up-001 - abdul|him]]\n')
     expect(readFile).not.toHaveBeenCalledWith('/v/ByTitle.md')
@@ -673,9 +674,44 @@ describe('a link that spells a title (YAZ-2420 D17)', () => {
     const records = [rec('/v/A.md', { links: ['Old'] }), rec('/v/Sub/Old.md'), rec('/v/x/y/z/new-7tq2m8vd4xhn.md', { title: 'New', properties: { title: 'New' } })]
     const files = { '/v/A.md': { content: '[[Old]]\n', mtime: 1 } }
     installBridge(files)
-    expect(countLinkReferences({ root, oldPath: '/v/Sub/Old.md', records })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Sub/Old.md', newPath: '/v/Sub/New.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/Sub/Old.md', records })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Sub/Old.md', newPath: '/v/Sub/New.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[New]]\n')
+  })
+})
+
+describe('a note that holds its own `title:` line, renamed (YAZ-2523 🔒 V12)', () => {
+  const root = '/v'
+  const OLD = '/v/docs/deploy.md'
+  const NEW = '/v/docs/release.md'
+  const TITLES = ['Deploy checklist', 'deploy']
+
+  it.each(TITLES)('where the vault does not use IDs, `title: %s` is an ordinary property: bare, pathed and frontmatter links to deploy.md are rewritten and counted', async (title) => {
+    const records = [rec('/v/A.md', { links: ['deploy', 'deploy'] }), rec('/v/P.md', { links: ['docs/deploy'] }), rec(OLD, { properties: { title } })]
+    const files = { '/v/A.md': { content: '---\nnext: "[[deploy]]"\n---\n\n[[deploy]]\n', mtime: 1 }, '/v/P.md': { content: '[[docs/deploy]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(countLinkReferences({ ids: false, root, oldPath: OLD, records })).toBe(2)
+    expect(await updateLinksAfterRename({ ids: false, root, oldPath: OLD, newPath: NEW, records })).toEqual({ updated: 2, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('---\nnext: "[[release]]"\n---\n\n[[release]]\n')
+    expect(files['/v/P.md'].content).toBe('[[docs/release]]\n')
+  })
+
+  it.each(TITLES)('where the vault uses IDs, a link that spells `title: %s` travels with the note: left as written, not counted', async (title) => {
+    const records = [rec('/v/A.md', { links: [title, title] }), rec(OLD, { title, properties: { title } })]
+    const content = `---\nnext: "[[${title}]]"\n---\n\n[[${title}]]\n`
+    const files = { '/v/A.md': { content, mtime: 1 } }
+    installBridge(files)
+    expect(countLinkReferences({ ids: true, root, oldPath: OLD, records })).toBe(0)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: OLD, newPath: NEW, records })).toEqual({ updated: 0, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(content)
+  })
+
+  it('where the vault does not use IDs, the note is titled by its new file name afterwards: a bare link stays bare beside a deeper note of that name', async () => {
+    const records = [rec('/v/A.md', { links: ['deploy'] }), rec(OLD, { properties: { title: 'Deploy checklist' } }), rec('/v/x/y/z/release.md')]
+    const files = { '/v/A.md': { content: '[[deploy]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ ids: false, root, oldPath: OLD, newPath: NEW, records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[release]]\n')
   })
 })
 
@@ -694,8 +730,8 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
       '/v/ByTitle.md': { content: '[[Abdul]], [[abdul|him]] and [[Abdul#Rates]]\n', mtime: 1 },
     }
     const { readFile } = installBridge(files)
-    expect(countLinkReferences({ root, oldPath: OLD, records, title: 'UP-001 - Abdul' })).toBe(2)
-    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: NEW, records, title: 'UP-001 - Abdul' })).toEqual({ updated: 2, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: OLD, records, title: 'UP-001 - Abdul' })).toBe(2)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: OLD, newPath: NEW, records, title: 'UP-001 - Abdul' })).toEqual({ updated: 2, skipped: 0 })
     expect(files['/v/ByTitle.md'].content).toBe('[[UP-001 - Abdul]], [[UP-001 - Abdul|him]] and [[UP-001 - Abdul#Rates]]\n')
     expect(files['/v/ByName.md'].content).toBe(`[[up-001-abdul-${ID}]] and [[candidates/up-001-abdul-${ID}]]\n`)
     expect(readFile).not.toHaveBeenCalledWith('/v/ById.md')
@@ -705,7 +741,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul]
     const files = { '/v/A.md': { content: '[[Abdul]]\n', mtime: 1 } }
     installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: OLD, records, title: 'Abdul!' })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: OLD, newPath: OLD, records, title: 'Abdul!' })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Abdul!]]\n')
   })
 
@@ -713,8 +749,8 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md', { id: ID })]
     const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
     installBridge(files)
-    expect(countLinkReferences({ root, oldPath: '/v/Plan.md', records, title: 'Big Plan' })).toBe(1)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Plan.md', newPath: `/v/big-plan-${ID}.md`, records, title: 'Big Plan' })).toEqual({ updated: 1, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/Plan.md', records, title: 'Big Plan' })).toBe(1)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Plan.md', newPath: `/v/big-plan-${ID}.md`, records, title: 'Big Plan' })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Big Plan]]\n')
   })
 
@@ -722,7 +758,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul]
     const files = { '/v/A.md': { content: '[[Abdul]], [[Abdul|him]] and [[Abdul#Rates]]\n', mtime: 1 } }
     installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: OLD, newPath: `/v/candidates/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${ID}]], [[${ID}|him]] and [[${ID}#Rates]]\n`)
   })
 
@@ -731,7 +767,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul, other]
     const files = { '/v/A.md': { content: '[[Abdul]]\n', mtime: 1 } }
     installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/ali-${ID}.md`, records, title: 'Ali' })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: OLD, newPath: `/v/candidates/ali-${ID}.md`, records, title: 'Ali' })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
   })
 
@@ -739,7 +775,7 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md')]
     const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
     installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Plan.md', newPath: `/v/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Plan.md', newPath: `/v/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[a-b-${ID}]]\n`)
   })
 
@@ -748,13 +784,13 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const records = [rec('/v/A.md', { links: ['Candidates/Abdul'] }), abdul]
     const files = { '/v/A.md': { content: '[[Candidates/Abdul]] and [[candidates/abdul|him]]\n', mtime: 1 } }
     installBridge(files)
-    const note = { root, oldPath: OLD, newPath: NEW, records, folders, title: 'UP-001 - Abdul' }
+    const note = { ids: true, root, oldPath: OLD, newPath: NEW, records, folders, title: 'UP-001 - Abdul' }
     expect(countLinkReferences(note)).toBe(1)
     expect(await updateLinksAfterRename(note)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${ID}]] and [[${ID}|him]]\n`)
 
     files['/v/A.md'] = { content: '[[Candidates/Abdul]]\n', mtime: 1 }
-    const folder = { root, oldPath: '/v/candidates', newPath: '/v/hired', kind: 'dir' as const, records, folders, dirs: ['/v/candidates'], title: 'Hired' }
+    const folder = { ids: true, root, oldPath: '/v/candidates', newPath: '/v/hired', kind: 'dir' as const, records, folders, dirs: ['/v/candidates'], title: 'Hired' }
     expect(countLinkReferences(folder)).toBe(1)
     expect(await updateLinksAfterRename(folder)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
@@ -764,8 +800,8 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     const other = rec('/v/other-7tq2m8vd4xhn.md', { title: 'Other', properties: { title: 'Other' } })
     const records = [rec('/v/A.md', { links: ['Other'] }), abdul, other]
     const { readFile } = installBridge({ '/v/A.md': { content: '[[Other]]\n', mtime: 1 } })
-    expect(countLinkReferences({ root, oldPath: OLD, records, title: 'UP-001 - Abdul' })).toBe(0)
-    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: NEW, records, title: 'UP-001 - Abdul' })).toEqual({ updated: 0, skipped: 0 })
+    expect(countLinkReferences({ ids: true, root, oldPath: OLD, records, title: 'UP-001 - Abdul' })).toBe(0)
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath: OLD, newPath: NEW, records, title: 'UP-001 - Abdul' })).toEqual({ updated: 0, skipped: 0 })
     expect(readFile).not.toHaveBeenCalled()
   })
 })
@@ -779,7 +815,7 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
     const records = [rec('/v/A.md', { links: ['Upwork', 'upwork/Plan', FOLDER_ID] }), rec('/v/ById.md', { links: [FOLDER_ID] }), rec('/v/upwork/Plan.md')]
     const files = { '/v/A.md': { content: `[[Upwork]], [[upwork/Plan]] and [[${FOLDER_ID}]]\n`, mtime: 1 }, '/v/ById.md': { content: `[[${FOLDER_ID}]]\n`, mtime: 1 } }
     const { readFile } = installBridge(files)
-    const opts = { root, oldPath: '/v/upwork', newPath: '/v/upwork-2026', kind: 'dir' as const, records, folders: [upwork], dirs: ['/v/upwork'], title: 'Upwork 2026' }
+    const opts = { ids: true, root, oldPath: '/v/upwork', newPath: '/v/upwork-2026', kind: 'dir' as const, records, folders: [upwork], dirs: ['/v/upwork'], title: 'Upwork 2026' }
     expect(countLinkReferences(opts)).toBe(1)
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[Upwork 2026]], [[upwork-2026/Plan]] and [[${FOLDER_ID}]]\n`)
@@ -789,7 +825,7 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
   it('a folder\u2019s new title a link cannot spell, or that a note already has, is linked by the folder\u2019s id instead; a folder with no id by its new name (YAZ-2478)', async () => {
     const files = { '/v/A.md': { content: '[[Upwork]] and [[Upwork|jobs]]\n', mtime: 1 } }
     installBridge(files)
-    const opts = { root, oldPath: '/v/upwork', newPath: '/v/a-b', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] }), rec('/v/Jobs.md')], folders: [upwork], dirs: ['/v/upwork'] }
+    const opts = { ids: true, root, oldPath: '/v/upwork', newPath: '/v/a-b', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] }), rec('/v/Jobs.md')], folders: [upwork], dirs: ['/v/upwork'] }
     expect(await updateLinksAfterRename({ ...opts, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[${FOLDER_ID}]] and [[${FOLDER_ID}|jobs]]\n`)
 
@@ -805,7 +841,7 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
   it('a folder with no `title:` is titled by its name: its first title edit turns `[[Projects]]` into `[[Upwork 2026]]`', async () => {
     const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
     installBridge(files)
-    const opts = { root, oldPath: '/v/Projects', newPath: '/v/upwork-2026', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] })], folders: [rec('/v/Projects/.folder.md', { title: 'Projects' })], dirs: ['/v/Projects'], title: 'Upwork 2026' }
+    const opts = { ids: true, root, oldPath: '/v/Projects', newPath: '/v/upwork-2026', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] })], folders: [rec('/v/Projects/.folder.md', { title: 'Projects' })], dirs: ['/v/Projects'], title: 'Upwork 2026' }
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Upwork 2026]]\n')
   })
@@ -817,7 +853,7 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
     const files = { '/v/A.md': { content: '[[Projects]]\n', mtime: 1 } }
     const { readFile } = installBridge(files)
     const titled = rec('/v/client-work/.folder.md', { title: 'Projects', properties: { title: 'Projects' } })
-    const opts = { root, oldPath: '/v/Deep/Projects', newPath: '/v/Deep/work', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] })], folders: [titled, rec('/v/Deep/Projects/.folder.md', { title: 'Projects' })], dirs: ['/v/Deep', '/v/Deep/Projects', '/v/client-work'], ...(title === undefined ? {} : { title }) }
+    const opts = { ids: true, root, oldPath: '/v/Deep/Projects', newPath: '/v/Deep/work', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Projects'] })], folders: [titled, rec('/v/Deep/Projects/.folder.md', { title: 'Projects' })], dirs: ['/v/Deep', '/v/Deep/Projects', '/v/client-work'], ...(title === undefined ? {} : { title }) }
     expect(countLinkReferences(opts)).toBe(0)
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 0, skipped: 0 })
     expect(readFile).not.toHaveBeenCalled()
@@ -826,7 +862,7 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
   it('renaming or moving a folder with a title leaves `[[Its Title]]` as written and out of the count: the title travels in its `.folder.md`', async () => {
     const files = { '/v/A.md': { content: '[[Upwork]]\n', mtime: 1 } }
     const { readFile } = installBridge(files)
-    const opts = { root, oldPath: '/v/upwork', newPath: '/v/Archive/upwork', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] })], folders: [upwork], dirs: ['/v/Archive', '/v/upwork'] }
+    const opts = { ids: true, root, oldPath: '/v/upwork', newPath: '/v/Archive/upwork', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] })], folders: [upwork], dirs: ['/v/Archive', '/v/upwork'] }
     expect(countLinkReferences(opts)).toBe(0)
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 0, skipped: 0 })
     expect(readFile).not.toHaveBeenCalled()
@@ -846,12 +882,12 @@ describe('countLinkReferences (the banner N — the exact referencing-set filter
       rec('/v/C.md'),
     ]
     // Bare [[B]] resolves to the shallowest B — none at the root, so /v/Sub/B.md wins.
-    expect(countLinkReferences({ root, oldPath: '/v/Sub/B.md', records })).toBe(3)
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/Sub/B.md', records })).toBe(3)
   })
 
   it('0 when nothing references the moved path (→ no banner at all, the locked N === 0 rule)', () => {
     const records = [rec('/v/A.md', { links: ['C'] }), rec('/v/B.md'), rec('/v/C.md')]
-    expect(countLinkReferences({ root, oldPath: '/v/B.md', records })).toBe(0)
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/B.md', records })).toBe(0)
   })
 
   it('agrees with what updateLinksAfterRename then touches (one construction, never two truths)', async () => {
@@ -861,8 +897,8 @@ describe('countLinkReferences (the banner N — the exact referencing-set filter
     }
     installBridge(files)
     const records = [rec('/v/A.md', { links: ['B'] }), rec('/v/H.md', { embeds: ['B'] }), rec('/v/B.md')]
-    const n = countLinkReferences({ root, oldPath: '/v/B.md', records })
-    const summary = await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/B2.md', records })
+    const n = countLinkReferences({ ids: true, root, oldPath: '/v/B.md', records })
+    const summary = await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/B2.md', records })
     expect(n).toBe(2)
     expect(summary).toEqual({ updated: n, skipped: 0 })
   })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { datedSeed, renamedPath, targetDirFor, validateEntryName } from './createEntry'
+import { datedSeed, plainEntryName, renamedPath, targetDirFor, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -78,22 +78,26 @@ describe('renamedPath (Links E1, GRO-2194): a view-only file', () => {
   })
 })
 
-describe('renamedPath in a vault that does not use IDs (YAZ-2523 V3): what was typed is the name', () => {
-  it('a note takes the name typed and keeps its `.md`; a dot in the name is no extension', () => {
-    expect(renamedPath('/r/sub/Old name.md', '  Meeting notes  ')).toBe('/r/sub/Meeting notes.md')
-    expect(renamedPath('/r/sub/Old name.md', 'v1.2')).toBe('/r/sub/v1.2.md')
-    expect(renamedPath('/r/sub/Old name.markdown', 'Meeting notes')).toBe('/r/sub/Meeting notes.markdown')
+describe('plainEntryName (YAZ-2523 V3): the one rule for a name typed in a vault that does not use IDs', () => {
+  it('a note takes the name typed, with `.md` unless a Markdown suffix was typed; any other suffix is part of the name', () => {
+    expect(plainEntryName('  Meeting notes  ', 'file')).toBe('Meeting notes.md')
+    expect(plainEntryName('v1.2', 'file')).toBe('v1.2.md')
+    expect(plainEntryName('talk.pdf', 'file')).toBe('talk.pdf.md')
+    expect(plainEntryName('Old name.md', 'file')).toBe('Old name.md')
+    expect(plainEntryName('Old name.markdown', 'file')).toBe('Old name.markdown')
   })
 
-  it('the name a note already has, typed with or without its `.md`, is the same path', () => {
-    expect(renamedPath('/r/sub/Old name.md', 'Old name')).toBe('/r/sub/Old name.md')
-    expect(renamedPath('/r/sub/Old name.md', 'Old name.md')).toBe('/r/sub/Old name.md')
+  it('a note that is renamed keeps the Markdown suffix it has', () => {
+    expect(plainEntryName('Meeting notes', 'file', '.markdown')).toBe('Meeting notes.markdown')
   })
 
   it('a folder takes the name typed whole: no suffix is added, and one that reads as an extension is kept', () => {
-    expect(renamedPath('/r/sub/Plans', ' Q3 Plans ', 'dir')).toBe('/r/sub/Q3 Plans')
-    expect(renamedPath('/r/sub/v1.2', 'v2.0', 'dir')).toBe('/r/sub/v2.0')
-    expect(renamedPath('/r/sub/Plans', 'Archive.json', 'dir')).toBe('/r/sub/Archive.json')
-    expect(renamedPath('/r/sub/Plans', 'Plans', 'dir')).toBe('/r/sub/Plans')
+    expect(plainEntryName(' Q3 Plans ', 'dir')).toBe('Q3 Plans')
+    expect(plainEntryName('Archive.json', 'dir')).toBe('Archive.json')
+  })
+
+  it('a name a file cannot hold is refused with the reason', () => {
+    expect(() => plainEntryName('a/b', 'file')).toThrow('Name cannot contain "/"')
+    expect(() => plainEntryName('.git', 'dir')).toThrow('Names starting with "." are hidden')
   })
 })

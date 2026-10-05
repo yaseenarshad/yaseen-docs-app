@@ -55,10 +55,14 @@ describe('ConfirmSheet with onDismiss: two answers and a way out', () => {
     expect(calls()).toEqual([0, 0, 1])
   })
 
-  it('the second button carries its own label, takes the focus and cancels; the first confirms', () => {
+  it('the sheet itself holds the focus, not a button: a Space typed as the box appears presses neither answer', () => {
+    const el = render(true)
+    expect(document.activeElement).toBe(el.querySelector('.confirm'))
+  })
+
+  it('the second button carries its own label and cancels; the first confirms', () => {
     const el = render(true)
     expect(buttons(el).map((b) => b.textContent)).toEqual(['No', 'Yes'])
-    expect(document.activeElement?.textContent).toBe('No')
     act(() => buttons(el)[0].click())
     expect(calls()).toEqual([0, 1, 0])
     act(() => buttons(el)[1].click())
@@ -69,6 +73,31 @@ describe('ConfirmSheet with onDismiss: two answers and a way out', () => {
     render(true)
     expect(key('Enter').defaultPrevented).toBe(true)
     expect(calls()).toEqual([0, 0, 0])
+  })
+})
+
+describe('a sheet that goes away puts the focus back where it was', () => {
+  const opener = (): HTMLButtonElement => {
+    const button = document.body.appendChild(document.createElement('button'))
+    button.focus()
+    return button
+  }
+
+  it.each([true, false])('on the element that had it when the sheet opened (two answers: %s)', (twoAnswers) => {
+    const button = opener()
+    render(twoAnswers)
+    expect(document.activeElement).not.toBe(button)
+    act(() => root?.render(null))
+    expect(document.activeElement).toBe(button)
+    button.remove()
+  })
+
+  it('an element that is no longer in the document is left alone', () => {
+    const button = opener()
+    render(false)
+    button.remove()
+    act(() => root?.render(null))
+    expect(document.activeElement).toBe(document.body)
   })
 })
 

@@ -258,6 +258,19 @@ describe('a folder with no settings file', () => {
     expect((write.mock.calls[1][2] as { columns: unknown }).columns).toEqual({ ...DEFAULT_COLUMNS, owner: { kind: 'link' } })
   })
 
+  it.each([
+    [true, ['Table', 'Board']],
+    [false, ['Table']],
+  ])('saved views that cannot be read back fall back to the defaults of the vault they are in (IDs %s)', async (ids, tabs) => {
+    const el = await mount({ views: [{ type: 'table', name: 'Broken', bad: Symbol('no YAML for this') }] }, vault(), ids)
+    expect(texts(el, '.view-tab__btn')).toEqual(tabs)
+  })
+
+  it('a note’s own `id`, `title` and `also_in` are no columns where the vault uses IDs: a row holds the folder’s block, which has none of them', async () => {
+    const el = await mount({}, [rec(LEAD, held({ order: 2 }, { id: 'n0tead000001', title: 'Lead', also_in: [STAGES_ID] }))])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order'])
+  })
+
   it('before the first snapshot nothing renders: only the index can say the folder has no settings', async () => {
     expect(renderFolderView({ path: STAGES, source, onOpenFile }).innerHTML).toBe('')
   })
@@ -1536,7 +1549,7 @@ describe('each folder has its own properties (D19)', () => {
     it('"Delete column…" is not offered, by the header\u2019s menu or the Properties menu; hiding the column is a settings write that leaves every note as it was', async () => {
       const el = await mount(null, OWN, false)
       expect(captured.folder!.deleteColumn).toBeUndefined()
-      expect(captured.folder!.valueCount).toBeUndefined()
+      expect(captured.folder!.valueCount('note.owner')).toBe(0)
       click(byLabel(el, 'Properties'))
       click(byLabel(el, 'Open Owner'))
       expect(byLabel(el, 'Hide Owner in this view')).toBeDefined()

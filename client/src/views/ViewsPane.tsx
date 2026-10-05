@@ -60,8 +60,8 @@ export interface FolderHost {
    * has none (YAZ-2523 🔒 V11): the menus then offer no delete, and a column is hidden instead.
    */
   deleteColumn?: (key: string) => Promise<void>
-  /** How many notes hold the folder's value for a column — the number that delete's confirm states; there with `deleteColumn`. */
-  valueCount?: (key: string) => number
+  /** How many notes hold the folder's value for a column — the number that delete's confirm states. */
+  valueCount: (key: string) => number
   /**
    * The ONE door a view writes a row's values through — a cell edit, a board or section drop — in
    * one guarded write of that note. `records` ARE the folder's values for each row, and only the

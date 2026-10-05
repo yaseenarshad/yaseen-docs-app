@@ -366,9 +366,12 @@ describe('registerFsIpc', () => {
       const vault = await open(answer)
       try {
         const at = (...p: string[]) => path.join(vault, ...p)
-        expect(await call(CONTRACT.createFile, { path: at('Meeting notes.md'), content: NOTE, id: ID })).toEqual({ ok: true, value: { path: at('Meeting notes.md'), mtime: expect.any(Number), size: NOTE.length } })
+        expect(await call(CONTRACT.createFile, { path: at('Meeting notes.md'), content: NOTE })).toEqual({ ok: true, value: { path: at('Meeting notes.md'), mtime: expect.any(Number), size: NOTE.length } })
+        // A request shaped for a vault that uses IDs is refused, and makes nothing.
+        expect(await call(CONTRACT.createFile, { path: at(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createDir, { path: at('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createFile, at('Empty.md'))).toMatchObject({ ok: true })
-        expect(await call(CONTRACT.createDir, { path: at('Q3 Plans'), title: 'Q3 Plans' })).toEqual({ ok: true, value: { path: at('Q3 Plans') } })
+        expect(await call(CONTRACT.createDir, { path: at('Q3 Plans') })).toEqual({ ok: true, value: { path: at('Q3 Plans') } })
         expect(await paste(at('Plans', 'Name.md'), at('Plans'))).toEqual({ ok: true, value: { pasted: [{ from: at('Plans', 'Name.md'), to: at('Plans', 'Name copy.md'), kind: 'file' }], failed: [] } })
         // Into the vault's own folder: the root is in the vault too.
         expect(await paste(at('Plans'), vault)).toEqual({ ok: true, value: { pasted: [{ from: at('Plans'), to: at('Plans copy'), kind: 'dir' }], failed: [] } })
@@ -413,7 +416,7 @@ describe('registerFsIpc', () => {
       const other = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))
       try {
         await call(CONTRACT.createFile, path.join(other, 'Out.md'))
-        await call(CONTRACT.createDir, { path: path.join(other, 'Out'), title: 'Out' })
+        await call(CONTRACT.createDir, { path: path.join(other, 'Out') })
         await paste(path.join(vault, 'Plans', 'Name.md'), other)
         senderWinId = undefined
         await call(CONTRACT.createFile, path.join(other, 'No window.md'))

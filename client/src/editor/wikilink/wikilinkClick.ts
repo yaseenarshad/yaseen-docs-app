@@ -136,7 +136,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               if (path !== null) {
                 making.delete(page)
                 open(path)
-              } else if (isNoteId(page)) nav.onNotice('That note no longer exists')
+              } else if (isNoteId(page)) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
               else if (made === undefined) {
                 making.set(page, null)
                 void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {

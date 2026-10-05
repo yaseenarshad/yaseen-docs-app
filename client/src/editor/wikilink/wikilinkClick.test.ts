@@ -413,6 +413,15 @@ describe('wikilink click: id links (YAZ-2293)', () => {
     expect(createFile).not.toHaveBeenCalled()
     expect(createDir).not.toHaveBeenCalled()
   })
+
+  it('where the vault does not use IDs an id link opens nothing and creates nothing, and the notice says why (YAZ-2523 V13)', async () => {
+    const { root, nav } = await mount(`pad [[${ID}]] tail\n`, () => null, undefined, undefined, false)
+    mousedown(linkSpan(root, ID))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('This vault does not use IDs, so this link cannot be opened')
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+  })
 })
 
 describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {

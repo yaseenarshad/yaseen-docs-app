@@ -524,7 +524,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
   }
   const titled = () => {
     const indexSource = createWikilinkResolveSource()
-    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }], [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }])
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }], [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }], true)
     return indexSource
   }
 
@@ -544,6 +544,18 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     const plain = await mount()
     expect(await renameRow(plain.el, fileRow(plain.el), 'Plan')).toBe('a')
     expect(plain.props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'Plan', 'file')
+  })
+
+  // The ID vault's half is the two tests above: a title is free text, `/` and all.
+  it.each([
+    ['a note', fileRow],
+    ['a folder', dirRow],
+  ])('where the vault does not use IDs "Rename" on %s edits a file name: one a file cannot hold is refused in the box, which stays open with what was typed (YAZ-2523 V3)', async (_, row) => {
+    const { props, el } = await mount({ indexSource: indexFor(false) })
+    await renameRow(el, row(el), 'a/b')
+    expect(el.querySelector('.create-inline__error')?.textContent).toBe('Name cannot contain "/"')
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('a/b')
+    expect(props.onRetitle).not.toHaveBeenCalled()
   })
 
   it('a title left as it was is no edit: nothing is asked of the door', async () => {
@@ -2492,6 +2504,20 @@ describe('New note (GRO-2022)', () => {
     await commit(el, '   ')
     expect(bridge.createFile).not.toHaveBeenCalled()
     expect(input(el)).not.toBeNull()
+  })
+
+  it('before the vault’s index has landed its kind is not known: nothing is created, the box says so and keeps the name, and the same Enter works once it has (YAZ-2523)', async () => {
+    const indexSource = createWikilinkResolveSource()
+    const { el, bridge } = await mount({ indexSource })
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, 'Growth')
+    expect(errorText(el)).toBe('Vault index is still loading — try again in a moment')
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    expect(input(el)?.value).toBe('Growth')
+    indexSource.update(() => null, undefined, undefined, true)
+    await commit(el, 'Growth')
+    growthIn(bridge, '/v/sub')
   })
 
   // The ID vault's half of each row is the `B:` tests above.

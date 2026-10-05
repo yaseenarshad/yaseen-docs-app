@@ -1720,6 +1720,12 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files['/v/R.md'].content).toBe('See [[Docs/v1.2]].\n')
     })
 
+    it('a note stays a note: a name typed with another file’s suffix is the note `talk.pdf.md`, as "New note" makes it', async () => {
+      const { bridge } = await mount(askOff(), identity(), {}, feedPlain)
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'talk.pdf', 'file'))
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/talk.pdf.md' })
+    })
+
     it.each([
       ['the sidebar', () => captured.sidebar?.onRetitle('/v/Docs', 'Notes 2026', 'dir')],
       ['its page title', () => captured.editorRetitle?.('/v/Docs', 'Notes 2026', 'dir')],
@@ -1731,6 +1737,27 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs', newPath: '/v/Notes 2026' })
       expect(bridge.file.retitle).not.toHaveBeenCalled()
       expect(files['/v/R.md'].content).toBe('See [[Notes 2026/N]].\n')
+    })
+
+    it('a name typed before the vault’s index has landed renames nothing and says so: its kind is not known yet (YAZ-2523)', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, (b) => b.bridge.index.mockReturnValue(new Promise(() => undefined)))
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'Meeting notes', 'file'))
+      expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      [false, "Rename 'B' to 'C'? Links in 1 note will be updated.", 'See [[C]].\n'],
+      [true, "Rename 'B' to 'C'? No other notes link to it.", 'See [[B]].\n'],
+    ])('a note that holds `title: B`, renamed with IDs %s: `[[B]]` is counted and rewritten only where the title is an ordinary property (YAZ-2523 V12)', async (ids, asked, after) => {
+      const held = [record('/v/A.md', { links: ['B'] }), record('/v/B.md', { properties: { title: 'B' } })]
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const { el } = await mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: held, folders: [], generatedAt: 1, ids }))
+      await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
+      expect(sheetText(el)).toBe(asked)
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(files['/v/A.md'].content).toBe(after)
     })
 
     it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {
@@ -2006,6 +2033,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => void captured.sidebar?.onRenameFile('/v/Archive.json', '/v/Renamed.json', 'dir'))
 
       expect(count).toHaveBeenCalledWith({
+        ids: true,
         root: '/v',
         oldPath: '/v/Archive.json',
         kind: 'dir',
@@ -2397,7 +2425,7 @@ describe('App upkeep review (YAZ-2322)', () => {
 describe('App asks before a vault\u2019s notes are given IDs (YAZ-2523 V2)', () => {
   const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
   const ASK = { notes: 3, folders: 1, foreign: 0 }
-  const TEXT = "Give this vault's notes IDs? The app would write an ID into 3 notes and add a hidden settings file to 1 folder. With IDs, links keep working when a note is renamed or moved. Without them, the app leaves every file exactly as it is."
+  const TEXT = "Give this vault's notes IDs? The app would write an ID into 3 notes and add a hidden settings file to 1 folder. With IDs, links keep working when a note is renamed or moved, and the app names the file of a note you make or retitle. Without them, the app leaves every file exactly as it is."
   /** The index's answer for every root: `ask` only while the vault has not answered. */
   const feed = (ids: boolean, ask?: IndexResponse['ask']) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockImplementation(async (root) => ({ root, records: [], folders: [], generatedAt: 1, ids, ask }))
   const mountAsked = () => mount(defaultAppState(), VAULT, {}, feed(false, ASK))
@@ -2471,6 +2499,17 @@ describe('App asks before a vault\u2019s notes are given IDs (YAZ-2523 V2)', () 
     act(() => void el.querySelector('.confirm-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+  })
+
+  it('an answer whose save lands after the window moved to another vault closes nothing there: that vault is still asked', async () => {
+    const { bridge, el, emitFileRenamed } = await mountAsked()
+    let saved!: (answer: undefined) => void
+    bridge.vaultConfig.write.mockReturnValueOnce(new Promise<undefined>((resolve) => void (saved = resolve)))
+    await act(async () => sheetBtn(el, 'Give IDs')?.click())
+    await act(async () => emitFileRenamed('/v', '/w', 'dir'))
+    expect(sheetText(el)).toBe(TEXT)
+    await act(async () => saved(undefined))
+    expect(sheetText(el)).toBe(TEXT)
   })
 
   it('a save that fails says so in the notice and leaves the box to be answered again', async () => {
