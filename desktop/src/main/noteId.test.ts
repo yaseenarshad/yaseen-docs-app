@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, idsAnswer, isNoteId, mintNoteId } from '@shared/noteId'
 
 describe('note ids (YAZ-2293 D2)', () => {
   it('the frontmatter key is `id`', () => {
@@ -27,5 +27,17 @@ describe('note ids (YAZ-2293 D2)', () => {
     expect(isNoteId(42)).toBe(false)
     expect(isNoteId(null)).toBe(false)
     expect(isNoteId(undefined)).toBe(false)
+  })
+})
+
+describe("a vault's answer to IDs (YAZ-2523 V1)", () => {
+  it('is kept in `ids.json`', () => {
+    expect(IDS_FILE).toBe('ids.json')
+  })
+
+  it('is the `enabled` boolean of the file; a missing file, a file that says nothing, or one that says something else is not answered', () => {
+    expect(idsAnswer({ enabled: true })).toBe(true)
+    expect(idsAnswer({ enabled: false })).toBe(false)
+    for (const config of [null, undefined, {}, { enabled: 'yes' }, { enabled: 1 }, { enabled: null }, [], 'true', true]) expect(idsAnswer(config)).toBeUndefined()
   })
 })

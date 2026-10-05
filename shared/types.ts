@@ -193,6 +193,17 @@ export interface IndexResponse {
   folders: IndexRecord[]
   /** Main-process time (epoch ms) when this snapshot was taken. */
   generatedAt: number
+  /**
+   * Does this vault give its notes IDs (YAZ-2523 🔒 V5)? True only when its `ids.json` says yes.
+   * When false no record carries an `id`, and each one's `title` is its file name (🔒 V12).
+   */
+  ids: boolean
+  /**
+   * Only while the vault has NOT answered: what a yes would write (🔒 V2). `notes` would be given an
+   * id, `foreign` of them over another tool's `id`; `folders` would be given a `.folder.md`, or an
+   * `id` in the one they have.
+   */
+  ask?: { notes: number; folders: number; foreign: number }
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------

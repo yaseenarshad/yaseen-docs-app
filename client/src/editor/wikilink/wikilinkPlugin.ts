@@ -70,6 +70,8 @@ export interface WikilinkResolveSource {
   readonly records: readonly IndexRecord[]
   /** The same snapshot's folder settings records (YAZ-2290 D8) — never among `records`. */
   readonly folders: readonly IndexRecord[]
+  /** Does the snapshot's vault give its notes IDs (YAZ-2523 🔒 V5)? false until the first index lands. */
+  readonly ids: boolean
   /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped. */
   subscribe(listener: () => void): () => void
 }
@@ -80,7 +82,7 @@ export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
    * `records` omitted = no snapshot in play (decoration-only mounts): backlinks have nothing
    * to list, which is exactly right — the resolver alone cannot say who links where.
    */
-  update(resolve: ResolveLink, records?: readonly IndexRecord[], folders?: readonly IndexRecord[]): void
+  update(resolve: ResolveLink, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean): void
 }
 
 const NO_RECORDS: readonly IndexRecord[] = []
@@ -89,6 +91,7 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   let current: ResolveLink | null = null
   let snapshot: readonly IndexRecord[] = NO_RECORDS
   let settings: readonly IndexRecord[] = NO_RECORDS
+  let usesIds = false
   const listeners = new Set<() => void>()
   return {
     get resolve() {
@@ -100,16 +103,20 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
     get folders() {
       return settings
     },
+    get ids() {
+      return usesIds
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
       }
     },
-    update(resolve, records = NO_RECORDS, folders = NO_RECORDS) {
+    update(resolve, records = NO_RECORDS, folders = NO_RECORDS, ids = false) {
       current = resolve
       snapshot = records
       settings = folders
+      usesIds = ids
       listeners.forEach((l) => l())
     },
   }

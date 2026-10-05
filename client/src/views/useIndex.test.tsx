@@ -6,13 +6,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
+import { IDS_FILE } from '@shared/noteId'
+import type { IndexRecord, IndexResponse, VaultConfigChange, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { useIndex, type IndexState } from './useIndex'
 
+let configListeners: Array<(c: VaultConfigChange) => void> = []
+
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { index: vi.fn() },
+  api: {
+    index: vi.fn(),
+    vaultConfig: {
+      onChange: vi.fn((l: (c: VaultConfigChange) => void) => {
+        configListeners.push(l)
+        return () => (configListeners = configListeners.filter((x) => x !== l))
+      }),
+    },
+  },
 }))
 
 import { api } from '../api'
@@ -43,6 +54,7 @@ const response = (root: string, ...paths: string[]): IndexResponse => ({
   records: paths.map(rec),
   folders: [],
   generatedAt: 1,
+  ids: true,
 })
 
 let root: Root | null = null
@@ -89,6 +101,13 @@ async function emit(ev: WatchEvent): Promise<void> {
   })
 }
 
+async function configChanged(change: VaultConfigChange): Promise<void> {
+  await act(async () => {
+    configListeners.forEach((l) => l(change))
+    await vi.advanceTimersByTimeAsync(0)
+  })
+}
+
 async function pastDebounce(): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(400)
@@ -106,6 +125,7 @@ afterEach(() => {
   container?.remove()
   container = null
   listeners = []
+  configListeners = []
   vi.clearAllMocks()
   vi.useRealTimers()
 })
@@ -200,5 +220,38 @@ describe('useIndex', () => {
       await vi.advanceTimersByTimeAsync(1000)
     })
     expect(indexFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes the vault’s kind from the snapshot: `ids`, and `ask` while the vault has not answered; no IDs and nothing to ask until the first one lands (YAZ-2523)', async () => {
+    indexFn.mockResolvedValue({ ...response('/vault', '/vault/a.md'), ids: false, ask: { notes: 1, folders: 2, foreign: 0 } })
+    mount()
+    expect(state).toMatchObject({ ids: false, ask: undefined })
+    await flush()
+    expect(state).toMatchObject({ ids: false, ask: { notes: 1, folders: 2, foreign: 0 } })
+    indexFn.mockResolvedValue(response('/vault', '/vault/a.md'))
+    await act(async () => {
+      state.refresh()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(state).toMatchObject({ ids: true, ask: undefined })
+    indexFn.mockResolvedValue({ ...response('/other', '/other/x.md'), ids: false })
+    rerender('/other')
+    expect(state).toMatchObject({ ids: false, ask: undefined })
+  })
+
+  it('refetches at once when `ids.json` changes for its root — not for another root, not for another file (YAZ-2523)', async () => {
+    mount()
+    await flush()
+    await configChanged({ root: '/other', name: IDS_FILE })
+    await configChanged({ root: '/vault', name: 'review.json' })
+    await pastDebounce()
+    expect(indexFn).toHaveBeenCalledTimes(1)
+    indexFn.mockResolvedValue({ ...response('/vault', '/vault/a.md'), ids: false })
+    await configChanged({ root: '/vault', name: IDS_FILE })
+    expect(indexFn).toHaveBeenCalledTimes(2)
+    expect(state.ids).toBe(false)
+    act(() => root?.unmount())
+    root = null
+    expect(configListeners).toEqual([])
   })
 })

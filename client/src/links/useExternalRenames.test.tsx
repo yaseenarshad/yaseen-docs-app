@@ -41,7 +41,7 @@ function installBridge() {
   const files: Record<string, { content: string; mtime: number }> = {}
   const bridge = {
     coldDiff: vi.fn(async (): Promise<ColdStartDiffResponse | null> => null),
-    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], folders: [] as IndexRecord[], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], folders: [] as IndexRecord[], generatedAt: 1, ids: true })),
     tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
     readFile: vi.fn(async (path: string) => {
       const f = files[path]
@@ -247,7 +247,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
   it('Update repairs the app, rewrites the referencing note through the engine and shows the summary notice', async () => {
     const { bridge, files } = await mount()
     files['/v/A.md'] = { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 }
-    bridge.index.mockResolvedValue({ root: '/v', records: postRename, folders: [], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: postRename, folders: [], generatedAt: 2, ids: true })
     await snapshot(preRename)
     await snapshot(postRename)
     expect(bridge.writeFile).not.toHaveBeenCalled() // NOTHING before the confirmation (locked)
@@ -269,7 +269,7 @@ describe('useExternalRenames — Update (confirm-first, the ONLY path to any rew
     const after = [rec('/v/B2.md')]
     const { bridge, files } = await mount()
     files[settings.path] = { content: '---\nfolder_settings:\n  views:\n    - type: table\n      name: T\n      order:\n        - "[[B]]"\n---\n', mtime: 1 }
-    bridge.index.mockResolvedValue({ root: '/v', records: after, folders: [settings], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: after, folders: [settings], generatedAt: 2, ids: true })
     await snapshot(before, [settings])
     await snapshot(after, [settings])
     expect(banner()).toBe('/v/B.md|/v/B2.md|1')

@@ -147,6 +147,13 @@ function extractBody(props: Record<string, unknown>, body: string): Pick<IndexRe
 }
 
 /**
+ * A page's title when it has no `title:` line, and always in a vault that does not use IDs
+ * (YAZ-2523 🔒 V12): its file name. A folder's settings file reads as the folder it is in.
+ */
+export const fileTitle = (r: Pick<IndexRecord, 'path' | 'name' | 'basename'>): string =>
+  r.name === FOLDER_SETTINGS_FILE ? path.basename(path.dirname(r.path)) : r.basename
+
+/**
  * Builds the index record for one markdown file under `root` (GRO-2128): stat + read + frontmatter
  * parse + tag/link extraction. Files over MAX_FILE_BYTES get metadata only. fs errors surface as BridgeFailure.
  */
@@ -159,8 +166,7 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
     path: absPath,
     name,
     basename,
-    // Untitled, a folder's settings file reads as the folder it is in.
-    title: name === FOLDER_SETTINGS_FILE ? path.basename(path.dirname(absPath)) : basename,
+    title: fileTitle({ path: absPath, name, basename }),
     folder: path.relative(root, path.dirname(absPath)).split(path.sep).join('/'),
     ext: ext.slice(1).toLowerCase(),
     size: st.size,

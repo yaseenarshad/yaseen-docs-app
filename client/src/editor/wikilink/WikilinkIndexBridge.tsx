@@ -9,7 +9,7 @@
  * source-object identities.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, IndexResponse } from '@shared/types'
 import { useIndex } from '../../views/useIndex'
 import type { WatchSource } from '../../hooks/useWatch'
 import { useViewOnlyCatalog } from '../../hooks/useViewOnlyCatalog'
@@ -33,13 +33,15 @@ export interface WikilinkIndexBridgeProps {
   /**
    * Every READY snapshot, verbatim (Links E1c, GRO-2242): the external-rename detector diffs
    * consecutive snapshots — this component already sees them all, so no second `useIndex`
-   * (which would double every fetch). Keep the identity stable (App's hook does).
+   * (which would double every fetch). Keep the identity stable (App's hook does). With it, the
+   * snapshot's answer to "does this vault use IDs?" and what a yes would write (YAZ-2523 🔒 V5):
+   * the ONE place the window learns the vault's kind.
    */
-  onSnapshot?: (records: IndexRecord[], folders: IndexRecord[]) => void
+  onSnapshot?: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => void
 }
 
 export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly, onSnapshot }: WikilinkIndexBridgeProps) {
-  const { status, records, folders } = useIndex(root, watch)
+  const { status, records, folders, ids, ask } = useIndex(root, watch)
   // The folders a link can name (YAZ-2290 D10) come off the window's one tree feed. Read as ONE
   // string, so a tree that moved no folder wakes no editor (YAZ-2196).
   const dirList = useSyncExternalStore(
@@ -73,13 +75,13 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
     if (semantic === null) return
     // The snapshot rides ALONG with the resolver (Links D, GRO-2193): the backlinks section
     // reads both off the same source, so N and the resolution behind it always agree.
-    source.update(semantic.resolve, records, folders)
+    source.update(semantic.resolve, records, folders, ids)
     candidates?.update(mergeLinkCandidates(semantic.rows, viewOnly?.catalog?.candidates ?? []))
-  }, [semantic, records, folders, source, candidates, viewOnly])
+  }, [semantic, records, folders, ids, source, candidates, viewOnly])
   // Its own effect: a folder list that moved re-feeds the sources above, and is no index snapshot.
   useEffect(() => {
-    if (ready) onSnapshot?.(records, folders)
-  }, [ready, records, folders, onSnapshot])
+    if (ready) onSnapshot?.(records, folders, ids, ask)
+  }, [ready, records, folders, ids, ask, onSnapshot])
   return viewOnly === undefined ? null : (
     <ViewOnlyCatalogBridge
       root={root}

@@ -29,3 +29,12 @@ export function noteIdFrom(draw: (previous?: Uint8Array) => Uint8Array, taken: (
 
 /** A fresh random id, for a note being created. */
 export const mintNoteId = (): string => noteIdFrom(() => crypto.getRandomValues(new Uint8Array(12)))
+
+/** The vault config file holding a vault's answer to "do this vault's notes get IDs?" (YAZ-2523 🔒 V1). */
+export const IDS_FILE = 'ids.json'
+
+/** The answer in a parsed `IDS_FILE`: its `enabled` boolean. Anything else, a missing file too, is not answered. */
+export function idsAnswer(config: unknown): boolean | undefined {
+  const enabled = (config as { enabled?: unknown } | null | undefined)?.enabled
+  return typeof enabled === 'boolean' ? enabled : undefined
+}

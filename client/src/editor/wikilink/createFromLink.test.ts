@@ -30,7 +30,7 @@ const readFile = vi.mocked(api.readFile)
 /** The index's folders, by their settings records: titled by its own name when a folder has no `title:`. */
 const holds = (...folders: Array<[folder: string, title: string]>): void => {
   const records = folders.map(([folder, title]): IndexRecord => ({ path: `/vault/${folder}/.folder.md`, name: '.folder.md', basename: '.folder', title, folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] }))
-  vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: records, generatedAt: 0 })
+  vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: records, generatedAt: 0, ids: true })
 }
 
 beforeEach(() => {
