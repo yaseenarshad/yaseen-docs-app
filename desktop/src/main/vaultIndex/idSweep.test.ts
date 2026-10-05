@@ -3,13 +3,14 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } fr
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { copyEntry } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { renameFile } from '../fs/rename'
 import { tree } from '../fs/tree'
 import { subscribe } from '../fs/watchers'
+import { writeConfig } from '../vaultConfig'
 import { _resetIndexCache } from './cache'
 import { carryFolderValues, sweepIds } from './idSweep'
 import { _evictAll, flushIndexCache, getColdStartDiff, getIndex, initIndexCache } from './index'
@@ -42,10 +43,13 @@ const writesAfterTheRead = (content: string): void => {
 // The sweep (YAZ-2293 D3, D4): a note with no id is given one, and of the notes sharing an id
 // only its keeper keeps it. Scenario record sections A and B on YAZ-2293.
 
+/** The vault at `dir` says yes to IDs (YAZ-2523 V1): its `.yaseendocs/ids.json`. */
+const saysYes = (dir: string) => writeConfig(dir, IDS_FILE, { enabled: true })
+
 let root: string
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-'))
-  await mkdir(path.join(root, VAULT_CONFIG_DIR)) // an ADOPTED vault; the un-adopted case removes it
+  await saysYes(root) // an ID vault; the cases that are not one remove or change the answer
 })
 afterEach(async () => {
   race.afterRead = undefined
@@ -114,10 +118,22 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE))).toBe(true)
   })
 
-  it('writes nothing in a folder the app has not adopted', async () => {
+  it('writes nothing in a vault that has not said yes: one that said no, one whose `.yaseendocs/` holds no answer, and a folder with no `.yaseendocs/` (YAZ-2523 V10)', async () => {
+    const files = { 'README.md': '# readme\n', 'foreign.md': '---\nid: 42\n---\n' }
+    const sweepAll = async () => {
+      const records = await vault(files)
+      await sweepIds(root, records, [...records.values()], () => undefined, [at('Projects')])
+    }
+    await mkdir(at('Projects'))
+    await writeConfig(root, IDS_FILE, { enabled: false })
+    await sweepAll()
+    await rm(at(VAULT_CONFIG_DIR, IDS_FILE))
+    await writeFile(at(VAULT_CONFIG_DIR, 'favorites.json'), '[]\n')
+    await sweepAll()
     await rm(at(VAULT_CONFIG_DIR), { recursive: true })
-    await sweep(await vault({ 'README.md': '# readme\n' }))
-    expect(await read('README.md')).toBe('# readme\n')
+    await sweepAll()
+    for (const [rel, content] of Object.entries(files)) expect(await read(rel)).toBe(content)
+    expect(await readdir(at('Projects'))).toEqual([])
   })
 
   it('leaves alone what cannot take an id: invalid YAML, whatever `id` line it holds, and an oversize file', async () => {
@@ -136,7 +152,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(await read('Projects', FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${projects}\n---\n`)
   })
 
-  it('another tool’s `id` is replaced under the sweep’s guards: nothing in a folder the app has not adopted, and never over bytes another writer changed since the read (D30)', async () => {
+  it('another tool’s `id` is replaced under the sweep’s guards: nothing in a vault that has not said yes, and never over bytes another writer changed since the read (D30)', async () => {
     const foreign = '---\nid: 42\n---\nbody\n'
     const records = await vault({ 'a.md': foreign })
     writesAfterTheRead('---\nid: 42\n---\nbody, edited elsewhere\n')
@@ -152,7 +168,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     await sweep(await vault({ 'Inbox/a.md': foreign }))
     const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
     try {
-      await mkdir(path.join(other, VAULT_CONFIG_DIR))
+      await saysYes(other)
       await mkdir(path.join(other, 'Inbox'))
       const file = path.join(other, 'Inbox', 'a.md')
       await writeFile(file, foreign)
@@ -193,7 +209,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
 
     const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
     try {
-      await mkdir(path.join(other, VAULT_CONFIG_DIR))
+      await saysYes(other)
       await mkdir(path.join(other, 'Inbox'))
       const file = path.join(other, 'Inbox', 'a.md')
       await writeFile(file, 'from an agent\n')
@@ -212,7 +228,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
       const device = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-device-'))
       try {
         const file = path.join(device, rel)
-        await mkdir(path.join(device, VAULT_CONFIG_DIR))
+        await saysYes(device)
         await mkdir(path.dirname(file), { recursive: true })
         await writeFile(file, content)
         const record = await scanFile(device, file)
@@ -237,7 +253,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     // The same vault on two devices: the first note has moved on, and its twin lands where it stood.
     const dropOn = async (device: string) => {
       const on = (...p: string[]) => path.join(device, ...p)
-      await mkdir(on(VAULT_CONFIG_DIR), { recursive: true })
+      await saysYes(device)
       await mkdir(on('Archive'), { recursive: true })
       await mkdir(on('Inbox'), { recursive: true })
       await rm(on('Inbox', 'idea.md'), { force: true })
@@ -284,10 +300,10 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
   const settingsOf = (...dir: string[]) => read(...dir, FOLDER_SETTINGS_FILE)
   const folderIdOf = (...dir: string[]) => idIn(...dir, FOLDER_SETTINGS_FILE)
   const names = (...dir: string[]) => readdir(at(...dir)).then((all) => all.sort())
-  /** Another device's copy of the vault: adopted, holding `dirs`. */
+  /** Another device's copy of the vault: it says yes too, and holds `dirs`. */
   const otherDevice = async (dirs: readonly string[]): Promise<string> => {
     const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
-    await mkdir(path.join(other, VAULT_CONFIG_DIR))
+    await saysYes(other)
     for (const dir of dirs) await mkdir(path.join(other, dir), { recursive: true })
     return other
   }
@@ -304,7 +320,7 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     expect(await settingsOf('Projects', 'Alpha')).toBe(setFrontmatterProperty('', NOTE_ID_KEY, inner))
   })
 
-  it('an adopted vault with 100 folders and no `.folder.md` gets exactly 100 files, each holding only its `id`; a second run writes nothing; the same folder path is given the same id on another run', async () => {
+  it('a vault with 100 folders and no `.folder.md` gets exactly 100 files, each holding only its `id`; a second run writes nothing; the same folder path is given the same id on another run', async () => {
     const dirs = Array.from({ length: 100 }, (_, i) => (i % 10 === 0 ? `Area ${i / 10}` : `Area ${Math.floor(i / 10)}/Topic ${i % 10}`))
     for (const dir of dirs) await mkdir(at(dir), { recursive: true })
     await sweepFolders()
@@ -387,7 +403,7 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     await mkdir(at('Shown', '.cache', 'deep'), { recursive: true })
     await sweepFolders()
     for (const dir of skipped) {
-      expect(await names(dir)).toEqual(['inner'])
+      expect(await names(dir)).toEqual(dir === VAULT_CONFIG_DIR ? [IDS_FILE, 'inner'] : ['inner'])
       expect(await names(dir, 'inner')).toEqual([])
     }
     expect(await names('Shown')).toEqual(['.cache', FOLDER_SETTINGS_FILE])
@@ -703,7 +719,7 @@ describe('sweepIds, wired into the live index', () => {
     expect((await folders()).map((r) => r.folder)).toEqual(['Empty', 'Pictures', 'Projects'])
     for (const r of await folders()) expect(await readFile(r.path, 'utf8')).toBe(`---\nid: ${r.id}\n---\n`)
     expect((await readdir(root)).sort()).toEqual([VAULT_CONFIG_DIR, 'Empty', 'Pictures', 'Projects'])
-    expect(await readdir(at(VAULT_CONFIG_DIR))).toEqual([])
+    expect(await readdir(at(VAULT_CONFIG_DIR))).toEqual([IDS_FILE])
     expect(await readdir(at('Pictures', '.thumbs'))).toEqual([])
     expect((await readdir(at('Projects'))).sort()).toEqual([FOLDER_SETTINGS_FILE, 'a.md'])
   })

@@ -95,7 +95,7 @@ describe('folder settings in the index', () => {
     await until(async () => (await has()) === undefined)
   })
 
-  it('a folder the app was only pointed at — no `.yaseendocs` — is given no `.folder.md`: nothing is written, its folders have no id (D13)', async () => {
+  it('a vault that has not said yes to IDs — no `ids.json` — is given no `.folder.md`: nothing is written, its folders have no id (D13)', async () => {
     await getIndex(root) // the first build has run over every folder of the fixture
     await watcherReady(root)
     const dir = path.join(root, 'Made in Finder')

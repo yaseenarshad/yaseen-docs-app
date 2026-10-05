@@ -3,12 +3,12 @@
  * with captured stdio — so every receipt, refusal and exit code is pinned without spawning.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readComments } from '@shared/comments'
-import { isNoteId } from '@shared/noteId'
+import { IDS_FILE, isNoteId } from '@shared/noteId'
 import { addReview } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
 import { sweepIds } from '../main/vaultIndex/idSweep'
@@ -43,10 +43,14 @@ async function page(name: string, content: string): Promise<string> {
   return p
 }
 
-/** An ADOPTED vault under the temp dir (`.yaseendocs/` exists) holding `files`, keyed by vault-relative path. */
-async function vault(name: string, files: Record<string, string>): Promise<string> {
+/**
+ * A vault under the temp dir (`.yaseendocs/` exists) holding `files`, keyed by vault-relative path.
+ * It gives its notes IDs unless `ids` says no (false) or leaves the question unanswered (null).
+ */
+async function vault(name: string, files: Record<string, string>, ids: boolean | null = true): Promise<string> {
   const root = path.join(dir, name)
   await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
+  if (ids !== null) await writeFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), JSON.stringify({ enabled: ids }))
   for (const [rel, content] of Object.entries(files)) {
     await mkdir(path.dirname(path.join(root, rel)), { recursive: true })
     await writeFile(path.join(root, rel), content, 'utf8')
@@ -309,16 +313,30 @@ describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
 })
 
 describe('id (YAZ-2293)', () => {
-  it('a page that has an id: prints it and writes nothing — bytes and mtime as they were, vault or no vault', async () => {
+  it('a page that has an id: prints it and writes nothing — bytes and mtime as they were, in no vault and in a vault of either kind', async () => {
     const content = '---\nid: k3m9x2pq7abc\n---\n# Has one\n'
-    const p = await page('has.md', content)
-    const before = (await stat(p)).mtimeMs
-    expect(await run(['id', p])).toEqual({ code: 0, out: 'k3m9x2pq7abc\n', err: '' })
-    expect(await readFile(p, 'utf8')).toBe(content)
-    expect((await stat(p)).mtimeMs).toBe(before)
+    for (const p of [await page('has.md', content), path.join(await vault('ids', { 'has.md': content }), 'has.md'), path.join(await vault('plain', { 'has.md': content }, false), 'has.md')]) {
+      const before = (await stat(p)).mtimeMs
+      expect(await run(['id', p])).toEqual({ code: 0, out: 'k3m9x2pq7abc\n', err: '' })
+      expect(await readFile(p, 'utf8')).toBe(content)
+      expect((await stat(p)).mtimeMs).toBe(before)
+    }
   })
 
-  it("a page with no id, in an adopted vault: is given the id the app's sweep would give it, and no other byte changes", async () => {
+  it('a page with no id whose vault does not give its notes IDs — it said no, it has not answered, or there is no vault above — is refused: exit 1, nothing written (YAZ-2523)', async () => {
+    const content = '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n'
+    const said = await vault('no', { 'Kickoff.md': content, 'Projects/a.png': 'png' }, false)
+    const pages = [path.join(said, 'Kickoff.md'), path.join(await vault('unanswered', { 'Kickoff.md': content }, null), 'Kickoff.md'), await page('Kickoff.md', content)]
+    for (const p of pages) {
+      expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${p} has no id, and its vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)\n` })
+      expect(await readFile(p, 'utf8')).toBe(content)
+    }
+    // A folder is given no settings file there either.
+    expect((await run(['id', path.join(said, 'Projects', FOLDER_SETTINGS_FILE)])).code).toBe(1)
+    expect(await readdir(path.join(said, 'Projects'))).toEqual(['a.png'])
+  })
+
+  it("a page with no id, in a vault that gives its notes IDs: is given the id the app's sweep would give it, and no other byte changes", async () => {
     const content = '---\ntitle: Kickoff # kept\n---\n# Kickoff\n'
     const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
     const r = await run(['id', p])
@@ -349,7 +367,7 @@ describe('id (YAZ-2293)', () => {
     expect(await run(['id', path.join(path.dirname(theirs), 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 
-  it("a page whose `id` is another tool's (`id: 42`), in an adopted vault: the app's id is written over it, the one the app's sweep would write, and printed (YAZ-2420 D30)", async () => {
+  it("a page whose `id` is another tool's (`id: 42`), in a vault that gives its notes IDs: the app's id is written over it, the one the app's sweep would write, and printed (YAZ-2420 D30)", async () => {
     const content = '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n'
     const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
     const r = await run(['id', p])
@@ -364,17 +382,11 @@ describe('id (YAZ-2293)', () => {
     expect(await readFile(twin, 'utf8')).toBe(await readFile(p, 'utf8'))
   })
 
-  it('a page that cannot take an id — no vault above it, a block that does not parse — exit 1, bytes untouched', async () => {
-    const bare = await page('bare.md', '# No vault here\n')
-    const root = await vault('mine', { 'broken.md': '---\nid: 42\ntitle: [\n---\n' })
-    for (const [p, reason] of [
-      [bare, `${bare} has no id and is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`],
-      [path.join(root, 'broken.md'), 'the properties block does not parse (invalid)'],
-    ] as const) {
-      const before = await readFile(p, 'utf8')
-      expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${reason}\n` })
-      expect(await readFile(p, 'utf8')).toBe(before)
-    }
+  it('a page whose properties block does not parse cannot take an id — exit 1, bytes untouched', async () => {
+    const content = '---\nid: 42\ntitle: [\n---\n'
+    const p = path.join(await vault('mine', { 'broken.md': content }), 'broken.md')
+    expect(await run(['id', p])).toEqual({ code: 1, out: '', err: 'the properties block does not parse (invalid)\n' })
+    expect(await readFile(p, 'utf8')).toBe(content)
   })
 })
 
@@ -465,9 +477,11 @@ describe('links (YAZ-2293)', () => {
     expect((await run(['links', scalar])).out).toBe(`${FOLDER}  Areas  Areas/  (also in)\n`)
   })
 
-  it('a page in no vault has nothing to resolve its ids against — exit 1', async () => {
-    const p = await page('loose.md', `[[${NOTE}]]\n`)
-    expect(await run(['links', p])).toEqual({ code: 1, out: '', err: `${p} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)\n` })
+  it('a page whose vault does not use IDs — it said no, it has not answered, or there is no vault above — has no ID links to list: exit 1 (YAZ-2523)', async () => {
+    const content = `[[${NOTE}]]\n`
+    for (const p of [path.join(await vault('no', { 'loose.md': content }, false), 'loose.md'), path.join(await vault('unanswered', { 'loose.md': content }, null), 'loose.md'), await page('loose.md', content)]) {
+      expect(await run(['links', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not use IDs, so there are no ID links to list\n` })
+    }
   })
 })
 

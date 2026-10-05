@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { readFile as fsReadFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId, noteIdFrom } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, idsAnswer, isNoteId, noteIdFrom } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
@@ -30,8 +30,7 @@ function inTurn<T>(write: () => Promise<T>): Promise<T> {
  * its id (D13). A folder's settings file given a fresh id is a COPIED folder's: the notes under it
  * carry their values for it to that id first (`carryFolderValues`), then the folder takes it.
  *
- * 🔒 Only in an ADOPTED vault (`.yaseendocs/` exists, YAZ-797): the app writes nothing into a
- * folder it was only pointed at. Creating a note or a folder there adopts it (`adoptVault`).
+ * 🔒 Only in a vault that said yes (`givesIds`, YAZ-2523 V1): the app writes nothing into any other.
  *
  * The id is DERIVED from the note's place and bytes (a folder's from its settings file's place),
  * so two devices that meet the same note before syncing make the same edit, which merges; a
@@ -60,7 +59,7 @@ export async function sweepIds(
   }
   // A settings file the index holds is a record like any note, swept above.
   const bare = dirs.map((dir) => path.join(dir, FOLDER_SETTINGS_FILE)).filter((file) => !records.has(file))
-  if ((stale.length === 0 && bare.length === 0) || !(await isAdopted(root))) return
+  if ((stale.length === 0 && bare.length === 0) || !(await givesIds(root))) return
   // An id some indexed note holds is never written (YAZ-2378): the same next one on every device.
   const taken = (id: string): boolean => holders.has(id)
   for (const r of stale) {
@@ -96,29 +95,29 @@ async function otherFiles(r: IndexRecord, holders: readonly IndexRecord[]): Prom
 }
 
 /**
- * Makes `root` an adopted vault — the user created a note or a folder in it, which is what says
- * the folder is theirs to manage (🔒 YAZ-2293). True when this call is what adopted it. A folder
- * that cannot be written to simply stays as it is.
+ * The vault's answer to "do your notes get IDs?" (YAZ-2523 🔒 V1): its `ids.json`. Undefined when it
+ * has not answered; a file that is missing, unreadable or not JSON has not. Read straight off the
+ * disk: the `yaseendocs` command asks too, and must not carry the app's config watcher with it.
  */
-export const adoptVault = (root: string): Promise<boolean> =>
-  mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true }).then(
-    (made) => made !== undefined,
-    () => false,
-  )
-
-export const isAdopted = (root: string): Promise<boolean> =>
-  stat(path.join(root, VAULT_CONFIG_DIR)).then(
-    (st) => st.isDirectory(),
-    () => false,
+export const idsOf = (root: string): Promise<boolean | undefined> =>
+  fsReadFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), 'utf8').then(
+    (raw) => idsAnswer(JSON.parse(raw)),
+    () => undefined,
   )
 
 /**
+ * Does this vault give its notes IDs (🔒 V1, V10)? Only when it said yes: that `.yaseendocs/`
+ * exists means nothing. The ONE gate for every id the app writes on its own.
+ */
+export const givesIds = async (root: string): Promise<boolean> => (await idsOf(root)) === true
+
+/**
  * A settings file deleted from a folder that is still there is created again holding the `id` it
- * had, so links and shortcuts to the folder still reach it. On the sweep's terms: an adopted
- * vault, never written over, never throws. A folder deleted whole has no directory to create it in.
+ * had, so links and shortcuts to the folder still reach it. On the sweep's terms: a vault
+ * that said yes, never written over, never throws. A folder deleted whole has no directory to create it in.
  */
 export const restoreFolderId = async (root: string, file: string, id: string): Promise<void> => {
-  if (await isAdopted(root)) await createDurable(file, setFrontmatterProperty('', NOTE_ID_KEY, id)).catch(() => undefined)
+  if (await givesIds(root)) await createDurable(file, setFrontmatterProperty('', NOTE_ID_KEY, id)).catch(() => undefined)
 }
 
 /** A page's bytes. A folder's settings file that is not there reads as empty, with no `mtime`, while its folder is. */

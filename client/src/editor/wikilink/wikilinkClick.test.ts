@@ -102,7 +102,7 @@ beforeEach(() => {
   createDir.mockImplementation(async (req) => ({ path: req.path }))
   createFile.mockImplementation(async (req) => ({ path: (req as { path: string }).path, mtime: 1, size: 0 }))
   vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
-  vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: [], generatedAt: 0 })
+  vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], folders: [], generatedAt: 0, ids: true })
 })
 
 afterEach(async () => {

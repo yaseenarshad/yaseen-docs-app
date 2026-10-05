@@ -1,11 +1,13 @@
 import path from 'node:path'
-import { isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
+import { IDS_FILE, NOTE_ID_KEY } from '@shared/noteId'
+import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { fsCall, isMarkdown } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
-import { restoreFolderId, sweepIds } from './idSweep'
+import { writeConfig } from '../vaultConfig'
+import { idsOf, restoreFolderId, sweepIds } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
 import { reconcile, type ColdStartDiff } from './reconcile'
-import { scanFile, walk } from './scan'
+import { fileTitle, scanFile, walk } from './scan'
 
 interface Entry {
   records: Map<string, IndexRecord>
@@ -15,6 +17,10 @@ interface Entry {
   inFlight: Set<Promise<unknown>>
   /** What the cold-start reconcile found (GRO-2223); dropped with the entry on idle eviction. */
   coldDiff?: ColdStartDiff
+  /** Every folder the build walked into: the ones a yes would write to (`wouldWrite`). */
+  dirs: string[]
+  /** Whether the vault said yes to IDs when last asked (YAZ-2523 🔒 V4): a yes that arrives later starts the pass. */
+  ids: boolean
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000
@@ -76,10 +82,23 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
 // either — the payload is `{version, root, records}` — so there is nothing to invalidate and no
 // CACHE_VERSION bump here.)
 
+/**
+ * What a yes would write (`IndexResponse.ask`, YAZ-2523 🔒 V2): a note with no id that can take
+ * one, and a folder with no settings file or no id in the one it has.
+ */
+function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly string[]): NonNullable<IndexResponse['ask']> {
+  const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && r.id === undefined && r.frontmatterError === undefined)
+  return {
+    notes: notes.length,
+    folders: dirs.filter((dir) => records.get(path.join(dir, FOLDER_SETTINGS_FILE))?.id === undefined).length,
+    foreign: notes.filter((r) => r.properties[NOTE_ID_KEY] !== undefined).length,
+  }
+}
+
 async function build(root: string): Promise<Entry> {
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set() }
-  const files: string[] = []
   const dirs: string[] = []
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false }
+  const files: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
   // reading it early keeps the multi-MB read ahead of the watcher's initial walk that floods the
@@ -96,6 +115,16 @@ async function build(root: string): Promise<Entry> {
     const { records, diff } = await reconcile(root, files, cached)
     entry.records = records
     entry.coldDiff = diff
+    let answer = await idsOf(root)
+    // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
+    // an id and none is waiting for one, so yes is saved. One that cannot be written to stays unanswered.
+    if (answer === undefined && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && r.id !== undefined) && wouldWrite(records, dirs).notes === 0) {
+      answer = await writeConfig(root, IDS_FILE, { enabled: true }).then(
+        () => true,
+        () => undefined,
+      )
+    }
+    entry.ids = answer === true
     // Not awaited: a vault of id-less notes must not hold up its first index (YAZ-2293 D3).
     void sweepIds(root, records, [...records.values()], (p) => cached.records?.get(p)?.id, dirs)
   } catch (err) {
@@ -142,16 +171,27 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   // Drain scans the watcher has already started: a create that beat this call is in this snapshot,
   // never invisible until the next fs event (YAZ-986) — the live twin of awaiting the first build.
   if (entry.inFlight.size > 0) await Promise.all([...entry.inFlight])
+  // The vault's kind is applied HERE, where the index is handed out (YAZ-2523 🔒 V5): the live
+  // records hold what is in the files, whatever the answer was when they were read.
+  const answer = await idsOf(root)
+  const ids = answer === true
+  if (ids && !entry.ids) sweepIndexed(root)
+  entry.ids = ids
   const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   // One map holds notes and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
   const records: IndexRecord[] = []
   const folders: IndexRecord[] = []
-  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(r)
-  return { root, records, folders, generatedAt: Date.now() }
+  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? r : plain(r))
+  return { root, records, folders, generatedAt: Date.now(), ids, ...(answer === undefined && { ask: wouldWrite(entry.records, entry.dirs) }) }
 }
 
-/** Sweeps every note the live index holds for `root`, and every folder there now — for a vault adopted after its index was built (YAZ-2293). */
-export function sweepIndexed(root: string): void {
+/** A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties. */
+function plain({ id: _id, ...r }: IndexRecord): IndexRecord {
+  return { ...r, title: fileTitle(r) }
+}
+
+/** Sweeps every note the live index holds for `root`, and every folder there now — for a vault that said yes after its index was built (YAZ-2523 🔒 V4). */
+function sweepIndexed(root: string): void {
   const records = entries.get(root)?.records
   if (records === undefined) return
   const dirs: string[] = []

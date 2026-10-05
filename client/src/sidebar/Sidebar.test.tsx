@@ -48,7 +48,7 @@ function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
     // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
-    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], folders: [], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], folders: [], generatedAt: 1, ids: true })),
     // The inline-create flow (GRO-2022).
     createFile: vi.fn(async (req: string | { path: string; content?: string; id?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
     // A note is born from its folder's hidden `.template.md` (YAZ-2290 E3): no folder has one by default.
@@ -960,7 +960,7 @@ describe('delete (GRO-2272)', () => {
     })
     const records = [rec('a'), rec('hub', ['a'])]
     const m = await mount()
-    m.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 } as never)
+    m.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
     act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     await act(async () => itemByLabel(m.el, 'Delete')?.click())
     await act(async () => undefined)
@@ -974,7 +974,7 @@ describe('delete (GRO-2272)', () => {
     })
     const folders = [rec('/v/other/.folder.md', { folder: 'other', properties: { folder_settings: { columns: { in: { kind: 'link', target: '[[sub]]' } } } } })]
     const m = await mount()
-    m.bridge.index.mockResolvedValue({ root: '/v', records: [rec('/v/hub.md', { links: ['sub'] })], folders, generatedAt: 1 } as never)
+    m.bridge.index.mockResolvedValue({ root: '/v', records: [rec('/v/hub.md', { links: ['sub'] })], folders, generatedAt: 1, ids: true } as never)
     act(() => void m.el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     await act(async () => itemByLabel(m.el, 'Delete')?.click())
     await act(async () => undefined)
@@ -1183,7 +1183,7 @@ describe('search results (YAZ-803)', () => {
 
   /** Mount over an index of Alpha + Docs/Anchor, then type `query` into the bar. */
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1310,7 +1310,7 @@ describe('search results (YAZ-803)', () => {
     const { el, input, bridge, props } = await search('a', { watch })
     await press(input, 'ArrowDown')
     expect(activeLabel(el)).toBe('Anchor') // index 1 of two rows
-    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], folders: [], generatedAt: 2 } as never)
+    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], folders: [], generatedAt: 2, ids: true } as never)
     await act(async () => [...listeners].forEach((l) => l({ type: 'unlink', path: '/v/Docs/Anchor.md' })))
     await afterQuiet()
     expect(rowLabels(el)).toEqual(['Alpha'])
@@ -1338,7 +1338,7 @@ describe('search-row context menu (YAZ-2050)', () => {
   /** `a` is the tree's own `/v/a.md`, so its row exists once the search is left. */
   const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], folders: [], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], folders: [], generatedAt: 1, ids: true } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1458,7 +1458,7 @@ describe('folder rows in search (YAZ-1491)', () => {
   /** A folder AND a note both called `sub`, so the tie-break is observable. */
   const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', title: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], folders: [], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], folders: [], generatedAt: 1, ids: true } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1475,7 +1475,7 @@ describe('folder rows in search (YAZ-1491)', () => {
   })
 
   it('E: a folder is found and shown by its title, off the search\'s own index read (YAZ-2420 D14)', async () => {
-    const m = await mount({}, (b) => b.index.mockResolvedValue({ root: '/v', records: [], folders: [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }], generatedAt: 1 } as never))
+    const m = await mount({}, (b) => b.index.mockResolvedValue({ root: '/v', records: [], folders: [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }], generatedAt: 1, ids: true } as never))
     await type(searchInput(m.el)!, 'upwork')
     expect(dirResult(m.el)?.getAttribute('aria-label')).toBe('Search result Upwork 2026, folder')
   })
@@ -1595,7 +1595,7 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
-  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1 } as never)
+  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
 
   const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
   /** Favorites is a glyph (YAZ-1766 D1): its name is the `aria-label`, not text. */
@@ -2445,13 +2445,13 @@ describe('New note (GRO-2022)', () => {
   it('writes no empty column keys (YAZ-2290 E1): the columns the folder declares are not stamped into the note, with a template or without', async () => {
     const declares = { path: '/v/sub/.folder.md', properties: { folder_settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] }, due: { kind: 'date' }, tags: { kind: 'list' } } } } }
     const bare = await openOn('.tree__row--dir')
-    bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1 })
+    bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1, ids: true })
     act(() => itemByLabel(bare.el, 'New note')?.click())
     await commit(bare.el, 'Growth')
     growthIn(bare.bridge, '/v/sub')
 
     const templated = await openOn('.tree__row--dir')
-    templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1 })
+    templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1, ids: true })
     withTemplate(templated.bridge, '/v/sub', '---\nowner: me\n---\n')
     act(() => itemByLabel(templated.el, 'New note')?.click())
     await commit(templated.el, 'Growth')
@@ -3900,7 +3900,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           bridge.tree.mockResolvedValue({ root: '/v', tree: WITH_SUB.map((node) => (node.path === dir && node.type === 'dir' ? { ...node, children: [...node.children, added] } : node)), generatedAt: 2 })
           bridge.file.paste.mockResolvedValue({ pasted: [{ from, to, kind: added.type }], failed: [] })
         }
-        const indexed = (bridge: ReturnType<typeof installBridge>, folders: IndexRecord[] = FOLDERS) => bridge.index.mockResolvedValue({ root: '/v', records: [], folders, generatedAt: 2 } as never)
+        const indexed = (bridge: ReturnType<typeof installBridge>, folders: IndexRecord[] = FOLDERS) => bridge.index.mockResolvedValue({ root: '/v', records: [], folders, generatedAt: 2, ids: true } as never)
 
         it('a note with values for a folder, copied into another: the sheet asks in the copy wording; Copy pastes, and the copy holds no block for that folder while the original still does', async () => {
           const { el, disk, bridge, writeFile, paste } = await mountCut()
