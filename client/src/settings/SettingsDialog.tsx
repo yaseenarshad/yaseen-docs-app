@@ -134,8 +134,8 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
       {item.render(ctx)}
     </SettingRow>
   )
-  /** `titled` is false under a search breadcrumb, which already names the group. */
-  const group = (g: SettingsGroup, items: readonly SettingDef[], key: number, titled = true) => (
+  /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
+  const group = (g: SettingsGroup, items: readonly SettingDef[], key: number, titled = true) => items.length > 0 && (
     <div key={key} className="settings-group">
       {titled && g.title !== undefined && <h3 className="settings-group__title">{g.title}</h3>}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}

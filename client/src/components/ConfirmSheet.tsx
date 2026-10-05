@@ -24,12 +24,20 @@ export interface ConfirmSheetProps {
   keys?: 'window' | 'sheet' | 'contained'
   onConfirm: () => void
   onCancel: () => void
+  /** The second button's text. */
+  cancelLabel?: string
+  /**
+   * Given, the sheet has TWO real answers (YAZ-2523 🔒 V2): the second button still calls
+   * `onCancel`, Esc and click-away call this instead, and Enter chooses nothing.
+   */
+  onDismiss?: () => void
   /** Extra controls between the text and the buttons (the delete sheet's "Don't ask me again"). */
   children?: ReactNode
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, children }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, cancelLabel = 'Cancel', onDismiss, children }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const dismiss = onDismiss ?? onCancel
 
   useEffect(() => cancelRef.current?.focus(), [])
 
@@ -38,22 +46,22 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
     if (e.key !== 'Escape' && e.key !== 'Enter') return
     e.preventDefault()
     if (keys === 'contained') e.stopPropagation()
-    if (e.key === 'Escape') onCancel()
-    else onConfirm()
+    if (e.key === 'Escape') dismiss()
+    else if (onDismiss === undefined) onConfirm()
   }
 
   useEffect(() => {
     if (keys !== 'window') return
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keys, onConfirm, onCancel]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
+  }, [keys, onConfirm, onCancel, onDismiss]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
 
   return (
     <div
       className="confirm-overlay"
       onMouseDown={(e) => {
         if (keys === 'contained') e.stopPropagation()
-        onCancel()
+        dismiss()
       }}
       onKeyDown={keys === 'window' ? undefined : onKey}
     >
@@ -64,7 +72,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
         {children}
         <div className="confirm__actions">
           <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </button>
           <button type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onConfirm}>
             {confirmLabel}

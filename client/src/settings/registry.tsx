@@ -15,10 +15,14 @@
  * Review (YAZ-2322 🔒 D7) is per-vault the same way: `.yaseendocs/review.json`, read and saved
  * through App's one `useReviewSettings`, so its section is `available` only with a vault open and
  * its rows call `review.save` — never `onChange`. Its switch is the one row while upkeep is off.
+ *
+ * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
+ * row is `available` only with a vault open and calls `ids.set`.
  */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, SettingsState } from '@shared/types'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
@@ -32,6 +36,8 @@ export interface SettingsCtx {
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
   /** This vault's review settings (YAZ-2322); absent with no vault open. */
   review?: ReviewSettingsState
+  /** This vault's answer on IDs (YAZ-2523 🔒 V4; undefined: it has not answered), whether any note holds one, and the switch; absent until a vault's index has loaded. */
+  ids?: { enabled: boolean | undefined; held: boolean; set: (enabled: boolean) => void }
 }
 
 export interface SettingDef {
@@ -98,6 +104,42 @@ const reviewNumber = (field: ReviewNumberField, label: string, unit: string): Se
   available: upkeepOn,
   render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} />,
 })
+
+/**
+ * The vault's IDs switch. Only a CHANGE writes: a click on the answer the vault gave is nothing. A
+ * vault that has not answered reads Off, and either click is its answer. Off in a vault whose notes
+ * hold IDs asks first (🔒 V13); the sheet's keys stay inside it, so the dialog under it does not close.
+ */
+function IdsControl({ ids }: { ids: NonNullable<SettingsCtx['ids']> }) {
+  const [asking, setAsking] = useState(false)
+  return (
+    <>
+      <Segmented
+        options={ON_OFF_OPTIONS}
+        value={ids.enabled === true}
+        onChange={(on) => {
+          if (on === ids.enabled) return
+          if (!on && ids.held) setAsking(true)
+          else ids.set(on)
+        }}
+        ariaLabel="Give this vault's notes IDs"
+      />
+      {asking && (
+        <ConfirmSheet
+          labelId="confirm-ids-off-text"
+          text="This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
+          confirmLabel="Turn off"
+          keys="contained"
+          onConfirm={() => {
+            setAsking(false)
+            ids.set(false)
+          }}
+          onCancel={() => setAsking(false)}
+        />
+      )}
+    </>
+  )
+}
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
@@ -244,6 +286,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
             render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
+      {
+        title: 'This vault',
+        items: [
+          {
+            id: 'ids',
+            label: "Give this vault's notes IDs",
+            hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
+            available: (ctx) => ctx.ids !== undefined,
+            render: ({ ids }) => ids && <IdsControl ids={ids} />,
           },
         ],
       },
