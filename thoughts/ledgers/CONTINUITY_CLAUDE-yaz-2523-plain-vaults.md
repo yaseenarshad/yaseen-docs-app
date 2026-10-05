@@ -32,16 +32,20 @@ The record is two comments there: "Locked decisions and the scenario record" (V1
   - [x] 7B3: plain create, rename and copy (`4a12b71`)
   - [x] 7B4: ID-only features are not offered in a plain vault (`5cb8d82`)
   - [x] 7B2: the box and the Settings switch (`2ea0bcd`)
-  - [x] 7C: plain tables
-- Now: [→] 7D1: an independent review scopes the polish pass
+  - [x] 7C: plain tables (`858bcbb`)
+  - [x] 7D1, 7D2: an independent review, and its list applied (`4d86ec3`)
+  - [x] The two size ceilings set to the measured values, on Yaseen's OK (`2d31c61`)
+  - [x] 7E1: every row of the record mapped to a test (294 files, 5,364 tests)
+  - [x] 7E2: walk-through on the running app, driven over its debugging port; scratch vaults at `~/Desktop/yaz-2523-demo/`
+  - [x] 7E3: docs (`docs/CONTRACTS.md` "Two kinds of vault", `docs/REGRESSION.md` K1 to K7, `README.md`)
+- Now: [→] 7E4: pull request, merge, close out
 - Remaining:
-  - [ ] 7D2: apply the polish
-  - [ ] 7E1 to 7E4: tests against the record, walk-through (scratch vaults at `~/Desktop/yaz-2523-demo/`), docs, merge
-  - [ ] Set the two size ceilings to the final measured values (Yaseen's OK given 2026-10-05)
+  - [ ] Yaseen's own look at the box's wording (the demo is ready; a wording change is a small follow-up)
+  - [ ] Playwright was not run (not allowed). Its fixture vault needs `.yaseendocs/ids.json` saying yes, as the unit fixture got, the next time it is.
 
 ## Open Questions
 
-- None.
+- One ruling narrows V11 and is flagged for Yaseen on 7D2: the quiet yes needs a vault a yes would write nothing into, folders included.
 
 ## Working Set
 
