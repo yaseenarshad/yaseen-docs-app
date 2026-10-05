@@ -35,8 +35,7 @@
  * Nothing here sleeps: every debounced commit (500 ms, `OutlineEditor`'s own) is gated on the
  * disk state or on the UI consequence it causes.
  *
- * Same harness as folderView.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `outline-`
- * step screenshots).
+ * The harness: a temp `--user-data-dir`, a COPY of the fixture, `outline-` step screenshots.
  */
 // Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
 // so every selector here was read from the source, not observed. Run it once and fix what it finds.
