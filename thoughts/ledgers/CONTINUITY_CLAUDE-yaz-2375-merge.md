@@ -35,6 +35,7 @@
 - D18 the real vault is converted in one sitting with YAZ-2420's conversion; the new build is not installed over the app before that.
 - D19 each folder has its own properties: a folder's values for a note are in the note under `in:`, in the block named by the folder's id. The top level is the note's own fields.
 - D20 a folder's values leave the note when the note leaves the folder (in-app move, removed shortcut, or the user's next change of a note moved outside the app); a block for a folder the app cannot find is kept; never on read.
+- D21 a move, a Cut then Paste or "Remove shortcut" that would clear a folder's values asks first; one that clears nothing stays silent (amends YAZ-888 and YAZ-2290 E5).
 - D12's keep-rule is gone (D19): deleting a column removes that folder's values only.
 - The conversion table is approved (YAZ-2383): each page becomes the folder that holds its members; 2 shortcuts, 5 nestings, 2 relations dropped.
 
@@ -49,11 +50,13 @@ Linear is the record: every sub-issue has a "Done" comment, and YAZ-2375 has "St
   - [x] 3L, 3M: each folder has its own properties, D19 (`e404b6a`)
   - [x] Phase 4: instructions at draft 5 on YAZ-2396 (conversion, values, backfill), each part proven on a copy. The real run is under YAZ-2420 (D18).
   - [x] 5A, 5B: polish review and pass (`7666355`)
-- Now: [→] 3N, 3O, 3P (YAZ-2454, 2455, 2458): links inside a folder's values, a copied folder's values, values leave with the note (D20)
-- Next: 5C (YAZ-2421): delete the Playwright specs this project made false; file the issue for a new suite
+  - [x] 3N, 3O, 3P: links inside a folder's values, a copied folder's values, values leave with the note (`3e22ff0`, `e68c045`)
+  - [x] A value write changes only its own line of `in` (`3779e1f`, found in the walk-through)
+  - [x] 5C: the Playwright specs the merge made false are deleted (`458a717`); a new suite is YAZ-2459
+  - [x] 6B: the hand walk-through on the converted copy, through the app's DevTools port (no Playwright)
+- Now: [→] 3Q (YAZ-2460): the app asks before a move that clears a folder's values (D21); 6A the scenario-test map
+- Next: 6C docs check, then 6D: merge to `main`, push, open the demo app for Yaseen (no install, no release)
 - Remaining:
-  - [ ] 6A scenario-test map, 6B walk-through on the converted copy in the dev app, 6C docs
-  - [ ] 6D demo to Yaseen, merge to `main`, push (no install, no release)
   - [ ] Close-out: handoff comments, project update, remove worktree and branch, archive the fork repo, the message owed below
 
 ## Owed at the merge

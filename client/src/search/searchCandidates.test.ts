@@ -63,7 +63,7 @@ describe('searchCandidates', () => {
 })
 
 describe('folderCandidates (🔒 D1, YAZ-1491)', () => {
-  it('one `dir` row per folder: matched by its own name, opening (revealing) its own path', () => {
+  it('one `dir` row per folder: matched by its own name, carrying its own path', () => {
     expect(folderCandidates('/vault', ['/vault/Archive'])).toEqual([
       { kind: 'dir', name: 'Archive', lower: 'archive', label: 'Archive', path: '/vault/Archive', folder: '' },
     ])
