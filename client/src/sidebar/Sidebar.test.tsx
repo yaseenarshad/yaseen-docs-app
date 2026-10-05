@@ -4163,4 +4163,18 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(props.onNotice).toHaveBeenCalledExactlyOnceWith("Can't add the shortcut: disk full", 'error')
     })
   })
+
+  // The ID vault's half is `its menu` and `is a FOLDER row's item`, above.
+  it('in a vault that does not use IDs no menu offers a shortcut: a folder row has no "Add note shortcut", and a note whose `also_in` names a folder has no shortcut row to remove (YAZ-2523 V5)', async () => {
+    const { el, indexSource } = await mountLinked([PROJECTS_ID])
+    // As such a vault's index hands them out: `also_in` is a property like any other, and no folder has an id.
+    act(() => indexSource.update(() => null, records([PROJECTS_ID]), [indexRecord('/v/Projects/.folder.md')], false))
+    expect(shortcutRow(el)).toBeNull()
+    rightClick(row(el, '/v/Projects'))
+    expect(itemByLabel(el, 'New note')).toBeDefined()
+    expect(itemByLabel(el, 'Add note shortcut')).toBeUndefined()
+    rightClick(row(el, HEALTH))
+    expect(itemByLabel(el, 'Delete')).toBeDefined()
+    expect(itemByLabel(el, 'Remove shortcut')).toBeUndefined()
+  })
 })

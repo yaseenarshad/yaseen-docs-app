@@ -289,6 +289,25 @@ describe('titleCandidates (the cell editors, YAZ-2293)', () => {
   })
 })
 
+// The ID vault's half is `a note with an id is linked BY it` and `rows are typed and read as TITLES`, above.
+describe('a vault that does not use IDs links by NAME (YAZ-2523 V3)', () => {
+  /** A note as such a vault's index hands it out: no `id`, its file name as its title; `id` and `title` are among its properties. */
+  const records = [{ ...rec('/vault/candidates/Abdul.md', ['AR']), properties: { id: 'k3m9x2pq7abc', title: 'UP-001 - Abdul' } }]
+
+  it('the `[[` picker\u2019s rows are typed, read and inserted as the file name, the alias row piped; each resolves back to the note', () => {
+    const rows = linkCandidates(records)
+    expect(rows.map(({ name, insert }) => ({ name, insert }))).toEqual([
+      { name: 'Abdul', insert: 'Abdul' },
+      { name: 'AR', insert: 'Abdul|AR' },
+    ])
+    expect(rows.map((c) => resolverFor(records, '/vault')(c.insert)?.record.path)).toEqual(['/vault/candidates/Abdul.md', '/vault/candidates/Abdul.md'])
+  })
+
+  it('a link cell offers the note by its file name and writes that name', () => {
+    expect(titleCandidates(records)).toEqual([{ name: 'Abdul', insert: 'Abdul', label: 'Abdul', lower: 'abdul' }])
+  })
+})
+
 describe('mergeLinkCandidates (YAZ-1310)', () => {
   it('suppresses recognized view-only targets even before a matching catalog entry exists', () => {
     const markdown = [

@@ -152,11 +152,11 @@ const FOLDER = '/vault/.folder.md'
 const FOLDER_ID = 'w7x8y9z0a1b2'
 /** The note's value for that folder's Status: in the folder's block of `in` (D19). */
 const LOCAL_NOTE = `---\nin:\n  ${FOLDER_ID}:\n    Status: Ready\n---\nOriginal note body\n`
-/** The window's feed after its first snapshot; `columns` undefined = the folder has no settings file. */
+/** The window's feed after its first snapshot, of a vault that uses IDs (YAZ-2523); `columns` undefined = the folder has no settings file. */
 const folderFeed = (columns?: Record<string, PropertyDecl>) => {
   const source = createWikilinkResolveSource()
   const settings: IndexRecord[] = columns === undefined ? [] : [{ ...TEST_RECORDS[0], path: FOLDER, name: '.folder.md', basename: '.folder', title: 'vault', folder: '', id: FOLDER_ID, properties: { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } } }]
-  source.update(() => null, [{ ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work' }], settings)
+  source.update(() => null, [{ ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work' }], settings, true)
   return source
 }
 
@@ -171,9 +171,10 @@ const folderMd = (dir: string, { columns, id, title = dir.slice(dir.lastIndexOf(
   id,
   properties: columns === undefined ? {} : { folder_settings: { columns, views: [{ type: 'board', name: 'Board' }] } },
 })
+/** A feed of those folders, in a vault that uses IDs: with none, the vault's kind and nothing else. */
 const feedOf = (...folders: IndexRecord[]) => {
   const source = createWikilinkResolveSource()
-  source.update(() => null, [], folders)
+  source.update(() => null, [], folders, true)
   return source
 }
 
@@ -183,7 +184,7 @@ const SHORTCUT_NOTE = `---\nalso_in:\n  - ${AREAS_ID}\n  - a1b2c3d4e5f6\n---\nBo
 /** The living folder declares Status and effort; Areas declares effort (differently) and owner. */
 const shortcutFeed = () => {
   const source = createWikilinkResolveSource()
-  source.update(() => null, [], [folderMd(ROOT, { columns: { Status: { kind: 'select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } } }), folderMd('/vault/Areas', { columns: { effort: { kind: 'text' }, owner: { kind: 'text' } }, id: AREAS_ID })])
+  source.update(() => null, [], [folderMd(ROOT, { columns: { Status: { kind: 'select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } } }), folderMd('/vault/Areas', { columns: { effort: { kind: 'text' }, owner: { kind: 'text' } }, id: AREAS_ID })], true)
   return source
 }
 
@@ -239,14 +240,14 @@ function editorOf(el: HTMLElement, key: string): string {
 
 describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
   it('is COLLAPSED by default and shows the top-level key count', () => {
-    const el = mount(MESSY)
+    const el = mount(MESSY, { wikilinks: feedOf() })
     expect(header(el)?.getAttribute('aria-expanded')).toBe('false')
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (2)') // aliases and status: `title` is not counted (YAZ-2420 D27)
     expect(area(el)).toBeNull()
   })
 
   it('E: the `title` row is not shown and "Properties (N)" does not count it; the raw YAML view still shows the line (YAZ-2420 D27)', () => {
-    const el = mount('---\ntitle: UP-001 - Abdul\nStatus: Ready\n---\nBody\n')
+    const el = mount('---\ntitle: UP-001 - Abdul\nStatus: Ready\n---\nBody\n', { wikilinks: feedOf() })
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (1)')
     expand(el)
     expect(keysOf(el)).toEqual(['Status'])
@@ -269,7 +270,7 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
 
   it('an edit saves the replaceFrontmatter result with the FRESH read mtime', async () => {
     readFile.mockResolvedValue(fileOf(MESSY))
-    const el = mount(MESSY)
+    const el = mount(MESSY, { wikilinks: feedOf() })
     expandRaw(el)
     // A value changes; the comment stays exactly where the user left it.
     typeInto(el, INTERIOR.replace('status: draft', 'status: done'))
@@ -670,7 +671,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
   })
 
   it('`id` is RESERVED too (YAZ-2293): chipped, read-only — editing it would orphan every link to the note', () => {
-    const el = mount('---\nid: k3m9x2pq7abc\nstatus: draft\n---\nBody\n', { root: ROOT })
+    const el = mount('---\nid: k3m9x2pq7abc\nstatus: draft\n---\nBody\n', { wikilinks: feedOf() })
     expand(el)
     expect(keysOf(el)).toEqual(['id', 'status'])
     const r = rowOf(el, 'id')
@@ -681,7 +682,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
   })
 
   it('an `id` that is no note id (another tool’s `id: 42`) is RESERVED like any other: the app writes its own over it, so it has no editor (YAZ-2420 D30)', () => {
-    const el = mount('---\nid: 42\n---\nBody\n', { root: ROOT })
+    const el = mount('---\nid: 42\n---\nBody\n', { wikilinks: feedOf() })
     expand(el)
     const r = rowOf(el, 'id')
     expect(chipIn(r)).toBe('Reserved')
@@ -1063,7 +1064,7 @@ describe('FrontmatterPanel — a folder\'s own panel (YAZ-2290 D9)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<FrontmatterPanel file={{ path: OWN, content, mtime: 0 }} />))
+    act(() => root?.render(<FrontmatterPanel file={{ path: OWN, content, mtime: 0 }} wikilinks={feedOf()} />))
     return container
   }
 
@@ -1481,7 +1482,7 @@ Body
   })
 
   it('`in` is no row with no folder either: a note the panel has no folder for shows its own fields alone', () => {
-    const el = mount(CONTENT)
+    const el = mount(CONTENT, { wikilinks: feedOf() })
     expand(el)
     expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in'])
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (4)')
@@ -1541,5 +1542,89 @@ Body
     expect(writeFile.mock.calls.map(([request]) => request.path)).toEqual(['/vault/Hiring/.folder.md', NOOR])
     const id = /^id: (\S+)$/m.exec(disk.get('/vault/Hiring/.folder.md')!)![1]
     expect(disk.get(NOOR)).toBe(`---\ntitle: Noor\nin:\n  ${id}:\n    score: 8\n---\nBody\n`)
+  })
+
+  /** The panel is the note's own frontmatter and nothing else there. The ID vault's half of each row is the tests above, and `typed rows`' Reserved ones. */
+  describe('in a vault that does not use IDs (YAZ-2523 V5, V12)', () => {
+    /** The folders as such a vault's index hands them out: their saved settings, and no id. */
+    const unnumbered = (): IndexRecord[] => [folderMd('/vault/Archive'), folderMd('/vault/Hiring', { columns: HIRING }), folderMd('/vault/Tasks', { columns: TASKS })]
+    const plainFeed = () => {
+      const source = createWikilinkResolveSource()
+      source.update(() => null, [], unnumbered())
+      return source
+    }
+    /** A note of a vault that used IDs once: every key the app owned there, and two folders' blocks. */
+    const BLOCKS = CONTENT.slice(CONTENT.indexOf('\nin:\n') + 1, CONTENT.indexOf('---\nBody'))
+    const PLAIN = CONTENT.replace('aliases: [Noor]\n', 'title: Noor Khan\naliases: [Noor]\n').replace('---\nBody', 'comments: []\nreviews: []\n---\nBody')
+
+    it('no "Properties from", no "Note fields" heading and no folder rows, though the note holds `in:` blocks and its folder saved settings: the rows are the note\u2019s own frontmatter, `title` and `in` among them, each counted', () => {
+      const el = mountNote(PLAIN, NOOR, plainFeed())
+      expect(from(el)).toBeNull()
+      expect(ownHeading(el)).toBeNull()
+      expect(keysOf(el)).toEqual(['id', 'title', 'aliases', 'Status', 'also_in', 'in', 'comments', 'reviews'])
+      expect(header(el)?.getAttribute('aria-label')).toBe('Properties (8)')
+    })
+
+    it('`id`, `title` and `also_in` are ordinary: each has its editor and its menu, and `also_in` reads as written; `in` is a value no editor holds, like any map; `comments` and `reviews` are still Reserved', () => {
+      const el = mountNote(PLAIN, NOOR, plainFeed())
+      for (const key of ['id', 'title', 'also_in']) {
+        expect(chipIn(rowOf(el, key))).toBeNull()
+        expect(rowOf(el, key).querySelector('[data-edit]')).not.toBeNull()
+        expect(byLabel(rowOf(el, key), `Configure ${key}`)).not.toBeNull()
+      }
+      expect(rowOf(el, 'also_in').querySelector('.frontmatter-panel__value')?.textContent).toBe(TASKS_ID)
+      expect(chipIn(rowOf(el, 'in'))).toBe('YAML')
+      for (const key of ['comments', 'reviews']) {
+        expect(chipIn(rowOf(el, key))).toBe('Reserved')
+        expect(rowOf(el, key).querySelector('[data-edit]')).toBeNull()
+      }
+    })
+
+    it('an edit of `id` or of `title` writes that one line, and removing `also_in` only its own lines: the `in:` blocks stay byte for byte', async () => {
+      const el = mountNote(PLAIN, NOOR, plainFeed())
+      await edit(rowOf(el, 'id'), 'noor-1')
+      expect(written()).toBe(PLAIN.replace('id: k3m9x2pq7abc', 'id: noor-1'))
+      await edit(rowOf(el, 'title'), 'Noor K')
+      expect(written()).toBe(PLAIN.replace('title: Noor Khan', 'title: Noor K'))
+      await removeRow(rowOf(el, 'also_in'))
+      expect(written()).toBe(PLAIN.replace(`also_in:\n  - ${TASKS_ID}\n`, ''))
+      expect(writeFile.mock.calls.every(([request]) => request.path === NOOR && request.content.includes(BLOCKS))).toBe(true)
+    })
+
+    it('Add property adds to the note itself, at the top level, under `title` or `id` as under any name; `comments` is still refused', async () => {
+      const bytes = `---\nStatus: mine\n${BLOCKS}---\nBody\n`
+      const el = mountNote(bytes, NOOR, plainFeed())
+      const add = async (name: string, value: string): Promise<void> => {
+        click(btn(el, 'Add property'))
+        setValue(byLabel<HTMLInputElement>(el, 'New property name'), name)
+        setValue(byLabel<HTMLInputElement>(el, 'New property value'), value)
+        click(btn(el, 'Add'))
+        await flush()
+      }
+      await add('title', 'Noor Khan')
+      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: bytes.replace('---\nBody', 'title: Noor Khan\n---\nBody'), expectedMtime: 100 })
+      await add('id', 'noor-1')
+      expect(written()).toBe(bytes.replace('---\nBody', 'id: noor-1\n---\nBody'))
+      click(btn(el, 'Add property'))
+      setValue(byLabel<HTMLInputElement>(el, 'New property name'), 'comments')
+      click(btn(el, 'Add'))
+      expect(errorLine(el)?.textContent).toBe("comments is the app's own property — it is set where it belongs, not here")
+      expect(writeFile).toHaveBeenCalledTimes(2)
+    })
+
+    it('a vault that stops using IDs while the panel is open: the folder rows go, and the next edit leaves every `in:` block as it is — one an ID vault would have dropped too (V13)', async () => {
+      const ARCHIVE_ID = 'a7ch1ve00001'
+      // Noor holds Archive's values, and Archive does not show it: the block an ID vault drops at the next write (D20).
+      const stale = CONTENT.replace('\nin:\n', `\nin:\n  ${ARCHIVE_ID}:\n    Status: Old\n`)
+      const source = feedOf(folderMd('/vault/Archive', { id: ARCHIVE_ID }), folderMd('/vault/Hiring', { columns: HIRING, id: HIRING_ID }), folderMd('/vault/Tasks', { columns: TASKS, id: TASKS_ID }))
+      const el = mountNote(stale, NOOR, source)
+      expect(from(el)).not.toBeNull()
+      // The same settings files, not a byte moved: only the vault's answer changed.
+      act(() => source.update(() => null, [], unnumbered()))
+      expect(from(el)).toBeNull()
+      expect(keysOf(el)).toEqual(['id', 'aliases', 'Status', 'also_in', 'in'])
+      await edit(rowOf(el, 'Status'), 'yours')
+      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: NOOR, content: stale.replace('Status: mine', 'Status: yours'), expectedMtime: 100 })
+    })
   })
 })

@@ -61,9 +61,12 @@ export function openIdMenu(parent: HTMLElement, x: number, y: number, name: stri
   return close
 }
 
-/** The id of the rendered (collapsed) id link under `target`, or null — `wikilinkClick`'s hit-test. */
-function idLinkAt(view: EditorView, target: EventTarget | null): string | null {
-  if (!(target instanceof Element)) return null
+/**
+ * The id of the rendered (collapsed) id link under `target`, or null — `wikilinkClick`'s hit-test.
+ * Where the vault does not use IDs (`ids`, YAZ-2523 🔒 V5) no link is one.
+ */
+function idLinkAt(view: EditorView, target: EventTarget | null, ids: boolean): string | null {
+  if (!ids || !(target instanceof Element)) return null
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || !view.dom.contains(span)) return null
   const page = linkPageName(wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0)) ?? '')
@@ -79,12 +82,12 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
         handleDOMEvents: {
           mousedown: (view, event) => {
             // A Ctrl-click is macOS's other right-click, and arrives as a LEFT-button mousedown.
-            if (!(event.button === 2 || (event.button === 0 && event.ctrlKey)) || idLinkAt(view, event.target) === null) return false
+            if (!(event.button === 2 || (event.button === 0 && event.ctrlKey)) || idLinkAt(view, event.target, source.ids) === null) return false
             event.preventDefault()
             return true
           },
           contextmenu: (view, event) => {
-            const id = idLinkAt(view, event.target)
+            const id = idLinkAt(view, event.target, source.ids)
             const parent = view.dom.parentElement
             if (id === null || parent === null) return false
             event.preventDefault()

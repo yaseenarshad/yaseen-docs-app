@@ -23,7 +23,8 @@ const resolve = (target: string) => (target === ID ? '/vault/Projects/Road Map.m
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, withNav = true, feed: (source: MutableWikilinkResolveSource) => void = (source) => source.update(resolve)) {
+/** The feed of a vault that uses IDs, unless a test says otherwise (YAZ-2523). */
+async function mount(markdown: string, withNav = true, feed: (source: MutableWikilinkResolveSource) => void = (source) => source.update(resolve, undefined, undefined, true)) {
   const source = createWikilinkResolveSource()
   feed(source)
   const nav = { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
@@ -120,7 +121,7 @@ describe('right-click on a rendered id link', () => {
     const records = [titled('/vault/upwork-2026/up-001-abdul-k3m9x2pq7abc.md', ID, 'UP-001 - Abdul')]
     const folders = [titled('/vault/upwork-2026/.folder.md', FOLDER_ID, 'Upwork 2026')]
     const { root, view } = await mount(`pad [[${FOLDER_ID}]] and [[${ID}]] tail\n`, true, (source) =>
-      source.update(linkResolver(records, '/vault', ['/vault/upwork-2026'], folders), records, folders),
+      source.update(linkResolver(records, '/vault', ['/vault/upwork-2026'], folders), records, folders, true),
     )
     mouse(linkSpan(root, 'UP-001 - Abdul'), 'contextmenu')
     expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['UP-001 - Abdul', ID, 'Copy ID'])
@@ -138,7 +139,7 @@ describe('right-click on a rendered id link', () => {
     const records = [record('/vault/Projects/Road Map.md', ID, 'Road Map')]
     const folders = [record('/vault/Projects/.folder.md', FOLDER_ID, 'Projects')]
     const { root, view } = await mount(`pad [[${FOLDER_ID}]] and [[${ID}]] tail\n`, true, (source) =>
-      source.update(linkResolver(records, '/vault', ['/vault/Projects'], folders), records, folders),
+      source.update(linkResolver(records, '/vault', ['/vault/Projects'], folders), records, folders, true),
     )
     mouse(linkSpan(root, 'Projects'), 'contextmenu') // the link itself shows the bare name
     const rows = rowsOf(popupOf(view)!)
@@ -179,6 +180,14 @@ describe('what keeps the native menu', () => {
       expect(mouse(linkSpan(root, shown), 'mousedown').defaultPrevented).toBe(false)
       expect(mouse(linkSpan(root, shown), 'contextmenu').defaultPrevented).toBe(false)
     }
+    expect(popupOf(view)).toBeNull()
+  })
+
+  // The ID vault's half is `replaces the native menu` and `the reveal trap`, above.
+  it('in a vault that does not use IDs a link whose text looks like an id is an ordinary link: no menu, no Copy ID (YAZ-2523 V5)', async () => {
+    const { root, view } = await mount(`pad [[${ID}]] tail\n`, true, (source) => source.update(() => null))
+    expect(mouse(linkSpan(root, ID), 'mousedown').defaultPrevented).toBe(false)
+    expect(mouse(linkSpan(root, ID), 'contextmenu').defaultPrevented).toBe(false)
     expect(popupOf(view)).toBeNull()
   })
 

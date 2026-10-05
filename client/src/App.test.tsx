@@ -1549,6 +1549,22 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(bridge.writeFile).not.toHaveBeenCalled()
     })
 
+    // The ID vault's half is every other test of this block.
+    it('in a vault that does not use IDs a move and a rename ask nothing about values and write nothing: every `in:` block stays byte for byte (YAZ-2523 V13)', async () => {
+      // As such a vault's index hands them out: `in` is a property like any other, and no folder has an id.
+      const plain = { ...snapshot(), folders: snapshot().folders.map(({ id: _id, ...folder }) => folder), ids: false }
+      const places = ['/v/Team/Archive/Noor.md', '/v/Noor.md', '/v/Team/Hiring/Noor Khan.md']
+      const files = Object.fromEntries(places.map((place) => [place, { content: held, mtime: 1 }]))
+      const { bridge, el } = await mount(askOff(), identity(), files, (b) => b.bridge.index.mockResolvedValue(plain))
+      for (const place of places) {
+        await drag(NOOR, place)
+        expect(el.querySelector('.confirm')).toBeNull()
+        expect(bridge.file.rename).toHaveBeenLastCalledWith({ oldPath: NOOR, newPath: place })
+        expect(files[place].content).toBe(held)
+      }
+      expect(bridge.writeFile).not.toHaveBeenCalled()
+    })
+
     it('a rename that only changes the name: the rename sheet as today, never this one', async () => {
       const { el } = await mountTeam()
       await act(async () => void captured.sidebar?.onRenameFile(NOOR, '/v/Team/Hiring/Noor Khan.md', 'file'))
