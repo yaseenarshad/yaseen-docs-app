@@ -10,9 +10,8 @@ Issue: https://linear.app/growprofit/issue/YAZ-2541/group-a-table-by-folder-fold
 
 ## Constraints
 
-- Prototype in this worktree only (`yaz-2541-group-by-folder`, cut from main `d73a532`). No commit or push until Yaseen confirms.
+- Built in the worktree `yaz-2541-group-by-folder`, cut from main `d73a532`.
 - No Playwright. Verify with vitest, typecheck, and the hand-tested demo vault.
-- Nothing goes to Linear until "approved, lock it in". Sub-issues wait for his sub-issue prompt.
 - Raising a `tools/perf/budget.json` ceiling needs his explicit OK.
 
 ## Key Decisions
@@ -40,20 +39,19 @@ Design, as proposed in chat:
 
 ## State
 
-Decisions LOCKED by Yaseen 2026-10-05 ("approved, lock it in"). Record: comment `57da44d2` on YAZ-2541, plus "Amendment 1" (B4: shortcut homes after the page's own folders; B1 built). He gave leave to commit, push and merge to main. No release unless he asks. No Playwright.
+CLOSED 2026-10-05. Merged to main by PR #91 (`3836937`). Not released: Yaseen cuts releases himself. The Linear record on YAZ-2541 (comment `57da44d2`, with Amendment 1) is the source of truth.
 
 - Done:
-  - [x] YAZ-2542 1- Scope (findings posted)
-  - [x] YAZ-2543 2- Engine: YAZ-2544 2A, YAZ-2545 2B, YAZ-2546 2C (commit `bad7c8a`, pushed)
-  - [x] YAZ-2547 3- Menus and headers: YAZ-2548 3A, YAZ-2549 3B, YAZ-2550 3C (same commit)
-  - [x] YAZ-2552 4A- Polish list posted (six items)
-- Now: [→] YAZ-2553 4B- Apply the polish pass: all six items are edited on disk, UNCOMMITTED; typecheck + `npx vitest run` must pass, then commit and push, comment, Done (and YAZ-2551 Done)
-- Next: YAZ-2554 5- Verify: gates (`npm run build`, `npm run perf:budget:ci`), scenarios A to Q read off the dev app with `scratchpad/drive.mjs` (debug port 9341; a folder page opens on a DOUBLE click)
-- Remaining:
-  - [ ] PR to main, merge (fetch main first; YAZ-2523's worktree also edits `FolderView.test.tsx`, not yet on main)
-  - [ ] Closeout: `📦 Handoff` comment on the parent and every sub-issue, project update on "Yaseen Docs App", YAZ-2541 Done
-  - [ ] Stop the dev app, delete the demo vault and profile, remove this worktree and branch
-  - [ ] Update memory: flow notes from this run
+  - [x] YAZ-2542 1- Scope
+  - [x] YAZ-2543 2- Engine: YAZ-2544 2A, YAZ-2545 2B, YAZ-2546 2C (`bad7c8a`)
+  - [x] YAZ-2547 3- Menus and headers: YAZ-2548 3A, YAZ-2549 3B, YAZ-2550 3C (`bad7c8a`)
+  - [x] YAZ-2551 4- Polish and anti-slop: YAZ-2552 4A, YAZ-2553 4B (`a880846`)
+  - [x] YAZ-2554 5- Verify (gates, and every scenario read off the dev app; no Playwright)
+  - [x] `docs/CONTRACTS.md` states the rule (`73afffd`)
+  - [x] Handoff comment on the parent and every sub-issue; project update posted
+  - [x] Demo vault, its profile, the worktree and the branch removed
+- Now: nothing
+- Next: nothing
 
 ## Open Questions
 
@@ -61,8 +59,6 @@ Decisions LOCKED by Yaseen 2026-10-05 ("approved, lock it in"). Record: comment 
 
 ## Working Set
 
-- Branch: `yaz-2541-group-by-folder`; worktree `.claude/worktrees/yaz-2541-group-by-folder`
-- Files: `client/src/views/engine.ts`, `client/src/views/ViewsPane.tsx`, `client/src/views/view/GroupHeader.tsx`, `client/src/views/view/SortMenu.tsx`, the five header call sites, and their tests
+- Files: `client/src/views/engine.ts`, `client/src/views/ViewsPane.tsx`, `client/src/views/FolderView.tsx`, `client/src/views/view/GroupHeader.tsx`, `client/src/views/view/SortMenu.tsx`, the five header call sites, and their tests
 - Tests: `npx vitest run --project client`, `npm run typecheck`
-- Demo: vault "Group a table by folder" and profile `profile-yaz-2541`, both in the session scratchpad; built by `make_demo_vault.py` there
-- Launch: from `desktop/` in the worktree, `YASEEN_DOCS_USER_DATA_DIR=<profile> YASEEN_DOCS_E2E=1 npx electron-vite dev`
+- Gotchas left for the next change: YAZ-2523's worktree also edits `client/src/views/FolderView.test.tsx`; the size gate's eager JS row has 891 bytes of room left
