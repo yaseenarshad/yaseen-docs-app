@@ -158,7 +158,7 @@ const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree_
 /** An index record for a note of the `/v` vault — only `folder` matters to the folder rows' counts (YAZ-2290 E6). */
 const indexRecord = (path: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
-  return { path, name, basename: name.replace(/\.md$/, ''), folder: path.slice('/v/'.length, Math.max('/v/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: path.slice('/v/'.length, Math.max('/v/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
 }
 const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
 /**
@@ -917,7 +917,7 @@ describe('delete (GRO-2272)', () => {
     // record missing them resolves nothing, which is how the first draft of this test passed
     // vacuously against an empty count.
     const rec = (base: string, links: string[] = []) => ({
-      path: `/v/${base}.md`, name: `${base}.md`, basename: base, folder: '', ext: 'md',
+      path: `/v/${base}.md`, name: `${base}.md`, basename: base, title: base, folder: '', ext: 'md',
       size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [],
     })
     const records = [rec('a'), rec('hub', ['a'])]
@@ -931,7 +931,7 @@ describe('delete (GRO-2272)', () => {
 
   it('a FOLDER target counts the notes that link to the folder, and a folder whose settings name it (YAZ-2290 D10)', async () => {
     const rec = (path: string, over: object = {}) => ({
-      path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'hub', folder: '', ext: 'md',
+      path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'hub', title: 'hub', folder: '', ext: 'md',
       size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [] as string[], embeds: [], ...over,
     })
     const folders = [rec('/v/other/.folder.md', { folder: 'other', properties: { folder_settings: { columns: { in: { kind: 'link', target: '[[sub]]' } } } } })]
@@ -1287,7 +1287,7 @@ describe('search results (YAZ-803)', () => {
  */
 describe('search-row context menu (YAZ-2050)', () => {
   /** `a` is the tree's own `/v/a.md`, so its row exists once the search is left. */
-  const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
     const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
@@ -1407,7 +1407,7 @@ describe('folder rows in search (YAZ-1491)', () => {
   const expandedState = (el: HTMLElement, label: string) => dirRow(el, label)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
 
   /** A folder AND a note both called `sub`, so the tie-break is observable. */
-  const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', title: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
     const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
@@ -2703,7 +2703,7 @@ describe('Sidebar "Copy ID" (YAZ-2293)', () => {
   ]
   const record = (path: string, id?: string) => {
     const name = path.slice(path.lastIndexOf('/') + 1)
-    return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.[^.]+$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+    return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.[^.]+$/, ''), title: name.replace(/\.[^.]+$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   }
   // Only `/v/a.md` is a note WITH an id. The PDF and the folder are given records the real index
   // never holds, so what keeps the item off those rows is the row's kind, not an empty lookup.

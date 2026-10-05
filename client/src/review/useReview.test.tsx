@@ -39,7 +39,7 @@ function scan(path: string, { content, mtime }: { content: string; mtime: number
   delete properties[REVIEWS_KEY]
   const name = path.slice(path.lastIndexOf('/') + 1)
   const folder = path.slice(ROOT.length + 1, Math.max(ROOT.length + 1, path.lastIndexOf('/')))
-  return { path, name, basename: name.replace(/\.md$/, ''), folder, ext: 'md', size: content.length, ctime: 0, mtime, properties, ...(error !== undefined && { frontmatterError: error }), aliases: [], tags: [], links: [], embeds: [], ...(reviews.length > 0 && { reviews }), text: textFingerprint(body) }
+  return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder, ext: 'md', size: content.length, ctime: 0, mtime, properties, ...(error !== undefined && { frontmatterError: error }), aliases: [], tags: [], links: [], embeds: [], ...(reviews.length > 0 && { reviews }), text: textFingerprint(body) }
 }
 
 /** What the watcher does after a write: a fresh snapshot, then every subscriber woken. */

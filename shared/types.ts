@@ -153,6 +153,8 @@ export interface IndexRecord {
   name: string
   /** File name without extension. */
   basename: string
+  /** What the app shows (YAZ-2420 🔒 D14): the frontmatter `title`, else `basename` — for a folder's settings file, the folder's own name. */
+  title: string
   /** Root-relative folder, '/' separators, '' at the root. */
   folder: string
   /** 'md' | 'markdown' (no dot). */

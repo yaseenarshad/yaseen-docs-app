@@ -15,6 +15,7 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
     path,
     name,
     basename: name.replace(/\.md$/, ''),
+    title: name.replace(/\.md$/, ''),
     folder: path.indexOf('/', '/vault/'.length) === -1 ? '' : folder,
     ext: 'md',
     size: 1,

@@ -117,7 +117,7 @@ describe('right-click on a rendered id link', () => {
   it('K5 — right-click a rendered link to a FOLDER: the folder\'s name with "(folder)", its id and Copy ID', async () => {
     const FOLDER_ID = 'f7n2w8rt4xyz'
     const record = (path: string, id: string): IndexRecord => ({
-      path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', folder: 'Projects', ext: 'md', size: 1, ctime: 1, mtime: 1,
+      path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title: 'x', folder: 'Projects', ext: 'md', size: 1, ctime: 1, mtime: 1,
       properties: {}, aliases: [], tags: [], links: [], embeds: [],
     })
     // The bridge's feed: a folder with its settings file's id, and a note INSIDE it — which is no folder.

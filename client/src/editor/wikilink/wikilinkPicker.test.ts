@@ -388,6 +388,7 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
       path,
       name,
       basename: name.replace(/\.md$/, ''),
+      title: name.replace(/\.md$/, ''),
       folder: path.indexOf('/', '/vault/'.length) === -1 ? '' : folder,
       ext: 'md',
       size: 1,
@@ -495,7 +496,7 @@ describe('wikilink picker: folders, by id (scenario K)', () => {
   const NOTE_ID = 'k3m9x2pq7abc'
   const FOLDER_ID = 'f7n2w8rt4xyz'
   const record = (path: string, id: string): IndexRecord => ({
-    path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
+    path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''), title: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
     folder: path.slice('/vault/'.length, Math.max('/vault/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1,
     properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })

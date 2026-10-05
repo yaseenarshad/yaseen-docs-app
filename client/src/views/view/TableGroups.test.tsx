@@ -141,6 +141,7 @@ function manyRecords(n = 600): IndexRecord[] {
       path: `/vault/${basename}.md`,
       name: `${basename}.md`,
       basename,
+      title: basename,
       folder: '',
       ext: 'md',
       size: 0,
@@ -208,6 +209,7 @@ describe('grouped sections', () => {
       path: `/vault/${name}.md`,
       name: `${name}.md`,
       basename: name,
+      title: name,
       properties: { status },
     })
     const records = [rec('both', ['a', 'b']), rec('onlyA', ['a'])]
@@ -252,7 +254,7 @@ describe('collapse', () => {
     const ID = 'k3m9x2pq7abc'
     /** "Creator Economy" carries the id (under whatever title), and the first two notes are grouped under it BY that id. */
     const vault = (title: string): IndexRecord[] =>
-      TEST_RECORDS.map((r, i) => (i === 2 ? { ...r, id: ID, basename: title, name: `${title}.md` } : i < 2 ? { ...r, properties: { ...r.properties, status: `[[${ID}]]` } } : r))
+      TEST_RECORDS.map((r, i) => (i === 2 ? { ...r, id: ID, basename: title, title: title, name: `${title}.md` } : i < 2 ? { ...r, properties: { ...r.properties, status: `[[${ID}]]` } } : r))
     let records = vault('Creator Economy')
     const { el } = mount(GROUP_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     expect(headerTexts(el)).toEqual(['idea', 'published', 'Creator Economy', 'No value'])
@@ -284,6 +286,7 @@ describe('collapse', () => {
       path: `/vault/many/n${i}.md`,
       name: `n${i}.md`,
       basename: `n${i}`,
+      title: `n${i}`,
       folder: 'many',
       properties: { ...TEST_RECORDS[0].properties, status: `s${i}` },
     }))

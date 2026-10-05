@@ -24,6 +24,7 @@ const rec = (path: string, { links = [], embeds = [], aliases = [] }: RecInit = 
     path,
     name,
     basename: name.replace(/\.md$/, ''),
+    title: name.replace(/\.md$/, ''),
     folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
     ext: 'md',
     size: 1,
