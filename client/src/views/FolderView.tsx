@@ -26,7 +26,7 @@ import type { ColumnDecl } from './folderSettings'
 import { stringify } from 'yaml'
 import { folderValues, withFolderValues } from '@shared/folderValues'
 import { folderSettingsPath, inFolder, type CommentsOrder, type FileResponse, type PropertiesResponse } from '@shared/types'
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
@@ -278,15 +278,30 @@ export function FolderView({
     // Wherever it is born, the seeded values are THIS folder's — its view is the one being satisfied — and a
     // folder with no id is given one first (`folderId`). It is titled `Untitled`, every time (YAZ-2420 🔒 D20: the
     // ids keep the files apart), unless the caller knows what it is called (YAZ-943's inline board add types one).
+    // In a vault that does not use IDs (YAZ-2523 🔒 V3) the folder is given no id and a seeded value is the note's own
+    // property; only the name keeps two notes apart, so an untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
+      const ids = source.ids
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
-      const block = Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
-      const seeded = (template: Record<string, unknown>): Record<string, unknown> => ({
-        ...(block === undefined ? template : withFolderValues(template, block, seed.properties)),
-        ...(seed.tags !== undefined && { tags: seed.tags }),
-      })
+      const dir = into === folder ? path : absFrom(root, into)
+      const block = !ids || Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
+      // No seed when the view seeds nothing: the note is then its folder's template as it is.
+      const seeded =
+        Object.keys(seed.properties).length === 0 && seed.tags === undefined
+          ? undefined
+          : (template: Record<string, unknown>): Record<string, unknown> => ({
+              ...(block === undefined ? { ...template, ...seed.properties } : withFolderValues(template, block, seed.properties)),
+              ...(seed.tags !== undefined && { tags: seed.tags }),
+            })
       const typed = (name ?? '').trim()
-      return createNote(into === folder ? path : absFrom(root, into), typed === '' ? 'Untitled' : typed, seeded)
+      if (ids || typed !== '') return createNote(dir, typed === '' ? 'Untitled' : typed, ids, seeded)
+      for (let n = 1; ; n += 1) {
+        try {
+          return await createNote(dir, n === 1 ? 'Untitled' : `Untitled ${n}`, false, seeded)
+        } catch (err) {
+          if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
+        }
+      }
     },
     // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
     // The same save drops the note's values for the folders that no longer show it (D20).

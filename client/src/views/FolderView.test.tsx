@@ -113,11 +113,12 @@ const onOpenFile = vi.fn()
 /**
  * WikilinkIndexBridge's own wrapping: THE link resolver — a note, else a folder of the Files
  * tree — the notes, and the folder settings records riding beside them. `settings: null` = the
- * folder has no `.folder.md`.
+ * folder has no `.folder.md`. The vault uses IDs, here and wherever a test feeds the source itself,
+ * but for the block that says otherwise (YAZ-2523).
  */
 function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault()): void {
   const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_settings: settings }), id: STAGES_ID }]
-  act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+  act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
 }
 
 /** Mounts, hands over the first snapshot — the order the window does it in — and lets the settings file's read answer. */
@@ -298,7 +299,7 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
   it('a subfolder is never a row — not even one with a settings file of its own', async () => {
     const el = renderFolderView({ path: STAGES, source, onOpenFile })
     const folders = [{ ...rec(SETTINGS_FILE, { folder_settings: SETTINGS }), id: STAGES_ID }, { ...rec('/vault/stages/archive/.folder.md'), id: 'z8y7x6w5v4t3' }]
-    act(() => source.update(linkResolver(vault(), '/vault', vaultDirs('/vault'), folders), vault(), folders))
+    act(() => source.update(linkResolver(vault(), '/vault', vaultDirs('/vault'), folders), vault(), folders, true))
     await flush()
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old'])
@@ -399,7 +400,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
   /** The snapshot with a second settings file beside the folder's own: `dir`'s, saving `columns`. */
   const feedWith = (dir: string, columns: Record<string, unknown>, records: IndexRecord[] = shortcut()): void => {
     const folders = [{ ...rec(`${dir}/.folder.md`, { folder_settings: { columns, views: [TABLE] } }), id: 'z8y7x6w5v4t3' }, { ...rec(SETTINGS_FILE, { folder_settings: SETTINGS }), id: STAGES_ID }]
-    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
   }
   const openDeleteSheet = (el: HTMLElement): void => {
     selectView(el, 'Table')
@@ -975,7 +976,7 @@ describe('cell editing writes the NOTE, in the folder’s block, typed by the fo
     expect(typed()).toHaveLength(8)
     vi.mocked(api.tree).mockResolvedValue({ root: '/vault', tree: [...DIRS, { type: 'dir', name: 'Fresh', path: '/vault/Fresh', children: [] }], generatedAt: 2 })
     await fetchTree('/vault')
-    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), source.folders), records, source.folders)) // the bridge, on a folder list that moved
+    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), source.folders), records, source.folders, true)) // the bridge, on a folder list that moved
     expect(typed()).toEqual(['One'])
   })
 
@@ -1092,6 +1093,59 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
   })
 })
 
+// The ID vault's half of each row is the block above.
+describe('New in a vault that does not use IDs makes the note the plain way (YAZ-2523 V3)', () => {
+  /** The folder as such a vault's index hands it out: its settings record has no id. */
+  const mountPlain = async (settings: unknown = SETTINGS): Promise<HTMLElement> => {
+    const el = renderFolderView({ path: STAGES, source, onOpenFile })
+    const folders = [rec(SETTINGS_FILE, { folder_settings: settings })]
+    act(() => source.update(linkResolver(vault(), '/vault', vaultDirs('/vault'), folders), vault(), folders, false))
+    await flush()
+    return el
+  }
+
+  it('"New" creates `Untitled.md` in the folder, empty: no id and no `title` is sent', async () => {
+    const el = await mountPlain()
+    click(byLabel(el, 'New note'))
+    await flush()
+    expect(createFile.mock.calls).toEqual([[{ path: '/vault/stages/Untitled.md', content: '' }]])
+    expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/Untitled.md')
+  })
+
+  it('when `Untitled.md` is taken "New" creates `Untitled 2.md`, then `Untitled 3.md`', async () => {
+    const taken = new Set(['/vault/stages/Untitled.md', '/vault/stages/Untitled 2.md'])
+    createFile.mockImplementation(async (req) => {
+      const { path } = req as CreateFileRequest
+      if (taken.has(path)) throw new BridgeRequestError('ALREADY_EXISTS', 'file exists')
+      return { path, mtime: 1, size: 0 }
+    })
+    const el = await mountPlain()
+    click(byLabel(el, 'New note'))
+    await flush()
+    expect(createFile.mock.calls.map(([req]) => (req as CreateFileRequest).path)).toEqual(['/vault/stages/Untitled.md', '/vault/stages/Untitled 2.md', '/vault/stages/Untitled 3.md'])
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/stages/Untitled 3.md')
+  })
+
+  it('a view\u2019s seeded values are the note\u2019s own properties beside the template\u2019s: no `in:` block is written, and the folder is given no id', async () => {
+    readFile.mockResolvedValue({ path: '/vault/stages/.template.md', content: '---\nowner: me\n---\n## Notes\n', mtime: 1, size: 0 })
+    const el = await mountPlain({ ...SETTINGS, views: [{ type: 'table', name: 'Table', order: ['file.name'], filters: { and: ['file.hasTag("hiring")', 'kind == "task"'] } }] })
+    click(byLabel(el, 'New note'))
+    await flush()
+    expect(createFile.mock.calls).toEqual([[{ path: '/vault/stages/Untitled.md', content: '---\nowner: me\nkind: task\ntags:\n  - hiring\n---\n## Notes\n' }]])
+    expect(transform).not.toHaveBeenCalled()
+  })
+
+  it('a typed name that is taken, or one a file cannot hold, is refused and never made under another name', async () => {
+    await mountPlain()
+    expect(await captured.folder!.create({ properties: {} }, 'Ship it')).toBe('/vault/stages/Ship it.md')
+    createFile.mockRejectedValue(new BridgeRequestError('ALREADY_EXISTS', 'file exists'))
+    await expect(captured.folder!.create({ properties: {} }, 'Ship it')).rejects.toThrow('file exists')
+    expect(createFile).toHaveBeenCalledTimes(2)
+    await expect(captured.folder!.create({ properties: {} }, 'a/b')).rejects.toThrow('Name cannot contain "/"')
+    expect(createFile).toHaveBeenCalledTimes(2)
+  })
+})
+
 // ---------- the write-echo guard vs rapid gestures (YAZ-1241) ----------
 
 describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
@@ -1187,7 +1241,7 @@ describe('each folder has its own properties (D19)', () => {
     const open = async (path: string): Promise<HTMLElement> => {
       unmountFolderView()
       const el = renderFolderView({ path, source, onOpenFile })
-      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
       await flush()
       return el
     }
@@ -1273,7 +1327,7 @@ describe('each folder has its own properties (D19)', () => {
     const records = [rec(LEAD, { status: '4-Done', in: { [STAGES_ID]: { status: '2-Todo' }, [ARCHIVE_ID]: { status: '1-Backlog' } } }), rec(SALES, { status: '4-Done' })]
     disk.set(SALES, '---\nstatus: 4-Done\n---\n')
     const el = renderFolderView({ path: STAGES, source, onOpenFile })
-    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+    act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
     await flush()
     expect(captured.folder!.settings.columns).toEqual(DEFAULT_COLUMNS)
     expect([cell(el, 'Lead Gen', 1).textContent, cell(el, 'Sales', 1).textContent]).toEqual(['2-Todo', 'Empty']) // this folder's Status, never the note's own
@@ -1335,7 +1389,7 @@ describe('each folder has its own properties (D19)', () => {
     const open = async (): Promise<HTMLElement> => {
       disk.set(DEEP, MOVED)
       const el = renderFolderView({ path: STAGES, source, onOpenFile })
-      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders))
+      act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
       await flush()
       return el
     }
@@ -1397,7 +1451,7 @@ describe('each folder has its own properties (D19)', () => {
       disk.set(LEAD, '')
       const folders = [rec(SETTINGS_FILE, { folder_settings: { columns: { order: { kind: 'number' } }, views: [{ type: 'table', name: 'Table' }] } })]
       const el = renderFolderView({ path: STAGES, source, onOpenFile })
-      act(() => source.update(linkResolver(records(), '/vault', vaultDirs('/vault'), folders), records(), folders))
+      act(() => source.update(linkResolver(records(), '/vault', vaultDirs('/vault'), folders), records(), folders, true))
       await flush()
       expect(cell(el, 'Lead Gen', 1).textContent).toBe('Empty')
       editNumber(el, 'Lead Gen', 1, 'Edit order', '4')
@@ -1412,7 +1466,7 @@ describe('each folder has its own properties (D19)', () => {
       disk.set(SETTINGS_FILE, '---\nowner: me\n---\n')
       const folders = [rec(SETTINGS_FILE, { folder_settings: { views: [{ type: 'table', name: 'Table', filters: 'kind == "task"' }] } })]
       const el = renderFolderView({ path: STAGES, source, onOpenFile })
-      act(() => source.update(linkResolver([], '/vault', vaultDirs('/vault'), folders), [], folders))
+      act(() => source.update(linkResolver([], '/vault', vaultDirs('/vault'), folders), [], folders, true))
       await flush()
       click(byLabel(el, 'New note'))
       await flush()

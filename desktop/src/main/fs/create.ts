@@ -23,18 +23,23 @@ import { requireRequest } from './validate'
  * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding a fresh `id` and, when
  * the request carries one, the folder's `title` (YAZ-2420 🔒 D6): `createFolderSettings`. A folder
  * whose file could not be written stands without one, and the id sweep gives it one.
+ *
+ * 🔒 All of that only where the vault uses IDs (`ids`, YAZ-2523 V3). In any other a folder is the
+ * directory and a note the content it was given, as Finder would make them: no id is written, a
+ * request's `id` is not used, and the answer carries none.
  */
-export async function createDir(req: CreateDirRequest): Promise<CreateDirResponse> {
+export async function createDir(req: CreateDirRequest, ids: boolean): Promise<CreateDirResponse> {
   const { path: raw, title } = requireRequest(req)
   const p = requireAbsPath(raw, 'path')
   if (title !== undefined && typeof title !== 'string') throw new BridgeFailure('BAD_REQUEST', "'title' must be a string", { path: p })
   await fsCall(p, () => mkdir(p))
+  if (!ids) return { path: p }
   const born = setFrontmatterProperty('', NOTE_ID_KEY, mintNoteId())
   await createFolderSettings(p, title === undefined ? born : setFrontmatterProperty(born, TITLE_KEY, title)).catch(() => undefined)
   return { path: p }
 }
 
-export async function createFile(req: string | CreateFileRequest): Promise<CreateFileResponse> {
+export async function createFile(req: string | CreateFileRequest, ids: boolean): Promise<CreateFileResponse> {
   // Crosses IPC from a sandboxed renderer: shape-checked like a request body (writeFile's posture).
   const raw: unknown = req
   const isReq = typeof raw === 'object' && raw !== null
@@ -44,7 +49,7 @@ export async function createFile(req: string | CreateFileRequest): Promise<Creat
   if (content !== undefined && typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   const given = isReq ? (raw as Record<string, unknown>).id : undefined
   if (given !== undefined && !isNoteId(given)) throw new BridgeFailure('BAD_REQUEST', "'id' must be a note id", { path: p })
-  const born = withNoteId(content ?? '', given ?? mintNoteId())
+  const born = ids ? withNoteId(content ?? '', given ?? mintNoteId()) : { content: content ?? '', id: undefined }
   return fsCall(p, async () => {
     await createDurable(p, born.content)
     const st = await stat(p)

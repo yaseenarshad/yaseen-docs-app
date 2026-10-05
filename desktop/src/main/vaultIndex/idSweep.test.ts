@@ -608,7 +608,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createFile(at('Made here.md'))
+    await createFile(at('Made here.md'), true)
     await until(async () => (await indexed('Made here.md')) !== undefined)
     await rm(at('Made here.md'))
     await until(async () => (await indexed('Made here.md')) === undefined)
@@ -744,7 +744,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createDir({ path: at('Made here') })
+    await createDir({ path: at('Made here') }, true)
     const born = await read('Made here', FOLDER_SETTINGS_FILE)
     await until(async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here'))
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
@@ -755,7 +755,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createDir({ path: at('Made here') })
+    await createDir({ path: at('Made here') }, true)
     const born = await idIn('Made here', FOLDER_SETTINGS_FILE)
     const listed = async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here' && r.id === born)
     await until(listed)
@@ -789,7 +789,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    const { to } = await copyEntry(at('a.md'), root)
+    const { to } = await copyEntry(at('a.md'), root, true)
     const copied = await readFile(to, 'utf8')
     const id = /^id: (.+)$/m.exec(copied)?.[1]
     expect(isNoteId(id)).toBe(true)
@@ -825,7 +825,7 @@ describe('sweepIds, wired into the live index', () => {
     await getIndex(root)
     await ready
     await until(async () => (await getIndex(root)).folders.length === 3) // `Stages/Deep` has been given its own file
-    const { to } = await copyEntry(at('Hiring'), root)
+    const { to } = await copyEntry(at('Hiring'), root, true)
     const files: string[] = []
     await walk(to, files)
     const contents = () => Promise.all(files.map((file) => readFile(file, 'utf8')))

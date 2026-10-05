@@ -40,7 +40,7 @@
  * `[[id]]`. When nothing matches a non-empty fragment, a single "Create" row creates the page
  * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
  * `createPage`) and links it by the id it is born with — `[[typed text]]` as-is when there is
- * no vault to create in, or the creation fails. A `|` in the fragment is alias
+ * no vault to create in, the vault does not use IDs (YAZ-2523 🔒 V3), or the creation fails. A `|` in the fragment is alias
  * entry: the popup closes and typing continues as plain text. Code is excluded like the
  * decorations: no picker inside `code_block` or inline-`code` text.
  */
@@ -53,7 +53,7 @@ import { mintNoteId } from '@shared/noteId'
 import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
-import { linkPageName } from './wikilinkPlugin'
+import { linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 import './wikilinkPicker.css'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
@@ -181,12 +181,15 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
  * When it is not born — a failure — nothing carries the id, and the id goes back to the page
  * name that was typed: found by its text, which a fresh id makes unique in the document,
  * wherever typing has since pushed it.
+ *
+ * No `id`: the vault does not use IDs (YAZ-2523 🔒 V3). The page is made the plain way, and the
+ * link already holds the name that was typed.
  */
-function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, id: string): void {
-  void createFromLink(nav.root, name, nav.createFolder(), id).then((result) => {
+function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, id: string | undefined): void {
+  void createFromLink(nav.root, name, id !== undefined, nav.createFolder(), id).then((result) => {
     if (result.status === 'created') return nav.onNotice(`Created "${linkPageName(name)}"`)
     if (result.status === 'error') nav.onNotice(result.message)
-    if (view === undefined || view.isDestroyed) return
+    if (id === undefined || view === undefined || view.isDestroyed) return
     let from = -1
     view.state.doc.descendants((node, pos) => {
       const at = node.text?.indexOf(`[[${id}`) ?? -1
@@ -199,12 +202,13 @@ function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string
 /**
  * Replace the `[[fragment` with the full `[[insert]]` text, park the caret after it — and, for the
  * Create row, make the page: a freshly minted id (YAZ-2293) the page is then born with stands in
- * for the typed page name, and a `#heading` typed after it rides along.
+ * for the typed page name, and a `#heading` typed after it rides along. Where the vault does not
+ * use IDs (`links.ids`, YAZ-2523 🔒 V3) none is minted, and the typed name goes in as it is.
  */
-function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, nav?: WikilinkNav, view?: EditorView): boolean {
+function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, links: WikilinkResolveSource, nav?: WikilinkNav, view?: EditorView): boolean {
   if (dispatch) {
-    const born = row.create && nav !== undefined ? { nav, id: mintNoteId() } : undefined
-    const text = `[[${born === undefined ? row.insert : row.insert.replace(/^[^#]*/, born.id)}]]`
+    const born = row.create && nav !== undefined ? { nav, id: links.ids ? mintNoteId() : undefined } : undefined
+    const text = `[[${born?.id === undefined ? row.insert : row.insert.replace(/^[^#]*/, born.id)}]]`
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
     dispatch(tr.scrollIntoView())
@@ -213,12 +217,12 @@ function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | u
   return true
 }
 
-const insertSelected = (nav?: WikilinkNav): Command => (state, dispatch, view) => {
+const insertSelected = (links: WikilinkResolveSource, nav?: WikilinkNav): Command => (state, dispatch, view) => {
   const session = pickerKey.getState(state)?.session ?? null
   if (session === null) return false
   const row = session.rows[session.selected]
   if (row === undefined) return false
-  return insertRow(state, dispatch, session, row, nav, view)
+  return insertRow(state, dispatch, session, row, links, nav, view)
 }
 
 const move = (delta: 1 | -1): Command => (state, dispatch) => {
@@ -240,16 +244,16 @@ const PRIORITY = 100
  * ↑/↓/Enter/Esc while the picker is open; every command declines (false) when it is closed, so
  * the keys fall through — the outliner keeps Tab/Enter in lists, nothing is ever swallowed.
  */
-export const createWikilinkPickerKeymap = (nav?: WikilinkNav) =>
+export const createWikilinkPickerKeymap = (links: WikilinkResolveSource, nav?: WikilinkNav) =>
   $shortcut(() => ({
     WikilinkPickerNext: { key: 'ArrowDown', priority: PRIORITY, onRun: () => move(1) },
     WikilinkPickerPrev: { key: 'ArrowUp', priority: PRIORITY, onRun: () => move(-1) },
-    WikilinkPickerInsert: { key: 'Enter', priority: PRIORITY, onRun: () => insertSelected(nav) },
+    WikilinkPickerInsert: { key: 'Enter', priority: PRIORITY, onRun: () => insertSelected(links, nav) },
     WikilinkPickerDismiss: { key: 'Escape', priority: PRIORITY, onRun: () => dismiss },
   }))
 
 /** The popup element + its rows; mousedown-preventDefault so picking never blurs the editor. */
-function buildPopup(view: EditorView, nav?: WikilinkNav): { element: HTMLElement; render: (session: PickerSession | null) => void } {
+function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: WikilinkNav): { element: HTMLElement; render: (session: PickerSession | null) => void } {
   const element = document.createElement('div')
   element.className = WIKILINK_PICKER_CLASS
   element.setAttribute('role', 'listbox')
@@ -274,7 +278,7 @@ function buildPopup(view: EditorView, nav?: WikilinkNav): { element: HTMLElement
         if (current === null) return
         const liveRow = current.rows[i]
         if (liveRow === undefined) return
-        insertRow(view.state, (tr) => view.dispatch(tr), current, liveRow, nav, view)
+        insertRow(view.state, (tr) => view.dispatch(tr), current, liveRow, links, nav, view)
         view.focus()
       })
       element.appendChild(item)
@@ -283,7 +287,7 @@ function buildPopup(view: EditorView, nav?: WikilinkNav): { element: HTMLElement
   return { element, render }
 }
 
-export function createWikilinkPicker(source: WikilinkCandidateSource, nav?: WikilinkNav) {
+export function createWikilinkPicker(source: WikilinkCandidateSource, links: WikilinkResolveSource, nav?: WikilinkNav) {
   return $prose(
     () =>
       new Plugin<PickerState>({
@@ -294,7 +298,7 @@ export function createWikilinkPicker(source: WikilinkCandidateSource, nav?: Wiki
             tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source) : value,
         },
         view: (editorView) => {
-          const popup = buildPopup(editorView, nav)
+          const popup = buildPopup(editorView, links, nav)
           // Attached (hidden) from the start — the provider would only append it on its first
           // debounced pass; its later appendChild of the same node into the same parent is a no-op.
           popup.element.dataset.show = 'false'

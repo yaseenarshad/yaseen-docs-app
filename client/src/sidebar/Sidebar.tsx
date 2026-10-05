@@ -546,7 +546,7 @@ export function Sidebar({
     [root],
   )
 
-  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, dispatch)
+  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, dispatch, indexSource)
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —

@@ -222,6 +222,7 @@ export function useFileClipboard(
    * values for the folders that do not show them (YAZ-2420 3E1), judged after it; the original is
    * never written. The copies are listed off the tree that refresh reads — the index hears of them
    * only once the watcher has — and a folder it has not heard of yet, the copy of one, keeps its block.
+   * In a vault that does not use IDs a copy is left as it landed (YAZ-2523 🔒 V3).
    */
   const runPaste = useCallback(
     async (dir: string) => {
@@ -231,7 +232,7 @@ export function useFileClipboard(
         if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
         refresh()
         if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root, oldPath: from, newPath: to, kind, ...before })
-        else {
+        else if (index.ids) {
           const [{ tree }, { folders }] = await Promise.all([fetchTree(root), api.index(root)])
           for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(root, path, folders)).catch(() => undefined)
         }
@@ -331,6 +332,7 @@ export function useInlineEdits(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
   dispatch: Dispatch<TreeAction>,
+  index: WikilinkResolveSource,
 ) {
   const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
@@ -355,14 +357,15 @@ export function useInlineEdits(
     async (name: string) => {
       if (creating === null) return
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
+      // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
       let note: string | null = null
-      if (creating.kind === 'dir') await api.createDir({ path: folderPath(creating.parentDir, name), title: name })
-      else note = await createNote(creating.parentDir, name)
+      if (creating.kind === 'dir') await api.createDir({ path: folderPath(creating.parentDir, name, index.ids), ...(index.ids && { title: name }) })
+      else note = await createNote(creating.parentDir, name, index.ids)
       setCreating(null)
       refresh()
       if (note !== null) onOpenFile(note)
     },
-    [creating, refresh, onOpenFile],
+    [creating, refresh, onOpenFile, index],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])

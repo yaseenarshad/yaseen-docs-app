@@ -139,7 +139,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               } else if (isNoteId(page)) nav.onNotice('That note no longer exists')
               else if (made === undefined) {
                 making.set(page, null)
-                void createFromLink(nav.root, inner, nav.createFolder(), undefined, source.folders).then((result) => {
+                void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {
                   if (result.status === 'created') making.set(page, result.path)
                   else making.delete(page)
                   if (result.status === 'error') nav.onNotice(result.message)

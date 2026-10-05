@@ -77,3 +77,23 @@ describe('renamedPath (Links E1, GRO-2194): a view-only file', () => {
     expect(renamedPath('/r/data.json', 'profile.pdf')).toBe('/r/profile.pdf')
   })
 })
+
+describe('renamedPath in a vault that does not use IDs (YAZ-2523 V3): what was typed is the name', () => {
+  it('a note takes the name typed and keeps its `.md`; a dot in the name is no extension', () => {
+    expect(renamedPath('/r/sub/Old name.md', '  Meeting notes  ')).toBe('/r/sub/Meeting notes.md')
+    expect(renamedPath('/r/sub/Old name.md', 'v1.2')).toBe('/r/sub/v1.2.md')
+    expect(renamedPath('/r/sub/Old name.markdown', 'Meeting notes')).toBe('/r/sub/Meeting notes.markdown')
+  })
+
+  it('the name a note already has, typed with or without its `.md`, is the same path', () => {
+    expect(renamedPath('/r/sub/Old name.md', 'Old name')).toBe('/r/sub/Old name.md')
+    expect(renamedPath('/r/sub/Old name.md', 'Old name.md')).toBe('/r/sub/Old name.md')
+  })
+
+  it('a folder takes the name typed whole: no suffix is added, and one that reads as an extension is kept', () => {
+    expect(renamedPath('/r/sub/Plans', ' Q3 Plans ', 'dir')).toBe('/r/sub/Q3 Plans')
+    expect(renamedPath('/r/sub/v1.2', 'v2.0', 'dir')).toBe('/r/sub/v2.0')
+    expect(renamedPath('/r/sub/Plans', 'Archive.json', 'dir')).toBe('/r/sub/Archive.json')
+    expect(renamedPath('/r/sub/Plans', 'Plans', 'dir')).toBe('/r/sub/Plans')
+  })
+})
