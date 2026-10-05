@@ -231,7 +231,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
   const chosen = dirs.find((d) => d === picked) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
   const chosenRecord = useMemo(() => (chosen === undefined ? undefined : folderRecord(folders, chosen)), [folders, chosen])
-  const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(chosenRecord)), [chosen, chosenRecord])
+  const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(chosenRecord, ids)), [chosen, chosenRecord, ids])
   /** The chosen folder's id names its block; none until its `.folder.md` holds one — then its values read as empty. */
   const chosenId = chosenRecord?.id
   /**
@@ -296,7 +296,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
     setSaving(true)
     try {
       const { key, definition, base } = propertyMenu
-      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base)
+      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base, ids)
       setPropertyMenu(null)
       setError(null)
     } catch (err) { setError(`Could not save the property: ${messageOf(err)}`) }

@@ -26,8 +26,8 @@ export interface TableHeaderMenuProps {
   onUpdate: Mutate
   /** `FolderHost.setColumns`: declare on the folder AND show, one write. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
-  /** "Delete column…" (YAZ-1513): hands the key to the table, which asks first (`ConfirmDeleteColumn`). */
-  onDeleteColumn: (key: string) => void
+  /** "Delete column…" (YAZ-1513): hands the key to the table, which asks first (`ConfirmDeleteColumn`). Absent → no such item. */
+  onDeleteColumn?: (key: string) => void
   onClose: () => void
 }
 
@@ -118,19 +118,21 @@ export function TableHeaderMenu({ x, y, columnKey, def, viewIndex, keys, takenKe
             <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setMode('add')}>
               Add column to the right…
             </button>
-            <button
-              type="button"
-              className="ctx-menu__item ctx-menu__item--danger"
-              role="menuitem"
-              disabled={reason !== null}
-              title={reason ?? undefined}
-              onClick={() => {
-                onDeleteColumn(key)
-                onClose()
-              }}
-            >
-              Delete column…
-            </button>
+            {onDeleteColumn && (
+              <button
+                type="button"
+                className="ctx-menu__item ctx-menu__item--danger"
+                role="menuitem"
+                disabled={reason !== null}
+                title={reason ?? undefined}
+                onClick={() => {
+                  onDeleteColumn(key)
+                  onClose()
+                }}
+              >
+                Delete column…
+              </button>
+            )}
           </>
         )}
       </div>

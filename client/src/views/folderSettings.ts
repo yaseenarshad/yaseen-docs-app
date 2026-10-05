@@ -64,8 +64,8 @@ export const DEFAULT_COLUMNS: Readonly<Record<string, ColumnDecl>> = {
 
 const KINDS = new Set<string>(PROPERTY_KINDS)
 
-/** A fresh copy per read: the defaults are handed out to be edited and written back. */
-const defaultViews = (): ViewDef[] => DEFAULT_VIEWS.map((view) => ({ ...view }))
+/** A fresh copy per read: the defaults are handed out to be edited and written back. The Table alone where the vault does not use IDs (YAZ-2523 🔒 V11). */
+const defaultViews = (ids: boolean): ViewDef[] => (ids ? DEFAULT_VIEWS : DEFAULT_VIEWS.slice(0, 1)).map((view) => ({ ...view }))
 
 /** Keys → `{ kind, target?, required? }`. An unknown kind means the column is ABSENT (typing falls to lower rungs). */
 function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDecl> {
@@ -109,11 +109,11 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
  * never thrown. It only ever drops: a usable list comes back as the file wrote it, in its order,
  * with nothing spliced in.
  */
-function readViews(raw: unknown, problems: string[]): ViewDef[] {
-  if (raw === undefined) return defaultViews()
+function readViews(raw: unknown, problems: string[], ids: boolean): ViewDef[] {
+  if (raw === undefined) return defaultViews(ids)
   if (!Array.isArray(raw)) {
     problems.push(`${FOLDER_SETTINGS_KEY}.views must be a list of views — using the default views`)
-    return defaultViews()
+    return defaultViews(ids)
   }
   const views: ViewDef[] = []
   raw.forEach((view: unknown, i) => {
@@ -130,7 +130,7 @@ function readViews(raw: unknown, problems: string[]): ViewDef[] {
     // Unknown view types and extra keys ride along untouched (`ViewDef`'s index signature).
     views.push(view as ViewDef)
   })
-  if (views.length === 0) return defaultViews()
+  if (views.length === 0) return defaultViews(ids)
   return views
 }
 
@@ -195,22 +195,25 @@ export const hasFolderSettings = (record: IndexRecord | undefined): boolean => r
  * A FOLDER's settings (YAZ-2290 D1/E2), off its `.folder.md` record. Until that file saves any, the
  * folder has the defaults — the default views and the default Status column — and nothing is
  * written for them. Once saved, the file states exactly which columns the folder has.
+ *
+ * Where the vault does not use IDs (`ids` false, YAZ-2523 🔒 V11) the defaults are a Table and no
+ * column: a column there is the notes' own property, and none is made up.
  */
-export function folderSettings(record: IndexRecord | undefined): FolderSettings {
+export function folderSettings(record: IndexRecord | undefined, ids: boolean): FolderSettings {
   const raw = record?.properties[FOLDER_SETTINGS_KEY]
   // Absent, or written as a bare `folder_settings:` — nothing saved yet.
-  if (raw == null) return { columns: structuredClone(DEFAULT_COLUMNS), views: defaultViews(), problems: [] }
+  if (raw == null) return { columns: ids ? structuredClone(DEFAULT_COLUMNS) : {}, views: defaultViews(ids), problems: [] }
   const problems: string[] = []
   if (!isRecord(raw)) {
     problems.push(`${FOLDER_SETTINGS_KEY} must be a map of settings — using the defaults`)
-    return { columns: {}, views: defaultViews(), problems }
+    return { columns: {}, views: defaultViews(ids), problems }
   }
   return {
     columns: readColumns(raw.columns, problems),
     defaultView: readDefaultView(raw.defaultView, problems),
     formulas: readFormulas(raw.formulas, problems),
     properties: readProperties(raw.properties, problems),
-    views: readViews(raw.views, problems),
+    views: readViews(raw.views, problems, ids),
     problems,
   }
 }
@@ -314,7 +317,7 @@ export function writeFolderSettings(
  * boundary: concurrent changes to other columns/views are retained, while a changed definition
  * asks the user to reopen its settings. transformFile repeats this check after an mtime retry.
  */
-export function writeFolderColumn(path: string, key: string, next: PropertyDecl, base: PropertyDecl | undefined): Promise<{ mtime: number }> {
+export function writeFolderColumn(path: string, key: string, next: PropertyDecl, base: PropertyDecl | undefined, ids: boolean): Promise<{ mtime: number }> {
   const problems: string[] = []
   const replacement = readColumns({ column: next }, problems).column
   if (!replacement || problems.length) return Promise.reject(new Error(problems[0] ?? 'Invalid property definition'))
@@ -327,7 +330,7 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     const settings = parsed.properties[FOLDER_SETTINGS_KEY]
     if (settings != null && !isRecord(settings)) throw new Error('Folder settings must be a map before editing properties.')
     // Nothing saved yet (YAZ-2290 E2): the default columns are what the caller saw, so this first write states them.
-    const raw = settings ?? { columns: DEFAULT_COLUMNS }
+    const raw = settings ?? { columns: folderSettings(undefined, ids).columns }
     if (raw.columns !== undefined && !isRecord(raw.columns)) throw new Error('Folder columns must be a map before editing properties.')
     const columns = raw.columns ?? {}
     const current = Object.prototype.hasOwnProperty.call(columns, key) ? columns[key] : undefined

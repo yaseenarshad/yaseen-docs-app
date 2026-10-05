@@ -14,7 +14,9 @@
  *    the folder's id (`shared/folderValues.ts`). This host is the one seam: the views get rows
  *    whose `properties` ARE this folder's block, and every value they write comes back through
  *    `writeValues` into it. A column is never stamped into a note (E1). That write is also where a
- *    note drops the values of the folders that no longer show it (D20).
+ *    note drops the values of the folders that no longer show it (D20). Where the vault does not
+ *    use IDs (YAZ-2523 🔒 V6) there is no block: the rows are the notes' own properties, a value is
+ *    written at the top of its note, and no column is deleted.
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
  *    components a note uses.
@@ -43,7 +45,7 @@ import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
 import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
 import { createNote } from './scaffold'
-import { writeFolderValues } from './writeProperty'
+import { writeFolderValues, writeProperties } from './writeProperty'
 import { ViewFolder } from './view/GroupHeader'
 import './views.css'
 import './folderView.css'
@@ -120,6 +122,8 @@ export function FolderView({
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
+  /** Does the vault use IDs (YAZ-2523 🔒 V5)? Everything ID-only below asks this, and nothing under the host does. */
+  const ids = source.ids
 
   /** Where the settings live (D1) — and the file every write below goes to, created by the first one. */
   const file = folderSettingsPath(path)
@@ -128,12 +132,12 @@ export function FolderView({
   const record = useMemo(() => folderRecord(feed.folders, path), [feed.folders, path])
   /** null = no snapshot yet: a folder with no settings file is the defaults, so only the index can say which this is. */
   const indexed = feed.resolve !== null
-  const settings = useMemo(() => (indexed ? folderSettings(record) : null), [indexed, record])
+  const settings = useMemo(() => (indexed ? folderSettings(record, ids) : null), [indexed, record, ids])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
   /** The folder's id: the name of its block in a note. None until its `.folder.md` holds one — then every value reads as empty. */
   const id = record?.id
-  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note. */
-  const shown = useMemo(() => rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })), [rows, id])
+  /** The rows as the views read them (D19): each row's `properties` are THIS folder's values for the note — or, where the vault does not use IDs, the note's own. */
+  const shown = useMemo(() => (ids ? rows.map((row) => ({ ...row, properties: folderValues(row.properties, id) })) : rows), [rows, id, ids])
 
   /**
    * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
@@ -281,7 +285,6 @@ export function FolderView({
     // In a vault that does not use IDs (YAZ-2523 🔒 V3) the folder is given no id and a seeded value is the note's own
     // property; only the name keeps two notes apart, so an untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
-      const ids = source.ids
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const dir = into === folder ? path : absFrom(root, into)
       const block = !ids || Object.keys(seed.properties).length === 0 ? undefined : id ?? (await folderId(path))
@@ -305,13 +308,14 @@ export function FolderView({
     },
     // A folder with no id is given one first — the path its first shortcut uses (`folderId`) — then the value is written.
     // The same save drops the note's values for the folders that no longer show it (D20).
-    writeValues: async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)),
+    // Where the vault does not use IDs the value is the note's own property, and that is all the write is.
+    writeValues: ids ? async (note, writes) => writeFolderValues(note, id ?? (await folderId(path)), writes, dropStaleFolderValues(root, note, feed.folders)) : writeProperties,
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.
     setColumn: (key, next, base) => {
       const before = aheadRef.current
       setAhead({ ...liveSettings.columns, [key]: next })
-      return writeFolderColumn(file, key, next, base).catch((err: unknown) => {
+      return writeFolderColumn(file, key, next, base, ids).catch((err: unknown) => {
         setAhead(before)
         throw err
       })
@@ -330,16 +334,19 @@ export function FolderView({
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
     // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
     // strips report into the column banner, no rollback. They reach every indexed note holding
-    // the field in this folder's block.
-    deleteColumn: (key) =>
-      deleteColumnEverywhere(key, {
-        columns: liveSettings.columns,
-        def: parsed.def,
-        records: feed.records,
-        folderId: id,
-        writeSettings: commitSettings,
-      }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
-    valueCount: (key) => notesHolding(feed.records, id, key).length,
+    // the field in this folder's block. Not offered where the vault does not use IDs (YAZ-2523 🔒 V11):
+    // a column there is the notes' own property, and is hidden instead.
+    ...(ids && {
+      deleteColumn: (key: string) =>
+        deleteColumnEverywhere(key, {
+          columns: liveSettings.columns,
+          def: parsed.def,
+          records: feed.records,
+          folderId: id,
+          writeSettings: commitSettings,
+        }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
+      valueCount: (key: string) => notesHolding(feed.records, id, key).length,
+    }),
     retitle: (note, title) => onRetitle(note, title, 'file'),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,

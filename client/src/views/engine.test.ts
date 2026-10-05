@@ -463,16 +463,9 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
-  it("propertyKeys: a note's `id` is never a DEFAULT column, and is one when the view's order names it (YAZ-2293)", () => {
-    const withIds = TEST_RECORDS.map((r, i) => ({ ...r, id: `k3m9x2pq7ab${i}`, properties: { ...r.properties, id: `k3m9x2pq7ab${i}` } }))
-    expect(propertyKeys(yasin, yasin.views[1], withIds)).toEqual(propertyKeys(yasin, yasin.views[1], TEST_RECORDS))
-    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.id'] }, withIds)).toEqual(['file.name', 'note.id'])
-  })
-
-  it("propertyKeys: a note's shortcuts, `also_in`, are never a DEFAULT column either (YAZ-2290 D2)", () => {
-    const withShortcuts = TEST_RECORDS.map((r) => ({ ...r, properties: { ...r.properties, also_in: ['f7n2w8rt4xyz'] } }))
-    expect(propertyKeys(yasin, yasin.views[1], withShortcuts)).toEqual(propertyKeys(yasin, yasin.views[1], TEST_RECORDS))
-    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.also_in'] }, withShortcuts)).toEqual(['file.name', 'note.also_in'])
+  it('propertyKeys: every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12)', () => {
+    const own = [{ ...TEST_RECORDS[0], properties: { id: 'k3m9x2pq7abc', also_in: ['f7n2w8rt4xyz'], title: 'Zebra', status: 'idea' } }]
+    expect(propertyKeys(yasin, yasin.views[1], own)).toEqual(['file.name', 'note.also_in', 'note.id', 'note.status', 'note.title'])
   })
 
   it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
@@ -543,12 +536,6 @@ describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', 
 
   it('a file value sorts by its title', () => {
     expect(titles(table({ sort: [{ property: 'formula.self', direction: 'ASC' }] }, { formulas: { self: 'file' } }))).toEqual(['UP-001 - Abdul', 'Zebra'])
-  })
-
-  it('F: `title` is never a default column, and is one when the view\'s order names it', () => {
-    const titled = [note('up-001-abdul-k3m9x2pq7abc', 'UP-001 - Abdul', { title: 'UP-001 - Abdul', status: 'idea' })]
-    expect(propertyKeys(yasin, yasin.views[1], titled)).toEqual(['file.name', 'note.status'])
-    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.title'] }, titled)).toEqual(['file.name', 'note.title'])
   })
 })
 

@@ -42,7 +42,7 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
 const METRICS = '/vault/Metrics/.folder.md'
 
 /** A folder's settings file carrying this settings value, parsed. */
-const settingsOf = (value: unknown) => folderSettings(rec(METRICS, { folder_settings: value }))
+const settingsOf = (value: unknown) => folderSettings(rec(METRICS, { folder_settings: value }), true)
 
 const TABLE_BOARD = [
   { type: 'table', name: 'Table' },
@@ -52,8 +52,8 @@ const TABLE_BOARD = [
 describe('defaults (Q7, amended YAZ-935, YAZ-2290 D5a): a folder that lists NO views gets its two skins, Table then Board', () => {
   it('DEFAULT_VIEWS is two — no Outline (D5a) — and each parse hands back its own copy', () => {
     expect(DEFAULT_VIEWS.map((v) => v.type)).toEqual(['table', 'board'])
-    const a = folderSettings(undefined)
-    const b = folderSettings(undefined)
+    const a = folderSettings(undefined, true)
+    const b = folderSettings(undefined, true)
     expect(a.views).not.toBe(b.views)
     expect(a.views[0]).not.toBe(b.views[0])
   })
@@ -74,20 +74,28 @@ describe("a FOLDER's settings (YAZ-2290 D1/E2): its `.folder.md`, else the defau
   const FILE = '/vault/Projects/.folder.md'
 
   it('no settings file: the default views and the default Status column', () => {
-    expect(folderSettings(undefined)).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
+    expect(folderSettings(undefined, true)).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
   })
 
   it('a file that has saved NO settings yet is the defaults too, each read its own copy', () => {
-    const a = folderSettings(rec(FILE, {}))
+    const a = folderSettings(rec(FILE, {}), true)
     expect(a).toEqual({ columns: DEFAULT_COLUMNS, views: TABLE_BOARD, problems: [] })
-    expect(folderSettings(rec(FILE, { folder_settings: null }))).toEqual(a)
+    expect(folderSettings(rec(FILE, { folder_settings: null }), true)).toEqual(a)
     expect(a.columns).not.toBe(DEFAULT_COLUMNS)
-    expect(a.columns.status).not.toBe(folderSettings(rec(FILE, {})).columns.status)
+    expect(a.columns.status).not.toBe(folderSettings(rec(FILE, {}), true).columns.status)
   })
 
   it('once saved, the file states exactly which columns the folder has — Status is not added back', () => {
-    expect(folderSettings(rec(FILE, { folder_settings: { columns: { owner: { kind: 'text' } } } })).columns).toEqual({ owner: { kind: 'text' } })
-    expect(folderSettings(rec(FILE, { folder_settings: { views: [{ type: 'table', name: 'Table' }] } })).columns).toEqual({})
+    expect(folderSettings(rec(FILE, { folder_settings: { columns: { owner: { kind: 'text' } } } }), true).columns).toEqual({ owner: { kind: 'text' } })
+    expect(folderSettings(rec(FILE, { folder_settings: { views: [{ type: 'table', name: 'Table' }] } }), true).columns).toEqual({})
+  })
+
+  it('where the vault does not use IDs the defaults are a Table alone and no column: nothing saved, or settings that list no usable view (YAZ-2523 V11)', () => {
+    const TABLE = [{ type: 'table', name: 'Table' }]
+    expect(folderSettings(undefined, false)).toEqual({ columns: {}, views: TABLE, problems: [] })
+    expect(folderSettings(rec(FILE, { folder_settings: { columns: { owner: { kind: 'text' } } } }), false)).toMatchObject({ columns: { owner: { kind: 'text' } }, views: TABLE })
+    expect(folderSettings(rec(FILE, { folder_settings: { views: [] } }), false).views).toEqual(TABLE)
+    expect(folderSettings(rec(FILE, { folder_settings: 'table' }), false).views).toEqual(TABLE)
   })
 })
 
@@ -214,7 +222,7 @@ describe('defaultView (YAZ-1104): the saved starting view', () => {
     expect(settingsOf({ defaultView: 'Table' }).defaultView).toBe('Table')
     expect(settingsOf({ defaultView: 'Table' }).problems).toEqual([])
     expect(settingsOf({}).defaultView).toBeUndefined()
-    expect(folderSettings(undefined).defaultView).toBeUndefined()
+    expect(folderSettings(undefined, true).defaultView).toBeUndefined()
   })
 
   it.each([

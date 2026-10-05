@@ -193,6 +193,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
     const choice = kind === 'select' || kind === 'multi-select'
     const linkKind = kind === 'link' || kind === 'multi-link'
     const reason = undeletableReason(key)
+    const { deleteColumn, valueCount } = folder
     const style = cardStyleOf(key)
     const observed = [...new Set(records.flatMap((r) => {
       const value = r.properties[name]
@@ -318,28 +319,30 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
           >
             Hide in this view
           </button>
-          <button
-            type="button"
-            className="column-detail__action column-detail__action--danger"
-            aria-label={`Delete column ${label}`}
-            disabled={reason !== null}
-            title={reason ?? undefined}
-            onClick={() => setDeleting(key)}
-          >
-            Delete column…
-          </button>
+          {deleteColumn && (
+            <button
+              type="button"
+              className="column-detail__action column-detail__action--danger"
+              aria-label={`Delete column ${label}`}
+              disabled={reason !== null}
+              title={reason ?? undefined}
+              onClick={() => setDeleting(key)}
+            >
+              Delete column…
+            </button>
+          )}
         </div>
-        {deleting !== null && (
+        {deleting !== null && deleteColumn && valueCount && (
           <ConfirmDeleteColumn
             columnKey={deleting}
             def={def}
-            count={folder.valueCount}
+            count={valueCount}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {
               const gone = deleting
               setDeleting(null)
               setDetail(null)
-              void folder.deleteColumn(gone)
+              void deleteColumn(gone)
             }}
           />
         )}

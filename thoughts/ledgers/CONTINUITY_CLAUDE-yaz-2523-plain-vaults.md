@@ -28,14 +28,16 @@ The record is two comments there: "Locked decisions and the scenario record" (V1
 
 - Done:
   - [x] 7A: scope, decisions V1 to V13, the sub-issue tree, baseline (291 files, 5,218 tests)
-- Now: [→] 7B1 and 7B5: the answer, the gate, the command line
+  - [x] 7B1 and 7B5: the answer, the one gate, the command line (`f88e3f1`)
+  - [x] 7B3: plain create, rename and copy (`4a12b71`)
+  - [x] 7B4: ID-only features are not offered in a plain vault (`5cb8d82`)
+  - [x] 7B2: the box and the Settings switch (`2ea0bcd`)
+  - [x] 7C: plain tables
+- Now: [→] 7D1: an independent review scopes the polish pass
 - Remaining:
-  - [ ] 7B3: plain create, rename and copy
-  - [ ] 7B4: ID-only features are not offered in a plain vault
-  - [ ] 7B2: the box and the Settings switch
-  - [ ] 7C: plain tables
-  - [ ] 7D1, 7D2: polish
-  - [ ] 7E1 to 7E4: tests against the record, walk-through, docs, merge
+  - [ ] 7D2: apply the polish
+  - [ ] 7E1 to 7E4: tests against the record, walk-through (scratch vaults at `~/Desktop/yaz-2523-demo/`), docs, merge
+  - [ ] Set the two size ceilings to the final measured values (Yaseen's OK given 2026-10-05)
 
 ## Open Questions
 
