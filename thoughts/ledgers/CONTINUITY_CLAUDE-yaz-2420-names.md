@@ -6,7 +6,7 @@ The record is the comment "Decision and scenario record, final" (D1 to D30). Rea
 ## Goal
 
 - A note's title, ID and file name are three things with one job each: `title:` and `id:` in the note, and a file name the app builds as `<kebab-title>-<id>.md`.
-- Done means: phases 1 to 6 under YAZ-2420 are Done, the work is on `main`, and Yaseen's real vault has been converted in one sitting.
+- Done means: phases 1 to 6 under YAZ-2420 are Done, the work is on `main`, and Yaseen's real vault has been converted in one sitting. (All true since 2026-10-05.)
 
 ## Constraints
 
@@ -37,9 +37,10 @@ The record is the comment "Decision and scenario record, final" (D1 to D30). Rea
   - [x] Phase 6: 6A unit tests and the whole Playwright suite (229), 6B walk-through on the real app (`desktop/e2e/names.spec.ts`), 6C docs
   - [x] 3E1 a copy into another folder leaves behind values it does not show, after asking; 3C1 the "Ask before renaming" setting
   - [x] 6D: merged as pull request #89 (`0472906`), with the two size ceilings set to the measured values on Yaseen's OK; released as v0.9.33
-- Now: closed. Not installed over Yaseen's app, by his choice (D33).
+  - [x] Phase 4 and 1B: both vaults converted and pushed on 2026-10-05 (`yaseen-docs-vault` at `85a00a8`, `business-wiki-MASTER` at `848d492`); a built name keeps a leading underscore (pull request #90, on `main`, not released). Records: YAZ-2439 and YAZ-2524. Scripts and logs are outside the repo, in `~/Desktop/yaz-2420-trial/` and in those issues' comments.
+- Now: closed. v0.9.33 is installed on Yaseen's Mac.
 - Remaining:
-  - [ ] Phase 4 and 1B: parked until Yaseen asks (the old vault)
+  - [ ] YAZ-2523 (a vault can say no to IDs): another session has it
   - [ ] `desktop/e2e/links.spec.ts` step 7 has a timing race (it picks a note before the app has given it its ID); harden it the next time Playwright is allowed
 
 ## Open Questions
