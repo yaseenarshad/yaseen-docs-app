@@ -51,13 +51,16 @@
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
  *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
+ *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the note whose `title:` that is —
+ *    the same again. A note with no `title:` is linked by its file name, and that is rewritten.
  */
 import { FOLDER_VALUES_KEY, folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isViewOnly } from '@shared/fileKind'
+import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { resolverFor, targetBasename } from '../views/engine'
+import { resolverFor, targetBasename, targetKey } from '../views/engine'
 import { folderSettingsLinks, mapFolderSettingsLinks } from '../views/folderSettings'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
@@ -290,6 +293,13 @@ function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog
   // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
   // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
   const resolver = resolverFor(records, root, { aliases: false, ids: false })
+  // A link that spells a note's `title:` (YAZ-2420 🔒 D17) is the third of that kind: the title is
+  // in the file's own frontmatter, so the link still reaches it afterwards. A note with no `title:`
+  // is titled by its file name, and a link spelling that is a name link, rewritten as ever.
+  const named = (t: string): string | undefined => {
+    const hit = resolver(t)?.record
+    return hit !== undefined && titleOf(hit.properties, '') !== '' && targetKey(t) === hit.title.toLowerCase() ? undefined : hit?.path
+  }
   // A FOLDER holds a name only when no note, path or ALIAS does (YAZ-2290 D10) — asked of the
   // full resolver, so a link an alias answers is never read as the folder's. No folder ids either.
   const anyNote = resolverFor(records, root)
@@ -302,7 +312,7 @@ function makeResolves({ root, oldPath, kind, records, dirs = [], viewOnlyCatalog
     if (hit !== undefined) return hit
     // An explicit recognized non-Markdown extension belongs exclusively to the lightweight
     // catalog. It must never acquire a semantic record/resolver fallback on a miss.
-    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : resolver(t)?.record.path ?? (anyNote(t) === null ? folder(t) : null)
+    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : named(t) ?? (anyNote(t) === null ? folder(t) : null)
     targetPaths.set(t, resolved)
     return resolved
   }
@@ -342,7 +352,7 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
     kind === 'file'
       ? records.map((r) =>
           r.path === oldPath
-            ? { ...r, path: newPath, name: newName, basename: stripExt(newName), folder: newRel.includes('/') ? newRel.slice(0, newRel.lastIndexOf('/')) : '' }
+            ? { ...r, path: newPath, name: newName, basename: stripExt(newName), title: titleOf(r.properties, stripExt(newName)), folder: newRel.includes('/') ? newRel.slice(0, newRel.lastIndexOf('/')) : '' }
             : r,
         )
       : records

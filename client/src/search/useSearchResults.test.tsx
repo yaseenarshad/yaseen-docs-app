@@ -34,8 +34,8 @@ const rec = (basename: string, folder = ''): IndexRecord => ({
   embeds: [],
 })
 
-function installBridge(records: IndexRecord[]) {
-  const bridge = { index: vi.fn(async (root: string) => ({ root, records, generatedAt: 1 })) }
+function installBridge(records: IndexRecord[], folders: IndexRecord[]) {
+  const bridge = { index: vi.fn(async (root: string) => ({ root, records, folders, generatedAt: 1 })) }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
 }
@@ -55,8 +55,8 @@ function Harness({ watch, query, dirs = NO_DIRS, titles = NO_TITLES }: { watch: 
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
-async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS) {
-  const bridge = installBridge(records)
+async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS, folders: IndexRecord[] = []) {
+  const bridge = installBridge(records, folders)
   tweak?.(bridge) // before the first render: the mount read is the one that can fail
   // A real fan-out watch (useWatch's shape), so "did search subscribe at all?" is answerable.
   const listeners: ((ev: WatchEvent) => void)[] = []
@@ -114,7 +114,7 @@ describe('useSearchResults (YAZ-803)', () => {
     bridge.index.mockClear()
     await rerender('') // back to no query: the records stay, nothing is refetched
     expect(bridge.index).not.toHaveBeenCalled()
-    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 2 })
     await fire({ type: 'add', path: '/v/Anchor.md', mtime: 1 }) // still subscribed while the bar is empty
     await rerender('a')
     expect(labels()).toEqual(['Alpha', 'Anchor'])
@@ -122,7 +122,7 @@ describe('useSearchResults (YAZ-803)', () => {
 
   it('a structural watch event refetches the index; the new snapshot is searchable', async () => {
     const { bridge, fire } = await mount([rec('Alpha')], 'a')
-    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 2 })
     await fire({ type: 'add', path: '/v/Anchor.md', mtime: 1 })
     expect(labels()).toEqual(['Alpha', 'Anchor'])
   })
@@ -154,8 +154,8 @@ describe('useSearchResults (YAZ-803)', () => {
   it('a stale answer is never applied over a newer one (YAZ-2191)', async () => {
     const { bridge, emit } = await mount([rec('Alpha')], 'a')
     let answerOld!: () => void
-    bridge.index.mockImplementationOnce((root: string) => new Promise((r) => (answerOld = () => r({ root, records: [rec('Alpha')], generatedAt: 2 }))))
-    bridge.index.mockResolvedValueOnce({ root: '/v', records: [rec('Alpha'), rec('Anchor')], generatedAt: 3 })
+    bridge.index.mockImplementationOnce((root: string) => new Promise((r) => (answerOld = () => r({ root, records: [rec('Alpha')], folders: [], generatedAt: 2 }))))
+    bridge.index.mockResolvedValueOnce({ root: '/v', records: [rec('Alpha'), rec('Anchor')], folders: [], generatedAt: 3 })
     act(() => emit({ type: 'ready', root: '/v' }))
     await act(async () => emit({ type: 'ready', root: '/v' }))
     expect(labels()).toEqual(['Alpha', 'Anchor'])
@@ -183,6 +183,15 @@ describe('useSearchResults (YAZ-803)', () => {
     await mount([rec('Archive'), rec('Archived plan')], 'archive', undefined, ['/v/Archive', '/v/Archive/Old'])
     // Exact bucket: the folder sits above the note; prefix bucket: the note; `Old` never matches.
     expect(labels()).toEqual(['📁Archive', 'Archive', 'Archived plan'])
+  })
+
+  it("D: an id in the bar is that note alone, and a folder's id that folder, read off the index's folder records (YAZ-2420 D32)", async () => {
+    const records = [{ ...rec('up-001-abdul-k3m9x2pq7abc'), title: 'UP-001 - Abdul', id: 'k3m9x2pq7abc' }, rec('Archive')]
+    const folders = [{ ...rec('.folder', 'Archive'), id: 'f7n2w8rt4xyz' }]
+    const { rerender } = await mount(records, '[[k3m9x2pq7abc]]', undefined, ['/v/Archive'], folders)
+    expect(labels()).toEqual(['UP-001 - Abdul'])
+    await rerender('/v/Archive/f7n2w8rt4xyz')
+    expect(labels()).toEqual(['📁Archive'])
   })
 
   it('folder rows survive an unreadable index — they come from the tree, not the feed', async () => {

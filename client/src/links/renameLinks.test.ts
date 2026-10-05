@@ -650,6 +650,35 @@ describe('id links are never rewritten (YAZ-2293 D5)', () => {
   })
 })
 
+describe('a link that spells a title (YAZ-2420 D17)', () => {
+  const root = '/v'
+  const ABDUL = '/v/candidates/up-001-abdul-k3m9x2pq7abc.md'
+  const abdul = rec(ABDUL, { title: 'UP-001 - Abdul', properties: { title: 'UP-001 - Abdul' } })
+
+  it('E: renaming or moving a note with a title leaves `[[Its Title]]` as written and out of the count; a link spelling its file name is rewritten', async () => {
+    const records = [rec('/v/ByFile.md', { links: ['up-001-abdul-k3m9x2pq7abc'] }), rec('/v/ByTitle.md', { links: ['UP-001 - Abdul'] }), abdul]
+    const files = {
+      '/v/ByFile.md': { content: '[[up-001-abdul-k3m9x2pq7abc]]\n', mtime: 1 },
+      '/v/ByTitle.md': { content: '[[UP-001 - Abdul]] and [[up-001 - abdul|him]]\n', mtime: 1 },
+    }
+    const { readFile } = installBridge(files)
+    expect(countLinkReferences({ root, oldPath: ABDUL, records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: ABDUL, newPath: '/v/hired/abdul-k3m9x2pq7abc.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/ByFile.md'].content).toBe('[[abdul-k3m9x2pq7abc]]\n')
+    expect(files['/v/ByTitle.md'].content).toBe('[[UP-001 - Abdul]] and [[up-001 - abdul|him]]\n')
+    expect(readFile).not.toHaveBeenCalledWith('/v/ByTitle.md')
+  })
+
+  it('a note with no title is renamed as before, and its new file name is its title from then on: `[[Old]]` becomes a bare `[[New]]` beside a deeper note titled New', async () => {
+    const records = [rec('/v/A.md', { links: ['Old'] }), rec('/v/Sub/Old.md'), rec('/v/x/y/z/new-7tq2m8vd4xhn.md', { title: 'New', properties: { title: 'New' } })]
+    const files = { '/v/A.md': { content: '[[Old]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(countLinkReferences({ root, oldPath: '/v/Sub/Old.md', records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Sub/Old.md', newPath: '/v/Sub/New.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[New]]\n')
+  })
+})
+
 describe('countLinkReferences (the banner N — the exact referencing-set filter, no reads, no writes)', () => {
   const root = '/v'
 

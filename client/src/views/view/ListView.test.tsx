@@ -185,7 +185,7 @@ describe('primary line', () => {
     const primaries = [...el.querySelectorAll('.view-list__primary')].map((s) => s.textContent)
     expect(primaries[0]).toBe('idea')
     // file.name is second in order, so it renders as a plain inline value, not the primary link
-    expect(inlineOf(items(el)[0])).toBe('Agentic Agency.md') // the VALUE keeps its extension; only a TITLE is the basename (YAZ-1549)
+    expect(inlineOf(items(el)[0])).toBe('Agentic Agency') // the VALUE is the title too (YAZ-2420 D18)
   })
 
   it('empty values are skipped in the inline run — a bare note renders no inline span', () => {

@@ -1,7 +1,7 @@
 /** The title-search perf smoke (YAZ-802) — keeps the 1,000+ file acceptance honest. Runs in the `perf` project (YAZ-740). */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { folderCandidates, searchCandidates, searchTitles } from './searchCandidates'
+import { folderCandidates, searchCandidates, searchRows } from './searchCandidates'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -26,12 +26,13 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
 
 describe('searchCandidates', () => {
   it('perf smoke: 2,000 records + 500 folders derive and match well under a keystroke budget', () => {
-    const records = Array.from({ length: 2000 }, (_, i) => rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]))
+    // Every note has an id, so each keystroke also looks for all 2,000 in the query (YAZ-2420 D32).
+    const records = Array.from({ length: 2000 }, (_, i) => ({ ...rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]), id: `k3m9x2pq${String(i).padStart(4, '0')}` }))
     // Folder rows ride in the same list since YAZ-1491 (🔒 D1): 50 top-level folders, each with 9 nested.
     const dirs = Array.from({ length: 50 }, (_, i) => `/vault/folder${i}`).flatMap((d) => [d, ...Array.from({ length: 9 }, (_, j) => `${d}/sub${j}`)])
     const start = performance.now()
     const candidates = [...folderCandidates('/vault', dirs, new Map()), ...searchCandidates(records)]
-    for (let i = 0; i < 10; i++) searchTitles(candidates, `Note 49`)
+    for (let i = 0; i < 10; i++) searchRows(candidates, `Note 49`)
     const elapsed = performance.now() - start
     expect(candidates).toHaveLength(4500) // 500 folder rows + one basename row + one alias row per record
     // The measured ms in the run's output, like every other perf smoke (YAZ-861): a budget that

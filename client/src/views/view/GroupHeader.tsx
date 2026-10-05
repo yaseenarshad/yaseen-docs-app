@@ -52,8 +52,8 @@ export function chip(v: Value, key?: number, resolve?: Resolver) {
 /**
  * The page's TITLE wherever a skin shows its `file.name` column (YAZ-1513/1549): the record's
  * `title` (YAZ-2420 🔒 D14), never the file name — one spelling for the table's name cell, the
- * board's card title, the card's title and the list's primary. `file.name`'s VALUE keeps its
- * extension for sort and filter; only what the eye reads is the name. A row that is in the folder
+ * board's card title, the card's title and the list's primary. `file.name`'s VALUE is the title
+ * too (🔒 D18), so the column sorts and filters by what it shows. A row that is in the folder
  * by a SHORTCUT (YAZ-2290 D2) wears the mark after it — here, so every skin marks it alike.
  */
 export const rowTitle = (row: Row): ReactNode => <RowTitle row={row} />

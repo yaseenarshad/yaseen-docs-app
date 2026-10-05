@@ -69,22 +69,24 @@ left in the app, has no \`by\`. \`edit\` and \`delete\` work only on comments th
 a person's comment is edited or deleted in the app. Deleting a comment deletes its replies.
 
 Every page has a permanent id in its frontmatter (\`id: k3m9x2pq7abc\`); a rename or a move never
-changes it. A link between pages is written \`[[<id>]]\`, and the app shows the page's current
-title in its place. \`id\` prints a page's id — a page that has none is given one first, exactly
-as the app would, and only inside a vault (a folder holding \`.yaseendocs/\`). \`links\` lists
-every id on a page — its links, and the folders it is also in — with the page or folder that id
-names now, or \`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the
-vault for \`id: <id>\`.
+changes it. A page's title is its \`title:\` line, and the app builds the file name from the title
+and the id (\`<kebab-title>-<id>.md\`). A link between pages is written \`[[<id>]]\`, and the app
+shows the page's current title in its place. \`id\` prints a page's id — a page that has none is
+given one first, exactly as the app would, and only inside a vault (a folder holding
+\`.yaseendocs/\`). \`links\` lists every id on a page — its links, and the folders it is also in —
+with the title and path of the page or folder that id names now, or \`(missing)\` (\`--json\` for
+the raw shape). To find a page from an id, search the vault's file names for it; a file the app did
+not name is found by its \`id: <id>\` line.
 
 A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
 named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
-those folders after the links, each by id and the folder it names now.
+those folders after the links, each by id and the title and path of the folder it names now.
 
 \`due\` prints the day a page is next up for review. The app works that date out from the page's
 \`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
 file, so this is the place to read it. Given a folder, \`due\` lists the pages due now under it,
-most overdue first (\`--json\` for the raw shape of either). Nothing is due in a vault until
-upkeep is turned on for it, in the app's Settings.
+each by title and path, most overdue first (\`--json\` for the raw shape of either). Nothing is due
+in a vault until upkeep is turned on for it, in the app's Settings.
 
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
@@ -223,9 +225,9 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   const files: string[] = []
   await walk(target, files)
   const notes = files.filter((file) => !isFolderSettingsPath(file))
-  const queue = reviewQueue([...(await scanAll(target, notes)).values()], settings, Date.now()).map((r) => ({ path: r.path, due: dueAt(r, settings) }))
+  const queue = reviewQueue([...(await scanAll(target, notes)).values()], settings, Date.now()).map((r) => ({ title: r.title, path: r.path, due: dueAt(r, settings) }))
   if (json) io.stdout(`${JSON.stringify(queue.map((q) => ({ ...q, due: iso(q.due) })), null, 2)}\n`)
-  else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.path}\n`).join(''))
+  else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.title}  ${q.path}\n`).join(''))
 }
 
 async function run(argv: readonly string[], io: Io): Promise<void> {
@@ -315,22 +317,23 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       const files: string[] = []
       if (ids.length > 0 || held.length > 0) await walk(root, files)
       const records = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
-      const rows = ids.map((id): { id: string; kind: 'note' | 'folder' | 'missing'; path?: string } => {
+      // Each id with the title (YAZ-2420 🔒 D14) and the real path of what it names now.
+      const rows = ids.map((id): { id: string; kind: 'note' | 'folder' | 'missing'; title?: string; path?: string } => {
         const r = records.find((o) => o.id === id)
         if (r === undefined) return { id, kind: 'missing' }
         // A folder's id is carried by its `.folder.md`; what it names is the folder.
-        if (isFolderSettingsPath(r.path)) return { id, kind: 'folder', path: r.folder }
-        return { id, kind: 'note', path: r.folder === '' ? r.name : `${r.folder}/${r.name}` }
+        if (isFolderSettingsPath(r.path)) return { id, kind: 'folder', title: r.title, path: r.folder }
+        return { id, kind: 'note', title: r.title, path: r.folder === '' ? r.name : `${r.folder}/${r.name}` }
       })
       const line = (r: (typeof rows)[number]) =>
-        `${r.id}  ${r.kind === 'missing' ? '(missing)' : r.kind === 'note' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`
+        `${r.id}  ${r.kind === 'missing' ? '(missing)' : `${r.title}  ${r.kind === 'note' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`}`
       // The folders the page holds values for (`in`, D19), apart from its links: a block whose id no folder has is its id alone.
-      const blocks = held.map((id): { id: string; path?: string } => {
+      const blocks = held.map((id): { id: string; title?: string; path?: string } => {
         const folder = records.find((o) => o.id === id && isFolderSettingsPath(o.path))
-        return folder === undefined ? { id } : { id, path: folder.folder }
+        return folder === undefined ? { id } : { id, title: folder.title, path: folder.folder }
       })
       const listed = rows.length === 0 ? `no ids on ${page}\n` : `${rows.map(line).join('\n')}\n`
-      const values = blocks.length === 0 ? '' : `\nin:\n${blocks.map((b) => (b.path === undefined ? b.id : `${b.id}  ${b.path}/`)).join('\n')}\n`
+      const values = blocks.length === 0 ? '' : `\nin:\n${blocks.map((b) => (b.path === undefined ? b.id : `${b.id}  ${b.title}  ${b.path}/`)).join('\n')}\n`
       io.stdout(flags.has('--json') ? `${JSON.stringify({ links: rows, in: blocks }, null, 2)}\n` : listed + values)
       return
     }

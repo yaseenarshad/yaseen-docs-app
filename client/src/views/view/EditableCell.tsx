@@ -18,7 +18,7 @@ export interface EditableCellProps {
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
   editor: EditorKind | null
-  /** Index basenames for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the basename (`basenameCandidates`). */
+  /** Index titles for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the title (`basenameCandidates`). */
   basenames: readonly LinkCandidate[]
   /**
    * The ONE write: the host's own. A folder's views write its block of the note
