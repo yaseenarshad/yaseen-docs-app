@@ -19,14 +19,12 @@
  * Same harness as rename.spec.ts (temp `--user-data-dir`, a temp vault, `names-` step screenshots).
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, launchApp, layer, menuItem, openFolder, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { NOTE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, launchApp, layer, menuItem, only, openFolder, quitApp, seededState, shoot, tabsOf, titleOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
-
-const ID = '[0-9a-hjkmnp-tv-z]{12}'
 
 let userData: string
 let vault: string
@@ -39,15 +37,7 @@ const inline = (w: Page) => w.locator('.create-inline__input')
 const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
 const results = (w: Page) => w.locator('[aria-label="Search results"] [role="option"]')
 
-/** The one file in `dir` whose name matches, or '' while there is none or more than one. */
-async function only(dir: string, pattern: RegExp): Promise<string> {
-  const hits = (await readdir(dir).catch(() => [])).filter((name) => pattern.test(name))
-  return hits.length === 1 ? hits[0] : ''
-}
 const read = (p: string) => readFile(p, 'utf8').catch(() => '')
-const idOf = (content: string) => /^id: (\S+)$/m.exec(content)?.[1] ?? ''
-/** The `title:` line's text; YAML may quote it (a colon, or a value that was quoted before). */
-const titleOf = (content: string) => (/^title: (.*)$/m.exec(content)?.[1] ?? '').replace(/^(['"])(.*)\1$/, '$2').replace(/''/g, "'")
 
 /** A name change asks first (YAZ-888); confirm it when it does. */
 async function confirmIfAsked(w: Page): Promise<void> {
