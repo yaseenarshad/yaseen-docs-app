@@ -616,8 +616,8 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     // Nothing reads them, so opening rewrites nothing.
     expect(writeFile).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
-    // Every key a row, in the block's order, among the note's own; then the folder's one default column, unfilled.
-    expect(keysOf(el)).toEqual(['folder_page', 'folder_pages', 'folder_page_settings', 'title', 'status'])
+    // The folder's one default column, unfilled; then every key a row, in the block's order, among the note's own.
+    expect(keysOf(el)).toEqual(['status', 'folder_page', 'folder_pages', 'folder_page_settings', 'title'])
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (4)')
     // Typed by their own values, like any property: a flag, a list, and a map no editor can hold.
     for (const key of ['folder_page', 'folder_pages', 'folder_page_settings']) expect(chipIn(rowOf(el, key))).not.toBe('Reserved')
@@ -686,11 +686,11 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
   it('ONE folder is in force at a time: the columns of a folder it is a SHORTCUT in are listed only once that folder is picked', () => {
     const el = mount(SHORTCUT_NOTE, { root: ROOT, wikilinks: shortcutFeed() })
     expand(el)
-    // Its own key, then the living folder's two columns — Areas' `owner` is not merged in.
-    expect(keysOf(el)).toEqual(['also_in', 'Status', 'effort'])
+    // The living folder's two columns, then its own key — Areas' `owner` is not merged in.
+    expect(keysOf(el)).toEqual(['Status', 'effort', 'also_in'])
     expect(editorOf(el, 'effort')).toBe('number')
     setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Areas')
-    expect(keysOf(el)).toEqual(['also_in', 'effort', 'owner'])
+    expect(keysOf(el)).toEqual(['effort', 'owner', 'also_in'])
     expect(editorOf(el, 'effort')).toBe('text')
   })
 
@@ -944,9 +944,9 @@ describe('FrontmatterPanel — "Properties from"', () => {
     expect(JSON.stringify({ ...localStorage })).toBe(stored)
   })
 
-  it('a field of the note’s own is typed by the lower rungs, else its own value — never by the chosen folder — and is listed before the folder’s rows', () => {
+  it('a field of the note’s own is typed by the lower rungs, else its own value — never by the chosen folder — and is listed after the folder’s rows', () => {
     const el = mountAt(NOTE, '---\ncount: 3\ndue: 2026-01-01\n---\nBody\n', nested(), declaring({ due: { kind: 'date' } }))
-    expect(keysOf(el)).toEqual(['count', 'due', 'effort', 'owner'])
+    expect(keysOf(el)).toEqual(['effort', 'owner', 'count', 'due'])
     expect(editorOf(el, 'count')).toBe('number') // its own value
     expect(editorOf(el, 'due')).toBe('date') // the legacy declaration
   })
@@ -1168,8 +1168,9 @@ describe('FrontmatterPanel — a stored id link reads as the note title (YAZ-229
 
 /**
  * Two kinds of field (D19): the note's OWN, at the top level, and a FOLDER's, under `in` in the
- * block named by the folder's id. One list — the note's own rows, then "Properties from <folder>"
- * and that folder's rows — and every edit goes where its row lives.
+ * block named by the folder's id. "Properties from <folder>" leads the panel (D22); one list holds
+ * that folder's rows, then a line and "This note" with the note's own — and every edit goes where
+ * its row lives.
  */
 describe('FrontmatterPanel — each folder has its own properties (D19)', () => {
   const NOOR = '/vault/Hiring/Noor.md'
@@ -1204,10 +1205,13 @@ Body
     return container
   }
   const from = (el: HTMLElement) => el.querySelector<HTMLElement>('.frontmatter-property-context')
-  /** The note's own rows: the ones above "Properties from". */
-  const ownRows = (el: HTMLElement) => rows(el).filter((r) => (r.compareDocumentPosition(from(el)!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0)
-  /** The chosen folder's rows: the ones under it. */
-  const folderRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLLIElement>('.frontmatter-property-context ~ .frontmatter-panel__row')]
+  /** The line and "This note": what parts the folder's rows from the note's own. */
+  const ownHeading = (el: HTMLElement) => el.querySelector<HTMLElement>('.frontmatter-panel__own')
+  const before = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  /** The chosen folder's rows: the ones above "This note" (all of them when no own field shows). */
+  const folderRows = (el: HTMLElement) => (from(el) === null ? [] : rows(el).filter((r) => ownHeading(el) === null || before(r, ownHeading(el)!)))
+  /** The note's own rows: the ones under "This note" (all of them when no folder shows the note). */
+  const ownRows = (el: HTMLElement) => (from(el) === null ? rows(el) : rows(el).filter((r) => ownHeading(el) !== null && before(ownHeading(el)!, r)))
   const names = (list: HTMLLIElement[]) => list.map((r) => r.dataset.key)
   const row = (list: HTMLLIElement[], key: string): HTMLLIElement => {
     const found = list.find((r) => r.dataset.key === key)
@@ -1229,18 +1233,65 @@ Body
   }
   const written = (): string => writeFile.mock.calls.at(-1)![0].content
 
-  it('Open a note’s panel: the note’s own fields, then "Properties from <folder>" with that folder’s columns and the note’s values for that folder — unfilled columns as empty rows', () => {
+  it('A note that several folders show: first "Properties from" with the choice of folders, then the search bar, then the chosen folder’s columns — filled and unfilled — then a line and "This note" with the note’s own fields (D22)', () => {
     const el = mountNote()
-    expect(names(ownRows(el))).toEqual(['id', 'aliases', 'Status', 'also_in'])
     expect(from(el)?.textContent).toMatch(/^Properties from /)
     expect(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select')?.value).toBe('/vault/Hiring')
     expect(names(folderRows(el))).toEqual(['Status', 'old_field', 'score'])
-    expect(shows(row(ownRows(el), 'Status'))).toBe('mine') // the note's own
+    expect(names(ownRows(el))).toEqual(['id', 'aliases', 'Status', 'also_in'])
     expect(shows(row(folderRows(el), 'Status'))).toBe('Interview') // Hiring's
     expect(shows(row(folderRows(el), 'score'))).toBe('Empty')
-    // ONE list: the heading row sits in it, between the two groups.
-    expect(from(el)?.parentElement).toBe(el.querySelector('.frontmatter-panel__rows'))
+    expect(shows(row(ownRows(el), 'Status'))).toBe('mine') // the note's own
+    // The order on the page: "Properties from", the search bar, the list; the line and its label inside the list.
+    const search = el.querySelector('.column-search')!
+    const list = el.querySelector('.frontmatter-panel__rows')!
+    expect(before(from(el)!, search)).toBe(true)
+    expect(before(search, list)).toBe(true)
+    expect(from(el)?.parentElement).not.toBe(list)
+    expect(ownHeading(el)?.parentElement).toBe(list)
+    expect(ownHeading(el)?.textContent).toBe('This note')
     expect(el.querySelectorAll('.frontmatter-panel__rows')).toHaveLength(1)
+  })
+
+  it('A note that one folder shows: the first line is the plain text "Properties from <folder>", with no choice; the rest is the same', () => {
+    const el = mountNote(CONTENT.replace(`also_in:\n  - ${TASKS_ID}\n`, ''))
+    expect(from(el)?.textContent).toBe('Properties from Hiring')
+    expect(from(el)?.querySelector('select')).toBeNull()
+    expect(before(from(el)!, el.querySelector('.column-search')!)).toBe(true)
+    expect(names(folderRows(el))).toEqual(['Status', 'old_field', 'score'])
+    expect(names(ownRows(el))).toEqual(['id', 'aliases', 'Status'])
+  })
+
+  it('A note no folder shows: no "Properties from" line, no line and no "This note" label — only its own fields', () => {
+    const el = mountNote(CONTENT, '/elsewhere/Noor.md')
+    expect(from(el)).toBeNull()
+    expect(ownHeading(el)).toBeNull()
+    expect(names(rows(el))).toEqual(['id', 'aliases', 'Status', 'also_in'])
+  })
+
+  it('The chosen folder has no columns and the note has no values for it: "Properties from" still leads; the list goes straight to the line and "This note"', () => {
+    const bare = feedOf(folderMd('/vault/Hiring', { columns: {}, id: HIRING_ID }))
+    const el = mountNote('---\nid: k3m9x2pq7abc\naliases: [Noor]\n---\nBody\n', NOOR, bare)
+    expect(from(el)?.textContent).toBe('Properties from Hiring')
+    expect(folderRows(el)).toHaveLength(0)
+    expect(el.querySelector('.frontmatter-panel__rows')?.firstElementChild).toBe(ownHeading(el))
+    expect(names(ownRows(el))).toEqual(['id', 'aliases'])
+  })
+
+  it('Searching filters both groups: the line and "This note" show only when an own field matches; "Properties from" stays in place', () => {
+    const el = mountNote()
+    const search = el.querySelector<HTMLInputElement>('.column-search input')
+    setValue(search, 'score')
+    expect(names(rows(el))).toEqual(['score'])
+    expect(ownHeading(el)).toBeNull()
+    expect(from(el)).not.toBeNull()
+    setValue(search, 'alias')
+    expect(names(folderRows(el))).toEqual([])
+    expect(names(ownRows(el))).toEqual(['aliases'])
+    expect(ownHeading(el)).not.toBeNull()
+    setValue(search, 'status')
+    expect(names(folderRows(el))).toEqual(['Status'])
+    expect(names(ownRows(el))).toEqual(['Status'])
   })
 
   it('the count is the fields the note holds — its own, and its values for the chosen folder; `in` is not one', () => {

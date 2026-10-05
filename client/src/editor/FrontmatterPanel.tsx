@@ -385,23 +385,25 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
             />
           ) : (
             <>
+              {/* "Properties from" leads (D22): it decides what the list below is about. */}
+              {chosen !== undefined && (
+                <div className="frontmatter-property-context">
+                  {dirs.length === 1 ? `Properties from ${basename(chosen)}` : (
+                    <label>Properties from <select className="view-select" value={chosen} onChange={(e) => { setPicked(e.target.value); setPropertyMenu(null) }}>
+                      {/* A name two choices share reads as each one's path from the root. */}
+                      {dirs.map((d) => <option key={d} value={d}>{vault !== undefined && dirs.some((o) => o !== d && basename(o) === basename(d)) ? relTo(vault, d) : basename(d)}</option>)}
+                    </select></label>
+                  )}
+                </div>
+              )}
               {rows.length > 0 && <ColumnSearch value={query} onChange={setQuery} label="Search properties" placeholder="Search properties…" />}
               {rows.length > 0 && shown.length === 0 && <p className="column-search__empty" role="status">No properties found.</p>}
-              {(shown.length > 0 || chosen !== undefined) && (
-                // ONE list, two groups: the note's own fields, then the chosen folder's under its heading row.
+              {shown.length > 0 && (
+                // ONE list, two groups: the chosen folder's rows, then the note's own under a line and "This note".
                 <ul className="frontmatter-panel__rows">
-                  {shown.filter((row) => !row.folder).map(rowItem)}
-                  {chosen !== undefined && (
-                    <li className="frontmatter-property-context">
-                      {dirs.length === 1 ? `Properties from ${basename(chosen)}` : (
-                        <label>Properties from <select className="view-select" value={chosen} onChange={(e) => { setPicked(e.target.value); setPropertyMenu(null) }}>
-                          {/* A name two choices share reads as each one's path from the root. */}
-                          {dirs.map((d) => <option key={d} value={d}>{vault !== undefined && dirs.some((o) => o !== d && basename(o) === basename(d)) ? relTo(vault, d) : basename(d)}</option>)}
-                        </select></label>
-                      )}
-                    </li>
-                  )}
                   {shown.filter((row) => row.folder).map(rowItem)}
+                  {chosen !== undefined && shown.some((row) => !row.folder) && <li className="frontmatter-panel__own">This note</li>}
+                  {shown.filter((row) => !row.folder).map(rowItem)}
                 </ul>
               )}
               {adding !== null && (
