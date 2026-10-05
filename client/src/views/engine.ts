@@ -1,7 +1,7 @@
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
-import type { IndexRecord } from '@shared/types'
+import { type IndexRecord, inFolder } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
@@ -73,6 +73,11 @@ export interface RunOptions {
    * pointing outside them still resolves. Absent: one built from `records`.
    */
   resolve?: Resolver
+  /**
+   * The folder whose page this is (as the index names it), the vault's folder records and the vault's
+   * name (YAZ-2541): given, a Folder level groups by the folders below the page, each headed by its title.
+   */
+  page?: { folder: string; folders: readonly IndexRecord[]; vault: string }
 }
 
 /** Value of one property key for one row's scope. */
@@ -373,6 +378,13 @@ const byPath = (a: Entry, b: Entry): number => (a.row.record.path < b.row.record
 
 const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof ErrorValue || (Array.isArray(v) && v.length === 0)
 
+/** The folder `depth` steps below `page` on the way to `folder` (YAZ-2541); `folder` itself when it is nearer than that, or not under the page (a shortcut's home). */
+export function folderAt(folder: string, page: string, depth: number): string {
+  if (!inFolder(folder, page)) return folder
+  const steps = (page === '' ? 0 : page.split('/').length) + depth
+  return folder.split('/').slice(0, steps).join('/')
+}
+
 // ---------- public API ----------
 
 /**
@@ -492,14 +504,20 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     }
     return out
   }
-  /** One level over `list`: its distinct keys in the level's direction, then the value-less entries. */
-  const bucket = (list: Entry[], { property, direction }: GroupBySpec) => {
+  /**
+   * One level over `list`: its distinct keys in the level's direction, then the value-less entries.
+   * `depth` > 0 marks a Folder level under a page (YAZ-2541): the key is the folder that many steps
+   * below the page, so deeper notes roll up into it, and a shortcut's home stays its own — the vault
+   * root included ('' is a folder there, not a missing value) — and comes after the page's own folders.
+   */
+  const bucket = (list: Entry[], { property, direction }: GroupBySpec, depth: number) => {
     const valued: { key: Value; entries: Entry[] }[] = []
     const noValue: Entry[] = []
     let fannedOut = false
     for (const entry of list) {
-      const key = valueOf(entry, property)
-      if (isNoValue(key)) {
+      const own = valueOf(entry, property)
+      const key = depth > 0 && typeof own === 'string' ? folderAt(own, opts.page!.folder, depth) : own
+      if (isNoValue(key) && !(depth > 0 && key === '')) {
         noValue.push(entry)
         continue
       }
@@ -529,34 +547,43 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       }
       if (joined === 0) noValue.push(entry)
     }
-    valued.sort((a, b) => compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC', resolve))
+    const outside = (key: Value): number => (depth > 0 && typeof key === 'string' && !inFolder(key, opts.page!.folder) ? 1 : 0)
+    valued.sort((a, b) => outside(a.key) - outside(b.key) || compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC', resolve))
     return { valued, noValue, fannedOut }
   }
-  const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean): Group =>
-    ({ key, label: key === null ? NO_VALUE : render(key, resolve), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
+  const titles = new Map([...(opts.page?.folders ?? []).map(f => [f.folder, f.title] as const), ['', opts.page?.vault ?? '']])
+  /** A Folder group (YAZ-2541) is headed as the sidebar names its folder: by title, a folder with no settings file by its directory, the root by the vault's name. */
+  const labelOf = (key: Value, depth: number): string =>
+    depth > 0 && typeof key === 'string' ? titles.get(key) ?? key.slice(key.lastIndexOf('/') + 1) : render(key, resolve)
+  const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean, depth: number): Group =>
+    ({ key, label: key === null ? NO_VALUE : labelOf(key, depth), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
 
   let groups: Group[] | null = null
   // Levels past the second are ignored in v1 (YAZ-745); a level without a property name is not one.
   const levels = groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, 2)
+  // How far below the page each Folder level groups (YAZ-2541): the first one step, a second two; 0 = not a Folder level.
+  const isFolder = levels.map(l => opts.page !== undefined && l.property === 'file.folder')
+  const depths = isFolder.map((yes, i) => (yes ? isFolder.slice(0, i + 1).filter(Boolean).length : 0))
   if (levels.length) {
-    const outer = bucket(kept, levels[0])
+    const outer = bucket(kept, levels[0], depths[0])
     const branches: { key: Value | null; entries: Entry[] }[] = [...outer.valued]
     if (outer.noValue.length) branches.push({ key: null, entries: outer.noValue })
     if (levels.length === 1) {
-      groups = branches.map(b => groupOf(b.key, b.entries, outer.fannedOut))
+      groups = branches.map(b => groupOf(b.key, b.entries, outer.fannedOut, depths[0]))
     } else {
-      const nested = branches.map(b => ({ ...b, inner: bucket(b.entries, levels[1]) }))
+      const nested = branches.map(b => ({ ...b, inner: bucket(b.entries, levels[1], depths[1]) }))
       // Fan-out is a flag per LEVEL, not per branch: one list anywhere inside marks every inner group.
       const innerFanned = nested.some(b => b.inner.fannedOut)
       groups = nested.map(b => {
         // MERGE RULE (YAZ-745): an inner key equal to its outer's is no child — its rows sit
         // DIRECTLY under the outer, as do the value-less rows of a "No value" outer, which
-        // therefore never carries a "No value" child.
+        // therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it:
+        // a subfolder's own notes resolve to the subfolder at both depths, so they sit directly under it.
         const merges = (key: Value): boolean => b.key !== null && equals(key, b.key)
-        const children = b.inner.valued.filter(x => !merges(x.key)).map(x => groupOf(x.key, x.entries, innerFanned))
-        if (b.key !== null && b.inner.noValue.length) children.push(groupOf(null, b.inner.noValue, innerFanned))
+        const children = b.inner.valued.filter(x => !merges(x.key)).map(x => groupOf(x.key, x.entries, innerFanned, depths[1]))
+        if (b.key !== null && b.inner.noValue.length) children.push(groupOf(null, b.inner.noValue, innerFanned, depths[1]))
         const direct = b.key === null ? b.inner.noValue : b.inner.valued.filter(x => merges(x.key)).flatMap(x => x.entries)
-        return { ...groupOf(b.key, b.entries, outer.fannedOut), children, direct: direct.map(e => e.row) }
+        return { ...groupOf(b.key, b.entries, outer.fannedOut, depths[0]), children, direct: direct.map(e => e.row) }
       })
     }
   }

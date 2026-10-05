@@ -323,6 +323,7 @@ export function BoardView({
               view={view}
               columns={keys}
               groupKey={g.key}
+              label={g.label}
               rows={g.rows}
               collapsed={isCollapsed}
               onToggle={() => onToggleGroup(gk)}
@@ -368,6 +369,7 @@ export function BoardView({
                                   view={view}
                                   columns={keys}
                                   groupKey={child.key}
+                                  label={child.label}
                                   rows={child.rows}
                                   collapsed={childCollapsed}
                                   onToggle={() => onToggleGroup(ck)}

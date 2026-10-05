@@ -99,6 +99,8 @@ export interface GroupHeaderProps {
   columns: readonly string[]
   /** The engine group's key; null = the "No value" group. */
   groupKey: Value | null
+  /** What the engine calls the group (`Group.label`): a Folder group's is its folder's title (YAZ-2541), which its key, the path, does not say. */
+  label: string
   /** The group's SHOWN (post-search) rows: the count and summaries are computed over exactly these. */
   rows: readonly Row[]
   collapsed: boolean
@@ -109,8 +111,7 @@ export interface GroupHeaderProps {
   resolve?: Resolver
 }
 
-export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onToggle, onNew, resolve }: GroupHeaderProps) {
-  const label = groupKey === null ? 'No value' : render(groupKey, resolve)
+export function GroupHeader({ def, view, columns, groupKey, label, rows, collapsed, onToggle, onNew, resolve }: GroupHeaderProps) {
   return (
     <div className="view-group">
       <button type="button" className="view-group__toggle" aria-expanded={!collapsed} aria-label={`Toggle group ${label}`} onClick={onToggle}>
@@ -119,7 +120,7 @@ export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onT
         </svg>
       </button>
       <span className={`view-group__value${groupKey === null ? ' view-group__value--none' : ''}`}>
-        {groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
+        {typeof groupKey === 'string' ? label : groupKey === null ? 'No value' : groupValue(groupKey, resolve)}
       </span>
       <span className="view-group__count">{rows.length}</span>
       {onNew !== undefined && (

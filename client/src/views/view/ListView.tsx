@@ -176,6 +176,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                   view={view}
                   columns={keys}
                   groupKey={g.key}
+                  label={g.label}
                   rows={g.rows}
                   collapsed={isCollapsed}
                   onToggle={() => onToggleGroup(gk)}

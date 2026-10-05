@@ -6,6 +6,7 @@ import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageResolver } from '../links/folderLinks'
+import { relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, runView } from './engine'
@@ -35,6 +36,8 @@ export interface FolderHost {
   vaultRecords: readonly IndexRecord[]
   /** The same snapshot's folder settings records: a link column narrowed to a folder asks what that folder holds, shortcuts included. */
   vaultFolders: readonly IndexRecord[]
+  /** What the app calls the vault (`storage.vaultName`): the name of the group a note living in the vault root is put under when a view groups by Folder (YAZ-2541). */
+  vaultName: string
   /** The window's link resolver (`linkResolver`): a note first, then a folder. A link cell reads a folder's name through it, and a link column finds the folder its target names. */
   resolveLink: ResolveLink
   /**
@@ -199,9 +202,12 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
    * however long it grows. Everything else the view says (sort, limit, groupBy) still runs.
    */
   const isOutline = view.type === 'outline'
+  // The page the views belong to, as the index names its folder (YAZ-2541): a Folder level groups by
+  // the folders below it, each headed by its title off the vault's folder records.
+  const page = useMemo(() => ({ folder: relTo(root, folderPath), folders: vaultFolders, vault: folder.vaultName }), [root, folderPath, vaultFolders, folder.vaultName])
   const result = useMemo(
-    () => runView(def, view, shown, { resolve, declared: Object.keys(folder.settings.columns) }),
-    [def, view, shown, resolve],
+    () => runView(def, view, shown, { resolve, declared: Object.keys(folder.settings.columns), page }),
+    [def, view, shown, resolve, page],
   )
 
   const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folder.settings))
@@ -297,9 +303,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
   const onNewNote = (group: Group | null, name?: string, at?: GroupSpot) => {
     const seed = deriveSeed(def, view)
     if (group !== null) {
-      seedGroup(seed, group, view, at?.level ?? 0)
       // 🔒 YAZ-745: an INNER "+" seeds the outer too, so the note lands in the very section clicked.
+      // The outer goes FIRST (YAZ-2541): under Folder then Folder both levels set `seed.folder`, and
+      // the inner folder, the one clicked, is where the note must be born — so it writes last.
       if (at !== undefined && at.level > 0) seedGroup(seed, at.outer, view, 0)
+      seedGroup(seed, group, view, at?.level ?? 0)
     }
     setCreateError(null)
     folder

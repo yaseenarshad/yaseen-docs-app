@@ -32,6 +32,7 @@ import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
 import { usePathTitles } from '../lib/pageLabel'
 import { absFrom, relTo } from '../lib/paths'
+import { storage } from '../lib/storage'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
@@ -273,6 +274,7 @@ export function FolderView({
     settings: liveSettings,
     vaultRecords: feed.records,
     vaultFolders: feed.folders,
+    vaultName: storage.vaultName(root),
     resolveLink,
     // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
     // Wherever it is born, the seeded values are THIS folder's — its view is the one being satisfied — and a
