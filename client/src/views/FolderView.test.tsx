@@ -21,7 +21,7 @@ import { linkResolver, vaultDirs } from '../links/folderLinks'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderView } from './testFolderView'
 
-vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeFolderValues: vi.fn(), transformFile: vi.fn() }))
+vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn(), writeFolderValues: vi.fn(), transformFile: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), tree: vi.fn() },
@@ -46,7 +46,7 @@ vi.mock('./view/OutlineEditor', () => ({
 
 import { api, BridgeRequestError } from '../api'
 import type { FolderHost, ViewsPaneProps } from './ViewsPane'
-import { transformFile, writeFolderValues, writeProperty } from './writeProperty'
+import { transformFile, writeFolderValues, writeProperties, writeProperty } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
 /** The ONE door a view writes a value through (D19): the note, the folder's id, the fields. */
@@ -114,17 +114,17 @@ const onOpenFile = vi.fn()
  * WikilinkIndexBridge's own wrapping: THE link resolver — a note, else a folder of the Files
  * tree — the notes, and the folder settings records riding beside them. `settings: null` = the
  * folder has no `.folder.md`. The vault uses IDs, here and wherever a test feeds the source itself,
- * but for the block that says otherwise (YAZ-2523).
+ * but for the blocks that say otherwise (YAZ-2523): with `ids` false no record has an id, the folder's included.
  */
-function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault()): void {
-  const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_settings: settings }), id: STAGES_ID }]
-  act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
+function feed(settings: unknown = SETTINGS, records: IndexRecord[] = vault(), ids = true): void {
+  const folders = settings === null ? [] : [{ ...rec(SETTINGS_FILE, { folder_settings: settings }), ...(ids && { id: STAGES_ID }) }]
+  act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, ids))
 }
 
 /** Mounts, hands over the first snapshot — the order the window does it in — and lets the settings file's read answer. */
-async function mount(settings: unknown = SETTINGS, records: IndexRecord[] = vault()): Promise<HTMLElement> {
+async function mount(settings: unknown = SETTINGS, records: IndexRecord[] = vault(), ids = true): Promise<HTMLElement> {
   const el = renderFolderView({ path: STAGES, source, onOpenFile })
-  feed(settings, records)
+  feed(settings, records, ids)
   await flush()
   return el
 }
@@ -421,7 +421,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
 
   it('Delete a column from a folder: that field is removed from THAT folder’s block in every indexed note that has it — a note under it at any depth, a shortcut, and a note it no longer shows', async () => {
     await mount(SETTINGS, vault()) // no shortcut: Other is no row here, yet still holds an `order` for this folder
-    await act(async () => captured.folder!.deleteColumn('order'))
+    await act(async () => captured.folder!.deleteColumn!('order'))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
     const strip = transform.mock.calls[0][1]
     const other = `---\ntitle: mine\norder: 5\nin:\n  z8y7x6w5v4t3:\n    order: 4\n  ${STAGES_ID}:\n    order: 7\n---\n`
@@ -432,14 +432,14 @@ describe('a shortcut is a row too (D2/D4)', () => {
   it('another folder showing the note with a column of the same name keeps nothing here: each folder’s value is its own', async () => {
     await mount(SETTINGS, shortcut())
     feedWith('/vault/stages/archive', { order: { kind: 'text' } })
-    await act(async () => captured.folder!.deleteColumn('order'))
+    await act(async () => captured.folder!.deleteColumn!('order'))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
   })
 
   it('a note that cannot be written is reported in the column banner; the others are still stripped', async () => {
     transform.mockRejectedValueOnce(new Error('frontmatter is not valid YAML'))
     const el = await mount(SETTINGS, shortcut())
-    await act(async () => captured.folder!.deleteColumn('order'))
+    await act(async () => captured.folder!.deleteColumn!('order'))
     expect(q(el, '[role="alert"]').textContent).toContain('Could not remove "order" from 1 note: Other (frontmatter is not valid YAML)')
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
   })
@@ -878,7 +878,7 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
   it('two rapid writes COMPOSE: a column added, then another deleted before either echoes — the first declaration survives (the YAZ-1549 finding)', async () => {
     await mount()
     await setColumn('owner', { kind: 'link' })
-    await act(async () => captured.folder!.deleteColumn('order'))
+    await act(async () => captured.folder!.deleteColumn!('order'))
     expect(write).toHaveBeenCalledTimes(1)
     expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
     expect(columnsOf()).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
@@ -887,7 +887,7 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
   it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one note is touched', async () => {
     write.mockRejectedValueOnce(new Error('disk full'))
     const el = await mount()
-    await act(async () => captured.folder!.deleteColumn('order'))
+    await act(async () => captured.folder!.deleteColumn!('order'))
     expect(transform).not.toHaveBeenCalled() // LEAD and SALES carry `order`; neither was stripped
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
     expect(columnsOf()).toEqual(SETTINGS.columns)
@@ -1096,13 +1096,7 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
 // The ID vault's half of each row is the block above.
 describe('New in a vault that does not use IDs makes the note the plain way (YAZ-2523 V3)', () => {
   /** The folder as such a vault's index hands it out: its settings record has no id. */
-  const mountPlain = async (settings: unknown = SETTINGS): Promise<HTMLElement> => {
-    const el = renderFolderView({ path: STAGES, source, onOpenFile })
-    const folders = [rec(SETTINGS_FILE, { folder_settings: settings })]
-    act(() => source.update(linkResolver(vault(), '/vault', vaultDirs('/vault'), folders), vault(), folders, false))
-    await flush()
-    return el
-  }
+  const mountPlain = (settings: unknown = SETTINGS): Promise<HTMLElement> => mount(settings, vault(), false)
 
   it('"New" creates `Untitled.md` in the folder, empty: no id and no `title` is sent', async () => {
     const el = await mountPlain()
@@ -1473,6 +1467,87 @@ describe('each folder has its own properties (D19)', () => {
       const id = idOf(disk.get(SETTINGS_FILE)!)
       expect(disk.get(SETTINGS_FILE)).toBe(`---\nowner: me\nid: ${id}\n---\n`)
       expect(created(0).content).toBe(`---\nin:\n  ${id}:\n    kind: task\ntitle: Untitled\n---\n`)
+    })
+  })
+
+  // The ID vault's half of each row is the block above; "New" with a seed is in the block of the plain "New".
+  describe('where the vault does not use IDs a folder\u2019s columns are the notes\u2019 own properties (YAZ-2523 V6)', () => {
+    const writeOwn = vi.mocked(writeProperties)
+    /** The notes as such a vault's index holds them: every key is the note's own, `id`, `title`, `also_in` and `in` like the rest (V12). */
+    const OWN = [rec(LEAD, { owner: 'Ana', id: 'k3m9x2pq7abc', also_in: [ARCHIVE_ID] }), rec(SALES, { order: 1 }), rec(DEEP, { title: 'mine', order: 500, in: { [ARCHIVE_ID]: { order: 30 }, [STAGES_ID]: { order: 3 } } })]
+    const headers = (el: ParentNode): string[] => texts(el, '.view-table thead th:not(.view-table__gutter)')
+
+    beforeEach(async () => {
+      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      writeOwn.mockImplementation(real.writeProperties)
+      write.mockImplementation(real.writeProperty)
+    })
+
+    it('a folder with nothing saved is a Table alone — no Board, no `status` column — listing Name and the notes\u2019 own keys with their values, `id`, `title`, `also_in` and `in` among them; opening writes NOTHING', async () => {
+      const el = await mount(null, OWN, false)
+      expect(texts(el, '.view-tab__btn')).toEqual(['Table'])
+      expect(captured.folder!.settings.columns).toEqual({})
+      expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Owner', 'Title'])
+      expect([cell(el, 'Lead Gen', 2).textContent, cell(el, 'Lead Gen', 5).textContent, cell(el, 'Old', 4).textContent, cell(el, 'Old', 6).textContent]).toEqual(['k3m9x2pq7abc', 'Ana', '500', 'mine'])
+      expect(write).not.toHaveBeenCalled()
+      expect(writeOwn).not.toHaveBeenCalled()
+      expect(writeValues).not.toHaveBeenCalled()
+      expect(transform).not.toHaveBeenCalled()
+      expect(createFile).not.toHaveBeenCalled()
+      expect(writeFile).not.toHaveBeenCalled()
+    })
+
+    it('a cell edit writes that one line at the top of the note: an `in:` block already there stays byte for byte, and no `.folder.md` is made', async () => {
+      disk.set(DEEP, THREE)
+      const el = await mount(null, OWN, false)
+      editNumber(el, 'Old', 4, 'Edit order', '9')
+      await flush()
+      expect(disk.get(DEEP)).toBe(THREE.replace('order: 500\n', 'order: 9\n'))
+      expect([...disk.keys()]).toEqual([DEEP])
+    })
+
+    it('a board drop writes the grouped property at the top of the note, and nothing else', async () => {
+      disk.set(DEEP, THREE)
+      const el = await mount({ ...SETTINGS, views: [ORDER_BOARD] }, OWN, false)
+      fire(card(el, 'Old'), 'dragstart')
+      fire(columnHolding(el, 'Sales'), 'drop') // the column of `order: 1`
+      await flush()
+      expect(disk.get(DEEP)).toBe(THREE.replace('order: 500\n', 'order: 1\n'))
+      expect([...disk.keys()]).toEqual([DEEP])
+    })
+
+    it('a view change makes `.folder.md`, holding `folder_settings` and nothing else: no `id`, no `title`, no `status` column', async () => {
+      const el = await mount(null, OWN, false)
+      click(byLabel(el, 'Add view'))
+      click(menuItem(el, 'Cards'))
+      await flush()
+      expect(disk.get(SETTINGS_FILE)).toBe('---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n    - type: cards\n      name: Cards\n---\n')
+      expect([...disk.keys()]).toEqual([SETTINGS_FILE])
+    })
+
+    it('a column declared there is the only one the file states, and the folder is still a Table alone', async () => {
+      const el = await mount(null, OWN, false)
+      await act(async () => void (await captured.folder!.setColumn('owner', { kind: 'text' }, undefined)))
+      expect(disk.get(SETTINGS_FILE)).toBe('---\nfolder_settings:\n  columns:\n    owner:\n      kind: text\n---\n')
+      feed({ columns: { owner: { kind: 'text' } } }, OWN, false)
+      expect(texts(el, '.view-tab__btn')).toEqual(['Table'])
+    })
+
+    it('"Delete column…" is not offered, by the header\u2019s menu or the Properties menu; hiding the column is a settings write that leaves every note as it was', async () => {
+      const el = await mount(null, OWN, false)
+      expect(captured.folder!.deleteColumn).toBeUndefined()
+      expect(captured.folder!.valueCount).toBeUndefined()
+      click(byLabel(el, 'Properties'))
+      click(byLabel(el, 'Open Owner'))
+      expect(byLabel(el, 'Hide Owner in this view')).toBeDefined()
+      expect(el.querySelector('[aria-label="Delete column Owner"]')).toBeNull()
+      click(byLabel(el, 'Properties'))
+      rightClick([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')][5])
+      expect(texts(el, '[role="menuitem"]')).toEqual(['Rename column…', 'Hide column', 'Add column to the right…'])
+      click(menuItem(el, 'Hide column'))
+      await flush()
+      expect(headers(el)).toEqual(['Name', 'Also in', 'Id', 'In', 'Order', 'Title'])
+      expect([...disk.keys()]).toEqual([SETTINGS_FILE])
     })
   })
 })

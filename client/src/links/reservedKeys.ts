@@ -21,7 +21,7 @@ const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY,
  * panel hides it; on a note that key is an ordinary property.
  *
  * Where the vault does not use IDs (YAZ-2523 🔒 V12) only the comments store and the review log are
- * the app's: `id`, `title`, `also_in` and `in` are ordinary properties there. As columns they are
- * still never deleted: `deleteColumn.ts` asks for the ID vault's keys in either kind of vault.
+ * the app's: `id`, `title`, `also_in` and `in` are ordinary properties there. A column is deleted
+ * only where the vault uses IDs (🔒 V11), so `deleteColumn.ts` asks for that vault's keys.
  */
 export const reservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT : PLAIN)

@@ -56,11 +56,12 @@ export interface FolderHost {
   /**
    * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the folder's
    * value for it on every note holding one — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
-   * the host reports failures in its own banner.
+   * the host reports failures in its own banner. A host whose columns are the notes' own properties
+   * has none (YAZ-2523 🔒 V11): the menus then offer no delete, and a column is hidden instead.
    */
-  deleteColumn: (key: string) => Promise<void>
-  /** How many notes hold the folder's value for a column — the number that delete's confirm states. */
-  valueCount: (key: string) => number
+  deleteColumn?: (key: string) => Promise<void>
+  /** How many notes hold the folder's value for a column — the number that delete's confirm states; there with `deleteColumn`. */
+  valueCount?: (key: string) => number
   /**
    * The ONE door a view writes a row's values through — a cell edit, a board or section drop — in
    * one guarded write of that note. `records` ARE the folder's values for each row, and only the

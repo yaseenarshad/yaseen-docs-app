@@ -20,7 +20,7 @@ import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '
 import { flush, q, rec, renderFolderView, unmountFolderView } from '../testFolderView'
 import type { OutlineEditorProps } from './OutlineEditor'
 
-vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
+vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 /** The editor, stubbed: what it was seeded with, and the door a debounced edit comes back through. */
 const editor = vi.hoisted(() => ({ props: null as OutlineEditorProps | null }))
 vi.mock('./OutlineEditor', () => ({
