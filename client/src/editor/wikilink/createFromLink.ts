@@ -11,20 +11,19 @@
  * A pathed target (`[[Sub/Page]]`, `[[/Page]]`) is an explicit aim and stays root-relative
  * whatever the setting (Obsidian's behavior); missing parent folders — the base included —
  * are created level by level (`ensureFolder` — the bridge's `createDir` does not recurse).
- * `.md` is appended unless the name is already markdown (mirrors the sidebar's `entryPath`).
- * Races are benign: `ALREADY_EXISTS` means someone created the page first — just open it.
+ * What was typed is the note's TITLE (YAZ-2420 🔒 D20) — the last segment of a pathed target,
+ * whose earlier segments are the titles of the folders it names (🔒 D6); `base` is a path on disk.
  * Invalid names and create failures come back as `error` for the caller's passive notice
  * (App's link-notice).
  */
 import type { SettingsState } from '@shared/types'
-import { BridgeRequestError } from '../../api'
 import { createNote, ensureFolder } from '../../views/scaffold'
 import { validateEntryName } from '../../sidebar/createEntry'
 import { linkPageName } from './wikilinkPlugin'
 
 export type CreateFromLinkResult =
-  /** The page exists now — open `path` (`exists` = lost the creation race, equally fine). */
-  | { status: 'created' | 'exists'; path: string }
+  /** The page exists now — open `path`. */
+  | { status: 'created'; path: string }
   /** Same-file link (`[[#h]]`): nothing to create, nothing to open. */
   | { status: 'noop' }
   /** Unusable name or bridge failure: show `message` as a passive notice, never a dialog. */
@@ -49,43 +48,40 @@ export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'n
 }
 
 /**
- * Pure path planning for `target` (already stripped): root-relative folder ('' = the vault
- * root) + the absolute `.md` path, or a human-readable error. A BARE target lands under
- * `base` (see `newNoteBase`); a PATHED one ignores it — an explicit path is an explicit
- * aim (module doc). Each `/`-segment — base segments included — passes the sidebar's
- * `validateEntryName` rules; errors name the full effective path.
+ * Pure planning for `target` (already stripped): the root-relative folder ('' = the vault root)
+ * and the note's title, or a human-readable error. A BARE target lands under `base` (see
+ * `newNoteBase`), a path on disk; a PATHED one ignores it — an explicit path is an explicit aim
+ * (module doc) — and its folder is `titled`: typed text, each segment a folder's title. Each
+ * folder segment — base segments included — passes the sidebar's `validateEntryName` rules; the
+ * title is free text and only has to be there. Errors name the full effective path.
  */
-export function planLinkCreation(root: string, target: string, base = ''): { folder: string; path: string } | { error: string } {
-  const effective = base !== '' && !target.includes('/') ? `${base}/${target}` : target
+export function planLinkCreation(target: string, base = ''): { folder: string; titled: boolean; title: string } | { error: string } {
+  const titled = target.includes('/')
+  const effective = base !== '' && !titled ? `${base}/${target}` : target
   const segments = effective.replace(/^\/+/, '').split('/').map((s) => s.trim())
-  for (const segment of segments) {
+  for (const [i, segment] of segments.entries()) {
     if (segment === '') return { error: `Can't create "${effective}": empty name` }
-    const reason = validateEntryName(segment)
+    const reason = i === segments.length - 1 ? null : validateEntryName(segment)
     if (reason !== null) return { error: `Can't create "${effective}": ${reason}` }
   }
-  const last = segments[segments.length - 1]
-  const name = /\.(md|markdown)$/i.test(last) ? last : `${last}.md`
-  const folder = segments.slice(0, -1).join('/')
-  return { folder, path: `${root}/${folder === '' ? '' : `${folder}/`}${name}` }
+  return { folder: segments.slice(0, -1).join('/'), titled, title: segments[segments.length - 1] }
 }
 
 /**
  * Create the page behind raw `[[inner]]` under `root` — bare targets under `base` — and resolve where to open (see module doc).
  * It is born like every note in that folder (`createNote`): with the folder's `.template.md`.
  * `id` is for the picker's Create row (YAZ-2293), which has already written `[[id]]` and needs the
- * page born with it; a click on a name link passes none and main mints one.
+ * page born with it; a click on a name link passes none and one is made for it.
  */
 export async function createFromLink(root: string, inner: string, base = '', id?: string): Promise<CreateFromLinkResult> {
   const target = linkPageName(inner)
   if (target === '') return { status: 'noop' }
-  const planned = planLinkCreation(root, target, base)
+  const planned = planLinkCreation(target, base)
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
-    if (planned.folder !== '') await ensureFolder(root, planned.folder)
-    await createNote(planned.path, undefined, id)
-    return { status: 'created', path: planned.path }
+    const dir = await ensureFolder(root, planned.folder, planned.titled)
+    return { status: 'created', path: await createNote(dir, planned.title, undefined, id) }
   } catch (err) {
-    if (err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS') return { status: 'exists', path: planned.path }
     return { status: 'error', message: `Can't create "${target}": ${err instanceof Error ? err.message : String(err)}` }
   }
 }

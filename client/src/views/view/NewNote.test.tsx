@@ -185,7 +185,7 @@ describe('toolbar New', () => {
   })
 
   // The note is born in the folder being viewed, and the toolbar's New passes no name, so
-  // `createInFolder` keeps the `Untitled` scheme (`FolderView.test.tsx`).
+  // the host titles it `Untitled` (`FolderView.test.tsx`).
   it('a file.inFolder filter seeds nothing and never places the note', async () => {
     const { el } = mount(FOLDER_TABLE)
 

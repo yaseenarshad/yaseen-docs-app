@@ -13,8 +13,8 @@ import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
 import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
-import { createNote } from '../../views/scaffold'
-import { entryPath, renamedPath, targetDirFor, type EntryKind } from '../createEntry'
+import { createNote, folderPath } from '../../views/scaffold'
+import { renamedPath, targetDirFor, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
@@ -342,12 +342,13 @@ export function useInlineEdits(
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
-      const p = entryPath(creating.parentDir, name, creating.kind)
-      if (creating.kind === 'dir') await api.createDir(p)
-      else await createNote(p)
+      // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
+      let note: string | null = null
+      if (creating.kind === 'dir') await api.createDir({ path: folderPath(creating.parentDir, name), title: name })
+      else note = await createNote(creating.parentDir, name)
       setCreating(null)
       refresh()
-      if (creating.kind !== 'dir') onOpenFile(p)
+      if (note !== null) onOpenFile(note)
     },
     [creating, refresh, onOpenFile],
   )

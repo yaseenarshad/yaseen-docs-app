@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { datedSeed, entryPath, renamedPath, renameInputName, targetDirFor, validateEntryName } from './createEntry'
+import { datedSeed, renamedPath, renameInputName, targetDirFor, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -15,23 +15,6 @@ describe('validateEntryName', () => {
     expect(validateEntryName('a/b')).toMatch(/\//)
     expect(validateEntryName('.hidden')).toMatch(/hidden/i)
     expect(validateEntryName('a\0b')).not.toBeNull()
-  })
-})
-
-describe('entryPath', () => {
-  it('appends .md to file names without a markdown extension', () => {
-    expect(entryPath('/r', 'note', 'file')).toBe('/r/note.md')
-    expect(entryPath('/r', 'note.txt', 'file')).toBe('/r/note.txt.md')
-  })
-
-  it('keeps existing markdown extensions, case-insensitive', () => {
-    expect(entryPath('/r', 'note.md', 'file')).toBe('/r/note.md')
-    expect(entryPath('/r', 'note.MARKDOWN', 'file')).toBe('/r/note.MARKDOWN')
-  })
-
-  it('uses dir names as-is and trims whitespace', () => {
-    expect(entryPath('/r', 'Folder', 'dir')).toBe('/r/Folder')
-    expect(entryPath('/r', '  note ', 'file')).toBe('/r/note.md')
   })
 })
 

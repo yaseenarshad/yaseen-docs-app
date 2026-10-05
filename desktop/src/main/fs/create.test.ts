@@ -30,6 +30,20 @@ describe('createDir', () => {
     expect(await settingsIn(p)).toBe(setFrontmatterProperty('', NOTE_ID_KEY, id))
   })
 
+  it('C: a folder made in the app, titled `Upwork 2026`, is born holding `id` and `title: Upwork 2026` (YAZ-2420 D6)', async () => {
+    const p = path.join(root, 'upwork-2026')
+    expect(await createDir({ path: p, title: 'Upwork 2026' })).toEqual({ path: p })
+    expect(await settingsIn(p)).toMatch(/^---\nid: [0-9a-z]{12}\ntitle: Upwork 2026\n---\n$/)
+  })
+
+  it('a request with no title is the bare path: only the `id`', async () => {
+    const p = path.join(root, 'no-title')
+    await createDir({ path: p })
+    expect(await settingsIn(p)).toMatch(/^---\nid: [0-9a-z]{12}\n---\n$/)
+    expect(await code(createDir({ path: path.join(root, 'bad-title'), title: 7 as never }))).toBe('BAD_REQUEST')
+    await expect(stat(path.join(root, 'bad-title'))).rejects.toThrow()
+  })
+
   it('the id is fresh, like a note born in the app: the same folder name twice is two ids', async () => {
     const [a, b] = [path.join(root, 'Zeta', 'Twin'), path.join(root, 'alpha', 'Twin')]
     await createDir(a)

@@ -282,8 +282,8 @@ describe('wikilink picker: create-new row', () => {
     return id
   }
 
-  it('nothing matching offers one Create row: Enter inserts the link BY ID and makes the page with that id, staying put (YAZ-1357, 🔒 D3 revised; YAZ-2293)', async () => {
-    createFile.mockResolvedValue({ path: '/vault/New Page.md', mtime: 1, size: 0 })
+  it('B: nothing matching offers one Create row: Enter inserts the link BY ID and makes the page titled by the typed text, with that id, staying put (YAZ-1357, 🔒 D3 revised; YAZ-2293; YAZ-2420 D20)', async () => {
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const n = nav()
     const { crepe } = await mount('X\n', source('Alpha'), n)
     caret(crepe, posOf(crepe, 'X', 1))
@@ -294,7 +294,7 @@ describe('wikilink picker: create-new row', () => {
     press(crepe, 'Enter')
     const id = linkedId(crepe)
     await new Promise((r) => setTimeout(r, 0))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/New Page.md', content: '', id })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/new-page-${id}.md`, content: '---\ntitle: New Page\n---\n', id })
     expect(linkedId(crepe)).toBe(id) // created: the id link stays
     expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
     expect(n.openCurrent).not.toHaveBeenCalled()
@@ -302,7 +302,7 @@ describe('wikilink picker: create-new row', () => {
   })
 
   it('a `#heading` typed with the name rides on the id link, and comes back with the name on a failure', async () => {
-    createFile.mockResolvedValueOnce({ path: '/vault/Page.md', mtime: 1, size: 0 })
+    createFile.mockResolvedValueOnce({ path: '', mtime: 1, size: 0 })
     const { crepe } = await mount('X\n', source('Alpha'), nav())
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Page#Section')
@@ -311,7 +311,7 @@ describe('wikilink picker: create-new row', () => {
     expect(isNoteId(id)).toBe(true)
     expect(heading).toBe('#Section')
     await new Promise((r) => setTimeout(r, 0))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Page.md', content: '', id })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/page-${id}.md`, content: '---\ntitle: Page\n---\n', id })
 
     createFile.mockReset()
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
@@ -324,14 +324,14 @@ describe('wikilink picker: create-new row', () => {
   })
 
   it('a click on the Create row does the same', async () => {
-    createFile.mockResolvedValue({ path: '/vault/Clicked.md', mtime: 1, size: 0 })
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const n = nav()
     const { crepe } = await mount('X\n', source('Alpha'), n)
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Clicked')
     document.querySelector<HTMLElement>(`.${WIKILINK_PICKER_CREATE_CLASS}`)?.click()
     await new Promise((r) => setTimeout(r, 0))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Clicked.md', content: '', id: linkedId(crepe) })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/clicked-${linkedId(crepe)}.md`, content: '---\ntitle: Clicked\n---\n', id: linkedId(crepe) })
   })
 
   it('a create failure is SAID through the notice, and the id link falls back to the typed text — no page was born with that id', async () => {
@@ -346,19 +346,6 @@ describe('wikilink picker: create-new row', () => {
     expect(getMarkdownForSave(crepe)).toBe('X[[Doomed]]\n')
     await vi.waitFor(() => expect(n.onNotice).toHaveBeenCalledWith('Can\'t create "Doomed": disk full'))
     expect(n.openCurrent).not.toHaveBeenCalled()
-  })
-
-  it('a page that already exists under that name was not born with the id either: the link falls back to the name, which resolves — silently', async () => {
-    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'exists'))
-    const n = nav()
-    const { crepe } = await mount('X\n', source('Alpha'), n)
-    caret(crepe, posOf(crepe, 'X', 1))
-    type(crepe, '[[Unindexed')
-    press(crepe, 'Enter')
-    linkedId(crepe)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(getMarkdownForSave(crepe)).toBe('X[[Unindexed]]\n')
-    expect(n.onNotice).not.toHaveBeenCalled()
   })
 
   it('without a nav there is no vault to create in: the row only inserts', async () => {

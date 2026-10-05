@@ -178,9 +178,9 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
  * Without a nav there is no vault to create in, so the row only inserts.
  *
  * The link is already in the document by `id` (YAZ-2293), so the page is born WITH that id.
- * When it is not born — a failure, or a page of that name the index had not shown yet — nothing
- * carries the id, and the id goes back to the page name that was typed: found by its text, which
- * a fresh id makes unique in the document, wherever typing has since pushed it.
+ * When it is not born — a failure — nothing carries the id, and the id goes back to the page
+ * name that was typed: found by its text, which a fresh id makes unique in the document,
+ * wherever typing has since pushed it.
  */
 function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, id: string): void {
   void createFromLink(nav.root, name, nav.createFolder(), id).then((result) => {

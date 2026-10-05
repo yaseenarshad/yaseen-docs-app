@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { validateEntryName, type EntryKind } from './createEntry'
 
-/** Placeholder per entry kind; the extension is implied (added by `entryPath`). */
+/** Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20). */
 const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', dir: 'New folder' }
 
 interface CreateInlineProps {
@@ -23,7 +23,8 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
   const submit = async (value: string) => {
     const name = value.trim()
     if (name === '' || name === seed.trim() || submitting.current) return
-    const invalid = validateEntryName(name)
+    // A note's title is free text (YAZ-2420 🔒 D20).
+    const invalid = kind === 'file' ? null : validateEntryName(name)
     if (invalid !== null) {
       setError(invalid)
       return
