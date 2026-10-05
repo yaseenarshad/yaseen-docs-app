@@ -26,10 +26,11 @@ vi.mock('../api', async (importOriginal) => ({
   },
 }))
 
-import { api } from '../api'
+import { BridgeRequestError, api } from '../api'
 
 const read = vi.mocked(api.vaultConfig.read)
 const write = vi.mocked(api.vaultConfig.write)
+const notice = vi.fn()
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -37,7 +38,7 @@ let root: Root | null = null
 let state: ReviewSettingsState
 
 function Probe({ vault }: { vault: string | null }) {
-  state = useReviewSettings(vault)
+  state = useReviewSettings(vault, notice)
   return null
 }
 
@@ -50,6 +51,7 @@ beforeEach(() => {
   listeners = []
   read.mockReset().mockResolvedValue(null)
   write.mockReset().mockResolvedValue(undefined)
+  notice.mockReset()
 })
 
 afterEach(() => {
@@ -109,6 +111,24 @@ describe('useReviewSettings', () => {
     await act(async () => state.save({ ...DEFAULT_REVIEW_SETTINGS, baseDays: 400 }))
     expect(state.settings.maxDays).toBe(400)
     expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { ...DEFAULT_REVIEW_SETTINGS, baseDays: 400, maxDays: 400 })
+  })
+
+  it('a review.json that stops being valid JSON mid-session: the settings stay as they were and a save is refused with a notice, until the file parses again', async () => {
+    const on = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
+    const changed = () => act(async () => listeners.forEach((l) => l({ root: '/vault', name: REVIEW_SETTINGS_FILE })))
+    read.mockResolvedValue({ enabled: true })
+    await mount('/vault')
+    read.mockRejectedValue(new BridgeRequestError('INVALID_CONFIG', 'review.json is not valid JSON'))
+    await changed()
+    expect(state.settings).toEqual(on)
+    await act(async () => state.save({ ...on, baseDays: 10 }))
+    expect(state.settings).toEqual(on)
+    expect(write).not.toHaveBeenCalled()
+    expect(notice).toHaveBeenCalledExactlyOnceWith("Can't save the review settings: review.json is not valid JSON", 'error')
+    read.mockResolvedValue({ enabled: true, baseDays: 7 })
+    await changed()
+    await act(async () => state.save({ ...on, baseDays: 10 }))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', REVIEW_SETTINGS_FILE, { ...on, baseDays: 10 })
   })
 
   it('a save that fails falls back to what the file holds', async () => {

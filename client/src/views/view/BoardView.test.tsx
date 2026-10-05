@@ -620,7 +620,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(openRight).toHaveBeenCalledExactlyOnceWith(levelsPath)
   })
 
-  it('leaves headers, add controls, placeholders, the no-group hint, and other view types on their native menu', () => {
+  it('leaves headers, add controls, placeholders and the no-group hint on their native menu', () => {
     const openBackground = vi.fn()
     const { el } = mount(BOARD_BASE, { folder: testFolderHost({ openBackground }) })
     const firstCard = cardNamed(el, 'Agentic Agency')
@@ -649,13 +649,6 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     const hint = mount(NO_GROUP_BASE, { folder: testFolderHost({ openBackground }) })
     expect(rightClick(q(hint.el, '.view-board__hint')).defaultPrevented).toBe(false)
     expect(hint.el.querySelector('.ctx-menu')).toBeNull()
-
-    unmount()
-    const list = mount('views:\n  - type: list\n    name: L\n    order:\n      - file.name\n', {
-      folder: testFolderHost({ openBackground }),
-    })
-    expect(rightClick(q(list.el, '.view-list__item')).defaultPrevented).toBe(false)
-    expect(list.el.querySelector('.ctx-menu')).toBeNull()
   })
 })
 

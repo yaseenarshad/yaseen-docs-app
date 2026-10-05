@@ -86,6 +86,7 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
   }, [])
 
   const start = useCallback((folder?: string) => {
+    if (!live.current.settings.enabled) return
     const queue = reviewQueue(live.current.records, live.current.settings, Date.now(), folder).map((r) => r.path)
     setSession({ label: folder ? folder.slice(folder.lastIndexOf('/') + 1) : 'Inbox', queue, total: queue.length, undo: null })
   }, [])

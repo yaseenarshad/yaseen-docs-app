@@ -8,30 +8,22 @@ import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
 
 /**
- * The id sweep (YAZ-2293 D3, D4): a note the app did not create arrives with no id, and a copied
- * note arrives carrying its original's. Each of the notes in `among` that has no id is given
- * one; of the indexed notes sharing an id, only the KEEPER keeps it — the one the index already
- * knew to hold it (`knew`), else the first in path order, which is the same answer on every
- * device — and any other in `among` is given a fresh one.
+ * The id sweep (YAZ-2293 D3, D4). Each note in `among` with no id is given one. Of the indexed
+ * notes sharing an id only the KEEPER keeps it — the one the index knew to hold it (`knew`), else
+ * the first in path order, the same on every device — and any other in `among` is given a fresh
+ * one. Each folder in `dirs` (never the vault root) with no `.folder.md` is given one holding only
+ * its id (D13).
  *
- * A FOLDER's id is the `id` of its `.folder.md`, so each of `dirs` — folders the tree shows,
- * never the vault root — that has no such file is given one holding only its id (D13).
+ * 🔒 Only in an ADOPTED vault (`.yaseendocs/` exists, YAZ-797): the app writes nothing into a
+ * folder it was only pointed at. Creating a note or a folder there adopts it (`adoptVault`).
  *
- * 🔒 Only in an ADOPTED vault (`.yaseendocs/` exists): the app never writes behind the user's
- * back into a folder it has merely been pointed at (the standing rule of YAZ-797). Creating a
- * note or a folder in the folder adopts it (`adoptVault`).
+ * The id is DERIVED from the note's place and bytes (a folder's from its settings file's place),
+ * so two devices that meet the same note before syncing make the same edit, which merges; a
+ * different id on each would be a conflict the built-in sync stops on (`git/sync.ts`).
  *
- * The id is DERIVED from the note (its place in the vault and its bytes), not drawn at random:
- * two devices that both meet the same note before syncing then make the same edit, which merges.
- * A different id on each would be a conflict, and the built-in sync stops on one (`git/sync.ts`).
- * A folder's is derived the same way, from its settings file's place and no bytes.
- *
- * Safe to run any number of times and never throws: the write is a compare-and-set against the
- * file's bytes as they are NOW and its mtime, so a note that cannot take an id (unparsable
- * frontmatter, a hand-written `id` of another shape, an oversize file) or that changed under the
- * sweep is simply left for its next index event. A settings file is created only where there is
- * none at the moment of the write. The write's own watch event rescans the note, which then
- * needs nothing.
+ * Safe to run any number of times and never throws: each write is a compare-and-set against the
+ * file's bytes and mtime, a settings file is created only where there is none, and a file that
+ * cannot take an id or changed under the sweep is left for its next index event.
  */
 export async function sweepIds(
   root: string,
@@ -95,6 +87,23 @@ export const isAdopted = (root: string): Promise<boolean> =>
   )
 
 /**
+ * A settings file deleted from a folder that is still there is created again holding the `id` it
+ * had, so links and shortcuts to the folder still reach it. On the sweep's terms: an adopted
+ * vault, never written over, never throws. A folder deleted whole has no directory to create it in.
+ */
+export const restoreFolderId = async (root: string, file: string, id: string): Promise<void> => {
+  if (await isAdopted(root)) await createDurable(file, setFrontmatterProperty('', NOTE_ID_KEY, id)).catch(() => undefined)
+}
+
+/** A page's bytes. A folder's settings file that is not there reads as empty, with no `mtime`, while its folder is. */
+export const readPage = (file: string): Promise<{ content: string; mtime?: number }> =>
+  readFile(file).catch(async (err: unknown) => {
+    if (!isFolderSettingsPath(file) || !(err instanceof BridgeFailure) || err.code !== 'NOT_FOUND') throw err
+    if (!(await stat(path.dirname(file)).catch(() => null))?.isDirectory()) throw err
+    return { content: '' }
+  })
+
+/**
  * The file's id becomes a fresh one, but only while it still is `held` (undefined: it has none),
  * and never one that is `taken`. Resolves to the id written, undefined when nothing was. The
  * `yaseendocs id` command calls this too, so the command and the sweep give a note the same
@@ -104,10 +113,7 @@ export const isAdopted = (root: string): Promise<boolean> =>
  * one that appears before the write stays as it is (D13).
  */
 export async function giveId(root: string, file: string, held: string | undefined, taken?: (id: string) => boolean): Promise<string | undefined> {
-  const { content, mtime } = await readFile(file).catch((err: unknown) => {
-    if (isFolderSettingsPath(file) && err instanceof BridgeFailure && err.code === 'NOT_FOUND') return { content: '', mtime: undefined }
-    throw err
-  })
+  const { content, mtime } = await readPage(file)
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error !== undefined || properties[NOTE_ID_KEY] !== held) return
   const place = path.relative(root, file).split(path.sep).join('/')

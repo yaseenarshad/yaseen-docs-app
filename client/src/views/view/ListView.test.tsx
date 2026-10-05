@@ -164,6 +164,13 @@ describe('primary line', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
+  it('a right-click on a row opens the page menu: "Copy ID" directly under "Copy path" when its note has an id', () => {
+    const { el } = mount(LIST_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
+    act(() => void items(el)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
+    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+  })
+
   it('no order at all defaults the primary line to the file.name link', () => {
     const { el, onOpenFile } = mount('views:\n  - type: list\n    name: L\n')
     expect(titles(el)).toHaveLength(8)

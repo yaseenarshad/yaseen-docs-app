@@ -22,7 +22,7 @@
  * N recomputes live, and an entry re-reads its snippets when its own record's mtime moved — so a
  * link added or removed on disk lands here without a watcher or an IPC call of our own.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { api } from '../api'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
@@ -120,7 +120,7 @@ function BacklinkEntry({
       cancelled = true
     }
   }, [folder, record.path, record.mtime, target])
-  const lines = folder ? folderMentionSnippets(record, target, resolve ?? (() => null)) : snippets
+  const lines = useMemo(() => (folder ? folderMentionSnippets(record, target, resolve ?? (() => null)) : snippets), [folder, record, target, resolve, snippets])
 
   const open = (event: React.MouseEvent): void => {
     if (event.metaKey && openBackground !== undefined) openBackground(page)

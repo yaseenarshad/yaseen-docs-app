@@ -32,7 +32,7 @@ import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
 import { VAULT_CONFIG_DIR, isFolderSettingsPath } from '@shared/types'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
-import { giveId, isAdopted } from '../main/vaultIndex/idSweep'
+import { giveId, isAdopted, readPage } from '../main/vaultIndex/idSweep'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { scanFile, walk } from '../main/vaultIndex/scan'
 
@@ -78,7 +78,8 @@ vault for \`id: <id>\`.
 \`due\` prints the day a page is next up for review. The app works that date out from the page's
 \`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
 file, so this is the place to read it. Given a folder, \`due\` lists the pages due now under it,
-most overdue first (\`--json\` for the raw shape of either).
+most overdue first (\`--json\` for the raw shape of either). Nothing is due in a vault until
+upkeep is turned on for it, in the app's Settings.
 
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
@@ -116,16 +117,13 @@ function parse(argv: readonly string[]): { verb: string; args: string[]; flags: 
  * empty and the write creates it — a folder's settings file the app has not written yet (YAZ-2290 D1).
  */
 export async function transformOnDisk(path: string, transform: (content: string) => string, create = false): Promise<string> {
-  let file: { content: string; mtime: number } = await readFile(path).catch((err: unknown) => {
-    if (!create || !(err instanceof BridgeFailure) || err.code !== 'NOT_FOUND') throw err
-    return { content: '', mtime: 0 }
-  })
+  let file: { content: string; mtime?: number } = await (create ? readPage : readFile)(path)
   let retried = false
   for (;;) {
     const content = transform(file.content)
     if (content === file.content) return content
     try {
-      await writeFile({ path, content, expectedMtime: file.mtime })
+      await writeFile({ path, content, expectedMtime: file.mtime ?? 0 })
       return content
     } catch (err) {
       if (!(err instanceof BridgeFailure) || err.code !== 'CONFLICT' || retried) throw err
@@ -256,13 +254,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'comments': {
-      // A folder with no settings file yet has no comments (YAZ-2290 D1); a folder that is not there is still not found.
-      const { content } = await readFile(page).catch(async (err: unknown) => {
-        if (!isFolderSettingsPath(page) || !(err instanceof BridgeFailure) || err.code !== 'NOT_FOUND') throw err
-        if (!(await stat(dirname(page)).catch(() => null))?.isDirectory()) throw err
-        return { content: '' }
-      })
-      const comments = readComments(content)
+      const comments = readComments((await readPage(page)).content)
       io.stdout(flags.has('--json') ? `${JSON.stringify(threadsOf(comments), null, 2)}\n` : comments.length === 0 ? `no comments on ${page}\n` : `${listing(comments)}\n`)
       return
     }
@@ -293,7 +285,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'id': {
-      const { properties, error } = parseFrontmatter(splitFrontmatter((await readFile(page)).content).frontmatter)
+      const { properties, error } = parseFrontmatter(splitFrontmatter((await readPage(page)).content).frontmatter)
       let id = properties[NOTE_ID_KEY]
       if (!isNoteId(id)) {
         // The sweep's own refusals (`vaultIndex/idSweep.ts`), each given its reason; `giveId` checks them again on the bytes it writes against.

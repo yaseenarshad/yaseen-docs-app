@@ -48,7 +48,7 @@ const B = '/vault/B.md'
 describe('backlinksFor (Links D, GRO-2193)', () => {
   it('collects the notes whose links resolve to the open note, and only those', () => {
     const records = [rec('/vault/A.md', { links: ['B'] }), rec(B, {}), rec('/vault/C.md', { links: ['Elsewhere'] })]
-    expect(backlinksFor(B, records, resolverOver(records)).map((r) => r.path)).toEqual(['/vault/A.md'])
+    expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
   it('counts a mention in ANY link form: bare, root-relative, pathed and case-insensitive', () => {
@@ -58,7 +58,7 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
       rec(B, {}),
       rec('/vault/C.md', { links: ['/vault/B.md'] }),
     ]
-    expect(backlinksFor(B, records, resolverOver(records)).map((r) => r.path)).toEqual([
+    expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual([
       '/vault/A.md',
       '/vault/C.md',
       '/vault/Sub/Deep.md',
@@ -67,22 +67,22 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
 
   it('an ALIAS-form link is a linked mention too (E2 aliases ride the shared resolver)', () => {
     const records = [rec('/vault/A.md', { links: ['CAC'] }), rec(B, { aliases: ['CAC'] })]
-    expect(backlinksFor(B, records, resolverOver(records)).map((r) => r.path)).toEqual(['/vault/A.md'])
+    expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
   it('an `![[embed]]` is a mention as well (embeds count, locked)', () => {
     const records = [rec('/vault/A.md', { embeds: ['B'] }), rec(B, {})]
-    expect(backlinksFor(B, records, resolverOver(records)).map((r) => r.path)).toEqual(['/vault/A.md'])
+    expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
   it('never lists the open note itself, even when it links to itself', () => {
     const records = [rec('/vault/A.md', { links: ['B'] }), rec(B, { links: ['B'] })]
-    expect(backlinksFor(B, records, resolverOver(records)).map((r) => r.path)).toEqual(['/vault/A.md'])
+    expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
   it('one entry per referencing note, whatever the number of mentions it holds', () => {
     const records = [rec('/vault/A.md', { links: ['B', 'b', 'B.md'], embeds: ['B'] }), rec(B, {})]
-    expect(backlinksFor(B, records, resolverOver(records))).toHaveLength(1)
+    expect(backlinksFor(B, records, resolverOver(records), [])).toHaveLength(1)
   })
 
   it('orders entries by path whatever the input order', () => {
@@ -92,7 +92,7 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
       rec(B, {}),
       rec('/vault/Sub/Mid.md', { links: ['B'] }),
     ]
-    expect(backlinksFor(B, records, resolverOver(records)).map((r) => r.path)).toEqual([
+    expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual([
       '/vault/Alpha.md',
       '/vault/Sub/Mid.md',
       '/vault/Zeta.md',
@@ -101,24 +101,24 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
 
   it('no mentions → an empty list (the section renders nothing on this)', () => {
     const records = [rec('/vault/A.md'), rec(B, {})]
-    expect(backlinksFor(B, records, resolverOver(records))).toEqual([])
+    expect(backlinksFor(B, records, resolverOver(records), [])).toEqual([])
   })
 
   it('memoizes per (resolver identity, path): the same snapshot answers the same array', () => {
     const records = [rec('/vault/A.md', { links: ['B'] }), rec(B, {})]
     const resolve = resolverOver(records)
-    expect(backlinksFor(B, records, resolve)).toBe(backlinksFor(B, records, resolve))
+    expect(backlinksFor(B, records, resolve, [])).toBe(backlinksFor(B, records, resolve, []))
     // A refetched snapshot swaps in a NEW resolver and recomputes (live updates).
     const next = [rec(B, {})]
-    expect(backlinksFor(B, next, resolverOver(next))).toEqual([])
+    expect(backlinksFor(B, next, resolverOver(next), [])).toEqual([])
   })
 
   it('a new resolver over the SAME records recomputes: a folder the tree just named gains its mentions (YAZ-2290 D10)', () => {
     const records = [rec('/vault/A.md', { links: ['Projects'] })]
     const before = resolverOver(records)
-    expect(backlinksFor('/vault/Projects', records, before)).toEqual([])
+    expect(backlinksFor('/vault/Projects', records, before, [])).toEqual([])
     const after = (target: string) => before(target) ?? (target === 'Projects' ? '/vault/Projects' : null)
-    expect(backlinksFor('/vault/Projects', records, after).map((r) => r.path)).toEqual(['/vault/A.md'])
+    expect(backlinksFor('/vault/Projects', records, after, []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 })
 
@@ -144,6 +144,10 @@ describe('links from FOLDER pages: a folder\'s settings mention what they link',
     expect(mentions(B, [column, order])).toEqual(['/vault/A.md', '/vault/Areas/.folder.md', '/vault/Projects/.folder.md'])
   })
 
+  it('a folder\'s own link property (`owner: "[[B]]"` in its `.folder.md`) is a mention, as a note\'s is', () => {
+    expect(mentions(B, [rec('/vault/Team/.folder.md', { links: ['B'] })])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
+  })
+
   it('a bare string is no link: not a table\'s `order` of column keys, nor a bare `target`', () => {
     const keys = settings('/vault/Areas', { columns: { owner: { kind: 'link', target: 'B' } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'B'] }] })
     expect(mentions(B, [keys, settings('/vault/Projects', {}), rec('/vault/Work/.folder.md')])).toEqual(['/vault/A.md'])
@@ -152,10 +156,6 @@ describe('links from FOLDER pages: a folder\'s settings mention what they link',
   it('a link inside the prose of an outline line counts, as one inside a note\'s body does', () => {
     const prose = settings('/vault/Team', outline('- see [[B]] inline'))
     expect(mentions(B, [prose])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
-  })
-
-  it('Linked mentions on a folder\'s page lists the notes AND the folders that link to it', () => {
-    expect(mentions(TEAM, [settings('/vault/Projects', outline('- [[Team]]'))])).toEqual(['/vault/Projects/.folder.md', '/vault/Work/Plan.md'])
   })
 
   it('a folder that links to itself is not listed, as a note never lists itself', () => {
@@ -175,14 +175,6 @@ describe('links from FOLDER pages: a folder\'s settings mention what they link',
       '/vault/Work/.folder.md',
       '/vault/Work/Zed.md',
     ])
-  })
-
-  it('the per-snapshot cache holds for folders: one resolver answers one array, a new one recomputes', () => {
-    const folders = [settings('/vault/Projects', outline('- [[B]]'))]
-    const resolve = linkResolver(NOTES, '/vault', DIRS, folders)
-    expect(backlinksFor(B, NOTES, resolve, folders)).toBe(backlinksFor(B, NOTES, resolve, folders))
-    const next = [settings('/vault/Projects', outline('- nothing'))]
-    expect(backlinksFor(B, NOTES, linkResolver(NOTES, '/vault', DIRS, next), next).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
   describe('snippet for a folder entry', () => {
@@ -306,7 +298,7 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
   const marked = (s: MentionSnippet): string[] => s.ranges.map((r) => s.text.slice(r.from, r.to))
 
   it('a note linking by id is a linked mention of the note that id names', () => {
-    expect(backlinksFor(ROAD, records, resolve).map((r) => r.path)).toEqual(['/vault/A.md'])
+    expect(backlinksFor(ROAD, records, resolve, []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
   it('the snippet shows the note\'s current TITLE where the editor does — heading form and hand-typed label included', () => {

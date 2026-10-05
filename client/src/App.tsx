@@ -131,7 +131,6 @@ export function App() {
   // read it — the editor's chip (every mounted tab) and the settings cog's section — and they
   // must never disagree, which two hooks watching the same root eventually would.
   const githubSync = useGithubSync(root)
-  const reviewSettings = useReviewSettings(root)
   // The attention banner (3B): passive, exactly like the external-rename one — `role="status"`,
   // explicit buttons, never a modal. Sync failing is not worth stealing focus over; the vault
   // still works, and the note in front of the user is untouched.
@@ -411,6 +410,7 @@ export function App() {
     return () => clearTimeout(timer)
   }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: notify })
+  const reviewSettings = useReviewSettings(root, notify)
   // Upkeep review (YAZ-2322): the Inbox count and the window's one session, read off the SAME index
   // source the wikilinks use. App's, because the sidebar that shows the count unmounts while collapsed.
   const review = useReview(root, wikilinks, reviewSettings.settings, notify)
