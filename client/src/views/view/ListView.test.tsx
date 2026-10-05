@@ -196,6 +196,16 @@ describe('primary line', () => {
   })
 })
 
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a list row\'s primary line shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(LIST_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-list__title')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
+  })
+})
+
 describe('an id link (YAZ-2293 D8)', () => {
   const ID = 'k3m9x2pq7abc'
   const records = TEST_RECORDS.map((r) =>

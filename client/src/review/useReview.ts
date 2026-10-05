@@ -17,7 +17,7 @@ import { transformFile } from '../views/writeProperty'
  */
 
 export interface ReviewSession {
-  /** "Inbox", or the folder's name. */
+  /** "Inbox", or the folder's title (YAZ-2420 🔒 D14). */
   label: string
   /** The note showing; null once nothing is left. */
   path: string | null
@@ -54,6 +54,7 @@ interface Session {
 
 interface IndexSource {
   readonly records: readonly IndexRecord[]
+  readonly folders: readonly IndexRecord[]
   subscribe(listener: () => void): () => void
 }
 
@@ -88,8 +89,9 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
   const start = useCallback((folder?: string) => {
     if (!live.current.settings.enabled) return
     const queue = reviewQueue(live.current.records, live.current.settings, Date.now(), folder).map((r) => r.path)
-    setSession({ label: folder ? folder.slice(folder.lastIndexOf('/') + 1) : 'Inbox', queue, total: queue.length, undo: null })
-  }, [])
+    const label = folder ? (source.folders.find((f) => f.folder === folder)?.title ?? folder.slice(folder.lastIndexOf('/') + 1)) : 'Inbox'
+    setSession({ label, queue, total: queue.length, undo: null })
+  }, [source])
 
   const keep = useCallback(async () => {
     const path = live.current.session?.queue[0]

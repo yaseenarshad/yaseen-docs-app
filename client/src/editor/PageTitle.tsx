@@ -1,9 +1,8 @@
 /**
  * THE PAGE TITLE (⚡ YAZ-888) — block ZERO of the note's own scroller, above `.editor-mount`.
  *
- * 🔒 The title IS the file name (`stripExt(basename(path))`), never a frontmatter `title`: the
- * whole link system resolves pages by NAME, and aliases already cover alternate display names.
- * So this is React-side chrome and never a ProseMirror node — the note's markdown round-trips
+ * It SHOWS the page's title (YAZ-2420 🔒 D14, `pageLabel`); the field it edits is still the file
+ * name. It is React-side chrome and never a ProseMirror node — the note's markdown round-trips
  * byte-identically past it, and an in-document `# Heading` is a block of the note like any other
  * (syncing the two is deliberately out of scope).
  *
@@ -16,12 +15,16 @@
  * here duplicates that.
  */
 import { useRef, useState } from 'react'
-import { pageLabel } from '../lib/pageLabel'
+import { pageLabel, usePathTitles } from '../lib/pageLabel'
+import { basename, stripExt } from '../lib/paths'
 import { renamedPath, validateEntryName } from '../sidebar/createEntry'
+import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 interface PageTitleProps {
-  /** The open note; its file name minus the extension IS the title. */
+  /** The open note; its file name minus the extension is the name the field edits. */
   path: string
+  /** The window's index snapshot (YAZ-2420 🔒 D14): the heading shows the page's title. Absent, its file name. */
+  source?: WikilinkResolveSource
   /** Commit: the renamed absolute path, straight to App's rename door (which confirms). */
   onRename: (newPath: string) => void
   /** The app's passive notice — any name the sidebar's rules reject. */
@@ -32,8 +35,10 @@ interface PageTitleProps {
   kind?: 'file' | 'dir'
 }
 
-export function PageTitle({ path, onRename, onNotice, onArrowDown, kind = 'file' }: PageTitleProps) {
-  const name = pageLabel(path, kind === 'dir')
+export function PageTitle({ path, source, onRename, onNotice, onArrowDown, kind = 'file' }: PageTitleProps) {
+  const titles = usePathTitles(source)
+  // The rename field's prefill, a file name: how a title edit commits is YAZ-2420 3C's.
+  const name = kind === 'dir' ? basename(path) : stripExt(basename(path))
   const [editing, setEditing] = useState(false)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
@@ -113,7 +118,7 @@ export function PageTitle({ path, onRename, onNotice, onArrowDown, kind = 'file'
           open()
         }}
       >
-        {name}
+        {pageLabel(path, kind === 'dir', titles)}
       </h1>
     </div>
   )

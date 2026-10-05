@@ -7,7 +7,8 @@ import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { basename, relTo } from '../lib/paths'
+import { isFolderPath, pageLabel, usePathTitles } from '../lib/pageLabel'
+import { relTo } from '../lib/paths'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
 import { ancestorDirs, findDirNode, treeHasFile } from '../lib/treeState'
@@ -397,6 +398,10 @@ export function Sidebar({
     read()
     return indexSource.subscribe(read)
   }, [root, indexSource])
+  // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
+  const titles = usePathTitles(indexSource)
+  /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
+  const nameOf = useCallback((path: string) => pageLabel(path, isFolderPath(root, path), titles), [root, titles])
 
   // What the chevrons button unfolds on the active lens.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
@@ -408,7 +413,7 @@ export function Sidebar({
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
-  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, pendingSearchFocus, onSearchFocusHandled, activate)
+  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, titles, pendingSearchFocus, onSearchFocusHandled, activate)
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -443,14 +448,14 @@ export function Sidebar({
     if (tree === null || pendingReveal === null || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
     if (!revealTargetPresent) {
-      onNotice(revealMissingMessage(pendingReveal.path), 'error')
+      onNotice(revealMissingMessage(nameOf(pendingReveal.path)), 'error')
       return
     }
     // A reveal is "show me THIS" (YAZ-1605): a target outside every focused folder ends the focus first.
     if (focusDirs.length > 0 && !focusDirs.some((dir) => pendingReveal.path === dir || pendingReveal.path.startsWith(`${dir}/`))) setFocusDirs([])
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses.
     dispatch({ type: 'expandTo', root, file: revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path })
-  }, [focusDirs, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
+  }, [focusDirs, nameOf, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
 
   const filesRevealReady = revealTargetPresent && ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
 
@@ -565,10 +570,10 @@ export function Sidebar({
   const reveal = useCallback(
     (path: string) => {
       api.shell.reveal({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${nameOf(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
-    [onNotice],
+    [onNotice, nameOf],
   )
 
   /**
@@ -579,10 +584,10 @@ export function Sidebar({
   const openVsCode = useCallback(
     (path: string) => {
       api.shell.openVsCode({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${nameOf(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
-    [onNotice],
+    [onNotice, nameOf],
   )
 
   /**
@@ -593,10 +598,10 @@ export function Sidebar({
   const openDefault = useCallback(
     (path: string) => {
       api.shell.openDefault({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${nameOf(path)}" — it is no longer there` : `Can't open "${nameOf(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     },
-    [onNotice],
+    [onNotice, nameOf],
   )
 
   // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
@@ -850,6 +855,7 @@ export function Sidebar({
                 selection={selection}
                 counts={counts}
                 shortcuts={shortcuts}
+                titles={titles}
               />
             )}
           </>
@@ -877,6 +883,7 @@ export function Sidebar({
                 selection={selection}
                 counts={counts}
                 shortcuts={shortcuts}
+                titles={titles}
               />
             )}
           </>
@@ -928,12 +935,13 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       )}
-      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} lost={pendingPaste.lost} onConfirm={confirmPaste} onCancel={cancelPaste} />}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} indexSource={indexSource} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
+      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} lost={pendingPaste.lost} indexSource={indexSource} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (
         <ConfirmMove
           shortcut={confirmingShortcut}
           lost={confirmingShortcut.lost}
+          indexSource={indexSource}
           onConfirm={() => {
             setConfirmingShortcut(null)
             removeShortcutRow(confirmingShortcut.path, confirmingShortcut.dir)

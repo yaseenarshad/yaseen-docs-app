@@ -21,10 +21,14 @@ const ROOT = '/vault'
 /** path → { content, mtime }: the vault the fake index is scanned from. */
 let vault = new Map<string, { content: string; mtime: number }>()
 let records: IndexRecord[] = []
+let folders: IndexRecord[] = []
 let listeners: Array<() => void> = []
 const source = {
   get records() {
     return records
+  },
+  get folders() {
+    return folders
   },
   subscribe(l: () => void) {
     listeners.push(l)
@@ -96,6 +100,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
   vi.setSystemTime(NOW)
   vault = new Map()
+  folders = []
   listeners = []
   notices.length = 0
   failWrites = false
@@ -202,6 +207,14 @@ describe('a session', () => {
     await mount()
     act(() => review.start('notes'))
     expect(review.session).toMatchObject({ label: 'notes', total: 2 })
+  })
+
+  it('E: a folder session is named by the folder\'s title (YAZ-2420 D14)', async () => {
+    put('hiring/upwork-2026/a.md', 60)
+    folders = [{ path: `${ROOT}/hiring/upwork-2026/.folder.md`, folder: 'hiring/upwork-2026', title: 'Upwork 2026' } as IndexRecord]
+    await mount()
+    act(() => review.start('hiring/upwork-2026'))
+    expect(review.session).toMatchObject({ label: 'Upwork 2026', total: 1 })
   })
 
   it('keeps the note showing while it is edited, though the edit makes it no longer due', async () => {

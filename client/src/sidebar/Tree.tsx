@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { TreeNode } from '@shared/types'
-import { stripExt } from '../lib/paths'
+import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import { renameInputName, type EntryKind, type MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -117,6 +117,8 @@ interface TreeProps {
    * click on it selects nothing, so ⌘C / ⌘X / ⌘V never act on the note from here.
    */
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
+  /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. The ORDER stays by file name. */
+  titles: PathTitles
   /** Favorites-only (YAZ-1766 D4): root rows reorder the list instead of moving files; nested rows do not drag. */
   reorder?: TreeReorder
   depth?: number
@@ -138,10 +140,11 @@ function TreeLevel({
   selection,
   counts,
   shortcuts,
+  titles,
   reorder,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, reorder }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -233,7 +236,7 @@ function TreeLevel({
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
-                <span className="tree__label">{node.name}</span>
+                <span className="tree__label">{pageLabel(node.path, true, titles)}</span>
                 {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}
@@ -302,7 +305,7 @@ function TreeLevel({
                 rowReorder.drop()
               }}
             >
-              <span className="tree__label">{stripExt(node.name)}</span>
+              <span className="tree__label">{pageLabel(node.path, false, titles)}</span>
               {isShortcutRow(node) && <ShortcutIcon />}
             </button>
           </li>

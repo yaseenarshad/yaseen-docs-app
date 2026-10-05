@@ -184,7 +184,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
   // notes (D10), so a link to a folder reads, sorts and groups as that folder's name.
   const vaultRecords = folder.vaultRecords
   const vaultFolders = folder.vaultFolders
-  const resolve = useMemo(() => pageResolver(vaultRecords, root, folder.resolveLink), [vaultRecords, root, folder.resolveLink])
+  const resolve = useMemo(() => pageResolver(vaultRecords, vaultFolders, root, folder.resolveLink), [vaultRecords, vaultFolders, root, folder.resolveLink])
   /**
    * The folder's OUTLINE (YAZ-820) is a free-form DOCUMENT, not rows. `propertyKeys` reads
    * `view.order` and nothing else, so `view.outline`, a string, can not reach the value pass
@@ -516,7 +516,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           {rows.map((row) => (
             <li key={row.record.path} className="view-row">
               <button type="button" className="view-row__link" onClick={() => onOpenFile(row.record.path)}>
-                {nameKey === undefined ? row.record.name : render(row.values[nameKey], resolve)}
+                {row.record.title}
               </button>
               {rest.length > 0 && <span className="view-row__values">{rest.map((k) => render(row.values[k], resolve)).join(' · ')}</span>}
             </li>

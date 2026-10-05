@@ -72,6 +72,7 @@ const cover = (name: string, properties: Record<string, unknown>): IndexRecord =
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   folder: '',
   properties,
 })
@@ -196,6 +197,16 @@ describe('grid', () => {
     act(() => void cardOf(el, 'Agentic Agency').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
     expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+  })
+})
+
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a card\'s title shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-card__title')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
   })
 })
 

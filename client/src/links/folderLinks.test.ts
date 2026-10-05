@@ -10,7 +10,7 @@ import type { IndexRecord, TreeNode } from '@shared/types'
 import { fetchTree } from '../lib/treeFeed'
 import { resolverFor } from '../views/engine'
 import { linkCandidates, matchLinkCandidates } from './completion'
-import { belongsToBasenames, folderLinkCandidates, folderResolver, linkResolver, vaultDirs } from './folderLinks'
+import { belongsToBasenames, folderLinkCandidates, folderResolver, linkResolver, pageResolver, vaultDirs } from './folderLinks'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -100,6 +100,15 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
   it('no folder list, or an id whose folder the tree does not hold: nothing resolves', () => {
     expect(folderResolver('/vault', [])('Projects')).toBeNull()
     expect(folderResolver('/vault', DIRS, [rec('/vault/Gone/.folder.md', { id: FOLDER_ID })])(FOLDER_ID)).toBeNull()
+  })
+})
+
+describe('pageResolver: a folder stands in as a file', () => {
+  it('E: a link to a folder reads as the folder\'s title; a folder with none reads as its directory\'s name (YAZ-2420 D14)', () => {
+    const folders = [rec('/vault/Projects/.folder.md', { id: FOLDER_ID, title: 'Client Projects' })]
+    const resolve = pageResolver([], folders, '/vault', linkResolver([], '/vault', DIRS, folders))
+    expect(resolve(FOLDER_ID)?.record.title).toBe('Client Projects')
+    expect(resolve('Archive')?.record.title).toBe('Archive')
   })
 })
 

@@ -25,7 +25,7 @@ import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
 import { NoticeIcon } from './components/NoticeIcon'
-import { basename, relTo } from './lib/paths'
+import { relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
@@ -35,7 +35,7 @@ import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
-import { isFolderPath } from './lib/pageLabel'
+import { isFolderPath, pageLabel, pathTitles } from './lib/pageLabel'
 import { onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -123,6 +123,8 @@ export function App() {
   const [wikilinks] = useState(createWikilinkResolveSource)
   /** A note's id off the index snapshot (YAZ-2293): what the sidebar row's and the tab's "Copy ID" copy. */
   const noteId = useCallback((path: string) => wikilinks.records.find((r) => r.path === path)?.id, [wikilinks])
+  /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off the index snapshot as it stands. */
+  const nameOf = useCallback((path: string) => pageLabel(path, isFolderPath(root, path), pathTitles(wikilinks.records, wikilinks.folders)), [root, wikilinks])
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
   const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
   // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
@@ -296,14 +298,20 @@ export function App() {
 
   // The OS window title mirrors what is open (C3, GRO-2165) under the vault's display name (YAZ-1974 D4); Electron follows document.title.
   const vaultName = useVaultName(root)
-  // Whether the active tab is a FOLDER is the Files tree's to say (YAZ-2290), so the title follows the tree too.
+  // Whether the active tab is a FOLDER is the Files tree's to say (YAZ-2290), and the page's title
+  // the index's (YAZ-2420 🔒 D14), so the title follows both.
   useEffect(() => {
     const sync = (): void => {
-      document.title = windowTitle(vaultName, file, file !== null && isFolderPath(root, file))
+      document.title = windowTitle(vaultName, file, pathTitles(wikilinks.records, wikilinks.folders), file !== null && isFolderPath(root, file))
     }
     sync()
-    return root === null ? undefined : onTree(root, sync)
-  }, [vaultName, file, root])
+    const offIndex = wikilinks.subscribe(sync)
+    const offTree = root === null ? undefined : onTree(root, sync)
+    return () => {
+      offIndex()
+      offTree?.()
+    }
+  }, [vaultName, file, root, wikilinks])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -556,7 +564,7 @@ export function App() {
         kind = (await api.file.rename({ oldPath, newPath })).kind
       } catch (err) {
         const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
-        notify(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
+        notify(exists ? `Can't rename: "${nameOf(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
       // A note that left a folder leaves that folder's values behind (D20).
@@ -576,7 +584,7 @@ export function App() {
       })
       if (summary.updated > 0 || summary.skipped > 0) notify(renameNotice(summary))
     },
-    [root],
+    [root, nameOf],
   )
 
   /**
@@ -614,7 +622,7 @@ export function App() {
       }
       const catalog = buildViewOnlyCatalog(requestedRoot, response.tree)
       if (kind === 'file' && !catalog.entries.some((entry) => entry.path === oldPath)) {
-        notify(`Can't rename: "${basename(oldPath)}" is no longer in the current file list`)
+        notify(`Can't rename: "${nameOf(oldPath)}" is no longer in the current file list`)
         return undefined
       }
       return catalog
@@ -623,7 +631,7 @@ export function App() {
       notify("Can't rename: couldn't load the current file list")
       return undefined
     }
-  }, [root, viewOnlyLinks])
+  }, [root, viewOnlyLinks, nameOf])
 
   const requestRename = useCallback(
     async (oldPath: string, newPath: string, kind: TreeNode['type']): Promise<void> => {
@@ -714,7 +722,7 @@ export function App() {
     try {
       await api.file.delete({ path })
     } catch (err) {
-      const name = basename(path)
+      const name = nameOf(path)
       // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
       notify(
         err instanceof BridgeRequestError && err.code === 'IO_ERROR'
@@ -722,7 +730,7 @@ export function App() {
           : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`,
       )
     }
-  }, [])
+  }, [nameOf])
 
   const onRootMissing = useCallback(() => {
     storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
@@ -903,6 +911,7 @@ export function App() {
               onShowInSidebar={showInSidebar}
               onNotice={notify}
               noteId={noteId}
+              indexSource={wikilinks}
               reviewState={review.inReview}
               onSetReview={review.setInReview}
             />
@@ -940,6 +949,7 @@ export function App() {
       {root !== null && rightPanel.open && (
         <RightPanel
           root={root}
+          indexSource={wikilinks}
           items={rightPanel.items}
           expanded={rightPanel.expanded}
           width={rightPanel.width}
@@ -985,13 +995,14 @@ export function App() {
           that would clear a folder's values asks through its own sheet (D21). */}
       {pendingRename !== null &&
         ('lost' in pendingRename ? (
-          <ConfirmMove moves={[pendingRename]} lost={pendingRename.lost} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
+          <ConfirmMove moves={[pendingRename]} lost={pendingRename.lost} indexSource={wikilinks} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
         ) : (
           <ConfirmRename
             oldPath={pendingRename.oldPath}
             newPath={pendingRename.newPath}
             kind={pendingRename.kind}
             count={pendingRename.count}
+            indexSource={wikilinks}
             onConfirm={confirmRename}
             onCancel={() => setPendingRename(null)}
           />

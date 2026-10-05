@@ -1,6 +1,7 @@
 /** The persistent search bar (YAZ-739 A-, YAZ-801/803): its query, the ranked results, the keyboard's highlighted row and ⌘K's focus handshake. */
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { WatchSource } from '../../hooks/useWatch'
+import type { PathTitles } from '../../lib/pageLabel'
 import type { SearchCandidate } from '../../search/searchCandidates'
 import { useSearchResults } from '../../search/useSearchResults'
 
@@ -28,6 +29,7 @@ export function useSidebarSearch(
   root: string,
   watch: WatchSource,
   dirs: string[],
+  titles: PathTitles,
   pendingSearchFocus: boolean,
   onSearchFocusHandled: () => void,
   activate: (hit: SearchCandidate, background: boolean) => void,
@@ -37,7 +39,7 @@ export function useSidebarSearch(
   // on unmount and on a root switch without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const results = useSearchResults(root, watch, query, dirs)
+  const results = useSearchResults(root, watch, query, dirs, titles)
   // The bar keeps focus while the list is driven from it (YAZ-803). Opening leaves the list up.
   const { sel, setSelected, onKeys } = useResultKeys(results, (hit, e) => activate(hit, e.metaKey))
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list

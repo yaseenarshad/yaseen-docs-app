@@ -45,7 +45,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { isNoteId } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
-import { basename, stripExt } from '../../lib/paths'
+import { pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -129,13 +129,13 @@ export function linkPageName(inner: string): string {
 
 /**
  * The title an id link shows (YAZ-2293): `target` is a note's id and `resolve` finds the note →
- * its file name without the extension. undefined for a name, for an id no note has, and before
+ * its title, by `titles` (YAZ-2420 🔒 D14). undefined for a name, for an id no note has, and before
  * the index has loaded — all of which show the target as written. The ONE answer shared by the
  * decorations, the backlinks snippets and the right-click menu (`wikilinkMenu.ts`).
  */
-export function idLinkTitle(target: string, resolve: ResolveLink | null): string | undefined {
+export function idLinkTitle(target: string, resolve: ResolveLink | null, titles: PathTitles): string | undefined {
   const path = resolve !== null && isNoteId(target) ? resolve(target) : null
-  return path === null ? undefined : stripExt(basename(path))
+  return path === null ? undefined : pageLabel(path, false, titles)
 }
 
 /**
@@ -209,7 +209,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // hiding every character would leave a zero-width invisible run the click handler cannot see
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
   // consistent answer (FN12, GRO-2197).
-  const titleOf = (target: string) => idLinkTitle(target, source.resolve)
+  const titleOf = (target: string) => idLinkTitle(target, source.resolve, pathTitles(source.records, source.folders))
   if (linkDisplayText(inner, titleOf) === '') return
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`

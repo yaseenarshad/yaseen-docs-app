@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import { pathTitles } from '../lib/pageLabel'
 import { linkResolver } from './folderLinks'
 import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
 
@@ -37,6 +38,9 @@ const rec = (path: string, { links = [], embeds = [], aliases = [] }: RecInit = 
     embeds,
   }
 }
+
+/** No snapshot's titles: an id link reads as its note's file name. */
+const NO_TITLES = pathTitles([], [])
 
 /** The resolve function the app feeds the section — `resolverFor` unwrapped to a path (bridge idiom). */
 const resolverOver = (records: readonly IndexRecord[]): ResolveLink => {
@@ -180,7 +184,7 @@ describe('links from FOLDER pages: a folder\'s settings mention what they link',
 
   describe('snippet for a folder entry', () => {
     const resolve = linkResolver(NOTES, '/vault', DIRS)
-    const shown = (folder: IndexRecord) => folderMentionSnippets(folder, B, resolve).map((s) => [s.text, ...s.ranges.map((r) => s.text.slice(r.from, r.to))])
+    const shown = (folder: IndexRecord) => folderMentionSnippets(folder, B, resolve, NO_TITLES).map((s) => [s.text, ...s.ranges.map((r) => s.text.slice(r.from, r.to))])
 
     it('the line of its outline that holds the link — the bullet\'s text, as the page shows it', () => {
       expect(shown(settings('/vault/Projects', outline(`- intro\n    * see [[${ID}]] first\n- [[Elsewhere]]\n- [[B|the plan]]`)))).toEqual([
@@ -209,55 +213,55 @@ describe('mentionSnippets (Links D, GRO-2193; display text + line grouping FN9/F
   const marked = (s: MentionSnippet): string[] => s.ranges.map((r) => s.text.slice(r.from, r.to))
 
   it('returns the mention line as the EDITOR shows it, with the display text highlighted', () => {
-    const [snippet] = mentionSnippets('# A\n\nSee [[B]] for more.\n', B, resolve)
+    const [snippet] = mentionSnippets('# A\n\nSee [[B]] for more.\n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('See B for more.')
     expect(marked(snippet)).toEqual(['B'])
   })
 
   it('one snippet per LINE, in document order; other links are never highlighted', () => {
-    const snippets = mentionSnippets('[[Elsewhere]] then [[B]]\n\nand [[B|the other]] again\n', B, resolve)
+    const snippets = mentionSnippets('[[Elsewhere]] then [[B]]\n\nand [[B|the other]] again\n', B, resolve, NO_TITLES)
     expect(snippets.map((s) => s.text)).toEqual(['Elsewhere then B', 'and the other again'])
     expect(snippets.map(marked)).toEqual([['B'], ['the other']])
   })
 
   it('a piped mention shows its ALIAS — exactly the editor display, never the raw brackets (FN9)', () => {
-    const [snippet] = mentionSnippets('see [[B|Bee alias]] here\n', B, resolve)
+    const [snippet] = mentionSnippets('see [[B|Bee alias]] here\n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('see Bee alias here')
     expect(marked(snippet)).toEqual(['Bee alias'])
   })
 
   it('a heading-form mention shows the ` > `-joined display, like the decorations', () => {
-    const [snippet] = mentionSnippets('deep [[B#Intro]] link\n', B, resolve)
+    const [snippet] = mentionSnippets('deep [[B#Intro]] link\n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('deep B > Intro link')
     expect(marked(snippet)).toEqual(['B > Intro'])
   })
 
   it('an UNRELATED link on the same line shows display text too, unhighlighted (FN9)', () => {
-    const [snippet] = mentionSnippets('[[Other|o]] with [[B]] here\n', B, resolve)
+    const [snippet] = mentionSnippets('[[Other|o]] with [[B]] here\n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('o with B here')
     expect(marked(snippet)).toEqual(['B'])
   })
 
   it('TWO mentions on one line make ONE snippet with TWO highlights (FN10)', () => {
-    const snippets = mentionSnippets('See [[B]] and [[B|again]] here\n', B, resolve)
+    const snippets = mentionSnippets('See [[B]] and [[B|again]] here\n', B, resolve, NO_TITLES)
     expect(snippets).toHaveLength(1)
     expect(snippets[0].text).toBe('See B and again here')
     expect(marked(snippets[0])).toEqual(['B', 'again'])
   })
 
   it('highlights alias-form mentions by display text and embed mentions raw (embeds are undecorated)', () => {
-    expect(mentionSnippets('via [[CAC]]\n', B, resolve).map(marked)).toEqual([['CAC']])
-    expect(mentionSnippets('shown ![[B]]\n', B, resolve).map(marked)).toEqual([['![[B]]']])
+    expect(mentionSnippets('via [[CAC]]\n', B, resolve, NO_TITLES).map(marked)).toEqual([['CAC']])
+    expect(mentionSnippets('shown ![[B]]\n', B, resolve, NO_TITLES).map(marked)).toEqual([['![[B]]']])
   })
 
   it('skips fenced blocks and inline code — exactly what the index skips', () => {
     const content = '```\n[[B]]\n```\n\nand `[[B]]` inline\n\nreal [[B]]\n'
-    expect(mentionSnippets(content, B, resolve).map((s) => s.text)).toEqual(['real B'])
+    expect(mentionSnippets(content, B, resolve, NO_TITLES).map((s) => s.text)).toEqual(['real B'])
   })
 
   it('trims the line and windows a long one around the first mention, ellipsised on both sides', () => {
     const pad = 'x'.repeat(400)
-    const [snippet] = mentionSnippets(`   ${pad} [[B]] ${pad}   \n`, B, resolve)
+    const [snippet] = mentionSnippets(`   ${pad} [[B]] ${pad}   \n`, B, resolve, NO_TITLES)
     expect(snippet.text.length).toBeLessThanOrEqual(SNIPPET_MAX_CHARS + 2)
     expect(snippet.text.startsWith('…')).toBe(true)
     expect(snippet.text.endsWith('…')).toBe(true)
@@ -266,27 +270,27 @@ describe('mentionSnippets (Links D, GRO-2193; display text + line grouping FN9/F
 
   it('a second mention outside the window is dropped; the first (centred) one never is', () => {
     const pad = 'x'.repeat(400)
-    const [snippet] = mentionSnippets(`[[B]] ${pad} [[B]]\n`, B, resolve)
+    const [snippet] = mentionSnippets(`[[B]] ${pad} [[B]]\n`, B, resolve, NO_TITLES)
     expect(marked(snippet)).toEqual(['B'])
     expect(snippet.ranges).toHaveLength(1)
   })
 
   it('a short line keeps its whole text and gets no ellipsis', () => {
-    const [snippet] = mentionSnippets('   * [[B]] note   \n', B, resolve)
+    const [snippet] = mentionSnippets('   * [[B]] note   \n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('* B note')
   })
 
   it('mentions of another note, same-file `[[#heading]]` links and plain text yield nothing', () => {
-    expect(mentionSnippets('[[Elsewhere]] and [[#top]] and words\n', B, resolve)).toEqual([])
+    expect(mentionSnippets('[[Elsewhere]] and [[#top]] and words\n', B, resolve, NO_TITLES)).toEqual([])
   })
 
   it('caps the snippet LINES per note (the section stays quiet on link-heavy notes)', () => {
     const content = Array.from({ length: MAX_SNIPPETS + 3 }, (_, i) => `line ${i} [[B]]`).join('\n')
-    expect(mentionSnippets(content, B, resolve)).toHaveLength(MAX_SNIPPETS)
+    expect(mentionSnippets(content, B, resolve, NO_TITLES)).toHaveLength(MAX_SNIPPETS)
   })
 
   it('reads mentions out of the frontmatter block too (the index counts them as links)', () => {
-    const [snippet] = mentionSnippets('---\nparent: "[[B]]"\n---\n\nbody\n', B, resolve)
+    const [snippet] = mentionSnippets('---\nparent: "[[B]]"\n---\n\nbody\n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('parent: "B"')
   })
 })
@@ -303,9 +307,15 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
   })
 
   it('the snippet shows the note\'s current TITLE where the editor does — heading form and hand-typed label included', () => {
-    const [snippet] = mentionSnippets(`See [[${ID}]], [[${ID}#Scope]] and [[${ID}|the plan]].\n`, ROAD, resolve)
+    const [snippet] = mentionSnippets(`See [[${ID}]], [[${ID}#Scope]] and [[${ID}|the plan]].\n`, ROAD, resolve, NO_TITLES)
     expect(snippet.text).toBe('See Road Map, Road Map > Scope and the plan.')
     expect(marked(snippet)).toEqual(['Road Map', 'Road Map > Scope', 'the plan'])
+  })
+
+  it('E: the snippet shows the title the note\'s record holds, not its file name (YAZ-2420 D14)', () => {
+    const titled = [{ ...rec('/vault/Projects/up-001-abdul-k3m9x2pq7abc.md'), id: ID, title: 'UP-001 - Abdul' }]
+    const [snippet] = mentionSnippets(`See [[${ID}#Scope]].\n`, titled[0].path, resolverOver(titled), pathTitles(titled, []))
+    expect(snippet.text).toBe('See UP-001 - Abdul > Scope.')
   })
 
   it('a link in a folder’s value counts as a linked mention of its target, exactly as a top-level whole-value link does', () => {
@@ -315,11 +325,11 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
     const all = [holder, { ...rec(ROAD), id: ID }]
     const over = resolverOver(all)
     expect(backlinksFor(ROAD, all, over, []).map((r) => r.path)).toEqual(['/vault/Hiring/Noor.md'])
-    expect(mentionSnippets(content, ROAD, over).map((s) => s.text)).toEqual(['owner: "Road Map"'])
+    expect(mentionSnippets(content, ROAD, over, NO_TITLES).map((s) => s.text)).toEqual(['owner: "Road Map"'])
   })
 
   it('an id no note has reads as the raw id, as the editor shows it', () => {
-    const [snippet] = mentionSnippets(`gone [[zzzzzzzzzzz9]] but [[${ID}]]\n`, ROAD, resolve)
+    const [snippet] = mentionSnippets(`gone [[zzzzzzzzzzz9]] but [[${ID}]]\n`, ROAD, resolve, NO_TITLES)
     expect(snippet.text).toBe('gone zzzzzzzzzzz9 but Road Map')
     expect(marked(snippet)).toEqual(['Road Map'])
   })

@@ -114,15 +114,29 @@ describe('right-click on a rendered id link', () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith(DEAD)
   })
 
+  it('E: the name row is the title of the note, and of the folder (YAZ-2420 D14)', async () => {
+    const FOLDER_ID = 'f7n2w8rt4xyz'
+    const titled = (path: string, id: string, title: string) => ({ path, id, title, folder: 'upwork-2026', basename: 'x', aliases: [] as string[] }) as IndexRecord
+    const records = [titled('/vault/upwork-2026/up-001-abdul-k3m9x2pq7abc.md', ID, 'UP-001 - Abdul')]
+    const folders = [titled('/vault/upwork-2026/.folder.md', FOLDER_ID, 'Upwork 2026')]
+    const { root, view } = await mount(`pad [[${FOLDER_ID}]] and [[${ID}]] tail\n`, true, (source) =>
+      source.update(linkResolver(records, '/vault', ['/vault/upwork-2026'], folders), records, folders),
+    )
+    mouse(linkSpan(root, 'UP-001 - Abdul'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['UP-001 - Abdul', ID, 'Copy ID'])
+    mouse(linkSpan(root, 'Upwork 2026'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['Upwork 2026 (folder)', FOLDER_ID, 'Copy ID'])
+  })
+
   it('K5 — right-click a rendered link to a FOLDER: the folder\'s name with "(folder)", its id and Copy ID', async () => {
     const FOLDER_ID = 'f7n2w8rt4xyz'
-    const record = (path: string, id: string): IndexRecord => ({
-      path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title: 'x', folder: 'Projects', ext: 'md', size: 1, ctime: 1, mtime: 1,
+    const record = (path: string, id: string, title: string): IndexRecord => ({
+      path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title, folder: 'Projects', ext: 'md', size: 1, ctime: 1, mtime: 1,
       properties: {}, aliases: [], tags: [], links: [], embeds: [],
     })
     // The bridge's feed: a folder with its settings file's id, and a note INSIDE it — which is no folder.
-    const records = [record('/vault/Projects/Road Map.md', ID)]
-    const folders = [record('/vault/Projects/.folder.md', FOLDER_ID)]
+    const records = [record('/vault/Projects/Road Map.md', ID, 'Road Map')]
+    const folders = [record('/vault/Projects/.folder.md', FOLDER_ID, 'Projects')]
     const { root, view } = await mount(`pad [[${FOLDER_ID}]] and [[${ID}]] tail\n`, true, (source) =>
       source.update(linkResolver(records, '/vault', ['/vault/Projects'], folders), records, folders),
     )

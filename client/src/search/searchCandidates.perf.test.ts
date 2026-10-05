@@ -30,7 +30,7 @@ describe('searchCandidates', () => {
     // Folder rows ride in the same list since YAZ-1491 (🔒 D1): 50 top-level folders, each with 9 nested.
     const dirs = Array.from({ length: 50 }, (_, i) => `/vault/folder${i}`).flatMap((d) => [d, ...Array.from({ length: 9 }, (_, j) => `${d}/sub${j}`)])
     const start = performance.now()
-    const candidates = [...folderCandidates('/vault', dirs), ...searchCandidates(records)]
+    const candidates = [...folderCandidates('/vault', dirs, new Map()), ...searchCandidates(records)]
     for (let i = 0; i < 10; i++) searchTitles(candidates, `Note 49`)
     const elapsed = performance.now() - start
     expect(candidates).toHaveLength(4500) // 500 folder rows + one basename row + one alias row per record

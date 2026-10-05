@@ -334,6 +334,7 @@ const listRec = (name: string, status: unknown): IndexRecord => ({
   path: `/vault/${name}.md`,
   name: `${name}.md`,
   basename: name,
+  title: name,
   properties: { status },
 })
 

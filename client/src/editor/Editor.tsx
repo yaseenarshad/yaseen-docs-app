@@ -498,6 +498,7 @@ function CrepeHost({
         <div className="page-header">
           <PageTitle
             path={file.path}
+            source={wikilinks}
             onRename={(newPath) => onRenameFile?.(file.path, newPath)}
             onNotice={onNotice}
             onArrowDown={() => {

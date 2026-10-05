@@ -1,12 +1,13 @@
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { copyNoteId } from '../../lib/copyNoteId'
-import { basename } from '../../lib/paths'
 
 interface PageContextMenuProps {
   x: number
   y: number
   path: string
+  /** The page's title, off the row's own index record (YAZ-2420 🔒 D14): what a notice calls it. */
+  title: string
   /** The page's note id (YAZ-2293), off the row's own index record; absent when it has none, and "Copy ID" is then not offered. */
   noteId?: string
   onOpenRight?: (path: string) => void
@@ -16,13 +17,13 @@ interface PageContextMenuProps {
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, noteId, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, title, noteId, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path }).catch((error: unknown) => {
       onNotice?.(
         error instanceof BridgeRequestError && error.code === 'NOT_FOUND'
-          ? `Can't reveal "${basename(path)}" — it is no longer there`
+          ? `Can't reveal "${title}" — it is no longer there`
           : `Can't reveal: ${error instanceof Error ? error.message : String(error)}`,
       )
     })

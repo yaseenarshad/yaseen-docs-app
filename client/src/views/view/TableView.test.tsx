@@ -241,6 +241,30 @@ describe('table structure', () => {
   })
 })
 
+describe('the title (YAZ-2420 D14)', () => {
+  it('E: a table\'s Name cell shows the note\'s title, not its file name; a note with none shows its file name', () => {
+    const { el } = mount(TYPED_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    const titles = [...el.querySelectorAll('.view-table__link')].map((b) => b.textContent)
+    expect(titles).toContain('UP-001 - Abdul')
+    expect(titles).not.toContain('Agentic Agency')
+    expect(titles).toContain('Attribution')
+  })
+
+  it('E: a link chip and a file chip show the title of the note they name', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = TEST_RECORDS.map((r, i) => ({ ...r, ...(i === 0 ? { id: ID, title: 'UP-001 - Abdul' } : {}), properties: { ...r.properties, related: `[[${ID}]]` } }))
+    const { el } = mount(`formulas:\n  me: file\nviews:\n  - type: table\n    name: T\n    order: [note.related, formula.me]\n`, { records, folder: testFolderHost({ vaultRecords: records }) })
+    const chips = [...el.querySelectorAll('.view-table__chip--link')].map((chip) => chip.textContent)
+    expect(chips.slice(0, 2)).toEqual(['UP-001 - Abdul', 'UP-001 - Abdul'])
+    expect(chips).toContain('Attribution')
+  })
+
+  it('E: the placeholder list of an unknown view type names each note by its title', () => {
+    const { el } = mount('views:\n  - type: bogus\n    name: L\n', { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
+    expect([...el.querySelectorAll('.view-row__link')].map((row) => row.textContent).slice(0, 2)).toEqual(['UP-001 - Abdul', 'The Levels of an Agency'])
+  })
+})
+
 describe('cells by type', () => {
   it('numbers right-align, booleans are read-only checkboxes, lists and links are chips, errors are #ERROR chips', () => {
     const { el } = mount(TYPED_BASE)
@@ -442,7 +466,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     click(itemNamed(el, 'Reveal in Finder')!)
     await act(async () => Promise.resolve())
 
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency.md" — it is no longer there`)
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency" — it is no longer there`)
   })
 
   it('retargets to the latest row and dismisses on Escape or an outside press', () => {

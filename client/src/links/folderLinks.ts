@@ -11,6 +11,7 @@
  */
 import type { IndexRecord, TreeResponse } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { basename, dirname, relTo } from '../lib/paths'
 import { latestTree } from '../lib/treeFeed'
 import { allDirs } from '../lib/treeState'
@@ -86,10 +87,11 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
 /**
  * The resolver a view reads its links through (`Resolver`), folders included (D10): the note,
  * else the folder the window's link resolver (`link`) gives the target, standing in as a file named
- * like the folder. So `[[<folder id>]]` reads as the folder's name wherever an id link reads as its
- * note's title (YAZ-2293 D8), and sorts and groups under that name.
+ * like the folder and titled as the folder is (`folders`, YAZ-2420 🔒 D14). So `[[<folder id>]]`
+ * reads as the folder's title wherever an id link reads as its note's title (YAZ-2293 D8), and
+ * sorts and groups under its name.
  */
-export function pageResolver(records: readonly IndexRecord[], root: string | undefined, link: ResolveLink | null): Resolver {
+export function pageResolver(records: readonly IndexRecord[], folders: readonly IndexRecord[], root: string | undefined, link: ResolveLink | null): Resolver {
   const note = resolverFor(records, root)
   if (link === null) return note
   return (target) => {
@@ -97,7 +99,7 @@ export function pageResolver(records: readonly IndexRecord[], root: string | und
     const dir = hit === null ? link(target) : null
     if (dir === null) return hit
     const name = basename(dir)
-    return new FileValue({ path: dir, name, basename: name, folder: dirname(relTo(root ?? '', dir)), ext: '', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
+    return new FileValue({ path: dir, name, basename: name, title: pageLabel(dir, true, pathTitles(records, folders)), folder: dirname(relTo(root ?? '', dir)), ext: '', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
   }
 }
 

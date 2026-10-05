@@ -287,7 +287,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 
   it('fan-out edges: duplicates count once, empty elements drop, an all-empty list is No value', () => {
-    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties: { k } })
     const recs = [
       rec('dup', ['a', 'a']),
       rec('mixed', ['a', null, '']),
@@ -303,7 +303,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 
   it('a row in two groups is counted in both; the footer stays de-duplicated (YAZ-671 D2)', () => {
-    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties: { k } })
     const recs = [rec('both', ['a', 'b']), rec('onlyA', ['a'])]
     const g = runView(
       { views: [] },
@@ -318,7 +318,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 
   it('links fan out per target and group by exact target (YAZ-673 Q1)', () => {
-    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties: { k } })
     const recs = [rec('spans', ['[[Lead Gen]]', '[[Sales]]']), rec('one', ['[[Lead Gen]]'])]
     const g = runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'k' } }, recs, {})
     expect(labels(g)).toEqual(['[[Lead Gen]]', '[[Sales]]'])
@@ -336,7 +336,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
 
 describe('runView: nested group by (YAZ-745)', () => {
   const rec = (name: string, properties: Record<string, unknown>) =>
-    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties }) as IndexRecord
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties }) as IndexRecord
   const T = (groupBy: ViewDef['groupBy'], recs: IndexRecord[], extra: Partial<ViewDef> = {}, def: Partial<ViewSet> = {}, opts: Parameters<typeof runView>[3] = {}) =>
     runView({ views: [], ...def }, { type: 'table', name: 'T', groupBy, ...extra }, recs, opts)
 
@@ -527,7 +527,7 @@ describe('targetBasename (YAZ-2241)', () => {
       for (const [j, folder] of folders.entries()) {
         const ext = (i + j) % 3 === 0 ? '.markdown' : (i + j) % 3 === 1 ? '.MD' : '.md'
         const rel = folder === '' ? `${name}${ext}` : `${folder}/${name}${ext}`
-        records.push({ ...TEST_RECORDS[0], path: `/vault/${rel}`, name: `${name}${ext}`, basename: name, folder, aliases: ['Alias'] })
+        records.push({ ...TEST_RECORDS[0], path: `/vault/${rel}`, name: `${name}${ext}`, basename: name, title: name, folder, aliases: ['Alias'] })
       }
     }
     const resolve = makeResolver(records.map(r => new FileValue(r)), '/vault', { aliases: false })
@@ -679,6 +679,7 @@ describe('makeResolver: note ids (YAZ-2293 D5)', () => {
     path: `/vault/${basename}.md`,
     name: `${basename}.md`,
     basename,
+    title: basename,
     folder: '',
     aliases: [],
     ...(id === undefined ? {} : { id }),
@@ -723,7 +724,7 @@ describe('makeResolver: note ids (YAZ-2293 D5)', () => {
 
 describe('runView: an id link orders and labels by what is shown (YAZ-2293 D8)', () => {
   const note = (basename: string, extra: Partial<IndexRecord> = {}): IndexRecord => ({
-    ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, folder: '', properties: {}, ...extra,
+    ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, title: basename, folder: '', properties: {}, ...extra,
   })
   /** The ids sort AGAINST the titles on purpose: `1…` is Zed, `9…` is Alpha. */
   const ZED = '1aaaaaaaaaaa'

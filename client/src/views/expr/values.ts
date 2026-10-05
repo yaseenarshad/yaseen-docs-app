@@ -35,7 +35,7 @@ export function linkText(link: LinkValue, resolve?: Resolver): string {
   if (link.display !== undefined || resolve === undefined) return link.display ?? link.target
   // The id is the part before any `#heading`, which rides along as it does on a name.
   const id = link.target.split('#', 1)[0]
-  const title = isNoteId(id) ? resolve(id)?.record.basename : undefined
+  const title = isNoteId(id) ? resolve(id)?.record.title : undefined
   return title === undefined ? link.target : title + link.target.slice(id.length)
 }
 export class RegexValue {
@@ -51,6 +51,8 @@ export interface FileRecordLike {
   id?: string
   name: string
   basename: string
+  /** What the app shows (YAZ-2420 🔒 D14); a folder standing in as a file carries its own. */
+  title: string
   folder: string
   ext: string
   size: number

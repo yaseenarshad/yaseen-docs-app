@@ -10,6 +10,7 @@ import type { IndexRecord, IndexResponse, TreeNode, TreeResponse, WatchEvent } f
 import type { WatchListener, WatchSource } from '../../hooks/useWatch'
 import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } from './wikilinkPicker'
 import { createWikilinkResolveSource, idLinkTitle, type MutableWikilinkResolveSource } from './wikilinkPlugin'
+import { pathTitles } from '../../lib/pageLabel'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { WikilinkIndexBridge } from './WikilinkIndexBridge'
 
@@ -380,7 +381,7 @@ describe('WikilinkIndexBridge', () => {
     const index = (...paths: string[]): IndexResponse => ({
       root: '/trees',
       records: paths.map((p) => rec(p)),
-      folders: [{ ...rec('/trees/Work/Projects/.folder.md'), id: FOLDER_ID }],
+      folders: [{ ...rec('/trees/Work/Projects/.folder.md'), id: FOLDER_ID, title: 'Client Projects' }],
       generatedAt: 1,
     })
     const tree = (...extra: TreeNode[]): TreeResponse => ({
@@ -403,11 +404,11 @@ describe('WikilinkIndexBridge', () => {
       expect(source.resolve?.('Nope')).toBeNull()
     })
 
-    it('the id of a folder\'s settings file resolves to the folder, and an id link shows the folder\'s name', async () => {
+    it('the id of a folder\'s settings file resolves to the folder, and an id link shows the folder\'s title', async () => {
       mount('/trees')
       await flush()
       expect(source.resolve?.(FOLDER_ID)).toBe('/trees/Work/Projects')
-      expect(idLinkTitle(FOLDER_ID, source.resolve)).toBe('Projects')
+      expect(idLinkTitle(FOLDER_ID, source.resolve, pathTitles(source.records, source.folders))).toBe('Client Projects')
     })
 
     it('the picker offers the folders after the notes, each "(folder)": by id when it has one, else by name — not at all when a note holds its path', async () => {

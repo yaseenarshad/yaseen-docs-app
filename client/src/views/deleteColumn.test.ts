@@ -192,8 +192,8 @@ describe('deleteColumn', () => {
   })
 
   it('a note that cannot be written (invalid YAML) is reported, not written; the others are still stripped (no rollback)', async () => {
-    const h = host({ records: [...host().records, rec(BROKEN, held({ status: 'x' }))] })
-    await expect(deleteColumn('status', h)).rejects.toThrow(/Could not remove "status" from 1 note: broken \(frontmatter is not valid YAML/)
+    const h = host({ records: [...host().records, { ...rec(BROKEN, held({ status: 'x' })), title: 'UP-001 - Abdul' }] })
+    await expect(deleteColumn('status', h)).rejects.toThrow(/Could not remove "status" from 1 note: UP-001 - Abdul \(frontmatter is not valid YAML/)
     expect(disk.get(BROKEN)).toBe('---\nstatus: [unclosed\n---\n')
     expect(disk.get(A)).not.toContain('status:')
     expect(disk.get(C)).not.toContain('status:')

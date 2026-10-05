@@ -538,6 +538,14 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
   })
 
+  it('E: the page title shows the note\'s title once the index has it (YAZ-2420 D14)', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(BODY, 1, { wikilinks: source })
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('note')
+    feed(source, [{ ...record(PATH), title: 'UP-001 - Abdul' }])
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('UP-001 - Abdul')
+  })
+
   it('with the review settings, "Reviews" is the last block, after "Linked mentions" (YAZ-2322)', async () => {
     const source = createWikilinkResolveSource()
     const el = await mount(BODY, 1, { wikilinks: source, reviewSettings: { ...DEFAULT_REVIEW_SETTINGS, enabled: true } })
@@ -573,6 +581,20 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     await settle()
     return container
   }
+
+  it('E: a folder\'s page is titled with the folder\'s title (YAZ-2420 D14)', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/upwork-2026`)], generatedAt: 1 }))
+    readFile.mockResolvedValue({ path: '/titled/upwork-2026/.folder.md', content: '---\ntitle: Upwork 2026\n---\n', mtime: 1, size: 27 })
+    const source = createWikilinkResolveSource()
+    act(() => source.update(() => null, [], [{ path: '/titled/upwork-2026/.folder.md', folder: 'upwork-2026', title: 'Upwork 2026', mtime: 1, properties: {} } as IndexRecord]))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Editor root="/titled" path="/titled/upwork-2026" watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    await settle()
+    await settle()
+    expect(container.querySelector('.page-title__text')?.textContent).toBe('Upwork 2026')
+  })
 
   it.each(['Projects', 'Notes.md', 'v1.2'])('a folder named %s renders the folder view — nothing is read as a file, no editor mounts', async (name) => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/${name}`, [file(`${r}/${name}/a.md`)])], generatedAt: 1 }))
