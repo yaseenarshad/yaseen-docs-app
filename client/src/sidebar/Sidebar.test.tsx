@@ -139,8 +139,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     selectionRef: { current: EMPTY_SELECTION },
     // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App's listener asks it; the chord tests hold their own box.
     clipboardRef: { current: null },
-    // The folder rows' counts (🔒 E6, YAZ-2290) read the window's index source: empty unless a test feeds it.
-    indexSource: createWikilinkResolveSource(),
+    // The folder rows' counts (🔒 E6, YAZ-2290) read the window's index source: empty unless a test feeds it,
+    // and of a vault that uses IDs unless a test says otherwise (YAZ-2523).
+    indexSource: indexFor(true),
     // Upkeep review (YAZ-2322) is off, as in a new vault, unless a test turns it on; App counts and
     // owns the session, with nothing due and no review open by default.
     upkeep: false,
@@ -161,6 +162,12 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
 }
 
 const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file')
+/** The window's index source for an empty vault that uses IDs, or for one that does not (YAZ-2523). */
+const indexFor = (ids: boolean) => {
+  const source = createWikilinkResolveSource()
+  source.update(() => null, undefined, undefined, ids)
+  return source
+}
 /** An index record for a note of the `/v` vault — only `folder` matters to the folder rows' counts (YAZ-2290 E6). */
 const indexRecord = (path: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -2486,6 +2493,45 @@ describe('New note (GRO-2022)', () => {
     expect(bridge.createFile).not.toHaveBeenCalled()
     expect(input(el)).not.toBeNull()
   })
+
+  // The ID vault's half of each row is the `B:` tests above.
+  describe('in a vault that does not use IDs (YAZ-2523 V3)', () => {
+    const openPlain = async () => {
+      const m = await mount({ indexSource: indexFor(false) })
+      act(() => void m.el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      act(() => itemByLabel(m.el, 'New note')?.click())
+      return m
+    }
+
+    it('committing a name creates `<name>.md` in the right-clicked folder, empty with no template there, then opens it: no id and no `title` is sent', async () => {
+      const { el, bridge, props } = await openPlain()
+      await commit(el, 'Meeting notes')
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Meeting notes.md', content: '' })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Meeting notes.md')
+    })
+
+    it('the folder\u2019s `.template.md` is the note as it is', async () => {
+      const { el, bridge } = await openPlain()
+      withTemplate(bridge, '/v/sub', '---\nowner: me\ntitle: Template\n---\n## Notes\n')
+      await commit(el, 'Growth')
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: '---\nowner: me\ntitle: Template\n---\n## Notes\n' })
+    })
+
+    it('a name a file cannot hold is refused in the box with the reason, and one that is taken as the bridge refuses it: nothing is created, and the box stays open', async () => {
+      const { el, bridge, props } = await openPlain()
+      await commit(el, 'a/b')
+      expect(errorText(el)).toBe('Name cannot contain "/"')
+      await commit(el, '.hidden')
+      expect(errorText(el)).toBe('Names starting with "." are hidden')
+      expect(bridge.createFile).not.toHaveBeenCalled()
+      bridge.createFile.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'path already exists' })
+      await commit(el, 'Taken')
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Taken.md', content: '' })
+      expect(errorText(el)).toBe('path already exists')
+      expect(input(el)).not.toBeNull()
+      expect(props.onOpenFile).not.toHaveBeenCalled()
+    })
+  })
 })
 
 /**
@@ -2603,6 +2649,19 @@ describe('New folder / New dated folder (GRO-2022, YAZ-1604)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // The ID vault's half is the `C:` tests above.
+  it('in a vault that does not use IDs New folder creates the directory under the name typed and sends no title; a name a folder cannot hold is refused in the box (YAZ-2523 V3)', async () => {
+    const { el, bridge } = await mount({ indexSource: indexFor(false) })
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'New folder')?.click())
+    await commit(el, '.git')
+    expect(errorText(el)).toBe('Names starting with "." are hidden')
+    expect(bridge.createDir).not.toHaveBeenCalled()
+    await commit(el, 'Q3 Plans')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Q3 Plans' })
+    expect(bridge.createFile).not.toHaveBeenCalled()
   })
 })
 
@@ -3616,7 +3675,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
   const mountLinked = async (alsoIn?: unknown, over: Partial<SidebarProps> = {}, tweak?: (bridge: ReturnType<typeof installBridge>) => unknown) => {
     vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Areas', '/v/Projects'])
     const indexSource = createWikilinkResolveSource()
-    act(() => indexSource.update(() => null, records(alsoIn), FOLDERS))
+    act(() => indexSource.update(() => null, records(alsoIn), FOLDERS, true))
     const disk = new Map([
       [HEALTH, alsoIn === undefined ? 'Body\n' : `---\nalso_in:\n  - ${PROJECTS_ID}\n---\nBody\n`],
       ['/v/Projects/.folder.md', `---\nid: ${PROJECTS_ID}\n---\n`],
@@ -3652,7 +3711,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
 
     it('E: shows the note\'s title, as its real row does, and still stands in file-name order (YAZ-2420 D15)', async () => {
       const { el, indexSource } = await mountLinked([PROJECTS_ID])
-      act(() => indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, title: 'Zz Top' } : r)), FOLDERS))
+      act(() => indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, title: 'Zz Top' } : r)), FOLDERS, true))
       expect(row(el, HEALTH)?.textContent).toBe('Zz Top')
       expect([...(row(el, '/v/Projects')?.closest('li')?.querySelectorAll('.tree__row--file') ?? [])].map((r) => r.textContent)).toEqual(['Alpha', 'Zz Top', 'Zeta'])
     })
@@ -3743,7 +3802,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       await act(async () => itemByLabel(el, 'Remove shortcut')?.click())
       expect(disk.get(HEALTH)).toBe('---\n---\nBody\n')
       expect(props.onDeleteFile).not.toHaveBeenCalled()
-      act(() => indexSource.update(() => null, records(), FOLDERS))
+      act(() => indexSource.update(() => null, records(), FOLDERS, true))
       expect(shortcutRow(el)).toBeNull()
       expect(row(el, HEALTH)).not.toBeNull() // the note is where it lives
       expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('2')
@@ -3764,7 +3823,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       const mountHolding = async () => {
         const mounted = await mountLinked([PROJECTS_ID])
         mounted.disk.set(HEALTH, HELD)
-        act(() => mounted.indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, properties: { ...r.properties, in: { [PROJECTS_ID]: { order: 1 } } } } : r)), FOLDERS))
+        act(() => mounted.indexSource.update(() => null, records([PROJECTS_ID]).map((r) => (r.path === HEALTH ? { ...r, properties: { ...r.properties, in: { [PROJECTS_ID]: { order: 1 } } } } : r)), FOLDERS, true))
         return mounted
       }
       const askToRemove = async (el: HTMLElement) => {
@@ -3832,7 +3891,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           })
         })
         const { el, indexSource } = mounted
-        act(() => indexSource.update(() => null, [...records().map((r) => (r.path === ALPHA || r.path === ZETA ? holding(r) : r)), holding(indexRecord(`${SUB}/Deep.md`))], FOLDERS))
+        act(() => indexSource.update(() => null, [...records().map((r) => (r.path === ALPHA || r.path === ZETA ? holding(r) : r)), holding(indexRecord(`${SUB}/Deep.md`))], FOLDERS, true))
         const clip = (op: 'copy' | 'cut', ...paths: string[]) => act(() => pushClip?.({ count: paths.length, op, paths }))
         const paste = async (op: 'copy' | 'cut', paths: string[], into = '/v/Areas'): Promise<void> => {
           clip(op, ...paths)
@@ -3954,7 +4013,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           const sub: IndexRecord = { ...indexRecord(`${SUB}/.folder.md`), id: SUB_ID, title: 'Sub' }
           const { el, disk, bridge, writeFile, indexSource, paste } = await mountCut()
           // By the window's snapshot Deep holds values for Projects and for Sub, the folder it is in.
-          act(() => indexSource.update(() => null, [{ ...indexRecord(`${SUB}/Deep.md`), properties: { in: { [PROJECTS_ID]: { order: 1 }, [SUB_ID]: { order: 2 } } } }], [...FOLDERS, sub]))
+          act(() => indexSource.update(() => null, [{ ...indexRecord(`${SUB}/Deep.md`), properties: { in: { [PROJECTS_ID]: { order: 1 }, [SUB_ID]: { order: 2 } } } }], [...FOLDERS, sub], true))
           await paste('copy', [SUB])
           expect(sheetText(el)).toBe("Copy 'Sub' to 'Areas'? 1 note will not keep its values for Projects.")
           // As main lands it: the copy has an id of its own, and its note's values for Sub were carried to it.
@@ -3964,6 +4023,23 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
           await act(async () => sheetBtn(el, 'Copy')?.click())
           expect(disk.get(DEEP_COPY)).toBe(`---\nin:\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
           expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: DEEP_COPY })) // the original is never written
+        })
+
+        it('in a vault that does not use IDs a pasted copy is left as it landed: no sheet, and nothing is read or written after the paste (YAZ-2523 V3)', async () => {
+          const PLAIN = '/v/Areas/Alpha copy.md'
+          const { el, disk, bridge, writeFile, indexSource, paste } = await mountCut()
+          // As such a vault's index hands them out: `in` is a property like any other, and no folder has an id.
+          act(() => indexSource.update(() => null, [holding(indexRecord(ALPHA))], [indexRecord('/v/Projects/.folder.md')], false))
+          disk.set(PLAIN, HELD)
+          landed(bridge, '/v/Areas', file(PLAIN), PLAIN, ALPHA)
+          bridge.index.mockClear()
+          await paste('copy', [ALPHA])
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+          expect(bridge.index).not.toHaveBeenCalled()
+          expect(bridge.readFile).not.toHaveBeenCalledWith(PLAIN)
+          expect(writeFile).not.toHaveBeenCalled()
+          expect(disk.get(PLAIN)).toBe(HELD)
         })
 
         it('nothing to leave behind — a note with no values, a copy from outside this vault — means no sheet: the paste runs at once', async () => {

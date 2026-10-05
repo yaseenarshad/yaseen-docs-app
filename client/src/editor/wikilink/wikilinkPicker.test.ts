@@ -26,7 +26,7 @@ const createFile = vi.mocked(api.createFile)
 import { linkCandidates, nameCandidate } from '../../links/completion'
 import { folderLinkCandidates, linkResolver } from '../../links/folderLinks'
 import { resolverFor } from '../../views/engine'
-import { WIKILINK_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilinkPlugin'
 import {
   WIKILINK_PICKER_CLASS,
   WIKILINK_PICKER_CREATE_CLASS,
@@ -39,10 +39,10 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 /** The nav a real window hands the editor (Links C): the create row is its second user (YAZ-1357). */
 const nav = () => ({ root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() })
 
-async function mount(markdown: string, candidates: MutableWikilinkCandidateSource, wikilinkNav?: ReturnType<typeof nav>) {
+async function mount(markdown: string, candidates: MutableWikilinkCandidateSource, wikilinkNav?: ReturnType<typeof nav>, wikilinks?: WikilinkResolveSource) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinkCandidates: candidates, wikilinkNav })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks, wikilinkCandidates: candidates, wikilinkNav })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -275,6 +275,13 @@ describe('wikilink picker: create-new row', () => {
     vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
   })
 
+  /** The index snapshot the editor reads the vault's kind off (YAZ-2523): one that uses IDs, or one that does not. */
+  const vault = (ids: boolean): WikilinkResolveSource => {
+    const links = createWikilinkResolveSource()
+    links.update(() => null, undefined, undefined, ids)
+    return links
+  }
+
   /** The id the Create row linked by (YAZ-2293): the document is `X[[<id>]]` and nothing else. */
   const linkedId = (crepe: Crepe): string => {
     const id = /^X\[\[(.*)\]\]\n$/.exec(getMarkdownForSave(crepe))?.[1] ?? ''
@@ -285,7 +292,7 @@ describe('wikilink picker: create-new row', () => {
   it('B: nothing matching offers one Create row: Enter inserts the link BY ID and makes the page titled by the typed text, with that id, staying put (YAZ-1357, 🔒 D3 revised; YAZ-2293; YAZ-2420 D20)', async () => {
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const n = nav()
-    const { crepe } = await mount('X\n', source('Alpha'), n)
+    const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[New Page')
     const create = document.querySelector(`.${WIKILINK_PICKER_CREATE_CLASS}`)
@@ -303,7 +310,7 @@ describe('wikilink picker: create-new row', () => {
 
   it('a `#heading` typed with the name rides on the id link, and comes back with the name on a failure', async () => {
     createFile.mockResolvedValueOnce({ path: '', mtime: 1, size: 0 })
-    const { crepe } = await mount('X\n', source('Alpha'), nav())
+    const { crepe } = await mount('X\n', source('Alpha'), nav(), vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Page#Section')
     press(crepe, 'Enter')
@@ -315,7 +322,7 @@ describe('wikilink picker: create-new row', () => {
 
     createFile.mockReset()
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
-    const doomed = await mount('X\n', source('Alpha'), nav())
+    const doomed = await mount('X\n', source('Alpha'), nav(), vault(true))
     caret(doomed.crepe, posOf(doomed.crepe, 'X', 1))
     type(doomed.crepe, '[[Doomed#Section')
     press(doomed.crepe, 'Enter')
@@ -326,7 +333,7 @@ describe('wikilink picker: create-new row', () => {
   it('a click on the Create row does the same', async () => {
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const n = nav()
-    const { crepe } = await mount('X\n', source('Alpha'), n)
+    const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Clicked')
     document.querySelector<HTMLElement>(`.${WIKILINK_PICKER_CREATE_CLASS}`)?.click()
@@ -337,7 +344,7 @@ describe('wikilink picker: create-new row', () => {
   it('a create failure is SAID through the notice, and the id link falls back to the typed text — no page was born with that id', async () => {
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
     const n = nav()
-    const { crepe } = await mount('X\n', source('Alpha'), n)
+    const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Doomed')
     press(crepe, 'Enter')
@@ -346,6 +353,32 @@ describe('wikilink picker: create-new row', () => {
     expect(getMarkdownForSave(crepe)).toBe('X[[Doomed]]\n')
     await vi.waitFor(() => expect(n.onNotice).toHaveBeenCalledWith('Can\'t create "Doomed": disk full'))
     expect(n.openCurrent).not.toHaveBeenCalled()
+  })
+
+  it('in a vault that does not use IDs the Create row inserts the typed name and makes `<typed>.md`, empty: no id is minted, sent or inserted (YAZ-2523 V3)', async () => {
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const n = nav()
+    const { crepe } = await mount('X\n', source('Alpha'), n, vault(false))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[New Page#Section')
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('X[[New Page#Section]]\n')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/New Page.md', content: '' })
+    expect(getMarkdownForSave(crepe)).toBe('X[[New Page#Section]]\n')
+    expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
+  })
+
+  it('there a click on the Create row does the same, and a failure is said through the notice with the link left as typed', async () => {
+    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'a file with this name already exists'))
+    const n = nav()
+    const { crepe } = await mount('X\n', source('Alpha'), n, vault(false))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[Taken')
+    document.querySelector<HTMLElement>(`.${WIKILINK_PICKER_CREATE_CLASS}`)?.click()
+    await vi.waitFor(() => expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t create "Taken": a file with this name already exists'))
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Taken.md', content: '' })
+    expect(getMarkdownForSave(crepe)).toBe('X[[Taken]]\n')
   })
 
   it('without a nav there is no vault to create in: the row only inserts', async () => {

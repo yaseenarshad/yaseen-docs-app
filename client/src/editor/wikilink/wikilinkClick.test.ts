@@ -23,7 +23,7 @@ import type { IndexRecord, TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { linkResolver } from '../../links/folderLinks'
 import { buildViewOnlyCatalog } from '../../links/viewOnlyCatalog'
-import { createCrepe } from '../createCrepe'
+import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 
@@ -53,9 +53,10 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 /** Resolver used across the suite: only 'Known' exists, at /vault/Known.md. */
 const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md' : null)
 
-async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource) {
+/** `ids`: whether the snapshot's vault uses IDs (YAZ-2523): it does unless a test says otherwise. */
+async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource, ids = true) {
   const source = createWikilinkResolveSource()
-  if (resolve !== undefined) source.update(resolve)
+  if (resolve !== undefined) source.update(resolve, undefined, undefined, ids)
   const nav: NavMocks = { root: '/vault', createFolder, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -343,6 +344,35 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     source.update((target) => (target === 'Missing' ? born().path : resolveKnown(target)))
     expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(0)
     expect(linkSpan(root, 'Missing')).toBeDefined()
+  })
+})
+
+// The ID vault's half of each row is `unresolved links create the page`, above.
+describe('wikilink click: in a vault that does not use IDs a dead link\u2019s note is made the plain way (YAZ-2523 V3)', () => {
+  it('a click makes `<typed>.md`, empty, with no id and no title, opens it, and leaves the link as typed', async () => {
+    const { crepe, root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown, () => '', undefined, false)
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Missing.md', content: '' })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Missing.md')
+    expect(getMarkdownForSave(crepe)).toBe('pad [[Missing]] tail\n')
+  })
+
+  it('a pathed link makes each folder under the name typed, with no title, and the note in it', async () => {
+    const { root, nav } = await mount('go [[Sub Folder/Page]] now\n', () => null, () => 'Notes', undefined, false)
+    mousedown(linkSpan(root, 'Sub Folder/Page'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Sub Folder/Page.md'))
+    expect(createDir).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Sub Folder' })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Sub Folder/Page.md', content: '' })
+    expect(api.index).not.toHaveBeenCalled()
+  })
+
+  it('a name a file cannot hold is said through the notice, and nothing is made', async () => {
+    const { root, nav } = await mount('pad [[.hidden]] tail\n', resolveKnown, () => '', undefined, false)
+    mousedown(linkSpan(root, '.hidden'))
+    await vi.waitFor(() => expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t create ".hidden": Names starting with "." are hidden'))
+    expect(createFile).not.toHaveBeenCalled()
+    expect(nav.openCurrent).not.toHaveBeenCalled()
   })
 })
 

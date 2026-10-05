@@ -1677,6 +1677,59 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
   })
 
+  /** The same four surfaces, the same door, in a vault that does not use IDs (YAZ-2523 V3). The ID vault's half is `a title edit`, above. */
+  describe('a name typed in a vault that does not use IDs is the file\u2019s name (YAZ-2523 V3)', () => {
+    const feedPlain = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: false })
+
+    it('from the sidebar: a note is renamed to `<dir>/<typed>.md` through the same sheet and pipeline, the links that named it follow, and no title is written', async () => {
+      const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feedPlain)
+      await act(async () => void captured.sidebar?.onRetitle('/v/B.md', 'Meeting notes', 'file'))
+      expect(sheetText(el)).toBe("Rename 'B' to 'Meeting notes'? Links in 1 note will be updated.")
+      expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/B.md', newPath: '/v/Meeting notes.md' })
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+      expect(files['/v/A.md'].content).toBe('See [[Meeting notes]].\n')
+    })
+
+    it('from a note\u2019s page title and a table\u2019s Name cell, the editor\u2019s door: the same rename, in the note\u2019s own folder', async () => {
+      const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const { bridge, el } = await mount(askOff(), { ...identity(), file: '/v/Docs/N.md', tabs: ['/v/Docs/N.md'] }, files, feedPlain)
+      await act(async () => await captured.editorRetitle?.('/v/Docs/N.md', 'v1.2', 'file'))
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs/N.md', newPath: '/v/Docs/v1.2.md' })
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+      expect(files['/v/R.md'].content).toBe('See [[Docs/v1.2]].\n')
+    })
+
+    it.each([
+      ['the sidebar', () => captured.sidebar?.onRetitle('/v/Docs', 'Notes 2026', 'dir')],
+      ['its page title', () => captured.editorRetitle?.('/v/Docs', 'Notes 2026', 'dir')],
+    ])('a folder, from %s: a directory rename to the name typed, the links through it follow, and no title is written', async (_, retitle) => {
+      const files = { '/v/R.md': { content: 'See [[Docs/N]].\n', mtime: 1 } }
+      const { bridge } = await mount(askOff(), identity(), files, feedPlain)
+      bridge.file.rename.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/Notes 2026', kind: 'dir' } as never)
+      await act(async () => await retitle())
+      expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: '/v/Docs', newPath: '/v/Notes 2026' })
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+      expect(files['/v/R.md'].content).toBe('See [[Notes 2026/N]].\n')
+    })
+
+    it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {
+      const { bridge, el } = await mount(askOff(), identity(), {}, feedPlain)
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'B.md', 'file'))
+      expect(el.querySelector('.link-notice')).toBeNull()
+      await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'a/b', 'file'))
+      expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t rename: Name cannot contain "/"')
+      await act(async () => await captured.editorRetitle?.('/v/Docs', '.hidden', 'dir'))
+      expect(el.querySelector('.link-notice')?.textContent).toBe('Can\'t rename: Names starting with "." are hidden')
+      expect(el.querySelector('.confirm')).toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(bridge.file.retitle).not.toHaveBeenCalled()
+    })
+  })
+
   it('Cancel renames nothing and rewrites nothing', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)

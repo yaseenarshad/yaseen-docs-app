@@ -44,6 +44,7 @@ import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { useReview } from './review/useReview'
 import { useReviewSettings } from './review/useReviewSettings'
 import { SettingsDialog } from './settings/SettingsDialog'
+import { renamedPath, validateEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -673,7 +674,17 @@ export function App() {
   )
   // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
   const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])
-  const requestRetitle = useCallback((path: string, title: string, kind: TreeNode['type']) => requestRename(path, { title }, kind), [requestRename])
+  // Where the vault does not use IDs (YAZ-2523 🔒 V3) a title typed is the file's name: the door's other spelling.
+  const requestRetitle = useCallback(
+    async (path: string, title: string, kind: TreeNode['type']): Promise<void> => {
+      if (wikilinks.ids) return requestRename(path, { title }, kind)
+      const invalid = validateEntryName(title)
+      if (invalid !== null) return notify(`Can't rename: ${invalid}`)
+      const newPath = renamedPath(path, title, kind)
+      if (newPath !== path) return requestRename(path, { newPath }, kind)
+    },
+    [requestRename, wikilinks, notify],
+  )
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return

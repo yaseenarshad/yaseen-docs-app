@@ -16,15 +16,16 @@ type PastedEntry = PasteResponse['pasted'][number]
 const taken = async (dir: string, name: string): Promise<boolean> => (await stat(path.join(dir, name)).catch(() => null)) !== null
 
 /**
- * Finder's clash rule for a file (YAZ-1674, D3): `Note.md` → `Note copy.md` → `Note copy 2.md` → …
- * The name itself is returned when nothing sits at `dir/name`. Split at the LAST extension
- * (`archive.tar.gz` → `archive.tar copy.gz`, exactly Finder). A source that already ends in
+ * Finder's clash rule (YAZ-1674, D3): `Note.md` → `Note copy.md` → `Note copy 2.md` → …
+ * The name itself is returned when nothing sits at `dir/name`. A file is split at the LAST extension
+ * (`archive.tar.gz` → `archive.tar copy.gz`, exactly Finder); a folder keeps its whole name
+ * (`v1.2` → `v1.2 copy`): a dot in it is no extension. A source that already ends in
  * ` copy` / ` copy N` counts on from N rather than becoming `Note copy copy.md`, which is also Finder.
  */
-export async function freeName(dir: string, name: string): Promise<string> {
+export async function freeName(dir: string, name: string, kind: 'file' | 'dir'): Promise<string> {
   return fsCall(dir, async () => {
     if (!(await taken(dir, name))) return name
-    const ext = path.extname(name)
+    const ext = kind === 'file' ? path.extname(name) : ''
     const stem = name.slice(0, name.length - ext.length)
     const m = /^(.*) copy(?: (\d+))?$/.exec(stem)
     const base = m === null ? stem : m[1]
@@ -111,6 +112,7 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
  *
  * A note and a folder are born again (YAZ-2420 🔒 D21: `copyNote`, `copyFolder`); any other file,
  * and a note whose properties do not parse, is `fs.cp` under Finder's next free name (`freeName`).
+ * So is every entry where the vault does not use IDs (`ids`, YAZ-2523 🔒 V3): the same bytes, all the way down.
  *
  * Guards borrowed from rename/remove, and only where they transfer: a source the tree hides
  * (`isSkipped`: dot-entries, node_modules) is refused `BAD_REQUEST` — the UI never showed it,
@@ -122,7 +124,7 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
  * `add`/`addDir` echo fills the tree, and the client refreshes anyway — idempotent).
  * NOT in v1: carrying assets/images/drawings across vaults, link rewriting on copy.
  */
-export async function copyEntry(from: unknown, toDir: unknown): Promise<PastedEntry> {
+export async function copyEntry(from: unknown, toDir: unknown, ids: boolean): Promise<PastedEntry> {
   const src = requireAbsPath(from, 'from')
   const dir = requireAbsPath(toDir, 'toDir')
   return fsCall(src, async () => {
@@ -134,10 +136,12 @@ export async function copyEntry(from: unknown, toDir: unknown): Promise<PastedEn
     if (kind === 'dir' && (dir === src || dir.startsWith(`${src}${path.sep}`))) {
       throw new BridgeFailure('BAD_REQUEST', 'a folder cannot be copied inside itself', { path: dir })
     }
-    if (kind === 'dir') return { from: src, to: await copyFolder(src, dir, true), kind }
-    const copied = await copyNote(src, dir, ' copy')
-    if (copied !== undefined) return { from: src, to: copied, kind }
-    const to = path.join(dir, await freeName(dir, path.basename(src)))
+    if (ids) {
+      if (kind === 'dir') return { from: src, to: await copyFolder(src, dir, true), kind }
+      const copied = await copyNote(src, dir, ' copy')
+      if (copied !== undefined) return { from: src, to: copied, kind }
+    }
+    const to = path.join(dir, await freeName(dir, path.basename(src), kind))
     await copyBytes(src, to)
     return { from: src, to, kind }
   })

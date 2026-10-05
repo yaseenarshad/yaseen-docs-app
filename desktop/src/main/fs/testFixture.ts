@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BridgeFailure } from './fsUtils'
@@ -30,6 +30,21 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
     writeFile(path.join(root, 'node_modules', 'pkg', 'README.md'), 'readme'),
   ])
   return { root, cleanup: () => rm(root, { recursive: true, force: true }) }
+}
+
+/**
+ * Everything under `dir`, hidden entries included: each file's text by its path from `dir`, each
+ * folder as `<path>/`. What a test compares to prove that nothing else was written (YAZ-2523 🔒 V3).
+ */
+export async function vaultFiles(dir: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    const file = path.join(entry.parentPath, entry.name)
+    const rel = path.relative(dir, file)
+    if (entry.isDirectory()) out[`${rel}/`] = ''
+    else out[rel] = await readFile(file, 'utf8')
+  }
+  return out
 }
 
 /** The `BridgeFailure` a promise rejects with. */

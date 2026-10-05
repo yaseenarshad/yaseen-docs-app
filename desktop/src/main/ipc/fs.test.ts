@@ -5,7 +5,7 @@ import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
-import { makeFixture, sleep } from '../fs/testFixture'
+import { makeFixture, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
 import { fileClip } from '../fileClip'
@@ -331,6 +331,99 @@ describe('registerFsIpc', () => {
     })
   })
 
+  describe("a create, a title edit and a paste follow the calling window's vault (YAZ-2523 V3, V5)", () => {
+    const NOTE = '---\nstatus: idea\n---\nbody\n'
+    const ID = 'k3m9x2pq7abc'
+    /** A window on a fresh vault that holds `Plans/Name.md`; `answer` is what its `ids.json` says, and it has none when undefined. */
+    const open = async (answer?: boolean): Promise<string> => {
+      const vault = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-kind-'))
+      await mkdir(path.join(vault, 'Plans'))
+      await writeFile(path.join(vault, 'Plans', 'Name.md'), NOTE)
+      if (answer !== undefined) {
+        await mkdir(path.join(vault, '.yaseendocs'))
+        await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: answer }))
+      }
+      store.upsertWindow({ id: 'w-kind', root: vault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = 'w-kind'
+      return vault
+    }
+    const close = async (...dirs: string[]): Promise<void> => {
+      senderWinId = undefined
+      store.removeWindow('w-kind')
+      fileClip.clear()
+      for (const dir of dirs) await rm(dir, { recursive: true, force: true })
+    }
+    const call = (door: { channel: string }, ...args: unknown[]) => registered(door.channel)({ sender: {} }, ...args)
+    const paste = (from: string, targetDir: string) => {
+      fileClip.set({ op: 'copy', paths: [from] })
+      return call(CONTRACT.file.paste, { targetDir })
+    }
+
+    it.each([
+      ['said no', false],
+      ['has not answered', undefined],
+    ])('in a vault that %s a note, a folder and a copy are what Finder would make, a title edit is refused, and nothing else is written', async (_, answer) => {
+      const vault = await open(answer)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        expect(await call(CONTRACT.createFile, { path: at('Meeting notes.md'), content: NOTE, id: ID })).toEqual({ ok: true, value: { path: at('Meeting notes.md'), mtime: expect.any(Number), size: NOTE.length } })
+        expect(await call(CONTRACT.createFile, at('Empty.md'))).toMatchObject({ ok: true })
+        expect(await call(CONTRACT.createDir, { path: at('Q3 Plans'), title: 'Q3 Plans' })).toEqual({ ok: true, value: { path: at('Q3 Plans') } })
+        expect(await paste(at('Plans', 'Name.md'), at('Plans'))).toEqual({ ok: true, value: { pasted: [{ from: at('Plans', 'Name.md'), to: at('Plans', 'Name copy.md'), kind: 'file' }], failed: [] } })
+        // Into the vault's own folder: the root is in the vault too.
+        expect(await paste(at('Plans'), vault)).toEqual({ ok: true, value: { pasted: [{ from: at('Plans'), to: at('Plans copy'), kind: 'dir' }], failed: [] } })
+        for (const target of [at('Plans', 'Name.md'), at('Plans')]) {
+          expect(await call(CONTRACT.file.retitle, { path: target, title: 'Big Plan' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'this vault does not use IDs' } })
+        }
+        expect(await vaultFiles(vault)).toEqual({
+          ...(answer === false && { '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}' }),
+          'Meeting notes.md': NOTE,
+          'Empty.md': '',
+          'Q3 Plans/': '',
+          'Plans/': '',
+          'Plans/Name.md': NOTE,
+          'Plans/Name copy.md': NOTE,
+          'Plans copy/': '',
+          'Plans copy/Name.md': NOTE,
+          'Plans copy/Name copy.md': NOTE,
+        })
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('in a vault that said yes a note and a folder are born with their ids, a copy is born again, and a title edit goes through', async () => {
+      const vault = await open(true)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        expect(await call(CONTRACT.createFile, { path: at(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: true, value: { id: ID } })
+        expect(await readFile(at(`meeting-notes-${ID}.md`), 'utf8')).toBe(`---\nstatus: idea\nid: ${ID}\n---\nbody\n`)
+        expect(await call(CONTRACT.createDir, { path: at('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
+        expect(await readFile(at('q3-plans', '.folder.md'), 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\ntitle: Q3 Plans\n---\n$/)
+        expect(await paste(at('Plans', 'Name.md'), at('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-[0-9a-z]{12}\.md$/) }] } })
+        expect(await paste(at('Plans'), vault)).toMatchObject({ ok: true, value: { pasted: [{ to: at('plans-copy') }] } })
+        expect(await call(CONTRACT.file.retitle, { path: at('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: expect.stringMatching(/\/Plans\/big-plan-[0-9a-z]{12}\.md$/) } })
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('a path outside the calling window\u2019s vault, and a window with no vault, get no id: whatever a vault that said yes would give', async () => {
+      const vault = await open(true)
+      const other = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))
+      try {
+        await call(CONTRACT.createFile, path.join(other, 'Out.md'))
+        await call(CONTRACT.createDir, { path: path.join(other, 'Out'), title: 'Out' })
+        await paste(path.join(vault, 'Plans', 'Name.md'), other)
+        senderWinId = undefined
+        await call(CONTRACT.createFile, path.join(other, 'No window.md'))
+        expect(await vaultFiles(other)).toEqual({ 'Out.md': '', 'Out/': '', 'Name.md': NOTE, 'No window.md': '' })
+      } finally {
+        await close(vault, other)
+      }
+    })
+  })
+
   describe('fs:delete (GRO-2272)', () => {
     it('trashes the file, repairs the store and pushes file:deleted to every window', async () => {
       const target = path.join(root, 'delete-me.md')
@@ -474,6 +567,7 @@ describe('registerFsIpc', () => {
       const src = path.join(root, 'copy-src.md')
       await writeFile(src, 'copy me')
       win('w-copy', src)
+      senderWinId = 'w-copy'
       fileClip.set({ op: 'copy', paths: [src] })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])

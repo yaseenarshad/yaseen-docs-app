@@ -48,11 +48,13 @@ export function targetDirFor(node: MenuRow | null, root: string): string {
 /**
  * Absolute path for the sidebar's inline rename of a view-only FILE (Links E1, GRO-2194): same
  * parent directory. An explicit supported suffix is kept as typed; the old exact suffix is
- * appended only when none is recognized. A note or a folder is retitled instead (YAZ-2420 🔒 D16).
+ * appended only when none is recognized. A note or a folder is retitled instead (YAZ-2420 🔒 D16),
+ * except in a vault that does not use IDs (YAZ-2523 🔒 V3): there its name is what was typed too,
+ * a note by the same rule and a folder with no suffix added.
  */
-export function renamedPath(oldPath: string, newName: string): string {
+export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'dir' = 'file'): string {
   let final = newName.trim()
   if (final === basename(oldPath)) return oldPath
-  if (fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
+  if (kind === 'file' && fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dirname(oldPath)}/${final}`
 }
