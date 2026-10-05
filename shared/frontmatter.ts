@@ -85,12 +85,21 @@ const YAML_OUT = { lineWidth: 0, flowCollectionPadding: false } as const
  * a `Date` is out of scope — callers pass ISO strings.
  */
 export function setFrontmatterProperty(content: string, key: string, value: unknown): string {
+  return setFrontmatterIn(content, [key], value)
+}
+
+/**
+ * The same for a value INSIDE a key: `path` names it through maps (`['in', <folder id>, 'Status']`),
+ * and nothing beside it is laid out again. A map on the way that is missing, or written with no
+ * value, is made; one that holds anything else is refused.
+ */
+export function setFrontmatterIn(content: string, path: readonly string[], value: unknown): string {
   const { frontmatter, body } = splitFrontmatter(content)
 
   if (frontmatter === '') {
     if (value === undefined) return content
     const doc = parseDocument('')
-    doc.setIn([key], value)
+    doc.setIn(path, value)
     return `---\n${doc.toString(YAML_OUT)}---\n${body}`
   }
 
@@ -104,10 +113,21 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
   if (doc.contents !== null && !isMap(doc.contents)) throw new FrontmatterWriteError('frontmatter is not a map')
 
   if (value === undefined) {
-    if (!doc.hasIn([key])) return content
-    doc.deleteIn([key])
+    if (!doc.hasIn(path)) return content
+    doc.deleteIn(path)
   } else {
-    doc.setIn([key], value)
+    // The deepest map on the way that is not there yet takes the rest of the path as a new map.
+    let at = path.length - 1
+    let set: unknown = value
+    for (let i = 1; i < path.length; i++) {
+      const held = doc.getIn(path.slice(0, i))
+      if (isMap(held)) continue
+      if (held != null) throw new FrontmatterWriteError(`"${path.slice(0, i).join('.')}" is not a map of values`)
+      at = i - 1
+      set = path.slice(i).reduceRight<unknown>((inner, key) => ({ [key]: inner }), value)
+      break
+    }
+    doc.setIn(path.slice(0, at + 1), set)
   }
 
   const yaml = serializeInner(doc)

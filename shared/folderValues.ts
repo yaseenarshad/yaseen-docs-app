@@ -1,4 +1,4 @@
-import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
+import { FrontmatterWriteError, parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 
 /**
  * A folder's values for a note (D19): `in`, one block per FOLDER ID, each holding that folder's
@@ -48,13 +48,18 @@ export function withFolderValues(properties: Record<string, unknown>, folderId: 
 
 /**
  * Set (or clear, when `value === undefined`) ONE field of ONE folder's block in a whole file's
- * content. Only `in` is rewritten (`setFrontmatterProperty`, which refuses frontmatter that will
- * not parse); clearing a field the block does not hold returns the same string.
+ * content. Only that field's own line is written (`setFrontmatterIn`, which refuses frontmatter
+ * that will not parse): the rest of `in` keeps its quoting and layout, so two devices changing
+ * different values of one note merge. Clearing a field the block does not hold returns the same
+ * string; the block goes with its last field, and `in` with its last block.
  */
 export function setFolderValue(content: string, folderId: string, key: string, value: unknown): string {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
-  if (error === undefined && value === undefined && !Object.prototype.hasOwnProperty.call(folderValues(properties, folderId), key)) return content
-  return setFrontmatterProperty(content, FOLDER_VALUES_KEY, withFolderValues(properties, folderId, { [key]: value })[FOLDER_VALUES_KEY])
+  if (error === undefined && value === undefined && !Object.hasOwn(folderValues(properties, folderId), key)) return content
+  // What the change leaves says how much goes: the field, its emptied block, or an emptied `in`.
+  const blocks = withFolderValues(properties, folderId, { [key]: value })[FOLDER_VALUES_KEY]
+  const path = !isMap(blocks) ? [FOLDER_VALUES_KEY] : !Object.hasOwn(blocks, folderId) ? [FOLDER_VALUES_KEY, folderId] : [FOLDER_VALUES_KEY, folderId, key]
+  return setFrontmatterIn(content, path, value)
 }
 
 /**

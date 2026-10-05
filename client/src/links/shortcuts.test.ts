@@ -356,6 +356,11 @@ describe('a folder’s values leave the note when the note leaves the folder (D2
       expect(tidy('/vault/N.md', `---\n${blocks(PROJECTS_ID, AREAS_ID)}title: x\n---\n`)).toBe('---\ntitle: x\n---\n')
     })
 
+    it('the blocks that stay keep their quoting and layout: only the stale block’s lines go', () => {
+      const note = `---\nin:\n  ${AREAS_ID}:\n    Status: "Doing" # by Sam\n    on: '2026-09-07'\n  ${PROJECTS_ID}:\n    Status: "Done"\n---\n`
+      expect(tidy('/vault/Areas/N.md', note)).toBe(note.replace(`  ${PROJECTS_ID}:\n    Status: "Done"\n`, ''))
+    })
+
     it('a block for a folder the app cannot find is kept, always', () => {
       const note = `---\n${blocks(GONE_ID, PROJECTS_ID)}---\n`
       expect(tidy('/vault/Areas/N.md', note)).toBe(`---\n${blocks(GONE_ID)}---\n`)
