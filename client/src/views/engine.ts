@@ -506,18 +506,18 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   }
   /**
    * One level over `list`: its distinct keys in the level's direction, then the value-less entries.
-   * `depth` > 0 marks a Folder level under a page (YAZ-2541): the key is the folder that many steps
-   * below the page, so deeper notes roll up into it, and a shortcut's home stays its own — the vault
-   * root included ('' is a folder there, not a missing value) — and comes after the page's own folders.
+   * `depth` > 0 is a Folder level under a page (YAZ-2541): the key is the folder that many steps below it.
    */
   const bucket = (list: Entry[], { property, direction }: GroupBySpec, depth: number) => {
+    const page = depth > 0 ? opts.page!.folder : null
     const valued: { key: Value; entries: Entry[] }[] = []
     const noValue: Entry[] = []
     let fannedOut = false
     for (const entry of list) {
       const own = valueOf(entry, property)
-      const key = depth > 0 && typeof own === 'string' ? folderAt(own, opts.page!.folder, depth) : own
-      if (isNoValue(key) && !(depth > 0 && key === '')) {
+      const key = page !== null && typeof own === 'string' ? folderAt(own, page, depth) : own
+      // On a Folder level the vault root ('', a shortcut's home) is a folder, not a missing value.
+      if (isNoValue(key) && !(page !== null && key === '')) {
         noValue.push(entry)
         continue
       }
@@ -547,14 +547,18 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       }
       if (joined === 0) noValue.push(entry)
     }
-    const outside = (key: Value): number => (depth > 0 && typeof key === 'string' && !inFolder(key, opts.page!.folder) ? 1 : 0)
+    // The homes of shortcuts come after the page's own folders, whichever the direction.
+    const outside = (key: Value): number => Number(page !== null && typeof key === 'string' && !inFolder(key, page))
     valued.sort((a, b) => outside(a.key) - outside(b.key) || compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC', resolve))
     return { valued, noValue, fannedOut }
   }
-  const titles = new Map([...(opts.page?.folders ?? []).map(f => [f.folder, f.title] as const), ['', opts.page?.vault ?? '']])
+  let titles: Map<string, string> | undefined
   /** A Folder group (YAZ-2541) is headed as the sidebar names its folder: by title, a folder with no settings file by its directory, the root by the vault's name. */
-  const labelOf = (key: Value, depth: number): string =>
-    depth > 0 && typeof key === 'string' ? titles.get(key) ?? key.slice(key.lastIndexOf('/') + 1) : render(key, resolve)
+  const labelOf = (key: Value, depth: number): string => {
+    if (depth === 0 || typeof key !== 'string') return render(key, resolve)
+    titles ??= new Map([...opts.page!.folders.map(f => [f.folder, f.title] as const), ['', opts.page!.vault]])
+    return titles.get(key) ?? key.slice(key.lastIndexOf('/') + 1)
+  }
   const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean, depth: number): Group =>
     ({ key, label: key === null ? NO_VALUE : labelOf(key, depth), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
 
@@ -562,8 +566,8 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   // Levels past the second are ignored in v1 (YAZ-745); a level without a property name is not one.
   const levels = groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, 2)
   // How far below the page each Folder level groups (YAZ-2541): the first one step, a second two; 0 = not a Folder level.
-  const isFolder = levels.map(l => opts.page !== undefined && l.property === 'file.folder')
-  const depths = isFolder.map((yes, i) => (yes ? isFolder.slice(0, i + 1).filter(Boolean).length : 0))
+  const byFolder = (l: GroupBySpec): boolean => opts.page !== undefined && l.property === 'file.folder'
+  const depths = levels.map((l, i) => (byFolder(l) ? levels.slice(0, i + 1).filter(byFolder).length : 0))
   if (levels.length) {
     const outer = bucket(kept, levels[0], depths[0])
     const branches: { key: Value | null; entries: Entry[] }[] = [...outer.valued]
