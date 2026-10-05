@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { isNoteId } from '@shared/noteId'
+import type { IndexRecord } from '@shared/types'
 import { createNote, ensureFolder, folderPath } from './scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -14,6 +15,7 @@ vi.mock('../api', async (importOriginal) => ({
     createFile: vi.fn(),
     writeFile: vi.fn(),
     createDir: vi.fn(),
+    index: vi.fn(),
   },
 }))
 
@@ -26,8 +28,15 @@ const createDir = vi.mocked(api.createDir)
 const notFound = () => new BridgeRequestError('NOT_FOUND', 'path does not exist')
 const alreadyExists = () => new BridgeRequestError('ALREADY_EXISTS', 'path already exists')
 
+/** The index's folders, by their settings records. */
+const holds = (...folders: Array<[folder: string, title: string]>): void => {
+  const records = folders.map(([folder, title]): IndexRecord => ({ path: `/v/${folder}/.folder.md`, name: '.folder.md', basename: '.folder', title, folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] }))
+  vi.mocked(api.index).mockResolvedValue({ root: '/v', records: [], folders: records, generatedAt: 0 })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  holds()
 })
 
 const ID = 'k3m9x2pq7abc'
@@ -121,6 +130,14 @@ describe('ensureFolder', () => {
       { path: '/v/upwork-2026', title: 'Upwork 2026' },
       { path: '/v/upwork-2026/10-04-standup', title: '10_04- Standup' },
     ])
+  })
+
+  it('a titled level that names a folder already there — by its title, else by its directory name, in the folder reached so far — is that folder; only a level that names none is made (YAZ-2478)', async () => {
+    holds(['upwork', 'Upwork 2026'], ['upwork/Standup', 'Standup'], ['Standup', 'Standup'])
+    createDir.mockResolvedValue({ path: '' })
+
+    expect(await ensureFolder('/v', 'Upwork 2026/standup/Day One', true)).toBe('/v/upwork/Standup/day-one')
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/v/upwork/Standup/day-one', title: 'Day One' }])
   })
 
   it('C: a titled level with no letter or digit is refused, and nothing is made (YAZ-2420 D25)', async () => {

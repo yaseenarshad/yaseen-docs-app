@@ -2,6 +2,7 @@ import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from '@shared/fr
 import { mintNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
 import { api, BridgeRequestError } from '../api'
+import { typedFolders } from './engine'
 
 /** A template's content, or '' when there is none — existence = has-template. */
 async function readTemplate(path: string): Promise<string> {
@@ -45,12 +46,20 @@ export function folderPath(parent: string, title: string): string {
 
 /**
  * Create `<root>/<folder>` level by level (existing levels tolerated); resolves the absolute dir.
- * `titled` when `folder` is typed text and not a path on disk: each level is then a folder's title,
- * made as "New folder" makes it (`folderPath`), and the dir resolved is the one that was made.
+ * `titled` when `folder` is typed text and not a path on disk: each level is then a folder's title.
+ * A level that names a folder already there, by the index as it stands, is that folder
+ * (`typedFolders`, YAZ-2478); only one that names none is made, as "New folder" makes it
+ * (`folderPath`). The dir resolved is the one that was reached.
  */
 export async function ensureFolder(root: string, folder: string, titled = false): Promise<string> {
+  const held = titled ? typedFolders((await api.index(root)).folders) : undefined
   let dir = root
   for (const segment of folder.split('/').filter((s) => s !== '')) {
+    const found = held?.(dir.slice(root.length + 1), segment)
+    if (found !== undefined) {
+      dir = `${root}/${found}`
+      continue
+    }
     dir = titled ? folderPath(dir, segment) : `${dir}/${segment}`
     try {
       await api.createDir(titled ? { path: dir, title: segment } : dir)

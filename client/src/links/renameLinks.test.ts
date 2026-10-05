@@ -718,12 +718,29 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe('[[Big Plan]]\n')
   })
 
-  it('a new title a link cannot spell (`|`) is linked by the new file name instead', async () => {
+  it('a new title a link cannot spell (`A | B`) is linked by the note\u2019s id instead, its `|label` and `#heading` kept (YAZ-2478)', async () => {
     const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul]
+    const files = { '/v/A.md': { content: '[[Abdul]], [[Abdul|him]] and [[Abdul#Rates]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]], [[${ID}|him]] and [[${ID}#Rates]]\n`)
+  })
+
+  it('a new title another note already has is linked by the note\u2019s id instead (YAZ-2478)', async () => {
+    const other = rec('/v/ali-7tq2m8vd4xhn.md', { id: '7tq2m8vd4xhn', title: 'Ali', properties: { title: 'Ali' } })
+    const records = [rec('/v/A.md', { links: ['Abdul'] }), abdul, other]
     const files = { '/v/A.md': { content: '[[Abdul]]\n', mtime: 1 } }
     installBridge(files)
-    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/abdul-or-ali-${ID}.md`, records, title: 'Abdul | Ali' })).toEqual({ updated: 1, skipped: 0 })
-    expect(files['/v/A.md'].content).toBe(`[[abdul-or-ali-${ID}]]\n`)
+    expect(await updateLinksAfterRename({ root, oldPath: OLD, newPath: `/v/candidates/ali-${ID}.md`, records, title: 'Ali' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
+  })
+
+  it('a note with no id is still linked by its new file name when the new title cannot be spelled', async () => {
+    const records = [rec('/v/A.md', { links: ['Plan'] }), rec('/v/Plan.md')]
+    const files = { '/v/A.md': { content: '[[Plan]]\n', mtime: 1 } }
+    installBridge(files)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Plan.md', newPath: `/v/a-b-${ID}.md`, records, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[a-b-${ID}]]\n`)
   })
 
   it('a title edit of one note leaves a link that spells ANOTHER note\u2019s title alone', async () => {
@@ -750,6 +767,22 @@ describe('links to a folder by its TITLE (YAZ-2420 D17)', () => {
     expect(await updateLinksAfterRename(opts)).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe(`[[Upwork 2026]], [[upwork-2026/Plan]] and [[${FOLDER_ID}]]\n`)
     expect(readFile).not.toHaveBeenCalledWith('/v/ById.md')
+  })
+
+  it('a folder\u2019s new title a link cannot spell, or that a note already has, is linked by the folder\u2019s id instead; a folder with no id by its new name (YAZ-2478)', async () => {
+    const files = { '/v/A.md': { content: '[[Upwork]] and [[Upwork|jobs]]\n', mtime: 1 } }
+    installBridge(files)
+    const opts = { root, oldPath: '/v/upwork', newPath: '/v/a-b', kind: 'dir' as const, records: [rec('/v/A.md', { links: ['Upwork'] }), rec('/v/Jobs.md')], folders: [upwork], dirs: ['/v/upwork'] }
+    expect(await updateLinksAfterRename({ ...opts, title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${FOLDER_ID}]] and [[${FOLDER_ID}|jobs]]\n`)
+
+    files['/v/A.md'] = { content: '[[Upwork]]\n', mtime: 1 }
+    expect(await updateLinksAfterRename({ ...opts, newPath: '/v/jobs', title: 'Jobs' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${FOLDER_ID}]]\n`)
+
+    files['/v/A.md'] = { content: '[[Upwork]]\n', mtime: 1 }
+    expect(await updateLinksAfterRename({ ...opts, folders: [rec('/v/upwork/.folder.md', { title: 'Upwork', properties: { title: 'Upwork' } })], title: 'A | B' })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[a-b]]\n')
   })
 
   it('a folder with no `title:` is titled by its name: its first title edit turns `[[Projects]]` into `[[Upwork 2026]]`', async () => {

@@ -12,7 +12,8 @@
  * whatever the setting (Obsidian's behavior); missing parent folders — the base included —
  * are created level by level (`ensureFolder` — the bridge's `createDir` does not recurse).
  * What was typed is the note's TITLE (YAZ-2420 🔒 D20) — the last segment of a pathed target,
- * whose earlier segments are the titles of the folders it names (🔒 D6); `base` is a path on disk.
+ * whose earlier segments are the titles of the folders it names (🔒 D6), each a folder that is
+ * there before it is one to make (YAZ-2478); `base` is a path on disk.
  * Invalid names and create failures come back as `error` for the caller's passive notice
  * (App's link-notice).
  */
@@ -51,9 +52,9 @@ export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'n
  * Pure planning for `target` (already stripped): the root-relative folder ('' = the vault root)
  * and the note's title, or a human-readable error. A BARE target lands under `base` (see
  * `newNoteBase`), a path on disk; a PATHED one ignores it — an explicit path is an explicit aim
- * (module doc) — and its folder is `titled`: typed text, each segment a folder's title. Each
- * folder segment — base segments included — passes the sidebar's `validateEntryName` rules; the
- * title is free text and only has to be there. Errors name the full effective path.
+ * (module doc) — and its folder is `titled`: typed text, each segment a folder's title, free text
+ * as the note's is (YAZ-2478) and only has to be there. The base's segments pass the sidebar's
+ * `validateEntryName` rules. Errors name the full effective path.
  */
 export function planLinkCreation(target: string, base = ''): { folder: string; titled: boolean; title: string } | { error: string } {
   const titled = target.includes('/')
@@ -61,7 +62,7 @@ export function planLinkCreation(target: string, base = ''): { folder: string; t
   const segments = effective.replace(/^\/+/, '').split('/').map((s) => s.trim())
   for (const [i, segment] of segments.entries()) {
     if (segment === '') return { error: `Can't create "${effective}": empty name` }
-    const reason = i === segments.length - 1 ? null : validateEntryName(segment)
+    const reason = titled || i === segments.length - 1 ? null : validateEntryName(segment)
     if (reason !== null) return { error: `Can't create "${effective}": ${reason}` }
   }
   return { folder: segments.slice(0, -1).join('/'), titled, title: segments[segments.length - 1] }

@@ -55,8 +55,9 @@
  *    to the folder whose `.folder.md` holds it — the same again. A page with no `title:` is
  *    linked by its name, and that is rewritten.
  *  - A TITLE EDIT (YAZ-2420 D16, `title`) is the one rename a title does not travel through: a
- *    link that spelled the old title is rewritten to the new one, and counted. Links by name or
- *    by path follow the new file as in any rename; id links stay as written.
+ *    link that spelled the old title is rewritten to the new one, and counted — to the page's id
+ *    (YAZ-2478) when a link cannot spell the new title or another page answers to it. Links by
+ *    name or by path follow the new file as in any rename; id links stay as written.
  */
 import { FOLDER_VALUES_KEY, folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -70,6 +71,7 @@ import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
+import { folderRecord } from './shortcuts'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
 /** Does this raw link target point at the renamed file? (Wired to THE shared resolver.) */
@@ -392,12 +394,17 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
         const path = mapMoved(entry.path)
         return path === entry.path ? entry : { ...entry, path, name: basename(path) }
       }))
+  const id = (kind === 'dir' ? folderRecord(folders, oldPath) : records.find((r) => r.path === oldPath))?.id
   const newTarget: NewTarget = (target) => {
     const hit = resolveTargetPath(target) as string // non-null: `resolves` vetted this target
     const moved = mapMoved(hit)
     // A title edit (YAZ-2420 🔒 D16): a link that spelled the old title spells the new one, when
-    // a link can spell it and it reaches the page; else the link goes by name, as below.
-    if (title !== undefined && hit === oldPath && spellsTitle(target) && exactLinkTarget(`[[${title}]]`) === title && postLink(title) === moved) return title
+    // a link can spell it and it reaches the page; else the link goes by the page's id (YAZ-2478),
+    // and by name, as below, only when it has none.
+    if (title !== undefined && hit === oldPath && spellsTitle(target)) {
+      if (exactLinkTarget(`[[${title}]]`) === title && postLink(title) === moved) return title
+      if (id !== undefined) return id
+    }
     const movedName = basename(moved)
     const movedRel = relTo(root, moved)
     // A folder (YAZ-2290 D10) has no extension to keep: pathed stays pathed, and bare stays bare
