@@ -516,11 +516,12 @@ export function Sidebar({
         reviewDir: upkeep && node?.type === 'dir' ? node.path : null,
         reviewPath: inReview === null ? null : filePath,
         reviewIsOn: inReview === true,
-        shortcutDir: plural === null && node?.type === 'dir' ? node.path : null,
+        // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
+        shortcutDir: indexSource.ids && plural === null && node?.type === 'dir' ? node.path : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
       })
     },
-    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState],
+    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState, indexSource],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice, indexSource)

@@ -141,6 +141,16 @@ describe('what a folder shows (YAZ-2375 D4)', () => {
     expect(pathsIn(records, 'Projects', [settings('Projects')])).toEqual(['/vault/Projects/A.md'])
   })
 
+  // The ID vault's half is `plus the notes whose also_in holds the folder's id`, above.
+  it('in a vault that does not use IDs no row is a shortcut: its index hands out no folder id, so a note\u2019s `also_in` names nothing (YAZ-2523 V5)', () => {
+    const records = [rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), rec('/vault/Projects/A.md')]
+    // The same folders as such a vault's index hands them out: the `id` line is a property, and the record has no id.
+    const plain = FOLDERS.map(({ id, ...folder }) => ({ ...folder, properties: { id } }))
+    expect(pathsIn(records, 'Projects', plain)).toEqual(['/vault/Projects/A.md'])
+    expect(pathsIn(records, 'Areas', plain)).toEqual(['/vault/Areas/Health.md'])
+    for (const folder of ['Projects', 'Areas']) expect(folderRows(records, plain, folder).some((r) => isShortcut(r, folder))).toBe(false)
+  })
+
   it('rows come in the order the index gives them, lived-in and shortcut alike', () => {
     const records = [rec('/vault/Areas/B.md', { also_in: [PROJECTS_ID] }), rec('/vault/Projects/A.md'), rec('/vault/Zebra/C.md', { also_in: [PROJECTS_ID] })]
     expect(pathsIn(records, 'Projects')).toEqual(['/vault/Areas/B.md', '/vault/Projects/A.md', '/vault/Zebra/C.md'])
@@ -499,6 +509,18 @@ describe('what a move would clear, from a snapshot (D21)', () => {
     expect(left([file('/vault/Projects/N.md', '/vault/Areas/N.md')], [rec('/vault/Projects/N.md', { also_in: [PROJECTS_ID], in: { [PROJECTS_ID]: { order: 1 } } })])).toEqual(NOTHING)
     expect(left([file('/vault/Projects/N.md', '/vault/Areas/N.md')], [holding('/vault/Projects/N.md')])).toEqual(NOTHING)
     expect(left([file('/vault/Projects/N.md', '/vault/Areas/N.md')], [holding('/vault/Projects/N.md', NOBODY_ID)])).toEqual(NOTHING)
+  })
+
+  // The ID vault's half is the test above, and `in the bytes being written`.
+  it('in a vault that does not use IDs no block is ever stale: its index hands out no folder id, so a move would clear nothing, clears nothing, and a write drops nothing (YAZ-2523 V13)', async () => {
+    const plain = NESTED.map(({ id: _id, ...folder }) => folder)
+    const records = [holding('/vault/Projects/Deep/N.md', DEEP_ID, PROJECTS_ID, AREAS_ID)]
+    const note = `---\n${blocks(DEEP_ID, PROJECTS_ID, AREAS_ID)}---\nBody\n`
+    const moves = [file('/vault/Projects/Deep/N.md', '/vault/Areas/N.md'), dir('/vault/Projects/Deep', '/vault/Deep')]
+    expect(left(moves, records, plain)).toEqual(NOTHING)
+    for (const move of moves) await dropFolderValuesAfterMove({ root: '/vault', ...move, records, folders: plain })
+    expect(api.readFile).not.toHaveBeenCalled()
+    expect(dropStaleFolderValues('/vault', '/vault/Areas/N.md', plain)(note)).toBe(note)
   })
 
   it('a folder is moved and notes under it would lose values: the notes are counted, and the folders that move with them are not named', () => {
