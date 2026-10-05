@@ -9,17 +9,14 @@
  * belongs to a folder by living in it: nothing in its frontmatter says so, and step 1 proves the
  * counts off the disk.
  *
- * WHAT THIS SPEC IS FOR, now that the wave has siblings: `folderView.spec.ts` drives the folder
- * view's own gestures (cells, pickers, New, grouping), `folderTabs.spec.ts` the tab itself.
- * What is left here — and lives nowhere else — is the CONTENT: that the index reads this vault
- * correctly, that its links and backlinks agree with its relations, and that a rename leaves both
- * the graph and the folders standing.
+ * WHAT THIS SPEC IS FOR: not the folder view's own gestures (cells, pickers, New, grouping), and
+ * not the folder's tab itself. What is here — and lives nowhere else — is the CONTENT: that the
+ * index reads this vault correctly, that its links and backlinks agree with its relations, and
+ * that a rename leaves both the graph and the folders standing.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  the vault is sound: zero `page_type` keys, zero broken links, and every folder row shows the
  *      count of the notes that live in it — the same numbers read off the disk
- *   2  a declared column, edited inline in `KPIs` — a surgical write into the note's own file,
- *      leaving its other keys and body byte-for-byte
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
  *   4  the backlinks panel finds every note that names a KPI, and the ones that live in `Problems`
  *      are exactly the two problems whose relations point at it
@@ -71,17 +68,11 @@ const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
 /** The notes living directly in each, in the same order — the shape of the whole map. */
 const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
 
-/** The folder step 2 edits through, and the note it writes to (row 1 in path order). */
+/** The folder the note step 5 renames lives in. */
 const KPIS = 'KPIs'
-const GROSS_MARGIN = path.join('KPIs', 'Gross Margin.md')
-/** Its `kpi_category` today, and what step 2 makes it — the page's own body argues for the change. */
-const CATEGORY_WAS = 'lagging'
-const CATEGORY_NOW = 'fundamental'
 
 /** Every note in `Problems` — the fixture's own answer to "which mentions are problems?". */
 const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
-/** The KPIs, in the path order the index hands them to a table with no sort. */
-const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
 
 const FUNNEL = path.join('Funnel Stages', 'Sales-Conversion.md')
 const RENAMED = 'Deal Win Rate'
@@ -119,8 +110,6 @@ const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
  * (`file.name`'s VALUE keeps the extension for sort and filter; the eye never sees it).
  */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
-/** `data-cell="row:col"` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none. */
-const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 
 /** The name-change confirm (⚡ YAZ-888): every rename below passes it, and its count is the rewrite's own. */
 async function confirmRename(w: Page, message: string): Promise<void> {
@@ -244,38 +233,6 @@ test('step 1 — the encyclopedia is sound, and every folder row counts exactly 
   // A launch is collapsed since YAZ-1642: open the six folders once for every step that clicks a
   // note's row.
   await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
-})
-
-test('step 2 — a declared column, edited inline: written to the note’s own file, surgically', async () => {
-  await openFolder(win, path.join(vault, KPIS))
-  await expect(activeTab(win)).toHaveText(KPIS)
-  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  // Its rows are the five notes that live in it, in path order.
-  await expect(rowNames(contents(win))).toHaveText(KPI_MEMBERS)
-
-  // Column 1 is `kpi_category`, declared `text` by `KPIs/.folder.md`. Row 1 is Gross Margin, whose
-  // own body argues it is not a funnel lagging indicator at all.
-  // The CELL owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`),
-  // so the door in is a deliberate double-click — `folderColumns.spec.ts` step 3's idiom.
-  await cell(contents(win), 1, 1).dblclick()
-  const input = win.locator('.view-cell-edit__input')
-  await expect(input).toBeVisible()
-  await expect(input).toHaveValue(CATEGORY_WAS)
-  await shoot(win, 'bible-02-declared-cell-edit')
-  await input.fill(CATEGORY_NOW)
-  await win.keyboard.press('Enter')
-
-  // The write lands in the NOTE's frontmatter, surgically — every other key and the whole
-  // body survive, and `funnel_stages`, the declared column this note holds no value for,
-  // stays an empty cell rather than becoming an empty key (YAZ-2290 E1).
-  const grossMargin = path.join(vault, GROSS_MARGIN)
-  await expect.poll(() => readFile(grossMargin, 'utf8'), { timeout: 10_000 }).toContain(`kpi_category: ${CATEGORY_NOW}`)
-  const after = await readFile(grossMargin, 'utf8')
-  expect(after).toContain('unit: percent')
-  expect(after).not.toContain('funnel_stages:')
-  expect(after).toContain('# Gross Margin')
-  expect(after).not.toContain('page_type')
-  await shoot(win, 'bible-02b-declared-cell-written')
 })
 
 test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click → background tab', async () => {

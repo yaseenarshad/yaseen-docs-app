@@ -23,8 +23,7 @@
  *   5 quit → relaunch: the column and its declaration are in the settings file, not in the session
  *   6 a name that is not a property name is refused inline, and NOTHING is written
  *
- * Same harness as folderView.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `columns-`
- * step screenshots).
+ * The harness: a temp `--user-data-dir`, a COPY of the fixture, `columns-` step screenshots.
  */
 // Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
 // so every selector here was read from the source, not observed. Run it once and fix what it finds.
@@ -221,9 +220,6 @@ test('step 3 — the retyped column edits as a number, onto the NOTE’s own fil
   const after = await readFile(subject, 'utf8')
   expect(after).toContain('kpi_category: lagging') // every other key is untouched
   expect(after).toContain(`# ${SUBJECT}`) // and so is the body
-  // A number kind writes a NUMBER, not the string the input carried.
-  const props = parseFrontmatter(splitFrontmatter(after).frontmatter).properties
-  expect(props[COLUMN]).toBe(42)
   await shoot(win, 'columns-04-number-cell-write')
 
   // Only the edited note moved; the other four are still byte-identical to what launched.

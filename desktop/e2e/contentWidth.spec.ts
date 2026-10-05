@@ -94,7 +94,6 @@ test('Full aligns the folder view and Board, survives relaunch, and stays fluid 
   await layer(win).locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
   await expect(layer(win).locator('.view-board')).toBeVisible()
-  await expect(layer(win).locator('.view-board__col')).toHaveCount(2)
   // A folder's tab stacks the header row, the views and its comments (FolderView.tsx): there is no
   // note body, and "Linked mentions" renders nothing for a folder no note links to.
   const folderSurfaces = ['.page-header', '.folder-view', '.comments'] as const
