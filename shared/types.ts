@@ -339,7 +339,7 @@ export interface FileWriteResponse {
 
 // ---------- createDir(req) ----------
 
-/** `createDir` takes the bare path or `{ path, title }`: the title its `.folder.md` is born holding (YAZ-2420 🔒 D6). */
+/** `createDir` takes `{ path, title }`: the title its `.folder.md` is born holding (YAZ-2420 🔒 D6). */
 export interface CreateDirRequest {
   path: string
   /** The folder's title; omitted → a `.folder.md` holding only its `id`. */

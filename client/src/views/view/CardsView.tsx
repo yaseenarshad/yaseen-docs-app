@@ -2,8 +2,8 @@ import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useM
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import type { ViewSet, ViewDef } from '../viewSchema'
-import { basenameCandidates, type LinkCandidate } from '../../links/completion'
-import { belongsToBasenames } from '../../links/folderLinks'
+import { titleCandidates, type LinkCandidate } from '../../links/completion'
+import { belongsToTitles } from '../../links/folderLinks'
 import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { cellEditor, columnTyping } from '../editorType'
@@ -157,12 +157,12 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     [rest, rowRecords, properties, settings],
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
-  const basenames = useMemo(() => basenameCandidates(vaultRecords), [vaultRecords])
+  const titles = useMemo(() => titleCandidates(vaultRecords), [vaultRecords])
   // Relation columns narrow the link picker to the notes in the FOLDER the target names
-  // (YAZ-2290 D10: `belongsToBasenames`); a target naming no folder falls back to all basenames.
+  // (YAZ-2290 D10: `belongsToTitles`); a target naming no folder falls back to all titles.
   const linkNames = useMemo(() => {
     const m = new Map<string, LinkCandidate[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, vaultFolders, resolveLink, root, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToTitles(vaultRecords, vaultFolders, resolveLink, root, t.target))
     return m
   }, [typings, vaultRecords, vaultFolders, resolveLink, root])
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
@@ -197,7 +197,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                         value={row.values[key]}
                         editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
                         options={typings.get(key)?.options}
-                        basenames={linkNames.get(key) ?? basenames}
+                        titles={linkNames.get(key) ?? titles}
                         resolve={resolve}
                         onCommit={(next) => onWriteValue(row.record.path, bare, next)}
                       />

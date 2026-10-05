@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
-import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
+import { ViewsPane, freeName, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import type { ColumnDecl } from '../folderSettings'
 import { TEST_RECORDS } from '../testRecords'
@@ -286,6 +286,18 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
     expect(data.setData).toHaveBeenCalledExactlyOnceWith('application/x-yaseen-view-tab', 'View')
     expect(data.setData).not.toHaveBeenCalledWith('text/plain', expect.anything())
     expect(data.effectAllowed).toBe('move')
+  })
+})
+
+describe('freeName (YAZ-943): a new view\u2019s name', () => {
+  it('the base when free, then base 2, base 3…', () => {
+    expect(freeName('Table', new Set())).toBe('Table')
+    expect(freeName('Table', new Set(['Table']))).toBe('Table 2')
+    expect(freeName('Table', new Set(['Table', 'Table 2']))).toBe('Table 3')
+  })
+
+  it('fills gaps left by renames', () => {
+    expect(freeName('Table copy', new Set(['Table copy', 'Table copy 3']))).toBe('Table copy 2')
   })
 })
 
@@ -1052,7 +1064,7 @@ views:
     expect(select.disabled).toBe(false)
     click(select)
 
-    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'formula.Score']
+    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'file.basename', 'formula.Score']
     expect(def()).toEqual({ ...before, views: [{ ...before.views[0], order }, before.views[1]] })
     expect(parseViews(yaml()).def).toEqual(def())
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => input.checked)).toBe(true)
@@ -1093,7 +1105,7 @@ views:
     click(byLabel(el, 'Properties'))
     const reopened = openMenu(el, 'Properties')
     click(byText(reopened, 'button', 'Select all'))
-    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status', 'file.basename'])
     expect(def().views[0].frozenColumns).toBeUndefined()
     expect(parseViews(yaml()).def).toEqual(def())
     expect(el.querySelector(type === 'table' ? '.view-table__name' : '.view-board__title')).not.toBeNull()
@@ -1104,15 +1116,13 @@ views:
     const { el, onChange, def } = mount(`views:\n  - type: ${type}\n    name: Empty\n`, { records: [] })
     const pop = openMenu(el, 'Properties')
     const select = byText<HTMLButtonElement>(pop, 'button', 'Select all')
-    expect(select.disabled).toBe(true)
-    click(select)
-    expect(onChange).not.toHaveBeenCalled()
-    expect(def().views[0].order).toBeUndefined()
     click(byText(pop, 'button', 'Unselect all'))
     expect(def().views[0].order).toEqual([])
     expect(select.disabled).toBe(false)
     click(select)
-    expect(def().views[0].order).toEqual(['file.name'])
+    expect(def().views[0].order).toEqual(['file.name', 'file.basename'])
+    expect(select.disabled).toBe(true)
+    click(select)
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
@@ -1252,6 +1262,14 @@ views:
     expect(byLabel<HTMLInputElement>(pop, 'Show Name').checked).toBe(false)
     click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual(['file.name'])
+  })
+
+  it('F: the "File name" column is offered, and ticking it adds `file.basename` to the view (YAZ-2420 D18)', () => {
+    const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
+    const box = byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show File name')
+    expect(box.checked).toBe(false)
+    click(box)
+    expect(def().views[0].order).toEqual(['file.name', 'file.basename'])
   })
 
   it('the grip reorders the shown keys only (YAZ-1207: arrows are gone)', () => {
@@ -1586,7 +1604,7 @@ views:
     const pop = openMenu(el, 'Properties')
     const rows = [...pop.querySelectorAll<HTMLElement>('.view-prop')]
     const keyed = rows.map((row) => row.querySelector('.view-prop__name small')?.textContent ?? null)
-    expect(keyed).toEqual(['file.name', 'note.name', null])
+    expect(keyed).toEqual(['file.name', 'note.name', null, null])
   })
 })
 

@@ -3,11 +3,8 @@
  * label is its whole name. `api.tree` is mocked; each case stands in its own root, with its own feed.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { act, createElement } from 'react'
-import { createRoot } from 'react-dom/client'
 import type { IndexRecord, TreeNode } from '@shared/types'
-import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { isFolderPath, pageLabel, pathTitles, usePathTitles, type PathTitles } from './pageLabel'
+import { isFolderPath, pageLabel, pathTitles } from './pageLabel'
 import { fetchTree } from './treeFeed'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -41,26 +38,12 @@ describe('pageLabel', () => {
   })
 })
 
-describe('usePathTitles', () => {
-  it('follows the index, and a snapshot that changed no title keeps the Map it had', () => {
-    ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
-    const source = createWikilinkResolveSource()
-    const seen: PathTitles[] = []
-    function Harness() {
-      seen.push(usePathTitles(source))
-      return null
-    }
-    const root = createRoot(document.createElement('div'))
-    act(() => root.render(createElement(Harness)))
-    expect(seen.at(-1)?.size).toBe(0)
-    act(() => source.update(() => null, [titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')]))
-    const first = seen.at(-1)
-    expect([...(first ?? [])]).toEqual([['/v/a.md', 'A'], ['/v/dir', 'Dir']])
-    act(() => source.update(() => null, [titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')]))
-    expect(seen.at(-1)).toBe(first)
-    act(() => source.update(() => null, [titled('/v/a.md', 'A2')], [titled('/v/dir/.folder.md', 'Dir')]))
-    expect(seen.at(-1)?.get('/v/a.md')).toBe('A2')
-    act(() => root.unmount())
+describe('pathTitles', () => {
+  it('a snapshot that changed no title keeps the Map the last one had (YAZ-2194)', () => {
+    const first = pathTitles([titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')])
+    expect([...first]).toEqual([['/v/a.md', 'A'], ['/v/dir', 'Dir']])
+    expect(pathTitles([titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')])).toBe(first)
+    expect(pathTitles([titled('/v/a.md', 'A2')], [titled('/v/dir/.folder.md', 'Dir')]).get('/v/a.md')).toBe('A2')
   })
 })
 

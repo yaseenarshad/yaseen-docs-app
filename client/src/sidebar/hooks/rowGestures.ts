@@ -9,7 +9,7 @@ import type { FileClipState, SidebarLens, TreeNode, TreeResponse } from '@shared
 import { api } from '../../api'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import type { NoticeKind } from '../../lib/notice'
-import { isFolderPath, pageLabel, pathTitles } from '../../lib/pageLabel'
+import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
 import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
@@ -232,7 +232,7 @@ export function useFileClipboard(
           if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
           else onNotice(`Pasted ${countItems(res.pasted.length)}`, 'paste')
         } else {
-          const name = pageLabel(first.from, isFolderPath(root, first.from), pathTitles(index.records, index.folders))
+          const name = pageName(root, first.from, pathTitles(index.records, index.folders))
           if (res.pasted.length === 0) onNotice(`Couldn't paste: ${name} — ${first.message}`, 'error')
           else onNotice(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${name} — ${first.message}`, 'paste')
         }

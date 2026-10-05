@@ -1548,7 +1548,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       const files = { [NOOR]: { content: held, mtime: 1 } }
       const { bridge, el } = await mountTeam(files)
       await act(async () => void captured.sidebar?.onRetitle(NOOR, 'Noor Khan', 'file'))
-      expect(sheetText(el)).toBe("Rename 'Noor' to 'Noor Khan'? No other notes link to it.")
+      expect(sheetText(el)).toBe("Rename 'Noor' to 'Noor Khan'? No links need updating.")
       expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Rename'])
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: NOOR, title: 'Noor Khan' })
@@ -1634,9 +1634,9 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     it.each([
-      [{ code: 'BAD_REQUEST', message: 'its properties do not parse', path: ABDUL }, "Can't rename: its properties do not parse"],
-      [{ code: 'ALREADY_EXISTS', message: 'a folder with this name already exists', path: RENAMED }, 'Can\'t rename: "UP-001 - Abdul" already exists'],
-    ])('a refused title edit shows the ordinary notice with the reason, and rewrites nothing', async (error, notice) => {
+      [{ code: 'BAD_REQUEST', message: "this note's properties do not parse", path: ABDUL }, "Can't change the title: this note's properties do not parse"],
+      [{ code: 'ALREADY_EXISTS', message: 'a folder with this name already exists', path: RENAMED }, 'Can\'t change the title: "UP-001 - Abdul" already exists'],
+    ])('a refused title edit says the title could not be changed, with the reason, and rewrites nothing', async (error, notice) => {
       const files = notes()
       const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
       bridge.file.retitle.mockRejectedValue(error)

@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, basenameCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -270,10 +270,10 @@ describe('linkCandidates: rows are typed and read as TITLES (YAZ-2420 D17)', () 
   })
 })
 
-describe('basenameCandidates (the cell editors, YAZ-2293)', () => {
+describe('titleCandidates (the cell editors, YAZ-2293)', () => {
   it('E: offers a note with a title by the title, and writes its id — its title when it has none (YAZ-2420 D17)', () => {
     const titled = { ...rec('/vault/candidates/up-001-abdul-k3m9x2pq7abc.md'), title: 'UP-001 - Abdul' }
-    expect(basenameCandidates([{ ...titled, id: 'k3m9x2pq7abc' }, titled])).toEqual([
+    expect(titleCandidates([{ ...titled, id: 'k3m9x2pq7abc' }, titled])).toEqual([
       { name: 'UP-001 - Abdul', insert: 'k3m9x2pq7abc', label: 'UP-001 - Abdul', lower: 'up-001 - abdul' },
       { name: 'UP-001 - Abdul', insert: 'UP-001 - Abdul', label: 'UP-001 - Abdul', lower: 'up-001 - abdul' },
     ])
@@ -282,7 +282,7 @@ describe('basenameCandidates (the cell editors, YAZ-2293)', () => {
 
   it('offers every note by its BASENAME — no alias row, no folder form — and writes its id when it has one', () => {
     const records = [rec('/vault/Note.md', ['Alias']), { ...rec('/vault/a/Note.md'), id: 'k3m9x2pq7abc' }]
-    expect(basenameCandidates(records)).toEqual([
+    expect(titleCandidates(records)).toEqual([
       { name: 'Note', insert: 'Note', label: 'Note', lower: 'note' },
       { name: 'Note', insert: 'k3m9x2pq7abc', label: 'Note', lower: 'note' },
     ])

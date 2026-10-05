@@ -217,7 +217,8 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
     const settings = await reviewSettings(dirname(target))
     const record = await scanFile(dirname(target), target)
     const at = isInReview(record, settings) ? dueAt(record, settings) : null
-    io.stdout(json ? `${JSON.stringify({ path: target, inReview: at !== null, due: at === null ? null : iso(at) }, null, 2)}\n` : at === null ? `${target} is not in review\n` : `${day(at)}  ${target}\n`)
+    const page = `${record.title}  ${target}`
+    io.stdout(json ? `${JSON.stringify({ title: record.title, path: target, inReview: at !== null, due: at === null ? null : iso(at) }, null, 2)}\n` : at === null ? `${page} is not in review\n` : `${day(at)}  ${page}\n`)
     return
   }
   const settings = await reviewSettings(target)

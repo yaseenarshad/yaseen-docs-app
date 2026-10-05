@@ -58,6 +58,8 @@
  *    link that spelled the old title is rewritten to the new one, and counted — to the page's id
  *    (YAZ-2478) when a link cannot spell the new title or another page answers to it. Links by
  *    name or by path follow the new file as in any rename; id links stay as written.
+ *  - A PATH OF TITLES (YAZ-2478): `[[Candidates/Abdul]]`, the note titled Abdul in the folder
+ *    titled Candidates, is rewritten to the note's id, since either title may be the one that changed.
  */
 import { FOLDER_VALUES_KEY, folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -71,7 +73,7 @@ import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
-import { folderRecord } from './shortcuts'
+import { folderRecord, foldersByDir } from './shortcuts'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
 /** Does this raw link target point at the renamed file? (Wired to THE shared resolver.) */
@@ -239,6 +241,7 @@ function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boole
  * The basenames (`basenameKey`) any note's links spell (YAZ-2241). `countLinkReferences` is 0 for a
  * file whose basename is not in the set (`targetBasename`), so a caller counting many renames can skip
  * those without building a resolver for each: 230 renames in one snapshot were one 0.4 s task.
+ * (A path of titles, YAZ-2478, spells no basename: a caller that skips by this set does not count it.)
  */
 export function linkedBasenames(records: readonly IndexRecord[]): Set<string> {
   const named = new Set<string>()
@@ -294,6 +297,7 @@ function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], v
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
   spellsTitle: (t: string) => boolean
+  typedId: (t: string) => string | undefined
 } {
   // NAME-ONLY resolution (E2, GRO-2214): an alias-form link (`[[CAC]]`) does resolve to the
   // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
@@ -301,8 +305,10 @@ function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], v
   // the probe without the alias map keeps the dry-run count and the rewrite agreeing on that.
   // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
   // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
-  const resolver = resolverFor(records, root, { aliases: false, ids: false })
-  const settings = new Map(folders.map((record) => [dirname(record.path), record]))
+  const resolver = resolverFor(records, root, { aliases: false, ids: false, folders })
+  // A path of titles (YAZ-2478) is the target only the folders answer; it is rewritten to the note's id.
+  const typedId = (t: string) => (resolverFor(records, root, { aliases: false, ids: false })(t) === null ? resolver(t)?.record.id : undefined)
+  const settings = foldersByDir(folders)
   const spells = (t: string, page: IndexRecord | undefined): page is IndexRecord => page !== undefined && targetKey(t) === page.title.toLowerCase()
   // A link that spells a page's `title:` (YAZ-2420 🔒 D17) is the third of that kind: the title is in
   // the note's own frontmatter, or the folder's `.folder.md`, so the link still reaches it afterwards.
@@ -318,7 +324,7 @@ function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], v
   // full resolver, so a link an alias answers is never read as the folder's. It is found as every
   // link finds it, by its title too (`folderResolver`), but for its id: no folder ids either.
   const anyNote = resolverFor(records, root)
-  const folder = folderResolver(root, dirs, folders.map((record) => ({ ...record, id: undefined })))
+  const folder = folderResolver(root, dirs, folders, { ids: false })
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p === oldPath || p.startsWith(prefix) : (p: string) => p === oldPath
   const targetPaths = new Map<string, string | null>()
@@ -344,7 +350,7 @@ function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], v
     return hit !== null && isMoved(hit)
   }
   // Asked of a target that resolved to `oldPath`: the page it reached is the renamed one.
-  return { resolves, resolveTargetPath, spellsTitle: (t) => spells(t, kind === 'dir' ? settings.get(oldPath) : resolver(t)?.record) }
+  return { resolves, resolveTargetPath, spellsTitle: (t) => spells(t, kind === 'dir' ? settings.get(oldPath) : resolver(t)?.record), typedId }
 }
 
 /**
@@ -363,7 +369,7 @@ export function countLinkReferences({ root, oldPath, kind = 'file', records, fol
 export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog, title }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p === oldPath || p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
-  const { resolves, resolveTargetPath, spellsTitle } = makeResolves({ root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
+  const { resolves, resolveTargetPath, spellsTitle, typedId } = makeResolves({ root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
@@ -416,6 +422,8 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
       if (target.includes('/')) return movedRel
       return postViewOnlyCatalog?.resolve(movedName) === moved ? movedName : movedRel
     }
+    const typed = typedId(target)
+    if (typed !== undefined) return typed
     if (!target.includes('/')) {
       // Bare form (file mode only — dir mode filtered bare targets out above): keep it only
       // when the bare name still resolves to the moved file post-move; otherwise escalate

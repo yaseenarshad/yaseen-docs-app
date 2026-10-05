@@ -48,12 +48,12 @@ function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
     // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
-    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], folders: [], generatedAt: 1 })),
     // The inline-create flow (GRO-2022).
     createFile: vi.fn(async (req: string | { path: string; content?: string; id?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
     // A note is born from its folder's hidden `.template.md` (YAZ-2290 E3): no folder has one by default.
     readFile: vi.fn((path: string): Promise<{ path: string; content: string; mtime: number; size: number }> => Promise.reject({ code: 'NOT_FOUND', message: `no such file: ${path}` })),
-    createDir: vi.fn(async (req: string | { path: string; title?: string }) => ({ path: typeof req === 'string' ? req : req.path })),
+    createDir: vi.fn(async (req: { path: string; title?: string }) => ({ path: req.path })),
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
@@ -960,7 +960,7 @@ describe('delete (GRO-2272)', () => {
     })
     const records = [rec('a'), rec('hub', ['a'])]
     const m = await mount()
-    m.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 } as never)
+    m.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 } as never)
     act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     await act(async () => itemByLabel(m.el, 'Delete')?.click())
     await act(async () => undefined)
@@ -1183,7 +1183,7 @@ describe('search results (YAZ-803)', () => {
 
   /** Mount over an index of Alpha + Docs/Anchor, then type `query` into the bar. */
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1310,7 +1310,7 @@ describe('search results (YAZ-803)', () => {
     const { el, input, bridge, props } = await search('a', { watch })
     await press(input, 'ArrowDown')
     expect(activeLabel(el)).toBe('Anchor') // index 1 of two rows
-    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], generatedAt: 2 } as never)
+    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], folders: [], generatedAt: 2 } as never)
     await act(async () => [...listeners].forEach((l) => l({ type: 'unlink', path: '/v/Docs/Anchor.md' })))
     await afterQuiet()
     expect(rowLabels(el)).toEqual(['Alpha'])
@@ -1338,7 +1338,7 @@ describe('search-row context menu (YAZ-2050)', () => {
   /** `a` is the tree's own `/v/a.md`, so its row exists once the search is left. */
   const A_NOTE = { path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [A_NOTE], folders: [], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1458,7 +1458,7 @@ describe('folder rows in search (YAZ-1491)', () => {
   /** A folder AND a note both called `sub`, so the tie-break is observable. */
   const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', title: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], generatedAt: 1 } as never))
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], folders: [], generatedAt: 1 } as never))
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
@@ -1474,11 +1474,10 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(note.classList.contains('search-results__row--dir')).toBe(false)
   })
 
-  it('E: a folder is found and shown by its title, off the window\'s index (YAZ-2420 D14)', async () => {
-    const indexSource = createWikilinkResolveSource()
-    indexSource.update(() => null, [], [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }])
-    const { el } = await search('upwork', { indexSource })
-    expect(dirResult(el)?.getAttribute('aria-label')).toBe('Search result Upwork 2026, folder')
+  it('E: a folder is found and shown by its title, off the search\'s own index read (YAZ-2420 D14)', async () => {
+    const m = await mount({}, (b) => b.index.mockResolvedValue({ root: '/v', records: [], folders: [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }], generatedAt: 1 } as never))
+    await type(searchInput(m.el)!, 'upwork')
+    expect(dirResult(m.el)?.getAttribute('aria-label')).toBe('Search result Upwork 2026, folder')
   })
 
   it('Enter on a folder in the search results opens the folder\'s page as a tab, exactly as a note hit opens the note — nothing is revealed', async () => {
@@ -1596,7 +1595,7 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
-  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never)
+  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1 } as never)
 
   const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
   /** Favorites is a glyph (YAZ-1766 D1): its name is the `aria-label`, not text. */
@@ -2446,13 +2445,13 @@ describe('New note (GRO-2022)', () => {
   it('writes no empty column keys (YAZ-2290 E1): the columns the folder declares are not stamped into the note, with a template or without', async () => {
     const declares = { path: '/v/sub/.folder.md', properties: { folder_settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] }, due: { kind: 'date' }, tags: { kind: 'list' } } } } }
     const bare = await openOn('.tree__row--dir')
-    bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
+    bare.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1 })
     act(() => itemByLabel(bare.el, 'New note')?.click())
     await commit(bare.el, 'Growth')
     growthIn(bare.bridge, '/v/sub')
 
     const templated = await openOn('.tree__row--dir')
-    templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], generatedAt: 1 })
+    templated.bridge.index.mockResolvedValue({ root: '/v', records: [declares], folders: [], generatedAt: 1 })
     withTemplate(templated.bridge, '/v/sub', '---\nowner: me\n---\n')
     act(() => itemByLabel(templated.el, 'New note')?.click())
     await commit(templated.el, 'Growth')

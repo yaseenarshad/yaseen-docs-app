@@ -17,11 +17,12 @@ import { requireRequest } from './validate'
  * and the name stale, and the next edit fixes the name. A title whose built name is the one on
  * disk moves nothing: `newPath` is `oldPath`.
  *
- * A NOTE that has no id is given one first (🔒 D29, `giveId`). A FOLDER's title is in its
- * `.folder.md`, created here when it is missing; its name carries no id, so a title with no
- * letter or digit, or one whose name a neighbour holds, is refused before anything is written
- * (🔒 D25). Properties that will not parse refuse the edit (🔒 D24). The window's own vault root
- * is refused as `fs:rename` refuses it.
+ * A NOTE that has no id is given one first (🔒 D29, `giveId`); one that changes on disk as it is
+ * given is refused with nothing written. A FOLDER's title is in its `.folder.md`, created here
+ * when it is missing; its name carries no id, so a title with no letter or digit, or one whose
+ * name a neighbour holds, is refused before anything is written (🔒 D25). Properties that will
+ * not parse refuse the edit (🔒 D24). The window's own vault root is refused as `fs:rename`
+ * refuses it.
  */
 export async function retitle(root: string, req: unknown): Promise<RenameFileResponse> {
   const { path: raw, title: typed } = requireRequest(req)
@@ -39,23 +40,25 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
     await writeTitle(file, await readPage(file), title)
   } else {
     requireMarkdownFile(p)
-    let page = await readPage(p)
-    if (idOf(page.content) === undefined) {
-      await giveId(root, p, undefined)
-      page = await readPage(p)
-    }
-    await writeTitle(p, page, title)
-    const id = idOf(page.content)
-    // A note that could not take an id has no name to build: its title is written and its name stays.
-    name = id === undefined ? path.basename(p) : noteFileName(title, id)
+    const page = await readPage(p)
+    const held = idOf(p, page.content)
+    const id = held ?? (await giveId(root, p, undefined))
+    // `giveId` gives none only to a note that changed under the edit: nothing is written.
+    if (id === undefined) throw new BridgeFailure('CONFLICT', 'this note changed on disk; try again', { path: p })
+    await writeTitle(p, held === undefined ? await readPage(p) : page, title)
+    name = noteFileName(title, id)
   }
   const newPath = path.join(path.dirname(p), name)
   return newPath === p ? { oldPath: p, newPath, kind: src.isDirectory() ? 'dir' : 'file' } : renameFile({ oldPath: p, newPath })
 }
 
-const idOf = (content: string): string | undefined => {
-  const id = parseFrontmatter(splitFrontmatter(content).frontmatter).properties[NOTE_ID_KEY]
-  return isNoteId(id) ? id : undefined
+const unparsed = (file: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', "this note's properties do not parse", { path: file })
+
+/** The id the note at `file` holds, when it is one of this app's. Properties that do not parse refuse the edit (🔒 D24). */
+const idOf = (file: string, content: string): string | undefined => {
+  const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  if (error !== undefined) throw unparsed(file)
+  return isNoteId(properties[NOTE_ID_KEY]) ? properties[NOTE_ID_KEY] : undefined
 }
 
 /** `page` goes back to `file` with its `title:` set; a `.folder.md` that was not there is created. */
@@ -65,7 +68,7 @@ async function writeTitle(file: string, { content, mtime }: { content: string; m
     titled = setFrontmatterProperty(content, TITLE_KEY, title)
   } catch (err) {
     if (!(err instanceof FrontmatterWriteError)) throw err
-    throw new BridgeFailure('BAD_REQUEST', 'its properties do not parse', { path: file })
+    throw unparsed(file)
   }
   if (mtime === undefined) await createDurable(file, titled)
   else await writeFile({ path: file, content: titled, expectedMtime: mtime })

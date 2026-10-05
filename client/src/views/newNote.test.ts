@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { ViewSet, ViewDef, FilterNode } from './viewSchema'
-import { deriveSeed, freeName } from './newNote'
+import { deriveSeed } from './newNote'
 import { ruleToExpr } from './view/filterRows'
 
 /** A minimal def + view around the two filter slots. */
@@ -66,17 +66,5 @@ describe('deriveSeed', () => {
       ],
     })
     expect(s.properties).toEqual({ status: 'Done' })
-  })
-})
-
-describe('freeName (YAZ-943): the Untitled scheme, generalized to any typed base', () => {
-  it('the base when free, then base 2, base 3…', () => {
-    expect(freeName('Ship it', new Set())).toBe('Ship it')
-    expect(freeName('Ship it', new Set(['Ship it']))).toBe('Ship it 2')
-    expect(freeName('Ship it', new Set(['Ship it', 'Ship it 2']))).toBe('Ship it 3')
-  })
-
-  it('fills gaps left by renames', () => {
-    expect(freeName('Untitled', new Set(['Untitled', 'Untitled 3']))).toBe('Untitled 2')
   })
 })

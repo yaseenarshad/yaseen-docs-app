@@ -743,6 +743,23 @@ describe('a title edit (YAZ-2420 D16): a link that spelled the old title spells 
     expect(files['/v/A.md'].content).toBe(`[[a-b-${ID}]]\n`)
   })
 
+  it('a typed path of titles that reached the note (`[[Candidates/Abdul]]`) is counted and rewritten to its id, on its own title edit and on its folder\u2019s (YAZ-2478)', async () => {
+    const folders = [rec('/v/candidates/.folder.md', { title: 'Candidates', properties: { title: 'Candidates' } })]
+    const records = [rec('/v/A.md', { links: ['Candidates/Abdul'] }), abdul]
+    const files = { '/v/A.md': { content: '[[Candidates/Abdul]] and [[candidates/abdul|him]]\n', mtime: 1 } }
+    installBridge(files)
+    const note = { root, oldPath: OLD, newPath: NEW, records, folders, title: 'UP-001 - Abdul' }
+    expect(countLinkReferences(note)).toBe(1)
+    expect(await updateLinksAfterRename(note)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]] and [[${ID}|him]]\n`)
+
+    files['/v/A.md'] = { content: '[[Candidates/Abdul]]\n', mtime: 1 }
+    const folder = { root, oldPath: '/v/candidates', newPath: '/v/hired', kind: 'dir' as const, records, folders, dirs: ['/v/candidates'], title: 'Hired' }
+    expect(countLinkReferences(folder)).toBe(1)
+    expect(await updateLinksAfterRename(folder)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${ID}]]\n`)
+  })
+
   it('a title edit of one note leaves a link that spells ANOTHER note\u2019s title alone', async () => {
     const other = rec('/v/other-7tq2m8vd4xhn.md', { title: 'Other', properties: { title: 'Other' } })
     const records = [rec('/v/A.md', { links: ['Other'] }), abdul, other]

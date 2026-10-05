@@ -6,8 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
-import { createWikilinkResolveSource, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { PathTitles } from '../lib/pageLabel'
 import type { Move } from '../links/shortcuts'
 import { ConfirmMove, folderList, moveConfirmMessage, removeShortcutConfirmMessage } from './ConfirmMove'
 
@@ -57,13 +56,13 @@ afterEach(() => {
 const NOTE: Move = { oldPath: '/v/Hiring/Fiverr/Zain Shah.md', newPath: '/v/z.ARCHIVE/Zain Shah.md', kind: 'file' }
 const LOST = { notes: 1, folders: ['/v/Hiring/Fiverr', '/v/Hiring'] }
 
-function mount(ask: { moves: readonly Move[] } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST, indexSource?: WikilinkResolveSource) {
+function mount(ask: { moves: readonly Move[] } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST, titles: PathTitles = new Map()) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmMove {...ask} lost={lost} indexSource={indexSource} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmMove {...ask} lost={lost} titles={titles} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -79,12 +78,10 @@ describe('ConfirmMove', () => {
   })
 
   it('E: the move sheet names the note, the destination and the folders by their titles (YAZ-2420 D14)', () => {
-    const indexSource = createWikilinkResolveSource()
-    const titled = (path: string, title: string) => ({ path, title }) as IndexRecord
-    indexSource.update(() => null, [titled(NOTE.oldPath, 'FV-001 - Zain Shah')], [titled('/v/z.ARCHIVE/.folder.md', 'Archive'), titled('/v/Hiring/Fiverr/.folder.md', 'Fiverr 2026')])
-    expect(text(mount(undefined, undefined, indexSource).el)).toBe("Move 'FV-001 - Zain Shah' to 'Archive'? Its values for Fiverr 2026 and Hiring will be cleared.")
+    const titles = new Map([[NOTE.oldPath, 'FV-001 - Zain Shah'], ['/v/z.ARCHIVE', 'Archive'], ['/v/Hiring/Fiverr', 'Fiverr 2026']])
+    expect(text(mount(undefined, undefined, titles).el)).toBe("Move 'FV-001 - Zain Shah' to 'Archive'? Its values for Fiverr 2026 and Hiring will be cleared.")
     act(() => root?.unmount())
-    expect(text(mount({ shortcut: { path: NOTE.oldPath, dir: '/v/z.ARCHIVE' } }, { notes: 1, folders: ['/v/z.ARCHIVE'] }, indexSource).el)).toBe("Remove the shortcut from 'Archive'? The values of 'FV-001 - Zain Shah' for Archive will be cleared.")
+    expect(text(mount({ shortcut: { path: NOTE.oldPath, dir: '/v/z.ARCHIVE' } }, { notes: 1, folders: ['/v/z.ARCHIVE'] }, titles).el)).toBe("Remove the shortcut from 'Archive'? The values of 'FV-001 - Zain Shah' for Archive will be cleared.")
   })
 
   it('names a FOLDER whole: one called `2026.md` keeps its `.md`', () => {
@@ -100,7 +97,7 @@ describe('ConfirmMove', () => {
   it('a move to the vault’s top level: the destination is named by the vault’s name — and so is the root’s own folder', () => {
     const { el } = mount({ moves: [{ ...NOTE, newPath: '/v/Zain Shah.md' }] })
     expect(text(el)).toBe("Move 'Zain Shah' to 'v'? Its values for Fiverr and Hiring will be cleared.")
-    act(() => root?.render(<ConfirmMove moves={[{ oldPath: '/v/Top.md', newPath: '/v/Hiring/Top.md', kind: 'file' }]} lost={{ notes: 1, folders: ['/v'] }} onConfirm={() => undefined} onCancel={() => undefined} />))
+    act(() => root?.render(<ConfirmMove moves={[{ oldPath: '/v/Top.md', newPath: '/v/Hiring/Top.md', kind: 'file' }]} lost={{ notes: 1, folders: ['/v'] }} titles={new Map()} onConfirm={() => undefined} onCancel={() => undefined} />))
     expect(text(el)).toBe("Move 'Top' to 'Hiring'? Its values for v will be cleared.")
   })
 

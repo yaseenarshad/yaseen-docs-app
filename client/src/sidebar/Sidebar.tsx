@@ -5,7 +5,7 @@ import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { isFolderPath, pageLabel, usePathTitles } from '../lib/pageLabel'
+import { pageName, usePathTitles } from '../lib/pageLabel'
 import { relTo } from '../lib/paths'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
@@ -391,7 +391,7 @@ export function Sidebar({
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = usePathTitles(indexSource)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
-  const nameOf = useCallback((path: string) => pageLabel(path, isFolderPath(root, path), titles), [root, titles])
+  const nameOf = useCallback((path: string) => pageName(root, path, titles), [root, titles])
 
   // What the chevrons button unfolds on the active lens.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
@@ -403,7 +403,7 @@ export function Sidebar({
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
-  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, titles, pendingSearchFocus, onSearchFocusHandled, activate)
+  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, pendingSearchFocus, onSearchFocusHandled, activate)
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -921,13 +921,13 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       )}
-      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} indexSource={indexSource} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} lost={pendingPaste.lost} indexSource={indexSource} onConfirm={confirmPaste} onCancel={cancelPaste} />}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
+      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
       {confirmingShortcut !== null && (
         <ConfirmMove
           shortcut={confirmingShortcut}
           lost={confirmingShortcut.lost}
-          indexSource={indexSource}
+          titles={titles}
           onConfirm={() => {
             setConfirmingShortcut(null)
             removeShortcutRow(confirmingShortcut.path, confirmingShortcut.dir)

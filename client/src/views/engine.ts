@@ -127,7 +127,7 @@ export interface ResolverOptions {
   /**
    * The snapshot's folder settings records (YAZ-2478). Given, a pathed target no file path answers
    * is read as a path of TITLES: `Sub/Page` is the note titled Page in the folder `Sub` names
-   * (`typedFolders`). The rename engine's probe gives none: such a link is not rewritten.
+   * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the note's id.
    */
   folders?: readonly IndexRecord[]
 }

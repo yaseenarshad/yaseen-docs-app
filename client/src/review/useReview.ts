@@ -4,6 +4,7 @@ import { addReview, deleteReview, setInReview as withReview, type ReviewSettings
 import { isInReview, reviewQueue } from '@shared/schedule'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeKind } from '../lib/notice'
+import { folderTitle } from '../links/shortcuts'
 import { transformFile } from '../views/writeProperty'
 
 /**
@@ -89,9 +90,9 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
   const start = useCallback((folder?: string) => {
     if (!live.current.settings.enabled) return
     const queue = reviewQueue(live.current.records, live.current.settings, Date.now(), folder).map((r) => r.path)
-    const label = folder ? (source.folders.find((f) => f.folder === folder)?.title ?? folder.slice(folder.lastIndexOf('/') + 1)) : 'Inbox'
+    const label = folder ? folderTitle(source.folders, `${root}/${folder}`) : 'Inbox'
     setSession({ label, queue, total: queue.length, undo: null })
-  }, [source])
+  }, [root, source])
 
   const keep = useCallback(async () => {
     const path = live.current.session?.queue[0]

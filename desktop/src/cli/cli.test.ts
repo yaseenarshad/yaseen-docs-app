@@ -546,16 +546,16 @@ describe('due (YAZ-2322)', () => {
   it('a page: prints the date it is next due, from the defaults for what the vault\'s settings do not say', async () => {
     await upkeepOn()
     const { file, changed } = await aged('fresh.md', 2)
-    expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  ${file}\n`, err: '' })
+    expect(await run(['due', file])).toEqual({ code: 0, out: `${day(changed + 30 * DAY)}  fresh  ${file}\n`, err: '' })
   })
 
   it('upkeep off: `due <page>` and `due <folder>` report nothing due — no review.json, one with no `enabled` or a bad one, one that says false', async () => {
     const { file } = await aged('old.md', 90)
     const kept = await aged('sub/kept.md', 400, '---\nreview: true\n---\nKept.\n')
     const nothing = async (): Promise<void> => {
-      for (const page of [file, kept.file]) {
-        expect(await run(['due', page])).toEqual({ code: 0, out: `${page} is not in review\n`, err: '' })
-        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ path: page, inReview: false, due: null })
+      for (const [title, page] of [['old', file], ['kept', kept.file]]) {
+        expect(await run(['due', page])).toEqual({ code: 0, out: `${title}  ${page} is not in review\n`, err: '' })
+        expect(JSON.parse((await run(['due', page, '--json'])).out)).toEqual({ title, path: page, inReview: false, due: null })
       }
       expect(await run(['due', dir])).toEqual({ code: 0, out: `nothing is due under ${dir}\n`, err: '' })
       expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([])
@@ -573,22 +573,29 @@ describe('due (YAZ-2322)', () => {
     await upkeepOn()
     const reviewedAt = '2026-01-10T12:00:00Z'
     const { file } = await aged('kept.md', 1, addReview('Kept.\n', reviewedAt))
-    expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  ${file}\n`)
+    expect((await run(['due', file])).out).toBe(`${day(Date.parse(reviewedAt) + 60 * DAY)}  kept  ${file}\n`)
   })
 
   it('a page: uses the settings of the vault it is in', async () => {
     await upkeepOn({ baseDays: 7 })
     const { file, changed } = await aged('notes/deep/quick.md', 2)
-    expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  ${file}\n`)
+    expect((await run(['due', file])).out).toBe(`${day(changed + 7 * DAY)}  quick  ${file}\n`)
   })
 
   it('a page that is not in review says so; --json gives the raw shape', async () => {
     await upkeepOn()
     const { file } = await aged('off.md', 90, '---\nreview: false\n---\nOff.\n')
-    expect((await run(['due', file])).out).toBe(`${file} is not in review\n`)
-    expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ path: file, inReview: false, due: null })
+    expect((await run(['due', file])).out).toBe(`off  ${file} is not in review\n`)
+    expect(JSON.parse((await run(['due', file, '--json'])).out)).toEqual({ title: 'off', path: file, inReview: false, due: null })
     const on = await aged('on.md', 2)
-    expect(JSON.parse((await run(['due', on.file, '--json'])).out)).toEqual({ path: on.file, inReview: true, due: new Date(on.changed + 30 * DAY).toISOString() })
+    expect(JSON.parse((await run(['due', on.file, '--json'])).out)).toEqual({ title: 'on', path: on.file, inReview: true, due: new Date(on.changed + 30 * DAY).toISOString() })
+  })
+
+  it('E: a page is printed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
+    await upkeepOn()
+    const abdul = await aged('up-001-abdul-k3m9x2pq7abc.md', 2, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
+    expect((await run(['due', abdul.file])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
+    expect(JSON.parse((await run(['due', abdul.file, '--json'])).out)).toEqual({ title: 'UP-001 - Abdul', path: abdul.file, inReview: true, due: new Date(abdul.changed + 30 * DAY).toISOString() })
   })
 
   it('a folder: lists what is due now under it, most overdue first', async () => {

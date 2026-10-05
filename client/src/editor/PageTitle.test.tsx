@@ -5,9 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
 import { PageTitle } from './PageTitle'
-import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import type { PathTitles } from '../lib/pageLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -22,7 +21,7 @@ afterEach(() => {
 
 const PATH = '/vault/Docs/Old Note.md'
 
-function mount(opts: { path?: string; kind?: 'file' | 'dir'; source?: WikilinkResolveSource } = {}) {
+function mount(opts: { path?: string; kind?: 'file' | 'dir'; titles?: PathTitles } = {}) {
   const onRetitle = vi.fn()
   const onArrowDown = vi.fn()
   container = document.createElement('div')
@@ -30,7 +29,7 @@ function mount(opts: { path?: string; kind?: 'file' | 'dir'; source?: WikilinkRe
   root = createRoot(container)
   act(() =>
     root?.render(
-      <PageTitle path={opts.path ?? PATH} kind={opts.kind} source={opts.source} onRetitle={onRetitle} onArrowDown={onArrowDown} />,
+      <PageTitle path={opts.path ?? PATH} kind={opts.kind} titles={opts.titles ?? new Map()} onRetitle={onRetitle} onArrowDown={onArrowDown} />,
     ),
   )
   return { el: container, onRetitle, onArrowDown }
@@ -62,11 +61,10 @@ describe('PageTitle (⚡ YAZ-888)', () => {
   })
 
   it('E: the page title shows the note\'s title, and a folder\'s page its folder\'s (YAZ-2420 D14)', () => {
-    const source = createWikilinkResolveSource()
-    source.update(() => null, [{ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord], [{ path: '/vault/Docs/.folder.md', title: 'Upwork 2026' } as IndexRecord])
-    expect(heading(mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', source }).el)?.textContent).toBe('UP-001 - Abdul')
+    const titles = new Map([['/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/vault/Docs', 'Upwork 2026']])
+    expect(heading(mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', titles }).el)?.textContent).toBe('UP-001 - Abdul')
     act(() => root?.unmount())
-    expect(heading(mount({ path: '/vault/Docs', kind: 'dir', source }).el)?.textContent).toBe('Upwork 2026')
+    expect(heading(mount({ path: '/vault/Docs', kind: 'dir', titles }).el)?.textContent).toBe('Upwork 2026')
   })
 
   it('a click swaps the heading for an input prefilled with the current name', () => {
@@ -87,9 +85,8 @@ describe('PageTitle (⚡ YAZ-888)', () => {
   })
 
   it('the field edits the TITLE, for a note and for a folder: it is prefilled with it, and the title unchanged commits nothing (YAZ-2420 D16)', () => {
-    const source = createWikilinkResolveSource()
-    source.update(() => null, [{ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', title: 'UP-001 - Abdul' } as IndexRecord], [{ path: '/vault/Docs/.folder.md', title: 'Upwork 2026' } as IndexRecord])
-    const note = mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', source })
+    const titles = new Map([['/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/vault/Docs', 'Upwork 2026']])
+    const note = mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', titles })
     act(() => heading(note.el)?.click())
     expect(input(note.el)?.defaultValue).toBe('UP-001 - Abdul')
     type(note.el, 'UP-001 - Abdul')
@@ -98,7 +95,7 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     type(note.el, 'up-001-abdul-k3m9x2pq7abc') // the file name is not what the field compares with
     expect(note.onRetitle).toHaveBeenCalledExactlyOnceWith('up-001-abdul-k3m9x2pq7abc')
     act(() => root?.unmount())
-    const folder = mount({ path: '/vault/Docs', kind: 'dir', source })
+    const folder = mount({ path: '/vault/Docs', kind: 'dir', titles })
     act(() => heading(folder.el)?.click())
     expect(input(folder.el)?.defaultValue).toBe('Upwork 2026')
     type(folder.el, 'Upwork 2027')

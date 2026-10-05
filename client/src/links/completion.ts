@@ -133,7 +133,7 @@ const depthOf = (r: IndexRecord): number => (r.folder === '' ? 0 : r.folder.spli
  * folder disambiguation — each written as every link the app writes (YAZ-2293): the note's `id`
  * when it has one, else the title, the basename of a note that has none.
  */
-export const basenameCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
+export const titleCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
   records.map((r) => ({ ...nameCandidate(r.title), insert: r.id ?? r.title }))
 
 /**

@@ -728,7 +728,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createDir(at('Made here'))
+    await createDir({ path: at('Made here') })
     const born = await read('Made here', FOLDER_SETTINGS_FILE)
     await until(async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here'))
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
@@ -739,7 +739,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createDir(at('Made here'))
+    await createDir({ path: at('Made here') })
     const born = await idIn('Made here', FOLDER_SETTINGS_FILE)
     const listed = async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here' && r.id === born)
     await until(listed)

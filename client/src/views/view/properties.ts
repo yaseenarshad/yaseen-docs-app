@@ -8,7 +8,8 @@ import { canonicalKey } from './keys'
  * Every key the menus can offer (GRO-2135): the view's shown keys first (as written, so
  * `view.order` round-trips), then `file.name` + every note key seen or declared on the folder
  * (YAZ-895 — a DECLARED column is offerable before any note carries a value for it; since
- * YAZ-1549 `propertyKeys` itself shows it by default), then the formulas; de-duplicated by canonical key.
+ * YAZ-1549 `propertyKeys` itself shows it by default), then "File name" (`file.basename`,
+ * YAZ-2420 🔒 D18) and the formulas; de-duplicated by canonical key.
  * Never the note's own keys (`id` and the rest): the rows hold a folder's values (D19), not those.
  */
 export function allPropertyKeys(
@@ -28,6 +29,7 @@ export function allPropertyKeys(
   const declared = Object.keys(columns)
   for (const k of propertyKeys(def, view, records, declared)) add(k)
   for (const k of propertyKeys(def, { ...view, order: undefined }, records, declared)) add(k)
+  add('file.basename')
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out
 }

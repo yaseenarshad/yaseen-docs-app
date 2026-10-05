@@ -228,7 +228,7 @@ export function render(v: Value, resolve?: Resolver): string {
   if (v instanceof DateValue) return renderDate(v.ms, v.hasTime)
   if (v instanceof DurationValue) return renderDuration(v.ms)
   if (v instanceof LinkValue) return v.display === undefined ? `[[${linkText(v, resolve)}]]` : `[[${v.target}|${v.display}]]`
-  if (v instanceof FileValue) return `[[${v.record.basename}]]`
+  if (v instanceof FileValue) return `[[${v.record.title}]]`
   if (v instanceof RegexValue) return String(v.re)
   if (v instanceof ErrorValue) return `#ERROR: ${v.message}`
   return JSON.stringify(toJson(v))

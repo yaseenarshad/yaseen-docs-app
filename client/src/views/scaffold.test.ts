@@ -29,14 +29,11 @@ const notFound = () => new BridgeRequestError('NOT_FOUND', 'path does not exist'
 const alreadyExists = () => new BridgeRequestError('ALREADY_EXISTS', 'path already exists')
 
 /** The index's folders, by their settings records. */
-const holds = (...folders: Array<[folder: string, title: string]>): void => {
-  const records = folders.map(([folder, title]): IndexRecord => ({ path: `/v/${folder}/.folder.md`, name: '.folder.md', basename: '.folder', title, folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] }))
-  vi.mocked(api.index).mockResolvedValue({ root: '/v', records: [], folders: records, generatedAt: 0 })
-}
+const held = (...folders: Array<[folder: string, title: string]>): IndexRecord[] =>
+  folders.map(([folder, title]) => ({ path: `/v/${folder}/.folder.md`, name: '.folder.md', basename: '.folder', title, folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] }))
 
 beforeEach(() => {
   vi.clearAllMocks()
-  holds()
 })
 
 const ID = 'k3m9x2pq7abc'
@@ -118,14 +115,14 @@ describe('ensureFolder', () => {
     createDir.mockResolvedValue({ path: '' })
 
     expect(await ensureFolder('/v', 'kpis/growth')).toBe('/v/kpis/growth')
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/v/kpis', '/v/kpis/growth'])
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/v/kpis' }, { path: '/v/kpis/growth' }])
   })
 
   it('C: titled levels are each made as a folder is in the app — a kebab-case directory holding its title — and the directory made is what resolves (YAZ-2420 D6)', async () => {
     createDir.mockRejectedValueOnce(alreadyExists())
     createDir.mockResolvedValue({ path: '' })
 
-    expect(await ensureFolder('/v', 'Upwork 2026/10_04- Standup', true)).toBe('/v/upwork-2026/10-04-standup')
+    expect(await ensureFolder('/v', 'Upwork 2026/10_04- Standup', [])).toBe('/v/upwork-2026/10-04-standup')
     expect(createDir.mock.calls.map((c) => c[0])).toEqual([
       { path: '/v/upwork-2026', title: 'Upwork 2026' },
       { path: '/v/upwork-2026/10-04-standup', title: '10_04- Standup' },
@@ -133,15 +130,15 @@ describe('ensureFolder', () => {
   })
 
   it('a titled level that names a folder already there — by its title, else by its directory name, in the folder reached so far — is that folder; only a level that names none is made (YAZ-2478)', async () => {
-    holds(['upwork', 'Upwork 2026'], ['upwork/Standup', 'Standup'], ['Standup', 'Standup'])
     createDir.mockResolvedValue({ path: '' })
 
-    expect(await ensureFolder('/v', 'Upwork 2026/standup/Day One', true)).toBe('/v/upwork/Standup/day-one')
+    expect(await ensureFolder('/v', 'Upwork 2026/standup/Day One', held(['upwork', 'Upwork 2026'], ['upwork/Standup', 'Standup'], ['Standup', 'Standup']))).toBe('/v/upwork/Standup/day-one')
+    expect(api.index).not.toHaveBeenCalled()
     expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/v/upwork/Standup/day-one', title: 'Day One' }])
   })
 
   it('C: a titled level with no letter or digit is refused, and nothing is made (YAZ-2420 D25)', async () => {
-    await expect(ensureFolder('/v', '—', true)).rejects.toThrow('A folder name needs a letter or a digit')
+    await expect(ensureFolder('/v', '—', [])).rejects.toThrow('A folder name needs a letter or a digit')
     expect(createDir).not.toHaveBeenCalled()
   })
 

@@ -11,12 +11,11 @@ import { FOLDER_VALUES_KEY, folderValues, setFolderValue } from '@shared/folderV
 import { TITLE_KEY } from '@shared/noteName'
 import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
-import { basenameCandidates } from '../links/completion'
+import { titleCandidates } from '../links/completion'
 import { pageResolver } from '../links/folderLinks'
-import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { absFrom, dirname, relTo } from '../lib/paths'
 import { RESERVED_KEYS } from '../links/reservedKeys'
-import { dropStaleFolderValues, folderId, folderRecord, foldersById, foldersShowing } from '../links/shortcuts'
+import { dropStaleFolderValues, folderId, folderRecord, folderTitle, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY, folderSettings, hasFolderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
@@ -160,7 +159,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   // own writes (which run ahead of it) do not read as an external change and bounce back.
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content, draft: snap.draft })
 
-  const basenames = useMemo(() => basenameCandidates(wikilinks?.records ?? NO_RECORDS), [wikilinks?.records])
+  const titles = useMemo(() => titleCandidates(wikilinks?.records ?? NO_RECORDS), [wikilinks?.records])
   /** What a value's id link reads its title through (YAZ-2293 D8): the note's, or the folder's (D10). */
   const resolve = useMemo(() => pageResolver(wikilinks?.records ?? NO_RECORDS, wikilinks?.folders ?? NO_RECORDS, root ?? undefined, wikilinks?.resolve ?? null), [wikilinks?.records, wikilinks?.folders, root, wikilinks?.resolve])
 
@@ -238,7 +237,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   const block = useMemo(() => folderValues(parsed, chosenId), [parsed, chosenId])
   const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== FOLDER_VALUES_KEY && key !== TITLE_KEY)), [parsed])
   /** A folder as the panel names it: its title (YAZ-2420 🔒 D14). */
-  const folderName = (folder: string): string => pageLabel(folder, true, pathTitles(NO_RECORDS, folders))
+  const folderName = (folder: string): string => folderTitle(folders, folder)
   /** `also_in` as the eye reads it: each folder id as that folder's title; an entry no folder has stays as written. */
   const folderNames = (raw: unknown): unknown => {
     const name = (entry: unknown): unknown => (typeof entry === 'string' ? byId.get(entry)?.title : undefined) ?? entry
@@ -329,7 +328,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
               value={fromYaml(row.raw)}
               editor={row.editor}
               options={columnTyping(row.key, NO_RECORDS, decls, definition)?.options}
-              basenames={basenames}
+              titles={titles}
               resolve={resolve}
               onCommit={(next) => commit(row.key, next, row.folder)}
             />

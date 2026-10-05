@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
-import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pathTitles } from '../lib/pageLabel'
 import { ConfirmDelete, deleteConfirmMessage, type DeleteTarget } from './ConfirmDelete'
 
@@ -66,7 +65,7 @@ function mount(target: DeleteTarget, over: { onConfirm?: (d: boolean) => void; o
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<ConfirmDelete target={target} onConfirm={onConfirm} onCancel={onCancel} />))
+  act(() => root?.render(<ConfirmDelete target={target} titles={NONE} onConfirm={onConfirm} onCancel={onCancel} />))
   return { el: container, onConfirm, onCancel }
 }
 
@@ -74,13 +73,11 @@ const FILE: DeleteTarget = { path: '/v/a.md', kind: 'file', backlinks: 0 }
 const btn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
 describe('ConfirmDelete', () => {
-  it('E: names the note by its title off the index it is given (YAZ-2420 D14)', () => {
-    const indexSource = createWikilinkResolveSource()
-    indexSource.update(() => null, [{ path: '/v/a.md', title: 'UP-001 - Abdul' } as IndexRecord])
+  it('E: names the note by its title (YAZ-2420 D14)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<ConfirmDelete target={FILE} indexSource={indexSource} onConfirm={vi.fn()} onCancel={vi.fn()} />))
+    act(() => root?.render(<ConfirmDelete target={FILE} titles={new Map([['/v/a.md', 'UP-001 - Abdul']])} onConfirm={vi.fn()} onCancel={vi.fn()} />))
     expect(container.querySelector('.confirm__text')?.textContent).toBe('Delete "UP-001 - Abdul"? It moves to the Trash.')
   })
 
