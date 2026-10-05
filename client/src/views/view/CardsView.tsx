@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
 import type { ViewSet, ViewDef } from '../viewSchema'
@@ -13,6 +13,7 @@ import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface CardsViewProps {
   def: ViewSet
@@ -28,6 +29,10 @@ export interface CardsViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onOpenFile: (path: string) => void
+  /** The card's right-click menu (`PageContextMenu`): its two opens, and where a failed action says so. */
+  onOpenFileRight?: (path: string) => void
+  onOpenFileBackground?: (path: string) => void
+  onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
@@ -127,7 +132,14 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: CardsViewProps) {
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
+  /** A typed editor keeps its own (native) menu, as in the table. */
+  const openMenu = (event: ReactMouseEvent, row: Row): void => {
+    if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
+    event.preventDefault()
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, noteId: row.record.id })
+  }
   const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
@@ -162,7 +174,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
   const grid = (shown: readonly Row[]) => (
     <ul className="view-cards__grid">
       {shown.map((row) => (
-        <li key={row.record.path} className="view-card">
+        <li key={row.record.path} className="view-card" onContextMenu={(event) => openMenu(event, row)}>
           {imageKey !== null && <CardCover root={root} cover={coverOf(row.record, imageKey)} />}
           <div className="view-card__body">
             <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)}>
@@ -222,6 +234,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
               </section>
             )
           })}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )
 }

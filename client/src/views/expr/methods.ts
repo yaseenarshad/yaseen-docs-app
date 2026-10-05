@@ -1,3 +1,4 @@
+import { inFolder } from '@shared/types'
 import { formatDate, relativeDate, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
@@ -185,11 +186,7 @@ const FILE: Table<FileValue> = {
       return got ? got.record.path === want.record.path : linkTargetsMatch(l, target)
     })
   },
-  inFolder: (f, [dir]) => {
-    const want = trimSlashes(needString('inFolder', dir))
-    const have = trimSlashes(f.record.folder)
-    return want === '' || have === want || have.startsWith(`${want}/`)
-  },
+  inFolder: (f, [dir]) => inFolder(trimSlashes(f.record.folder), trimSlashes(needString('inFolder', dir))),
 }
 
 const REGEX: Table<RegexValue> = {

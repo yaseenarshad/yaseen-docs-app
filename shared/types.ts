@@ -729,7 +729,7 @@ export const FOLDER_SETTINGS_FILE = '.folder.md'
 /** The settings file of the folder at `dir`. */
 export const folderSettingsPath = (dir: string): string => `${dir}/${FOLDER_SETTINGS_FILE}`
 
-/** Whether `folder` is `ancestor` or under it, as the index names folders: root-relative, '' the root, which holds every folder. */
+/** Whether `folder` is `ancestor` or under it. Both absolute, or both as the index names folders: root-relative, '' the root, which holds every folder. */
 export const inFolder = (folder: string, ancestor: string): boolean => ancestor === '' || folder === ancestor || folder.startsWith(`${ancestor}/`)
 
 /** Whether `path` is a folder's settings file, either separator. */

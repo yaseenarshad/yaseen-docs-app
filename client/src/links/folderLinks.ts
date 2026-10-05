@@ -17,7 +17,7 @@ import { allDirs } from '../lib/treeState'
 import { resolverFor, targetKey } from '../views/engine'
 import { FileValue, type Resolver } from '../views/expr'
 import { basenameCandidates, nameCandidate, type LinkCandidate } from './completion'
-import { folderRows, foldersById } from './shortcuts'
+import { folderLabel, folderRows, foldersById } from './shortcuts'
 
 const dirsOf = new WeakMap<TreeResponse, readonly string[]>()
 
@@ -66,15 +66,12 @@ export function linkResolver(records: readonly IndexRecord[], root: string, dirs
 }
 
 /**
- * The `[[` picker's folder rows, each reading `<name> (folder)` — display text, never typed and
- * never written. A folder whose `.folder.md` holds an id (`folders`) is inserted by that ID, under
- * the folders' own shortest name: no note takes a name from a row that links by id. A folder with
- * no id is inserted by NAME, like a view-only file (`viewOnlyCatalog.ts`) — or by its root-relative
- * path when `resolve` gives the bare name to something else (a note or alias of that name, a
- * shallower folder) — and gets no row when neither spelling reaches it: nothing inserted would
- * link to it.
+ * The `[[` picker's folder rows (`folderLabel`). A folder with an id (`folders`) is inserted by
+ * it, under the shortest name that tells it from the other folders. One with no id is inserted by
+ * name — by its root-relative path when `resolve` gives the name to something else — and has no
+ * row when neither reaches it.
  */
-export function folderLinkCandidates(root: string, dirs: readonly string[], resolve: ResolveLink, folders: readonly IndexRecord[] = []): LinkCandidate[] {
+export function folderLinkCandidates(root: string, dirs: readonly string[], resolve: ResolveLink, folders: readonly IndexRecord[]): LinkCandidate[] {
   const ids = new Map(folders.map((settings) => [dirname(settings.path), settings.id]))
   const folder = folderResolver(root, dirs)
   return dirs.flatMap((dir) => {
@@ -82,7 +79,7 @@ export function folderLinkCandidates(root: string, dirs: readonly string[], reso
     // Of two folders still sharing an id, only the one it names is linked by it.
     const id = held !== undefined && resolve(held) === dir ? held : undefined
     const name = [basename(dir), relTo(root, dir)].find((spelling) => (id === undefined ? resolve : folder)(spelling) === dir)
-    return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: `${name} (folder)` }]
+    return name === undefined ? [] : [{ ...nameCandidate(name), insert: id ?? name, label: folderLabel(name) }]
   })
 }
 

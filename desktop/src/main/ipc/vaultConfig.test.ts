@@ -75,6 +75,12 @@ describe('registerVaultConfigIpc', () => {
     expect(await registered(CONTRACT.vaultConfig.write.channel)({ sender }, vault, 'a.txt', {})).toEqual(bad('UNSUPPORTED_EXTENSION'))
   })
 
+  it('a file that is not valid JSON answers INVALID_CONFIG, so a renderer can tell it from a missing one', async () => {
+    await mkdir(path.join(vault, VAULT_CONFIG_DIR))
+    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'review.json'), '{ "enabled": tr')
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'review.json')).toEqual(bad('INVALID_CONFIG'))
+  })
+
   it('subscribes one config watcher per open-vault root and drops it when the last window leaves', async () => {
     expect(activeConfigWatcherRoots()).toEqual([])
     store.upsertWindow({ id: 'w1', root: vault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds })

@@ -465,6 +465,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
+          onOpenFileRight={folder.openRight}
+          onOpenFileBackground={folder.openBackground}
+          onNotice={folder.onNotice}
           onNewInGroup={onNewNote}
           properties={properties}
           settings={folder.settings}
@@ -483,6 +486,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
+          onOpenFileRight={folder.openRight}
+          onOpenFileBackground={folder.openBackground}
+          onNotice={folder.onNotice}
           onNewInGroup={onNewNote}
           root={root}
           properties={properties}

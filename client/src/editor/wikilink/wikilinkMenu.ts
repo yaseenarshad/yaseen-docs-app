@@ -19,7 +19,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { isNoteId } from '@shared/noteId'
 import { copyNoteId } from '../../lib/copyNoteId'
-import { dirname } from '../../lib/paths'
+import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { renderMenu, type MenuRow } from '../blockHandleMenu'
 import { wikilinkInnerAt, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -91,8 +91,8 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
             const title = idLinkTitle(id, source.resolve)
             // A folder's name row says so: the id is its settings file's, and resolves to its directory.
             const dir = source.resolve?.(id)
-            const isFolder = source.folders.some((folder) => folder.id === id && dirname(folder.path) === dir)
-            close = openIdMenu(parent, event.clientX, event.clientY, title !== undefined && isFolder ? `${title} (folder)` : title, id, nav.onNotice)
+            const isFolder = dir != null && folderRecord(source.folders, dir)?.id === id
+            close = openIdMenu(parent, event.clientX, event.clientY, title !== undefined && isFolder ? folderLabel(title) : title, id, nav.onNotice)
             return true
           },
         },

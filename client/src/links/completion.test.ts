@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, basenameCandidates, linkCandidates, linkNames, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, basenameCandidates, linkCandidates, matchLinkCandidates, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -137,8 +137,7 @@ describe('linkCandidates', () => {
   })
 
   it('a name row matches, inserts and reads as itself (lower precomputed for the ranking scan, GRO-2197)', () => {
-    // `path` is the record this row names (YAZ-957): the back-pointer `linkNames` reads, so
-    // "this note's link name" needs neither a resolver nor a position match.
+    // `path` is the record this row names (YAZ-957).
     expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A', lower: 'a', path: '/vault/A.md' }])
   })
 
@@ -232,16 +231,6 @@ describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
       { name: 'N', label: 'N — a/Note', insert: ID },
       { name: 'b/Note', label: 'b/Note', insert: 'b/Note' },
       { name: 'N', label: 'N — b/Note', insert: 'b/Note|N' },
-    ])
-  })
-})
-
-describe('linkNames', () => {
-  it('a note with an id still maps to its NAME — the id is what a link inserts, never what a note is called (YAZ-2293)', () => {
-    const records = [{ ...rec('/vault/Note.md', ['Alias']), id: 'k3m9x2pq7abc' }, rec('/vault/a/Note.md', ['Other'])]
-    expect([...linkNames(records)]).toEqual([
-      ['/vault/Note.md', 'Note'],
-      ['/vault/a/Note.md', 'a/Note'],
     ])
   })
 })

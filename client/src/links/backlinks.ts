@@ -11,9 +11,9 @@
  * One entry per referencing NOTE (however many mentions it holds), path-sorted, so the section
  * renders the same order for the same snapshot.
  *
- * A FOLDER's page mentions what its settings link — a view's `order` entry or a link column's
- * `target` (`folderSettingsLinks`, by the rename engine's exact-link rule), and any link in an
- * outline line, prose included. Its entry is its settings file's record, sorted by that file's path.
+ * A FOLDER's page mentions what its settings record links by the rename engine's rule
+ * (`referenceTargets`: its own link properties, a view's `order` entry, a link column's `target`),
+ * and any link in an outline line, prose included. Its entry is that record, sorted by its path.
  *
  * Context snippets are read ON DEMAND (`fs:read` per shown entry, `mentionSnippets` below) —
  * the index stores no positions, and nothing is read until the section is expanded. A folder's
@@ -22,21 +22,19 @@
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { dirname } from '../lib/paths'
-import { folderSettings, folderSettingsLinks } from '../views/folderSettings'
+import { folderSettings } from '../views/folderSettings'
 import { parseOutline } from '../views/outlineDoc'
-import { exactLinkTarget, maskCode } from './renameLinks'
+import { maskCode, referenceTargets } from './renameLinks'
 
 /**
  * Records whose links/embeds resolve to `path`, then the settings records of the folders whose
  * settings link it, path-sorted; `path` itself — a note, or a folder's own page — never counts.
  */
 function referencing(path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] {
-  const mentions = (target: string | null): boolean => target !== null && resolve(target) === path
+  const mentions = (target: string): boolean => resolve(target) === path
   return [
     ...records.filter((r) => r.path !== path && [...r.links, ...r.embeds].some(mentions)),
-    ...folders.filter(
-      (f) => dirname(f.path) !== path && (folderSettingsLinks(f.properties).some((link) => mentions(exactLinkTarget(link))) || folderMentionSnippets(f, path, resolve).length > 0),
-    ),
+    ...folders.filter((f) => dirname(f.path) !== path && ([...referenceTargets(f)].some(mentions) || folderMentionSnippets(f, path, resolve, 1).length > 0)),
   ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
 }
 
@@ -51,7 +49,7 @@ function referencing(path: string, records: readonly IndexRecord[], folders: rea
 const backlinkCache = new WeakMap<ResolveLink, Map<string, IndexRecord[]>>()
 
 /** The notes — and the folders, as their settings records (`folders`) — mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
-export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[] = []): IndexRecord[] {
+export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[]): IndexRecord[] {
   let byPath = backlinkCache.get(resolve)
   if (byPath === undefined) backlinkCache.set(resolve, (byPath = new Map()))
   let hit = byPath.get(path)
@@ -191,7 +189,7 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
  * link to `target`, each as the page shows it — `mentionSnippets` over the bullets' text, in view
  * order. None when it links only by a view's `order` or a column's `target`.
  */
-export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink): MentionSnippet[] {
+export function folderMentionSnippets(settings: IndexRecord, target: string, resolve: ResolveLink, limit?: number): MentionSnippet[] {
   const bullets = folderSettings(settings).views.flatMap((view) => (view.outline === undefined ? [] : parseOutline(view.outline).map((line) => line.text)))
-  return mentionSnippets(bullets.join('\n'), target, resolve)
+  return mentionSnippets(bullets.join('\n'), target, resolve, limit)
 }

@@ -125,7 +125,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const bridge = {
     tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
-    index: vi.fn(async (root: string): Promise<{ root: string; records: IndexRecord[]; folders?: IndexRecord[]; generatedAt: number }> => ({ root, records: [], generatedAt: 1 })),
+    index: vi.fn(async (root: string): Promise<{ root: string; records: IndexRecord[]; folders: IndexRecord[]; generatedAt: number }> => ({ root, records: [], folders: [], generatedAt: 1 })),
     // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
     coldDiff: vi.fn(async () => null),
     readFile: vi.fn(async (path: string) => {
@@ -1172,7 +1172,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     }
     const tabs = ['/v/a.md', '/v/b.md', '/v/report.PDF', '/v/photo.PNG']
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs }, {}, (b) =>
-      b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/a.md', 'k3m9x2pq7abc'), note('/v/b.md')], generatedAt: 1 }),
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/a.md', 'k3m9x2pq7abc'), note('/v/b.md')], folders: [], generatedAt: 1 }),
     )
     const menuOf = (path: string) => {
       const tab = el.querySelector<HTMLElement>(`[role="tab"][title="${path}"]`)?.closest<HTMLElement>('.tabbar__tab')
@@ -1413,7 +1413,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   /** A references B by name; R references Docs/N by path — one file case, one folder case. */
   const records = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')]
   const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
-  const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+  const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
   const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
@@ -1506,7 +1506,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const count = vi.spyOn(renameLinks, 'countLinkReferences')
     try {
       const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
         b.bridge.tree.mockImplementation(async () => ({
           root: '/v',
           tree: [{ type: 'file', name: 'photo.png', path: '/v/photo.png', kind: 'image', size: 1, mtime: 1 }] as TreeNode[],
@@ -1545,7 +1545,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     let release!: () => void
     const pending = new Promise<TreeResponse>((r) => (release = () => r({ root: '/v', tree: [], generatedAt: 0 })))
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
         if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
         rootReads++
@@ -1577,7 +1577,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     let release!: () => void
     const pending = new Promise<TreeResponse>((r) => (release = () => r({ root: '/v', tree: [], generatedAt: 0 })))
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
         if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
         rootReads++
@@ -1633,7 +1633,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
     const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
-      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 })
       b.bridge.tree.mockResolvedValue({
         root: '/v',
         tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [] }],
@@ -1690,7 +1690,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const count = vi.spyOn(renameLinks, 'countLinkReferences')
     try {
       const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
-        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 }),
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, folders: [], generatedAt: 1 }),
       )
       await act(async () => void captured.sidebar?.onRenameFile('/v/Archive.json', '/v/Renamed.json', 'dir'))
 
@@ -1817,7 +1817,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     properties: {}, aliases: [], tags: [], links: [], embeds: [], text: 'x',
   })
   const withIndex = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) =>
-    void b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+    void b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1 })
   /** The vault's `review.json` turns upkeep on, and the index holds `records`. */
   const upkeepOn = (...records: IndexRecord[]) => (b: ReturnType<typeof installBridge>) => {
     b.bridge.vaultConfig.read.mockResolvedValue({ enabled: true })

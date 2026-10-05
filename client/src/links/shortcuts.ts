@@ -4,12 +4,10 @@
  * `id` of its `.folder.md` (YAZ-2293) — so it is the same file wherever it shows, and nothing is
  * rewritten when a folder or a note is renamed or moved. This module is the one door to that key.
  *
- * WHAT A FOLDER SHOWS (D4): the notes under it at any depth, plus the notes whose `also_in` holds
- * its id or the id of a folder under it — each once, in the index's own order. A subfolder is no
- * row, and the vault root has no page: its entry is the notes directly in it. `foldersShowing` is
- * the same rule from the note's side, and what the rows are built from. An entry no folder
- * has (a deleted folder, a typo) is ignored quietly, and a folder with no `.folder.md` has no id,
- * so nothing is a shortcut in it.
+ * WHAT A FOLDER SHOWS (D4): the notes under it at any depth, plus those whose `also_in` holds its
+ * id or the id of a folder under it — each once, in the index's order (`foldersShowing` is the
+ * rule from the note's side). The vault root's entry is the notes directly in it. An `also_in`
+ * entry no folder has is ignored.
  */
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -23,6 +21,9 @@ export function folderRecord(folders: readonly IndexRecord[], dir: string): Inde
   const path = folderSettingsPath(dir)
   return folders.find((r) => r.path === path)
 }
+
+/** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
+export const folderLabel = (name: string): string => `${name} (folder)`
 
 /** The settings records by folder id. Of two folders still sharing an id the first in path order is the one it names — the id sweep's own choice. */
 export function foldersById(folders: readonly IndexRecord[]): Map<string, IndexRecord> {
@@ -88,9 +89,6 @@ export const folderRows = (records: readonly IndexRecord[], folders: readonly In
 
 /** Whether a row `folder` shows is there by a shortcut: it does not live under it. */
 export const isShortcut = (record: IndexRecord, folder: string): boolean => !inFolder(record.folder, folder)
-
-/** Whether a note lives DIRECTLY in `folder`: its name is taken there. */
-export const livesIn = (record: IndexRecord, folder: string): boolean => record.folder === folder
 
 const propertiesOf = (content: string): Record<string, unknown> => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
 

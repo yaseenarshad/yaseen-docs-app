@@ -31,7 +31,7 @@ vi.mock('../api', async (importOriginal) => {
 import { alsoIn } from '@shared/alsoIn'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
-import { addShortcut, folderRows, foldersById, foldersShowing, isShortcut, livesIn, removeShortcut, rowsByFolder } from './shortcuts'
+import { addShortcut, folderRows, foldersById, foldersShowing, isShortcut, removeShortcut, rowsByFolder } from './shortcuts'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -205,12 +205,6 @@ describe('a row is a shortcut where it does not live under the folder', () => {
     expect(isShortcut(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
     expect(isShortcut(rec('/vault/Projects/Deep/Deeper/C.md'), 'Projects')).toBe(false)
     expect(isShortcut(rec('/vault/Projects/A.md'), 'Projects/Deep')).toBe(true)
-  })
-
-  it('livesIn is narrower: directly in the folder, not in a subfolder of it', () => {
-    expect(livesIn(rec('/vault/Projects/A.md'), 'Projects')).toBe(true)
-    expect(livesIn(rec('/vault/Projects/Deep/B.md'), 'Projects')).toBe(false)
-    expect(livesIn(rec('/vault/Areas/Health.md', { also_in: [PROJECTS_ID] }), 'Projects')).toBe(false)
   })
 })
 

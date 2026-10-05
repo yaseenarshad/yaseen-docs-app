@@ -628,6 +628,14 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(chipIn(rowOf(el, 'status'))).toBeNull()
   })
 
+  it('an `id` that is no note id (a hand-written `id: 42`) is the user’s own property: an editor and no chip', () => {
+    const el = mount('---\nid: 42\n---\nBody\n', { root: ROOT })
+    expand(el)
+    const r = rowOf(el, 'id')
+    expect(chipIn(r)).toBeNull()
+    expect(r.querySelector('[data-edit]')).not.toBeNull()
+  })
+
   it('a link value naming a FOLDER by its id reads as the folder’s name, as a note’s reads as its title (YAZ-2290 D10)', () => {
     const source = createWikilinkResolveSource()
     source.update((target) => (target === AREAS_ID ? '/vault/Areas' : null), [], []) // the window's link resolver: a note, else a folder
@@ -652,7 +660,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     // Its own key, then the living folder's two columns — Areas' `owner` is not merged in.
     expect(keysOf(el)).toEqual(['also_in', 'Status', 'effort'])
     expect(editorOf(el, 'effort')).toBe('number')
-    setValue(byLabel<HTMLSelectElement>(el, 'Property context'), '/vault/Areas')
+    setValue(el.querySelector<HTMLSelectElement>('.frontmatter-property-context select'), '/vault/Areas')
     expect(keysOf(el)).toEqual(['also_in', 'effort', 'owner'])
     expect(editorOf(el, 'effort')).toBe('text')
   })
@@ -662,7 +670,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     readFile.mockResolvedValue(fileOf(LOCAL_NOTE))
     const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
     expand(el)
-    expect(byLabel(el, 'Property context')).toBeNull() // one folder, nothing to choose
+    expect(el.querySelector('.frontmatter-property-context select')).toBeNull() // one folder, nothing to choose
     expect(rowOf(el, 'Status').querySelector('.property-choice-chip')?.textContent).toBe('Ready')
     expect(byLabel(el, 'Type of Status')).toBeNull()
     expect(byLabel(el, 'Delete Status')).toBeNull()
@@ -821,7 +829,7 @@ describe('FrontmatterPanel — "Properties from"', () => {
     return container
   }
   const from = (el: HTMLElement) => el.querySelector('.frontmatter-property-context')
-  const picker = (el: HTMLElement) => byLabel<HTMLSelectElement>(el, 'Property context')
+  const picker = (el: HTMLElement) => el.querySelector<HTMLSelectElement>('.frontmatter-property-context select')
   const choices = (el: HTMLElement) => [...(picker(el)?.options ?? [])].map((option) => option.textContent)
   const pick = (el: HTMLElement, dir: string) => setValue(picker(el), dir)
 
@@ -842,6 +850,15 @@ describe('FrontmatterPanel — "Properties from"', () => {
     const wikilinks = feedOf(folderMd('/vault/A', { id: A_ID }), folderMd('/vault/A/B'), folderMd(`${AREAS}/Health`, { id: HEALTH_ID }))
     const el = mountAt('/vault/A/B/Note.md', `---\nalso_in:\n  - ${HEALTH_ID}\n  - ${A_ID}\n---\nBody\n`, wikilinks)
     expect(choices(el)).toEqual(['B', 'A', 'Health', 'Areas'])
+    // The words are the dropdown's name.
+    expect(picker(el)?.labels[0].textContent).toMatch(/^Properties from /)
+    expect(picker(el)?.hasAttribute('aria-label')).toBe(false)
+  })
+
+  it('two choices with the same name read as their paths from the root; a name only one has stays bare', () => {
+    const wikilinks = feedOf(folderMd('/vault/A', { id: A_ID }), folderMd('/vault/A/Health'), folderMd(`${AREAS}/Health`, { id: HEALTH_ID }))
+    const el = mountAt('/vault/A/Health/Note.md', `---\nalso_in:\n  - ${HEALTH_ID}\n---\nBody\n`, wikilinks)
+    expect(choices(el)).toEqual(['A/Health', 'A', 'Areas/Health', 'Areas'])
   })
 
   it('a note in A/B/C where only A/B and A have saved settings: A/B is chosen first; C and A can be picked', () => {
@@ -881,7 +898,9 @@ describe('FrontmatterPanel — "Properties from"', () => {
     let el = mountAt(NOTE, 'Body\n', wikilinks)
     pick(el, '/vault/A')
     expect(picker(el)?.value).toBe('/vault/A')
-    act(() => root?.render(<FrontmatterPanel file={{ path: '/vault/A/B/C/Other.md', content: 'Body\n', mtime: 100 }} root={ROOT} wikilinks={wikilinks} />))
+    // The editor mounts one panel per note (keyed by its path).
+    act(() => root?.render(<FrontmatterPanel key="other" file={{ path: '/vault/A/B/C/Other.md', content: 'Body\n', mtime: 100 }} root={ROOT} wikilinks={wikilinks} />))
+    expand(el)
     expect(picker(el)?.value).toBe('/vault/A/B')
     pick(el, '/vault/A')
     act(() => root?.unmount())

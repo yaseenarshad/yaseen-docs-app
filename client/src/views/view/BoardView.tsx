@@ -9,7 +9,7 @@ import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle } from './GroupHeader'
 import { useFlip } from './flip'
-import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupsByFolder, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
 import { usePreview } from './PreviewCard'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { allPropertyKeys } from './properties'
@@ -105,8 +105,7 @@ export function BoardView({
   const { rowProps, card, close } = usePreview(preview, wikilinks)
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
-  /** Whether a level's groups take a new note: one it can seed, or — grouped by Folder — place. */
-  const adds = levelKeys.map((key, level) => key !== null || groupsByFolder(view, level))
+  const adds = [0, 1].map((level) => groupTakesNew(view, level))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
   const flipRoot = useFlip()
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */

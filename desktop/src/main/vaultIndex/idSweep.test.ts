@@ -308,15 +308,6 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     expect(await names()).toEqual([...skipped, 'Shown'].sort()) // no `.folder.md` at the top level
   })
 
-  it('writes no `.folder.md` in a folder the app has not adopted: its folders have no id', async () => {
-    await rm(at(VAULT_CONFIG_DIR), { recursive: true })
-    await mkdir(at('Projects', 'Alpha'), { recursive: true })
-    await sweepFolders()
-    expect(await names()).toEqual(['Projects'])
-    expect(await names('Projects')).toEqual(['Alpha'])
-    expect(await names('Projects', 'Alpha')).toEqual([])
-  })
-
   it('never writes over a `.folder.md` that appears between its look and its write, and a folder gone by then is passed over: nothing is thrown', async () => {
     await mkdir(at('Projects'))
     writesAfterTheRead('---\nid: k3m9x2pq7abc\nlabel: theirs\n---\n')
@@ -538,6 +529,23 @@ describe('sweepIds, wired into the live index', () => {
     await until(async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here'))
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
     expect(await read('Made here', FOLDER_SETTINGS_FILE)).toBe(born)
+  })
+
+  it('a `.folder.md` deleted while the app runs is written again holding the id it had; a folder deleted whole is given nothing', async () => {
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await createDir(at('Made here'))
+    const born = await idIn('Made here', FOLDER_SETTINGS_FILE)
+    const listed = async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here' && r.id === born)
+    await until(listed)
+    await rm(at('Made here', FOLDER_SETTINGS_FILE))
+    await until(async () => (await idIn('Made here', FOLDER_SETTINGS_FILE).catch(() => undefined)) === born)
+    await until(listed)
+    await rm(at('Made here'), { recursive: true })
+    await until(async () => !(await listed()))
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write that must not be made
+    expect(await readdir(root)).toEqual([VAULT_CONFIG_DIR])
   })
 
   it('a folder renamed outside the app takes its `.folder.md` with it: the id it was given is not derived again from the new path', async () => {

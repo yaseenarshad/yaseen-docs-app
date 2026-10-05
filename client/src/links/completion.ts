@@ -40,7 +40,7 @@ export interface LinkCandidate {
   name: string
   /** Placed between `[[` and `]]` — the note's or folder's `id`; without one the name, or the piped `Note|Alias` of an alias row. */
   insert: string
-  /** Row text: the name alone, `Alias — Note` (the alias row's disambiguation) or a folder's `Name (folder)`. Equal to `name` on a name row ONLY — how `linkNames` tells them apart. */
+  /** Row text: the name alone, `Alias — Note` (the alias row's disambiguation) or a folder's `Name (folder)`. */
   label: string
   /**
    * `name.toLowerCase()`, precomputed by the constructors so the ranking scan (GRO-2197 —
@@ -166,18 +166,4 @@ export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[]
     // its single argument and `names.map(nameCandidate)` can never pass an index as a path.
     return [{ ...nameCandidate(name), insert: r.id ?? name, path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, r.path, r.id))]
   })
-}
-
-/**
- * Every indexed note's own link NAME, keyed by path — one lookup, so no two surfaces can spell one
- * note two ways. The name is the shortest unambiguous one `linkCandidates` offers, which is
- * exactly the text that links BACK to that record. Alias rows are skipped — told by their `label`,
- * never by `insert`, which is the id on BOTH kinds of row once a note has one (YAZ-2293).
- */
-export function linkNames(records: readonly IndexRecord[]): Map<string, string> {
-  const names = new Map<string, string>()
-  for (const candidate of linkCandidates(records)) {
-    if (candidate.label === candidate.name && candidate.path !== undefined) names.set(candidate.path, candidate.name)
-  }
-  return names
 }

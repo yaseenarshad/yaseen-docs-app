@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { type MouseEvent as ReactMouseEvent, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import { basenameCandidates, type LinkCandidate } from '../../links/completion'
@@ -11,6 +11,7 @@ import type { FolderSettings } from '../folderSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface ListViewProps {
   def: ViewSet
@@ -24,6 +25,10 @@ export interface ListViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onOpenFile: (path: string) => void
+  /** The row's right-click menu (`PageContextMenu`): its two opens, and where a failed action says so. */
+  onOpenFileRight?: (path: string) => void
+  onOpenFileBackground?: (path: string) => void
+  onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
   /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
@@ -67,7 +72,14 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink }: ListViewProps) {
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
+  /** A typed editor keeps its own (native) menu, as in the table. */
+  const openMenu = (event: ReactMouseEvent, row: Row): void => {
+    if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
+    event.preventDefault()
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, noteId: row.record.id })
+  }
   const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -114,7 +126,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
       {shown.map((row, i) => {
         const inline = indent ? '' : rest.map((k) => render(row.values[k], resolve)).filter((s) => s !== '').join(separator)
         return (
-          <li key={row.record.path} className="view-list__item">
+          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)}>
             {marker !== 'none' && (
               <span className="view-list__marker" aria-hidden>
                 {marker === 'number' ? `${i + 1}.` : '•'}
@@ -172,6 +184,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
               </section>
             )
           })}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )
 }

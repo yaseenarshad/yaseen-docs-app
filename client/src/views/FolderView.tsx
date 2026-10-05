@@ -31,7 +31,7 @@ import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from '../links/BacklinksSection'
-import { folderRecord, folderRows, livesIn } from '../links/shortcuts'
+import { folderRecord, folderRows } from '../links/shortcuts'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { DEFAULT_VIEWS, folderSettings, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
@@ -266,7 +266,7 @@ export function FolderView({
     // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
     create: (seed, name) => {
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
-      return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => livesIn(r, into)), seed, name)
+      return createInFolder(into === folder ? path : absFrom(root, into), rows.filter((r) => r.folder === into), seed, name)
     },
     // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
     // stood before and rejects to the caller, whose inline text is the report.

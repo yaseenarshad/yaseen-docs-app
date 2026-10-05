@@ -2,7 +2,7 @@ import path from 'node:path'
 import { isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { fsCall, isMarkdown } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
-import { sweepIds } from './idSweep'
+import { restoreFolderId, sweepIds } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
 import { reconcile, type ColdStartDiff } from './reconcile'
 import { scanFile, walk } from './scan'
@@ -51,10 +51,13 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       // A folder that appears is given its settings file, and so its id (D13).
       void sweepIds(root, entry.records, [], (p) => entry.records.get(p)?.id, [ev.path])
       return
-    case 'unlink':
+    case 'unlink': {
+      const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
       entry.records.delete(ev.path)
       schedulePersist(root, entry.records)
+      if (id !== undefined) void restoreFolderId(root, ev.path, id)
       return
+    }
     case 'unlinkDir': {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)

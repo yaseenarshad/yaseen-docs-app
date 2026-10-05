@@ -105,24 +105,24 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
 describe('folderLinkCandidates: the `[[` picker offers folders', () => {
   const rows = (records: IndexRecord[]) => {
     const resolve = linkResolver(records, '/vault', DIRS)
-    return [...linkCandidates(records), ...folderLinkCandidates('/vault', DIRS, resolve)]
+    return [...linkCandidates(records), ...folderLinkCandidates('/vault', DIRS, resolve, [])]
   }
 
   it('a folder inserts its NAME — or its path when a shallower folder has the name', () => {
-    expect(folderLinkCandidates('/vault', DIRS, linkResolver([], '/vault', DIRS)).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Projects', 'Work', 'Work/Projects'])
+    expect(folderLinkCandidates('/vault', DIRS, linkResolver([], '/vault', DIRS), []).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Projects', 'Work', 'Work/Projects'])
   })
 
   it('and its path when a note has the name; every row links back to its own folder', () => {
     const records = [rec('/vault/Notes/Old.md')]
     const resolve = linkResolver(records, '/vault', DIRS)
-    const candidates = folderLinkCandidates('/vault', DIRS, resolve)
+    const candidates = folderLinkCandidates('/vault', DIRS, resolve, [])
     expect(candidates.map((c) => c.insert)).toEqual(['Archive', 'Archive/Old', 'Projects', 'Work', 'Work/Projects'])
     expect(candidates.map((c) => resolve(c.insert))).toEqual(DIRS)
   })
 
   it('a folder whose very path a note holds gets no row: nothing inserted would reach it', () => {
     const records = [rec('/vault/Projects.md'), rec('/vault/Work/Projects.md')]
-    expect(folderLinkCandidates('/vault', DIRS, linkResolver(records, '/vault', DIRS)).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Work'])
+    expect(folderLinkCandidates('/vault', DIRS, linkResolver(records, '/vault', DIRS), []).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Work'])
   })
 
   it('on an equal match the note ranks above the folder', () => {

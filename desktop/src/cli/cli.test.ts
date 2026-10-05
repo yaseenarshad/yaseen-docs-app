@@ -246,11 +246,6 @@ describe('comments', () => {
     expect(gone).toEqual(missing)
     expect(gone).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
-
-  it('a note path that does not exist: the not-found error', async () => {
-    expect(await run(['comments', path.join(dir, 'nope.md')])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
-    expect(await run(['comments', path.join(dir, 'nope.md'), '--json'])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
-  })
 })
 
 describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
@@ -322,6 +317,20 @@ describe('id (YAZ-2293)', () => {
     const record = await scanFile(theirs, twin)
     await sweepIds(theirs, new Map([[twin, record]]), [record], () => undefined)
     expect(await readFile(twin, 'utf8')).toBe(await readFile(p, 'utf8'))
+  })
+
+  it("`id <folder>/.folder.md` when the file is missing: the folder is given the settings file the app's sweep would give it, and its id printed; a folder that does not exist is not found", async () => {
+    const p = path.join(await vault('mine', {}), 'Projects', FOLDER_SETTINGS_FILE)
+    await mkdir(path.dirname(p))
+    const r = await run(['id', p])
+    const id = r.out.trimEnd()
+    expect(r).toEqual({ code: 0, out: `${id}\n`, err: '' })
+    expect(await readFile(p, 'utf8')).toBe(`---\nid: ${id}\n---\n`)
+    const theirs = path.join(await vault('theirs', {}), 'Projects')
+    await mkdir(theirs)
+    await sweepIds(path.dirname(theirs), new Map(), [], () => undefined, [theirs])
+    expect(await readFile(path.join(theirs, FOLDER_SETTINGS_FILE), 'utf8')).toBe(await readFile(p, 'utf8'))
+    expect(await run(['id', path.join(path.dirname(theirs), 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 
   it('a page that cannot take an id — no vault above it, a block that does not parse, an `id` of another shape — exit 1, bytes untouched', async () => {

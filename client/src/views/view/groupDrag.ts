@@ -60,6 +60,9 @@ export const groupsByFolder = (view: ViewDef, level = 0): boolean => {
   return typeof property === 'string' && canonicalKey(property) === 'file.folder'
 }
 
+/** Whether a level's groups take a new note: one it can seed, or — grouped by Folder — place. */
+export const groupTakesNew = (view: ViewDef, level: number): boolean => groupByKey(view, level) !== null || groupsByFolder(view, level)
+
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
 export function applyMoves(records: readonly IndexRecord[], moves: Record<string, PendingMove>): IndexRecord[] {
   return records.map((r) => {

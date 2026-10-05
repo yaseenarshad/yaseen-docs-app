@@ -190,6 +190,13 @@ describe('grid', () => {
     click(q(card, '.view-card__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
+
+  it('a right-click on a card opens the page menu: "Copy ID" directly under "Copy path" when its note has an id', () => {
+    const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
+    act(() => void cardOf(el, 'Agentic Agency').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
+    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
+  })
 })
 
 describe('an id link (YAZ-2293 D8)', () => {

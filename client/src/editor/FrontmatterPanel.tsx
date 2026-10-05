@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
+import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { basenameCandidates } from '../links/completion'
@@ -77,7 +78,8 @@ const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, 
 
 function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderSettings | null = null): Row[] {
   const own = Object.entries(properties).map(([key, raw]): Row => {
-    if (RESERVED_KEYS.has(key)) return { key, raw, editor: null, chip: 'reserved' }
+    // An `id` that is no note id is the user's own value, not the app's.
+    if (RESERVED_KEYS.has(key) && (key !== NOTE_ID_KEY || isNoteId(raw))) return { key, raw, editor: null, chip: 'reserved' }
     if (isOpaque(raw)) return { key, raw, editor: null, chip: 'yaml' }
     // Existing human-readable keys can have a folder-local declaration.
     return { key, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
@@ -131,8 +133,8 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   // and the view settings block is edited through the views, so it is no row.
   const own = isFolderSettingsPath(file.path)
   const byId = useMemo(() => foldersById(folders), [folders])
-  // The choice of folder is the panel's own state, held with the note it was made for.
-  const [picked, setPicked] = useState<{ note: string; dir: string } | null>(null)
+  // The choice of folder is the panel's own state: the panel is mounted per note.
+  const [picked, setPicked] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   // 🔒 Typed rows are the default; raw is the fallback under them.
   const [yamlMode, setYamlMode] = useState(false)
@@ -206,7 +208,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
     return foldersShowing(dir === vault ? '' : relTo(vault, dir), parsed, byId).map((folder) => (folder === '' ? vault : absFrom(vault, folder)))
   }, [wikilinks, own, vault, dir, parsed, byId])
   // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
-  const chosen = dirs.find((d) => picked?.note === file.path && d === picked.dir) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
+  const chosen = dirs.find((d) => d === picked) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
   const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(folderRecord(folders, chosen))), [folders, chosen])
   /** `also_in` as the eye reads it: each folder id as that folder's name; an entry no folder has stays as written. */
   const folderNames = (raw: unknown): unknown => {
@@ -257,7 +259,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
   }
 
   const saveDefinition = async (): Promise<void> => {
-    if (!propertyMenu || chosen === undefined) return
+    if (!propertyMenu) return
     setSaving(true)
     try {
       const { key, definition, base } = propertyMenu
@@ -280,7 +282,7 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
-          <p className="frontmatter-property-menu__scope">In {basename(chosen ?? dir)}</p>
+          <p className="frontmatter-property-menu__scope">In {basename(chosen)}</p>
           <fieldset disabled={saving} className="property-settings-fields">
           <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(parsed[propertyMenu.key]) ? (parsed[propertyMenu.key] as unknown[]).map(String) : parsed[propertyMenu.key] == null ? [] : [String(parsed[propertyMenu.key])]} />
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
@@ -296,8 +298,9 @@ export function FrontmatterPanel({ file, root, properties: decls = null, wikilin
           {chosen !== undefined && !rawMode && (
             <div className="frontmatter-property-context">
               {dirs.length === 1 ? `Properties from ${basename(chosen)}` : (
-                <label>Properties from <select className="view-select" aria-label="Property context" value={chosen} onChange={(e) => { setPicked({ note: file.path, dir: e.target.value }); setPropertyMenu(null) }}>
-                  {dirs.map((d) => <option key={d} value={d}>{basename(d)}</option>)}
+                <label>Properties from <select className="view-select" value={chosen} onChange={(e) => { setPicked(e.target.value); setPropertyMenu(null) }}>
+                  {/* A name two choices share reads as each one's path from the root. */}
+                  {dirs.map((d) => <option key={d} value={d}>{vault !== undefined && dirs.some((o) => o !== d && basename(o) === basename(d)) ? relTo(vault, d) : basename(d)}</option>)}
                 </select></label>
               )}
             </div>

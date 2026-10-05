@@ -156,7 +156,7 @@ export const CONTRACT = {
   },
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188): created lazily on first write; reading never creates it. */
   vaultConfig: {
-    /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing or the JSON is malformed. */
+    /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing; malformed JSON rejects `INVALID_CONFIG`. */
     read: invoke<[root: string, name: string], unknown>('vaultConfig:read', 2),
     /** Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`. */
     write: invoke<[root: string, name: string, value: unknown], void>('vaultConfig:write', 3),

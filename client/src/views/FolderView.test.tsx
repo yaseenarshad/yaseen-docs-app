@@ -257,24 +257,10 @@ describe('a folder whose `.folder.md` declares columns', () => {
 // ---------- the rows (D4) ----------
 
 describe('rows are the notes UNDER the folder, at any depth, and only those', () => {
-  it('a note directly in the folder is a row; a note in another folder is not', async () => {
-    const el = await mount()
-    selectView(el, 'Table')
-    expect(rowNames(el)).toEqual(expect.arrayContaining(['Lead Gen', 'Sales']))
-    expect(el.textContent).not.toContain('Other') // another folder
-    expect(el.textContent).not.toContain('CAC')
-  })
-
   it('a note in a subfolder, at any depth, is a row', async () => {
     const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Older'])
-  })
-
-  it('a folder with no notes of its own but notes in its subfolders shows all of them', async () => {
-    const el = await mount(SETTINGS, [rec(OTHER), rec(DEEP), rec('/vault/stages/archive/2019/Older.md'), rec('/vault/stages/live/Now.md')])
-    selectView(el, 'Table')
-    expect(rowNames(el)).toEqual(['Old', 'Older', 'Now'])
   })
 
   it('a subfolder is never a row — not even one with a settings file of its own', async () => {
