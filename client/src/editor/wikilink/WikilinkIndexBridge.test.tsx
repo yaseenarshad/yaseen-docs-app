@@ -415,7 +415,7 @@ describe('WikilinkIndexBridge', () => {
       mount('/trees')
       await flush()
       expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'Plan', 'Projects', 'Work', FOLDER_ID])
-      expect(candidates.candidates.map((c) => c.label)).toEqual(['Note', 'Plan', 'Projects (folder)', 'Work (folder)', 'Work/Projects (folder)'])
+      expect(candidates.candidates.map((c) => c.label)).toEqual(['Note', 'Plan', 'Projects (folder)', 'Work (folder)', 'Client Projects (folder)']) // its title (YAZ-2420 D17)
     })
 
     it('a new folder wakes the editors once and resolves; a tree that moved no folder wakes nobody (YAZ-2196)', async () => {

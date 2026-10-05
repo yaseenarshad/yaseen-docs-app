@@ -7,23 +7,24 @@
  * MAX_SUGGESTIONS after ranking.
  *
  * `linkCandidates(records)` derives the editor picker's candidates from an index snapshot:
- * every markdown note under its SHORTEST unambiguous link target, plus one row per frontmatter
- * ALIAS (Links E2, GRO-2214). Duplicate basenames follow the resolver's shallowest-depth rule
- * (`views/engine.ts` `makeResolver`, GRO-2190): the bare basename resolves to the shallowest
- * match (equal depth → first in path order), so only that record gets the bare name — every
- * other duplicate is disambiguated as `folder/basename`, which resolves root-relatively.
+ * every markdown note under its TITLE (YAZ-2420 🔒 D17 — the basename of a note that has no
+ * `title:`), plus one row per frontmatter ALIAS (Links E2, GRO-2214). Duplicate titles follow the
+ * resolver's shallowest-depth rule (`views/engine.ts` `makeResolver`, GRO-2190): the bare title
+ * resolves to the shallowest match (equal depth → first in path order), so only that record gets
+ * the bare name — every other duplicate is disambiguated as `folder/title`, and inserts
+ * `folder/basename`, which resolves root-relatively.
  * An alias row is typed as the alias but INSERTS the piped `[[Note|Alias]]`, so it is
  * unambiguous by construction too — the target is that note's own unambiguous name, whoever
  * else claims the alias (aliases resolve after basenames, and two notes may share one). Two
  * notes claiming the same alias therefore both show, told apart by the note half of the label —
- * which is already `folder/basename` when their basenames collide as well.
+ * which is already `folder/title` when their titles collide as well.
  * A note WITH a frontmatter `id` (YAZ-2293, 🔒) is linked by it instead: both its name row and
  * its alias rows insert the plain `[[id]]` — no name, no pipe — so the link survives any rename
  * or move. The names above are then only what such a row is TYPED and READ as; a note with no
  * id keeps inserting them, and the exception below is theirs alone.
  * Inserting exactly a candidate's `insert` text therefore always links to its record — with ONE
- * honest exception (GRO-2197 audit): the `r.folder === ''` clause below hands the bare basename
- * to EVERY root-level record, so two files at the vault ROOT whose basenames differ only by case
+ * honest exception (GRO-2197 audit): the `r.folder === ''` clause below hands the bare title
+ * to EVERY root-level record, so two files at the vault ROOT that share a title, in any case
  * (or `A.md` next to `A.markdown`) both offer a bare row while the resolver, which case-folds,
  * can only give the name to one of them. There is no unambiguous name to offer the second, so
  * this is recorded rather than fixed.
@@ -73,10 +74,10 @@ export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly
   ]
 }
 
-/** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted as the note's `id` — piped by name when it has none. */
-const aliasCandidate = (alias: string, note: string, path: string, id?: string): LinkCandidate => ({
+/** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted as the note's `id` — piped behind `target`, the text that links to it, when it has none. */
+const aliasCandidate = (alias: string, note: string, target: string, path: string, id?: string): LinkCandidate => ({
   name: alias,
-  insert: id ?? `${note}|${alias}`,
+  insert: id ?? `${target}|${alias}`,
   label: `${alias} — ${note}`,
   lower: alias.toLowerCase(),
   path,
@@ -128,19 +129,20 @@ export function matchLinkCandidates<T extends { name: string; lower?: string }>(
 const depthOf = (r: IndexRecord): number => (r.folder === '' ? 0 : r.folder.split('/').length)
 
 /**
- * What Bases' cell editors complete over: the index BASENAMES — no aliases, no folder
- * disambiguation — each written as every link the app writes (YAZ-2293): the note's `id` when it
- * has one, else the basename it always was.
+ * What Bases' cell editors complete over: the index TITLES (YAZ-2420 🔒 D17) — no aliases, no
+ * folder disambiguation — each written as every link the app writes (YAZ-2293): the note's `id`
+ * when it has one, else the title, the basename of a note that has none.
  */
 export const basenameCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
-  records.map((r) => ({ ...nameCandidate(r.basename), insert: r.id ?? r.basename }))
+  records.map((r) => ({ ...nameCandidate(r.title), insert: r.id ?? r.title }))
 
 /**
  * Candidates for one index snapshot, in records order (i.e. path-sorted): per record its name —
- * the basename when this record is what the bare basename resolves to (unique, or the shallowest
- * duplicate — equal depth to the first in order, mirroring `makeResolver`), else the
- * root-relative `folder/basename` — followed by one alias row per frontmatter alias, inserting
- * the piped form; every row of a record with an `id` inserts that id instead (module doc).
+ * the title when this record is what the bare title resolves to (unique, or the shallowest
+ * duplicate — equal depth to the first in order, mirroring `makeResolver`), else
+ * `folder/title`, inserting the root-relative `folder/basename` — followed by one alias row per
+ * frontmatter alias, inserting the piped form; every row of a record with an `id` inserts that id
+ * instead (module doc).
  * Duplicate detection is case-insensitive, like resolution. Two alias rows are
  * SKIPPED (GRO-2197): an alias equal to the chosen name (case-insensitively) would only add a
  * degenerate `[[X|X]]` next to the plain `[[X]]` row, and an alias containing `[` or `]` would
@@ -151,19 +153,21 @@ export const basenameCandidates = (records: readonly IndexRecord[]): LinkCandida
 export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[] {
   const shallowest = new Map<string, { index: number; depth: number }>()
   records.forEach((r, index) => {
-    const key = r.basename.toLowerCase()
+    const key = r.title.toLowerCase()
     const depth = depthOf(r)
     const prev = shallowest.get(key)
     if (prev === undefined || depth < prev.depth) shallowest.set(key, { index, depth })
   })
   return records.flatMap((r, index) => {
-    const name =
-      shallowest.get(r.basename.toLowerCase())?.index === index || r.folder === '' ? r.basename : `${r.folder}/${r.basename}`
+    const bare = shallowest.get(r.title.toLowerCase())?.index === index || r.folder === ''
+    const name = bare ? r.title : `${r.folder}/${r.title}`
+    // What links to it with no id: the title while it resolves here, else the path, which no title joins.
+    const target = bare ? r.title : `${r.folder}/${r.basename}`
     // GRO-2197: no `[[X|X]]` row for an alias that IS the chosen name, no bracketed alias
     // whose piped insert would re-parse as a different link (module doc above).
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== name.toLowerCase() && !/[[\]]/.test(alias))
     // The record rides along (YAZ-957) — added HERE, where it is known, so `nameCandidate` keeps
     // its single argument and `names.map(nameCandidate)` can never pass an index as a path.
-    return [{ ...nameCandidate(name), insert: r.id ?? name, path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, r.path, r.id))]
+    return [{ ...nameCandidate(name), insert: r.id ?? target, path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, target, r.path, r.id))]
   })
 }

@@ -14,7 +14,7 @@
  */
 import type { IndexRecord } from '@shared/types'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
-import { relTo } from '../lib/paths'
+import { dirname, relTo } from '../lib/paths'
 import { matchLinkCandidates } from '../links/completion'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
@@ -31,6 +31,8 @@ export interface SearchCandidate {
   path: string
   /** Root-relative folder for the row's secondary label ('' at the vault root). */
   folder: string
+  /** The note's or folder's id, on the row of its title: what `searchRows` finds it by (YAZ-2420 🔒 D32). */
+  id?: string
 }
 
 /** Result cap for title search — a scrollable result list, not the `[[` picker's MAX_SUGGESTIONS popup. */
@@ -46,7 +48,7 @@ export function searchCandidates(records: readonly IndexRecord[]): SearchCandida
   return records.flatMap((r) => {
     const row = (name: string, label: string): SearchCandidate => ({ kind: 'file', name, lower: name.toLowerCase(), label, path: r.path, folder: r.folder })
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== r.title.toLowerCase())
-    return [row(r.title, r.title), ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
+    return [{ ...row(r.title, r.title), id: r.id }, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
   })
 }
 
@@ -56,18 +58,31 @@ export function searchCandidates(records: readonly IndexRecord[]): SearchCandida
  * ABSOLUTE paths in tree order (`allDirs`, treeState.ts), so a folder's row sits above its
  * children's — and, spliced ahead of `searchCandidates`, above any note that ties with it in a
  * rank bucket. `folder` follows `IndexRecord.folder`: root-relative, `/`
- * separated, `''` directly under the root.
+ * separated, `''` directly under the root. A folder's id is its settings record's (`folders`).
  */
-export function folderCandidates(root: string, dirs: readonly string[], titles: PathTitles): SearchCandidate[] {
+export function folderCandidates(root: string, dirs: readonly string[], titles: PathTitles, folders: readonly IndexRecord[] = []): SearchCandidate[] {
+  const ids = new Map(folders.map((settings) => [dirname(settings.path), settings.id]))
   return dirs.map((dir) => {
     const rel = relTo(root, dir)
     const cut = rel.lastIndexOf('/')
     const name = pageLabel(dir, true, titles)
-    return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: cut === -1 ? '' : rel.slice(0, cut) }
+    return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: cut === -1 ? '' : rel.slice(0, cut), id: ids.get(dir) }
   })
 }
 
 /** Rows matching `query`, ranked exact → prefix → substring by the shared matcher, capped at SEARCH_CAP. */
 export function searchTitles(candidates: readonly SearchCandidate[], query: string): SearchCandidate[] {
   return matchLinkCandidates(candidates, query, SEARCH_CAP)
+}
+
+/**
+ * What the search box shows for `query` (YAZ-2420 🔒 D32): when the text holds the id of a note or
+ * a folder anywhere in it — a pasted id, an `[[id]]` link, a file name, a whole path — exactly
+ * those, each under its title; otherwise `searchTitles`. An id is held whole or not at all: no part
+ * of one matches.
+ */
+export function searchRows(candidates: readonly SearchCandidate[], query: string): SearchCandidate[] {
+  const text = query.toLowerCase()
+  const held = candidates.filter((c) => c.id !== undefined && text.includes(c.id))
+  return held.length > 0 ? held : searchTitles(candidates, query)
 }

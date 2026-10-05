@@ -26,7 +26,8 @@ const rec = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     path,
     name,
     basename: name.replace(/\.md$/, ''),
-    title: name.replace(/\.md$/, ''),
+    // As the index titles a record with no `title:`: a `.folder.md` by its folder's own name.
+    title: name === '.folder.md' ? path.split('/').at(-2)! : name.replace(/\.md$/, ''),
     folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
     ext: 'md',
     size: 1,
@@ -95,6 +96,20 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(resolve(FOLDER_ID)).toBe('/vault/Work/Projects')
     expect(resolve(`[[${FOLDER_ID}]]`)).toBe('/vault/Work/Projects')
     expect(resolve(NOTE_ID)).toBe('/vault/Projects/Plan.md')
+  })
+
+  it('E: `[[Title]]` is the folder with that title, before a folder merely NAMED so; a note of the title wins (YAZ-2420 D17)', () => {
+    const folders = [rec('/vault/Archive/Old/.folder.md', { title: 'Legacy' }), rec('/vault/Work/.folder.md', { title: 'Old' })]
+    const resolve = linkResolver([], '/vault', DIRS, folders)
+    expect(resolve('[[legacy]]')).toBe('/vault/Archive/Old')
+    expect(resolve('Old')).toBe('/vault/Work') // the title, not the directory `Archive/Old`
+    expect(resolve('Work')).toBe('/vault/Work') // and a titled folder still answers to its directory's name
+    expect(linkResolver([rec('/vault/Notes/legacy-k3m9x2pq7abc.md', { title: 'Legacy' })], '/vault', DIRS, folders)('Legacy')).toBe('/vault/Notes/legacy-k3m9x2pq7abc.md')
+  })
+
+  it('two folders with one title: the shallowest', () => {
+    const folders = [rec('/vault/Archive/Old/.folder.md', { title: 'Clients' }), rec('/vault/Work/.folder.md', { title: 'Clients' })]
+    expect(linkResolver([], '/vault', DIRS, folders)('Clients')).toBe('/vault/Work')
   })
 
   it('no folder list, or an id whose folder the tree does not hold: nothing resolves', () => {
@@ -195,6 +210,14 @@ describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)
     expect(resolve([rec('/vault/Archive/Projects.md'), rec('/vault/Roadmap.md', { aliases: ['Projects'] })])).toBe('/vault/Archive/Projects.md')
     expect(resolve([rec('/vault/Roadmap.md', { aliases: ['Projects'] })])).toBe('/vault/Roadmap.md')
     expect(resolve([rec('/vault/Roadmap.md')])).toBe('/vault/Projects')
+  })
+
+  it('E: a folder\'s row is typed and read as its TITLE, and inserts its id; with no id, the title (YAZ-2420 D17)', () => {
+    const titled = (id?: string) => [rec('/vault/Work/Projects/.folder.md', { title: 'Client Projects', ...(id === undefined ? {} : { id }) })]
+    expect(matchLinkCandidates(rows([], titled(WORK_ID)).rows, 'client').map(row)).toEqual([['Client Projects (folder)', WORK_ID]])
+    const { resolve, rows: all } = rows([], titled())
+    expect(matchLinkCandidates(all, 'client').map(row)).toEqual([['Client Projects (folder)', 'Client Projects']])
+    expect(resolve('Client Projects')).toBe('/vault/Work/Projects')
   })
 
   it('two folders still sharing an id: only the one the id names is linked by it', () => {

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { pathTitles } from '../lib/pageLabel'
-import { SEARCH_CAP, folderCandidates, searchCandidates, searchTitles } from './searchCandidates'
+import { SEARCH_CAP, folderCandidates, searchCandidates, searchRows, searchTitles } from './searchCandidates'
 
 const NO_TITLES = pathTitles([], [])
 
@@ -151,5 +151,40 @@ describe('searchTitles', () => {
     const matched = searchTitles(many, 'cac')
     expect(matched).toHaveLength(SEARCH_CAP)
     expect(matched[0].name).toBe('CAC')
+  })
+})
+
+describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const ABDUL = `/vault/candidates/up-001-abdul-${ID}.md`
+  const folders = [{ ...rec('/vault/candidates/.folder.md', [], 'Candidates 2026'), id: 'f7n2w8rt4xyz' }]
+  const rows = [
+    ...folderCandidates('/vault', ['/vault/candidates'], pathTitles([], folders), folders),
+    ...searchCandidates([{ ...rec(ABDUL, ['Abdul'], 'UP-001 - Abdul'), id: ID }, rec('/vault/k3m9 abdul notes.md'), { ...rec('/vault/plan-7tq2m8vd4xhn.md', [], 'Plan'), id: '7tq2m8vd4xhn' }]),
+  ]
+  const found = (query: string) => searchRows(rows, query).map((c) => [c.kind, c.label, c.path])
+
+  it('D: an id pasted alone is its note, the only result, under its title', () => {
+    expect(found(ID)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
+    expect(found(` ${ID.toUpperCase()} `)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
+  })
+
+  it('D: a `[[<id>]]` link, a file name or a whole copied path that holds the id is the same one result, wherever the note lives now', () => {
+    for (const pasted of [`[[${ID}|Abdul]]`, `up-001-abdul-rehman-${ID}.md`, `/Users/y/vault/ai-dev-hire/upwork/up-001-abdul-rehman-${ID}.md`]) expect(found(pasted)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
+  })
+
+  it("D: a folder's id is the folder, the only result", () => {
+    expect(found('see f7n2w8rt4xyz')).toEqual([['dir', 'Candidates 2026', '/vault/candidates']])
+  })
+
+  it('D: text that holds two ids gives those two and nothing else', () => {
+    expect(found(`[[${ID}]] and [[7tq2m8vd4xhn]]`).map(([, label]) => label)).toEqual(['UP-001 - Abdul', 'Plan'])
+  })
+
+  it('D: text that holds no id of this vault is the ordinary search: part of an id matches nothing by id, and a title sharing its letters is found as any title is', () => {
+    expect(found('k3m9').map(([, label]) => label)).toEqual(['k3m9 abdul notes'])
+    expect(found(ID.slice(0, 11))).toEqual([])
+    expect(found('zzzz9zzzzzzz')).toEqual([]) // an id, but of no note here
+    expect(searchRows(rows, 'abdul')).toEqual(searchTitles(rows, 'abdul'))
   })
 })

@@ -103,6 +103,11 @@ describe('help and usage', () => {
     expect(lines.filter((line, i) => (i < first || i >= first + 3) && /`in:`|\.folder\.md/.test(line))).toEqual([])
   })
 
+  it('E: says that a page\'s title is its `title:` line, that the app builds the file name from the title and the id, and that a page is found from an id by its file name (YAZ-2420 D14)', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['`title:` line', '`<kebab-title>-<id>.md`', "search the vault's file names for it", 'a file the app did not name is found by its `id: <id>` line']) expect(help).toContain(said)
+  })
+
   it('usage errors exit 2 with the reason and the usage block on stderr, nothing on stdout', async () => {
     const p = await page('a.md', '')
     for (const [argv, reason] of [
@@ -380,7 +385,7 @@ describe('links (YAZ-2293)', () => {
     expect(await run(['links', home])).toEqual({
       code: 0,
       err: '',
-      out: `${NOTE}  Projects/Alpha/Kickoff notes.md\n${DEAD}  (missing)\n${FOLDER}  Areas/  (also in)\n`,
+      out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n${DEAD}  (missing)\n${FOLDER}  Areas  Areas/  (also in)\n`,
     })
   })
 
@@ -389,9 +394,9 @@ describe('links (YAZ-2293)', () => {
     const r = await run(['links', path.join(root, 'Home.md'), '--json'])
     expect(JSON.parse(r.out)).toEqual({
       links: [
-        { id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' },
+        { id: NOTE, kind: 'note', title: 'Kickoff notes', path: 'Projects/Alpha/Kickoff notes.md' },
         { id: DEAD, kind: 'missing' },
-        { id: FOLDER, kind: 'folder', path: 'Areas' },
+        { id: FOLDER, kind: 'folder', title: 'Areas', path: 'Areas' },
       ],
       in: [],
     })
@@ -409,21 +414,41 @@ describe('links (YAZ-2293)', () => {
     expect(await run(['links', held])).toEqual({
       code: 0,
       err: '',
-      out: `${NOTE}  Projects/Alpha/Kickoff notes.md\n\nin:\n${FOLDER}  Areas/\n${DEAD}\n${NOTE}\n`,
+      out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n\nin:\n${FOLDER}  Areas  Areas/\n${DEAD}\n${NOTE}\n`,
     })
     expect(JSON.parse((await run(['links', held, '--json'])).out)).toEqual({
-      links: [{ id: NOTE, kind: 'note', path: 'Projects/Alpha/Kickoff notes.md' }],
-      in: [{ id: FOLDER, path: 'Areas' }, { id: DEAD }, { id: NOTE }],
+      links: [{ id: NOTE, kind: 'note', title: 'Kickoff notes', path: 'Projects/Alpha/Kickoff notes.md' }],
+      in: [{ id: FOLDER, title: 'Areas', path: 'Areas' }, { id: DEAD }, { id: NOTE }],
     })
     // Values and no ids: the links say so, and the folders are still listed.
     const only = path.join(root, 'Only.md')
     await writeFile(only, `---\nin:\n  ${FOLDER}:\n    Status: Interview\n---\n`, 'utf8')
-    expect((await run(['links', only])).out).toBe(`no ids on ${only}\n\nin:\n${FOLDER}  Areas/\n`)
+    expect((await run(['links', only])).out).toBe(`no ids on ${only}\n\nin:\n${FOLDER}  Areas  Areas/\n`)
+  })
+
+  it('E: each id is followed by the title of the note or folder it names now, then its path — in the `in:` group too, and as `title` in --json (YAZ-2420 D14)', async () => {
+    const root = await vault('titled', {
+      'Home.md': `---\nalso_in:\n  - ${FOLDER}\nin:\n  ${FOLDER}:\n    Status: Interview\n---\nSee [[${NOTE}]] and [[${DEAD}]].\n`,
+      [`candidates/up-001-abdul-${NOTE}.md`]: `---\nid: ${NOTE}\ntitle: UP-001 - Abdul\n---\n`,
+      [`upwork-2026/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${FOLDER}\ntitle: Upwork 2026\n---\n`,
+    })
+    const home = path.join(root, 'Home.md')
+    expect((await run(['links', home])).out).toBe(
+      `${NOTE}  UP-001 - Abdul  candidates/up-001-abdul-${NOTE}.md\n${DEAD}  (missing)\n${FOLDER}  Upwork 2026  upwork-2026/  (also in)\n\nin:\n${FOLDER}  Upwork 2026  upwork-2026/\n`,
+    )
+    expect(JSON.parse((await run(['links', home, '--json'])).out)).toEqual({
+      links: [
+        { id: NOTE, kind: 'note', title: 'UP-001 - Abdul', path: `candidates/up-001-abdul-${NOTE}.md` },
+        { id: DEAD, kind: 'missing' },
+        { id: FOLDER, kind: 'folder', title: 'Upwork 2026', path: 'upwork-2026' },
+      ],
+      in: [{ id: FOLDER, title: 'Upwork 2026', path: 'upwork-2026' }],
+    })
   })
 
   it('a scalar `also_in` is one entry, as the app reads it', async () => {
     const scalar = path.join(await mine(), 'Scalar.md')
-    expect((await run(['links', scalar])).out).toBe(`${FOLDER}  Areas/  (also in)\n`)
+    expect((await run(['links', scalar])).out).toBe(`${FOLDER}  Areas  Areas/  (also in)\n`)
   })
 
   it('a page in no vault has nothing to resolve its ids against — exit 1', async () => {
@@ -559,8 +584,15 @@ describe('due (YAZ-2322)', () => {
     await aged('fresh.md', 2)
     await aged('off.md', 200, '---\nreview: false\n---\nOff.\n')
     await aged('sub/.folder.md', 300, '---\nviews: []\n---\n') // a folder's settings file is never a note
-    expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  ${older.file}\n${day(old.changed + 30 * DAY)}  ${old.file}\n`)
-    expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
+    expect((await run(['due', dir])).out).toBe(`${day(older.changed + 30 * DAY)}  older  ${older.file}\n${day(old.changed + 30 * DAY)}  old  ${old.file}\n`)
+    expect(JSON.parse((await run(['due', path.join(dir, 'sub'), '--json'])).out)).toEqual([{ title: 'older', path: older.file, due: new Date(older.changed + 30 * DAY).toISOString() }])
+  })
+
+  it('E: a folder: each page is listed by its title, then its path, and --json carries `title` (YAZ-2420 D14)', async () => {
+    await upkeepOn()
+    const abdul = await aged('candidates/up-001-abdul-k3m9x2pq7abc.md', 120, '---\ntitle: UP-001 - Abdul\n---\nBody.\n')
+    expect((await run(['due', dir])).out).toBe(`${day(abdul.changed + 30 * DAY)}  UP-001 - Abdul  ${abdul.file}\n`)
+    expect(JSON.parse((await run(['due', dir, '--json'])).out)).toEqual([{ title: 'UP-001 - Abdul', path: abdul.file, due: new Date(abdul.changed + 30 * DAY).toISOString() }])
   })
 
   it('a folder with nothing due says so', async () => {
