@@ -159,7 +159,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string; title: string; noteId: string | undefined } | null>(null)
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** The header's own menu (YAZ-1513): `key` null = the `#` gutter header. */
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
@@ -327,7 +327,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     })
 
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
-  const openRowMenu = ({ path, title, id: noteId }: IndexRecord) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
+  const openRowMenu = ({ path, title }: IndexRecord) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-editing]') !== null) return
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
@@ -335,7 +335,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     event.preventDefault()
     close()
     cell.focus()
-    setRowMenu({ x: event.clientX, y: event.clientY, path, title, noteId })
+    setRowMenu({ x: event.clientX, y: event.clientY, path, title })
   }
 
   /**
@@ -618,7 +618,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             y={rowMenu.y}
             path={rowMenu.path}
             title={rowMenu.title}
-            noteId={rowMenu.noteId}
             onOpen={onOpenFile}
             onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}

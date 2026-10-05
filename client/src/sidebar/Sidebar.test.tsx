@@ -360,18 +360,12 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(fileRow(el)?.classList.contains('tree__row--active')).toBe(true)
   })
 
-  it("Copy for Agent on a FOLDER row hands out the folder's settings file; blank space has no such item (YAZ-2290 D9)", async () => {
-    const writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const agentPrompt = vi.fn(async (_req: { path: string }) => 'handshake')
-    const { props, el } = await mount({}, (bridge) => Object.assign(bridge.shell, { agentPrompt }))
-    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    await act(async () => itemByLabel(el, 'Copy for Agent')?.click())
-    expect(agentPrompt).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/.folder.md' })
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('handshake')
-    expect(props.onNotice).toHaveBeenCalledWith('Copied for agent')
-    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy for Agent')).toBeUndefined()
+  it('a note row, a folder row and blank space offer one item that copies text, "Copy path": beside the file clipboard\'s Copy, nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
+    const { el } = await mount()
+    for (const [target, copies] of [['.tree__row--file', ['Copy', 'Copy path']], ['.tree__row--dir', ['Copy', 'Copy path']], ['.sidebar__body', ['Copy path']]] as const) {
+      act(() => void el.querySelector(target)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      expect(menuItems(el).map((b) => b.textContent).filter((label) => label?.startsWith('Copy'))).toEqual(copies)
+    }
   })
 
   it('folder rows and blank space get no "Open in new window" item', async () => {
@@ -2120,7 +2114,7 @@ describe('favorites (YAZ-1766)', () => {
     for (const label of ['Focus on folder', 'Cut', 'Copy', 'Copy path', 'New note', 'Rename', 'Remove from favorites', 'Open in', 'Delete']) expect(itemByLabel(el, label), label).toBeDefined()
     closeMenu(el)
     rightClick(rowByPath(el, `${v}/top.md`))
-    expect(itemByLabel(el, 'Copy for Agent')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
     expect(itemByLabel(el, 'Focus on folder')).toBeUndefined()
   })
 
@@ -2333,7 +2327,6 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy',
       'Paste',
       'Copy path',
-      'Copy for Agent',
       'New note',
       'New folder',
       // Their own section (YAZ-2249 🔒 E1/E2): the dated twins lined up under the everyday pair.
@@ -2785,67 +2778,6 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     await act(async () => emit?.({ type: 'unlinkDir', path: '/v/gone' }))
     await afterQuiet()
     expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/kept', '/v/a.md'])
-  })
-})
-
-/**
- * "Copy ID" (YAZ-2293): the note's permanent `id`, directly under "Copy path". The target is read
- * off the window's index snapshot when the menu opens, for the right-clicked NOTE only — so a note
- * with no id, a file that is not a note, a folder and a 2+ selection all open a menu without it.
- */
-describe('Sidebar "Copy ID" (YAZ-2293)', () => {
-  const ID_TREE: TreeNode[] = [
-    { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
-    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
-    { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' },
-    { type: 'file', name: 'report.pdf', path: '/v/report.pdf', size: 1, mtime: 1, kind: 'pdf' },
-    { type: 'file', name: 'photo.png', path: '/v/photo.png', size: 1, mtime: 1, kind: 'image' },
-  ]
-  const record = (path: string, id?: string) => {
-    const name = path.slice(path.lastIndexOf('/') + 1)
-    return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.[^.]+$/, ''), title: name.replace(/\.[^.]+$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
-  }
-  // Only `/v/a.md` is a note WITH an id. The PDF and the folder are given records the real index
-  // never holds, so what keeps the item off those rows is the row's kind, not an empty lookup.
-  const records = [record('/v/a.md', 'k3m9x2pq7abc'), record('/v/b.md'), record('/v/report.pdf', 'p4d8f1zz2abc'), record('/v/photo.png', 'h6g3k8vv5abc'), record('/v/sub', 's7b2q9mm4abc')]
-  const noteId = (path: string) => records.find((r) => r.path === path)?.id
-  const mountIds = () => mount({ noteId }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: ID_TREE, generatedAt: 1 }))
-  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
-  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-
-  it('a note with an id offers "Copy ID" directly under "Copy path"; it copies exactly the id, confirms and closes', async () => {
-    const writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const { el, props } = await mountIds()
-    rightClick(rowByPath(el, '/v/a.md'))
-    const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    expect(labels.indexOf('Copy for Agent')).toBe(labels.indexOf('Copy ID') + 1)
-    act(() => itemByLabel(el, 'Copy ID')?.click())
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
-    await act(async () => {})
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
-  })
-
-  it.each([
-    ['a note with no id', '/v/b.md'],
-    ['a file that is not a note', '/v/report.pdf'],
-    ['an image', '/v/photo.png'],
-    ['a folder', '/v/sub'],
-  ])('%s offers no "Copy ID" — "Copy path" stays', async (_what, path) => {
-    const { el } = await mountIds()
-    rightClick(rowByPath(el, path))
-    expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Copy ID')).toBeUndefined()
-  })
-
-  it('a 2+ selection offers no "Copy ID", even on the note that has one', async () => {
-    const { el } = await mountIds()
-    for (const path of ['/v/a.md', '/v/b.md']) act(() => void rowByPath(el, path)?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
-    rightClick(rowByPath(el, '/v/a.md'))
-    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
-    expect(itemByLabel(el, 'Copy ID')).toBeUndefined()
   })
 })
 
@@ -3782,7 +3714,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       const labels = menuItems(el).map((item) => item.textContent)
       expect(labels[labels.length - 1]).toBe('Remove shortcut')
       for (const absent of ['Delete', 'Rename', 'Cut', 'Copy', 'Paste', 'Add note shortcut']) expect(labels).not.toContain(absent)
-      for (const kept of ['Copy path', 'Copy for Agent', 'Add to favorites', 'Open in']) expect(labels).toContain(kept)
+      for (const kept of ['Copy path', 'Add to favorites', 'Open in']) expect(labels).toContain(kept)
       // The real row's menu is a file row's, as ever.
       rightClick(row(el, HEALTH))
       expect(itemByLabel(el, 'Delete')).toBeDefined()

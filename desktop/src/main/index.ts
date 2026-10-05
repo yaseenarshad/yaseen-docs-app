@@ -8,7 +8,6 @@ import { SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
-import { registerAgentIpc } from './ipc/agent'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { createLinkQueue } from './linkQueue'
@@ -179,8 +178,6 @@ app.whenReady().then(() => {
     writeText: (text) => clipboard.writeText(text),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
-  // Copy for Agent (YAZ-1617): main knows where the `yaseendocs` command lives; the renderer only asks.
-  registerAgentIpc({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
   const handlers = createMenuHandlers(store, manager, {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),

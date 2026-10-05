@@ -49,7 +49,6 @@ readAsset/2: invoke fs:read-asset ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUN
 readFile/1: invoke fs:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readImage/1: invoke fs:read-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-shell.agentPrompt/1: invoke shell:agent-prompt ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

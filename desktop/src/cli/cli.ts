@@ -9,8 +9,7 @@
  * CONFLICT. `readFile` / `writeFile` from `main/fs/file` are Electron-free and already do the
  * atomic tmp+rename and the mtime check, so nothing is reimplemented here.
  *
- * `HELP` IS the contract: it is the only documentation an agent reads (the Copy for Agent
- * handshake points at `--help` and names no verb), so its wording is UI copy.
+ * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -71,12 +70,12 @@ a person's comment is edited or deleted in the app. Deleting a comment deletes i
 Every page has a permanent id in its frontmatter (\`id: k3m9x2pq7abc\`); a rename or a move never
 changes it. A page's title is its \`title:\` line, and the app builds the file name from the title
 and the id (\`<kebab-title>-<id>.md\`). A link between pages is written \`[[<id>]]\`, and the app
-shows the page's current title in its place. \`id\` prints a page's id — a page that has none is
-given one first, exactly as the app would, and only inside a vault (a folder holding
-\`.yaseendocs/\`). \`links\` lists every id on a page — its links, and the folders it is also in —
-with the title and path of the page or folder that id names now, or \`(missing)\` (\`--json\` for
-the raw shape). To find a page from an id, search the vault's file names for it; a file the app did
-not name is found by its \`id: <id>\` line.
+shows the page's current title in its place. \`id\` prints a page's id — a page that has none, or
+an \`id\` some other tool wrote, is given one first, exactly as the app would, and only inside a
+vault (a folder holding \`.yaseendocs/\`). \`links\` lists every id on a page — its links, and the
+folders it is also in — with the title and path of the page or folder that id names now, or
+\`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the vault's file
+names for it; a file the app did not name is found by its \`id: <id>\` line.
 
 A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
 named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
@@ -297,7 +296,6 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (!isNoteId(id)) {
         // The sweep's own refusals (`vaultIndex/idSweep.ts`), each given its reason; `giveId` checks them again on the bytes it writes against.
         if (error !== undefined) throw new Error('the properties block does not parse (invalid)')
-        if (id !== undefined) throw new Error(`the ${NOTE_ID_KEY} property is not a page id (foreign)`)
         const root = await vaultRoot(dirname(page))
         if (root === null) throw new Error(`${page} has no id and is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`)
         id = await giveId(root, page, undefined)

@@ -480,15 +480,13 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a row whose note has an id offers "Copy ID" directly under "Copy path" (YAZ-2293) and copies exactly that id', () => {
+  it('a row whose note has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31, table F)', () => {
     const records = TEST_RECORDS.map((r) => (r.path === expectedPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
     const { el } = mount(TYPED_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     rightClick(q(el, '[data-cell="0:1"]'))
     const labels = menuItems(el).map((item) => item.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    click(itemNamed(el, 'Copy ID')!)
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(labels).toContain('Copy path')
+    expect(labels).not.toContain('Copy ID')
   })
 
   it('copies and reveals the row absolute path, closing after either command', () => {

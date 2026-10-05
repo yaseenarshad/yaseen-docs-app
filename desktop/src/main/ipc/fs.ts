@@ -166,7 +166,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // then `clip:changed` carries the rest (the same catch-up read `github.status` offers).
   handle(CONTRACT.file.clipState, async () => fileClip.state())
   // Paste (D2–D4). Per entry, in clipboard order, and one bad entry never stops the rest:
-  //  - a COPY is `copyEntry` (fs.cp under Finder's next free name, D3/D4) with deliberately NO
+  //  - a COPY is `copyEntry` (a note or a folder under its own built name, YAZ-2420 🔒 D21; any
+  //    other file `fs.cp` under Finder's next free name, D3/D4) with deliberately NO
   //    store repair and NO broadcast — nothing moved and nothing went, so there is nothing to
   //    remap or retire; the tree learns of the new entry from the watcher's add/addDir echo,
   //    exactly like any add made outside the app, and the client's refresh() is idempotent;

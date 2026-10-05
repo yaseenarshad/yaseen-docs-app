@@ -120,11 +120,49 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(await read('README.md')).toBe('# readme\n')
   })
 
-  it('leaves alone what cannot take an id: invalid YAML, a hand-written `id` of another shape, an oversize file', async () => {
+  it('leaves alone what cannot take an id: invalid YAML, whatever `id` line it holds, and an oversize file', async () => {
     const big = 'x'.repeat(MAX_FILE_BYTES + 1)
-    const files = { 'broken.md': '---\nstatus: [unclosed\n---\nbody\n', 'foreign.md': '---\nid: 42\n---\nbody\n', 'big.md': big }
+    const files = { 'broken.md': '---\nstatus: [unclosed\n---\nbody\n', 'broken too.md': '---\nid: 42\nstatus: [unclosed\n---\nbody\n', 'big.md': big }
     await sweep(await vault(files))
     for (const [rel, content] of Object.entries(files)) expect(await read(rel)).toBe(content)
+  })
+
+  it('an `id` that is not one of this app’s (`id: 42`, another tool’s text) is no id: the app’s is written over it and the old value is kept nowhere (YAZ-2420 D30, table B)', async () => {
+    await sweep(await vault({ 'a.md': '---\nid: 42\nstatus: draft\n---\nbody\n', [`Projects/${FOLDER_SETTINGS_FILE}`]: '---\nid: from-another-tool\n---\n' }))
+    const [a, projects] = [await idIn('a.md'), await idIn('Projects', FOLDER_SETTINGS_FILE)]
+    expect(isNoteId(a)).toBe(true)
+    expect(isNoteId(projects)).toBe(true)
+    expect(await read('a.md')).toBe(`---\nid: ${a}\nstatus: draft\n---\nbody\n`)
+    expect(await read('Projects', FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${projects}\n---\n`)
+  })
+
+  it('another tool’s `id` is replaced under the sweep’s guards: nothing in a folder the app has not adopted, and never over bytes another writer changed since the read (D30)', async () => {
+    const foreign = '---\nid: 42\n---\nbody\n'
+    const records = await vault({ 'a.md': foreign })
+    writesAfterTheRead('---\nid: 42\n---\nbody, edited elsewhere\n')
+    await sweep(records)
+    expect(await read('a.md')).toBe('---\nid: 42\n---\nbody, edited elsewhere\n')
+    await rm(at(VAULT_CONFIG_DIR), { recursive: true })
+    await sweep(await vault({ 'a.md': foreign }))
+    expect(await read('a.md')).toBe(foreign)
+  })
+
+  it('two devices that meet the same note holding another tool’s `id` write the same id over it (D30)', async () => {
+    const foreign = '---\nid: 42\n---\nfrom another tool\n'
+    await sweep(await vault({ 'Inbox/a.md': foreign }))
+    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
+    try {
+      await mkdir(path.join(other, VAULT_CONFIG_DIR))
+      await mkdir(path.join(other, 'Inbox'))
+      const file = path.join(other, 'Inbox', 'a.md')
+      await writeFile(file, foreign)
+      const record = await scanFile(other, file)
+      await sweepIds(other, new Map([[file, record]]), [record], () => undefined)
+      expect(isNoteId(await idIn('Inbox', 'a.md'))).toBe(true)
+      expect(await readFile(file, 'utf8')).toBe(await read('Inbox', 'a.md'))
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
   })
 
   it('is a compare-and-set: a file that gained an id since it was scanned keeps it', async () => {
@@ -730,27 +768,29 @@ describe('sweepIds, wired into the live index', () => {
     expect(await read('After', FOLDER_SETTINGS_FILE)).toBe(given)
   })
 
-  it("the app's own duplicate (`copyEntry`) is given a fresh id on its index event; the original keeps its bytes (B1)", async () => {
+  it("the app's own duplicate (`copyEntry`) holds a fresh id at once, so its index event writes nothing; the original keeps its bytes (B1, YAZ-2420 D21)", async () => {
     await vault({ 'a.md': NOTE })
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    expect((await copyEntry(at('a.md'), root)).to).toBe(at('a copy.md'))
-    await until(async () => {
-      const copy = (await indexed('a copy.md'))?.id
-      return isNoteId(copy) && copy !== 'k3m9x2pq7abc'
-    })
-    expect(await idIn('a copy.md')).toBe((await indexed('a copy.md'))?.id)
+    const { to } = await copyEntry(at('a.md'), root)
+    const copied = await readFile(to, 'utf8')
+    const id = /^id: (.+)$/m.exec(copied)?.[1]
+    expect(isNoteId(id)).toBe(true)
+    expect(id).not.toBe('k3m9x2pq7abc')
+    await until(async () => (await getIndex(root)).records.some((r) => r.path === to && r.id === id))
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
+    expect(await readFile(to, 'utf8')).toBe(copied)
     expect(await read('a.md')).toBe(NOTE)
     expect((await indexed('a.md'))?.id).toBe('k3m9x2pq7abc')
   })
 
-  it('a duplicated folder: every note in the copy, and its `.folder.md`, is given a fresh id; the originals keep theirs (B3)', async () => {
+  it('a folder duplicated in Finder: every note in the copy, and its `.folder.md`, is given a fresh id; the originals keep theirs (B3)', async () => {
     await folderOfNotes()
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    expect((await copyEntry(at('Notes'), root)).to).toBe(at('Notes copy'))
+    await cp(at('Notes'), at('Notes copy'), { recursive: true, preserveTimestamps: true })
     await until(async () => {
       const fresh = await idsUnder('Notes copy')
       return fresh.every((id) => isNoteId(id) && !HELD.includes(id)) && new Set(fresh).size === FOLDER.length
@@ -759,19 +799,46 @@ describe('sweepIds, wired into the live index', () => {
     expect(await idsUnder('Notes')).toEqual(HELD)
   })
 
-  it.each([
-    ['in the app (`copyEntry`)', (from: string, to: string) => copyEntry(from, path.dirname(to))],
-    ['in Finder', (from: string, to: string) => cp(from, to, { recursive: true, preserveTimestamps: true })],
-  ])('a folder is copied %s, the app running: the copy’s table shows the same values as the original’s, and the original is untouched', async (_by, copy) => {
-    // Enough notes that the sweep's own id writes are still landing while the values are carried.
-    const many = Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`Hiring/N${i}.md`, `---\nid: n${String(i).padStart(11, '0')}\nin:\n  ${HIRING}:\n    Rank: ${i}\n---\n`]))
-    const original = { ...under('Hiring'), ...many }
+  // Enough notes that the sweep's own id writes are still landing while the values are carried.
+  const MANY = Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`Hiring/N${i}.md`, `---\nid: n${String(i).padStart(11, '0')}\nin:\n  ${HIRING}:\n    Rank: ${i}\n---\n`]))
+
+  it('a folder is copied in the app (`copyEntry`), the app running: the copy holds its fresh ids and its values at once, the sweep writes nothing into it, and the original is untouched (YAZ-2420 D21)', async () => {
+    const original = { ...under('Hiring'), ...MANY }
     await vault(original)
     const ready = watcherReady()
     await getIndex(root)
     await ready
     await until(async () => (await getIndex(root)).folders.length === 3) // `Stages/Deep` has been given its own file
-    await copy(at('Hiring'), at('Hiring copy'))
+    const { to } = await copyEntry(at('Hiring'), root)
+    const files: string[] = []
+    await walk(to, files)
+    const contents = () => Promise.all(files.map((file) => readFile(file, 'utf8')))
+    const copied = await contents()
+    const held = copied.map((content) => parseFrontmatter(splitFrontmatter(content).frontmatter).properties)
+    const originals = new Set(Object.values(original).map((content) => /^id: (.+)$/m.exec(content)![1]))
+    expect(new Set(held.map((properties) => properties.id)).size).toBe(files.length)
+    expect(held.every((properties) => isNoteId(properties.id) && !originals.has(properties.id))).toBe(true)
+    const hiring = (await idIn('hiring-copy', FOLDER_SETTINGS_FILE))!
+    const stages = (await idIn('hiring-copy', 'Stages', FOLDER_SETTINGS_FILE))!
+    const valuesOf = (title: string): unknown => held.find((properties) => properties.title === title)?.in
+    expect(valuesOf('Noor')).toEqual({ [hiring]: { Status: 'Interview', owner: '[[Sam]]' }, [ELSEWHERE]: { Rank: 2 } })
+    expect(valuesOf('Sam')).toEqual({ [hiring]: { Status: 'Offer' }, [stages]: { Step: 2 } })
+    for (let i = 0; i < 24; i++) expect(valuesOf(`N${i}`)).toEqual({ [hiring]: { Rank: i } })
+    // The index has met every note of the copy, and no event on one made the sweep write.
+    await until(async () => (await getIndex(root)).records.filter((r) => r.path.startsWith(to + path.sep)).length === Object.keys(original).length - 2)
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
+    expect(await contents()).toEqual(copied)
+    for (const [name, content] of Object.entries(original)) expect(await read(name)).toBe(content)
+  })
+
+  it('a folder is copied in Finder, the app running: the copy’s table shows the same values as the original’s, and the original is untouched', async () => {
+    const original = { ...under('Hiring'), ...MANY }
+    await vault(original)
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await until(async () => (await getIndex(root)).folders.length === 3) // `Stages/Deep` has been given its own file
+    await cp(at('Hiring'), at('Hiring copy'), { recursive: true, preserveTimestamps: true })
     await until(async () => {
       const ids = (await getIndex(root)).records.filter((r) => r.path.startsWith(at('Hiring copy') + path.sep)).map((r) => r.id)
       const originals = new Set(Object.values(original).map((content) => /^id: (.+)$/m.exec(content)![1]))

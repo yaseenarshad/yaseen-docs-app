@@ -111,7 +111,7 @@ export function BoardView({
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string; noteId: string | undefined } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /** Browser click tails after secondary-click and drag gestures must not become page opens. */
   const suppressClick = useRef(false)
   const suppressOnce = () => {
@@ -216,7 +216,7 @@ export function BoardView({
     event.preventDefault()
     suppressOnce()
     close()
-    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title, noteId: row.record.id })
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
     const source = dnd.source(row.record.path, group, at)
@@ -400,7 +400,6 @@ export function BoardView({
           y={menu.y}
           path={menu.path}
           title={menu.title}
-          noteId={menu.noteId}
           onOpenRight={onOpenFileRight}
           onOpenBackground={onOpenFileBackground}
           onNotice={onNotice}

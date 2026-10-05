@@ -96,19 +96,16 @@ const propertiesOf = (content: string): Record<string, unknown> => parseFrontmat
 /**
  * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): a
  * folder with no `.folder.md` gets one holding just its id (that write creates the file,
- * `readForWrite`), and a file with no id is given a fresh one. Asked of the file's own bytes, never
- * the index: a snapshot one write behind would mint a second id over the first, and every shortcut
- * and value naming the first would be lost.
+ * `readForWrite`), and a file with no id, or another tool's (YAZ-2420 🔒 D30), is given a fresh one.
+ * Asked of the file's own bytes, never the index: a snapshot one write behind would mint a second
+ * id over the first, and every shortcut and value naming the first would be lost.
  */
 export async function folderId(dir: string): Promise<string> {
   const fresh = mintNoteId()
   const { content } = await transformFile(folderSettingsPath(dir), (bytes) =>
-    propertiesOf(bytes)[NOTE_ID_KEY] == null ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes,
+    isNoteId(propertiesOf(bytes)[NOTE_ID_KEY]) ? bytes : setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh),
   )
-  const id = propertiesOf(content)[NOTE_ID_KEY]
-  // Someone else's value (`shared/noteId.ts`): never an id, never overwritten.
-  if (!isNoteId(id)) throw new Error(`the id in ${folderSettingsPath(dir)} is not a page id`)
-  return id
+  return propertiesOf(content)[NOTE_ID_KEY] as string
 }
 
 /**

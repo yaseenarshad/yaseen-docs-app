@@ -506,15 +506,13 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a card whose note has an id offers "Copy ID" directly under "Copy path" (YAZ-2293) and copies exactly that id', () => {
+  it('a card whose note has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31)', () => {
     const records = TEST_RECORDS.map((r) => (r.path === agenticPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
     const { el } = mount(BOARD_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
     const labels = menuItems(el).map((item) => item.textContent)
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    click(itemNamed(el, 'Copy ID')!)
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(labels).toContain('Copy path')
+    expect(labels).not.toContain('Copy ID')
   })
 
   it('opens in the background, copies, and reveals the exact absolute card path, closing after every action', () => {

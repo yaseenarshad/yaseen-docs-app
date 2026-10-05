@@ -349,13 +349,27 @@ describe('id (YAZ-2293)', () => {
     expect(await run(['id', path.join(path.dirname(theirs), 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 
-  it('a page that cannot take an id — no vault above it, a block that does not parse, an `id` of another shape — exit 1, bytes untouched', async () => {
+  it("a page whose `id` is another tool's (`id: 42`), in an adopted vault: the app's id is written over it, the one the app's sweep would write, and printed (YAZ-2420 D30)", async () => {
+    const content = '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n'
+    const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
+    const r = await run(['id', p])
+    const id = r.out.trimEnd()
+    expect(r).toEqual({ code: 0, out: `${id}\n`, err: '' })
+    expect(isNoteId(id)).toBe(true)
+    expect(await readFile(p, 'utf8')).toBe(`---\nid: ${id}\ntitle: Kickoff\n---\n# Kickoff\n`)
+    const theirs = await vault('theirs', { 'Projects/Kickoff.md': content })
+    const twin = path.join(theirs, 'Projects/Kickoff.md')
+    const record = await scanFile(theirs, twin)
+    await sweepIds(theirs, new Map([[twin, record]]), [record], () => undefined)
+    expect(await readFile(twin, 'utf8')).toBe(await readFile(p, 'utf8'))
+  })
+
+  it('a page that cannot take an id — no vault above it, a block that does not parse — exit 1, bytes untouched', async () => {
     const bare = await page('bare.md', '# No vault here\n')
-    const root = await vault('mine', { 'broken.md': '---\ntitle: [\n---\n', 'foreign.md': '---\nid: 42\n---\n' })
+    const root = await vault('mine', { 'broken.md': '---\nid: 42\ntitle: [\n---\n' })
     for (const [p, reason] of [
       [bare, `${bare} has no id and is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`],
       [path.join(root, 'broken.md'), 'the properties block does not parse (invalid)'],
-      [path.join(root, 'foreign.md'), 'the id property is not a page id (foreign)'],
     ] as const) {
       const before = await readFile(p, 'utf8')
       expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${reason}\n` })

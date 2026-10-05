@@ -1,6 +1,5 @@
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
-import { copyNoteId } from '../../lib/copyNoteId'
 
 interface PageContextMenuProps {
   x: number
@@ -8,8 +7,6 @@ interface PageContextMenuProps {
   path: string
   /** The page's title, off the row's own index record (YAZ-2420 🔒 D14): what a notice calls it. */
   title: string
-  /** The page's note id (YAZ-2293), off the row's own index record; absent when it has none, and "Copy ID" is then not offered. */
-  noteId?: string
   /** "Open", in the current tab (YAZ-2420 🔒 D26): a table's, whose Name cell no longer opens on a click. */
   onOpen?: (path: string) => void
   onOpenRight?: (path: string) => void
@@ -19,7 +16,7 @@ interface PageContextMenuProps {
 }
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, title, noteId, onOpen, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.shell.reveal({ path }).catch((error: unknown) => {
@@ -72,20 +69,6 @@ export function PageContextMenu({ x, y, path, title, noteId, onOpen, onOpenRight
       >
         Copy path
       </button>
-      {/* Right under Copy path (YAZ-2293): exactly the id, which is what a `[[id]]` link names. */}
-      {noteId !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            copyNoteId(noteId, onNotice)
-            onClose()
-          }}
-        >
-          Copy ID
-        </button>
-      )}
       <button type="button" className="ctx-menu__item" role="menuitem" onClick={reveal}>
         Reveal in Finder
       </button>

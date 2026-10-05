@@ -153,8 +153,6 @@ export const CONTRACT = {
     openDefault: invoke<[req: RevealRequest], RevealResponse>('shell:openDefault', 1),
     /** Open a validated Markdown-link target through the OS; never creates an Electron window. */
     openLink: invoke<[req: OpenLinkRequest], void>('shell:open-link', 1),
-    /** Copy for Agent (YAZ-1617): the handshake text for a page, composed in main because only main knows where the command lives. */
-    agentPrompt: invoke<[req: RevealRequest], string>('shell:agent-prompt', 1),
   },
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188): created lazily on first write; reading never creates it. */
   vaultConfig: {

@@ -8,7 +8,6 @@ import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, folderValues, setFolderValue } from '@shared/folderValues'
-import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
@@ -90,8 +89,8 @@ const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, 
 function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderSettings | null = null): Row[] {
   const inFolder = folder !== null
   const held = Object.entries(properties).map(([key, raw]): Row => {
-    // The app's keys are the NOTE's; an `id` that is no note id is the user's own value, not the app's.
-    if (!inFolder && RESERVED_KEYS.has(key) && (key !== NOTE_ID_KEY || isNoteId(raw))) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
+    // The app's keys are the NOTE's; an `id` that is no note id is the app's too, which writes its own over it (YAZ-2420 🔒 D30).
+    if (!inFolder && RESERVED_KEYS.has(key)) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
     if (isOpaque(raw)) return { key, folder: inFolder, raw, editor: null, chip: 'yaml' }
     // Existing human-readable keys can have a folder-local declaration.
     return { key, folder: inFolder, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }

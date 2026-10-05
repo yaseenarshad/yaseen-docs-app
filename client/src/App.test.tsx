@@ -1173,7 +1173,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('c')
   })
 
-  it('a tab\'s menu offers "Copy ID" off the window\'s index: under "Copy path" for the note that has an id, absent for a note with none, a PDF and an image (YAZ-2293, scenario E1, E2)', async () => {
+  it('a tab\'s menu offers "Copy path" and no "Copy ID", for a note whose id the window\'s index holds as for a note with none, a PDF and an image (YAZ-2420 D31)', async () => {
     const note = (path: string, id?: string): IndexRecord => {
       const name = path.slice(path.lastIndexOf('/') + 1)
       return { path, ...(id === undefined ? {} : { id }), name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
@@ -1187,9 +1187,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       act(() => void tab?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
       return [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map((item) => item.textContent)
     }
-    const labels = menuOf('/v/a.md')
-    expect(labels.indexOf('Copy ID')).toBe(labels.indexOf('Copy path') + 1)
-    for (const path of tabs.slice(1)) {
+    for (const path of tabs) {
       expect(menuOf(path), path).toContain('Copy path')
       expect(menuOf(path), path).not.toContain('Copy ID')
     }

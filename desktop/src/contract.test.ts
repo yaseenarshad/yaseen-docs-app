@@ -11,7 +11,6 @@ import { afterAll, expect, it, vi } from 'vitest'
 import { ipcMain, ipcRenderer } from 'electron'
 import { CONTRACT, leaves, SPECIAL } from '@shared/ipc'
 import { registerIpc } from './main/ipc'
-import { registerAgentIpc } from './main/ipc/agent'
 import { registerClipboardIpc } from './main/ipc/clipboard'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
@@ -37,9 +36,8 @@ const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
 afterAll(() => rm(dir, { recursive: true, force: true }))
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The three registrations `main/index.ts` makes on `ready`.
+  // The two registrations `main/index.ts` makes on `ready`.
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
-  registerAgentIpc({ packaged: false, resourcesPath: dir, mainDir: dir })
   registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc)
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)

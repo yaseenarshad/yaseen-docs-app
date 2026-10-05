@@ -16,7 +16,7 @@ import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { tree: vi.fn(), shell: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}), agentPrompt: vi.fn().mockResolvedValue('handshake') } },
+  api: { tree: vi.fn(), shell: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}) } },
 }))
 import { api, BridgeRequestError } from '../api'
 import { fetchTree } from '../lib/treeFeed'
@@ -265,7 +265,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menu?.getAttribute('role')).toBe('menu')
     expect(menu?.style.left).toBe('120px')
     expect(menu?.style.top).toBe('42px')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('Show in sidebar targets the right-clicked inactive tab, closes the menu, and never activates it', () => {
@@ -313,79 +313,27 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).toBeNull()
   })
 
-  it('Copy for Agent (YAZ-1617) asks main for the handshake for THAT tab, writes it, and closes the menu', async () => {
-    const el = mount(props)
-    rightClick(tabAt(el, 1))
-    await act(async () => {
-      items(el)[2]?.click()
-    })
-    expect(vi.mocked(api.shell.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
-    expect(writeText).toHaveBeenCalledWith('handshake')
-    expect(menuOf(el)).toBeNull()
-  })
-
-  // "Copy ID" (YAZ-2293): the tab IS the note, so it offers the sidebar row's id item, directly under Copy path.
-  const noteId = (path: string) => (path === '/vault/sub/Deep Note.md' ? 'k3m9x2pq7abc' : undefined)
-
-  it('Copy ID sits under Copy path on a tab whose note has an id — and is absent on one that has none', () => {
-    const el = mount({ ...props, noteId })
-    rightClick(tabAt(el, 1))
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy ID', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
-    rightClick(tabAt(el, 0))
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
-  })
-
-  it('Copy ID writes exactly the id, confirms through the notice, and closes the menu', async () => {
-    const onNotice = vi.fn()
-    const el = mount({ ...props, noteId, onNotice })
-    rightClick(tabAt(el, 1))
-    await act(async () => {
-      items(el).find((b) => b.textContent === 'Copy ID')?.click()
-    })
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
-    expect(menuOf(el)).toBeNull()
-  })
-
-  it('Copy ID reports a clipboard the OS refused', async () => {
-    writeText.mockRejectedValue(new Error('denied'))
-    const onNotice = vi.fn()
-    const el = mount({ ...props, noteId, onNotice })
-    rightClick(tabAt(el, 1))
-    await act(async () => {
-      items(el).find((b) => b.textContent === 'Copy ID')?.click()
-    })
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy ID: denied")
-  })
-
-  it("Copy for Agent on a FOLDER tab hands out the folder's settings file — also for a folder named like a file; a view-only tab has no such item (YAZ-2290 D9)", async () => {
-    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/agent', tree: [{ type: 'dir', name: 'Projects', path: '/agent/Projects', children: [] }, { type: 'dir', name: 'Notes.md', path: '/agent/Notes.md', children: [] }], generatedAt: 1 })
-    await fetchTree('/agent')
-    const el = mount({ ...props, root: '/agent', tabs: ['/agent/Projects', '/agent/Notes.md', '/agent/report.pdf'] })
-    for (const [i, page] of [[0, '/agent/Projects/.folder.md'], [1, '/agent/Notes.md/.folder.md']] as const) {
-      vi.mocked(api.shell.agentPrompt).mockClear()
+  it('"Copy path" is a tab\'s one copy item, a note\'s and a folder\'s: nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/one', tree: [{ type: 'dir', name: 'Projects', path: '/one/Projects', children: [] }], generatedAt: 1 })
+    await fetchTree('/one')
+    const el = mount({ ...props, root: '/one', tabs: ['/one/Note.md', '/one/Projects'] })
+    for (const i of [0, 1]) {
       rightClick(tabAt(el, i))
-      expect(items(el).map((b) => b.textContent)).toContain('Copy for Agent')
-      await act(async () => {
-        items(el).find((b) => b.textContent === 'Copy for Agent')?.click()
-      })
-      expect(vi.mocked(api.shell.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: page })
+      expect(items(el).map((b) => b.textContent).filter((label) => label?.startsWith('Copy'))).toEqual(['Copy path'])
     }
-    rightClick(tabAt(el, 2))
-    expect(items(el).map((b) => b.textContent)).not.toContain('Copy for Agent')
   })
 
   it.each([
     [true, 'Turn review off'],
     [false, 'Turn review on'],
-  ])('a note whose review state is %s gets "%s" under the copy items, and it asks for the opposite (YAZ-2322)', (state, label) => {
+  ])('a note whose review state is %s gets "%s" under Copy path, and it asks for the opposite (YAZ-2322)', (state, label) => {
     const reviewState = vi.fn(() => state)
     const onSetReview = vi.fn()
     const el = mount({ ...props, reviewState, onSetReview })
     rightClick(tabAt(el, 1))
     expect(reviewState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', label, 'Reveal in Finder', 'Open in VS Code'])
-    act(() => items(el)[3]?.click())
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', label, 'Reveal in Finder', 'Open in VS Code'])
+    act(() => items(el)[2]?.click())
     expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md', !state)
     expect(menuOf(el)).toBeNull()
   })
@@ -393,7 +341,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   it('a tab with no review state — a folder, a PDF, a note the index has not seen, any note with upkeep off — gets no review item', () => {
     const el = mount({ ...props, reviewState: () => null, onSetReview: vi.fn() })
     rightClick(tabAt(el, 0))
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('the menu retargets: right-clicking another tab copies THAT tab\'s path', () => {
