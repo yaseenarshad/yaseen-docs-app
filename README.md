@@ -80,6 +80,17 @@ Upkeep review is off until you turn it on for a vault (Settings › Review). Onc
 
 A review writes one line into the note's own frontmatter, under `reviews`; when it is next due is worked out from that log, never stored, so the three numbers (Settings › Review, kept per vault in `.yaseendocs/review.json`) can change at any time. A note's right-click menu turns its review off (`review: false`); its page lists its reviews under "Linked mentions". For agents, `yaseendocs due "<page.md>"` prints the day a page is next due, and `yaseendocs due "<folder>"` lists what is due now, each page by its title and path.
 
+## Two kinds of vault
+
+A vault is one of two kinds, and the app asks which the first time you open a folder: a box says how many notes and folders it would write to, and has two answers.
+
+- **Give IDs**: every note gets a permanent ID, the app names each note's file from its title and its ID, and links keep working when a note is renamed or moved, by anything. Everything below about titles, built file names, IDs, shortcuts, each folder's own properties and the default Board and `status` column describes this kind of vault.
+- **Not for this vault**: the app is a plain viewer and editor of the files you have, and it never writes anything you did not ask for: no IDs, no `title:` lines, no hidden files in your folders. A note's name is its file name: a new note is `Name.md`, a rename renames the file and updates the links that named it, and a copy is `Name copy.md`. Folder pages and tables still work: a folder opens as a Table whose columns are the notes' own properties, and editing a cell changes that one line in that one note. Shortcuts, per-folder properties, deleting a column, Copy ID and search by ID are not offered.
+
+Press Esc and nothing is saved or written: the vault stays plain, and the app asks again the next time you open it. A vault where every note and folder already has its ID is not asked.
+
+The answer is kept in the vault itself, in `.yaseendocs/ids.json`, so your other machines get the same one. You can change it at any time: Settings › Files & Links › **Give this vault's notes IDs**. Turning it on gives the notes their IDs then. Turning it off stops the app writing from then on and removes nothing; notes show their file names, and links stored as IDs do not open, until you turn it back on.
+
 ## Sidebar and windows
 
 - **Two lenses**: the sidebar shows your vault two ways, switched by the tabs at the top. **Files** (the default, YAZ-1846) is the ordinary folder tree on disk — every file, not just the ones the app can open: a file with no in-app viewer (an EPUB, a ZIP, …) is listed muted and a click hands it to the OS default app, as does right-click → Open in ▸ "Default app" on any row. Every folder shows how many notes it holds, and a folder is itself a page: double-click it to open it (see Folders). The **♥** tab is your favorites (below). Same vault, two readings; both offer the same right-click menu.
