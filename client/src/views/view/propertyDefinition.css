@@ -201,18 +201,18 @@
 .frontmatter-property-menu__heading strong {
   font-weight: 500;
 }
-/* "Properties from": the folder whose columns type and list the note's rows. It leads the panel (D22). */
-.frontmatter-property-context {
+/* The two headings of a note's panel (D23): "Note fields" over the note's own rows, "Properties
+   from" over the chosen folder's. A line parts the groups: "Properties from"'s top edge, drawn
+   only under a note field. */
+.frontmatter-property-context,
+.frontmatter-panel__own {
   font-size: 12px;
   color: var(--fg-muted);
 }
-/* The line and "This note": the note's own fields, under the chosen folder's. */
-.frontmatter-panel__own {
+.frontmatter-panel__row + .frontmatter-property-context {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--fg-muted);
 }
 .frontmatter-property-menu__scope {
   padding: 0 9px;
