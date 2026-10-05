@@ -20,6 +20,7 @@ import { openByGesture } from '../../lib/openGesture'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { TableHeaderMenu } from './TableHeaderMenu'
+import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import { allPropertyKeys } from './properties'
@@ -77,6 +78,8 @@ export interface TableViewProps {
   valueCount: (key: string) => number
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
+  /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
+  onRetitle: (path: string, title: string) => void
 }
 
 const DEFAULT_WIDTH = 150
@@ -95,6 +98,12 @@ const COLUMN_MIME = 'application/x-yaseen-table-column'
 
 /** One display line: a group header row (`nested` = an inner section, YAZ-745), or a data row with its `data-cell` row index (data rows only), its `#` gutter number `n` (YAZ-1513) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
 type Line = { header: Group; gk: string; nested?: true; at: GroupSpot } | { row: Row; r: number; n: number; g: Group | null; gk: string | null; at: GroupSpot | null }
+
+/**
+ * A data row's sibling key. Fan-out (YAZ-671): the same record can sit in several groups, and the
+ * tbody is ONE flat list (the windowing needs it), so the path alone is not unique.
+ */
+const rowKey = (line: Extract<Line, { row: Row }>): string => (line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`)
 
 /** Let a table property-cell double-click activate the shared editor exactly once. */
 function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
@@ -124,7 +133,9 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
 
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
- * mouseup), typed cells, the `file.name` cell opening the note, a pinned summary row with a
+ * mouseup), typed cells, the `file.name` cell showing the note's title as plain text (YAZ-2420
+ * 🔒 D26: a click selects it, a double-click edits the title, ⌘/⌥-click and Enter open the
+ * note), a pinned summary row with a
  * click-to-pick kind per column (`view.summaries`), arrow-key cell navigation and windowing above
  * `WINDOW_AT` lines. Note-property cells edit inline (5B, GRO-2142): `EditableCell` per cell,
  * opened by a whole-cell double-click or Enter, typed by `cellEditor` over the view's rows. With `groupBy` (4C, GRO-2137) the groups render as sections in the same flat
@@ -135,11 +146,13 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview, wikilinks)
-  /** The name link and Enter on its cell share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
+  /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
+  /** The data row (`rowKey`) whose title is being edited in its Name cell (YAZ-2420 🔒 D26). */
+  const [titleEdit, setTitleEdit] = useState<string | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
   // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
@@ -476,9 +489,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 </tr>
               ) : (
                 <tr
-                  // Fan-out (YAZ-671): the same record can sit in several groups, and the tbody is ONE
-                  // flat list (the windowing needs it), so the path alone is not a unique sibling key.
-                  key={line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`}
+                  key={rowKey(line)}
                   className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
                   {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at), ...dnd.target(line.g, line.at) })}
                   {...rowProps(line.row.record)}
@@ -491,21 +502,38 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   {numbered && <td className="view-table__gutter">{line.n}</td>}
                   {keys.map((key, c) => {
                     const v = line.row.values[key]
+                    const { path, title } = line.row.record
                     return (
                       <td
                         key={key}
-                        className={[typeOf(v) === 'number' && 'view-table__cell--num', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
+                        className={[typeOf(v) === 'number' && 'view-table__cell--num', c === nameCol && 'view-table__name', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
                         style={frozenStyle(c)}
                         tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                         data-cell={`${line.r}:${c}`}
-                        onClick={bares[c] === null ? undefined : selectCell}
-                        onDoubleClick={bares[c] === null ? undefined : activateEditorFromCell}
+                        // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
+                        onClick={c === nameCol ? (e) => (e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
+                        onDoubleClick={c === nameCol ? () => setTitleEdit(rowKey(line)) : bares[c] === null ? undefined : activateEditorFromCell}
                       >
                         {c === nameCol ? (
                           <>
-                            <button type="button" className="view-table__link" onClick={(e) => openByGesture(e, line.row.record.path, openHandlers)}>
-                              {rowTitle(line.row)}
-                            </button>
+                            {titleEdit === rowKey(line) ? (
+                              <span className="view-cell-edit" data-editing="">
+                                <TextField
+                                  className="view-input view-cell-edit__input"
+                                  autoFocus
+                                  aria-label="Edit title"
+                                  value={title}
+                                  normalize={(draft) => draft.trim() || null}
+                                  onCommit={(next) => onRetitle(path, next)}
+                                  onDone={() => {
+                                    setTitleEdit(null)
+                                    wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:${c}"]`)?.focus()
+                                  }}
+                                />
+                              </span>
+                            ) : (
+                              rowTitle(line.row)
+                            )}
                             {moveError?.path === line.row.record.path && (
                               <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
                                 Move failed
@@ -591,6 +619,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             path={rowMenu.path}
             title={rowMenu.title}
             noteId={rowMenu.noteId}
+            onOpen={onOpenFile}
             onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}
             onNotice={onNotice}

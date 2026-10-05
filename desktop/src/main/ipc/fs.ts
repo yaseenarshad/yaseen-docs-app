@@ -15,6 +15,7 @@ import { openLink } from '../fs/openLink'
 import { readPdf } from '../fs/pdf'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
+import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
@@ -88,6 +89,20 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be renamed', { path: oldPath })
     }
     const res = await renameFile(req)
+    store.renamePath(res.oldPath, res.newPath)
+    await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    return res
+  })
+  // A title edit (YAZ-2420 🔒 D16): `retitle` writes the title and renames; a path that changed
+  // then takes the rename handler's downstream above, verbatim. One that kept its name moved
+  // nothing, so there is nothing to repair or push: the index reads the new title off the watcher.
+  handleWithEvent(CONTRACT.file.retitle, async (e, req: unknown) => {
+    const senderId = windows.idFor(e.sender)
+    const root = store.get().windows.find((w) => w.id === senderId)?.root
+    if (root == null) throw new BridgeFailure('BAD_REQUEST', 'no vault is open in this window')
+    const res = await retitle(root, req)
+    if (res.newPath === res.oldPath) return res
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })

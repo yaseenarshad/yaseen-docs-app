@@ -87,12 +87,13 @@ interface EditorProps {
   /** The vault's property declarations (YAZ-835), App-owned like `wikilinks`: typing rung 2 for a folder's views (YAZ-846). */
   properties?: PropertiesResponse | null
   /**
-   * A title commit (⚡ YAZ-888) goes to App's ONE rename door — the same prop the sidebar's
-   * inline rename and drag-move reach, so the name-change confirm and every failure notice come
-   * with it. Absent → the title renders and edits, but commits nothing (decoration-only mounts).
-   * A FOLDER's title (YAZ-2290 D9) says `dir`: the door counts and rewrites links by kind.
+   * A title commit (⚡ YAZ-888, YAZ-2420 🔒 D16) goes to App's ONE rename door — the one the
+   * sidebar's inline rename and drag-move reach, so the name-change confirm and every failure
+   * notice come with it. Absent → the title renders and edits, but commits nothing
+   * (decoration-only mounts). A FOLDER's title (YAZ-2290 D9) says `dir`: the door counts and
+   * rewrites links by kind. A table's Name cell commits through it too (🔒 D19).
    */
-  onRenameFile?: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => void
+  onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void
   /**
    * This vault's GitHub sync status (YAZ-1081 3A, 🔒 D5), App-owned like `wikilinks`: ONE
    * `useGithubSync` per window feeds every mounted tab. null while the first fetch is in
@@ -109,7 +110,7 @@ interface EditorProps {
   reviewSettings?: ReviewSettings
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps) {
   const inTree = useTreeKind(root, path)
   if (path === null) {
     return (
@@ -126,7 +127,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     if (inTree === 'dir') {
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRenameFile={onRenameFile} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
         </section>
       )
     }
@@ -162,11 +163,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps & { path: string }) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps & { path: string }) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -174,7 +175,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
       )}
     </section>
   )
@@ -194,7 +195,7 @@ function CrepeHost({
   viewOnlyLinks,
   wikilinkCandidates,
   properties,
-  onRenameFile,
+  onRetitle,
   sync,
   onSyncNow,
   commentsOrder,
@@ -213,7 +214,7 @@ function CrepeHost({
   viewOnlyLinks?: ViewOnlyLinkSource
   wikilinkCandidates?: WikilinkCandidateSource
   properties?: PropertiesResponse | null
-  onRenameFile?: (oldPath: string, newPath: string) => void
+  onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
   commentsOrder: CommentsOrder
@@ -499,8 +500,7 @@ function CrepeHost({
           <PageTitle
             path={file.path}
             source={wikilinks}
-            onRename={(newPath) => onRenameFile?.(file.path, newPath)}
-            onNotice={onNotice}
+            onRetitle={(title) => onRetitle?.(file.path, title, 'file')}
             onArrowDown={() => {
               const crepe = crepeRef.current
               if (crepe !== null) focusEditor(crepe)

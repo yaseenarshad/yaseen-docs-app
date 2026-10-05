@@ -398,6 +398,19 @@ export interface RenameFileResponse {
   kind: 'file' | 'dir'
 }
 
+// ---------- file.retitle(req) (YAZ-2420) ----------
+
+/**
+ * A title edit (🔒 D16), for a note or a folder: `title` is written to its frontmatter (a folder's
+ * `.folder.md`), then it is renamed to the name built from that title. Answers as a rename does,
+ * with `newPath` equal to `oldPath` when the built name is the one it has; a path that changed is
+ * repaired and pushed exactly as `file.rename`'s is.
+ */
+export interface RetitleRequest {
+  path: string
+  title: string
+}
+
 /** Pushed to EVERY window after a successful in-app rename; renderers remap their own tabs (a `dir` event remaps every tab under the old prefix). */
 export interface FileRenamedEvent {
   oldPath: string

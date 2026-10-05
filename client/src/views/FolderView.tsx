@@ -66,8 +66,8 @@ export interface FolderViewProps {
   wikilinkCandidates?: WikilinkCandidateSource
   newNoteFolderFor?: (sourcePath: string) => string
   onNotice?: (message: string) => void
-  /** A title commit renames the FOLDER (D9) through App's one rename door. */
-  onRenameFile?: (oldPath: string, newPath: string, kind: 'dir') => void
+  /** A title commit — the FOLDER's own (D9), or a row's from a table's Name cell (YAZ-2420 🔒 D19) — through App's one rename door. */
+  onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
 }
@@ -113,7 +113,7 @@ export function FolderView({
   wikilinkCandidates,
   newNoteFolderFor,
   onNotice,
-  onRenameFile,
+  onRetitle,
   commentsOrder,
   onChangeCommentsOrder,
 }: FolderViewProps) {
@@ -323,6 +323,7 @@ export function FolderView({
         writeSettings: commitSettings,
       }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     valueCount: (key) => notesHolding(feed.records, id, key).length,
+    retitle: (note, title) => onRetitle?.(note, title, 'file'),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,
@@ -338,7 +339,7 @@ export function FolderView({
     // the table's sticky header finds the scroller it bridges to (YAZ-1151).
     <div className="editor-host">
       <div className="page-header">
-        <PageTitle path={path} kind="dir" source={source} onRename={(newPath) => onRenameFile?.(path, newPath, 'dir')} onNotice={onNotice} />
+        <PageTitle path={path} kind="dir" source={source} onRetitle={(title) => onRetitle?.(path, title, 'dir')} />
         {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} />}
       </div>
       <section className="folder-view">

@@ -4,6 +4,7 @@
  * (a move on disk) and a favorite along its list.
  */
 import { useCallback, useEffect, useMemo, useReducer, useState, type Dispatch, type RefObject } from 'react'
+import { isMarkdown } from '@shared/fileKind'
 import type { FileClipState, SidebarLens, TreeNode, TreeResponse } from '@shared/types'
 import { api } from '../../api'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
@@ -318,6 +319,7 @@ export function useInlineEdits(
   refresh: () => void,
   onOpenFile: (path: string) => void,
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
+  onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
   dispatch: Dispatch<TreeAction>,
 ) {
   const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string } | null>(null)
@@ -358,14 +360,17 @@ export function useInlineEdits(
   const submitRename = useCallback(
     async (name: string) => {
       if (renamingEntry === null) return
-      const target = renamedPath(renamingEntry.path, name, renamingEntry.kind)
+      const { path, kind } = renamingEntry
       setRenamingEntry(null)
-      if (target === renamingEntry.path) return // same name = no-op
       // App owns the whole flow (and routes failures to the passive notice — never a dialog);
-      // the tree row follows via the watcher's unlink+add refresh.
-      await onRenameFile(renamingEntry.path, target, renamingEntry.kind)
+      // the tree row follows via the watcher's unlink+add refresh. What was typed for a note or
+      // a folder is its TITLE (YAZ-2420 🔒 D16); for any other file, its name.
+      if (kind === 'dir' || isMarkdown(path)) return onRetitle(path, name, kind)
+      const target = renamedPath(path, name)
+      if (target === path) return // same name = no-op
+      await onRenameFile(path, target, 'file')
     },
-    [renamingEntry, onRenameFile],
+    [renamingEntry, onRenameFile, onRetitle],
   )
 
   const renaming: PendingRename | null = useMemo(

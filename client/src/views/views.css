@@ -929,21 +929,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.view-table__link {
-  max-width: 100%;
-  overflow: hidden;
-  /* Plain text, not link-blue (YAZ-1513): the hover underline still says "this opens". */
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.view-table__link:hover {
-  text-decoration: underline;
-}
-
 /* Header drag-to-reorder (YAZ-1548): the grabbed header dims, an accent edge marks the slot the
    drop would land in — before the hovered header, or after the LAST one for the end slot. */
 .view-table thead th[draggable='true'] {

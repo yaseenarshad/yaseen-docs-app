@@ -64,7 +64,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -253,6 +253,59 @@ describe('registerFsIpc', () => {
     })
     expect(store.get()).toBe(before)
     expect(w.webContents.send).not.toHaveBeenCalled()
+  })
+
+  describe('fs:retitle (YAZ-2420 🔒 D16)', () => {
+    const NOTE = '---\nid: k3m9x2pq7abc\n---\n'
+    const windowOn = (id: string) => {
+      store.upsertWindow({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = id
+    }
+
+    it('a title edit that changes the name runs the rename handler\'s downstream: the store and favorites are repaired and file:renamed reaches every window', async () => {
+      const oldPath = path.join(root, 'Retitle.md')
+      const newPath = path.join(root, 'big-plan-k3m9x2pq7abc.md')
+      await writeFile(oldPath, NOTE)
+      windowOn('w-retitle')
+      store.setFolder(root, { lastFile: oldPath })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      vi.mocked(favorites.renamePath).mockClear()
+      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: oldPath, title: 'Big Plan' })).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
+      expect(await readFile(newPath, 'utf8')).toBe('---\nid: k3m9x2pq7abc\ntitle: Big Plan\n---\n')
+      expect(store.get().folders[root].lastFile).toBe(newPath)
+      expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([root]), oldPath, newPath)
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath, newPath, kind: 'file' })
+      store.removeWindow('w-retitle')
+    })
+
+    it('a title edit that keeps the name writes the title and moves nothing: no repair, no broadcast', async () => {
+      const file = path.join(root, 'same-name-k3m9x2pq7abc.md')
+      await writeFile(file, NOTE)
+      windowOn('w-retitle')
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      vi.mocked(favorites.renamePath).mockClear()
+      const before = store.get()
+      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: file, title: 'Same, Name' })).toEqual({ ok: true, value: { oldPath: file, newPath: file, kind: 'file' } })
+      expect(await readFile(file, 'utf8')).toBe('---\nid: k3m9x2pq7abc\ntitle: Same, Name\n---\n')
+      expect(store.get()).toBe(before)
+      expect(vi.mocked(favorites.renamePath)).not.toHaveBeenCalled()
+      expect(w.webContents.send).not.toHaveBeenCalled()
+      store.removeWindow('w-retitle')
+    })
+
+    it("refuses the calling window's own vault root, and a refused edit answers a BridgeError envelope and broadcasts nothing", async () => {
+      windowOn('w-retitle')
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: root, title: 'Vault' })).toEqual({
+        ok: false,
+        error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: root },
+      })
+      expect(w.webContents.send).not.toHaveBeenCalled()
+      store.removeWindow('w-retitle')
+    })
   })
 
   describe('fs:create-file adopts the folder (YAZ-2293)', () => {

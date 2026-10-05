@@ -28,6 +28,8 @@ interface SidebarStubProps {
   onFileMissing: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
+  /** A title edit (YAZ-2420 D16) arrives at that same door. */
+  onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
   pendingSearchFocus: boolean
   /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
@@ -72,12 +74,15 @@ const captured = vi.hoisted(() => ({
   /** Sidebar stub renders — one per App render while the sidebar is open. */
   sidebarRenders: 0,
   editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
+  /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
+  editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void }) => {
     captured.editorOpeners.push({ path, open: onOpenFile })
+    captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
       <div data-editor data-root={root} data-path={path ?? ''} data-review-settings={reviewSettings === undefined ? 'none' : 'given'}>
@@ -207,6 +212,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     // the renamed push on mount; the banner's Update goes through repairRename.
     file: {
       rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
+      // A title edit (YAZ-2420 D16): the name main would build is each test's to say; by default the path stands.
+      retitle: vi.fn(async ({ path }: { path: string; title: string }) => ({ oldPath: path, newPath: path, kind: 'file' as 'file' | 'dir' })),
       repairRename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath, kind: 'file' as const })),
       onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void) => {
         fileRenamed.add(l)
@@ -1539,6 +1546,17 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(el.querySelector('.confirm__btn--danger')).toBeNull()
     })
 
+    it('a title edit of a note that holds a folder’s values: the rename sheet, never this one, and the values stay (YAZ-2420 D16)', async () => {
+      const files = { [NOOR]: { content: held, mtime: 1 } }
+      const { bridge, el } = await mountTeam(files)
+      await act(async () => void captured.sidebar?.onRetitle(NOOR, 'Noor Khan', 'file'))
+      expect(sheetText(el)).toBe("Rename 'Noor' to 'Noor Khan'? No other notes link to it.")
+      expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Rename'])
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: NOOR, title: 'Noor Khan' })
+      expect(files[NOOR].content).toBe(held)
+    })
+
     it('a move to the vault’s top level: the destination is named by the vault’s name, and the folders nearest to the note first', async () => {
       const { el } = await mountTeam()
       await drag(NOOR, '/v/Noor.md')
@@ -1561,6 +1579,73 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await act(async () => emitFileRenamed('/v', '/w', 'dir'))
       expect(el.querySelector('.confirm')).toBeNull()
       expect(bridge.file.rename).not.toHaveBeenCalled()
+    })
+  })
+
+  /** A title edit is the same door (YAZ-2420 D16): the same sheet, the same pipeline, another bridge call. */
+  describe('a title edit (YAZ-2420 D16)', () => {
+    const ID = 'k3m9x2pq7abc'
+    const ABDUL = `/v/abdul-${ID}.md`
+    const RENAMED = `/v/up-001-abdul-${ID}.md`
+    const titled = [record('/v/A.md', { links: ['Abdul'] }), record('/v/ById.md', { links: [ID] }), record(ABDUL, { id: ID, title: 'Abdul', properties: { id: ID, title: 'Abdul' } })]
+    const feedTitled = (b: ReturnType<typeof installBridge>) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: titled, folders: [], generatedAt: 1 })
+      b.bridge.file.retitle.mockResolvedValue({ oldPath: ABDUL, newPath: RENAMED, kind: 'file' })
+    }
+    const notes = () => ({ '/v/A.md': { content: 'See [[Abdul]].\n', mtime: 1 }, '/v/ById.md': { content: `See [[${ID}]].\n`, mtime: 1 } })
+
+    it('asks first, counting the notes whose links spell the old title, and confirming retitles through the whole pipeline: `[[Old title]]` becomes `[[New title]]`, an id link is neither counted nor rewritten', async () => {
+      const files = notes()
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
+      await act(async () => void captured.sidebar?.onRetitle(ABDUL, 'UP-001 - Abdul', 'file'))
+      expect(sheetText(el)).toBe("Rename 'Abdul' to 'UP-001 - Abdul'? Links in 1 note will be updated.")
+      expect(bridge.file.retitle).not.toHaveBeenCalled() // nothing is written before the beat
+
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      expect(files['/v/A.md'].content).toBe('See [[UP-001 - Abdul]].\n')
+      expect(files['/v/ById.md'].content).toBe(`See [[${ID}]].\n`)
+      expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+    })
+
+    it('the page title commits through the same door as the sidebar', async () => {
+      const { bridge, el } = await mount(defaultAppState(), { ...identity(), file: ABDUL, tabs: [ABDUL] }, notes(), feedTitled)
+      await act(async () => void captured.editorRetitle?.(ABDUL, 'UP-001 - Abdul', 'file'))
+      expect(sheetText(el)).toBe("Rename 'Abdul' to 'UP-001 - Abdul'? Links in 1 note will be updated.")
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: ABDUL, title: 'UP-001 - Abdul' })
+    })
+
+    it('a title edit that keeps the file name still rewrites the links: the path main answers with is the one the links are told', async () => {
+      const files = notes()
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
+      bridge.file.retitle.mockResolvedValue({ oldPath: ABDUL, newPath: ABDUL, kind: 'file' })
+      await act(async () => void captured.sidebar?.onRetitle(ABDUL, 'Abdul!', 'file'))
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(files['/v/A.md'].content).toBe('See [[Abdul!]].\n')
+    })
+
+    it('a folder is retitled the same way, and named by the title typed', async () => {
+      const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
+      bridge.file.retitle.mockResolvedValue({ oldPath: '/v/Docs', newPath: '/v/notes-2026', kind: 'dir' })
+      await act(async () => void captured.sidebar?.onRetitle('/v/Docs', 'Notes 2026', 'dir'))
+      expect(sheetText(el)).toBe("Rename 'Docs' to 'Notes 2026'? Links in 1 note will be updated.")
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.retitle).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs', title: 'Notes 2026' })
+    })
+
+    it.each([
+      [{ code: 'BAD_REQUEST', message: 'its properties do not parse', path: ABDUL }, "Can't rename: its properties do not parse"],
+      [{ code: 'ALREADY_EXISTS', message: 'a folder with this name already exists', path: RENAMED }, 'Can\'t rename: "UP-001 - Abdul" already exists'],
+    ])('a refused title edit shows the ordinary notice with the reason, and rewrites nothing', async (error, notice) => {
+      const files = notes()
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, feedTitled)
+      bridge.file.retitle.mockRejectedValue(error)
+      await act(async () => void captured.sidebar?.onRetitle(ABDUL, 'UP-001 - Abdul', 'file'))
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(el.querySelector('.link-notice')?.textContent).toBe(notice)
+      expect(files['/v/A.md'].content).toBe('See [[Abdul]].\n')
     })
   })
 

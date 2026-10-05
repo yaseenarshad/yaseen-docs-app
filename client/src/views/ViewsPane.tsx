@@ -67,6 +67,8 @@ export interface FolderHost {
    * host knows where a note keeps them (D19: its block of `in`).
    */
   writeValues: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>
+  /** A row's title edited in a table's Name cell (YAZ-2420 🔒 D19): the one title edit, through App's rename door. */
+  retitle: (path: string, title: string) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -442,6 +444,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, propert
           deleteColumn={folder.deleteColumn}
           valueCount={folder.valueCount}
           onWriteValue={writeValue}
+          onRetitle={folder.retitle}
         />
       ) : view.type === 'board' ? (
         <BoardView

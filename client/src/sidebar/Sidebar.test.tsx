@@ -129,6 +129,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
+    onRetitle: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
     pendingSearchFocus: false,
@@ -507,18 +508,48 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
-  it('a FOLDER row\'s context menu offers "Rename"; committing routes old→new (no extension logic) through onRenameFile', async () => {
-    const { props, el } = await mount()
-    act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  /** Rename on a row, the box as it opens, then `typed` and Enter. */
+  const renameRow = async (el: HTMLElement, row: Element | null | undefined, typed: string) => {
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     act(() => itemByLabel(el, 'Rename')?.click())
     const input = el.querySelector<HTMLInputElement>('.create-inline__input')
-    expect(input?.value).toBe('sub') // the raw folder name — no extension stripping for dirs
+    const prefill = input?.value
     act(() => {
-      input!.value = 'archive'
+      input!.value = typed
       input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await act(async () => undefined)
-    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive', 'dir')
+    return prefill
+  }
+  const titled = () => {
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), title: 'UP-001 - Abdul' }], [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }])
+    return indexSource
+  }
+
+  it('a FOLDER row\'s "Rename" edits its TITLE: the box is prefilled with it, and committing is a title edit, free text and all (YAZ-2420 D16)', async () => {
+    const { props, el } = await mount({ indexSource: titled() })
+    expect(await renameRow(el, dirRow(el), 'Upwork: 2027/28')).toBe('Upwork 2026')
+    expect(props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/sub', 'Upwork: 2027/28', 'dir')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('a NOTE row\'s "Rename" edits its TITLE the same way; a note with no title is prefilled with its file name, less the extension (YAZ-2420 D16)', async () => {
+    const { props, el } = await mount({ indexSource: titled() })
+    expect(await renameRow(el, fileRow(el), 'UP-002 - Ali')).toBe('UP-001 - Abdul')
+    expect(props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'UP-002 - Ali', 'file')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    const plain = await mount()
+    expect(await renameRow(plain.el, fileRow(plain.el), 'Plan')).toBe('a')
+    expect(plain.props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'Plan', 'file')
+  })
+
+  it('a title left as it was is no edit: nothing is asked of the door', async () => {
+    const { props, el } = await mount({ indexSource: titled() })
+    await renameRow(el, fileRow(el), 'UP-001 - Abdul')
+    expect(props.onRetitle).not.toHaveBeenCalled()
+    expect(el.querySelector('.create-inline__input')).toBeNull()
   })
 
   it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered', async () => {

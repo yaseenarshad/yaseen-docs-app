@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs'
 import { readdir, rename, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { RenameFileResponse } from '@shared/types'
@@ -64,13 +65,18 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
     const parent = await stat(parentP).catch(() => null)
     if (parent === null) throw new BridgeFailure('NOT_FOUND', 'the target folder does not exist', { path: parentP })
     if (!parent.isDirectory()) throw new BridgeFailure('NOT_A_DIRECTORY', 'the target parent is not a folder', { path: parentP })
-    const dst = await stat(newP).catch(() => null)
-    if (dst !== null && !(dst.ino === src.ino && dst.dev === src.dev)) {
-      throw new BridgeFailure('ALREADY_EXISTS', kind === 'dir' ? 'a folder with this name already exists' : 'a file with this name already exists', { path: newP })
-    }
+    await requireFreeTarget(src, newP)
     await rename(oldP, newP)
     return { oldPath: oldP, newPath: newP, kind }
   })
+}
+
+/** The never-overwrite pre-check above, for `src` landing on `newP`: `ALREADY_EXISTS` unless nothing is there, or `src` itself is (a case-only rename). */
+export async function requireFreeTarget(src: Stats, newP: string): Promise<void> {
+  const dst = await stat(newP).catch(() => null)
+  if (dst !== null && !(dst.ino === src.ino && dst.dev === src.dev)) {
+    throw new BridgeFailure('ALREADY_EXISTS', src.isDirectory() ? 'a folder with this name already exists' : 'a file with this name already exists', { path: newP })
+  }
 }
 
 /**

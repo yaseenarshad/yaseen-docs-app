@@ -804,6 +804,28 @@ describe('sweepIds, wired into the live index', () => {
     for (const [name, content] of Object.entries(under('People'))) expect(await read(name)).toBe(content)
   })
 
+  it('a file made outside the app keeps its name: it is given its id, shows its name as its title, and is never renamed on sight (YAZ-2420 D5)', async () => {
+    await vault({ 'Plan.md': 'body\n' })
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await until(async () => (await indexed('Plan.md'))?.id !== undefined)
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a rename the app must not make
+    expect(await readdir(root)).toEqual([VAULT_CONFIG_DIR, 'Plan.md'])
+    expect((await indexed('Plan.md'))?.title).toBe('Plan')
+  })
+
+  it('a `title:` line edited by hand shows as the title and renames nothing (YAZ-2420 D23)', async () => {
+    await vault({ 'plan-k3m9x2pq7abc.md': '---\nid: k3m9x2pq7abc\ntitle: Plan\n---\nbody\n' })
+    const ready = watcherReady()
+    await getIndex(root)
+    await ready
+    await writeFile(at('plan-k3m9x2pq7abc.md'), '---\nid: k3m9x2pq7abc\ntitle: Quite Another Name\n---\nbody\n')
+    await until(async () => (await indexed('plan-k3m9x2pq7abc.md'))?.title === 'Quite Another Name')
+    await new Promise((r) => setTimeout(r, 300)) // long enough for a rename the app must not make
+    expect(await readdir(root)).toEqual([VAULT_CONFIG_DIR, 'plan-k3m9x2pq7abc.md'])
+  })
+
   it('a note renamed outside the app keeps its id, byte for byte (C2)', async () => {
     await vault({ 'a.md': NOTE })
     const ready = watcherReady()

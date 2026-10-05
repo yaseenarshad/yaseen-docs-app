@@ -153,7 +153,7 @@ const options = (el: ParentNode): (string | null)[] => [...el.querySelectorAll('
  * Row names, whichever body is rendering: the placeholder list or the real table (`file.name`,
  * extension and all). The outline has no rows at all: it is a document.
  */
-const rowNames = (el: ParentNode): string[] => texts(el, '.view-row__link, .view-table__link')
+const rowNames = (el: ParentNode): string[] => texts(el, '.view-row__link, .view-table__name')
 /** The outline document the editor was seeded with (YAZ-903). */
 const doc = (el: ParentNode): string => q(el, '.outline-doc').textContent ?? ''
 
@@ -346,7 +346,7 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     for (const row of el.querySelectorAll('.view-table tbody tr')) {
       const header = row.querySelector('.view-group__value')
       if (header !== null) under = groups[header.textContent ?? ''] = []
-      else under?.push(...texts(row, '.view-table__link'))
+      else under?.push(...texts(row, '.view-table__name'))
     }
     expect(groups).toEqual({ stages: ['Lead Gen', 'Sales'], 'stages/archive': ['Old'], 'stages/archive/2019': ['Older'] })
     expect(texts(el, '.view-group__count')).toEqual(['2', '1', '1'])
@@ -372,7 +372,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     }
     const order = ['file.name']
     const el = await mount({ ...SETTINGS, views: [TABLE, { ...BOARD, order, groupBy: { property: 'note.order' } }, { type: 'cards', name: 'Cards', order }, { type: 'list', name: 'List', order }] }, shortcut())
-    expect(marked(el, '.view-table__link')).toEqual(['Other'])
+    expect(marked(el, '.view-table__name')).toEqual(['Other'])
     selectView(el, 'Board')
     expect(marked(el, '.view-board__title')).toEqual(['Other'])
     selectView(el, 'Cards')

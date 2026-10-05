@@ -290,6 +290,19 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties (2)')
   })
 
+  it('the `title:` line edited in the raw YAML view is one more line of the block: it is saved, and the file is not renamed (YAZ-2420 D23)', async () => {
+    readFile.mockResolvedValue(fileOf(MESSY))
+    const el = mount(MESSY)
+    expandRaw(el)
+    typeInto(el, INTERIOR.replace('title: "Deep   Work"', 'title: Shallow Work'))
+    click(btn(el, 'Save'))
+    await settle()
+
+    // The whole of what the panel asks of the bridge: this mock has no rename and no retitle to call.
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: MESSY.replace('title: "Deep   Work"', 'title: Shallow Work'), expectedMtime: 100 })
+    expect(Object.keys(api)).toEqual(['readFile', 'writeFile', 'createFile', 'properties'])
+  })
+
   it('a Save in flight joins the close/quit flush: the flush settles only once its write has landed (YAZ-2174)', async () => {
     readFile.mockResolvedValue(fileOf(MESSY))
     let land!: () => void

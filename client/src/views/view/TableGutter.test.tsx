@@ -91,7 +91,7 @@ const dataRows = (el: ParentNode): HTMLTableRowElement[] =>
   [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer):not(.view-table__group)')]
 /** `[name, #]` per data row, in display order. */
 const numbered = (el: ParentNode): [string, string][] =>
-  dataRows(el).map((tr) => [q(tr, '.view-table__link').textContent ?? '', q(tr, 'td.view-table__gutter').textContent ?? ''])
+  dataRows(el).map((tr) => [q(tr, '.view-table__name').textContent ?? '', q(tr, 'td.view-table__gutter').textContent ?? ''])
 const gutters = (el: ParentNode): string[] => numbered(el).map(([, n]) => n)
 /** The grouped tbody as `{ 'group label': [#...] }`, in document order. */
 function sections(el: ParentNode): Record<string, string[]> {
