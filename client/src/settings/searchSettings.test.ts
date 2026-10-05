@@ -37,6 +37,7 @@ describe('settingCandidates', () => {
       'confirmDelete',
       'confirmRename',
       'newNoteLocation',
+      'ids',
       'hotkeys-keyboard',
       'hotkeys-views',
       'hotkeys-window',
@@ -51,7 +52,7 @@ describe('settingCandidates', () => {
 
   it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
-    expect(all.slice(all.indexOf('newNoteLocation'), all.indexOf('githubSync') + 1)).toEqual(['newNoteLocation', ...REVIEW_ROWS, 'githubSync'])
+    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', ...REVIEW_ROWS, 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
@@ -87,7 +88,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'ids'])
   })
 
   it('matches on the group title: "threading" finds the three threading rows', () => {

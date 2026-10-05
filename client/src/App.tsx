@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { IDS_FILE } from '@shared/noteId'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type IndexRecord, type IndexResponse, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -24,6 +25,7 @@ import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
+import { ConfirmIds } from './components/ConfirmIds'
 import { NoticeIcon } from './components/NoticeIcon'
 import { relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -507,6 +509,37 @@ export function App() {
   const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, notify)
   const relLabel = useCallback((p: string) => (root === null ? p : relTo(root, p)), [root])
 
+  // The vault's answer on IDs as the last snapshot said it (YAZ-2523 🔒 V5), for the Settings switch:
+  // `enabled` is undefined while the vault has not answered, `held` says a note holds an ID. Null
+  // until this root's first snapshot, so the switch never shows an answer the vault did not give.
+  // While it has not answered, `idsAsk` is what a yes would write: the box that asks (🔒 V2). An
+  // answer, or Esc, closes the box for this root: later snapshots still carry `ask` and must not reopen it.
+  const [vaultIds, setVaultIds] = useState<{ enabled: boolean | undefined; held: boolean } | null>(null)
+  const [idsAsk, setIdsAsk] = useState<IndexResponse['ask']>()
+  const idsAskClosed = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    idsAskClosed.current = null
+    setVaultIds(null)
+    setIdsAsk(undefined)
+  }, [root])
+  const onSnapshot = useCallback(
+    (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => {
+      onIndexSnapshot(records, folders)
+      setVaultIds({ enabled: ask === undefined ? ids : undefined, held: records.some((record) => record.id !== undefined) })
+      if (idsAskClosed.current !== root) setIdsAsk(ask)
+    },
+    [root, onIndexSnapshot],
+  )
+  const closeIdsAsk = (): void => {
+    idsAskClosed.current = root
+    setIdsAsk(undefined)
+  }
+  /** Save the vault's answer in its `ids.json` (🔒 V1), from the box or from Settings; the index refetches off the write. */
+  const saveIds = (enabled: boolean): void => {
+    if (root === null) return
+    api.vaultConfig.write(root, IDS_FILE, { enabled }).then(closeIdsAsk, (err: unknown) => notify(`Couldn't save this vault's answer: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+  }
+
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
   // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
   // dirty buffer is carried into the new path and the old controller retired (no flush to
@@ -811,7 +844,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled }, review: root === null ? undefined : reviewSettings }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled }, review: root === null ? undefined : reviewSettings, ids: vaultIds === null ? undefined : { ...vaultIds, set: saveIds } }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -908,7 +941,7 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onIndexSnapshot} />
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs.
               A review (YAZ-2322) is not a tab: its bar stands in the strip's place until it closes. */}
           {session !== null ? (
@@ -1026,6 +1059,8 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
+      {/* The box that asks whether this vault's notes get IDs (YAZ-2523 🔒 V2). */}
+      {idsAsk !== undefined && <ConfirmIds ask={idsAsk} onAnswer={saveIds} onDismiss={closeIdsAsk} />}
     </div>
   )
 }

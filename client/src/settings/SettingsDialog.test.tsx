@@ -25,23 +25,26 @@ beforeEach(() => {
   scrollIntoView.mockClear()
 })
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean | undefined; held: boolean }) {
   const onChange = vi.fn()
   const onClose = vi.fn()
   const setEnabled = vi.fn()
   const save = vi.fn()
+  const setIds = vi.fn()
   // `undefined` (the argument omitted) means no Sync section at all; an explicit `null` is the
   // section present with its first status fetch still in flight.
   const sync = syncStatus === undefined ? undefined : { status: syncStatus, setEnabled }
   // The same for Review: no settings handed over is no vault open, so no section.
   const review = reviewSettings === undefined ? undefined : { settings: reviewSettings, save }
+  // And for the vault's IDs switch (YAZ-2523): no answer handed over is no vault open, so no row.
+  const ids = vaultIds === undefined ? undefined : { ...vaultIds, set: setIds }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review }} onClose={onClose} />))
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, rerender, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -527,5 +530,91 @@ describe('SettingsDialog search (D6)', () => {
     expect(currentNav(el)).toBe('Files & Links')
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
     expect(scrollIntoView.mock.instances[0]).toBe(el.querySelector('#settings-files'))
+  })
+})
+
+describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () => {
+  const OFF_TEXT = "This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
+  const withIds = (enabled: boolean | undefined, held = false) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
+  const pressed = (el: HTMLElement) => rowButtons(el, 'ids').map((b) => b.getAttribute('aria-pressed'))
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+
+  it('with no vault open the row is absent, and so is its "This vault" group; a search does not find it', () => {
+    const { el } = mount()
+    expect(row(el, 'ids')).toBeNull()
+    expect(groupTitles(el)).not.toContain('This vault')
+    type(searchInput(el), 'files & links')
+    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation'])
+  })
+
+  it('a vault open: the row sits in Files & Links under "This vault", with its label and hint', () => {
+    const { el } = withIds(false)
+    expect(row(el, 'ids')?.closest('[data-section]')?.id).toBe('settings-files')
+    expect(row(el, 'ids')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'ids')?.querySelector('.setting__label')?.textContent).toBe("Give this vault's notes IDs")
+    expect(row(el, 'ids')?.querySelector('.setting__hint')?.textContent).toBe('Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.')
+    expect(rowButtons(el, 'ids').map((b) => b.textContent)).toEqual(['On', 'Off'])
+  })
+
+  it("shows the vault's answer: On where it said yes, Off where it said no or has not answered", () => {
+    expect(pressed(withIds(true, true).el)).toEqual(['true', 'false'])
+    unmount()
+    expect(pressed(withIds(false).el)).toEqual(['false', 'true'])
+  })
+
+  it('On writes yes at once', () => {
+    const { el, setIds } = withIds(false)
+    act(() => rowButtons(el, 'ids')[0].click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true)
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('Off in a vault whose notes hold IDs asks first, in the locked words; Cancel and Esc leave it on and the dialog open', () => {
+    const { el, setIds, onClose } = withIds(true, true)
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(OFF_TEXT)
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Turn off'])
+    act(() => sheetBtn(el, 'Cancel')?.click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    act(() => rowButtons(el, 'ids')[1].click())
+    pressEscape(sheetBtn(el, 'Cancel') as HTMLElement)
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(pressed(el)).toEqual(['true', 'false'])
+  })
+
+  it('Off in a vault whose notes hold IDs writes no only on "Turn off"', () => {
+    const { el, setIds } = withIds(true, true)
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(setIds).not.toHaveBeenCalled()
+    act(() => sheetBtn(el, 'Turn off')?.click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('a click on the answer the row already shows writes nothing and asks nothing', () => {
+    const on = withIds(true, true)
+    act(() => rowButtons(on.el, 'ids')[0].click())
+    expect(on.setIds).not.toHaveBeenCalled()
+    unmount()
+    const off = withIds(false)
+    act(() => rowButtons(off.el, 'ids')[1].click())
+    expect(off.setIds).not.toHaveBeenCalled()
+    expect(off.el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('a vault that has not answered reads Off, and a click on Off saves no: the box does not have to come back for it', () => {
+    const { el, setIds } = withIds(undefined)
+    expect(pressed(el)).toEqual(['false', 'true'])
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('Off in a vault that holds no IDs writes no at once', () => {
+    const { el, setIds } = withIds(true)
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+    expect(el.querySelector('.confirm')).toBeNull()
   })
 })
