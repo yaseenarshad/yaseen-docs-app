@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { MAX_FILE_BYTES } from '@shared/types'
+import { textFingerprint } from '@shared/reviews'
+import { MAX_FILE_BYTES, VAULT_CONFIG_DIR } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
 import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
 
@@ -109,6 +110,17 @@ describe('extractLinks / extractEmbeds', () => {
     expect(extractAliases({ aliases: ['[[X]]'] })).toEqual(['[[X]]'])
   })
 
+  it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the note’s links, exactly as a top-level whole-value link is', () => {
+    const props = { related: '[[Top]]', in: { '3y7505rsr6fd': { owner: '[[k3m9x2pq7abc]]', Status: 'Interview', team: ['[[Sam|S]]', 'plain', 7] }, mzf9cjhn02vm: { lead: '[[Road#Scope]]' } } }
+    expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam', 'Road', 'Body'])
+  })
+
+  it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link', () => {
+    expect(extractLinks({ in: { '3y7505rsr6fd': { note: 'see [[x]] later', list: ['ask [[y]]'] } } }, '')).toEqual([])
+    // A block that is no map holds no values.
+    expect(extractLinks({ in: { '3y7505rsr6fd': '[[x]]' } }, '')).toEqual([])
+  })
+
   it('de-duplicates: frontmatter first, then first appearance', () => {
     expect(extractLinks({ a: '[[B]]' }, '[[A]] [[B]] [[A]]')).toEqual(['B', 'A'])
     expect(extractEmbeds('![[a]] ![[b]] ![[a]]')).toEqual(['a', 'b'])
@@ -177,6 +189,16 @@ describe('scanFile', () => {
     expect(r.embeds).toEqual(['chart.png'])
   })
 
+  it('`id` is the frontmatter id when it has the note-id shape, else absent (YAZ-2293 D1)', async () => {
+    const withId = path.join(root, 'With id.md')
+    const foreign = path.join(root, 'Foreign id.md')
+    await writeFile(withId, '---\nid: k3m9x2pq7abc\n---\nbody\n')
+    await writeFile(foreign, '---\nid: 42\n---\nbody\n')
+    expect((await scanFile(root, withId)).id).toBe('k3m9x2pq7abc')
+    expect('id' in (await scanFile(root, foreign))).toBe(false)
+    expect('id' in (await scanFile(root, path.join(root, 'VSL-v1.md')))).toBe(false)
+  })
+
   it('string `tags:` is split', async () => {
     const r = await scanFile(root, note('2. Creator Economy', 'The Gold In Your Archive.md'))
     expect(r.tags).toEqual(['creator'])
@@ -202,12 +224,61 @@ describe('scanFile', () => {
     expect(r.links).toEqual([])
   })
 
+  it('indexing a note never removes a block of `in`: the record carries every folder’s values as written, their links counted, and the file is left byte for byte', async () => {
+    const held = path.join(root, 'held.md')
+    const content = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[Sam]]"\n  mzf9cjhn02vm:\n    Status: 2-Todo\n---\nbody\n'
+    await writeFile(held, content)
+    const r = await scanFile(root, held)
+    expect(r.properties).toEqual({ in: { '3y7505rsr6fd': { owner: '[[Sam]]' }, mzf9cjhn02vm: { Status: '2-Todo' } } })
+    expect(r.links).toEqual(['Sam'])
+    expect(await readFile(held, 'utf8')).toBe(content)
+  })
+
+  it('frontmatter `reviews` land on the record in time order and are never a property (YAZ-2322)', async () => {
+    const reviewed = path.join(root, 'reviewed.md')
+    await writeFile(reviewed, '---\nstatus: draft\nreview: false\nreviews:\n  - {at: 2026-11-03T09:00:00Z, rating: keep, text: 9f3a1c2e}\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\nBody.\n')
+    const r = await scanFile(root, reviewed)
+    expect(r.properties).toEqual({ status: 'draft', review: false })
+    expect(r.reviews?.map((e) => e.at)).toEqual(['2026-10-04T14:02:11Z', '2026-11-03T09:00:00Z'])
+  })
+
+  it('upkeep off: the index is unchanged — the record still carries the review log and the body fingerprint, `reviews` is never a property, and the note is left byte for byte', async () => {
+    const reviewed = path.join(root, 'reviewed-off.md')
+    const bytes = '---\nreview: true\nreviews:\n  - {at: 2026-10-04T14:02:11Z, rating: keep, text: 9f3a1c2e}\n---\nBody.\n'
+    await writeFile(reviewed, bytes)
+    // No review.json, one that says off, one that says on: the same record each time.
+    const records = [await scanFile(root, reviewed)]
+    await mkdir(path.join(root, VAULT_CONFIG_DIR))
+    for (const enabled of [false, true]) {
+      await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled }))
+      records.push(await scanFile(root, reviewed))
+    }
+    await rm(path.join(root, VAULT_CONFIG_DIR), { recursive: true }) // the fixture is an un-adopted folder
+    expect(records[0]).toMatchObject({ properties: { review: true }, reviews: [{ at: '2026-10-04T14:02:11Z', rating: 'keep', text: '9f3a1c2e' }], text: textFingerprint('Body.\n') })
+    expect(records[1]).toEqual(records[0])
+    expect(records[2]).toEqual(records[0])
+    expect(await readFile(reviewed, 'utf8')).toBe(bytes)
+  })
+
+  it('`text` is the fingerprint of the body alone: a frontmatter change leaves it, a body change moves it (YAZ-2322)', async () => {
+    const file = path.join(root, 'fingerprinted.md')
+    await writeFile(file, '---\nstatus: draft\n---\nBody.\n')
+    const first = await scanFile(root, file)
+    expect(first.text).toBe(textFingerprint('Body.\n'))
+    expect(first.reviews).toBeUndefined()
+    await writeFile(file, '---\nstatus: done\ncomments:\n  - {id: a, at: 2026-09-11T18:22:31Z, body: hi}\n---\nBody.\n')
+    expect((await scanFile(root, file)).text).toBe(first.text)
+    await writeFile(file, '---\nstatus: done\n---\nBody, edited.\n')
+    expect((await scanFile(root, file)).text).not.toBe(first.text)
+  })
+
   it('files over MAX_FILE_BYTES → metadata only', async () => {
     const big = path.join(root, 'big.md')
     await writeFile(big, '---\na: 1\n---\n#tag [[x]]\n' + 'x'.repeat(MAX_FILE_BYTES))
     const r = await scanFile(root, big)
     expect(r.size).toBeGreaterThan(MAX_FILE_BYTES)
     expect(r).toMatchObject({ name: 'big.md', properties: {}, aliases: [], tags: [], links: [], embeds: [] })
+    expect(r.text).toBeUndefined() // not read, so never a review card
   })
 
   it('missing file → BridgeFailure NOT_FOUND', async () => {

@@ -1,7 +1,7 @@
 /**
  * CMD+F IN-PAGE FIND, end to end (YAZ-970, proving YAZ-962): Chrome-style find in the REAL app —
  * highlights, the N-of-M counter, Enter cycling, fold auto-reveal with the landing exception, and
- * the routing rule between a folder page's two editors.
+ * the routing rule between the note editor and a folder's outline editor.
  *
  * The two proofs that are THE feature:
  *   1 a match hidden inside a collapsed bullet is revealed the moment the query matches it, and
@@ -10,12 +10,15 @@
  *   2 the whole session — open, type, cycle, reveal, close — leaves the file on disk
  *     byte-identical, proven after a real quit (the autosave flush point).
  *
- * Routing (locked in YAZ-967): on a folder page both editors can be on screen; CMD+F belongs to
- * the outline view while focus stands inside it, and to the note editor otherwise.
+ * Routing (locked in YAZ-967, visibility amendment YAZ-970): each editor has its own bar; CMD+F
+ * belongs to an outline while focus stands inside it, and to the note editor otherwise — and a
+ * folder's tab (YAZ-2290) has no note editor at all, so there the outline answers from anywhere.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault, nothing
  * sleeps — every wait is a locator assertion on the UI consequence.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -24,11 +27,13 @@ import {
   appWindow,
   buildFixtureVault,
   CHILD_BULLET,
+  contents,
   copyVault,
   launchApp,
   md5,
+  openFolder,
   outlineEditor,
-  outlineLinkLines,
+  outlineLines,
   quitApp,
   SEED_FILE,
   seededState,
@@ -128,27 +133,26 @@ test.describe('note page: highlights, cycling, fold reveal, untouched disk', () 
   })
 })
 
-test.describe('folder page: CMD+F belongs to the editor that owns focus', () => {
+test.describe('folder tab: CMD+F belongs to the outline, the only editor it has', () => {
   const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-  /** Home's five members — adoption writes every one of them into its document (YAZ-1152). */
-  const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
-  /** The one this file searches for: Home's own prose does not contain the word anywhere. */
-  const ADOPTED = 'Industries'
+  /** The folder whose settings file ships an outline document — three lines of prose (YAZ-2290). */
+  const FOLDER = 'Funnel Stages'
+  /** A word that document says exactly once. */
+  const WORD = 'deal'
   let userData: string
   let vault: string
   let app: ElectronApplication
   let win: Page
 
   test.beforeAll(async () => {
-    userData = await mkdtemp(path.join(tmpdir(), 'find-e2e-home-'))
+    userData = await mkdtemp(path.join(tmpdir(), 'find-e2e-folder-'))
     vault = await copyVault(FIXTURE)
-    app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Home.md')) })
+    app = await launchApp({ userData, seedState: seededState(vault, null) })
     win = await appWindow(app, 'w1')
-    await expect(outlineEditor(win.locator('body'))).toBeVisible()
-    // ADOPTION settles FIRST (YAZ-1152): it writes the five members into the document and re-seeds
-    // the editor to show them, and a remount landing mid-test would drop the caret the routing
-    // rule below is about. Once the five lines are on screen there is nothing left to write.
-    await expect.poll(() => outlineLinkLines(win.locator('body'))).toEqual(TOPICS.map((n) => `[[${n}]]`))
+    // The folder opens on its first view, the outline, showing the document its settings hold.
+    await openFolder(win, path.join(vault, FOLDER))
+    await expect(outlineEditor(contents(win))).toBeVisible()
+    await expect(outlineLines(contents(win))).toHaveCount(3)
   })
 
   test.afterAll(async () => {
@@ -158,42 +162,23 @@ test.describe('folder page: CMD+F belongs to the editor that owns focus', () => 
   })
 
   test('focus in the outline view: CMD+F opens the outline bar and finds its text', async () => {
-    await outlineEditor(win.locator('body')).click()
+    await outlineEditor(contents(win)).click()
     await win.keyboard.press('Meta+f')
     await expect(bar(win)).toHaveCount(1)
     await expect(win.locator('.view-outline-editor .find-bar')).toBeVisible()
-    await input(win).fill('root')
+    await input(win).fill(WORD)
     await expect(counter(win)).toHaveText('1 of 1')
-    await expect(win.locator('.view-outline-editor .find-match--active')).toHaveText('root')
+    await expect(win.locator('.view-outline-editor .find-match--active')).toHaveText(WORD)
     await shoot(win, 'find-outline-active')
     await win.keyboard.press('Escape')
     await expect(bar(win)).toHaveCount(0)
   })
 
-  test(`an ADOPTED member is findable: CMD+F finds "${ADOPTED}", which only adoption put in the document`, async () => {
-    // ⚡ THE YAZ-1152 BUG ITSELF. `Industries` is a member of Home and Home's prose never says the
-    // word — before adoption its name lived in a read-only row BELOW the editor, so the outline's
-    // find (which searches the DOCUMENT) could not see it and CMD+F answered "no results" about a
-    // name plainly on screen. Now the membership IS a line of the document, so the find finds it.
-    await outlineEditor(win.locator('body')).click()
-    await win.keyboard.press('Meta+f')
-    await expect(win.locator('.view-outline-editor .find-bar')).toBeVisible()
-    await input(win).fill(ADOPTED)
-
-    // Counted, not merely highlighted: one match, and it is the adopted line — the highlight is
-    // INSIDE the outline editor, which is the other half of the routing rule above.
-    await expect(counter(win)).toHaveText('1 of 1')
-    await expect(win.locator('.view-outline-editor .find-match--active')).toHaveText(ADOPTED)
-    await expect(matches(win)).toHaveCount(1)
-    await shoot(win, 'find-outline-adopted-member')
-    await win.keyboard.press('Escape')
-    await expect(bar(win)).toHaveCount(0)
-  })
-
-  test('focus outside both editors: the outline still answers — a folder page HAS no visible note editor', async () => {
-    // YAZ-919 hides the note mount on folder pages (the outline IS the document), so a note bar
-    // here would search a hidden document. The visibility amendment routes CMD+F to the outline
-    // even from the sidebar.
+  test('focus outside the editor: the outline still answers — a folder’s tab HAS no note editor', async () => {
+    // A folder's tab mounts no note editor at all (YAZ-2290 D9): the views stand where a note's
+    // body would be. So there is no note bar to claim the key, and the visibility amendment
+    // routes CMD+F to the outline even from the sidebar.
+    await expect(win.locator('.editor-mount')).toHaveCount(0)
     await win.getByRole('textbox', { name: 'Search notes' }).click()
     await win.keyboard.press('Meta+f')
     await expect(bar(win)).toHaveCount(1)

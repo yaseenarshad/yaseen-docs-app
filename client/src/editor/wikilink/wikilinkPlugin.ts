@@ -1,7 +1,7 @@
 /**
  * Wikilink rendering in the editor (Links A, GRO-2190): `[[target]]` stays PLAIN TEXT in the
  * document (Crepe parses it as text; `postProcessMarkdown` un-escapes it on save) and a `$prose`
- * plugin renders it Obsidian-live-preview style with INLINE DECORATIONS only — never a schema or
+ * plugin renders it Obsidian-live-preview style with DECORATIONS only — never a schema or
  * serializer change, so round-trip stays byte-identical (`roundtrip.test.ts`).
  *
  * Display (caret outside the match):
@@ -9,6 +9,12 @@
  *  - `[[target|alias]]` hides `target|` and shows only the alias,
  *  - `[[target#heading]]` shows `target > heading` (the `#` is hidden; each post-`#` segment
  *    carries `wikilink__sub`, whose CSS `::before` draws the ` > ` separator),
+ *  - `[[<id>]]` (YAZ-2293 — the target is a note's permanent id, and the source resolves it) hides
+ *    the id as well and shows the note's CURRENT TITLE in its place: the one WIDGET here, every
+ *    other decoration only hides or styles characters the document holds. The title is read off
+ *    the index at each build, so a rename changes what the link shows and not one byte of the
+ *    document. A hand-typed `[[<id>|label]]` shows its label; an id no note has, and any id before
+ *    the index loads, shows as the raw id, like a name,
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -21,6 +27,8 @@
  * that match's decorations drop entirely — raw `[[syntax]]` is visible and editable. This is
  * also what makes arrow traversal work with `display: none` hiding: the caret can never sit
  * against hidden text, because by the time it reaches a match boundary the match is already raw.
+ * The title widget sits INSIDE the match (after the `[[`), so the same rule covers it: no caret
+ * is ever beside it, and it is gone before the caret reaches the id.
  *
  * Exclusions: `![[…]]` embeds (image embeds stay plain),
  * `code_block` nodes and inline-`code` marked text (mirrors the index's `stripCode`,
@@ -35,7 +43,9 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isNoteId } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
+import { basename, stripExt } from '../../lib/paths'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -44,7 +54,7 @@ export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
 export const WIKILINK_SYNTAX_CLASS = 'wikilink__syntax'
 export const WIKILINK_SUB_CLASS = 'wikilink__sub'
 
-/** Link target → resolved absolute path, or null when no note matches. */
+/** Link target → resolved absolute path — a note's file, else a folder's directory (YAZ-2290 D10) — or null when nothing matches. */
 export type ResolveLink = (target: string) => string | null
 
 /** How the latest resolver reaches the plugin; see `createWikilinkResolveSource`. */
@@ -58,6 +68,8 @@ export interface WikilinkResolveSource {
    * snapshots.
    */
   readonly records: readonly IndexRecord[]
+  /** The same snapshot's folder settings records (YAZ-2290 D8) — never among `records`. */
+  readonly folders: readonly IndexRecord[]
   /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped. */
   subscribe(listener: () => void): () => void
 }
@@ -68,7 +80,7 @@ export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
    * `records` omitted = no snapshot in play (decoration-only mounts): backlinks have nothing
    * to list, which is exactly right — the resolver alone cannot say who links where.
    */
-  update(resolve: ResolveLink, records?: readonly IndexRecord[]): void
+  update(resolve: ResolveLink, records?: readonly IndexRecord[], folders?: readonly IndexRecord[]): void
 }
 
 const NO_RECORDS: readonly IndexRecord[] = []
@@ -76,6 +88,7 @@ const NO_RECORDS: readonly IndexRecord[] = []
 export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   let current: ResolveLink | null = null
   let snapshot: readonly IndexRecord[] = NO_RECORDS
+  let settings: readonly IndexRecord[] = NO_RECORDS
   const listeners = new Set<() => void>()
   return {
     get resolve() {
@@ -84,15 +97,19 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
     get records() {
       return snapshot
     },
+    get folders() {
+      return settings
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
       }
     },
-    update(resolve, records = NO_RECORDS) {
+    update(resolve, records = NO_RECORDS, folders = NO_RECORDS) {
       current = resolve
       snapshot = records
+      settings = folders
       listeners.forEach((l) => l())
     },
   }
@@ -111,20 +128,31 @@ export function linkPageName(inner: string): string {
 }
 
 /**
+ * The title an id link shows (YAZ-2293): `target` is a note's id and `resolve` finds the note →
+ * its file name without the extension. undefined for a name, for an id no note has, and before
+ * the index has loaded — all of which show the target as written. The ONE answer shared by the
+ * decorations, the backlinks snippets and the right-click menu (`wikilinkMenu.ts`).
+ */
+export function idLinkTitle(target: string, resolve: ResolveLink | null): string | undefined {
+  const path = resolve !== null && isNoteId(target) ? resolve(target) : null
+  return path === null ? undefined : stripExt(basename(path))
+}
+
+/**
  * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the alias after
  * the first `|` when piped, else the non-empty `#`-split parts joined with the ` > ` separator
- * the CSS draws between segments. '' means NOTHING would be visible (`[[Note|]]`, `[[|]]`,
+ * the CSS draws between segments — the page part replaced by `titleOf`'s answer when it has one
+ * (an id link's title, `idLinkTitle`). '' means NOTHING would be visible (`[[Note|]]`, `[[|]]`,
  * `[[#]]`) — such a match stays raw (FN12, GRO-2197; see `decorate`). Exported for the
  * backlinks snippets (FN9, GRO-2197), which must read exactly as the editor renders: one
  * mapping, never a second regex.
  */
-export function linkDisplayText(inner: string): string {
+export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined): string {
   const pipe = inner.indexOf('|')
   if (pipe >= 0) return inner.slice(pipe + 1)
-  return inner
-    .split('#')
-    .filter((part) => part.length > 0)
-    .join(' > ')
+  const parts = inner.split('#')
+  parts[0] = titleOf?.(parts[0].trim()) ?? parts[0]
+  return parts.filter((part) => part.length > 0).join(' > ')
 }
 
 const wikilinkKey = new PluginKey<DecorationSet>('mdapp-wikilink')
@@ -156,6 +184,14 @@ function hide(out: Decoration[], from: number, to: number): void {
   if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }))
 }
 
+/** The DOM an id link's title widget draws: the classes its id text would have worn. */
+function titleSpan(cls: string, title: string): HTMLElement {
+  const span = document.createElement('span')
+  span.className = cls
+  span.textContent = title
+  return span
+}
+
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
 function linkIsResolved(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): boolean {
   const viewSource = viewOnly
@@ -173,7 +209,8 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // hiding every character would leave a zero-width invisible run the click handler cannot see
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
   // consistent answer (FN12, GRO-2197).
-  if (linkDisplayText(inner) === '') return
+  const titleOf = (target: string) => idLinkTitle(target, source.resolve)
+  if (linkDisplayText(inner, titleOf) === '') return
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
   const innerStart = start + 2
@@ -188,13 +225,20 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
     let at = innerStart
     let shown = 0
     const parts = inner.split('#')
+    const title = titleOf(parts[0].trim())
     for (let i = 0; i < parts.length; i++) {
       if (i > 0) {
         hide(out, at, at + 1) // the #
         at += 1
       }
       const part = parts[i]
-      if (part.length > 0) {
+      if (i === 0 && title !== undefined) {
+        // An id link: the id is syntax too, and the title stands where it was. Keyed by the
+        // title, so a rebuild that changes nothing redraws nothing.
+        hide(out, at, at + part.length)
+        out.push(Decoration.widget(at, () => titleSpan(cls, title), { key: title }))
+        shown++
+      } else if (part.length > 0) {
         out.push(Decoration.inline(at, at + part.length, { class: shown > 0 ? `${cls} ${WIKILINK_SUB_CLASS}` : cls }))
         shown++
       }

@@ -18,6 +18,8 @@ type Outcome = PromiseSettledResult<TreeResponse>
 
 interface Feed {
   listeners: Set<(outcome: Outcome) => void>
+  /** The newest tree delivered: what a late mount reads without a walk of its own (YAZ-2290 D3). */
+  latest: TreeResponse | null
   onWire: Promise<TreeResponse> | null
   queued: Promise<TreeResponse> | null
   /** The turn the latest request was sent in, and when. */
@@ -47,7 +49,7 @@ export function currentTurn(): number {
 
 function feedOf(root: string): Feed {
   let feed = feeds.get(root)
-  if (feed === undefined) feeds.set(root, (feed = { listeners: new Set(), onWire: null, queued: null, sentTurn: 0, sentAt: 0, sent: 0, delivered: 0 }))
+  if (feed === undefined) feeds.set(root, (feed = { listeners: new Set(), latest: null, onWire: null, queued: null, sentTurn: 0, sentAt: 0, sent: 0, delivered: 0 }))
   return feed
 }
 
@@ -61,6 +63,7 @@ function send(root: string, feed: Feed): Promise<TreeResponse> {
     if (feed.onWire === request) feed.onWire = null
     if (seq < feed.delivered) return // a bypassed request answering late: never over a newer answer
     feed.delivered = seq
+    if (outcome.status === 'fulfilled') feed.latest = outcome.value
     for (const listener of [...feed.listeners]) listener(outcome)
   }
   request.then(
@@ -93,6 +96,11 @@ export function onTree(root: string, listener: (outcome: Outcome) => void): () =
   const feed = feedOf(root)
   feed.listeners.add(listener)
   return () => void feed.listeners.delete(listener)
+}
+
+/** The newest tree `onTree` has delivered for `root`; null before the first answer. */
+export function latestTree(root: string): TreeResponse | null {
+  return feedOf(root).latest
 }
 
 /** Whether a request for `root` was sent in `turn` or later: its answer covers anything seen by then. */

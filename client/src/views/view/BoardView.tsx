@@ -1,15 +1,17 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
-import type { FolderPageSettings } from '../folderPageSettings'
+import type { FolderSettings } from '../folderSettings'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, pageTitle } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle } from './GroupHeader'
 import { useFlip } from './flip'
-import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
 import { usePreview } from './PreviewCard'
+import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
 
@@ -18,8 +20,8 @@ export interface BoardViewProps {
   view: ViewDef
   viewIndex: number
   records: readonly IndexRecord[]
-  /** The folder page's settings — its declared columns show by default (YAZ-1549). */
-  folderPage?: FolderPageSettings | null
+  /** The folder's settings — its declared columns show by default (YAZ-1549). */
+  settings: FolderSettings
   /** Post-search groups from ViewsPane (empty groups dropped); null when the view has no `groupBy`. */
   groups: readonly Group[] | null
   /** Collapsed group keys (`groupKeyOf`) for this page + view; owned by ViewsPane, persisted via storage. */
@@ -30,7 +32,7 @@ export interface BoardViewProps {
   onOpenFile?: (path: string) => void
   /** Open a card page in the window's right panel. */
   onOpenFileRight?: (path: string) => void
-  /** Open a card's page without replacing the current folder page. */
+  /** Open a card's page without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
   onNotice?: (message: string) => void
@@ -42,6 +44,10 @@ export interface BoardViewProps {
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
   /** Preview mode (`view.preview`, YAZ-1244): resting on a card pops its page read-only. */
   preview?: boolean
+  /** The window's link source, for the preview: an id link in it reads as its note's title (YAZ-2293). */
+  wikilinks?: WikilinkResolveSource
+  /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its note's title (YAZ-2293 D8). */
+  resolve?: Resolver
 }
 
 /**
@@ -78,7 +84,7 @@ const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
 export function BoardView({
   def,
   view,
-  folderPage = null,
+  settings,
   viewIndex,
   records,
   groups,
@@ -93,16 +99,19 @@ export function BoardView({
   moveError,
   onNewInGroup,
   preview = false,
+  wikilinks,
+  resolve,
 }: BoardViewProps) {
-  const { rowProps, card, close } = usePreview(preview)
+  const { rowProps, card, close } = usePreview(preview, wikilinks)
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
+  const adds = [0, 1].map((level) => groupTakesNew(view, level))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
   const flipRoot = useFlip()
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
   /** Browser click tails after secondary-click and drag gestures must not become page opens. */
   const suppressClick = useRef(false)
   const suppressOnce = () => {
@@ -158,7 +167,7 @@ export function BoardView({
     )
   }
 
-  const keys = propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {}))
+  const keys = propertyKeys(def, view, records, Object.keys(settings.columns))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
   /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
@@ -185,14 +194,14 @@ export function BoardView({
             openCard(row, event)
           }}
         >
-          {pageTitle(row)}
+          {rowTitle(row)}
         </button>
       )
     const style = styleOf(key)
     return (
       <div key={key} className={`view-board__prop${styleClasses(style)}`}>
         {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
-        <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
+        <span className="view-board__prop-value">{cellContent(row.values[key], resolve)}</span>
       </div>
     )
   }
@@ -207,7 +216,7 @@ export function BoardView({
     event.preventDefault()
     suppressOnce()
     close()
-    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path })
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, noteId: row.record.id })
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
     const source = dnd.source(row.record.path, group, at)
@@ -317,7 +326,8 @@ export function BoardView({
               rows={g.rows}
               collapsed={isCollapsed}
               onToggle={() => onToggleGroup(gk)}
-              onNew={onNewInGroup === undefined || levelKeys[0] === null ? undefined : () => onNewInGroup(g)}
+              onNew={onNewInGroup === undefined || !adds[0] ? undefined : () => onNewInGroup(g)}
+              resolve={resolve}
             />
           )
           return (
@@ -362,13 +372,14 @@ export function BoardView({
                                   collapsed={childCollapsed}
                                   onToggle={() => onToggleGroup(ck)}
                                   onNew={
-                                    onNewInGroup === undefined || levelKeys[1] === null
+                                    onNewInGroup === undefined || !adds[1]
                                       ? undefined
                                       : () => onNewInGroup(child, undefined, innerAt)
                                   }
+                                  resolve={resolve}
                                 />
                                 {!childCollapsed && cardList(child.rows, child, innerAt, childOver)}
-                                {!childCollapsed && levelKeys[1] !== null && inlineAdd(child, ck, innerAt)}
+                                {!childCollapsed && adds[1] && inlineAdd(child, ck, innerAt)}
                               </section>
                             )
                           })}
@@ -378,7 +389,7 @@ export function BoardView({
                   )}
                 </>
               )}
-              {!isCollapsed && g.children === undefined && levelKeys[0] !== null && inlineAdd(g, gk)}
+              {!isCollapsed && g.children === undefined && adds[0] && inlineAdd(g, gk)}
             </section>
           )
         })}
@@ -388,6 +399,7 @@ export function BoardView({
           x={menu.x}
           y={menu.y}
           path={menu.path}
+          noteId={menu.noteId}
           onOpenRight={onOpenFileRight}
           onOpenBackground={onOpenFileBackground}
           onNotice={onNotice}

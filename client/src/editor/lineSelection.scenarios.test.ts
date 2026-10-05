@@ -37,7 +37,7 @@ afterEach(async () => {
   }
 })
 
-/** The folder page's editor, mounted the way `views/view/OutlineEditor.tsx` does (S23). */
+/** The folder outline's editor, mounted the way `views/view/OutlineEditor.tsx` does (S23). */
 async function mountOutline(markdown: string): Promise<Crepe> {
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -378,9 +378,9 @@ describe('04 Edges', () => {
   })
 })
 
-// ---- 05 Folder page -----------------------------------------------------------------------------
+// ---- 05 Folder outline --------------------------------------------------------------------------
 
-describe('05 Folder page (bullets-only editor)', () => {
+describe('05 Folder outline (bullets-only editor)', () => {
   it('S23 three top-level bullets: start of the first, ⇧↓ → start of the second; ⌫ → first gone, doc still bullets-only', async () => {
     const crepe = await mountOutline('* one\n* two\n* three\n')
     select(crepe, posOf(crepe, 'one'))
@@ -397,7 +397,7 @@ describe('05 Folder page (bullets-only editor)', () => {
     expect(shiftDown(crepe)).toBe(true)
     expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'parent'), head: posOf(crepe, 'child') })
     backspace(crepe)
-    // OBSERVED: the parent becomes an EMPTY bullet that keeps its kid (`*` / `  * child`), the doc stays bullets-only, caret at the start of "child" — NOT the note editor's D3 lift (S8). Matches the scope's expectation for the folder page.
+    // OBSERVED: the parent becomes an EMPTY bullet that keeps its kid (`*` / `  * child`), the doc stays bullets-only, caret at the start of "child" — NOT the note editor's D3 lift (S8). Matches the scope's expectation for the folder outline.
     expect(md(crepe)).toBe('*\n  * child\n* after\n')
     expect(crepe.editor.action((ctx) => isBulletsOnly(ctx.get(editorViewCtx).state.doc))).toBe(true)
     expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'child'), head: posOf(crepe, 'child') })

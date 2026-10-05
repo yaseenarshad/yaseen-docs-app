@@ -14,9 +14,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
+/** No store behind this mount: collapse state stays in the pane. */
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 import { writeProperty, writeProperties } from '../writeProperty'
 
@@ -24,8 +26,8 @@ const write = vi.mocked(writeProperty)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
-const FOLDER_PAGE = testFolderPage()
+/** YAZ-846: `folder` is required — the folder view is the only mount there is. */
+const HOST = testFolderHost()
 
 const STATUS_BOARD = `views:
   - type: board
@@ -82,10 +84,10 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
-          root={null}
-          thisFile={null}
+          root="/vault"
+          folderPath="/vault/pillars.md"
           records={records}
-          folderPage={FOLDER_PAGE}
+          folder={HOST}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -382,6 +384,15 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/spans.md', 'status', ['[[Sales]]', '[[Nurture]]'])
   })
 
+  it('an id link element is written back as the stored `[[id]]`, never the title its column shows (YAZ-2293 D8)', () => {
+    const ID = 'k3m9x2pq7abc'
+    const records = [listRec('spans', ['[[Lead Gen]]', '[[Sales]]']), listRec('other', [`[[${ID}]]`]), { ...listRec('Nurture', []), id: ID }]
+    const { el } = mount(STATUS_BOARD, { records, folder: testFolderHost({ vaultRecords: records }) })
+    fire(cardOf(colOf(el, 'Lead Gen'), 'spans'), 'dragstart')
+    fire(colOf(el, 'Nurture'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/spans.md', 'status', ['[[Sales]]', `[[${ID}]]`])
+  })
+
   it('dropping on the card\'s own group stays a no-op', () => {
     const records = [listRec('both', ['a', 'b'])]
     const { el } = mount(STATUS_BOARD, { records })
@@ -394,7 +405,7 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
 
 it('drops onto an unused Select option by writing its exact declared label', async () => {
   const { el } = mount(STATUS_BOARD.replace('    name: B', '    name: B\n    showEmptyColumns: true'), {
-    folderPage: testFolderPage({ settings: { columns: { status: { kind: 'select', options: ['idea', 'Waiting: review'] } }, views: [], problems: [] } }),
+    folder: testFolderHost({ settings: { columns: { status: { kind: 'select', options: ['idea', 'Waiting: review'] } }, views: [], problems: [] } }),
   })
   expect(titlesIn(colOf(el, 'Waiting: review'))).toEqual([])
   fire(cardOf(colOf(el, 'idea'), 'Agentic Agency'), 'dragstart')
@@ -417,7 +428,7 @@ it('drops into an empty nested group with an array value for its unused Multi-se
 `
   const { el } = mount(board, {
     records: [{ ...TEST_RECORDS[0], properties: { status: ['Doing'], phase: 'Draft' } }],
-    folderPage: testFolderPage({ settings: {
+    folder: testFolderHost({ settings: {
       columns: { status: { kind: 'multi-select', options: ['Doing', 'Later'] }, phase: { kind: 'select', options: ['Draft', 'Review'] } },
       views: [], problems: [],
     } }),

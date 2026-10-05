@@ -28,6 +28,11 @@ describe('detectRenames (the E1c guard rails, GRO-2242 — locked)', () => {
     expect(detectRenames([f('/v/B.md', 7, 100)], [f('/v/B2.txt', 7, 100)])).toEqual([])
   })
 
+  it("a folder's settings file never pairs, and never makes a note's signature ambiguous (YAZ-2290 D8)", () => {
+    expect(detectRenames([f('/v/Old/.folder.md', 7, 100)], [f('/v/New/.folder.md', 7, 100)])).toEqual([])
+    expect(detectRenames([f('/v/B.md', 7, 100), f('/v/Old/.folder.md', 7, 100)], [f('/v/B2.md', 7, 100)])).toEqual([{ oldPath: '/v/B.md', newPath: '/v/B2.md' }])
+  })
+
   it('an AMBIGUOUS signature skips entirely — one removed vs two added, two removed vs one added, 2×2', () => {
     expect(detectRenames([f('/v/B.md', 7, 100)], [f('/v/X.md', 7, 100), f('/v/Y.md', 7, 100)])).toEqual([])
     expect(detectRenames([f('/v/A.md', 7, 100), f('/v/B.md', 7, 100)], [f('/v/X.md', 7, 100)])).toEqual([])

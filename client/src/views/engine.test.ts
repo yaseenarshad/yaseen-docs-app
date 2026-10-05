@@ -3,6 +3,7 @@ import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
 import { type ViewResult, basenameKey, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
+import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
 import { TEST_RECORDS } from './testRecords'
 
@@ -35,11 +36,11 @@ const names = (r: ViewResult): string[] => r.rows.map(row => row.record.basename
 const labels = (r: ViewResult): string[] => r.groups!.map(g => g.label)
 
 /** Runs Yasin's Table view with per-test overrides on the view and the definition. */
-function run(view: Partial<ViewDef> = {}, def: Partial<ViewSet> = {}, opts: { thisFile?: string | null } = {}): ViewResult {
+function run(view: Partial<ViewDef> = {}, def: Partial<ViewSet> = {}): ViewResult {
   const d: ViewSet = { ...yasin, ...def }
   const v: ViewDef = { ...d.views[0], ...view }
   d.views = [v, ...d.views.slice(1)]
-  return runView(d, v, TEST_RECORDS, opts)
+  return runView(d, v, TEST_RECORDS)
 }
 
 describe('runView: rows and values (GRO-2133)', () => {
@@ -157,12 +158,8 @@ describe('runView: filters (GRO-2133)', () => {
     expect(r.errors.map(e => e.where)).toEqual(['views[0].filters'])
   })
 
-  it('`this` is the record at opts.thisFile: backlinks to Agentic Agency', () => {
-    const r = run({ filters: 'file.hasLink(this)', sort: [] }, {}, { thisFile: AGENTIC })
-    expect(names(r)).toEqual(['The Levels of an Agency', 'List of Topics'])
-    expect(run({ filters: 'file.hasLink(this)', sort: [] }, {}, { thisFile: null }).rows).toHaveLength(0)
-    expect(run({ filters: 'file.hasLink(this)', sort: [] }, {}, { thisFile: '/vault/nope.md' }).rows).toHaveLength(0)
-    expect(run({ filters: 'this.basename == "Agentic Agency"', sort: [] }, {}, { thisFile: AGENTIC }).rows).toHaveLength(8)
+  it('`this` names no record — the views are a folder\'s — so a filter on it matches nothing', () => {
+    expect(run({ filters: 'file.hasLink(this)', sort: [] }).rows).toHaveLength(0)
   })
 })
 
@@ -466,6 +463,18 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
+  it("propertyKeys: a note's `id` is never a DEFAULT column, and is one when the view's order names it (YAZ-2293)", () => {
+    const withIds = TEST_RECORDS.map((r, i) => ({ ...r, id: `k3m9x2pq7ab${i}`, properties: { ...r.properties, id: `k3m9x2pq7ab${i}` } }))
+    expect(propertyKeys(yasin, yasin.views[1], withIds)).toEqual(propertyKeys(yasin, yasin.views[1], TEST_RECORDS))
+    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.id'] }, withIds)).toEqual(['file.name', 'note.id'])
+  })
+
+  it("propertyKeys: a note's shortcuts, `also_in`, are never a DEFAULT column either (YAZ-2290 D2)", () => {
+    const withShortcuts = TEST_RECORDS.map((r) => ({ ...r, properties: { ...r.properties, also_in: ['f7n2w8rt4xyz'] } }))
+    expect(propertyKeys(yasin, yasin.views[1], withShortcuts)).toEqual(propertyKeys(yasin, yasin.views[1], TEST_RECORDS))
+    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name', 'note.also_in'] }, withShortcuts)).toEqual(['file.name', 'note.also_in'])
+  })
+
   it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
     // seen and declared merge, once each
@@ -660,10 +669,94 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
 
 /**
  * The rows a run walks and the snapshot its links resolve against are two different things
- * (🔒 D2, YAZ-819). A caller whose rows ARE the vault never notices, but a folder page's
+ * (🔒 D2, YAZ-819). A caller whose rows ARE the vault never notices, but a folder's
  * contents pass only the MEMBERS as rows while injecting the whole-vault resolver, so a link
  * cell pointing at a page OUTSIDE the members still resolves.
  */
+describe('makeResolver: note ids (YAZ-2293 D5)', () => {
+  const note = (basename: string, id?: string): IndexRecord => ({
+    ...TEST_RECORDS[0],
+    path: `/vault/${basename}.md`,
+    name: `${basename}.md`,
+    basename,
+    folder: '',
+    aliases: [],
+    ...(id === undefined ? {} : { id }),
+  })
+  const files = (records: IndexRecord[]) => records.map(r => new FileValue(r))
+
+  it('an id resolves to the note that carries it, with `[[…]]`, `|label` and `#heading` stripped', () => {
+    const r = makeResolver(files([note('Kickoff', 'k3m9x2pq7abc'), note('Other')]), '/vault')
+    expect(r('k3m9x2pq7abc')?.record.basename).toBe('Kickoff')
+    expect(r('[[k3m9x2pq7abc|label]]')?.record.basename).toBe('Kickoff')
+    expect(r('k3m9x2pq7abc#Heading')?.record.basename).toBe('Kickoff')
+    expect(r('7tq2m8vd4xhn')).toBe(null)
+  })
+
+  it('the id wins over a note that is merely NAMED like it', () => {
+    const r = makeResolver(files([note('k3m9x2pq7abc'), note('Kickoff', 'k3m9x2pq7abc')]), '/vault')
+    expect(r('k3m9x2pq7abc')?.record.basename).toBe('Kickoff')
+  })
+
+  it('the id follows its note through a rename and a move, and resolves to nothing once the note is gone; a note with an id still answers to its name (scenario C2, C3, D11)', () => {
+    const before = resolverFor([note('Kickoff', 'k3m9x2pq7abc'), note('Other')], '/vault')
+    expect(before('k3m9x2pq7abc')?.record.path).toBe('/vault/Kickoff.md')
+    expect(before('[[Kickoff]]')?.record.id).toBe('k3m9x2pq7abc')
+    // Renamed AND moved by anything: the next snapshot holds the same id at another path.
+    const moved: IndexRecord = { ...note('Kickoff 2027', 'k3m9x2pq7abc'), path: '/vault/Archive/Kickoff 2027.md', folder: 'Archive' }
+    const after = resolverFor([moved, note('Other')], '/vault')
+    expect(after('k3m9x2pq7abc')?.record.path).toBe('/vault/Archive/Kickoff 2027.md')
+    expect(after('Kickoff')).toBe(null) // what the id is for: the old NAME is what stops resolving
+    expect(after('Kickoff 2027')?.record.id).toBe('k3m9x2pq7abc')
+    // Deleted: the id names nothing — no fallback to a note called anything.
+    expect(resolverFor([note('Other')], '/vault')('k3m9x2pq7abc')).toBe(null)
+  })
+
+  it('`{ ids: false }` builds the resolver the rename engine probes with: an id resolves to nothing', () => {
+    const records = [note('Kickoff', 'k3m9x2pq7abc')]
+    expect(makeResolver(files(records), '/vault', { ids: false })('k3m9x2pq7abc')).toBe(null)
+    expect(makeResolver(files(records), '/vault', { ids: false })('Kickoff')?.record.basename).toBe('Kickoff')
+    expect(resolverFor(records, '/vault', { ids: false })).not.toBe(resolverFor(records, '/vault'))
+    expect(resolverFor(records, '/vault', { ids: false })).not.toBe(resolverFor(records, '/vault', { aliases: false }))
+  })
+})
+
+describe('runView: an id link orders and labels by what is shown (YAZ-2293 D8)', () => {
+  const note = (basename: string, extra: Partial<IndexRecord> = {}): IndexRecord => ({
+    ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, folder: '', properties: {}, ...extra,
+  })
+  /** The ids sort AGAINST the titles on purpose: `1…` is Zed, `9…` is Alpha. */
+  const ZED = '1aaaaaaaaaaa'
+  const ALPHA = '9zzzzzzzzzzz'
+  const records = [
+    note('Alpha', { id: ALPHA }),
+    note('Zed', { id: ZED }),
+    note('row-a', { properties: { owner: `[[${ZED}]]` } }),
+    note('row-b', { properties: { owner: '[[Middle]]' } }),
+    note('row-c', { properties: { owner: `[[${ALPHA}]]` } }),
+    note('row-d', { properties: { owner: `[[${ALPHA}|Omega]]` } }),
+  ]
+  const view: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'owner'], filters: 'owner' }
+
+  it('sorts a link column by label, else title, else target — never by the id', () => {
+    const r = runView({ views: [view] }, { ...view, sort: [{ property: 'owner', direction: 'ASC' }] }, records)
+    expect(names(r)).toEqual(['row-c', 'row-b', 'row-d', 'row-a'])
+  })
+
+  it('a group is ordered and LABELLED by the title, while its key — and so its collapse key — stays the stored id', () => {
+    const r = runView({ views: [view] }, { ...view, groupBy: { property: 'owner' } }, records)
+    // The labelled link joins its target's group (links group by target), so three groups, not four.
+    expect(labels(r)).toEqual(['[[Alpha]]', '[[Middle]]', '[[Zed]]'])
+    expect(r.groups!.map(g => groupKeyOf(g.key))).toEqual([`v:[[${ALPHA}]]`, 'v:[[Middle]]', `v:[[${ZED}]]`])
+  })
+
+  it('an id naming no note keeps the raw id, in the label and in the order', () => {
+    const lone = [note('row-a', { properties: { owner: '[[7tq2m8vd4xhn]]' } }), note('row-b', { properties: { owner: '[[Middle]]' } })]
+    const r = runView({ views: [view] }, { ...view, groupBy: { property: 'owner' } }, lone)
+    expect(labels(r)).toEqual(['[[7tq2m8vd4xhn]]', '[[Middle]]'])
+  })
+})
+
 describe('runView: RunOptions.resolve (🔒 D2, YAZ-819)', () => {
   const view: ViewDef = { type: 'table', name: 'T', order: ['formula.out'] }
   const def: ViewSet = { formulas: { out: 'file("Attribution")' }, views: [view] }

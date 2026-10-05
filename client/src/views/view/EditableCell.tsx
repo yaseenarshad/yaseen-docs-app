@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { matchLinkNames, trailingLinkFragment } from '../../links/completion'
+import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
-import { type Value, fromYaml } from '../expr'
-import { writeProperty } from '../writeProperty'
+import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
 import { cellContent } from './GroupHeader'
 import { TextField } from './TextField'
 import { createPortal } from 'react-dom'
@@ -10,39 +9,40 @@ import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
 
 export interface EditableCellProps {
-  /** Absolute path of the note this cell belongs to. */
-  path: string
-  /** Bare frontmatter key (no `note.` prefix), as `writeProperty` wants it. */
+  /** Bare key (no `note.` prefix): the cell's accessible name. */
   propKey: string
-  /** The note's current raw YAML value for `propKey`; undefined when the key is absent. */
+  /** The current raw YAML value for `propKey`; undefined when it is absent. */
   raw: unknown
   /** The engine value, displayed while not editing. */
   value: Value
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
   editor: EditorKind | null
-  /** Index basenames for the link editor's `[[…]]` completion. */
-  basenames: readonly string[]
+  /** Index basenames for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the basename (`basenameCandidates`). */
+  basenames: readonly LinkCandidate[]
   /**
-   * Replaces the default `writeProperty(path, propKey, next)` commit (⚡ YAZ-884). The properties
-   * panel passes its own writer — the SAME dance, plus the panel's own belief of disk moving with
-   * it — so its raw fallback can never show a block that a typed edit has already left behind.
-   * Same contract as the default: resolves on success, rejects with the message to show.
+   * The ONE write: the host's own. A folder's views write its block of the note
+   * (`FolderHost.writeValues`, D19); the properties panel writes the row's group and moves its
+   * belief of disk with it (⚡ YAZ-884). Resolves on success, rejects with the message to show.
    */
-  onCommit?: (next: unknown) => Promise<unknown>
+  onCommit: (next: unknown) => Promise<unknown>
+  /**
+   * The vault's resolver (YAZ-2293 D8): the display — and the chips editor's chips — read an id
+   * link as its note's title. Display ONLY: the editors' text and every commit stay the stored form.
+   */
+  resolve?: Resolver
 }
 
 /**
  * One editable property cell (5B, GRO-2142), shared by table cells and card/list property
  * chips: cards/lists open the typed display directly, while the table host delegates double-click
  * or Enter through `[data-edit]` after a single click only selects the cell. Enter/blur commit
- * through `writeProperty` (or the
- * host's own `onCommit`, the properties panel's seam — ⚡ YAZ-884), Esc
+ * through the host's `onCommit`, Esc
  * cancels. Commits are optimistic: the committed raw value renders immediately and stays
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ path, propKey, raw, value, editor, basenames, onCommit, options = [] }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, basenames, onCommit, options = [], resolve }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -75,7 +75,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
     ;(el?.closest<HTMLElement>('[data-cell]') ?? el?.querySelector<HTMLElement>('[data-edit]'))?.focus()
   }, [editing])
 
-  if (editor === null) return <>{cellContent(value)}</>
+  if (editor === null) return <>{cellContent(value, resolve)}</>
 
   const current = pending !== null ? pending.v : raw
 
@@ -85,7 +85,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
     setPending({ v: next })
     const turn = ++revision.current
     echoes.current.push({ revision: turn, value: JSON.stringify(next ?? null) })
-    const write = () => onCommit === undefined ? writeProperty(path, propKey, next) : onCommit(next)
+    const write = () => onCommit(next)
     // Immediate feedback, ordered disk writes: a slow earlier choice cannot win last.
     const request = writes.current === null ? write() : writes.current.then(write)
     const settled = request.then(() => {}, (err: unknown) => {
@@ -144,7 +144,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
               setEditing(true)
             }}
           >
-            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v)) : cellContent(value)}
+            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve) : cellContent(value, resolve)}
           </button>
           {failure}
         </>
@@ -153,6 +153,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
           initial={Array.isArray(current) ? current.map(String) : text === '' ? [] : [text]}
           label={label}
           basenames={editor === 'multi-link' ? basenames : undefined}
+          resolve={resolve}
           onCommit={commit}
           onDone={close}
         />
@@ -190,7 +191,9 @@ interface ChipsEditorProps {
   initial: string[]
   label: string
   /** Present for multi-link (5E, GRO-2217): an unclosed trailing `[[fragment` offers these basenames, like LinkEditor. */
-  basenames?: readonly string[]
+  basenames?: readonly LinkCandidate[]
+  /** A chip holding an id link READS as `[[Title]]` through this (YAZ-2293 D8); `items` — what commits — stay the stored text. */
+  resolve?: Resolver
   /** The whole list, once, on commit (Enter with an empty input, or blur out of the editor). */
   onCommit: (next: string[]) => void
   onDone: () => void
@@ -203,7 +206,7 @@ interface ChipsEditorProps {
  * With `basenames` (a multi-link relation column) the input completes `[[…]]` exactly like
  * LinkEditor — Enter picks the highlighted suggestion first, then adds the chip.
  */
-function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEditorProps) {
+function ChipsEditor({ initial, label, basenames, resolve, onCommit, onDone }: ChipsEditorProps) {
   const [items, setItems] = useState(initial)
   const [text, setText] = useState('')
   const [sel, setSel] = useState(0)
@@ -211,7 +214,7 @@ function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEdito
   const dirty = useRef(false)
 
   const fragment = basenames === undefined ? null : trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkNames(basenames ?? [], fragment)
+  const matches = fragment === null ? [] : matchLinkCandidates(basenames ?? [], fragment)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -225,9 +228,15 @@ function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEdito
     onDone()
   }
 
-  const pick = (name: string) => {
-    setText(text.replace(/\[\[[^[\]]*$/, `[[${name}]]`))
+  const pick = ({ insert }: LinkCandidate) => {
+    setText(text.replace(/\[\[[^[\]]*$/, `[[${insert}]]`))
     setSel(0)
+  }
+
+  /** Only a LINK is re-rendered: `fromYaml` would also re-spell a date item, and a chip is otherwise its own text. */
+  const shown = (item: string) => {
+    const v = fromYaml(item)
+    return v instanceof LinkValue ? render(v, resolve) : item
   }
 
   return (
@@ -245,11 +254,11 @@ function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEdito
     >
       {items.map((item, i) => (
         <span key={`${item}:${i}`} className="view-table__chip">
-          {item}
+          {shown(item)}
           <button
             type="button"
             className="view-cell-edit__chip-x"
-            aria-label={`Remove ${item}`}
+            aria-label={`Remove ${shown(item)}`}
             onClick={() => change(items.filter((_, j) => j !== i))}
           >
             ×
@@ -297,17 +306,17 @@ function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEdito
       />
       {matches.length > 0 && (
         <span className="view-popover view-cell-edit__complete" role="listbox" aria-label={`${label} suggestions`}>
-          {matches.map((name, i) => (
+          {matches.map((match, i) => (
             <button
-              key={name}
+              key={match.insert}
               type="button"
               role="option"
               aria-selected={i === sel}
               className="view-popover__item"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(name)}
+              onClick={() => pick(match)}
             >
-              {name}
+              {match.label}
             </button>
           ))}
         </span>
@@ -318,7 +327,7 @@ function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEdito
 
 interface LinkEditorProps {
   initial: string
-  basenames: readonly string[]
+  basenames: readonly LinkCandidate[]
   label: string
   onCommit: (next: string) => void
   onDone: () => void
@@ -327,7 +336,8 @@ interface LinkEditorProps {
 /**
  * Link editor: a text input whose unclosed trailing `[[fragment` offers index basenames
  * (through the shared matcher, `links/completion.ts` — GRO-2191); ArrowUp/Down pick, Enter
- * completes to `[[basename]]` (then Enter again commits the string).
+ * completes to `[[id]]` — `[[basename]]` for a note without one, YAZ-2293 — (then Enter again
+ * commits the string).
  */
 function LinkEditor({ initial, basenames, label, onCommit, onDone }: LinkEditorProps) {
   const [text, setText] = useState(initial)
@@ -335,7 +345,7 @@ function LinkEditor({ initial, basenames, label, onCommit, onDone }: LinkEditorP
   const done = useRef(false)
 
   const fragment = trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkNames(basenames, fragment)
+  const matches = fragment === null ? [] : matchLinkCandidates(basenames, fragment)
 
   const finish = (commit: boolean) => {
     if (done.current) return
@@ -344,8 +354,8 @@ function LinkEditor({ initial, basenames, label, onCommit, onDone }: LinkEditorP
     onDone()
   }
 
-  const pick = (name: string) => {
-    setText(text.replace(/\[\[[^[\]]*$/, `[[${name}]]`))
+  const pick = ({ insert }: LinkCandidate) => {
+    setText(text.replace(/\[\[[^[\]]*$/, `[[${insert}]]`))
     setSel(0)
   }
 
@@ -393,17 +403,17 @@ function LinkEditor({ initial, basenames, label, onCommit, onDone }: LinkEditorP
       />
       {matches.length > 0 && (
         <span className="view-popover view-cell-edit__complete" role="listbox" aria-label={`${label} suggestions`}>
-          {matches.map((name, i) => (
+          {matches.map((match, i) => (
             <button
-              key={name}
+              key={match.insert}
               type="button"
               role="option"
               aria-selected={i === sel}
               className="view-popover__item"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(name)}
+              onClick={() => pick(match)}
             >
-              {name}
+              {match.label}
             </button>
           ))}
         </span>

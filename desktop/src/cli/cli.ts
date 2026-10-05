@@ -1,7 +1,8 @@
 /**
- * `yaseendocs` (YAZ-1617 🔒 D1, D4, D5): the door an agent uses to work with a page's comments from
- * the shell. Plain Node — this module and its entry never import `electron`; the packaged shim
- * runs it under `ELECTRON_RUN_AS_NODE=1` with the app's own binary (VS Code's `code` pattern).
+ * `yaseendocs` (YAZ-1617 🔒 D1, D4, D5): the door an agent uses to work with a page from the
+ * shell — its comments, and its id and the ids it points at (YAZ-2293). Plain Node — this module
+ * and its entry never import `electron`; the packaged shim runs it under `ELECTRON_RUN_AS_NODE=1`
+ * with the app's own binary (VS Code's `code` pattern).
  *
  * It writes through the SAME `shared/comments.ts` the block uses, guarded the same way as the
  * renderer's `transformFile` (YAZ-1472 🔒 D8): fresh bytes, `expectedMtime`, one retry on
@@ -11,7 +12,8 @@
  * `HELP` IS the contract: it is the only documentation an agent reads (the Copy for Agent
  * handshake points at `--help` and names no verb), so its wording is UI copy.
  */
-import { resolve } from 'node:path'
+import { readFile as readRaw, stat } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import {
   addComment,
   deleteComment,
@@ -22,8 +24,18 @@ import {
   threadsOf,
   type PageComment,
 } from '@shared/comments'
-import { BridgeFailure, requireMarkdownFile } from '../main/fs/fsUtils'
+import { alsoIn } from '@shared/alsoIn'
+import { folderBlocks } from '@shared/folderValues'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
+import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
+import { VAULT_CONFIG_DIR, isFolderSettingsPath } from '@shared/types'
+import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
+import { giveId, isAdopted, readPage } from '../main/vaultIndex/idSweep'
+import { scanAll } from '../main/vaultIndex/reconcile'
+import { scanFile, walk } from '../main/vaultIndex/scan'
 
 export interface Io {
   /** The whole of stdin, for `--body -`. */
@@ -37,9 +49,12 @@ export const USAGE = `usage:
   yaseendocs comments <page.md> [--json]
   yaseendocs edit     <page.md> <comment> --body <text | -> [--title <one line>]
   yaseendocs delete   <page.md> <comment>
+  yaseendocs id       <page.md>
+  yaseendocs links    <page.md> [--json]
+  yaseendocs due      <page.md | folder> [--json]
   yaseendocs --help`
 
-export const HELP = `yaseendocs — comments on a Yaseen Docs page, from the shell.
+export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, and when it is next due for review, from the shell.
 
 ${USAGE}
 
@@ -52,6 +67,24 @@ every thread (\`--json\` for the raw shape). Name a comment by its number as the
 Who wrote it: \`comment\` records \`by: agent\` unless --by says otherwise; a person's comment,
 left in the app, has no \`by\`. \`edit\` and \`delete\` work only on comments that carry a \`by\` —
 a person's comment is edited or deleted in the app. Deleting a comment deletes its replies.
+
+Every page has a permanent id in its frontmatter (\`id: k3m9x2pq7abc\`); a rename or a move never
+changes it. A link between pages is written \`[[<id>]]\`, and the app shows the page's current
+title in its place. \`id\` prints a page's id — a page that has none is given one first, exactly
+as the app would, and only inside a vault (a folder holding \`.yaseendocs/\`). \`links\` lists
+every id on a page — its links, and the folders it is also in — with the page or folder that id
+names now, or \`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the
+vault for \`id: <id>\`.
+
+A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
+named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
+those folders after the links, each by id and the folder it names now.
+
+\`due\` prints the day a page is next up for review. The app works that date out from the page's
+\`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
+file, so this is the place to read it. Given a folder, \`due\` lists the pages due now under it,
+most overdue first (\`--json\` for the raw shape of either). Nothing is due in a vault until
+upkeep is turned on for it, in the app's Settings.
 
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
@@ -85,16 +118,17 @@ function parse(argv: readonly string[]): { verb: string; args: string[]; flags: 
 /**
  * The renderer's `transformFile` on disk: read, transform, write against the mtime just read;
  * on CONFLICT read again and recompute ONCE. A second conflict throws. A no-op transform
- * writes nothing and returns the bytes as read.
+ * writes nothing and returns the bytes as read. `create`: a file that is not there yet reads as
+ * empty and the write creates it — a folder's settings file the app has not written yet (YAZ-2290 D1).
  */
-export async function transformOnDisk(path: string, transform: (content: string) => string): Promise<string> {
-  let file = await readFile(path)
+export async function transformOnDisk(path: string, transform: (content: string) => string, create = false): Promise<string> {
+  let file: { content: string; mtime?: number } = await (create ? readPage : readFile)(path)
   let retried = false
   for (;;) {
     const content = transform(file.content)
     if (content === file.content) return content
     try {
-      await writeFile({ path, content, expectedMtime: file.mtime })
+      await writeFile({ path, content, expectedMtime: file.mtime ?? 0 })
       return content
     } catch (err) {
       if (!(err instanceof BridgeFailure) || err.code !== 'CONFLICT' || retried) throw err
@@ -144,6 +178,14 @@ function agentOwned(content: string, ref: string, page: string): { comments: Pag
   return { comments, target }
 }
 
+/** The vault a folder is in: the nearest folder at or above it that the app has adopted (it holds `.yaseendocs/`); null when there is none. */
+async function vaultRoot(from: string): Promise<string | null> {
+  for (let dir = from; ; dir = dirname(dir)) {
+    if (await isAdopted(dir)) return dir
+    if (dir === dirname(dir)) return null
+  }
+}
+
 async function bodyOf(flags: Map<string, string | true>, io: Io): Promise<string> {
   const body = flags.get('--body')
   if (typeof body !== 'string') throw new Usage('--body is required')
@@ -155,11 +197,46 @@ const str = (flags: Map<string, string | true>, name: string): string | undefine
   return typeof v === 'string' ? v : undefined
 }
 
+/** The review settings of the vault `dir` is in, or the defaults when it is in none. */
+async function reviewSettings(dir: string): Promise<ReviewSettings> {
+  const root = await vaultRoot(dir)
+  if (root === null) return DEFAULT_REVIEW_SETTINGS
+  return sanitizeReviewSettings(await readRaw(join(root, VAULT_CONFIG_DIR, REVIEW_SETTINGS_FILE), 'utf8').then(JSON.parse).catch(() => null))
+}
+
+/**
+ * `due` (YAZ-2322 🔒 D2): a page's next review day, or the pages due now under a folder. The date
+ * is computed by the same `shared/schedule.ts` the app uses, from the same scan, so the two agree.
+ */
+async function due(target: string, json: boolean, io: Io): Promise<void> {
+  const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA') // the LOCAL day, as YYYY-MM-DD
+  const iso = (ms: number): string => new Date(ms).toISOString()
+  if (!(await fsCall(target, () => stat(target))).isDirectory()) {
+    requireMarkdownFile(target)
+    const settings = await reviewSettings(dirname(target))
+    const record = await scanFile(dirname(target), target)
+    const at = isInReview(record, settings) ? dueAt(record, settings) : null
+    io.stdout(json ? `${JSON.stringify({ path: target, inReview: at !== null, due: at === null ? null : iso(at) }, null, 2)}\n` : at === null ? `${target} is not in review\n` : `${day(at)}  ${target}\n`)
+    return
+  }
+  const settings = await reviewSettings(target)
+  const files: string[] = []
+  await walk(target, files)
+  const notes = files.filter((file) => !isFolderSettingsPath(file))
+  const queue = reviewQueue([...(await scanAll(target, notes)).values()], settings, Date.now()).map((r) => ({ path: r.path, due: dueAt(r, settings) }))
+  if (json) io.stdout(`${JSON.stringify(queue.map((q) => ({ ...q, due: iso(q.due) })), null, 2)}\n`)
+  else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.path}\n`).join(''))
+}
+
 async function run(argv: readonly string[], io: Io): Promise<void> {
   const { verb, args, flags } = parse(argv)
   if (verb === '' || verb === 'help' || flags.has('--help') || flags.has('-h')) {
     io.stdout(HELP)
     return
+  }
+  if (verb === 'due') {
+    if (args[0] === undefined) throw new Usage('due needs a page or a folder')
+    return due(resolve(args[0]), flags.has('--json'), io)
   }
   const page = args[0] === undefined ? undefined : resolve(args[0])
   if (page === undefined) throw new Usage(`${verb} needs a page`)
@@ -175,14 +252,14 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
         const parent = replyRef === undefined ? undefined : find(readComments(fresh), replyRef)
         if (replyRef !== undefined && parent === undefined) throw new Error(`no comment ${replyRef} on ${page}`)
         return addComment(fresh, body, { id, at: nowIso(), replyTo: parent?.id, title: str(flags, '--title'), by: str(flags, '--by')?.trim() || 'agent' })
-      })
+      }, isFolderSettingsPath(page))
       const comments = readComments(content)
       const added = comments.find((c) => c.id === id)
       io.stdout(`${added === undefined ? id : label(comments, added)} added to ${page}\n`)
       return
     }
     case 'comments': {
-      const comments = readComments((await readFile(page)).content)
+      const comments = readComments((await readPage(page)).content)
       io.stdout(flags.has('--json') ? `${JSON.stringify(threadsOf(comments), null, 2)}\n` : comments.length === 0 ? `no comments on ${page}\n` : `${listing(comments)}\n`)
       return
     }
@@ -210,6 +287,51 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
         return deleteComment(fresh, target.id)
       })
       io.stdout(`${receipt}\n`)
+      return
+    }
+    case 'id': {
+      const { properties, error } = parseFrontmatter(splitFrontmatter((await readPage(page)).content).frontmatter)
+      let id = properties[NOTE_ID_KEY]
+      if (!isNoteId(id)) {
+        // The sweep's own refusals (`vaultIndex/idSweep.ts`), each given its reason; `giveId` checks them again on the bytes it writes against.
+        if (error !== undefined) throw new Error('the properties block does not parse (invalid)')
+        if (id !== undefined) throw new Error(`the ${NOTE_ID_KEY} property is not a page id (foreign)`)
+        const root = await vaultRoot(dirname(page))
+        if (root === null) throw new Error(`${page} has no id and is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`)
+        id = await giveId(root, page, undefined)
+        if (id === undefined) throw new Error(`${page} changed while it was being given an id — run this again`)
+      }
+      io.stdout(`${id}\n`)
+      return
+    }
+    case 'links': {
+      const root = await vaultRoot(dirname(page))
+      if (root === null) throw new Error(`${page} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`)
+      const { links, properties } = await scanFile(root, page)
+      const linked = links.filter(isNoteId)
+      const ids = [...new Set([...linked, ...alsoIn(properties)])]
+      const held = folderBlocks(properties).map(([id]) => id)
+      // The vault as the app's index sees it (the same walk, the same scan). In path order, so of two pages sharing an id — a copy the sweep has not met — the one named is the sweep's first choice too.
+      const files: string[] = []
+      if (ids.length > 0 || held.length > 0) await walk(root, files)
+      const records = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
+      const rows = ids.map((id): { id: string; kind: 'note' | 'folder' | 'missing'; path?: string } => {
+        const r = records.find((o) => o.id === id)
+        if (r === undefined) return { id, kind: 'missing' }
+        // A folder's id is carried by its `.folder.md`; what it names is the folder.
+        if (isFolderSettingsPath(r.path)) return { id, kind: 'folder', path: r.folder }
+        return { id, kind: 'note', path: r.folder === '' ? r.name : `${r.folder}/${r.name}` }
+      })
+      const line = (r: (typeof rows)[number]) =>
+        `${r.id}  ${r.kind === 'missing' ? '(missing)' : r.kind === 'note' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`
+      // The folders the page holds values for (`in`, D19), apart from its links: a block whose id no folder has is its id alone.
+      const blocks = held.map((id): { id: string; path?: string } => {
+        const folder = records.find((o) => o.id === id && isFolderSettingsPath(o.path))
+        return folder === undefined ? { id } : { id, path: folder.folder }
+      })
+      const listed = rows.length === 0 ? `no ids on ${page}\n` : `${rows.map(line).join('\n')}\n`
+      const values = blocks.length === 0 ? '' : `\nin:\n${blocks.map((b) => (b.path === undefined ? b.id : `${b.id}  ${b.path}/`)).join('\n')}\n`
+      io.stdout(flags.has('--json') ? `${JSON.stringify({ links: rows, in: blocks }, null, 2)}\n` : listed + values)
       return
     }
     default:

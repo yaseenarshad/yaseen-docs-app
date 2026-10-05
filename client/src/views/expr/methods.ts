@@ -1,3 +1,4 @@
+import { inFolder } from '@shared/types'
 import { formatDate, relativeDate, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
@@ -137,7 +138,7 @@ const LIST: Table<Value[]> = {
   containsAll: (l, xs, { resolve }) => xs.every(x => l.some(v => equals(v, x, resolve))),
   containsAny: (l, xs, { resolve }) => xs.some(x => l.some(v => equals(v, x, resolve))),
   flat: l => flatten(l),
-  join: (l, [sep]) => l.map(render).join(sep == null ? ', ' : render(sep)),
+  join: (l, [sep]) => l.map(x => render(x)).join(sep == null ? ', ' : render(sep)),
   reverse: l => [...l].reverse(),
   slice: (l, [a, b]) => l.slice(needNumber('slice', a), optNumber('slice', b)),
   sort: l => [...l].sort(compareNatural),
@@ -185,11 +186,7 @@ const FILE: Table<FileValue> = {
       return got ? got.record.path === want.record.path : linkTargetsMatch(l, target)
     })
   },
-  inFolder: (f, [dir]) => {
-    const want = trimSlashes(needString('inFolder', dir))
-    const have = trimSlashes(f.record.folder)
-    return want === '' || have === want || have.startsWith(`${want}/`)
-  },
+  inFolder: (f, [dir]) => inFolder(trimSlashes(f.record.folder), trimSlashes(needString('inFolder', dir))),
 }
 
 const REGEX: Table<RegexValue> = {

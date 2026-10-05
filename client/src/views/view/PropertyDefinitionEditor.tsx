@@ -179,7 +179,7 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
         <span className="property-def__muted">Type</span><span className="property-def__current-type"><PropertyTypeIcon kind={value.kind} />{PROPERTY_LABELS[value.kind]}<span className="property-def__chevron" aria-hidden="true">›</span></span>
       </button>
       {!choice && <p className="property-def__description">{DESCRIPTIONS[value.kind]}</p>}
-      {(value.kind === 'link' || value.kind === 'multi-link') && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder page]]" value={value.target ?? ''} onCommit={target => {
+      {(value.kind === 'link' || value.kind === 'multi-link') && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder]]" value={value.target ?? ''} onCommit={target => {
         const next = { ...value }
         if (target.trim()) next.target = target.trim(); else delete next.target
         onChange(next)

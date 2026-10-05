@@ -1,17 +1,19 @@
 /**
  * DRAG-TO-REORDER COLUMNS, END TO END (YAZ-1207): the Properties menu's 6-dot grip proven
  * against the REAL app over the committed encyclopedia. The ↑↓ arrows are gone; dragging the
- * `unit` row's grip above `kpi_category` rewrites the KPIs folder page's own `order` on disk
+ * `unit` row's grip above `kpi_category` rewrites the KPIs folder's own `order` in its settings file
  * and the table's header row follows. Since YAZ-1513 every row and header reads the column's
  * LABEL (`file.name` → `Name`, `kpi_category` → `Kpi category`) and the table leads with the `#`
  * gutter, which is not a column and never appears in the list. Same harness as its siblings
  * (temp `--user-data-dir`, COPY of the fixture, step screenshots); serial by design.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, contents, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, contents, copyVault, launchApp, openFolder, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -28,8 +30,9 @@ const rowOf = (label: string): Locator =>
 test.beforeAll(async () => {
   const userData = await mkdtemp(path.join(tmpdir(), 'propreorder-userdata-'))
   vault = await copyVault(FIXTURE)
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'KPIs.md')) })
+  app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
+  await openFolder(win, path.join(vault, 'KPIs'))
 })
 
 test.afterAll(async () => {
@@ -55,7 +58,7 @@ test("step 2 — dragging unit's grip onto kpi_category's top half reorders the 
   await expect(headers()).toHaveText(['#', 'Name', 'Unit', 'Kpi category', 'Funnel stages'])
   await expect
     .poll(async () => {
-      const text = await readFile(path.join(vault, 'KPIs.md'), 'utf8')
+      const text = await readFile(path.join(vault, 'KPIs', '.folder.md'), 'utf8')
       return /- file\.name\s*\n\s*- note\.unit\s*\n\s*- note\.kpi_category\s*\n\s*- note\.funnel_stages/.test(text)
     })
     .toBe(true)
@@ -71,7 +74,7 @@ test('step 3 — file.name itself can be dragged down, like the arrows always al
   await expect(headers()).toHaveText(['#', 'Unit', 'Name', 'Kpi category', 'Funnel stages'])
   await expect
     .poll(async () => {
-      const text = await readFile(path.join(vault, 'KPIs.md'), 'utf8')
+      const text = await readFile(path.join(vault, 'KPIs', '.folder.md'), 'utf8')
       return /- note\.unit\s*\n\s*- file\.name\s*\n\s*- note\.kpi_category/.test(text)
     })
     .toBe(true)

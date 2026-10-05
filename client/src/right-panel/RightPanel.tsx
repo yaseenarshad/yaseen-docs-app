@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { RIGHT_PANEL_MAX_W, RIGHT_PANEL_MIN_W } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
-import { basename, stripExt } from '../lib/paths'
+import { pageLabel, useFolderPaths } from '../lib/pageLabel'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './right-panel.css'
 
 export interface RightPanelProps {
+  /** The open root: its Files tree says which pages are folders (YAZ-2290). */
+  root: string
   items: readonly string[]
   expanded: string | null
   width: number
@@ -33,13 +35,14 @@ const Chevron = ({ d }: { d: string }) => (
   </svg>
 )
 
-export function RightPanel({ items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
+export function RightPanel({ root, items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
   const [previewWidth, setPreviewWidth] = useState(width)
   const [dropAt, setDropAt] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const headerRefs = useRef(new Map<string, HTMLButtonElement>())
   const hideRef = useRef<HTMLButtonElement | null>(null)
   const resizeCleanup = useRef<(() => void) | null>(null)
+  const isFolder = useFolderPaths(root)
 
   useEffect(() => setPreviewWidth(width), [width])
   useEffect(() => () => resizeCleanup.current?.(), [])
@@ -191,7 +194,7 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
         }}
       >
         {items.map((path, index) => {
-          const label = stripExt(basename(path))
+          const label = pageLabel(path, isFolder(path))
           const isExpanded = path === expanded
           const cls = ['right-panel__item']
           if (isExpanded) cls.push('right-panel__item--expanded')

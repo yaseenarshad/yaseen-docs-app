@@ -21,14 +21,18 @@
  * passive link-notice), never a dialog. Two more notices (F2, GRO-2197) keep otherwise
  * invisible outcomes visible: a click during the pre-index window (nothing resolvable yet)
  * says the index is still loading, and a ⌘-click that CREATES a note names it — the new page
- * opened in a background tab, so nothing else on screen moves. `[[#h]]` (same-file, empty
- * target) is a no-op — the
- * heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified clicks keep their defaults (future
- * gestures, context menus).
+ * opened in a background tab, so nothing else on screen moves. An ID link (YAZ-2293) is the one
+ * unresolved link that is NEVER created: an id names a note that existed, so a page called
+ * `<id>.md` would be a different note wearing its name — the click says the note is gone
+ * and does nothing else. A resolving one opens from its title widget, which carries `.wikilink`
+ * and sits inside the match, so the hit-test below finds it like any segment. `[[#h]]`
+ * (same-file, empty target) is a no-op — the heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified
+ * clicks keep their defaults (future gestures, context menus).
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import { isNoteId } from '@shared/noteId'
 import { createFromLink } from './createFromLink'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
@@ -41,7 +45,7 @@ export interface WikilinkNav {
    * Root-relative folder where a BARE unresolved link creates its page ('' = the vault
    * root). A getter, read at CLICK time: the host resolves the Files & Links "default
    * location for new notes" setting against ITS OWN page path (`newNoteBase`, C2- GRO-2240),
-   * so right-panel and folder-page editors create beside themselves, not beside the main
+   * so right-panel and folder editors create beside themselves, not beside the main
    * tab (YAZ-1643); settings changes land live without remounting any editor. Pathed
    * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
    */
@@ -124,6 +128,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               }
               const path = resolve(page)
               if (path !== null) open(path)
+              else if (isNoteId(page)) nav.onNotice('That note no longer exists')
               else
                 void createFromLink(nav.root, inner, nav.createFolder()).then((result) => {
                   if (result.status === 'error') nav.onNotice(result.message)

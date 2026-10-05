@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { cellEditor, columnTyping, valueKind } from './editorType'
-import { DEFAULT_VIEWS, type FolderPageSettings } from './folderPageSettings'
+import { DEFAULT_VIEWS, type FolderSettings } from './folderSettings'
 import { TEST_RECORDS } from './testRecords'
 
 const record = (properties: Record<string, unknown>, i = 0): IndexRecord => ({
@@ -122,17 +122,17 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
 })
 
 /**
- * The ladder's TOP rung (🔒 Q8 of YAZ-815, wired here at YAZ-819): a FOLDER PAGE's own column
- * declaration, view-scoped — read through `columnKindIn`, never re-parsed here.
+ * The ladder's TOP rung (🔒 Q8 of YAZ-815, wired here at YAZ-819): a FOLDER's own column
+ * declaration, view-scoped — read off its settings, never re-parsed here.
  */
-describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
+describe('folder columns are the top rung (🔒 Q8, YAZ-815)', () => {
   const DECLS: PropertiesResponse = {
     root: '/vault',
     version: 1,
     properties: { owner: { kind: 'text' }, stage: { kind: 'date' } },
   }
   const recs = [record({ owner: 7, stage: 'plain' })]
-  const settings = (columns: Record<string, { kind: PropertyKind; target?: string }>): FolderPageSettings => ({
+  const settings = (columns: Record<string, { kind: PropertyKind; target?: string }>): FolderSettings => ({
     columns,
     views: DEFAULT_VIEWS.map((v) => ({ ...v })),
     problems: [],
@@ -145,16 +145,16 @@ describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
     expect(cellEditor(7, col)).toBe('multi-link')
   })
 
-  it('a key the folder page does not declare falls through to the rungs below, untouched', () => {
+  it('a key the folder does not declare falls through to the rungs below, untouched', () => {
     expect(columnTyping('stage', recs, DECLS, settings({ owner: { kind: 'link' } }))?.assigned).toBe('date')
   })
 
-  it('no folder page is exactly today’s ladder', () => {
+  it('no folder is exactly today’s ladder', () => {
     expect(columnTyping('owner', recs, DECLS, null)?.assigned).toBe('text')
     expect(columnTyping('owner', recs, DECLS)?.assigned).toBe('text')
   })
 
-  it('a folder page whose settings declare nothing changes nothing', () => {
+  it('a folder whose settings declare nothing changes nothing', () => {
     expect(columnTyping('owner', recs, DECLS, settings({}))?.assigned).toBe('text')
   })
 })
@@ -162,8 +162,8 @@ describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
 
 it('uses the whole folder declaration ahead of the vault declaration, including ordered options', () => {
   const properties: PropertiesResponse = { root: '/vault', version: 1, properties: { status: { kind: 'select', options: ['Vault'] } } }
-  const folderPage: FolderPageSettings = { columns: { status: { kind: 'multi-select', options: ['Ready', 'Later'] } }, views: [], problems: [] }
-  const typing = columnTyping('note.status', [record({ status: 'Legacy' })], properties, folderPage)
+  const settings: FolderSettings = { columns: { status: { kind: 'multi-select', options: ['Ready', 'Later'] } }, views: [], problems: [] }
+  const typing = columnTyping('note.status', [record({ status: 'Legacy' })], properties, settings)
   expect(typing).toMatchObject({ assigned: 'multi-select', options: ['Ready', 'Later'] })
   expect(cellEditor('Legacy', typing)).toBe('multi-select')
   expect(columnTyping('note.status', [], properties)?.options).toEqual(['Vault'])
@@ -172,7 +172,7 @@ it('uses the whole folder declaration ahead of the vault declaration, including 
 
 describe('option display ordering', () => {
   const manual = ['Stage 10', 'alpha', 'Stage 2', 'ALPHA']
-  const folder = (optionSort?: 'manual' | 'ascending' | 'descending'): FolderPageSettings => ({
+  const folder = (optionSort?: 'manual' | 'ascending' | 'descending'): FolderSettings => ({
     columns: { Status: { kind: 'select', options: manual, optionSort } }, views: [...DEFAULT_VIEWS], problems: [],
   })
   it('keeps the manual arrangement by default and sorts naturally without mutating it', () => {

@@ -14,9 +14,10 @@ import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { shell: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}), agentPrompt: vi.fn().mockResolvedValue('handshake') } },
+  api: { tree: vi.fn(), shell: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}), agentPrompt: vi.fn().mockResolvedValue('handshake') } },
 }))
 import { api, BridgeRequestError } from '../api'
+import { fetchTree } from '../lib/treeFeed'
 const reveal = vi.mocked(api.shell.reveal)
 const openVsCode = vi.mocked(api.shell.openVsCode)
 
@@ -25,11 +26,11 @@ const openVsCode = vi.mocked(api.shell.openVsCode)
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(props: TabBarProps) {
+function mount(props: Omit<TabBarProps, 'root'> & Partial<Pick<TabBarProps, 'root'>>) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<TabBar {...props} />))
+  act(() => root?.render(<TabBar root="/v" {...props} />))
   return container
 }
 
@@ -53,6 +54,21 @@ describe('TabBar', () => {
     const tabsEls = [...el.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
     expect(tabsEls.map((t) => t.textContent)).toEqual(['Note', 'Plan'])
     expect(tabsEls.map((t) => t.title)).toEqual(['/v/Note.md', '/v/sub/Plan.markdown'])
+  })
+
+  it('a FOLDER tab is labelled with the folder name, dots and all (YAZ-2290 D3)', () => {
+    const el = mount({ tabs: ['/v/v1.2', '/v/Projects'], active: '/v/v1.2', ...noop, ...noNav })
+    expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['v1.2', 'Projects'])
+  })
+
+  it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
+    const el = mount({ root: '/named', tabs: ['/named/Notes.md', '/named/Plan.md'], active: '/named/Notes.md', ...noop, ...noNav })
+    const labels = () => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)
+    expect(labels()).toEqual(['Notes', 'Plan']) // no tree yet: nothing says it is a folder
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
+    await act(async () => void (await fetchTree('/named')))
+    expect(labels()).toEqual(['Notes.md', 'Plan'])
+    expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
   })
 
   it('marks only the active tab: aria-selected + the underline modifier', () => {
@@ -191,7 +207,7 @@ describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
     ;(HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView = spy
     try {
       mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
-      act(() => root?.render(<TabBar tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
+      act(() => root?.render(<TabBar root="/v" tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
       const activeTab = spy.mock.contexts.at(-1) as HTMLElement
       expect(activeTab.classList.contains('tabbar__tab--active')).toBe(true)
       expect(activeTab.querySelector('[role="tab"]')?.textContent).toBe('b')
@@ -296,6 +312,78 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(vi.mocked(api.shell.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
     expect(writeText).toHaveBeenCalledWith('handshake')
     expect(menuOf(el)).toBeNull()
+  })
+
+  // "Copy ID" (YAZ-2293): the tab IS the note, so it offers the sidebar row's id item, directly under Copy path.
+  const noteId = (path: string) => (path === '/vault/sub/Deep Note.md' ? 'k3m9x2pq7abc' : undefined)
+
+  it('Copy ID sits under Copy path on a tab whose note has an id — and is absent on one that has none', () => {
+    const el = mount({ ...props, noteId })
+    rightClick(tabAt(el, 1))
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy ID', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
+    rightClick(tabAt(el, 0))
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
+  })
+
+  it('Copy ID writes exactly the id, confirms through the notice, and closes the menu', async () => {
+    const onNotice = vi.fn()
+    const el = mount({ ...props, noteId, onNotice })
+    rightClick(tabAt(el, 1))
+    await act(async () => {
+      items(el).find((b) => b.textContent === 'Copy ID')?.click()
+    })
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('Copy ID reports a clipboard the OS refused', async () => {
+    writeText.mockRejectedValue(new Error('denied'))
+    const onNotice = vi.fn()
+    const el = mount({ ...props, noteId, onNotice })
+    rightClick(tabAt(el, 1))
+    await act(async () => {
+      items(el).find((b) => b.textContent === 'Copy ID')?.click()
+    })
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy ID: denied")
+  })
+
+  it("Copy for Agent on a FOLDER tab hands out the folder's settings file — also for a folder named like a file; a view-only tab has no such item (YAZ-2290 D9)", async () => {
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/agent', tree: [{ type: 'dir', name: 'Projects', path: '/agent/Projects', children: [] }, { type: 'dir', name: 'Notes.md', path: '/agent/Notes.md', children: [] }], generatedAt: 1 })
+    await fetchTree('/agent')
+    const el = mount({ ...props, root: '/agent', tabs: ['/agent/Projects', '/agent/Notes.md', '/agent/report.pdf'] })
+    for (const [i, page] of [[0, '/agent/Projects/.folder.md'], [1, '/agent/Notes.md/.folder.md']] as const) {
+      vi.mocked(api.shell.agentPrompt).mockClear()
+      rightClick(tabAt(el, i))
+      expect(items(el).map((b) => b.textContent)).toContain('Copy for Agent')
+      await act(async () => {
+        items(el).find((b) => b.textContent === 'Copy for Agent')?.click()
+      })
+      expect(vi.mocked(api.shell.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: page })
+    }
+    rightClick(tabAt(el, 2))
+    expect(items(el).map((b) => b.textContent)).not.toContain('Copy for Agent')
+  })
+
+  it.each([
+    [true, 'Turn review off'],
+    [false, 'Turn review on'],
+  ])('a note whose review state is %s gets "%s" under the copy items, and it asks for the opposite (YAZ-2322)', (state, label) => {
+    const reviewState = vi.fn(() => state)
+    const onSetReview = vi.fn()
+    const el = mount({ ...props, reviewState, onSetReview })
+    rightClick(tabAt(el, 1))
+    expect(reviewState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', label, 'Reveal in Finder', 'Open in VS Code'])
+    act(() => items(el)[3]?.click())
+    expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md', !state)
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('a tab with no review state — a folder, a PDF, a note the index has not seen, any note with upkeep off — gets no review item', () => {
+    const el = mount({ ...props, reviewState: () => null, onSetReview: vi.fn() })
+    rightClick(tabAt(el, 0))
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('the menu retargets: right-clicking another tab copies THAT tab\'s path', () => {
@@ -413,6 +501,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     document.body.appendChild(host)
     root2 = createRoot(host)
     const base: TabBarProps = {
+      root: '/vault',
       tabs: ['/vault/A.md', '/vault/sub/Deep Note.md'],
       active: '/vault/A.md',
       onActivate: vi.fn(),

@@ -2,7 +2,7 @@ import type { DragEvent } from 'react'
 
 /**
  * The insertion-slot arithmetic BOTH horizontal tab strips reorder by — the window's tab bar
- * (GRO-2235) and a folder page's view tabs (YAZ-1471). One spelling, so the two strips cannot
+ * (GRO-2235) and a folder's view tabs (YAZ-1471). One spelling, so the two strips cannot
  * drift apart: a slot is an index in the WITH-dragged-item list and runs 0…length.
  */
 

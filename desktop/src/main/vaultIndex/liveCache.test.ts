@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { subscribe } from '../fs/watchers'
 import { makeViewsFixture } from '../fs/viewsFixture'
 import { _resetIndexCache, flushIndexCache, initIndexCache, loadIndexCache } from './cache'
@@ -285,5 +286,37 @@ describe('the persisted payload is version/root/records and nothing else', () =>
     expect(scanFile).not.toHaveBeenCalled() // every record reused: a full warm hit…
     expect(getColdStartDiff(root)).toMatchObject({ cacheStatus: 'hit', added: [], removed: [], changed: [] }) // …with zero invalidation
     expect(warm.records).toEqual(first.records)
+  })
+})
+
+// A folder's settings record rides the same cached map as the notes (YAZ-2290 D8): no payload key
+// of its own, no CACHE_VERSION bump, and a warm start serves it without reading the file.
+describe('folder settings survive a cold start from cache', () => {
+  let root: string
+  let cleanup: () => Promise<void>
+  let cacheDir: string
+  beforeAll(async () => {
+    ;({ root, cleanup } = await makeViewsFixture())
+    await writeFile(path.join(root, 'Content Pillars', FOLDER_SETTINGS_FILE), '---\nowner: Yaseen\n---\n')
+    cacheDir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-folders-'))
+    initIndexCache(cacheDir)
+  })
+  afterAll(async () => {
+    _evictAll()
+    _resetIndexCache()
+    await cleanup()
+    await rm(cacheDir, { recursive: true, force: true })
+  })
+
+  it('a warm build serves `folders` from the cache, with zero scans', async () => {
+    const first = await getIndex(root)
+    expect(first.folders.map((r) => r.folder)).toEqual(['Content Pillars'])
+    _evictAll()
+    await flushIndexCache()
+    vi.mocked(scanFile).mockClear()
+    const warm = await getIndex(root)
+    expect(scanFile).not.toHaveBeenCalled()
+    expect(getColdStartDiff(root)).toMatchObject({ cacheStatus: 'hit', added: [], removed: [], changed: [] })
+    expect(warm.folders).toEqual(first.folders)
   })
 })

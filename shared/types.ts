@@ -6,6 +6,8 @@
  * jail: any absolute path on the machine may be read or written.
  */
 
+import type { ReviewEntry } from './reviews'
+
 // ---------- Errors ----------
 
 export type BridgeErrorCode =
@@ -145,6 +147,8 @@ export interface TreeResponse {
 export interface IndexRecord {
   /** Absolute path. */
   path: string
+  /** Frontmatter `id` when it is a note id (`shared/noteId.ts`, YAZ-2293): the note's permanent identity. Absent when it has none. */
+  id?: string
   /** File name with extension. */
   name: string
   /** File name without extension. */
@@ -173,12 +177,18 @@ export interface IndexRecord {
   links: string[]
   /** `![[target]]` targets. */
   embeds: string[]
+  /** The note's review log (`shared/reviews.ts`, YAZ-2322), `at` ascending; absent when never reviewed. When it is next due is computed, never stored. */
+  reviews?: ReviewEntry[]
+  /** `textFingerprint` of the body: a review records the one it saw, so the body counts as changed when they differ. Absent when the file was not read. */
+  text?: string
 }
 
 export interface IndexResponse {
   root: string
   /** Every markdown note under `root` (dot-entries and `node_modules` skipped), sorted by path. */
   records: IndexRecord[]
+  /** Every folder's settings file (`FOLDER_SETTINGS_FILE`, YAZ-2290 D8), sorted by path; never in `records`. */
+  folders: IndexRecord[]
   /** Main-process time (epoch ms) when this snapshot was taken. */
   generatedAt: number
 }
@@ -340,15 +350,19 @@ export interface CreateDirResponse {
  */
 export interface CreateFileRequest {
   path: string
-  /** Initial file contents; omitted → an empty file. */
+  /** Initial file contents; omitted → a file holding only its `id`. */
   content?: string
+  /** The note id to be born with (YAZ-2293), for a caller that needs it before the file exists; omitted → a fresh one. */
+  id?: string
 }
 
 export interface CreateFileResponse {
   path: string
   mtime: number
-  /** The created file's byte length (0 for an empty markdown create). */
+  /** The created file's byte length. */
   size: number
+  /** The note id written into the file's frontmatter; absent when the seed's frontmatter would not parse. */
+  id?: string
 }
 
 // ---------- file.rename(req) (Links E1 + E1b, GRO-2194 / GRO-2241) ----------
@@ -397,8 +411,12 @@ export interface FileClipRequest {
   op: 'copy' | 'cut'
 }
 
-/** `clip:changed` — pushed to EVERY window after every clipboard change: how many, and which verb; null when empty (the menu's disabled "Paste"). */
-export type FileClipState = { count: number; op: 'copy' | 'cut' } | null
+/**
+ * `clip:changed` — pushed to EVERY window after every clipboard change: how many, which verb, and
+ * the paths as main holds them (absolute, de-duplicated, ordered), so a window can say what
+ * pasting a Cut would move (D21); null when empty (the menu's disabled "Paste").
+ */
+export type FileClipState = { count: number; op: 'copy' | 'cut'; paths: string[] } | null
 
 /** Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created. */
 export interface PasteRequest {
@@ -467,9 +485,6 @@ export const MAX_FOLD_KEYS_PER_FILE = 500
 /** Collapsed group keys per base view (Bases 4C, GRO-2137) are capped at this many. */
 export const MAX_COLLAPSED_GROUP_KEYS = 200
 
-/** Expanded Topics-tree pages per vault (🔒 D4, YAZ-848) are capped at this many — `folds`' cap, for a bucket of the same kind: one entry per page the user opened. */
-export const MAX_TOPICS_EXPANDED_PAGES = 500
-
 /** A vault display name (YAZ-1974 D3) is cut to this many characters (code points, so an emoji is never split). */
 export const MAX_VAULT_NAME = 80
 
@@ -480,22 +495,23 @@ export function cleanVaultName(raw: unknown): string | null {
   return name === '' ? null : name
 }
 
-/** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write — `topicsExpanded`'s cap, for a list of the same kind. */
+/** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write. */
 export const MAX_FAVORITES = 500
 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
- * `topics` (the folder-page tree, an empty shell until YAZ-848), `files` (the file explorer) or
- * `favorites` (the pinned files and folders, YAZ-1766 D1 — a third tab right of Files).
+ * `files` (the file explorer) or `favorites` (the pinned files and folders, YAZ-1766 D1 — the
+ * tab right of Files).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
  * and no `FolderState` entry. Default `DEFAULT_SIDEBAR_LENS` (`files` since YAZ-1846) — a
  * pre-847 state file simply gains it, and a pre-1628 file's retired global value seeds every
- * window that has none of its own.
+ * window that has none of its own. A state file that still names the retired `topics` lens reads
+ * as the default one, and its two retired keys are ignored on load (`store.ts`).
  */
-export type SidebarLens = 'topics' | 'files' | 'favorites'
+export type SidebarLens = 'files' | 'favorites'
 /** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). */
-export const SIDEBAR_LENSES: readonly SidebarLens[] = ['topics', 'files', 'favorites']
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'favorites']
 /** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
 export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
@@ -650,8 +666,6 @@ export interface WindowEntry {
    * `tabs` — a renamed focus follows its folder, a deleted one drops out.
    */
   focusDirs: string[]
-  /** Its Topics twin: the folder PAGES this window's Topics tree is narrowed to, or empty. */
-  focusTopics: string[]
   /** Its Favorites twin (YAZ-1766 D5): the favorited DIRS this window's Favorites tab is narrowed to, or empty. */
   focusFavorites: string[]
   bounds: WindowBounds
@@ -659,9 +673,9 @@ export interface WindowEntry {
 
 /**
  * View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds).
- * `expanded` and `topicsExpanded` are SESSION lists (YAZ-1642): shared by every window on the
+ * `expanded` is a SESSION list (YAZ-1642): shared by every window on the
  * vault through the main-owned store, never written to disk and never restored — a launch starts
- * both trees collapsed. The other fields persist.
+ * the tree collapsed. The other fields persist.
  */
 export interface FolderState {
   expanded: string[]
@@ -670,23 +684,12 @@ export interface FolderState {
   folds: Record<string, string[]>
   /** `<pagePath>::<viewName>` → collapsed group keys (max MAX_COLLAPSED_GROUP_KEYS). Session chrome, never written to the page's own card (GRO-2137). */
   baseGroups: Record<string, string[]>
-  /**
-   * The Topics tree's expanded folder pages (🔒 D4, YAZ-848), as PAGE PATHS — max
-   * MAX_TOPICS_EXPANDED_PAGES. Sibling of `expanded` (the FILE tree's open dirs): one flat
-   * per-root list of absolute paths, and a path-keyed bucket, so `store.renamePath` /
-   * `store.removePath` repair it exactly as they repair the other two.
-   *
-   * Keyed by the PAGE, never by tree position: a page reachable under two folder pages is ONE
-   * entry and opens under both at once — the mockup's behaviour. Session chrome, never written
-   * into any note's frontmatter.
-   */
-  topicsExpanded: string[]
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'name'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name'>>
 
 /**
  * The whole persisted app state — one user-global JSON file, owned by the main process
@@ -710,18 +713,31 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
 
 /**
  * The `.obsidian/`-style dotfolder that travels with a vault, and THE one definition of its name
- * (YAZ-861 — main's `vaultConfig.ts` and the client's `ensureHome.ts` each used to declare their
- * own copy of the literal). Both sides read it from here: main joins paths under it, and the
- * client probes it because its existence IS adoption (6C-, YAZ-849).
+ * (YAZ-861): main joins paths under it.
  */
 export const VAULT_CONFIG_DIR = '.yaseendocs'
+
+/**
+ * A folder's own settings, `<folder>/.folder.md`: frontmatter only (YAZ-2290 D1). The one dot-entry
+ * the index and the watcher see (D8); the Files tree never lists it.
+ */
+export const FOLDER_SETTINGS_FILE = '.folder.md'
+
+/** The settings file of the folder at `dir`. */
+export const folderSettingsPath = (dir: string): string => `${dir}/${FOLDER_SETTINGS_FILE}`
+
+/** Whether `folder` is `ancestor` or under it. Both absolute, or both as the index names folders: root-relative, '' the root, which holds every folder. */
+export const inFolder = (folder: string, ancestor: string): boolean => ancestor === '' || folder === ancestor || folder.startsWith(`${ancestor}/`)
+
+/** Whether `path` is a folder's settings file, either separator. */
+export const isFolderSettingsPath = (path: string): boolean => path.split(/[\\/]/).at(-1) === FOLDER_SETTINGS_FILE
 
 /**
  * Pushed to every window after a config file under `<root>/.yaseendocs/` changes — an own
@@ -812,7 +828,7 @@ export interface PropertyDecl {
   options?: string[]
   /** Display order; omitted means manual. The options array retains its manual order. */
   optionSort?: 'manual' | 'ascending' | 'descending'
-  /** link/multi-link only: the picker constraint — a wikilink to a folder page ("pages that belong to [[X]]", resolved by belongsToBasenames; YAZ-831). */
+  /** link/multi-link only: the picker constraint — a wikilink to a FOLDER ("the notes in [[X]]", resolved by belongsToBasenames; YAZ-2290 D10). */
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean
@@ -895,9 +911,8 @@ export interface WindowIdentity {
   sidebarCollapsed: boolean
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
-  /** Focus Mode's lists (YAZ-1605, per window since YAZ-1628; Favorites' own since YAZ-1766): the same three as `WindowEntry`'s. */
+  /** Focus Mode's lists (YAZ-1605, per window since YAZ-1628; Favorites' own since YAZ-1766): the same two as `WindowEntry`'s. */
   focusDirs: string[]
-  focusTopics: string[]
   focusFavorites: string[]
 }
 

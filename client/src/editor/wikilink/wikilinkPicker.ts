@@ -35,10 +35,12 @@
  * locked ruling): case-insensitive substring, cap 8. A note with frontmatter aliases (E2,
  * GRO-2214) is offered twice — under its name (inserting `[[Name]]`) and under each alias,
  * which READS `CAC — Customer Acquisition Cost` and INSERTS the piped `[[Customer Acquisition
- * Cost|CAC]]`, so the link targets the note and displays the alias. When nothing matches a
- * non-empty fragment, a single "Create" row inserts `[[typed text]]` as-is AND creates the page
+ * Cost|CAC]]`, so the link targets the note and displays the alias. A note with a frontmatter
+ * `id` (YAZ-2293, 🔒) is offered under the same rows but every one of them inserts the plain
+ * `[[id]]`. When nothing matches a non-empty fragment, a single "Create" row creates the page
  * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
- * `createPage`). A `|` in the fragment is alias
+ * `createPage`) and links it by the id it is born with — `[[typed text]]` as-is when there is
+ * no vault to create in, or the creation fails. A `|` in the fragment is alias
  * entry: the popup closes and typing continues as plain text. Code is excluded like the
  * decorations: no picker inside `code_block` or inline-`code` text.
  */
@@ -47,6 +49,7 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { mintNoteId } from '@shared/noteId'
 import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
@@ -91,9 +94,11 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
 }
 
 /**
- * One popup row: shows `label`, inserts `[[insert]]` — the two differ for an alias row, which
- * reads `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition
- * Cost|CAC]]` (E2, GRO-2214). `create` rows show as Create "…" (nothing matched) and make the page.
+ * One popup row: shows `label`, inserts `[[insert]]` — the two differ for every row of a note
+ * with an id (it inserts the id, YAZ-2293) and for an id-less note's alias row, which reads
+ * `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition Cost|CAC]]`
+ * (E2, GRO-2214). `create` rows show as Create "…" (nothing matched) and make the
+ * page — `insert` is then its typed NAME, and the link goes in by the new page's id (`insertRow`).
  */
 interface PickerRow {
   label: string
@@ -169,36 +174,51 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
  * The Create row's other half (YAZ-1357, 🔒 D3 revised): the page is BORN here, not on a later
  * click — Yasin's ruling, so a picked "Create" shows up in the sidebar at once. Same placement as
  * create-on-click (`createFromLink` under `nav.createFolder()`), no navigation (the caret keeps
- * typing; the link turns from dim to resolved on the index echo, and in an outline the reconcile
- * pass tags the member), one passive notice either way. Without a nav there is no vault to create
- * in, so the row only inserts.
+ * typing; the link turns from dim to resolved on the index echo), one passive notice either way.
+ * Without a nav there is no vault to create in, so the row only inserts.
+ *
+ * The link is already in the document by `id` (YAZ-2293), so the page is born WITH that id.
+ * When it is not born — a failure, or a page of that name the index had not shown yet — nothing
+ * carries the id, and the id goes back to the page name that was typed: found by its text, which
+ * a fresh id makes unique in the document, wherever typing has since pushed it.
  */
-function createPage(nav: WikilinkNav | undefined, name: string): void {
-  if (nav === undefined) return
-  void createFromLink(nav.root, name, nav.createFolder()).then((result) => {
+function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, id: string): void {
+  void createFromLink(nav.root, name, nav.createFolder(), id).then((result) => {
+    if (result.status === 'created') return nav.onNotice(`Created "${linkPageName(name)}"`)
     if (result.status === 'error') nav.onNotice(result.message)
-    else if (result.status === 'created') nav.onNotice(`Created "${linkPageName(name)}"`)
+    if (view === undefined || view.isDestroyed) return
+    let from = -1
+    view.state.doc.descendants((node, pos) => {
+      const at = node.text?.indexOf(`[[${id}`) ?? -1
+      if (at !== -1) from = pos + at + 2
+    })
+    if (from !== -1) view.dispatch(view.state.tr.insertText(name.split('#', 1)[0], from, from + id.length))
   })
 }
 
-/** Replace the `[[fragment` with the full `[[insert]]` text, park the caret after it — and, for the Create row, make the page. */
-function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, nav?: WikilinkNav): boolean {
+/**
+ * Replace the `[[fragment` with the full `[[insert]]` text, park the caret after it — and, for the
+ * Create row, make the page: a freshly minted id (YAZ-2293) the page is then born with stands in
+ * for the typed page name, and a `#heading` typed after it rides along.
+ */
+function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, nav?: WikilinkNav, view?: EditorView): boolean {
   if (dispatch) {
-    const text = `[[${row.insert}]]`
+    const born = row.create && nav !== undefined ? { nav, id: mintNoteId() } : undefined
+    const text = `[[${born === undefined ? row.insert : row.insert.replace(/^[^#]*/, born.id)}]]`
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
     dispatch(tr.scrollIntoView())
-    if (row.create) createPage(nav, row.insert)
+    if (born !== undefined) createPage(view, born.nav, row.insert, born.id)
   }
   return true
 }
 
-const insertSelected = (nav?: WikilinkNav): Command => (state, dispatch) => {
+const insertSelected = (nav?: WikilinkNav): Command => (state, dispatch, view) => {
   const session = pickerKey.getState(state)?.session ?? null
   if (session === null) return false
   const row = session.rows[session.selected]
   if (row === undefined) return false
-  return insertRow(state, dispatch, session, row, nav)
+  return insertRow(state, dispatch, session, row, nav, view)
 }
 
 const move = (delta: 1 | -1): Command => (state, dispatch) => {
@@ -254,7 +274,7 @@ function buildPopup(view: EditorView, nav?: WikilinkNav): { element: HTMLElement
         if (current === null) return
         const liveRow = current.rows[i]
         if (liveRow === undefined) return
-        insertRow(view.state, (tr) => view.dispatch(tr), current, liveRow, nav)
+        insertRow(view.state, (tr) => view.dispatch(tr), current, liveRow, nav, view)
         view.focus()
       })
       element.appendChild(item)

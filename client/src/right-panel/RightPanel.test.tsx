@@ -4,12 +4,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RightPanel, type RightPanelProps } from './RightPanel'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
+// The headers ask the Files tree which pages are folders (YAZ-2290): the one bridge call stubbed here.
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  api: { tree: vi.fn() },
+}))
+import { api } from '../api'
+import { fetchTree } from '../lib/treeFeed'
+
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | null = null
 let container: HTMLElement | null = null
 
 const base = (): RightPanelProps => ({
+  root: '/v',
   items: ['/v/Alpha.md', '/v/Beta.md'],
   expanded: '/v/Alpha.md',
   width: 440,
@@ -54,6 +63,16 @@ describe('RightPanel', () => {
     expect(el.querySelector<HTMLButtonElement>('[aria-label="Forward in right panel"]')?.disabled).toBe(true)
     expect(el.querySelectorAll('[data-viewer]')).toHaveLength(1)
     expect(el.querySelector('[role="separator"]')?.getAttribute('aria-valuenow')).toBe('440')
+  })
+
+  it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
+    const el = mount({ ...base(), root: '/named', items: ['/named/Notes.md', '/named/Plan.md'], expanded: null })
+    const labels = () => [...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)
+    expect(labels()).toEqual(['Notes', 'Plan'])
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
+    await act(async () => void (await fetchTree('/named')))
+    expect(labels()).toEqual(['Notes.md', 'Plan'])
+    expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
   })
 
   it('routes header, navigation, close, and hide gestures without coupling state', () => {

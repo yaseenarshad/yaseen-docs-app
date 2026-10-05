@@ -12,6 +12,14 @@ describe('allPropertyKeys', () => {
     expect(allPropertyKeys(def, view, TEST_RECORDS, { owner: { kind: 'link' } })).toContain('note.owner')
   })
 
+  it('no longer offers `note.id`, or any reserved top-level key: a folder’s table shows only that folder’s values, so such a column could never hold anything', () => {
+    // Rows as a folder's views get them (D19): `properties` are the folder's block; the note's own keys are not in it.
+    const rows = TEST_RECORDS.map((r, i) => ({ ...r, id: `k3m9x2pq7ab${i}`, properties: { status: 'open' } }))
+    const keys = allPropertyKeys(def, view, rows)
+    expect(keys).toContain('note.status')
+    for (const reserved of ['id', 'also_in', 'in', 'comments', 'reviews']) expect(keys).not.toContain(`note.${reserved}`)
+  })
+
   it('a declared column already seen in the values is listed once, not twice', () => {
     const keys = allPropertyKeys(def, view, TEST_RECORDS, { status: { kind: 'text' } })
     expect(keys.filter((k) => k === 'note.status')).toEqual(['note.status'])

@@ -11,18 +11,27 @@
  * GitHub sync (YAZ-1081 3B) is the ONE setting not in `SettingsState`: the switch lives per-vault
  * in `.yaseendocs/github.json`, read and written through the engine, so its section is
  * `available` only when App hands the engine's status + setter over.
+ *
+ * Review (YAZ-2322 🔒 D7) is per-vault the same way: `.yaseendocs/review.json`, read and saved
+ * through App's one `useReviewSettings`, so its section is `available` only with a vault open and
+ * its rows call `review.save` — never `onChange`. Its switch is the one row while upkeep is off.
  */
 import type { ReactNode } from 'react'
+import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, SettingsState } from '@shared/types'
+import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
   onChange: (next: SettingsState) => void
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
+  /** This vault's review settings (YAZ-2322); absent with no vault open. */
+  review?: ReviewSettingsState
 }
 
 export interface SettingDef {
@@ -33,10 +42,12 @@ export interface SettingDef {
   keywords?: readonly string[]
   /** The control stacks full-width under the text instead of sitting beside it (D7); a function reads live state (the folder input shows only for `folder`). */
   wide?: boolean | ((ctx: SettingsCtx) => boolean)
+  /** A row that only exists in some states (the Review rows need upkeep on); absent = always. */
+  available?: (ctx: SettingsCtx) => boolean
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'sync' | 'hotkeys'
+export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | 'sync' | 'hotkeys'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -72,6 +83,21 @@ const hotkeyTable = (entries: readonly HotkeyEntry[]) => (
     ))}
   </dl>
 )
+
+/** What the section title does not say: the feature's other name, and where its notes turn up. */
+const REVIEW_KEYWORDS = ['upkeep', 'inbox']
+
+/** Every Review row but the switch is there only while upkeep is on (🔒 D7). */
+const upkeepOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
+
+/** One number row of the Review section; the row's id is the `ReviewSettings` field it edits. */
+const reviewNumber = (field: ReviewNumberField, label: string, unit: string): SettingDef => ({
+  id: field,
+  label,
+  keywords: REVIEW_KEYWORDS,
+  available: upkeepOn,
+  render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} />,
+})
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
@@ -216,6 +242,36 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     ],
   },
   {
+    id: 'review',
+    title: 'Review',
+    available: (ctx) => ctx.review !== undefined,
+    note: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
+    groups: [
+      {
+        items: [
+          {
+            id: 'enabled',
+            label: 'Enable upkeep review',
+            keywords: REVIEW_KEYWORDS,
+            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Enable upkeep review" />,
+          },
+          reviewNumber('baseDays', 'Check a note after', 'days'),
+          reviewNumber('growth', 'Each time it is still relevant, wait', '× longer'),
+          // The hint is the three numbers' result in words, so it sits under the last of them.
+          { ...reviewNumber('maxDays', 'Longest wait', 'days'), hint: ({ review }) => (review === undefined ? '' : scheduleInWords(review.settings)) },
+          {
+            id: 'reviewByDefault',
+            label: 'New notes are in review',
+            keywords: REVIEW_KEYWORDS,
+            available: upkeepOn,
+            render: ({ review }) =>
+              review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.reviewByDefault} onChange={(reviewByDefault) => review.save({ ...review.settings, reviewByDefault })} ariaLabel="New notes are in review" />,
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: 'sync',
     title: 'Sync',
     available: (ctx) => ctx.sync !== undefined,
@@ -263,6 +319,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 
 /** The sections this context can show, in registry order — what the nav lists and search covers. */
 export const availableSections = (ctx: SettingsCtx): SettingsSection[] => SETTINGS_SECTIONS.filter((section) => section.available?.(ctx) ?? true)
+
+/** Whether a row exists in this context; the page and a search both leave out one that does not. */
+export const isAvailable = (item: SettingDef, ctx: SettingsCtx): boolean => item.available?.(ctx) ?? true
 
 /** A hint resolved against the context: plain text, or the live-state kind. */
 export const resolveHint = (item: SettingDef, ctx: SettingsCtx): string | undefined => (typeof item.hint === 'function' ? item.hint(ctx) : item.hint)

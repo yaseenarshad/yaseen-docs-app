@@ -52,7 +52,7 @@ async function mount(markdown: string, onChange: (md: string) => void = vi.fn())
   return container
 }
 
-/** The SAME mount handed a later `markdown` — what the disk moving under an open folder page looks like. */
+/** The SAME mount handed a later `markdown` — what the disk moving under an open folder looks like. */
 async function rerender(markdown: string): Promise<void> {
   await act(async () => {
     root?.render(<OutlineEditor markdown={markdown} onChange={lastOnChange} />)
@@ -99,7 +99,7 @@ describe('OutlineEditor (YAZ-901)', () => {
 
   it('does not report the mount-time normalisation as a change', async () => {
     // Milkdown rewrites `- ` at four spaces as `* ` at two — a normalisation, not an edit, and a
-    // caller that wrote it back would dirty the folder page's settings just by looking at it.
+    // caller that wrote it back would dirty the folder's settings just by looking at it.
     const onChange = vi.fn()
     await mount('- alpha\n    - beta\n', onChange)
     await tick(900)

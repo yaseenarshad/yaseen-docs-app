@@ -11,8 +11,6 @@
  *     asks — no Enter needed — and the rename lands everywhere step 1 proved
  *   3 Escape is the only discard: no sheet, nothing on disk moves
  *   4 leaving with the UNCHANGED name is silent: the field closes, no sheet
- *   5 the page that answers `[[Home]]` is INERT: its title opens no input and says why, through
- *     the app's standing passive notice — never a dialog (🔒 the Home guard)
  *
  * Same harness as rename.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `title-` step screenshots).
@@ -25,7 +23,7 @@ import { activeTab, appWindow, buildFixtureVault, confirmSheet, copyVault, edito
 
 test.describe.configure({ mode: 'serial' })
 
-/** Seeded on top of the fixture vault: Index links to Guide; Home is what `[[Home]]` answers with. */
+/** Seeded on top of the fixture vault: Index links to Guide. */
 const GUIDE_BODY = 'guide-note-body'
 const RENAMED = 'Handbook'
 const LEFT = 'Manual'
@@ -47,7 +45,6 @@ test.beforeAll(async () => {
   await Promise.all([
     writeFile(path.join(vault, 'Guide.md'), `# Guide\n\n${GUIDE_BODY}\n`),
     writeFile(path.join(vault, 'Index.md'), '# Index\n\nSee [[Guide]] here.\n'),
-    writeFile(path.join(vault, 'Home.md'), '# Home\n\nhome-note-body\n'),
   ])
 })
 
@@ -136,17 +133,5 @@ test('step 4 — leaving with the UNCHANGED name is silent: the field closes and
   await expect(titleInput(win)).toHaveCount(0)
   await expect(confirmSheet(win)).toHaveCount(0)
   await expect(title(win)).toHaveText(LEFT)
-})
-
-test('step 5 — HOME\'s title is inert: no input, one passive notice, nothing renamed (🔒 the Home guard)', async () => {
-  await fileRow(win, 'Home').click()
-  await expect(title(win)).toHaveText('Home')
-
-  await title(win).click()
-  await expect(titleInput(win)).toHaveCount(0)
-  await expect(confirmSheet(win)).toHaveCount(0)
-  await expect(win.locator('.link-notice')).toHaveText('Home anchors this vault — it keeps its name.')
-  expect(await readFile(path.join(vault, 'Home.md'), 'utf8')).toContain('home-note-body')
-  await shoot(win, 'title-06-home-guard')
   await quitApp(app)
 })

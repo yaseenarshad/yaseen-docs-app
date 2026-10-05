@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import type { ReviewSettings } from '@shared/reviews'
 import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
@@ -8,7 +9,7 @@ import { DrawingModal } from '../drawings/DrawingModal'
 import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
-import { FolderPageContents } from '../views/FolderPageContents'
+import { FolderView } from '../views/FolderView'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
@@ -34,11 +35,12 @@ import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
 import { BacklinksSection } from '../links/BacklinksSection'
+import { ReviewsSection } from '../review/ReviewsSection'
+import { useTreeKind } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
-import { HOME_LINK } from '../sidebar/ensureHome'
 import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import { ImageViewer } from '../viewers/ImageViewer'
@@ -49,18 +51,18 @@ import { ImageViewer } from '../viewers/ImageViewer'
  * (YAZ-2196). Memoised, they re-render only when their own inputs or subscriptions change.
  */
 const MemoFrontmatterPanel = memo(FrontmatterPanel)
-const MemoFolderPageContents = memo(FolderPageContents)
 const MemoCommentsSection = memo(CommentsSection)
 const MemoBacklinksSection = memo(BacklinksSection)
+const MemoReviewsSection = memo(ReviewsSection)
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
   root: string
   path: string | null
   watch: WatchSource
-  /** Bases open their row links through this (GRO-2135); App passes `openFile`. */
+  /** A folder's views open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
-  /** Folder-page Table/Board actions open a member in the window's right panel. */
+  /** A folder's Table/Board actions open a note in the window's right panel. */
   onOpenFileRight?: (path: string) => void
   /**
    * ⌘-click on an editor wiki link (Links C, GRO-2192) opens a background tab; App passes
@@ -72,24 +74,25 @@ interface EditorProps {
   /**
    * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240;
    * YAZ-1643): App passes a STABLE getter over the Files & Links setting (`newNoteBase`) that
-   * takes the SOURCE page's path — this editor binds its own, so a right-panel or folder-page
-   * editor creates beside itself, never beside the main tab. Absent → the vault root.
+   * takes the SOURCE page's path — this editor binds its own, so a right-panel editor or a
+   * folder's outline creates beside itself, never beside the main tab. Absent → the vault root.
    */
   newNoteFolderFor?: (sourcePath: string) => string
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
-  wikilinks?: WikilinkResolveSource
+  wikilinks: WikilinkResolveSource
   /** Separate navigation-only resolver for supported non-Markdown files. */
   viewOnlyLinks?: ViewOnlyLinkSource
   /** `[[` picker candidates (GRO-2191): same ownership and feed as `wikilinks`. */
   wikilinkCandidates?: WikilinkCandidateSource
-  /** The vault's property declarations (YAZ-835), App-owned like `wikilinks`: typing rung 2 for a folder page's contents block (YAZ-846). */
+  /** The vault's property declarations (YAZ-835), App-owned like `wikilinks`: typing rung 2 for a folder's views (YAZ-846). */
   properties?: PropertiesResponse | null
   /**
    * A title commit (⚡ YAZ-888) goes to App's ONE rename door — the same prop the sidebar's
    * inline rename and drag-move reach, so the name-change confirm and every failure notice come
    * with it. Absent → the title renders and edits, but commits nothing (decoration-only mounts).
+   * A FOLDER's title (YAZ-2290 D9) says `dir`: the door counts and rewrites links by kind.
    */
-  onRenameFile?: (oldPath: string, newPath: string) => void
+  onRenameFile?: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => void
   /**
    * This vault's GitHub sync status (YAZ-1081 3A, 🔒 D5), App-owned like `wikilinks`: ONE
    * `useGithubSync` per window feeds every mounted tab. null while the first fetch is in
@@ -102,15 +105,31 @@ interface EditorProps {
   commentsOrder: CommentsOrder
   /** The block's own Oldest/Newest toggle writes the SETTING through this. */
   onChangeCommentsOrder: (order: CommentsOrder) => void
+  /** The vault's review settings (YAZ-2322): App owns the one `useReviewSettings`; the Reviews section computes its dates from them. */
+  reviewSettings?: ReviewSettings
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps) {
+  const inTree = useTreeKind(root, path)
   if (path === null) {
     return (
       <section className="editor">
         <p className="editor-msg">Select a file from the sidebar.</p>
       </section>
     )
+  }
+  // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
+  // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
+  const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`)
+  if (inRoot) {
+    if (inTree === null) return <section className="editor" />
+    if (inTree === 'dir') {
+      return (
+        <section className="editor">
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRenameFile={onRenameFile} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+        </section>
+      )
+    }
   }
   const kind = fileKind(path)
   if (kind === 'text') {
@@ -135,17 +154,19 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     )
   }
   if (kind === null) {
+    // A path the tree does not hold at all is a folder deleted outside the app: its tab stays open,
+    // as a file's does, on the message a missing file gets (`useFile`).
     return (
       <section className="editor">
-        <p className="editor-msg editor-msg--error">Unsupported file type.</p>
+        <p className="editor-msg editor-msg--error">{inRoot && inTree === 'none' ? 'NOT_FOUND: path does not exist' : 'Unsupported file type.'}</p>
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
 }
 
-/** Markdown-only owner: loading, Crepe, migration, autosave, frontmatter, folder pages, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps & { path: string }) {
+/** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps & { path: string }) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -153,7 +174,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
       )}
     </section>
   )
@@ -178,6 +199,7 @@ function CrepeHost({
   onSyncNow,
   commentsOrder,
   onChangeCommentsOrder,
+  reviewSettings,
 }: {
   root: string
   file: FileResponse
@@ -196,6 +218,7 @@ function CrepeHost({
   onSyncNow?: () => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
+  reviewSettings?: ReviewSettings
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
@@ -443,17 +466,6 @@ function CrepeHost({
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel])
 
-  // The Home guard's fact (⚡ YAZ-888): Home is whatever `[[Home]]` RESOLVES to (🔒 D1, YAZ-821)
-  // — the window's own resolver, never a path check, so an aliased or nested Home is still Home.
-  // The live-feed idiom the backlinks section uses: subscribe once, re-read on each poke.
-  const [homePath, setHomePath] = useState<string | null>(() => wikilinks?.resolve?.(HOME_LINK) ?? null)
-  useEffect(() => {
-    if (wikilinks === undefined) return
-    const read = () => setHomePath(wikilinks.resolve?.(HOME_LINK) ?? null)
-    read()
-    return wikilinks.subscribe(read)
-  }, [wikilinks])
-
   return (
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
@@ -476,18 +488,16 @@ function CrepeHost({
       {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is
           the properties panel (⚡ YAZ-883), the note's frontmatter as raw YAML; then the Crepe
-          mount; then three blocks of the note's own: the folder page's contents when this page
-          carries the flag (YAZ-819, 🔒 D1 — nothing at all when it does not), then the comment
-          stream (YAZ-1472, 🔒 D4 — always there, the composer being the door to the first
-          comment), then "Linked mentions" (Links D, GRO-2193), which stays last. All of it
-          scrolls WITH the note, never in a panel. */}
+          mount; then three blocks of the note's own: the comment stream (YAZ-1472, 🔒 D4 — always
+          there, the composer being the door to the first comment), then "Linked mentions"
+          (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
+          the note, never in a panel. */}
       <div className="editor-host" style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">
           <PageTitle
             path={file.path}
-            isHome={homePath === file.path}
             onRename={(newPath) => onRenameFile?.(file.path, newPath)}
             onNotice={onNotice}
             onArrowDown={() => {
@@ -495,21 +505,20 @@ function CrepeHost({
               if (crepe !== null) focusEditor(crepe)
             }}
           />
-          {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App already threads here for
-              the contents block below — ONE registry, so a type declared in a row types the same
-              column in every folder page's views. */}
+          {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
+              folder view — ONE registry, so a type declared in a row types the same column in
+              every folder's views. */}
           <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} />
         </div>
         <div className="editor-mount" ref={hostRef} />
-        {wikilinks !== undefined && (
-          <MemoFolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} fileContent={file.content} />
-        )}
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
             writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
         <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
         {wikilinks !== undefined && (
           <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}
+        {/* The log from the disk truth, the date from the index record: renders nothing until it has the settings and the record. */}
+        <MemoReviewsSection file={diskFile} source={wikilinks} settings={reviewSettings} />
       </div>
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
           positioned ancestor, so the bar holds its corner while the note scrolls under it. */}

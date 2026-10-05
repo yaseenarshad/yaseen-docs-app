@@ -1,30 +1,31 @@
-/** Note property rows share the view editors and the selected folder page's definitions.
- * Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
- * A note with multiple folder memberships requires an explicit definition context.
+/** Two kinds of row in one list (D19): the note's OWN fields — the top level of its frontmatter —
+ * then the values of ONE of the folders that show it, "Properties from": that folder's block of
+ * `in` (`shared/folderValues.ts`), typed and listed by its columns. Every edit goes where its row
+ * lives. Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
  */
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import {
-  PROPERTY_NAME,
-  type FileResponse,
-  type IndexRecord,
-  type PropertiesResponse,
-  type PropertyDecl,
-} from '@shared/types'
+import { ALSO_IN_KEY } from '@shared/alsoIn'
+import { FOLDER_VALUES_KEY, folderValues, setFolderValue } from '@shared/folderValues'
+import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { PROPERTY_NAME, folderSettingsPath, inFolder, isFolderSettingsPath, type FileResponse, type IndexRecord, type PropertiesResponse, type PropertyDecl } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
-import { FOLDER_PAGE_KEY, folderPagesLookup } from '../links/folderPages'
+import { basenameCandidates } from '../links/completion'
+import { pageResolver } from '../links/folderLinks'
+import { absFrom, basename, dirname, relTo } from '../lib/paths'
 import { RESERVED_KEYS } from '../links/reservedKeys'
+import { dropStaleFolderValues, folderId, folderRecord, foldersById, foldersShowing } from '../links/shortcuts'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
-import { folderPageSettings, writeFolderColumn, type FolderPageSettings } from '../views/folderPageSettings'
+import { FOLDER_SETTINGS_KEY, folderSettings, hasFolderSettings, writeFolderColumn, type FolderSettings } from '../views/folderSettings'
 import { PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { cellContent } from '../views/view/GroupHeader'
 import { PropertiesIcon } from '../views/view/icons'
-import { trackFileWrite, writeProperty } from '../views/writeProperty'
+import { readForWrite, trackFileWrite, transformFile, writeFolderValues, type ContentTransform } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import '../views/views.css'
 
@@ -33,15 +34,14 @@ export interface FrontmatterPanelProps {
   file: Pick<FileResponse, 'path' | 'content' | 'mtime'>
   /** The vault root: the scope of `.yaseendocs/properties.json`. Absent → rows carry no type affordance. */
   root?: string | null
-  /** Legacy vault declarations are a fallback beneath the selected folder page's definition. */
+  /** Legacy vault declarations are a fallback beneath the folder's definition. */
   properties?: PropertiesResponse | null
-  /** Live link feed resolves folder membership and provides link suggestions. */
+  /** Live index feed: the folder's settings record, and the link suggestions. */
   wikilinks?: WikilinkResolveSource
 }
 
-/** The app's own keys: shown, never edited here — each has its own door (the sidebar's toggle, the folder page's settings, the Comments block below the note — YAZ-1472). */
-/** The one list (YAZ-1513): `links/reservedKeys.ts` spells it from the real constants. */
-const RESERVED = RESERVED_KEYS
+/** Why a reserved key has no editor, and why Add property refuses one: said once, in the same words. */
+const reservedText = (key: string): string => `${key} is the app's own property — it is set where it belongs, not here`
 
 /** No view is rendering here, so the ladder's record-derived rungs have nothing to read. */
 const NO_RECORDS: readonly IndexRecord[] = []
@@ -65,6 +65,8 @@ function isOpaque(raw: unknown): boolean {
 
 interface Row {
   key: string
+  /** Whose field it is: the chosen folder's (its block of `in`), or the note's own. */
+  folder: boolean
   raw: unknown
   /** null = read-only; the row then offers nothing but its chip. */
   editor: EditorKind | null
@@ -75,16 +77,27 @@ interface Row {
  * The editor for a key on THIS surface. `columnTyping` is the ONE ladder (`views/editorType.ts`):
  * folder declaration → legacy declaration → the note's own value → text.
  */
-const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, folder: FolderPageSettings | null = null): EditorKind | null =>
+const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, folder: FolderSettings | null = null): EditorKind | null =>
   cellEditor(raw, columnTyping(key, NO_RECORDS, decls, folder))
 
-function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderPageSettings | null = null): Row[] {
-  return Object.entries(properties).map(([key, raw]) => {
-    if (RESERVED.has(key)) return { key, raw, editor: null, chip: 'reserved' }
-    if (isOpaque(raw)) return { key, raw, editor: null, chip: 'yaml' }
+/**
+ * The rows of ONE group. No `folder`: the note's own fields, typed by the lower rungs. A `folder`:
+ * the fields of its block — typed by its columns, one it no longer has by the lower rungs — then
+ * its columns the block holds no value for.
+ */
+function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderSettings | null = null): Row[] {
+  const inFolder = folder !== null
+  const held = Object.entries(properties).map(([key, raw]): Row => {
+    // The app's keys are the NOTE's; an `id` that is no note id is the user's own value, not the app's.
+    if (!inFolder && RESERVED_KEYS.has(key) && (key !== NOTE_ID_KEY || isNoteId(raw))) return { key, folder: inFolder, raw, editor: null, chip: 'reserved' }
+    if (isOpaque(raw)) return { key, folder: inFolder, raw, editor: null, chip: 'yaml' }
     // Existing human-readable keys can have a folder-local declaration.
-    return { key, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
+    return { key, folder: inFolder, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
   })
+  // The folder's columns this note holds no value for (YAZ-2290 E1): empty rows, and a key reaches
+  // the note only when one is filled in — a column is never stamped into a note.
+  const missing = Object.keys(folder?.columns ?? {}).filter((key) => !Object.prototype.hasOwnProperty.call(properties, key))
+  return [...held, ...missing.map((key): Row => ({ key, folder: inFolder, raw: undefined, editor: editorFor(key, undefined, decls, folder), chip: null }))]
 }
 
 /** A new key's FIRST value, shaped by the kind it will be read back at — the registry is the authority. */
@@ -99,10 +112,10 @@ function seedValue(text: string, editor: EditorKind | null): unknown {
   return text
 }
 
-/** `setFrontmatterProperty` over the panel's OWN copy, never throwing: the disk write already succeeded. */
-function applied(content: string, key: string, value: unknown): string {
+/** A write's own change over the panel's OWN copy, never throwing: the disk write already succeeded. */
+function applied(content: string, change: ContentTransform): string {
   try {
-    return setFrontmatterProperty(content, key, value)
+    return change(content)
   } catch {
     return content
   }
@@ -117,17 +130,21 @@ interface Snapshot {
   draft: string | null
 }
 
-export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: FrontmatterPanelProps) {
-  const [propertyMenu, setPropertyMenu] = useState<{ key: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; folderPath: string | null; folderName: string; editing: boolean } | null>(null)
-  const [contextPath, setContextPath] = useState<string | null>(null)
-  const index = useSyncExternalStore(listener => wikilinks?.subscribe(listener) ?? (() => {}), () => wikilinks?.records ?? NO_RECORDS)
-  const contexts = useMemo(() => {
-    if (!wikilinks?.resolve) return []
-    const parents = folderPagesLookup(index, wikilinks.resolve).folderPagesOf(file.path)
-    return index.filter(r => parents.includes(r.path))
-  }, [index, wikilinks, file.path])
-  const context = contexts.find(r => r.path === contextPath) ?? (contextPath === null && contexts.length === 1 ? contexts[0] : null)
-  const folderDefinition = context ? folderPageSettings(context) : null
+export function FrontmatterPanel({ file, root, properties: decls = null, wikilinks }: FrontmatterPanelProps) {
+  const [propertyMenu, setPropertyMenu] = useState<{ key: string; folder: boolean; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
+  // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
+  // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
+  const subscribe = useCallback((poke: () => void) => wikilinks?.subscribe(poke) ?? (() => {}), [wikilinks])
+  const stamp = useSyncExternalStore(subscribe, () => (wikilinks?.folders ?? NO_RECORDS).map((r) => `${r.path}\0${r.mtime}`).join('\n'))
+  const folders = useMemo(() => wikilinks?.folders ?? NO_RECORDS, [wikilinks, stamp])
+  const dir = dirname(file.path)
+  // A folder's OWN panel (YAZ-2290 D9) is mounted on the settings file itself. Its properties are
+  // facts about the folder: the columns it declares for its notes neither type nor list here,
+  // and the view settings block is edited through the views, so it is no row.
+  const own = isFolderSettingsPath(file.path)
+  const byId = useMemo(() => foldersById(folders), [folders])
+  // The choice of folder is the panel's own state: the panel is mounted per note.
+  const [picked, setPicked] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   // 🔒 Typed rows are the default; raw is the fallback under them.
   const [yamlMode, setYamlMode] = useState(false)
@@ -142,7 +159,9 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
   // own writes (which run ahead of it) do not read as an external change and bounce back.
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content, draft: snap.draft })
 
-  const basenames = useMemo(() => (wikilinks?.records ?? NO_RECORDS).map((r) => r.basename), [wikilinks?.records])
+  const basenames = useMemo(() => basenameCandidates(wikilinks?.records ?? NO_RECORDS), [wikilinks?.records])
+  /** What a value's id link reads its title through (YAZ-2293 D8): the note's, or the folder's (D10). */
+  const resolve = useMemo(() => pageResolver(wikilinks?.records ?? NO_RECORDS, root ?? undefined, wikilinks?.resolve ?? null), [wikilinks?.records, root, wikilinks?.resolve])
 
   const disk = interiorOf(snap.content)
   const text = snap.draft ?? disk
@@ -158,14 +177,14 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
   const saveBlock = async (): Promise<void> => {
     setSaving(true)
     try {
-      const fresh = await api.readFile(file.path)
-      const next = replaceFrontmatter(fresh.content, text)
-      // Validate what will actually be WRITTEN, fences and all — never a hand-wrapped copy.
-      const parsed = parseFrontmatter(splitFrontmatter(next).frontmatter)
+      // Validate the block as it will be WRITTEN, fences and all — never a hand-wrapped copy.
+      const parsed = parseFrontmatter(splitFrontmatter(replaceFrontmatter(snap.content, text)).frontmatter)
       if (parsed.error !== undefined) {
         setError(`Not valid YAML: ${parsed.error}`)
         return
       }
+      const fresh = await readForWrite(file.path)
+      const next = replaceFrontmatter(fresh.content, text)
       // Identity never touches disk, same as the editor's autosave and `writeProperty`.
       if (next !== fresh.content) await writeBlock(file.path, next, fresh.mtime, text)
       setSnap((s) => ({ seen: s.seen, content: next, draft: null }))
@@ -178,30 +197,64 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
   }
 
   /**
-   * ONE key, surgically (🔒): `writeProperty`'s dance whole — read fresh, `setFrontmatterProperty`,
+   * ONE field, surgically (🔒): `writeProperty`'s dance whole — read fresh, `setFrontmatterProperty`,
    * `expectedMtime`, retry once — reused rather than duplicated. Then the panel's own belief of
    * disk moves the SAME way, so the raw fallback can never show a block a typed edit left behind
-   * and a later raw Save cannot silently revert it.
+   * and a later raw Save cannot silently revert it. A folder's row is written to that folder's
+   * block of `in` (D19); a folder with no id is given one first, the path its first shortcut uses.
+   * Either row's save also drops the note's values for the folders that no longer show it (D20).
    */
-  const commit = async (key: string, value: unknown): Promise<void> => {
-    await writeProperty(file.path, key, value)
-    setSnap((s) => ({ seen: s.seen, content: applied(s.content, key, value), draft: null }))
+  const commit = async (key: string, value: unknown, folder: boolean): Promise<void> => {
+    const tidy: ContentTransform = vault === undefined ? (content) => content : dropStaleFolderValues(vault, file.path, folders)
+    let change: ContentTransform = (content) => tidy(setFrontmatterProperty(content, key, value))
+    if (folder && chosen !== undefined) {
+      const id = chosenId ?? (await folderId(chosen))
+      change = (content) => tidy(setFolderValue(content, id, key, value))
+      await writeFolderValues(file.path, id, [{ key, value }], tidy)
+    } else await transformFile(file.path, change)
+    setSnap((s) => ({ seen: s.seen, content: applied(s.content, change), draft: null }))
     setError(null)
   }
 
-  const { properties: parsed, error: parseError } = parseFrontmatter(splitFrontmatter(snap.content).frontmatter)
-  const count = parseError === undefined ? Object.keys(parsed).length : 0
+  const { properties: parsed, error: parseError } = useMemo(() => parseFrontmatter(splitFrontmatter(snap.content).frontmatter), [snap.content])
+  // The folders that show the note (`foldersShowing`), as directories. No feed, or a note outside
+  // the vault — whose folder the index never reads an id for — is no folder: the note's own rows alone.
+  const vault = root?.replace(/\/+$/, '')
+  const dirs = useMemo(() => {
+    if (wikilinks === undefined || own || vault === undefined || !inFolder(dir, vault)) return []
+    return foldersShowing(dir === vault ? '' : relTo(vault, dir), parsed, byId).map((folder) => (folder === '' ? vault : absFrom(vault, folder)))
+  }, [wikilinks, own, vault, dir, parsed, byId])
+  // ONE folder is in force: the one picked, else the first that saved settings, else the one the note lives in.
+  const chosen = dirs.find((d) => d === picked) ?? dirs.find((d) => hasFolderSettings(folderRecord(folders, d))) ?? dirs[0]
+  const chosenRecord = useMemo(() => (chosen === undefined ? undefined : folderRecord(folders, chosen)), [folders, chosen])
+  const folderDefinition = useMemo(() => (chosen === undefined ? null : folderSettings(chosenRecord)), [chosen, chosenRecord])
+  /** The chosen folder's id names its block; none until its `.folder.md` holds one — then its values read as empty. */
+  const chosenId = chosenRecord?.id
+  /** The note's values for the chosen folder, and its own fields: everything at the top level but `in`. */
+  const block = useMemo(() => folderValues(parsed, chosenId), [parsed, chosenId])
+  const ownFields = useMemo(() => Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== FOLDER_VALUES_KEY)), [parsed])
+  /** `also_in` as the eye reads it: each folder id as that folder's name; an entry no folder has stays as written. */
+  const folderNames = (raw: unknown): unknown => {
+    const name = (entry: unknown): unknown => {
+      const folder = typeof entry === 'string' ? byId.get(entry) : undefined
+      return folder === undefined ? entry : basename(dirname(folder.path))
+    }
+    return Array.isArray(raw) ? raw.map(name) : name(raw)
+  }
+  const hidden = own && Object.prototype.hasOwnProperty.call(parsed, FOLDER_SETTINGS_KEY)
+  // The fields the note holds: its own, and its values for the chosen folder.
+  const count = parseError === undefined ? Object.keys(ownFields).length - (hidden ? 1 : 0) + Object.keys(block).length : 0
   const empty = disk === '' && snap.draft === null
   // The words live in the tooltip and the accessible name (YAZ-1758); the chip itself shows a glyph.
   const label = empty ? 'Add properties' : count > 0 ? `Properties (${count})` : 'Properties'
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
-  const rows = rawMode ? [] : rowsOf(parsed, decls, folderDefinition)
+  const rows = rawMode ? [] : [...rowsOf(ownFields, decls).filter((row) => !(own && row.key === FOLDER_SETTINGS_KEY)), ...(folderDefinition === null ? [] : rowsOf(block, decls, folderDefinition))]
   const needle = query.trim().toLocaleLowerCase()
   const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
 
-  const remove = (key: string): void => {
-    void commit(key, undefined).catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
+  const remove = (key: string, folder: boolean): void => {
+    void commit(key, undefined, folder).catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
   }
 
   const addKey = (): void => {
@@ -212,27 +265,76 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
       setError(`property names are snake_case (${String(PROPERTY_NAME)})`)
       return
     }
-    if (Object.prototype.hasOwnProperty.call(parsed, name)) {
+    // With a folder chosen the new field is that folder's (D19); with none it is the note's own.
+    const folder = folderDefinition !== null
+    if (Object.prototype.hasOwnProperty.call(folder ? block : parsed, name)) {
       setError(`"${name}" is already a property of this page`)
       return
     }
+    // The app's own keys have their own doors: a row added here would be read-only on a note and
+    // hidden on a folder, and its value would stand where the app's belongs.
+    if (RESERVED_KEYS.has(name) || (own && name === FOLDER_SETTINGS_KEY)) {
+      setError(reservedText(name))
+      return
+    }
     setSaving(true)
-    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls, folderDefinition)))
+    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls, folderDefinition)), folder)
       .then(() => setAdding(null))
       .catch((err: unknown) => setError(`Could not add "${name}": ${messageOf(err)}`))
       .finally(() => setSaving(false))
   }
 
   const saveDefinition = async (): Promise<void> => {
-    if (!propertyMenu?.folderPath) return
+    if (!propertyMenu) return
     setSaving(true)
     try {
-      const { key, definition, base, folderPath } = propertyMenu
-      await writeFolderColumn(folderPath, key, definition, base)
+      const { key, definition, base } = propertyMenu
+      await writeFolderColumn(folderSettingsPath(chosen), key, definition, base)
       setPropertyMenu(null)
       setError(null)
     } catch (err) { setError(`Could not save the property: ${messageOf(err)}`) }
     finally { setSaving(false) }
+  }
+
+  /** What the menu's row holds, as a definition's observed options. */
+  const menuValue = propertyMenu === null ? undefined : (propertyMenu.folder ? block : parsed)[propertyMenu.key]
+
+  const rowItem = (row: Row) => {
+    // A folder's row is typed by that folder; one of the note's own never is.
+    const definition = row.folder ? folderDefinition : null
+    return (
+      // Keyed by the folder too: another folder's row of the same name is another value, with its own editor state.
+      <li key={`${row.folder ? chosen : ''}:${row.key}`} className="frontmatter-panel__row" data-key={row.key}>
+        {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, folder: row.folder, anchor: event.currentTarget, base: definition?.columns[row.key], definition: definition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
+          <PropertyTypeIcon kind={row.editor} /><span>{row.key}</span>
+        </button>}
+        <span className="frontmatter-panel__value">
+          {row.editor === null ? (
+            <>
+              {cellContent(fromYaml(!row.folder && row.key === ALSO_IN_KEY ? folderNames(row.raw) : row.raw), resolve)}
+              <span
+                className="frontmatter-panel__chip"
+                title={row.chip === 'reserved' ? reservedText(row.key) : 'No typed editor can hold this value — edit it as YAML'}
+              >
+                {row.chip === 'reserved' ? 'Reserved' : 'YAML'}
+              </span>
+            </>
+          ) : (
+            <EditableCell
+              propKey={row.key}
+              raw={row.raw}
+              value={fromYaml(row.raw)}
+              editor={row.editor}
+              options={columnTyping(row.key, NO_RECORDS, decls, definition)?.options}
+              basenames={basenames}
+              resolve={resolve}
+              onCommit={(next) => commit(row.key, next, row.folder)}
+            />
+          )}
+        </span>
+
+      </li>
+    )
   }
 
   return (
@@ -247,26 +349,20 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
-          <p className="frontmatter-property-menu__scope">In {propertyMenu.folderName}</p>
+          <p className="frontmatter-property-menu__scope">In {basename(chosen)}</p>
           <fieldset disabled={saving} className="property-settings-fields">
-          <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(parsed[propertyMenu.key]) ? (parsed[propertyMenu.key] as unknown[]).map(String) : parsed[propertyMenu.key] == null ? [] : [String(parsed[propertyMenu.key])]} />
+          <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(menuValue) ? menuValue.map(String) : menuValue == null ? [] : [String(menuValue)]} />
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
           <div className="frontmatter-property-menu__actions"><button type="button" disabled={saving} onClick={() => setPropertyMenu(null)}>Cancel</button><button type="button" disabled={saving} onClick={() => void saveDefinition()}>{saving ? 'Saving…' : 'Save'}</button></div>
           </fieldset>
         </> : <>
-          {context ? <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button> : <p className="frontmatter-property-menu__scope">Choose a folder page to configure this property.</p>}
-          <button className="view-popover__item" type="button" onClick={() => { remove(propertyMenu.key); setPropertyMenu(null) }}>Remove from this note</button>
+          {/* A definition is a folder's column: only a folder's row has one to edit. */}
+          {propertyMenu.folder && <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button>}
+          <button className="view-popover__item" type="button" onClick={() => { remove(propertyMenu.key, propertyMenu.folder); setPropertyMenu(null) }}>Remove from this {own ? 'folder' : 'note'}</button>
         </>}
       </Popover>, document.body)}
       {expanded && (
         <div className="frontmatter-panel__body">
-          {contexts.length > 0 && !rawMode && <div className="frontmatter-property-context">
-            <label>Properties from <select aria-label="Property context" value={context?.path ?? ''} onChange={e => { setContextPath(e.target.value); setPropertyMenu(null) }}>
-              {contexts.length > 1 && <option value="">Choose a folder page…</option>}
-              {contexts.map(r => <option key={r.path} value={r.path}>{r.basename}</option>)}
-            </select></label>
-
-          </div>}
           {rawMode ? (
             <textarea
               className="frontmatter-panel__text"
@@ -291,44 +387,22 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
             <>
               {rows.length > 0 && <ColumnSearch value={query} onChange={setQuery} label="Search properties" placeholder="Search properties…" />}
               {rows.length > 0 && shown.length === 0 && <p className="column-search__empty" role="status">No properties found.</p>}
-              {shown.length > 0 && (
+              {(shown.length > 0 || chosen !== undefined) && (
+                // ONE list, two groups, each under its heading (D23): the note's own fields, then the chosen folder's.
                 <ul className="frontmatter-panel__rows">
-                  {shown.map((row) => (
-                    <li key={row.key} className="frontmatter-panel__row" data-key={row.key}>
-                      {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, anchor: event.currentTarget, base: folderDefinition?.columns[row.key], folderPath: context?.path ?? null, folderName: context?.basename ?? '', definition: folderDefinition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
-                        <PropertyTypeIcon kind={row.editor} /><span>{row.key}</span>
-                      </button>}
-                      <span className="frontmatter-panel__value">
-                        {row.editor === null ? (
-                          <>
-                            {cellContent(fromYaml(row.raw))}
-                            <span
-                              className="frontmatter-panel__chip"
-                              title={
-                                row.chip === 'reserved'
-                                  ? `${row.key} is the app's own property — it is set where it belongs, not here`
-                                  : 'No typed editor can hold this value — edit it as YAML'
-                              }
-                            >
-                              {row.chip === 'reserved' ? 'Reserved' : 'YAML'}
-                            </span>
-                          </>
-                        ) : (
-                          <EditableCell
-                            path={file.path}
-                            propKey={row.key}
-                            raw={row.raw}
-                            value={fromYaml(row.raw)}
-                            editor={row.editor}
-                            options={columnTyping(row.key, NO_RECORDS, decls, folderDefinition)?.options}
-                            basenames={basenames}
-                            onCommit={(next) => commit(row.key, next)}
-                          />
-                        )}
-                      </span>
-
+                  {chosen !== undefined && shown.some((row) => !row.folder) && <li className="frontmatter-panel__own">Note fields</li>}
+                  {shown.filter((row) => !row.folder).map(rowItem)}
+                  {chosen !== undefined && (
+                    <li className="frontmatter-property-context">
+                      {dirs.length === 1 ? `Properties from ${basename(chosen)}` : (
+                        <label>Properties from <select className="view-select" value={chosen} onChange={(e) => { setPicked(e.target.value); setPropertyMenu(null) }}>
+                          {/* A name two choices share reads as each one's path from the root. */}
+                          {dirs.map((d) => <option key={d} value={d}>{vault !== undefined && dirs.some((o) => o !== d && basename(o) === basename(d)) ? relTo(vault, d) : basename(d)}</option>)}
+                        </select></label>
+                      )}
                     </li>
-                  ))}
+                  )}
+                  {shown.filter((row) => row.folder).map(rowItem)}
                 </ul>
               )}
               {adding !== null && (

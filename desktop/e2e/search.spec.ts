@@ -18,6 +18,8 @@
  * Serial by design (the suite's idiom): each step continues the previous state, and every step
  * starts from `closeAllTabs` + an empty query so the one before it cannot colour it.
  */
+// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
+// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -120,7 +122,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- YAZ-802 / 803: rank and open
 
 test('step 1 — a typed title replaces the tree with a ranked list; Enter opens the top row in the CURRENT tab', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'roles', 'CEO.md')) })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
   await expect(tabsOf(win)).toHaveCount(1)
@@ -156,8 +158,8 @@ test('step 2 — a frontmatter alias is its own row, labelled "Alias — Basenam
 
 test('step 3 — ⌘-click on a row opens a BACKGROUND tab; the active tab never moves', async () => {
   await reset(win)
-  // Since YAZ-1646 the launch no longer unfolds the restored tab's ancestors: open `roles/` by hand.
-  await expandDirs(win, [path.join(vault, 'roles')])
+  // Since YAZ-1646 the launch no longer unfolds the restored tab's ancestors: open `Roles/` by hand.
+  await expandDirs(win, [path.join(vault, 'Roles')])
   await fileRow(win, 'CEO').click() // an active tab to leave alone
   await expect(activeTab(win)).toHaveText('CEO')
 
@@ -198,7 +200,7 @@ test('step 4 — ArrowDown / ArrowUp walk the rows from the input, clamped at BO
 
 test('step 5 — Esc on a typed query brings the tree back, with the expansion it had', async () => {
   await reset(win)
-  await dirRow(win, 'industries').click()
+  await dirRow(win, 'Industries').click()
   await expect(fileRow(win, 'PLG SaaS')).toBeVisible()
 
   await search(win, 'Nurture', ['Nurture', 'Nurture Sequencing', 'Lead Nurture'])

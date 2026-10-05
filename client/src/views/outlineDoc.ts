@@ -13,13 +13,15 @@
  * Serialising picks ONE spelling — `- ` at four spaces per level — so a document this app writes
  * is byte-stable through a parse → serialise round-trip.
  *
- * THE LINK RULE is the click rule and no second rule: a line whose text trims to EXACTLY a
- * wikilink and resolves is a link line, everything else is text (`links/folderPages.ts`
- * `entryTarget`). Whether the target is a folder page — or a member at all — is belonging's
- * question, asked elsewhere.
+ * THE LINK RULE: a line whose text trims to EXACTLY a wikilink is a link line, everything else is
+ * text (`isExactWikilink`) — the index's own frontmatter-link rule (`vaultIndex/scan.ts`).
  */
-import { entryTarget, isExactWikilink } from '../links/folderPages'
-import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+
+/** Exactly a wikilink, nothing around it. */
+const EXACT_WIKILINK_RE = /^\[\[[^[\]]*\]\]$/
+
+/** THE LINK RULE: decided on spelling alone, long before anything resolves the line (YAZ-900). */
+const isExactWikilink = (text: string): boolean => EXACT_WIKILINK_RE.test(text.trim())
 
 /** One bullet: its nesting level (0 = top) and its text — everything after the marker, untouched but for the padding. */
 export interface OutlineLine {
@@ -98,28 +100,9 @@ export function escapeOutlineMarkdown(markdown: string): string {
     .join('\n')
 }
 
-/** The path this LINE counts for, or null when it is text — the click rule, unchanged. */
-export function lineTarget(text: string, resolve: ResolveLink): string | null {
-  return entryTarget(text, resolve)
-}
-
-/** Names sort the way the base engine sorts them: case- and accent-insensitive, numeric-aware. */
-const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
-
-/**
- * The [D5] `order` list as an outline document: one flat wikilink line per entry (verbatim, stale
- * ones included — the outline is free text and nothing here judges them), then every unlisted
- * member, alphabetical by basename. The same arrangement `orderedMembers` produced, frozen into a
- * document ONCE. Pure: the migration that stores the result is its own issue.
- */
-export function fromOrder(order: string[] | undefined, unlistedMembers: string[]): OutlineLine[] {
-  const rest = [...unlistedMembers].sort(collator.compare)
-  return [...(order ?? []), ...rest.map((name) => `[[${name}]]`)].map((text) => ({ depth: 0, text }))
-}
-
 /**
  * A rename walking INTO the outline (YAZ-900): every LINE that is exactly a wikilink is offered to
- * `map`, `undefined` meaning leave it — the same leaf contract `mapFolderPageSettingsLinks` uses
+ * `map`, `undefined` meaning leave it — the same leaf contract `mapFolderSettingsLinks` uses
  * for an `order` entry, so an outline link and an order entry cannot spell themselves differently.
  * A wikilink inside prose is NOT a leaf and is never touched. Undefined when no line changed;
  * every other byte — markers, indentation, blank lines, prose — survives, since only the link text
@@ -138,21 +121,4 @@ export function mapOutlineLinks(outline: string, map: (link: string) => string |
     return raw.slice(0, lead) + next + raw.slice(lead + match[3].length)
   })
   return changed ? out.join('\n') : undefined
-}
-
-/**
- * A member LEAVING from outside the editor — the Topics drag (YAZ-1364, 🔒 D4): every LINE that is
- * exactly a wikilink resolving to `path` is dropped, the same set the × un-tag counts, and every
- * other byte survives — prose that merely mentions the page, and the children lines beneath a
- * dropped one, which keep their indent. Undefined when no line named it, so the caller writes
- * nothing. Without this the reconcile pass (YAZ-1357) would read the stale line and tag the page
- * straight back into the topic it was just dragged out of.
- */
-export function dropOutlineLinks(outline: string, path: string, resolve: ResolveLink): string | undefined {
-  const lines = outline.split('\n')
-  const kept = lines.filter((raw) => {
-    const match = BULLET_LINE.exec(raw)
-    return match === null || lineTarget(match[3], resolve) !== path
-  })
-  return kept.length === lines.length ? undefined : kept.join('\n')
 }

@@ -1,22 +1,20 @@
 import { useMemo } from 'react'
-import type { IndexRecord } from '@shared/types'
-import { membersCarrying } from '../deleteColumn'
 import { propertyLabel } from '../engine'
 import type { ViewSet } from '../viewSchema'
 import { canonicalKey } from './keys'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 
-/** The sheet's copy (YAZ-1513) — pure and separately tested, like `deleteConfirmMessage` next door. */
+/** The sheet's copy (YAZ-1513) — pure and separately tested, like `deleteConfirmMessage` next door: the notes that lose the folder's value. */
 export function deleteColumnMessage(label: string, key: string, count: number): string {
-  return `Delete "${label}"? This removes the column from this page and the "${key}" value from ${count} ${count === 1 ? 'note' : 'notes'}.`
+  return `Delete "${label}"? This removes the column from this folder and the "${key}" value from ${count} ${count === 1 ? 'note' : 'notes'}.`
 }
 
 interface ConfirmDeleteColumnProps {
-  /** The column, any spelling — the sheet derives its label, bare key and count itself (YAZ-1549). */
+  /** The column, any spelling — the sheet derives its label and bare key itself (YAZ-1549). */
   columnKey: string
   def: ViewSet
-  /** The direct members: the count is taken ONCE, when the sheet opens. */
-  records: readonly IndexRecord[]
+  /** `FolderHost.valueCount`: asked ONCE, when the sheet opens. */
+  count: (key: string) => number
   onConfirm: () => void
   onCancel: () => void
 }
@@ -27,15 +25,15 @@ interface ConfirmDeleteColumnProps {
  * (`keys="contained"`), so a Popover hosting this sheet does not see the same Escape and close
  * underneath it.
  */
-export function ConfirmDeleteColumn({ columnKey, def, records, onConfirm, onCancel }: ConfirmDeleteColumnProps) {
+export function ConfirmDeleteColumn({ columnKey, def, count, onConfirm, onCancel }: ConfirmDeleteColumnProps) {
   const label = propertyLabel(def, columnKey)
   const propKey = canonicalKey(columnKey).slice('note.'.length)
   // Taken once at open: the number the user reads is the number the confirm meant.
-  const count = useMemo(() => membersCarrying(records, columnKey).length, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const holding = useMemo(() => count(columnKey), []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <ConfirmSheet
       labelId="confirm-delete-column-text"
-      text={deleteColumnMessage(label, propKey, count)}
+      text={deleteColumnMessage(label, propKey, holding)}
       confirmLabel="Delete"
       danger
       keys="contained"

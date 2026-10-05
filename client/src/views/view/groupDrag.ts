@@ -11,7 +11,7 @@ import { groupKeyOf, nestedGroupKeyOf } from './GroupHeader'
  * sections. The views own the transient HTML5 drag state through `useGroupDrag`; ViewsPane owns
  * the optimistic moves (`PendingMove`, applied to the records BEFORE the engine runs, so the
  * card lands in its target group with sort/summaries/values all consistent) and commits them
- * through 5A's `writeProperty`.
+ * through the host's writer (`FolderHost.writeValues`).
  */
 
 /**
@@ -53,6 +53,15 @@ export function groupByKey(view: ViewDef, level = 0): string | null {
   const c = canonicalKey(property)
   return c.startsWith('note.') ? c.slice(5) : null
 }
+
+/** Whether `groupBy` at `level` is the Folder: nothing to write or drag there, but its group "+" has a place — that folder. */
+export const groupsByFolder = (view: ViewDef, level = 0): boolean => {
+  const property = groupByLevels(view)[level]?.property
+  return typeof property === 'string' && canonicalKey(property) === 'file.folder'
+}
+
+/** Whether a level's groups take a new note: one it can seed, or — grouped by Folder — place. */
+export const groupTakesNew = (view: ViewDef, level: number): boolean => groupByKey(view, level) !== null || groupsByFolder(view, level)
 
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
 export function applyMoves(records: readonly IndexRecord[], moves: Record<string, PendingMove>): IndexRecord[] {

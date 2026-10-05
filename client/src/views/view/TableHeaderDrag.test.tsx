@@ -13,12 +13,12 @@ import { createRoot, type Root } from 'react-dom/client'
 import { propertyKeys } from '../engine'
 import { type ParsedViews, type ViewSet, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const FOLDER_PAGE = testFolderPage()
+const HOST = testFolderHost()
 
 const BASE = `views:
   - type: table
@@ -44,7 +44,7 @@ function mount(text = BASE, props: Partial<ViewsPaneProps> = {}) {
   draw = () =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" thisFile="/vault/pillars.md" records={TEST_RECORDS} folderPage={FOLDER_PAGE} onOpenFile={vi.fn()} {...props} />,
+        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={HOST} onOpenFile={vi.fn()} {...props} />,
       ),
     )
   draw()

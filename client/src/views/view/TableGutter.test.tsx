@@ -12,12 +12,12 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import { testFolderPage } from '../testFolderPage'
+import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const FOLDER_PAGE = testFolderPage()
+const HOST = testFolderHost()
 
 /** In-memory stand-in for the main-owned store (same shape as TableGroups.test.tsx). */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -57,7 +57,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
   draw = () =>
     act(() =>
       root?.render(
-        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" thisFile="/vault/pillars.md" records={TEST_RECORDS} folderPage={FOLDER_PAGE} onOpenFile={vi.fn()} {...props} />,
+        <ViewsPane parsed={parsed} onChange={onChange} root="/vault" folderPath="/vault/pillars.md" records={TEST_RECORDS} folder={HOST} onOpenFile={vi.fn()} {...props} />,
       ),
     )
   draw()
@@ -223,15 +223,15 @@ describe('declared columns show by default (YAZ-1549)', () => {
     name: T
 `
   it('a newborn page with no members and no order already carries its declared Status header', () => {
-    const folderPage = testFolderPage({ settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] } }, views: [], problems: [] } })
-    const { el } = mount(NO_ORDER, { records: [], folderPage })
+    const folder = testFolderHost({ settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] } }, views: [], problems: [] } })
+    const { el } = mount(NO_ORDER, { records: [], folder })
     const headers = [...el.querySelectorAll('thead th:not(.view-table__gutter)')].map((th) => th.textContent?.trim())
     expect(headers).toEqual(['Name', 'Status'])
   })
 
   it('a declared key a member also carries is one column, not two', () => {
-    const folderPage = testFolderPage({ settings: { columns: { status: { kind: 'text' } }, views: [], problems: [] } })
-    const { el } = mount(NO_ORDER, { folderPage })
+    const folder = testFolderHost({ settings: { columns: { status: { kind: 'text' } }, views: [], problems: [] } })
+    const { el } = mount(NO_ORDER, { folder })
     const headers = [...el.querySelectorAll('thead th:not(.view-table__gutter)')].map((th) => th.textContent?.trim())
     expect(headers.filter((h) => h === 'Status')).toHaveLength(1)
   })

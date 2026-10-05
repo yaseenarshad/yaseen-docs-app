@@ -1,6 +1,6 @@
 /**
  * THE FOCUS HANDOFF (YAZ-961): the two directions of the keyboard loop, pinned in one place
- * because three surfaces perform them — the Topics rows, the Files rows and the search list hand
+ * because two surfaces perform them — the Files rows and the search list hand
  * focus INTO the open document; `createCrepe`'s Escape hands it BACK. jsdom has no layout, so
  * `offsetParent` is stubbed exactly as the tree suites stub it.
  */
@@ -46,8 +46,8 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(pm)
   })
 
-  it('skips a HIDDEN editor for the visible one — a folder page hides its body editor (YAZ-936)', () => {
-    editor(false) // the folder page's body: mounted for autosave, shown to nobody
+  it('skips a HIDDEN editor for the visible one — every visited tab keeps its editor mounted (YAZ-936)', () => {
+    editor(false) // a hidden tab's editor: mounted, shown to nobody
     const outline = editor(true)
     expect(focusOpenDocument()).toBe(true)
     expect(document.activeElement).toBe(outline)

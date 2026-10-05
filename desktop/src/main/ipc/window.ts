@@ -23,8 +23,8 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
   return v.map((t, i) => requireAbsPath(t, `tabs[${i}]`))
 }
 
-/** `focusDirs` / `focusTopics` / `focusFavorites` in the patch (YAZ-1628, YAZ-1766): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
-function optionalFocusList(raw: Record<string, unknown>, key: 'focusDirs' | 'focusTopics' | 'focusFavorites'): string[] | undefined {
+/** `focusDirs` / `focusFavorites` in the patch (YAZ-1628, YAZ-1766): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
+function optionalFocusList(raw: Record<string, unknown>, key: 'focusDirs' | 'focusFavorites'): string[] | undefined {
   const v = raw[key]
   if (v === undefined) return undefined
   if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${key}' must be an array of absolute paths`)
@@ -56,11 +56,11 @@ function optionalSidebarCollapsed(raw: Record<string, unknown>): boolean | undef
   return v
 }
 
-/** `sidebarLens` (YAZ-1628; three lenses since YAZ-1766): absent (untouched), or one of the lenses. */
+/** `sidebarLens` (YAZ-1628): absent (untouched), or one of the lenses. */
 function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefined {
   const v = raw.sidebarLens
   if (v === undefined) return undefined
-  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'topics', 'files' or 'favorites'")
+  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files' or 'favorites'")
   return v
 }
 
@@ -80,8 +80,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusTopics, focusFavorites } = entryFor(e)
-    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusDirs: [...focusDirs], focusTopics: [...focusTopics], focusFavorites: [...focusFavorites] }
+    const { id, root, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites } = entryFor(e)
+    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusDirs: [...focusDirs], focusFavorites: [...focusFavorites] }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -93,7 +93,6 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
     const focusDirs = optionalFocusList(patch, 'focusDirs')
-    const focusTopics = optionalFocusList(patch, 'focusTopics')
     const focusFavorites = optionalFocusList(patch, 'focusFavorites')
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
@@ -106,7 +105,6 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
       ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       ...(sidebarLens !== undefined ? { sidebarLens } : {}),
       ...(focusDirs !== undefined ? { focusDirs } : {}),
-      ...(focusTopics !== undefined ? { focusTopics } : {}),
       ...(focusFavorites !== undefined ? { focusFavorites } : {}),
       file: nextFile,
       tabs: nextTabs,

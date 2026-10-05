@@ -14,23 +14,27 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   targetDir: '/v',
   rowKind: null,
   copyPath: null,
+  openPath: null,
   // The multi-select pair (🔒 D5, YAZ-1337): null is the ordinary menu — no selection to act on.
   copyPaths: null,
   openTabPaths: null,
   clipPaths: null,
   newWindowPath: null,
   agentPath: null,
+  noteId: null,
   renamePath: null,
   deletePath: null,
   revealPath: null,
   openVsCodePath: null,
   openDefaultPath: null,
-  folderPagePath: null,
-  folderPageIsOn: false,
-  topicsAnchor: null,
   focusPaths: null,
   favoritePaths: null,
   favoriteIsOn: false,
+  reviewDir: null,
+  reviewPath: null,
+  reviewIsOn: false,
+  shortcutDir: null,
+  removeShortcut: null,
   lens: 'files',
   leaveSearchTo: null,
   clip: null,
@@ -38,6 +42,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
 })
 
 const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
+  onOpen: vi.fn(),
   onOpenInNewTabs: vi.fn(),
   onOpenNewWindow: vi.fn(),
   onOpenVsCode: vi.fn(),
@@ -52,11 +57,13 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onCopyForAgent: vi.fn(),
   onNewNote: vi.fn(),
   onNewDatedNote: vi.fn(),
-  onNewFolderPage: vi.fn(),
   onNewFolder: vi.fn(),
   onNewDatedFolder: vi.fn(),
-  onToggleFolderPage: vi.fn(),
   onToggleFavorite: vi.fn(),
+  onReviewFolder: vi.fn(),
+  onSetReview: vi.fn(),
+  onAddShortcut: vi.fn(),
+  onRemoveShortcut: vi.fn(),
   onRename: vi.fn(),
   onDelete: vi.fn(),
   ...over,
@@ -108,7 +115,6 @@ const FILE_ROW: Partial<MenuSectionTargets> = {
   revealPath: '/v/Note.md',
   openVsCodePath: '/v/Note.md',
   openDefaultPath: '/v/Note.md',
-  folderPagePath: '/v/Note.md',
 }
 
 /** Blank space: every row-only target null, the root fallbacks in place (GRO-2273, GRO-2274). */
@@ -126,8 +132,8 @@ describe('the seven groups (🔒 D7, amended)', () => {
     expect(groupsOf(build(FILE_ROW))).toEqual([
       ['Cut', 'Copy', 'Paste', 'Copy path', 'Copy for Agent'],
       ['New note', 'New folder'],
-      ['New dated note', 'New dated folder', 'New folder page'],
-      ['Turn into folder page', 'Rename'],
+      ['New dated note', 'New dated folder'],
+      ['Rename'],
       ['Open in'],
       ['Delete'],
     ])
@@ -137,7 +143,7 @@ describe('the seven groups (🔒 D7, amended)', () => {
     expect(groupsOf(build(BLANK))).toEqual([
       ['Paste', 'Copy path'],
       ['New note', 'New folder'],
-      ['New dated note', 'New dated folder', 'New folder page'],
+      ['New dated note', 'New dated folder'],
       ['Open in'], // the root's own OS verbs — the one this-row item blank space has
     ])
   })
@@ -150,7 +156,7 @@ describe('the seven groups (🔒 D7, amended)', () => {
     expect(labels.indexOf('Copy 2 paths')).toBe(labels.indexOf('Copy path') - 1)
   })
 
-  it('"Open N in new tabs" LEADS the group and hands the exact FILE list (🔒 D5, YAZ-1337); a folders-only selection has none (YAZ-1578 🔒 D3)', () => {
+  it('"Open N in new tabs" LEADS the group and hands the exact list (🔒 D5, YAZ-1337); no target, no item', () => {
     const onOpenInNewTabs = vi.fn()
     expect(labelsOf(build({ copyPaths: ['/v/one', '/v/two'], openTabPaths: null })).some((l) => /in new tabs$/.test(l))).toBe(false)
     select(build({ openTabPaths: ['/v/a.md', '/v/b.md'] }, { onOpenInNewTabs }), 'Open 2 in new tabs')
@@ -169,28 +175,19 @@ describe('the seven groups (🔒 D7, amended)', () => {
 
 /**
  * The create groups (YAZ-2249 🔒 E1/E2): the everyday pair first, then its own section for the
- * dated twins and the folder page, lined up under the pair — so the extras never crowd the
- * everyday items. Both stay above the act-on-this-row toggle (🔒 D4, YAZ-817). Pinned here
+ * dated twins, lined up under the pair — so the extras never crowd the
+ * everyday items. Both stay above the act-on-this-row group. Pinned here
  * because the position IS the ruling, not an accident of ordering.
  */
 describe('create groups (YAZ-2249 🔒 E1/E2)', () => {
-  it('offers New note · New folder, then its own section: New dated note · New dated folder · New folder page', () => {
+  it('offers New note · New folder, then its own section: New dated note · New dated folder', () => {
     expect(build()[2].map((i) => i.label)).toEqual(['New note', 'New folder'])
-    expect(build()[3].map((i) => i.label)).toEqual(['New dated note', 'New dated folder', 'New folder page'])
+    expect(build()[3].map((i) => i.label)).toEqual(['New dated note', 'New dated folder'])
   })
 
   it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {
-    expect(labelsOf(build(FILE_ROW))).toContain('New folder page')
-    expect(labelsOf(build(BLANK))).toContain('New folder page')
-  })
-
-  it('the two disk-folder births share ONE gate (YAZ-948; YAZ-1604): a null handler hides both', () => {
-    const labels = labelsOf(build(FILE_ROW, { onNewFolder: null, onNewDatedFolder: null }))
-    expect(labels).not.toContain('New folder')
-    expect(labels).not.toContain('New dated folder')
-    expect(labels).toContain('New note')
-    expect(labels).toContain('New dated note') // a note: never behind the folder gate (YAZ-2242 🔒 D1)
-    expect(labels).toContain('New folder page')
+    expect(labelsOf(build(FILE_ROW))).toContain('New dated folder')
+    expect(labelsOf(build(BLANK))).toContain('New dated folder')
   })
 
   it('New dated note hands the click to its own handler (YAZ-2242)', () => {
@@ -200,43 +197,13 @@ describe('create groups (YAZ-2249 🔒 E1/E2)', () => {
   })
 
   it('hands the click to the caller — the handler itself is the item (the New note idiom)', () => {
-    const onNewFolderPage = vi.fn()
-    select(build({}, { onNewFolderPage }), 'New folder page')
-    expect(onNewFolderPage).toHaveBeenCalledTimes(1)
-  })
-})
-
-/**
- * ONE state-aware item, both directions (🔒 D2, YAZ-817). The label is the flag's; the select
- * hands the handler BOTH the target and the direction, so the caller never has to re-derive
- * which way the toggle was pointing after the menu closed (GRO-2296).
- */
-describe('folder-page toggle item (🔒 D2)', () => {
-  it('reads "Turn into folder page" while the flag is off', () => {
-    const labels = labelsOf(build({ folderPagePath: '/v/a.md', folderPageIsOn: false }))
-    expect(labels).toContain('Turn into folder page')
-    expect(labels).not.toContain('Turn back into normal page')
-  })
-
-  it('reads "Turn back into normal page" while the flag is on', () => {
-    const labels = labelsOf(build({ folderPagePath: '/v/a.md', folderPageIsOn: true }))
-    expect(labels).toContain('Turn back into normal page')
-    expect(labels).not.toContain('Turn into folder page')
-  })
-
-  it('is absent entirely when there is no target', () => {
-    expect(labelsOf(build({ folderPagePath: null, folderPageIsOn: false })).some((l) => l.startsWith('Turn'))).toBe(false)
-  })
-
-  it('hands the select its own target AND the direction', () => {
-    const onToggleFolderPage = vi.fn()
-    select(build({ folderPagePath: '/v/a.md', folderPageIsOn: true }, { onToggleFolderPage }), 'Turn back into normal page')
-    expect(onToggleFolderPage).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
-  })
-
-  it('sits after the create groups and directly above Rename — above the destructive pair, which keeps the bottom', () => {
-    const sections = build(FILE_ROW)
-    expect(sections[4].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    const onNewFolder = vi.fn()
+    const onNewDatedFolder = vi.fn()
+    const sections = build({}, { onNewFolder, onNewDatedFolder })
+    select(sections, 'New folder')
+    select(sections, 'New dated folder')
+    expect(onNewFolder).toHaveBeenCalledTimes(1)
+    expect(onNewDatedFolder).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -255,7 +222,7 @@ describe('"Open in ▸" (D7 amended)', () => {
     const sections = build({ ...FILE_ROW, openTabPaths: ['/v/a.md', '/v/b.md'] })
     expect(itemOf(sections, 'Open in')?.onSelect).toBeUndefined()
     expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs'])
-    expect(sections[4].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Rename'])
     expect(sections[5].map((i) => i.label)).toEqual(['Open in'])
   })
 
@@ -292,8 +259,23 @@ describe('"Open in ▸" (D7 amended)', () => {
 /**
  * "Focus on …" (YAZ-1605): a VIEW verb, so it CLOSES the Open group — after the plural open,
  * ahead of the clipboard group. An EMPTY list hides it too (the caller's "nothing here
- * can be focused" answer), and the caller spells the label: it knows the lens and the count.
+ * can be focused" answer), and the caller spells the label: it knows the count.
  */
+describe('Open item (YAZ-2290 D3)', () => {
+  it('is absent without a target — a file row, blank space, a 2+ selection', () => {
+    expect(itemOf(build(FILE_ROW), 'Open')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Open')).toBeUndefined()
+  })
+
+  it('a folder row: it LEADS the menu, above Focus, and hands the caller the folder', () => {
+    const onOpen = vi.fn()
+    const sections = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'] }, { onOpen })
+    expect(sections[0].map((i) => i.label)).toEqual(['Open', 'Focus on folder'])
+    select(sections, 'Open')
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+  })
+})
+
 describe('Focus item (YAZ-1605)', () => {
   it.each<[string, Partial<MenuSectionTargets>]>([
     ['null', { focusPaths: null }],
@@ -320,7 +302,7 @@ describe('Focus item (YAZ-1605)', () => {
 /**
  * The file clipboard (🔒 D5, YAZ-1674): Cut / Copy on any ROW — file or dir, both lenses — never on
  * blank space; the label counts a 2+ selection. Paste is offered exactly where "New folder" is
- * (`onPaste` null withholds it) and is DISABLED, not hidden, while the clipboard is empty.
+ * and is DISABLED, not hidden, while the clipboard is empty.
  */
 describe('Cut / Copy / Paste (YAZ-1674)', () => {
   it('Cut and Copy are absent on blank space (nothing to clip) and present, bare, on a single row', () => {
@@ -359,28 +341,22 @@ describe('Cut / Copy / Paste (YAZ-1674)', () => {
     [7, 'Paste 7 items'],
   ])('with %i clipped it reads "%s", enabled, and selects the paste', (count, label) => {
     const onPaste = vi.fn()
-    const sections = build({ clip: { count, op: 'copy' } }, { onPaste })
+    const sections = build({ clip: { count, op: 'copy', paths: Array.from({ length: count }, (_, i) => `/v/${i}.md`) } }, { onPaste })
     expect(itemOf(sections, 'Paste')).toBeUndefined()
     const paste = leafOf(sections, label)
     expect(paste?.disabled).toBeUndefined()
     paste?.onSelect()
     expect(onPaste).toHaveBeenCalledTimes(1)
   })
-
-  it('a null onPaste WITHHOLDS Paste entirely — the Topics PAGE row rule, the same gate as "New folder"', () => {
-    const labels = labelsOf(build({ clipPaths: ['/v/Home.md'], clip: { count: 2, op: 'cut' } }, { onPaste: null, onNewFolder: null, onNewDatedFolder: null }))
-    expect(labels.some((l) => l.startsWith('Paste'))).toBe(false)
-    expect(labels).toContain('Cut')
-    expect(labels).toContain('Copy')
-  })
 })
 
 /**
  * The text clipboard: "Copy path" (GRO-2273, the root on blank space), "Copy N paths" (🔒 D5,
  * YAZ-1337 — the whole ordered selection, newline-joined), each confirming through the one notice
- * (YAZ-1341) and REPORTING a refused clipboard; "Copy for Agent" (YAZ-1617 🔒 D2) directly under.
+ * (YAZ-1341) and REPORTING a refused clipboard; "Copy for Agent" (YAZ-1617 🔒 D2) directly under —
+ * with "Copy ID" (YAZ-2293) between the two on a note that has one.
  */
-describe('Copy path / Copy N paths / Copy for Agent', () => {
+describe('Copy path / Copy N paths / Copy ID / Copy for Agent', () => {
   it('Copy path writes the exact path and confirms; absent without one', async () => {
     const writeText = installClipboard()
     const onNotice = vi.fn()
@@ -428,6 +404,31 @@ describe('Copy path / Copy N paths / Copy for Agent', () => {
     select(sections, 'Copy for Agent')
     expect(onCopyForAgent).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
   })
+
+  it('Copy ID writes exactly the id and confirms; absent when the row has none', async () => {
+    const writeText = installClipboard()
+    const onNotice = vi.fn()
+    expect(itemOf(build({ copyPath: '/v/Note.md', noteId: null }), 'Copy ID')).toBeUndefined()
+    select(build({ copyPath: '/v/Note.md', noteId: 'k3m9x2pq7abc' }, { onNotice }), 'Copy ID')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('k3m9x2pq7abc')
+    await Promise.resolve()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Copied ID')
+  })
+
+  it('Copy ID reports a clipboard the OS refused', async () => {
+    installClipboard(new Error('denied'))
+    const onNotice = vi.fn()
+    select(build({ noteId: 'k3m9x2pq7abc' }, { onNotice }), 'Copy ID')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy ID: denied")
+  })
+
+  it('Copy ID sits directly under Copy path and above Copy for Agent, with no shortcut hint', () => {
+    const sections = build({ ...FILE_ROW, noteId: 'k3m9x2pq7abc' })
+    expect(sections[1].map((i) => i.label)).toEqual(['Cut', 'Copy', 'Paste', 'Copy path', 'Copy ID', 'Copy for Agent'])
+    expect(itemOf(sections, 'Copy ID')?.hint).toBeUndefined()
+  })
 })
 
 /** Rename and Delete: a concrete row only, NEVER blank space (GRO-2241, GRO-2272); each hands its own path. */
@@ -446,6 +447,44 @@ describe('Rename / Delete', () => {
     select(sections, 'Delete')
     expect(onRename).toHaveBeenCalledExactlyOnceWith('/v/sub')
     expect(onDelete).toHaveBeenCalledExactlyOnceWith('/v/sub')
+  })
+})
+
+/**
+ * The review items (YAZ-2322) act ON the right-clicked row, so they lead the this-row group, above
+ * Rename: a FOLDER row starts a review of what is due inside it, and a NOTE row carries ONE
+ * state-aware item that takes it out of review or puts it back (the favorite toggle's idiom).
+ */
+describe('review items (YAZ-2322)', () => {
+  it('"Review this folder" is offered on a folder row only, and hands the folder to its handler', () => {
+    const onReviewFolder = vi.fn()
+    expect(labelsOf(build(FILE_ROW))).not.toContain('Review this folder')
+    expect(labelsOf(build(BLANK))).not.toContain('Review this folder')
+    const sections = build({ rowKind: 'dir', renamePath: '/v/sub', reviewDir: '/v/sub' }, { onReviewFolder })
+    expect(sections[4].map((i) => i.label)).toEqual(['Review this folder', 'Rename'])
+    select(sections, 'Review this folder')
+    expect(onReviewFolder).toHaveBeenCalledExactlyOnceWith('/v/sub')
+  })
+
+  it('a note in review reads "Turn review off", one out of it "Turn review on" — above Rename', () => {
+    const on = build({ ...FILE_ROW, reviewPath: '/v/Note.md', reviewIsOn: true })
+    expect(on[4].map((i) => i.label)).toEqual(['Turn review off', 'Rename'])
+    const off = build({ ...FILE_ROW, reviewPath: '/v/Note.md', reviewIsOn: false })
+    expect(off[4].map((i) => i.label)).toEqual(['Turn review on', 'Rename'])
+  })
+
+  it('hands the select its target and the state to SET', () => {
+    const onSetReview = vi.fn()
+    select(build({ reviewPath: '/v/a.md', reviewIsOn: true }, { onSetReview }), 'Turn review off')
+    expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/v/a.md', false)
+    const turnOn = vi.fn()
+    select(build({ reviewPath: '/v/a.md', reviewIsOn: false }, { onSetReview: turnOn }), 'Turn review on')
+    expect(turnOn).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
+  })
+
+  it('is absent with no target — a folder, blank space, a file that is not a note', () => {
+    expect(labelsOf(build(FILE_ROW)).some((l) => l.startsWith('Turn review'))).toBe(false)
+    expect(labelsOf(build(BLANK)).some((l) => l.startsWith('Turn review'))).toBe(false)
   })
 })
 
@@ -482,7 +521,65 @@ describe('favorite toggle item (YAZ-1766 D3)', () => {
 
   it('leads the "Open in ▸" group — the this-row group ends on Rename, and the toggle sits directly above the flyout', () => {
     const sections = build({ ...FILE_ROW, favoritePaths: ['/v/Note.md'], favoriteIsOn: false })
-    expect(sections[4].map((i) => i.label)).toEqual(['Turn into folder page', 'Rename'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Rename'])
     expect(sections[5].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
+  })
+})
+
+/**
+ * "Add note shortcut" (YAZ-2290 D2): a FOLDER row's item and nobody else's — the Sidebar hands
+ * a target only for one folder row outside a plural selection. It sits under the favorite toggle.
+ */
+describe('Add note shortcut item (YAZ-2290 D2)', () => {
+  it('is absent without a target — a file row, blank space, a 2+ selection', () => {
+    expect(itemOf(build(FILE_ROW), 'Add note shortcut')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Add note shortcut')).toBeUndefined()
+    expect(itemOf(build({ copyPaths: ['/v/a', '/v/b'], openTabPaths: ['/v/a', '/v/b'], favoritePaths: ['/v/a', '/v/b'] }), 'Add note shortcut')).toBeUndefined()
+  })
+
+  it('a folder row: directly under the favorite toggle, above the flyout, and it hands the caller the folder', () => {
+    const onAddShortcut = vi.fn()
+    const sections = build({ shortcutDir: '/v/Projects', favoritePaths: ['/v/Projects'], revealPath: '/v/Projects' }, { onAddShortcut })
+    expect(sections[5].map((i) => i.label)).toEqual(['Add to favorites', 'Add note shortcut', 'Open in'])
+    select(sections, 'Add note shortcut')
+    expect(onAddShortcut).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+  })
+})
+
+/**
+ * A SHORTCUT row (YAZ-2290 E5): the note shown in a folder it does not live in. "Remove
+ * shortcut" stands where Delete would, and the file clipboard is withheld — the row is not a file
+ * in this folder. Everything that acts on the note in its real place stays.
+ */
+describe('a shortcut row (YAZ-2290 E5)', () => {
+  /** What the Sidebar pins for one: the file row's targets, minus Delete, Rename and the clip. */
+  const SHORTCUT_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, clipPaths: null, renamePath: null, deletePath: null, removeShortcut: { path: '/v/Note.md', dir: '/v/Projects' } }
+
+  it('"Remove shortcut" stands LAST and alone where Delete would — no Delete, and nothing flagged danger', () => {
+    const sections = build(SHORTCUT_ROW)
+    expect(sections[6].map((i) => i.label)).toEqual(['Remove shortcut'])
+    expect(labelsOf(sections)).not.toContain('Delete')
+    expect(sections.flat().some((i) => i.danger === true)).toBe(false)
+  })
+
+  it('hands the caller the note and the folder it leaves', () => {
+    const onRemoveShortcut = vi.fn()
+    select(build(SHORTCUT_ROW, { onRemoveShortcut }), 'Remove shortcut')
+    expect(onRemoveShortcut).toHaveBeenCalledExactlyOnceWith('/v/Note.md', '/v/Projects')
+  })
+
+  it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items', () => {
+    expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
+      ['Copy path', 'Copy for Agent'],
+      ['New note', 'New folder'],
+      ['New dated note', 'New dated folder'],
+      ['Open in'],
+      ['Remove shortcut'],
+    ])
+  })
+
+  it('is absent on every other row', () => {
+    expect(itemOf(build(FILE_ROW), 'Remove shortcut')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Remove shortcut')).toBeUndefined()
   })
 })

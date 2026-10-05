@@ -54,11 +54,10 @@ export function writeState(profile, wins) {
       sidebarCollapsed: false,
       sidebarLens: 'files',
       focusDirs: [],
-      focusTopics: [],
       focusFavorites: [],
       bounds: { x: 40 + i * 40, y: 40 + i * 30, width: 1280, height: 860 },
     })),
-    folders: Object.fromEntries(wins.map((w) => [w.root, { expanded: [], lastFile: w.tabs[0] ?? null, folds: {}, baseGroups: {}, topicsExpanded: [], name: null }])),
+    folders: Object.fromEntries(wins.map((w) => [w.root, { expanded: [], lastFile: w.tabs[0] ?? null, folds: {}, baseGroups: {}, name: null }])),
   }
   fs.writeFileSync(path.join(profile, 'yaseendocs.json'), JSON.stringify(state, null, 2))
 }

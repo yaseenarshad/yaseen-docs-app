@@ -1,14 +1,17 @@
-import { useMemo } from 'react'
+import { type MouseEvent as ReactMouseEvent, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef } from '../viewSchema'
-import { belongsToBasenames } from '../../links/folderPages'
-import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
-import { render } from '../expr'
+import { basenameCandidates, type LinkCandidate } from '../../links/completion'
+import { belongsToBasenames } from '../../links/folderLinks'
+import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
+import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { type Resolver, render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
-import type { FolderPageSettings } from '../folderPageSettings'
+import type { FolderSettings } from '../folderSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, pageTitle } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, rowTitle } from './GroupHeader'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface ListViewProps {
   def: ViewSet
@@ -22,16 +25,28 @@ export interface ListViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onOpenFile: (path: string) => void
+  /** The row's right-click menu (`PageContextMenu`): its two opens, and where a failed action says so. */
+  onOpenFileRight?: (path: string) => void
+  onOpenFileBackground?: (path: string) => void
+  onNotice?: (message: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
-  /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
-  root: string | null
+  /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
+  root: string
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
-  /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
-  folderPage?: FolderPageSettings | null
-  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the MEMBERS: link resolution and the pickers read this. */
+  /** The settings of the folder whose rows these are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
+  settings: FolderSettings
+  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the folder's rows: link resolution and the pickers read this. */
   vaultRecords: readonly IndexRecord[]
+  /** The snapshot's folder settings records, for a link column narrowed to a folder. */
+  vaultFolders: readonly IndexRecord[]
+  /** ViewsPane's resolver: a cell reads an id link as the title of the note, or folder, it names (YAZ-2293 D8). */
+  resolve: Resolver
+  /** The window's link resolver, by which a link column's target names its folder. */
+  resolveLink: ResolveLink
+  /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
+  onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -59,8 +74,15 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: ListViewProps) {
-  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {})), [def, view, records, folderPage])
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue }: ListViewProps) {
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; noteId: string | undefined } | null>(null)
+  /** A typed editor keeps its own (native) menu, as in the table. */
+  const openMenu = (event: ReactMouseEvent, row: Row): void => {
+    if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
+    event.preventDefault()
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, noteId: row.record.id })
+  }
+  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(settings.columns)), [def, view, records, settings])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
   const nameIsPrimary = primary === undefined || canonicalKey(primary) === 'file.name'
@@ -72,35 +94,31 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
   const typings = useMemo(
-    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, properties, folderPage)])),
-    [keys, rowRecords, properties, folderPage],
+    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, properties, settings)])),
+    [keys, rowRecords, properties, settings],
   )
-  /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */
-  const basenames = useMemo(() => vaultRecords.map((r) => r.basename), [vaultRecords])
-  // Relation columns narrow the link picker to the pages of the folder page the target names
-  // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
-  // The resolver carries the ROOT since YAZ-846 — the very instance the wikilink surfaces hold.
-  const resolve = useMemo(() => {
-    const resolver = resolverFor(vaultRecords, root ?? undefined)
-    return (target: string) => resolver(target)?.record.path ?? null
-  }, [vaultRecords, root])
+  /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
+  const basenames = useMemo(() => basenameCandidates(vaultRecords), [vaultRecords])
+  // Relation columns narrow the link picker to the notes in the FOLDER the target names
+  // (YAZ-2290 D10: `belongsToBasenames`); a target naming no folder falls back to all basenames.
   const linkNames = useMemo(() => {
-    const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, resolve, t.target))
+    const m = new Map<string, LinkCandidate[]>()
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, vaultFolders, resolveLink, root, t.target))
     return m
-  }, [typings, vaultRecords, resolve])
+  }, [typings, vaultRecords, vaultFolders, resolveLink, root])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
-    if (bare === null) return cellContent(row.values[key])
+    if (bare === null) return cellContent(row.values[key], resolve)
     return (
       <EditableCell
-        path={row.record.path}
         propKey={bare}
         raw={row.record.properties[bare]}
         value={row.values[key]}
         editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
                         options={typings.get(key)?.options}
         basenames={linkNames.get(key) ?? basenames}
+        resolve={resolve}
+        onCommit={(next) => onWriteValue(row.record.path, bare, next)}
       />
     )
   }
@@ -108,9 +126,9 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   const items = (shown: readonly Row[]) => (
     <ul className="view-list__items">
       {shown.map((row, i) => {
-        const inline = indent ? '' : rest.map((k) => render(row.values[k])).filter((s) => s !== '').join(separator)
+        const inline = indent ? '' : rest.map((k) => render(row.values[k], resolve)).filter((s) => s !== '').join(separator)
         return (
-          <li key={row.record.path} className="view-list__item">
+          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)}>
             {marker !== 'none' && (
               <span className="view-list__marker" aria-hidden>
                 {marker === 'number' ? `${i + 1}.` : '•'}
@@ -120,7 +138,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
               <div className="view-list__line">
                 {nameIsPrimary ? (
                   <button type="button" className="view-list__title" onClick={() => onOpenFile(row.record.path)}>
-                    {pageTitle(row)}
+                    {rowTitle(row)}
                   </button>
                 ) : (
                   <span className="view-list__primary">{editable(row, primary)}</span>
@@ -162,11 +180,13 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                   collapsed={isCollapsed}
                   onToggle={() => onToggleGroup(gk)}
                   onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
+                  resolve={resolve}
                 />
                 {!isCollapsed && items(g.rows)}
               </section>
             )
           })}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onNotice={onNotice} onClose={() => setMenu(null)} />}
     </div>
   )
 }
