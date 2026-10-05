@@ -608,6 +608,33 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(buttonNamed(el, 'Remove from this note')).not.toBeNull()
   })
 
+  it('A note still carrying `folder_page`, `folder_pages` or `folder_page_settings` (the old model’s keys): ordinary frontmatter — each is the note’s own row, none hidden or Reserved; opening rewrites nothing and nothing is lost', async () => {
+    const interior = 'folder_page: true\nfolder_pages:\n  - "[[KPIs]]"\nfolder_page_settings:\n  views:\n    - type: board\n      name: Board\ntitle: Old hub'
+    const el = mount(`---\n${interior}\n---\nBody\n`, { root: ROOT, wikilinks: folderFeed() })
+    expand(el)
+    await flush()
+    // Nothing reads them, so opening rewrites nothing.
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+    // Every key a row, in the block's order, among the note's own; then the folder's one default column, unfilled.
+    expect(keysOf(el)).toEqual(['folder_page', 'folder_pages', 'folder_page_settings', 'title', 'status'])
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (4)')
+    // Typed by their own values, like any property: a flag, a list, and a map no editor can hold.
+    for (const key of ['folder_page', 'folder_pages', 'folder_page_settings']) expect(chipIn(rowOf(el, key))).not.toBe('Reserved')
+    expect(chipIn(rowOf(el, 'folder_page_settings'))).toBe('YAML') // what any nested map wears (`draft_layout` above)
+    for (const key of ['folder_page', 'folder_pages']) {
+      expect(chipIn(rowOf(el, key))).toBeNull()
+      expect(byLabel(rowOf(el, key), `Configure ${key}`)).not.toBeNull() // removable like any property of the note's
+    }
+    expect(editorOf(el, 'folder_page')).toBe('checkbox')
+    expect(editorOf(el, 'folder_pages')).toBe('chips')
+    // And nothing is lost: the block is there as written.
+    press(el.querySelector('.view-cell-edit__input'), 'Escape')
+    toRaw(el)
+    expect(area(el)?.value).toBe(interior)
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
   it('`comments` is RESERVED (YAZ-1472): chipped, read-only — its door is the Comments block', () => {
     const el = mount('---\ncomments:\n  - id: 3f9a1c2e\n    at: 2026-09-11T18:22:31Z\n    body: Hi\nstatus: draft\n---\nBody\n', { root: ROOT })
     expand(el)
