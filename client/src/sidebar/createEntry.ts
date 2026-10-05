@@ -49,12 +49,24 @@ export function targetDirFor(node: MenuRow | null, root: string): string {
  * Absolute path for the sidebar's inline rename of a view-only FILE (Links E1, GRO-2194): same
  * parent directory. An explicit supported suffix is kept as typed; the old exact suffix is
  * appended only when none is recognized. A note or a folder is retitled instead (YAZ-2420 🔒 D16),
- * except in a vault that does not use IDs (YAZ-2523 🔒 V3): there its name is what was typed too,
- * a note by the same rule and a folder with no suffix added.
+ * or, in a vault that does not use IDs, named by `plainEntryName`.
  */
-export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'dir' = 'file'): string {
+export function renamedPath(oldPath: string, newName: string): string {
   let final = newName.trim()
   if (final === basename(oldPath)) return oldPath
-  if (kind === 'file' && fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
+  if (fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dirname(oldPath)}/${final}`
+}
+
+/**
+ * The name on disk of the note or the folder named `typed` in a vault that does not use IDs
+ * (YAZ-2523 🔒 V3), made or renamed: as typed, and a note with `suffix` unless a Markdown suffix
+ * was typed. Any other suffix is part of the name (`talk.pdf` is the note `talk.pdf.md`): a note
+ * is never changed into another kind of file. A name a file cannot hold is refused.
+ */
+export function plainEntryName(typed: string, kind: EntryKind, suffix = '.md'): string {
+  const name = typed.trim()
+  const invalid = validateEntryName(name)
+  if (invalid !== null) throw new Error(invalid)
+  return kind === 'dir' || fileKind(name) === 'markdown' ? name : name + suffix
 }

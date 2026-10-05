@@ -52,13 +52,15 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
   const rootChanged = renderedRoot.current !== root
   useLayoutEffect(() => {
     renderedRoot.current = root
+    // The old vault's index says nothing about this one, its kind least of all (YAZ-2523 🔒 V5).
+    source.update(null)
     if (viewOnly === undefined) return
     // Root identity changes synchronously retire the old vault's navigation catalog and every
     // merged row. New semantic/catalog snapshots may then arrive in either order without ever
     // composing across vaults; the stable source objects themselves are deliberately retained.
     viewOnly.reset()
     candidates?.update([])
-  }, [root, candidates, viewOnly])
+  }, [root, source, candidates, viewOnly])
   // Only a READY snapshot feeds the sources: while the first fetch is pending (or a refetch
   // failed) links keep rendering with the previous resolver — or, before any index has ever
   // loaded, as resolved (source.resolve null) — never flashing everything unresolved.

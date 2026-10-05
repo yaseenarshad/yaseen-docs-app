@@ -31,8 +31,8 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
  */
 
 /**
- * Re-exported, not re-declared (YAZ-861): the name lives in `@shared/types` so main and the
- * client's adoption probe can never drift. This module owns the dotfolder, so it keeps naming it.
+ * Re-exported, not re-declared (YAZ-861): the name lives in `@shared/types`, one spelling for main
+ * and the command line. This module owns the dotfolder, so it keeps naming it.
  */
 export { VAULT_CONFIG_DIR }
 

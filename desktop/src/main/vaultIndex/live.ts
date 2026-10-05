@@ -54,6 +54,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       return
     }
     case 'addDir':
+      entry.dirs.push(ev.path)
       // A folder that appears is given its settings file, and so its id (D13).
       void sweepIds(root, entry.records, [], (p) => entry.records.get(p)?.id, [ev.path])
       return
@@ -67,6 +68,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     case 'unlinkDir': {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
+      entry.dirs = entry.dirs.filter((dir) => dir !== ev.path && !dir.startsWith(prefix))
       schedulePersist(root, entry.records)
       return
     }
@@ -117,8 +119,9 @@ async function build(root: string): Promise<Entry> {
     entry.coldDiff = diff
     let answer = await idsOf(root)
     // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
-    // an id and none is waiting for one, so yes is saved. One that cannot be written to stays unanswered.
-    if (answer === undefined && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && r.id !== undefined) && wouldWrite(records, dirs).notes === 0) {
+    // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays unanswered.
+    const ask = wouldWrite(records, dirs)
+    if (answer === undefined && ask.notes === 0 && ask.folders === 0 && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && r.id !== undefined)) {
       answer = await writeConfig(root, IDS_FILE, { enabled: true }).then(
         () => true,
         () => undefined,
@@ -187,7 +190,8 @@ export async function getIndex(root: string): Promise<IndexResponse> {
 
 /** A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties. */
 function plain({ id: _id, ...r }: IndexRecord): IndexRecord {
-  return { ...r, title: fileTitle(r) }
+  r.title = fileTitle(r)
+  return r
 }
 
 /** Sweeps every note the live index holds for `root`, and every folder there now — for a vault that said yes after its index was built (YAZ-2523 🔒 V4). */

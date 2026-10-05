@@ -182,11 +182,11 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
  * name that was typed: found by its text, which a fresh id makes unique in the document,
  * wherever typing has since pushed it.
  *
- * No `id`: the vault does not use IDs (YAZ-2523 🔒 V3). The page is made the plain way, and the
- * link already holds the name that was typed.
+ * No `id`: the vault does not use IDs (`ids`, YAZ-2523 🔒 V3). The page is made the plain way, and
+ * the link already holds the name that was typed.
  */
-function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, id: string | undefined): void {
-  void createFromLink(nav.root, name, id !== undefined, nav.createFolder(), id).then((result) => {
+function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, ids: boolean, id: string | undefined): void {
+  void createFromLink(nav.root, name, ids, nav.createFolder(), id).then((result) => {
     if (result.status === 'created') return nav.onNotice(`Created "${linkPageName(name)}"`)
     if (result.status === 'error') nav.onNotice(result.message)
     if (id === undefined || view === undefined || view.isDestroyed) return
@@ -212,7 +212,7 @@ function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | u
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
     dispatch(tr.scrollIntoView())
-    if (born !== undefined) createPage(view, born.nav, row.insert, born.id)
+    if (born !== undefined) createPage(view, born.nav, row.insert, links.ids, born.id)
   }
   return true
 }

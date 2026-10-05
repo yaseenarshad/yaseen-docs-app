@@ -81,8 +81,9 @@ export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
    * Swap in a fresh resolver + its snapshot (index refetch) and notify every subscriber.
    * `records` omitted = no snapshot in play (decoration-only mounts): backlinks have nothing
    * to list, which is exactly right — the resolver alone cannot say who links where.
+   * `null` forgets the vault (a change of root): no index has landed for the new one yet.
    */
-  update(resolve: ResolveLink, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean): void
+  update(resolve: ResolveLink | null, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean): void
 }
 
 const NO_RECORDS: readonly IndexRecord[] = []

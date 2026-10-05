@@ -75,7 +75,7 @@ export interface TableViewProps {
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
   deleteColumn?: (key: string) => Promise<void>
   /** `FolderHost.valueCount`: the number that confirm states. */
-  valueCount?: (key: string) => number
+  valueCount: (key: string) => number
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
@@ -642,7 +642,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             onClose={() => setHeaderMenu(null)}
           />
         )}
-        {confirmDelete !== null && deleteColumn && valueCount && (
+        {confirmDelete !== null && deleteColumn && (
           <ConfirmDeleteColumn
             columnKey={confirmDelete}
             def={def}

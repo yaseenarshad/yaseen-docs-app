@@ -1,6 +1,6 @@
 /**
- * The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). The copy is LOCKED, so it is
- * pinned character for character; the sheet has two answers and a way out that gives neither.
+ * The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). Its words are pinned
+ * character for character; the sheet has two answers and a way out that gives neither.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -9,11 +9,11 @@ import { ConfirmIds, idsAskMessage } from './ConfirmIds'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const WITH = ' With IDs, links keep working when a note is renamed or moved. Without them, the app leaves every file exactly as it is.'
+const WITH = ' With IDs, links keep working when a note is renamed or moved, and the app names the file of a note you make or retitle. Without them, the app leaves every file exactly as it is.'
 const EMPTY_START = "Should this vault's notes have IDs? With IDs, the app names each note's file and links keep working when a note is renamed or moved."
 const EMPTY_END = ' Without them, notes are plain files named as you type them, and the app writes nothing extra.'
 
-describe('the LOCKED copy (V2, V11)', () => {
+describe('the box’s words (V2, V11)', () => {
   it('notes to write, no folders: the count, one note in the singular', () => {
     expect(idsAskMessage({ notes: 854, folders: 0, foreign: 0 })).toBe(`Give this vault's notes IDs? The app would write an ID into 854 notes.${WITH}`)
     expect(idsAskMessage({ notes: 1, folders: 0, foreign: 0 })).toBe(`Give this vault's notes IDs? The app would write an ID into 1 note.${WITH}`)
@@ -25,9 +25,9 @@ describe('the LOCKED copy (V2, V11)', () => {
   })
 
   it('notes that hold another tool’s ID: how many would be replaced, "has" for one and "have" for more', () => {
-    expect(idsAskMessage({ notes: 9, folders: 0, foreign: 1 })).toBe(`Give this vault's notes IDs? The app would write an ID into 9 notes. 1 of them already has an ID from another tool, which would be replaced.${WITH}`)
+    expect(idsAskMessage({ notes: 9, folders: 0, foreign: 1 })).toBe(`Give this vault's notes IDs? The app would write an ID into 9 notes. 1 of the notes already has an ID from another tool, which would be replaced.${WITH}`)
     expect(idsAskMessage({ notes: 9, folders: 2, foreign: 3 })).toBe(
-      `Give this vault's notes IDs? The app would write an ID into 9 notes and add a hidden settings file to 2 folders. 3 of them already have an ID from another tool, which would be replaced.${WITH}`,
+      `Give this vault's notes IDs? The app would write an ID into 9 notes and add a hidden settings file to 2 folders. 3 of the notes already have an ID from another tool, which would be replaced.${WITH}`,
     )
   })
 

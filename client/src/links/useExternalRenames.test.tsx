@@ -83,8 +83,8 @@ async function mount(root: string | null = '/v') {
 }
 
 const banner = () => container?.querySelector('[data-banner]')?.textContent ?? null
-const snapshot = async (records: IndexRecord[], folders: IndexRecord[] = []) => {
-  act(() => captured.ext?.onSnapshot(records, folders))
+const snapshot = async (records: IndexRecord[], folders: IndexRecord[] = [], ids = true) => {
+  act(() => captured.ext?.onSnapshot(records, folders, ids))
   await act(async () => {}) // settle the cold-diff read (first snapshot) / queue updates
 }
 
@@ -142,6 +142,17 @@ describe('useExternalRenames — the while-running feed', () => {
     expect(banner()).toBeNull()
     await snapshot(postRename)
     expect(banner()).toBe('/v/B.md|/v/B2.md|1')
+  })
+
+  it.each([
+    [false, { properties: { title: 'deploy' } }, '/v/deploy.md|/v/release.md|1'],
+    [true, { properties: { title: 'deploy' }, title: 'deploy' }, null],
+  ])('a renamed note holding `title: deploy`, with IDs %s: `[[deploy]]` is a link by file name only where the vault does not use IDs (YAZ-2523 🔒 V12)', async (ids, titled, shown) => {
+    const linker = rec('/v/A.md', { links: ['deploy'], size: 20, mtime: 5 })
+    await mount()
+    await snapshot([linker, rec('/v/deploy.md', titled)], [], ids)
+    await snapshot([linker, rec('/v/release.md', titled)], [], ids)
+    expect(banner()).toBe(shown)
   })
 
   it('a burst of renames nobody links to never builds a count per rename; the one that IS linked still banners (YAZ-2241)', async () => {

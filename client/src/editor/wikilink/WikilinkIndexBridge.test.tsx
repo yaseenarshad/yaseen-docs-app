@@ -212,6 +212,25 @@ describe('WikilinkIndexBridge', () => {
     expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, false, ask)
   })
 
+  it('a switch of root forgets the old vault at once (YAZ-2523): no resolver, no records and no `ids` until the new vault’s index lands', async () => {
+    let resolveNext!: (response: IndexResponse) => void
+    indexFn.mockImplementation((vault) => (vault === '/next' ? new Promise((resolve) => { resolveNext = resolve }) : Promise.resolve(response('/vault/Note.md'))))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const render = (vault: string) => act(() => root?.render(<WikilinkIndexBridge root={vault} watch={watch} source={source} />))
+    render('/vault')
+    await flush()
+    expect(source.ids).toBe(true)
+    render('/next')
+    await flush()
+    expect([source.resolve, source.records, source.folders, source.ids]).toEqual([null, [], [], false])
+    resolveNext({ root: '/next', records: [rec('/next/New.md')], folders: [], generatedAt: 2, ids: true })
+    await flush()
+    expect(source.resolve?.('New')).toBe('/next/New.md')
+    expect(source.ids).toBe(true)
+  })
+
   it('aliases ride the same feed: the resolver dims nothing for `[[CAC]]` and the picker offers a piped row (E2, GRO-2214)', async () => {
     indexFn.mockResolvedValue({
       root: '/vault',

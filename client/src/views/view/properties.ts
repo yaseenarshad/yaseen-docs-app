@@ -11,7 +11,8 @@ import { canonicalKey } from './keys'
  * YAZ-1549 `propertyKeys` itself shows it by default), then "File name" (`file.basename`,
  * YAZ-2420 🔒 D18) and the formulas; de-duplicated by canonical key.
  * Where the vault uses IDs never the note's own keys (`id` and the rest): the rows hold a folder's
- * values (D19), not those. In any other the rows are the notes' own properties (YAZ-2523 🔒 V12).
+ * values (D19), not those. In a vault that does not use IDs the rows are the notes' own properties
+ * (YAZ-2523 🔒 V12).
  */
 export function allPropertyKeys(
   def: ViewSet,

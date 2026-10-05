@@ -313,27 +313,34 @@ describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
 })
 
 describe('id (YAZ-2293)', () => {
-  it('a page that has an id: prints it and writes nothing — bytes and mtime as they were, in no vault and in a vault of either kind', async () => {
+  it('a page that has an id, in a vault that gives its notes IDs: prints it and writes nothing — bytes and mtime as they were', async () => {
     const content = '---\nid: k3m9x2pq7abc\n---\n# Has one\n'
-    for (const p of [await page('has.md', content), path.join(await vault('ids', { 'has.md': content }), 'has.md'), path.join(await vault('plain', { 'has.md': content }, false), 'has.md')]) {
-      const before = (await stat(p)).mtimeMs
-      expect(await run(['id', p])).toEqual({ code: 0, out: 'k3m9x2pq7abc\n', err: '' })
-      expect(await readFile(p, 'utf8')).toBe(content)
-      expect((await stat(p)).mtimeMs).toBe(before)
-    }
+    const p = path.join(await vault('ids', { 'has.md': content }), 'has.md')
+    const before = (await stat(p)).mtimeMs
+    expect(await run(['id', p])).toEqual({ code: 0, out: 'k3m9x2pq7abc\n', err: '' })
+    expect(await readFile(p, 'utf8')).toBe(content)
+    expect((await stat(p)).mtimeMs).toBe(before)
   })
 
-  it('a page with no id whose vault does not give its notes IDs — it said no, it has not answered, or there is no vault above — is refused: exit 1, nothing written (YAZ-2523)', async () => {
-    const content = '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n'
-    const said = await vault('no', { 'Kickoff.md': content, 'Projects/a.png': 'png' }, false)
-    const pages = [path.join(said, 'Kickoff.md'), path.join(await vault('unanswered', { 'Kickoff.md': content }, null), 'Kickoff.md'), await page('Kickoff.md', content)]
-    for (const p of pages) {
-      expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${p} has no id, and its vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)\n` })
-      expect(await readFile(p, 'utf8')).toBe(content)
+  it('the vault is the nearest folder above the page that has ANSWERED: a folder in between that only holds app settings does not hide it (YAZ-2523 V10)', async () => {
+    const root = await vault('outer', { 'Inner/a.md': '# A\n', 'Inner/.yaseendocs/favorites.json': '[]\n' })
+    const r = await run(['id', path.join(root, 'Inner', 'a.md')])
+    expect(r.code).toBe(0)
+    expect(isNoteId(r.out.trim())).toBe(true)
+  })
+
+  it('a page whose vault does not give its notes IDs — it said no, it has not answered, or there is no vault above — is refused whether or not it holds an `id`: exit 1, nothing written (YAZ-2523)', async () => {
+    for (const content of ['---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n', '---\nid: k3m9x2pq7abc\n---\n# Has one\n']) {
+      const said = await vault('no', { 'Kickoff.md': content, 'Projects/a.png': 'png' }, false)
+      const pages = [path.join(said, 'Kickoff.md'), path.join(await vault('unanswered', { 'Kickoff.md': content }, null), 'Kickoff.md'), await page('Kickoff.md', content)]
+      for (const p of pages) {
+        expect(await run(['id', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)\n` })
+        expect(await readFile(p, 'utf8')).toBe(content)
+      }
+      // A folder is given no settings file there either.
+      expect((await run(['id', path.join(said, 'Projects', FOLDER_SETTINGS_FILE)])).code).toBe(1)
+      expect(await readdir(path.join(said, 'Projects'))).toEqual(['a.png'])
     }
-    // A folder is given no settings file there either.
-    expect((await run(['id', path.join(said, 'Projects', FOLDER_SETTINGS_FILE)])).code).toBe(1)
-    expect(await readdir(path.join(said, 'Projects'))).toEqual(['a.png'])
   })
 
   it("a page with no id, in a vault that gives its notes IDs: is given the id the app's sweep would give it, and no other byte changes", async () => {

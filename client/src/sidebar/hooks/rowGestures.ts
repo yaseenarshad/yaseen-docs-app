@@ -222,7 +222,8 @@ export function useFileClipboard(
    * values for the folders that do not show them (YAZ-2420 3E1), judged after it; the original is
    * never written. The copies are listed off the tree that refresh reads — the index hears of them
    * only once the watcher has — and a folder it has not heard of yet, the copy of one, keeps its block.
-   * In a vault that does not use IDs a copy is left as it landed (YAZ-2523 🔒 V3).
+   * In a vault that does not use IDs a copy is left as it landed (YAZ-2523 🔒 V3): by the data both
+   * branches do nothing there, and the gate on the copy's only saves its two fetches.
    */
   const runPaste = useCallback(
     async (dir: string) => {
@@ -356,6 +357,8 @@ export function useInlineEdits(
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
+      // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
+      if (index.resolve === null) throw new Error('Vault index is still loading — try again in a moment')
       // What was typed is the TITLE (YAZ-2420 🔒 D6, D20): the name on disk is built from it.
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
       let note: string | null = null
@@ -387,8 +390,8 @@ export function useInlineEdits(
   )
 
   const renaming: PendingRename | null = useMemo(
-    () => (renamingEntry === null ? null : { path: renamingEntry.path, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }),
-    [renamingEntry, submitRename],
+    () => (renamingEntry === null ? null : { path: renamingEntry.path, title: index.ids, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }),
+    [renamingEntry, submitRename, index],
   )
 
   const pending: PendingCreate | null = useMemo(

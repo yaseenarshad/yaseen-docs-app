@@ -32,7 +32,7 @@ import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
 import { VAULT_CONFIG_DIR, isFolderSettingsPath } from '@shared/types'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
-import { giveId, givesIds, readPage } from '../main/vaultIndex/idSweep'
+import { giveId, idsOf, readPage } from '../main/vaultIndex/idSweep'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { scanFile, walk } from '../main/vaultIndex/scan'
 
@@ -68,8 +68,8 @@ left in the app, has no \`by\`. \`edit\` and \`delete\` work only on comments th
 a person's comment is edited or deleted in the app. Deleting a comment deletes its replies.
 
 A vault gives its notes IDs only when "Give this vault's notes IDs" is on in the app's Settings
-(\`.yaseendocs/ids.json\`). In any other, a page's name is its file name, \`id\` gives no page an
-id and \`links\` is refused. The next two paragraphs describe a vault that does.
+(\`.yaseendocs/ids.json\`). In a vault that does not, a page's name is its file name, and \`id\`
+and \`links\` are refused. The next two paragraphs describe a vault that does.
 
 Every page has a permanent id in its frontmatter (\`id: k3m9x2pq7abc\`); a rename or a move never
 changes it. A page's title is its \`title:\` line, and the app builds the file name from the title
@@ -191,6 +191,19 @@ async function vaultRoot(from: string): Promise<string | null> {
   }
 }
 
+/**
+ * The vault whose IDs a page is in (YAZ-2523 🔒 V10): the nearest folder at or above it that has
+ * ANSWERED, when that answer is yes. A folder that only holds app settings is not asked. Null
+ * when the nearest answer is no, or nothing above has answered: "no" means no for agents too.
+ */
+async function idVault(from: string): Promise<string | null> {
+  for (let dir = from; ; dir = dirname(dir)) {
+    const answer = await idsOf(dir)
+    if (answer !== undefined) return answer ? dir : null
+    if (dir === dirname(dir)) return null
+  }
+}
+
 async function bodyOf(flags: Map<string, string | true>, io: Io): Promise<string> {
   const body = flags.get('--body')
   if (typeof body !== 'string') throw new Usage('--body is required')
@@ -296,14 +309,13 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'id': {
+      const root = await idVault(dirname(page))
+      if (root === null) throw new Error(`${page}'s vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)`)
       const { properties, error } = parseFrontmatter(splitFrontmatter((await readPage(page)).content).frontmatter)
       let id = properties[NOTE_ID_KEY]
       if (!isNoteId(id)) {
         // The sweep's own refusals (`vaultIndex/idSweep.ts`), each given its reason; `giveId` checks them again on the bytes it writes against.
         if (error !== undefined) throw new Error('the properties block does not parse (invalid)')
-        const root = await vaultRoot(dirname(page))
-        // "No" means no for agents too (YAZ-2523): an id is written only where the vault said yes.
-        if (root === null || !(await givesIds(root))) throw new Error(`${page} has no id, and its vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)`)
         id = await giveId(root, page, undefined)
         if (id === undefined) throw new Error(`${page} changed while it was being given an id — run this again`)
       }
@@ -311,8 +323,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'links': {
-      const root = await vaultRoot(dirname(page))
-      if (root === null || !(await givesIds(root))) throw new Error(`${page}'s vault does not use IDs, so there are no ID links to list`)
+      const root = await idVault(dirname(page))
+      if (root === null) throw new Error(`${page}'s vault does not use IDs, so there are no ID links to list`)
       const { links, properties } = await scanFile(root, page)
       const linked = links.filter(isNoteId)
       const ids = [...new Set([...linked, ...alsoIn(properties)])]

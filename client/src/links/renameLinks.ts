@@ -263,6 +263,8 @@ export function renameNotice({ updated, skipped }: RenameRewriteSummary): string
 }
 
 export interface UpdateLinksOptions {
+  /** Does this vault use IDs? Where it does not (YAZ-2523 🔒 V12) a `title:` line is an ordinary property: every title here is the file's name, and no link travels by one. */
+  ids: boolean
   root: string
   oldPath: string
   newPath: string
@@ -293,7 +295,7 @@ export interface UpdateLinksOptions {
  * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
  * fix — deferred with the rest of the E1c queue work.
  */
-function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], viewOnlyCatalog, title }: Pick<UpdateLinksOptions, 'root' | 'oldPath' | 'records' | 'folders' | 'dirs' | 'viewOnlyCatalog' | 'title'> & { kind: 'file' | 'dir' }): {
+function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = [], viewOnlyCatalog, title }: Pick<UpdateLinksOptions, 'ids' | 'root' | 'oldPath' | 'records' | 'folders' | 'dirs' | 'viewOnlyCatalog' | 'title'> & { kind: 'file' | 'dir' }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
   spellsTitle: (t: string) => boolean
@@ -315,7 +317,7 @@ function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], v
   // A page with no `title:` is titled by its name, and a link spelling that is a name link, rewritten
   // as ever. The one title that does not travel is the one a title edit replaces (`title`, 🔒 D16).
   const travels = (t: string, page: IndexRecord | undefined, path: string): boolean =>
-    spells(t, page) && titleOf(page.properties, '') !== '' && !(title !== undefined && path === oldPath)
+    ids && spells(t, page) && titleOf(page.properties, '') !== '' && !(title !== undefined && path === oldPath)
   const named = (t: string): string | undefined => {
     const hit = resolver(t)?.record
     return hit === undefined || travels(t, hit, hit.path) ? undefined : hit.path
@@ -360,16 +362,16 @@ function makeResolves({ root, oldPath, kind, records, folders = [], dirs = [], v
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): number {
-  const { resolves } = makeResolves({ root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
+export function countLinkReferences({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): number {
+  const { resolves } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   return [...records, ...folders].filter(makeReferences(resolves)).length
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
-export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog, title }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog, title }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p === oldPath || p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
-  const { resolves, resolveTargetPath, spellsTitle, typedId } = makeResolves({ root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
+  const { resolves, resolveTargetPath, spellsTitle, typedId } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
@@ -378,7 +380,7 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
     kind === 'file'
       ? records.map((r) =>
           r.path === oldPath
-            ? { ...r, path: newPath, name: newName, basename: stripExt(newName), title: title ?? titleOf(r.properties, stripExt(newName)), folder: newRel.includes('/') ? newRel.slice(0, newRel.lastIndexOf('/')) : '' }
+            ? { ...r, path: newPath, name: newName, basename: stripExt(newName), title: title ?? titleOf(ids ? r.properties : {}, stripExt(newName)), folder: newRel.includes('/') ? newRel.slice(0, newRel.lastIndexOf('/')) : '' }
             : r,
         )
       : records
@@ -390,7 +392,7 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
       ? folders.map((f) => {
           const path = mapMoved(f.path)
           const own = dirname(f.path) === oldPath
-          return path === f.path && !own ? f : { ...f, path, folder: relTo(root, dirname(path)), title: own ? title ?? titleOf(f.properties, newName) : f.title }
+          return path === f.path && !own ? f : { ...f, path, folder: relTo(root, dirname(path)), title: own ? title ?? titleOf(ids ? f.properties : {}, newName) : f.title }
         })
       : folders
   const postLink = linkResolver(postRecords, root, dirs.map(mapMoved), postFolders)

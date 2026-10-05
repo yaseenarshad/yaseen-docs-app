@@ -27,7 +27,7 @@ import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
 import { ConfirmIds } from './components/ConfirmIds'
 import { NoticeIcon } from './components/NoticeIcon'
-import { relTo } from './lib/paths'
+import { dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
@@ -46,7 +46,7 @@ import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { useReview } from './review/useReview'
 import { useReviewSettings } from './review/useReviewSettings'
 import { SettingsDialog } from './settings/SettingsDialog'
-import { renamedPath, validateEntryName } from './sidebar/createEntry'
+import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -509,35 +509,27 @@ export function App() {
   const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, notify)
   const relLabel = useCallback((p: string) => (root === null ? p : relTo(root, p)), [root])
 
-  // The vault's answer on IDs as the last snapshot said it (YAZ-2523 🔒 V5), for the Settings switch:
-  // `enabled` is undefined while the vault has not answered, `held` says a note holds an ID. Null
-  // until this root's first snapshot, so the switch never shows an answer the vault did not give.
-  // While it has not answered, `idsAsk` is what a yes would write: the box that asks (🔒 V2). An
-  // answer, or Esc, closes the box for this root: later snapshots still carry `ask` and must not reopen it.
-  const [vaultIds, setVaultIds] = useState<{ enabled: boolean | undefined; held: boolean } | null>(null)
-  const [idsAsk, setIdsAsk] = useState<IndexResponse['ask']>()
-  const idsAskClosed = useRef<string | null>(null)
-  useLayoutEffect(() => {
-    idsAskClosed.current = null
-    setVaultIds(null)
-    setIdsAsk(undefined)
-  }, [root])
+  // The vault's answer on IDs as the last snapshot said it (YAZ-2523 🔒 V5), with the root it is of:
+  // one of another vault says nothing here, so the Settings switch never shows an answer this vault
+  // did not give. `enabled` is undefined while the vault has not answered, and `ask` is then what a
+  // yes would write: the box that asks (🔒 V2). `held` says a note holds an ID, which is true only
+  // while the vault uses IDs (a plain vault's records carry none). An answer, or Esc, closes the box
+  // for that root: later snapshots still carry `ask` and must not reopen it. Leaving the vault forgets that.
+  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean | undefined; held: boolean; ask: IndexResponse['ask'] } | null>(null)
+  const [idsAskClosed, setIdsAskClosed] = useState<string | null>(null)
+  if (idsAskClosed !== null && idsAskClosed !== root) setIdsAskClosed(null)
+  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
   const onSnapshot = useCallback(
     (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => {
-      onIndexSnapshot(records, folders)
-      setVaultIds({ enabled: ask === undefined ? ids : undefined, held: records.some((record) => record.id !== undefined) })
-      if (idsAskClosed.current !== root) setIdsAsk(ask)
+      onIndexSnapshot(records, folders, ids)
+      setIdsSnapshot({ root, enabled: ask === undefined ? ids : undefined, held: records.some((record) => record.id !== undefined), ask })
     },
     [root, onIndexSnapshot],
   )
-  const closeIdsAsk = (): void => {
-    idsAskClosed.current = root
-    setIdsAsk(undefined)
-  }
   /** Save the vault's answer in its `ids.json` (🔒 V1), from the box or from Settings; the index refetches off the write. */
   const saveIds = (enabled: boolean): void => {
     if (root === null) return
-    api.vaultConfig.write(root, IDS_FILE, { enabled }).then(closeIdsAsk, (err: unknown) => notify(`Couldn't save this vault's answer: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+    api.vaultConfig.write(root, IDS_FILE, { enabled }).then(() => setIdsAskClosed(root), (err: unknown) => notify(`Couldn't save this vault's answer: ${err instanceof Error ? err.message : String(err)}`, 'error'))
   }
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
@@ -589,8 +581,9 @@ export function App() {
       await flushRenamedDir(oldPath)
       let records: Awaited<ReturnType<typeof api.index>>['records'] = []
       let folders: typeof records = []
+      let ids = false
       try {
-        ;({ records, folders } = await api.index(r))
+        ;({ records, folders, ids } = await api.index(r))
       } catch {
         records = [] // no index snapshot → the rename still runs, links just stay as they are
       }
@@ -612,6 +605,7 @@ export function App() {
         kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
       ) ?? false
       const summary = await updateLinksAfterRename({
+        ids,
         root: r,
         oldPath,
         newPath,
@@ -699,7 +693,7 @@ export function App() {
         oldPath,
         to,
         kind,
-        count: countLinkReferences({ root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), title: to.title, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+        count: countLinkReferences({ ids: wikilinks.ids, root, oldPath, kind, records, folders: wikilinks.folders, dirs: vaultDirs(root), title: to.title, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
         viewOnlyCatalog: catalog,
       })
     },
@@ -710,10 +704,16 @@ export function App() {
   // Where the vault does not use IDs (YAZ-2523 🔒 V3) a title typed is the file's name: the door's other spelling.
   const requestRetitle = useCallback(
     async (path: string, title: string, kind: TreeNode['type']): Promise<void> => {
+      // Until the index lands the vault's kind is not known (🔒 V5), and it decides which rename this is.
+      if (wikilinks.resolve === null) return notify("Can't rename: couldn't load the current file list")
       if (wikilinks.ids) return requestRename(path, { title }, kind)
-      const invalid = validateEntryName(title)
-      if (invalid !== null) return notify(`Can't rename: ${invalid}`)
-      const newPath = renamedPath(path, title, kind)
+      let name: string
+      try {
+        name = plainEntryName(title, kind, path.slice(path.lastIndexOf('.')))
+      } catch (err) {
+        return notify(`Can't rename: ${(err as Error).message}`)
+      }
+      const newPath = `${dirname(path)}/${name}`
       if (newPath !== path) return requestRename(path, { newPath }, kind)
     },
     [requestRename, wikilinks, notify],
@@ -1060,7 +1060,7 @@ export function App() {
           />
         ))}
       {/* The box that asks whether this vault's notes get IDs (YAZ-2523 🔒 V2). */}
-      {idsAsk !== undefined && <ConfirmIds ask={idsAsk} onAnswer={saveIds} onDismiss={closeIdsAsk} />}
+      {vaultIds?.ask !== undefined && idsAskClosed !== root && <ConfirmIds ask={vaultIds.ask} onAnswer={saveIds} onDismiss={() => setIdsAskClosed(root)} />}
     </div>
   )
 }
