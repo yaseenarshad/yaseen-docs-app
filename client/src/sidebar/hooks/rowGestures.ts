@@ -12,9 +12,11 @@ import type { NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
 import { basename } from '../../lib/paths'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../../lib/selection'
-import { findDirNode, treeHasPath, type TreeAction } from '../../lib/treeState'
-import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
+import { fetchTree } from '../../lib/treeFeed'
+import { findDirNode, notesAt, treeHasPath, type TreeAction } from '../../lib/treeState'
+import { dropFolderValuesAfterMove, dropStaleFolderValues, valuesLeftBehind, type LeftBehind, type Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
+import { transformFile } from '../../views/writeProperty'
 import { renamedPath, targetDirFor, type EntryKind } from '../createEntry'
 import { countItems } from '../menuSections'
 import type { MenuTargets, SidebarClipboard } from '../Sidebar'
@@ -169,8 +171,8 @@ export function useFileClipboard(
    * reads the current state ONCE on mount (`clipState`), so its Paste is labelled from the start.
    */
   const [clip, setClip] = useState<FileClipState>(null)
-  // The paste of a Cut that would clear values, waiting on its sheet (D21); null when it is closed.
-  const [pendingPaste, setPendingPaste] = useState<{ dir: string; moves: Move[]; lost: LeftBehind } | null>(null)
+  // The paste of a Cut that would clear values, or of a Copy that would not keep them (YAZ-2420 3E1), waiting on its sheet (D21); null when it is closed.
+  const [pendingPaste, setPendingPaste] = useState<{ dir: string; moves: Move[]; lost: LeftBehind; copy: boolean } | null>(null)
   // The sheet speaks for the clipboard it was asked about: another one ends the question.
   useEffect(() => setPendingPaste(null), [clip])
   useEffect(() => {
@@ -216,7 +218,10 @@ export function useFileClipboard(
    * idiom `startCreate` uses) and the tree refreshes EXPLICITLY: a copy moves nothing, so no
    * `fileRenamed` broadcast repairs it, and the watcher's add echo is a courtesy, not a contract
    * (`refresh` is idempotent). A CUT is a move: each note it moved leaves the values of the folders
-   * it left behind (D20), judged on the index as it stood before the paste.
+   * it left behind (D20), judged on the index as it stood before the paste. A COPY's notes keep no
+   * values for the folders that do not show them (YAZ-2420 3E1), judged after it; the original is
+   * never written. The copies are listed off the tree that refresh reads — the index hears of them
+   * only once the watcher has — and a folder it has not heard of yet, the copy of one, keeps its block.
    */
   const runPaste = useCallback(
     async (dir: string) => {
@@ -226,6 +231,10 @@ export function useFileClipboard(
         if (dir !== root) dispatch({ type: 'expandTo', root, file: `${dir}/x` })
         refresh()
         if (before !== null) for (const { from, to, kind } of res.pasted) await dropFolderValuesAfterMove({ root, oldPath: from, newPath: to, kind, ...before })
+        else {
+          const [{ tree }, { folders }] = await Promise.all([fetchTree(root), api.index(root)])
+          for (const { to } of res.pasted) for (const path of notesAt(tree, to)) await transformFile(path, dropStaleFolderValues(root, path, folders)).catch(() => undefined)
+        }
         const first = res.failed[0]
         if (first === undefined) {
           // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
@@ -245,27 +254,28 @@ export function useFileClipboard(
 
   /**
    * Paste's one door, the menu's and ⌘V's: a Cut that would clear a folder's values asks first
-   * (D21), by the window's own snapshot; anything else pastes at once. The moves are the clipboard's
-   * paths into `dir` — one already there is no move (main skips it, D2), and a folder is one the
-   * tree holds as a folder. A path outside this vault matches no record, so it never asks: the
-   * index cannot speak for it.
+   * (D21), by the window's own snapshot, and so does a Copy whose copies would not keep them
+   * (YAZ-2420 3E1); anything else pastes at once. The moves are the clipboard's paths into `dir` —
+   * one already there is no move (main skips a cut, D2; a copy beside its original leaves nothing
+   * behind), and a folder is one the tree holds as a folder. A path outside this vault matches no
+   * record, so it never asks: the index cannot speak for it.
    */
   const pasteInto = useCallback(
     (dir: string) => {
-      if (clip?.op === 'cut') {
+      if (clip !== null) {
         const moves = clip.paths.flatMap((oldPath): Move[] => {
           const newPath = `${dir}/${basename(oldPath)}`
           return newPath === oldPath ? [] : [{ oldPath, newPath, kind: dirs.includes(oldPath) ? 'dir' : 'file' }]
         })
         const lost = valuesLeftBehind({ root, moves, records: index.records, folders: index.folders })
-        if (lost.folders.length > 0) return setPendingPaste({ dir, moves, lost })
+        if (lost.folders.length > 0) return setPendingPaste({ dir, moves, lost, copy: clip.op === 'copy' })
       }
       void runPaste(dir)
     },
     [root, clip, dirs, index, runPaste],
   )
 
-  /** The sheet's Move: the paste runs as it does unasked. Its Cancel only closes it — the Cut stays on the clipboard. */
+  /** The sheet's Move or Copy: the paste runs as it does unasked. Its Cancel only closes it — the clipboard stays as it was. */
   const confirmPaste = useCallback(() => {
     if (pendingPaste === null) return
     setPendingPaste(null)

@@ -3856,13 +3856,10 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
       })
 
-      it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move; a Copy removes nothing (D20)', async () => {
+      it('a note Cut and Pasted into another folder leaves the old folder’s values behind in that move (D20)', async () => {
         const { el, disk, bridge, writeFile, paste } = await mountCut()
         disk.set('/v/Areas/Alpha.md', HELD) // where the paste lands it
         bridge.file.paste.mockResolvedValue({ pasted: [{ from: ALPHA, to: '/v/Areas/Alpha.md', kind: 'file' }], failed: [] })
-        await paste('copy', [ALPHA])
-        expect(bridge.file.paste).toHaveBeenCalledTimes(1)
-        expect(writeFile).not.toHaveBeenCalled()
         await paste('cut', [ALPHA])
         expect(writeFile).not.toHaveBeenCalled()
         await act(async () => sheetBtn(el, 'Move')?.click())
@@ -3891,11 +3888,91 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
         expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
       })
 
-      it('Copy, then Paste: never asks', async () => {
-        const { el, bridge, paste } = await mountCut()
-        await paste('copy', [ALPHA, ZETA, SUB])
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+      /**
+       * A copy keeps no values for the folders that do not show it, and the app asks first
+       * (YAZ-2420 3E1). Main lands the copy under a name of its own; the index has not heard of it
+       * when the paste answers, so the tree is what lists it. The original is never written.
+       */
+      describe('Copy, then Paste (YAZ-2420 3E1)', () => {
+        const COPY = '/v/Areas/alpha-copy-n3w1d0000001.md'
+        /** The tree once main has copied: `added` stands in the top-level folder `dir`. */
+        const landed = (bridge: ReturnType<typeof installBridge>, dir: string, added: TreeNode, to: string, from: string) => {
+          bridge.tree.mockResolvedValue({ root: '/v', tree: WITH_SUB.map((node) => (node.path === dir && node.type === 'dir' ? { ...node, children: [...node.children, added] } : node)), generatedAt: 2 })
+          bridge.file.paste.mockResolvedValue({ pasted: [{ from, to, kind: added.type }], failed: [] })
+        }
+        const indexed = (bridge: ReturnType<typeof installBridge>, folders: IndexRecord[] = FOLDERS) => bridge.index.mockResolvedValue({ root: '/v', records: [], folders, generatedAt: 2 } as never)
+
+        it('a note with values for a folder, copied into another: the sheet asks in the copy wording; Copy pastes, and the copy holds no block for that folder while the original still does', async () => {
+          const { el, disk, bridge, writeFile, paste } = await mountCut()
+          disk.set(ALPHA, HELD)
+          disk.set(COPY, HELD) // as main lands it
+          await paste('copy', [ALPHA])
+          expect(sheetText(el)).toBe("Copy 'Alpha' to 'Areas'? Its values for Projects will not be copied.")
+          expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Copy'])
+          expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
+          expect(bridge.file.paste).not.toHaveBeenCalled()
+          landed(bridge, '/v/Areas', file(COPY), COPY, ALPHA)
+          indexed(bridge)
+          await act(async () => sheetBtn(el, 'Copy')?.click())
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Areas' })
+          expect(disk.get(COPY)).toBe('---\n---\nBody\n')
+          expect(disk.get(ALPHA)).toBe(HELD)
+          expect(writeFile).toHaveBeenCalledTimes(1)
+        })
+
+        it('Cancel: nothing is copied, nothing is written, and the copy stays on the clipboard', async () => {
+          const { el, bridge, writeFile, paste } = await mountCut()
+          await paste('copy', [ALPHA])
+          await act(async () => sheetBtn(el, 'Cancel')?.click())
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).not.toHaveBeenCalled()
+          expect(writeFile).not.toHaveBeenCalled()
+          rightClick(row(el, '/v/Areas'))
+          expect(itemByLabel(el, 'Paste 1 item')?.disabled).toBe(false)
+        })
+
+        it('a copy into the folder the original is in asks nothing, and the copy, looked at, keeps every block', async () => {
+          const SAME = '/v/Projects/alpha-copy-n3w1d0000001.md'
+          const { el, disk, bridge, writeFile, paste } = await mountCut()
+          disk.set(SAME, HELD)
+          landed(bridge, '/v/Projects', file(SAME), SAME, ALPHA)
+          indexed(bridge)
+          await paste('copy', [ALPHA], '/v/Projects')
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: '/v/Projects' })
+          expect(bridge.readFile).toHaveBeenCalledWith(SAME)
+          expect(disk.get(SAME)).toBe(HELD)
+          expect(writeFile).not.toHaveBeenCalled()
+        })
+
+        it('a copied folder: its notes keep their values under the copy’s id, and lose the blocks of the folders outside it that no longer show them', async () => {
+          const SUB_ID = 's0bf01der000'
+          const COPY_ID = 'c0pyf01der00'
+          const SUB_COPY = '/v/Areas/sub-copy'
+          const DEEP_COPY = `${SUB_COPY}/deep-n3w1d0000002.md`
+          const sub: IndexRecord = { ...indexRecord(`${SUB}/.folder.md`), id: SUB_ID, title: 'Sub' }
+          const { el, disk, bridge, writeFile, indexSource, paste } = await mountCut()
+          // By the window's snapshot Deep holds values for Projects and for Sub, the folder it is in.
+          act(() => indexSource.update(() => null, [{ ...indexRecord(`${SUB}/Deep.md`), properties: { in: { [PROJECTS_ID]: { order: 1 }, [SUB_ID]: { order: 2 } } } }], [...FOLDERS, sub]))
+          await paste('copy', [SUB])
+          expect(sheetText(el)).toBe("Copy 'Sub' to 'Areas'? 1 note will not keep its values for Projects.")
+          // As main lands it: the copy has an id of its own, and its note's values for Sub were carried to it.
+          disk.set(DEEP_COPY, `---\nin:\n  ${PROJECTS_ID}:\n    order: 1\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
+          landed(bridge, '/v/Areas', { type: 'dir', name: 'sub-copy', path: SUB_COPY, children: [file(DEEP_COPY)] }, SUB_COPY, SUB)
+          indexed(bridge, [...FOLDERS, sub, { ...indexRecord(`${SUB_COPY}/.folder.md`), id: COPY_ID, title: 'Sub copy' }])
+          await act(async () => sheetBtn(el, 'Copy')?.click())
+          expect(disk.get(DEEP_COPY)).toBe(`---\nin:\n  ${COPY_ID}:\n    order: 2\n---\nBody\n`)
+          expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: DEEP_COPY })) // the original is never written
+        })
+
+        it('nothing to leave behind — a note with no values, a copy from outside this vault — means no sheet: the paste runs at once', async () => {
+          const { el, bridge, paste } = await mountCut()
+          await paste('copy', ['/v/top.md'])
+          await paste('copy', ['/w/Projects/Alpha.md'])
+          expect(el.querySelector('.confirm')).toBeNull()
+          expect(bridge.file.paste.mock.calls).toEqual([[{ targetDir: '/v/Areas' }], [{ targetDir: '/v/Areas' }]])
+        })
       })
 
       it('a folder is moved (Cut then Paste) and notes under it would lose values', async () => {

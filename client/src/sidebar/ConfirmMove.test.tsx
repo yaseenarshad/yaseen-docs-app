@@ -31,6 +31,12 @@ describe('the LOCKED copy (D21)', () => {
     expect(moveConfirmMessage([note, note], 'z.ARCHIVE', { notes: 1, folders: ['Fiverr'] })).toBe("Move 2 items to 'z.ARCHIVE'? 1 note will lose its values for Fiverr.")
   })
 
+  it('a copy into another folder (YAZ-2420 3E1): a note\'s values "will not be copied"; a folder or several items count the notes that will not keep theirs', () => {
+    expect(moveConfirmMessage([note], 'z.ARCHIVE', { notes: 1, folders: TWO }, true)).toBe("Copy 'FV-001 - Zain Shah' to 'z.ARCHIVE'? Its values for Fiverr and ENG PIPELINE will not be copied.")
+    expect(moveConfirmMessage([folder], 'z.ARCHIVE', { notes: 54, folders: TWO }, true)).toBe("Copy 'candidates' to 'z.ARCHIVE'? 54 notes will not keep their values for Fiverr and ENG PIPELINE.")
+    expect(moveConfirmMessage([note, folder], 'z.ARCHIVE', { notes: 1, folders: ['Fiverr'] }, true)).toBe("Copy 2 items to 'z.ARCHIVE'? 1 note will not keep its values for Fiverr.")
+  })
+
   it('"Remove shortcut", and the note holds values for a folder that will no longer show it', () => {
     expect(removeShortcutConfirmMessage('_PIPELINE-CONTEXT', 'ENG PIPELINE', ['ENG PIPELINE'])).toBe("Remove the shortcut from 'ENG PIPELINE'? The values of '_PIPELINE-CONTEXT' for ENG PIPELINE will be cleared.")
   })
@@ -56,7 +62,7 @@ afterEach(() => {
 const NOTE: Move = { oldPath: '/v/Hiring/Fiverr/Zain Shah.md', newPath: '/v/z.ARCHIVE/Zain Shah.md', kind: 'file' }
 const LOST = { notes: 1, folders: ['/v/Hiring/Fiverr', '/v/Hiring'] }
 
-function mount(ask: { moves: readonly Move[] } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST, titles: PathTitles = new Map()) {
+function mount(ask: { moves: readonly Move[]; copy?: boolean } | { shortcut: { path: string; dir: string } } = { moves: [NOTE] }, lost = LOST, titles: PathTitles = new Map()) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   container = document.createElement('div')
@@ -106,6 +112,12 @@ describe('ConfirmMove', () => {
     expect(text(el)).toBe("Remove the shortcut from 'ENG PIPELINE'? The values of '_PIPELINE-CONTEXT' for ENG PIPELINE will be cleared.")
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Remove'])
     expect(btn(el, 'Remove')?.classList.contains('confirm__btn--danger')).toBe(true)
+  })
+
+  it('a pasted Copy (YAZ-2420 3E1): the same sheet in the copy wording, offering Cancel and Copy', () => {
+    const { el } = mount({ moves: [NOTE], copy: true })
+    expect(text(el)).toBe("Copy 'Zain Shah' to 'z.ARCHIVE'? Its values for Fiverr and Hiring will not be copied.")
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Copy'])
   })
 
   it('offers exactly Cancel and Move', () => {

@@ -67,6 +67,11 @@ export function findNode(tree: readonly TreeNode[], path: string): TreeNode | nu
   return null
 }
 
+/** The notes at `path` (YAZ-2420 3E1): the note itself, or every note under that folder, any depth. */
+export function notesAt(tree: readonly TreeNode[], path: string): string[] {
+  return tree.flatMap((n) => (n.type === 'dir' ? notesAt(n.children, path) : n.kind === 'markdown' && (n.path === path || n.path.startsWith(`${path}/`)) ? [n.path] : []))
+}
+
 /**
  * The Favorites tab's top rows (YAZ-1766 D4): every favorite the tree still holds, in the list's
  * STORED order — the user's order, never the tree's — files and dirs alike. NOT `focusRoots`:

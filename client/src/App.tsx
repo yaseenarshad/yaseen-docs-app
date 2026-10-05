@@ -602,7 +602,8 @@ export function App() {
    * folder's values (D21, `valuesLeftBehind` over the window's own snapshot) and otherwise runs
    * silently (a confirm on every drag would be hostile, and bare links keep resolving across a
    * move anyway). A title edit (YAZ-2420 🔒 D16) changes the name and never the folder: it
-   * confirms, and is never a move.
+   * confirms, and is never a move. With "Ask before renaming" off (YAZ-2420 3C1) a changed name
+   * runs unasked, through the same pipeline; the move's question is not that setting's.
    *
    * Markdown-only renames still count synchronously. A ready lightweight catalog may prove a
    * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
@@ -652,6 +653,7 @@ export function App() {
         setPendingRename({ root, oldPath, to, kind, lost, viewOnlyCatalog: catalog })
         return
       }
+      if (!settings.confirmRename) return renameFile(oldPath, to, catalog)
       const records = wikilinks.records
       const hasMovedViewFile = catalog?.entries.some((entry) =>
         kind === 'file' ? entry.path === oldPath : entry.path.startsWith(`${oldPath}/`),
@@ -667,7 +669,7 @@ export function App() {
         viewOnlyCatalog: catalog,
       })
     },
-    [root, catalogForRename, renameFile, wikilinks],
+    [root, catalogForRename, renameFile, wikilinks, settings.confirmRename],
   )
   // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
   const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])

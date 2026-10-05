@@ -113,6 +113,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
   newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
+  confirmRename: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
