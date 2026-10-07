@@ -148,6 +148,22 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
   })
 
+  it('startupWindows: an older file without the key sanitizes to last; the three values survive; junk falls back (YAZ-2589 D2, S16, S17)', async () => {
+    const { startupWindows: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ startupWindows: 'last' })
+
+    for (const startupWindows of ['all', 'last', 'none']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, startupWindows } }))
+      expect(createStore(file).get().settings).toMatchObject({ startupWindows })
+    }
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, startupWindows: 'everything' } }))
+    expect(createStore(file).get().settings).toMatchObject({ startupWindows: 'last' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, startupWindows: true } }))
+    expect(createStore(file).get().settings).toMatchObject({ startupWindows: 'last' })
+  })
+
   it('confirmRename: a file without the key sanitizes to on; off survives; junk falls back (YAZ-2420 3C1)', async () => {
     const { confirmRename: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
@@ -631,6 +647,19 @@ describe('createStore: mutations', () => {
     expect(store.get().windows).toEqual([win('w2', { root: '/v' })])
     store.removeWindow('nope')
     expect(store.get().windows).toEqual([win('w2', { root: '/v' })])
+  })
+
+  it('removeWindow takes several ids and drops them in ONE commit; none that match is no commit (YAZ-2589 D3)', () => {
+    const store = createStore(file)
+    for (const id of ['w1', 'w2', 'w3']) store.upsertWindow(win(id))
+    let commits = 0
+    store.onChange(() => commits++)
+    store.removeWindow('w1', 'w3', 'nope')
+    expect(store.get().windows).toEqual([win('w2')])
+    expect(commits).toBe(1)
+    store.removeWindow()
+    store.removeWindow('nope', 'w1')
+    expect(commits).toBe(1)
   })
 
   describe('renamePath (Links E1, GRO-2194: the store repair after an in-app rename)', () => {

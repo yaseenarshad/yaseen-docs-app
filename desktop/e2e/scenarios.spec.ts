@@ -1,14 +1,16 @@
 /**
  * Desktop G3 (GRO-2180): multi-window, deep-link and Open With scenarios against the REAL app.
  * Same harness as smoke.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
- * `g3-` step screenshots). Serial by design across three launches:
+ * `g3-` step screenshots). Serial by design across four launches:
  *
  *   launch 1 (vault A, one seeded window) — scenario 1 (⌘⇧N twin windows + live sync),
  *     scenario 2 (conflict bar when dirty), scenario 3 (⌘-click → new window);
  *   launch 2 (no seed) — scenario 6: the three windows those scenarios left behind restore;
  *   launch 3 (vaults A+B seeded) — scenario 4 (hot deep link routes to the right vault's
  *     window), scenario 5 (link to a recents-only vault opens a new window), scenario 7
- *     (bonus: Finder's `open-file` rides the same pipeline).
+ *     (bonus: Finder's `open-file` rides the same pipeline);
+ *   launch 4 (vaults A+B+C seeded, "Reopen: Last vault") — scenario 8: a plain launch brings back
+ *     only the window of the vault used last (YAZ-2589 D2).
  *
  * Focus is asserted through routing effects (shown file / title / window count), never through
  * OS focus — `BrowserWindow.focus()` is unreliable when the app is not frontmost on the runner.
@@ -60,6 +62,7 @@ let userData: string
 let vaultSrc: string
 let vaultA: string
 let vaultB: string
+let vaultC: string
 let noteA: string // vault A's seeded file (SEED_FILE)
 let app: ElectronApplication
 let winA: Page
@@ -71,13 +74,14 @@ test.beforeAll(async () => {
   vaultSrc = await buildFixtureVault()
   vaultA = await copyVault(vaultSrc)
   vaultB = await copyVault(vaultSrc)
+  vaultC = await copyVault(vaultSrc)
   noteA = path.join(vaultA, SEED_FILE)
 })
 
 test.afterAll(async () => {
   await app?.close().catch(() => undefined)
   await Promise.all(
-    [userData, vaultSrc, vaultA, vaultB].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })),
+    [userData, vaultSrc, vaultA, vaultB, vaultC].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })),
   )
 })
 
@@ -235,5 +239,27 @@ test('scenario 7 (bonus) — Finder "Open With" (open-file) rides the same link 
   await expect(winA.locator('.ProseMirror')).toContainText(ROADMAP_BODY)
   expect(await windowCount(app)).toBe(2)
   await shoot(winA, 'g3-07-open-file-routed')
+  await quitApp(app)
+})
+
+test('scenario 8 — "Reopen: Last vault": a plain launch brings back only the window of the vault used last; the other two are forgotten (YAZ-2589 D2, D3)', async () => {
+  const noteB = path.join(vaultB, SEED_FILE)
+  // Three saved windows on three vaults, as a quit leaves them; vault B was used last (first in `recents`).
+  const seed = multiWindowState(
+    [
+      { id: 'la', root: vaultA, file: noteA },
+      { id: 'lb', root: vaultB, file: noteB },
+      { id: 'lc', root: vaultC, file: path.join(vaultC, SEED_FILE) },
+    ],
+    [vaultB, vaultA, vaultC],
+  )
+  app = await launchApp({ userData, seedState: { ...seed, settings: { ...seed.settings, startupWindows: 'last' } } })
+  const win = await appWindow(app, 'lb')
+  await expect.poll(() => win.title()).toBe(titleOf(vaultB, noteB))
+  expect(await windowCount(app)).toBe(1)
+  // The windows that did not come back are gone from the state file; their vaults stay in the recents.
+  await expect.poll(async () => (await readState(userData)).windows.map((w) => w.id)).toEqual(['lb'])
+  expect((await readState(userData)).recents.map((r) => r.path)).toEqual([vaultB, vaultA, vaultC])
+  await shoot(win, 'g3-08-last-vault-only')
   await quitApp(app)
 })

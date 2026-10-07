@@ -208,6 +208,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkNotice.add(l)
         return () => linkNotice.delete(l)
       }),
+      ready: vi.fn(async () => undefined),
     },
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
     // the renamed push on mount; the banner's Update goes through repairRename.
