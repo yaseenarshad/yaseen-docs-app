@@ -90,8 +90,9 @@ export const storage = {
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, roots: normalizeRoots([], root), file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusFavorites: [] as string[] }
-    identity = { ...identity, ...patch }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusFavorites: [] as string[] }
+    // The window is on that ONE vault (YAZ-2602 S61). The patch names `root` alone: main makes the list from it (S76).
+    identity = { ...identity, ...patch, ...(root === identity.root ? {} : { roots: normalizeRoots([], root) }) }
     send('window.setIdentity', () => api.window.setIdentity(patch))
   },
 
