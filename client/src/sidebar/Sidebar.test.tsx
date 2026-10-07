@@ -1187,92 +1187,205 @@ describe('persistent search bar (YAZ-801)', () => {
 })
 
 /**
- * Search results in the body (YAZ-803, 🔒 flat-list ruling on YAZ-739): a typed query swaps the
- * tree for a FLAT ranked list and clearing brings the tree straight back — the swap is a
- * conditional render, so nothing about the tree is torn down. The list is driven entirely from
- * the bar, which never loses focus: arrows clamp at both ends (no wrap, the `[[` picker's rule),
- * Enter opens in place, ⌘Enter in a background tab, and the list stays up either way.
+ * Search results in the body (YAZ-803), as a TREE since YAZ-2620 (overturning the flat-list ruling
+ * on YAZ-739 for the sidebar): a typed query swaps the active tab's body for the Files tree cut
+ * down to the matches and their parent folders, and clearing brings the tab's tree straight back —
+ * the swap is a conditional render, so nothing about that tree is torn down. The search has its
+ * own folds, in memory, and its own highlight, driven from the bar, which never loses focus: it
+ * starts on the BEST match, ↑/↓ walk the matches on screen and clamp at both ends, Enter opens in
+ * place, ⌘Enter in a background tab, and the results stay up either way. The S-numbers are the
+ * scenario record on YAZ-2620.
  */
-describe('search results (YAZ-803)', () => {
-  const record = (basename: string, folder = '') => ({
-    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, title: basename, folder, ext: 'md',
-    size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
-  })
-  const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
+describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  /** Three branches and two root notes: a folder no note of which says "archive", two `Readme`s, and `plan` — an exact name the tree draws LAST. */
+  const VAULT = (v: string): TreeNode[] => [
+    folder(`${v}/Archive`, [folder(`${v}/Archive/Deep`, [note(`${v}/Archive/Deep/Old.md`)]), note(`${v}/Archive/Notes.md`)]),
+    folder(`${v}/Docs`, [folder(`${v}/Docs/Guides`, [note(`${v}/Docs/Guides/Anchor guide.md`)]), note(`${v}/Docs/Anchor.md`), note(`${v}/Docs/Readme.md`)]),
+    folder(`${v}/Plans`, [note(`${v}/Plans/Plan A.md`), note(`${v}/Plans/Readme.md`), note(`${v}/Plans/Zed.md`)]),
+    note(`${v}/Alpha.md`),
+    note(`${v}/plan.md`),
+  ]
+  const notePaths = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.type === 'dir' ? notePaths(n.children) : n.kind === 'markdown' ? [n.path] : []))
+  const record = (v: string, path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: path.slice(v.length + 1, Math.max(v.length + 1, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+  }
 
-  /** Mount over an index of Alpha + Docs/Anchor, then type `query` into the bar. */
-  const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never))
+  let vaults = 0
+  /**
+   * A fresh vault per mount — the Files tree's folds persist per root across this file — over an
+   * index that holds every note of its tree, then `query` typed into the bar.
+   */
+  const search = async (query: string, over: Partial<SidebarProps> = {}, opts: { nodes?: (v: string) => TreeNode[]; records?: (v: string) => IndexRecord[]; tweak?: (bridge: ReturnType<typeof installBridge>) => unknown } = {}) => {
+    const v = `/v-search-${++vaults}`
+    const nodes = (opts.nodes ?? VAULT)(v)
+    const records = opts.records?.(v) ?? notePaths(nodes).map((path) => record(v, path))
+    // The watcher fans out to every subscriber (useWatch's shape) — here the tree's and search's.
+    const listeners: ((ev: WatchEvent) => void)[] = []
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        listeners.push(l)
+        return () => void listeners.splice(listeners.indexOf(l), 1)
+      },
+    }
+    const m = await mount({ root: v, watch, ...over }, (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: nodes, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
+      return opts.tweak?.(b)
+    })
     const input = searchInput(m.el)!
     await type(input, query)
-    return { ...m, input }
+    const emit = (ev: WatchEvent) => act(async () => [...listeners].forEach((l) => l(ev)))
+    return { ...m, v, input, nodes, records, emit }
   }
-  const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
-  const activeLabel = (el: HTMLElement) => el.querySelector('.search-results__row--active .search-results__label')?.textContent ?? null
+  /** The body's rows as the eye reads them: top to bottom, two spaces per depth. */
+  const shape = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row')].map((row) => {
+      let depth = -1
+      for (let list = row.closest('ul.tree'); list !== null; list = list.parentElement?.closest('ul.tree') ?? null) depth++
+      return `${'  '.repeat(depth)}${row.querySelector('.tree__label')?.textContent}`
+    })
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${path}"]`)
+  const isOpen = (el: HTMLElement, path: string) => row(el, path)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  /** The highlighted rows' labels: one while a match is on screen, none otherwise. */
+  const cursor = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__body .tree__row--selected .tree__label')].map((n) => n.textContent)
   const press = (input: HTMLInputElement, key: string, metaKey = false) =>
     act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey, bubbles: true })))
+  const click = (target: Element | null, init: MouseEventInit = {}) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init })))
+  const FILES_CLOSED = ['Archive', 'Docs', 'Plans', 'Alpha', 'plan']
 
-  it('typing swaps the tree for the ranked result list; clearing brings the tree back', async () => {
-    const { el, input } = await search('a')
-    expect(el.querySelector('.tree')).toBeNull()
-    expect(rowLabels(el)).toEqual(['Alpha', 'Anchor'])
+  it('S1, S3, S4, S6, S8: the body is the Files tree cut to the matches and their parent folders; no query is the tab\'s own tree', async () => {
+    const { el, input, v } = await search('anchor')
+    // S1: a match keeps its place, below its parents — open, though nobody opened them in Files.
+    expect(shape(el)).toEqual(['Docs', '  Guides', '    Anchor guide', '  Anchor'])
+    expect([isOpen(el, `${v}/Docs`), isOpen(el, `${v}/Docs/Guides`)]).toEqual(['true', 'true'])
+    // S3: a matched folder with matches inside opens to THOSE only. S4: a root match has no parent.
+    await type(input, 'plan')
+    expect(shape(el)).toEqual(['Plans', '  Plan A', 'plan'])
+    // S8: two notes of one title, each below its own folder.
+    await type(input, 'readme')
+    expect(shape(el)).toEqual(['Docs', '  Readme', 'Plans', '  Readme'])
+    // S6: spaces are no query, and neither is nothing.
+    await type(input, '   ')
+    expect(shape(el)).toEqual(FILES_CLOSED)
     await type(input, '')
-    expect(el.querySelector('.search-results')).toBeNull()
-    expect(el.querySelector('.tree__row--file')).not.toBeNull()
+    expect(shape(el)).toEqual(FILES_CLOSED)
+    expect(el.querySelector('.sidebar__body .sidebar__msg')).toBeNull()
   })
 
-  it('a reveal request for the current lens clears search so that lens tree can render', async () => {
-    const { el, input, rerender } = await search('a')
-    await rerender({ revealRequest: { id: 1, path: '/v/a.md' } })
+  it('S2, S15, S16: a matched folder with no match inside is closed and opens to ALL it holds; a fold lasts as long as its query', async () => {
+    const { el, input, v, props } = await search('archive')
+    expect(shape(el)).toEqual(['Archive'])
+    expect(isOpen(el, `${v}/Archive`)).toBe('false')
+    click(row(el, `${v}/Archive`))
+    expect(shape(el)).toEqual(['Archive', '  Deep', '  Notes'])
+    click(row(el, `${v}/Archive/Deep`))
+    expect(shape(el)).toEqual(['Archive', '  Deep', '    Old', '  Notes'])
+    // S15: a second click on the same folder closes it again, and a third reopens it as it was.
+    click(row(el, `${v}/Archive`))
+    expect(shape(el)).toEqual(['Archive'])
+    click(row(el, `${v}/Archive`))
+    expect(shape(el)).toEqual(['Archive', '  Deep', '    Old', '  Notes'])
+    expect(props.onOpenFile).not.toHaveBeenCalled() // D1: a click on a folder result folds it, it no longer opens its page
+    // S16: the text changed, so every fold of the search is forgotten.
+    await type(input, 'archiv')
+    expect(shape(el)).toEqual(['Archive'])
+    // S15 on a parent the search opened: closed by a click, and open again on the next query.
+    await type(input, 'anchor')
+    click(row(el, `${v}/Docs/Guides`))
+    expect(shape(el)).toEqual(['Docs', '  Guides', '  Anchor'])
+    await type(input, 'ancho')
+    expect(shape(el)).toEqual(['Docs', '  Guides', '    Anchor guide', '  Anchor'])
+  })
+
+  it('S17, S25, R4: a fold in the search never reaches the Files tree or the store; Esc shows the tree as it was — unfolded to a result that was opened', async () => {
+    const { el, input, v, props, bridge, rerender } = await search('anchor')
+    click(row(el, `${v}/Docs/Guides`))
+    click(row(el, `${v}/Docs`))
+    click(row(el, `${v}/Docs`))
+    await press(input, 'Escape')
     expect(input.value).toBe('')
-    expect(el.querySelector('.tree__row--file')).not.toBeNull()
-  })
-
-  it('a request that arrives while Favorites is showing does not disturb the current search', async () => {
-    const { input, rerender } = await search('a', { lens: 'favorites' })
-    await rerender({ revealRequest: { id: 1, path: '/v/a.md' } })
-    expect(input.value).toBe('a')
-  })
-
-  it('a query nothing matches says so, and still hides the tree', async () => {
-    const { el } = await search('zzz')
-    expect(el.textContent).toContain('No matches')
-    expect(el.querySelector('.tree')).toBeNull()
-  })
-
-  it('a folder label rides along on rows that have one', async () => {
-    const { el } = await search('anch')
-    expect(el.querySelector('.search-results__folder')?.textContent).toBe('Docs')
-  })
-
-  it('the top row starts selected; ArrowDown/ArrowUp clamp at both ends and never wrap', async () => {
-    const { el, input } = await search('a')
-    expect(activeLabel(el)).toBe('Alpha')
-    await press(input, 'ArrowUp')
-    expect(activeLabel(el)).toBe('Alpha') // already at the top
-    await press(input, 'ArrowDown')
-    expect(activeLabel(el)).toBe('Anchor')
-    await press(input, 'ArrowDown')
-    expect(activeLabel(el)).toBe('Anchor') // already at the bottom
-    await press(input, 'ArrowUp')
-    expect(activeLabel(el)).toBe('Alpha')
-  })
-
-  it('Enter opens the SELECTED row in the current tab and leaves the list up', async () => {
-    const { el, input, props } = await search('a')
-    await press(input, 'ArrowDown')
+    expect(shape(el)).toEqual(FILES_CLOSED)
+    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+    // S25: opening a result is the open rule's business (`useVaultTree`), so the cleared search lands on its row.
+    await type(input, 'anchor')
     await press(input, 'Enter')
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Anchor.md')
-    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
-    expect(input.value).toBe('a')
-    expect(rowLabels(el)).toEqual(['Alpha', 'Anchor'])
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Docs/Anchor.md`)
+    await rerender({ activeFile: `${v}/Docs/Anchor.md` })
+    await press(input, 'Escape')
+    expect(shape(el)).toEqual(['Archive', 'Docs', '  Guides', '  Anchor', '  Readme', 'Plans', 'Alpha', 'plan'])
+    expect(row(el, `${v}/Docs/Anchor.md`)?.classList.contains('tree__row--active')).toBe(true)
   })
 
-  it('⌘Enter opens the selected row in a background tab instead', async () => {
-    const { input, props } = await search('a')
+  it('S19, S20: the highlight starts on the BEST match, wherever the tree draws it; ↑/↓ walk the matches on screen, never a parent row, and never wrap', async () => {
+    const { el, input } = await search('anchor')
+    expect(cursor(el)).toEqual(['Anchor']) // the exact name, though `Anchor guide` is drawn above it
+    await press(input, 'ArrowDown')
+    expect(cursor(el)).toEqual(['Anchor']) // already the last match
+    await press(input, 'ArrowUp')
+    expect(cursor(el)).toEqual(['Anchor guide']) // past `Guides`, which is a parent and not a match
+    await press(input, 'ArrowUp')
+    expect(cursor(el)).toEqual(['Anchor guide']) // already the first match: `Docs` above it is no stop
+    await press(input, 'ArrowDown')
+    expect(cursor(el)).toEqual(['Anchor'])
+    // A name that only STARTS with the text: the first of them in the ranking, a folder before a note.
+    await type(input, 'pla')
+    expect(cursor(el)).toEqual(['Plans'])
+    await press(input, 'ArrowDown')
+    expect(cursor(el)).toEqual(['Plan A'])
+    // A new query is a new ranking: its best match — the last row here — not the carried position.
+    await type(input, 'plan')
+    expect(shape(el)).toEqual(['Plans', '  Plan A', 'plan'])
+    expect(cursor(el)).toEqual(['plan'])
+  })
+
+  it('S21: the matches below a folder the user closed are not walked; a highlight that stood on one moves to the match now at that position', async () => {
+    const { el, input, v, props } = await search('anchor')
+    await press(input, 'ArrowUp')
+    expect(cursor(el)).toEqual(['Anchor guide'])
+    click(row(el, `${v}/Docs/Guides`))
+    expect(shape(el)).toEqual(['Docs', '  Guides', '  Anchor'])
+    expect(cursor(el)).toEqual(['Anchor'])
+    await press(input, 'ArrowUp')
+    expect(cursor(el)).toEqual(['Anchor']) // the one match on screen
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Docs/Anchor.md`)
+    // No match on screen at all: nothing is highlighted and Enter has nothing to open.
+    click(row(el, `${v}/Docs`))
+    expect(shape(el)).toEqual(['Docs'])
+    expect(cursor(el)).toEqual([])
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a fold above the highlight leaves it on its match: the highlight is held by its path, not by its position', async () => {
+    const { el, input, v } = await search('a')
+    for (let i = 0; i < 4; i++) await press(input, 'ArrowDown')
+    expect(cursor(el)).toEqual(['Plans'])
+    click(row(el, `${v}/Docs`)) // a parent row above it: three matches leave the screen
+    expect(cursor(el)).toEqual(['Plans'])
+    click(row(el, `${v}/Docs`)) // …and come back
+    expect(cursor(el)).toEqual(['Plans'])
+    await press(input, 'ArrowUp')
+    expect(cursor(el)).toEqual(['Readme'])
+  })
+
+  it('S22: Enter opens the highlighted row in the current tab, ⌘Enter in a background tab; the bar keeps the focus and the results stay', async () => {
+    const { el, input, v, props } = await search('anchor')
+    act(() => input.focus())
+    await press(input, 'ArrowUp')
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Docs/Guides/Anchor guide.md`)
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    await press(input, 'ArrowDown')
     await press(input, 'Enter', true)
-    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
-    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/Docs/Anchor.md`)
+    expect(props.onOpenFile).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('anchor')
+    expect(shape(el)).toEqual(['Docs', '  Guides', '    Anchor guide', '  Anchor'])
   })
 
   /** An editor stand-in: layoutless jsdom always answers `offsetParent: null`, so it declares its own. */
@@ -1288,57 +1401,264 @@ describe('search results (YAZ-803)', () => {
     return pm
   }
 
-  it('a second Enter on the page ALREADY open commits the caret into it, and never re-opens it (YAZ-961)', async () => {
-    // The tree rows' rule (YAZ-921), on the search list: the first Enter previews — focus stays
-    // in the bar, so the walk continues — and the second is the deliberate "take me in".
+  it('S22: Enter on the page ALREADY open commits the caret into it and never re-opens it; ⌘-Enter there is still a background tab (YAZ-961)', async () => {
+    // The tree rows' rule (YAZ-921), on the search: the first Enter previews — focus stays in the
+    // bar, so the walk continues — and the second is the deliberate "take me in".
     const pm = editorStub()
-    const { input, props } = await search('alph', { activeFile: '/v/Alpha.md' })
+    const { el, input, v, props, rerender } = await search('alpha')
+    await rerender({ activeFile: `${v}/Alpha.md` })
+    // S39: the open file's row keeps its active style under the highlight.
+    expect(row(el, `${v}/Alpha.md`)?.className).toContain('tree__row--active tree__row--selected')
+    await press(input, 'Enter', true)
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/Alpha.md`)
+    expect(document.activeElement).not.toBe(pm)
     await press(input, 'Enter')
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(document.activeElement).toBe(pm)
     pm.remove()
   })
 
-  it('⌘-Enter on the open page still opens a background tab — never the commit (YAZ-961)', async () => {
-    const pm = editorStub()
-    const { input, props } = await search('alph', { activeFile: '/v/Alpha.md' })
-    await press(input, 'Enter', true)
-    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
-    expect(document.activeElement).not.toBe(pm)
-    pm.remove()
+  it('S26 to S29: a click acts as on any tree row and moves the highlight to a MATCH only; shift-click does nothing', async () => {
+    const { el, input, v, props } = await search('plan')
+    expect(cursor(el)).toEqual(['plan'])
+    // S26: a note row opens — ⌘ in a background tab — and takes the highlight.
+    click(row(el, `${v}/Plans/Plan A.md`))
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Plans/Plan A.md`)
+    expect(cursor(el)).toEqual(['Plan A'])
+    click(row(el, `${v}/plan.md`), { metaKey: true })
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/plan.md`)
+    expect(cursor(el)).toEqual(['plan'])
+    // S27: a folder row folds and, being a match, takes the highlight; only a double-click opens its page.
+    click(row(el, `${v}/Plans`))
+    expect(shape(el)).toEqual(['Plans', 'plan'])
+    expect(cursor(el)).toEqual(['Plans'])
+    expect(props.onOpenFile).toHaveBeenCalledTimes(1)
+    act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Plans`)
+    // S28: a row inside an opened folder is no match — it opens as a tree row does, and the highlight stays.
+    await type(input, 'archive')
+    click(row(el, `${v}/Archive`))
+    click(row(el, `${v}/Archive/Notes.md`))
+    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Archive/Notes.md`)
+    expect(cursor(el)).toEqual(['Archive'])
+    // S29: a search has no multi-select — shift neither selects, opens nor folds.
+    const opened = vi.mocked(props.onOpenFile).mock.calls.length
+    click(row(el, `${v}/Archive/Notes.md`), { shiftKey: true })
+    click(row(el, `${v}/Archive`), { shiftKey: true })
+    expect(cursor(el)).toEqual(['Archive'])
+    expect(shape(el)).toEqual(['Archive', '  Deep', '  Notes'])
+    expect(props.onOpenFile).toHaveBeenCalledTimes(opened)
   })
 
-  it('changing the query re-selects the top row', async () => {
-    const { el, input } = await search('a')
-    await press(input, 'ArrowDown')
-    expect(activeLabel(el)).toBe('Anchor')
-    await type(input, 'an')
-    expect(activeLabel(el)).toBe('Anchor') // the new ranking's FIRST row, not the carried index
-    expect(rowLabels(el)).toEqual(['Anchor'])
+  it('S30: a right-click opens the row\'s own menu — a parent row\'s too — and the highlight follows it onto a match, as it follows a click', async () => {
+    const { el, v } = await search('plan')
+    const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    rightClick(row(el, `${v}/Plans/Plan A.md`))
+    expect(itemByLabel(el, 'Rename')).toBeDefined()
+    expect(cursor(el)).toEqual(['Plan A'])
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    await type(searchInput(el)!, 'anchor')
+    rightClick(row(el, `${v}/Docs`))
+    expect(itemByLabel(el, 'Add to focus')).toBeDefined()
+    // `Docs` is a parent, not a match: the highlight stays, and while its menu is open the row
+    // wears the selected style beside it, as on Files — the menu says what it acts on.
+    expect(cursor(el)).toEqual(['Docs', 'Anchor'])
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(cursor(el)).toEqual(['Anchor'])
   })
 
-  it('an index refresh that shrinks the list keeps the highlight on the LAST row, and Enter opens that row (YAZ-808)', async () => {
-    // The watcher fans out to every subscriber (useWatch's shape) — here the tree's and search's.
-    const listeners: ((ev: WatchEvent) => void)[] = []
-    const watch = {
-      subscribe: (l: (ev: WatchEvent) => void) => {
-        listeners.push(l)
-        return () => void listeners.splice(listeners.indexOf(l), 1)
-      },
-    }
-    const { el, input, bridge, props } = await search('a', { watch })
+  it('S41 to S44: while text is typed an `esc` keycap says how to clear it, and a click on it does — the caret back in the bar; it is no Tab stop', async () => {
+    const { el, input } = await search('plan')
+    const keycap = () => el.querySelector<HTMLButtonElement>('.sidebar__search .sidebar__search-clear')
+    expect(keycap()?.textContent).toBe('esc')
+    expect([keycap()?.title, keycap()?.getAttribute('aria-label'), keycap()?.tabIndex]).toEqual(['Clear search (Esc)', 'Clear search', -1])
+    // The bar does not have the focus: the click still clears, and puts the caret there.
+    expect(document.activeElement).not.toBe(input)
+    click(keycap())
+    expect(input.value).toBe('')
+    expect(shape(el)).toEqual(FILES_CLOSED)
+    expect(document.activeElement).toBe(input)
+    expect(keycap()).toBeNull() // S41: nothing typed, nothing to clear
+    // S42: spaces are text too — what Esc would clear, the keycap offers to.
+    await type(input, '  ')
+    expect(keycap()).not.toBeNull()
+  })
+
+  it('S32: a drag does nothing — no row is a drop target and nothing moves on disk', async () => {
+    const { el, v, props } = await search('plan')
+    act(() => void row(el, `${v}/plan.md`)?.dispatchEvent(new Event('dragstart', { bubbles: true })))
+    act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new Event('dragover', { bubbles: true })))
+    expect(el.querySelector('.tree__row--drop')).toBeNull()
+    act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new Event('drop', { bubbles: true })))
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('S9, S10: a note is ONE row under its title, whatever of it matched — an alias alone, its title and an alias, or its id', async () => {
+    const { el, input, v, props } = await search('first', {}, {
+      records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Alpha.md') ? { aliases: ['First letter', 'Alphabet'] } : path.endsWith('/Zed.md') ? { id: 'k3m9x2pq7abc' } : {})),
+    })
+    expect(shape(el)).toEqual(['Alpha']) // S9: found by its alias, shown by its title
+    await type(input, 'alpha')
+    expect(shape(el)).toEqual(['Alpha']) // two candidates matched — the title and `Alphabet` — one row
     await press(input, 'ArrowDown')
-    expect(activeLabel(el)).toBe('Anchor') // index 1 of two rows
-    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], folders: [], generatedAt: 2, ids: true } as never)
-    await act(async () => [...listeners].forEach((l) => l({ type: 'unlink', path: '/v/Docs/Anchor.md' })))
-    await afterQuiet()
-    expect(rowLabels(el)).toEqual(['Alpha'])
-    expect(activeLabel(el)).toBe('Alpha') // the stale index 1 clamps onto the last row, not onto nothing
+    expect(cursor(el)).toEqual(['Alpha'])
     await press(input, 'Enter')
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Alpha.md`)
+    // S10: text that holds an id is that note alone, with its parents.
+    await type(input, `see [[k3m9x2pq7abc]] in ${v}/Plans`)
+    expect(shape(el)).toEqual(['Plans', '  Zed'])
+    expect(cursor(el)).toEqual(['Zed'])
   })
 
-  it('right-clicking blank space in the results offers no menu — not even the OS one (YAZ-803, YAZ-2050)', async () => {
+  it('S37, S38, S40, S9, S10: a match shows the typed text bold where it first sits — whatever its case, spaces aside — and every other row steps back; a tree outside a search is drawn as ever (R7)', async () => {
+    const vault = await search('', {}, {
+      records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Alpha.md') ? { aliases: ['First letter'] } : path.endsWith('/Zed.md') ? { id: 'k3m9x2pq7abc' } : {})),
+    })
+    const { el, input, v } = vault
+    const body = () => el.querySelector('.sidebar__body')!.innerHTML
+    const bold = () => [...el.querySelectorAll('.sidebar__body .tree__mark')].map((n) => n.textContent)
+    const grey = () => [...el.querySelectorAll('.sidebar__body .tree__row--context .tree__label')].map((n) => n.textContent)
+    const files = body()
+    await type(input, '  AN  ')
+    expect(shape(el)).toEqual(['Docs', '  Guides', '    Anchor guide', '  Anchor', 'Plans', '  Plan A', 'plan'])
+    expect(bold()).toEqual(['An', 'An', 'an', 'an', 'an']) // S37, S40: the label's own letters, the query's spaces ignored
+    expect(grey()).toEqual(['Docs', 'Guides']) // S38: the parents; `Plans` holds the text, so it is a match
+    // S37: the FIRST place only.
+    await type(input, 'a')
+    expect(row(el, `${v}/Plans/Plan A.md`)?.querySelector('.tree__label')?.innerHTML).toBe('Pl<mark class="tree__mark">a</mark>n A')
+    // S38: the rows inside an opened folder that holds no match are no matches either.
+    await type(input, 'archive')
+    click(row(el, `${v}/Archive`))
+    expect(bold()).toEqual(['Archive'])
+    expect(grey()).toEqual(['Deep', 'Notes'])
+    // S9, S10: found by an alias, or by an id — a match, in the normal colour, with nothing in its label to mark.
+    await type(input, 'first')
+    expect([shape(el), bold(), grey()]).toEqual([['Alpha'], [], []])
+    await type(input, 'k3m9x2pq7abc')
+    expect([shape(el), bold(), grey()]).toEqual([['Plans', '  Zed'], [], ['Plans']])
+    // R7: the tab's own tree gets no marks — it is drawn exactly as before the search.
+    await type(input, '')
+    expect(body()).toBe(files)
+    expect(el.querySelector('.tree__mark, .tree__row--context')).toBeNull()
+  })
+
+  it('S5, S11: nothing matched says so; at the limit a line below the tree says so — the limit counts candidate rows, a title and an alias being two', async () => {
+    const many = (v: string): TreeNode[] => [folder(`${v}/Log`, Array.from({ length: 30 }, (_, i) => note(`${v}/Log/Note ${String(i).padStart(2, '0')}.md`)))]
+    const { el, input } = await search('not', {}, { nodes: many, records: (v) => notePaths(many(v)).map((path, i) => record(v, path, { aliases: [`Notable ${i}`] })) })
+    // 60 candidates matched; the 50 kept are 25 notes' title and alias.
+    expect(el.querySelectorAll('.sidebar__body .tree__row--file')).toHaveLength(25)
+    expect(el.querySelector('.sidebar__body .tree + .sidebar__msg')?.textContent).toBe('Showing 50 matches. Type more to narrow.')
+    await type(input, 'note 1')
+    expect(el.querySelectorAll('.sidebar__body .tree__row--file')).toHaveLength(10)
+    expect(el.querySelector('.sidebar__body .sidebar__msg')).toBeNull()
+    await type(input, 'zzz')
+    expect(el.querySelector('.sidebar__body .tree')).toBeNull()
+    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches')
+  })
+
+  /** A folder of files that are no notes (🔒 D3) — a script the app cannot show, a PDF it can — beside a note whose file name is not its title. */
+  const TOOLS = (v: string): TreeNode[] => [
+    folder(`${v}/skills`, [
+      { type: 'file', name: 'get-transcript.py', path: `${v}/skills/get-transcript.py`, size: 1, mtime: 1, kind: null },
+      { type: 'file', name: 'scan.pdf', path: `${v}/skills/scan.pdf`, size: 1, mtime: 1, kind: 'pdf' },
+      note(`${v}/skills/Transcript.md`),
+    ]),
+    note(`${v}/up-001.md`),
+  ]
+  const toolRecords = (v: string) => [record(v, `${v}/skills/Transcript.md`), record(v, `${v}/up-001.md`, { title: 'Abdul' })]
+
+  it('S12, S13, S24: a file that is no note is found by its file name, extension included; Enter opens one the app cannot show in its default app, with no tab', async () => {
+    // S13: the index may hold a note the tree does not show (a hidden folder, `node_modules`): it is no row.
+    const { el, input, v, props, bridge } = await search('transcript', {}, { nodes: TOOLS, records: (root) => [...toolRecords(root), record(root, `${root}/node_modules/pkg/Transcript notes.md`)] })
+    expect(shape(el)).toEqual(['skills', '  get-transcript.py', '  Transcript'])
+    expect(cursor(el)).toEqual(['Transcript']) // the exact name; the script only holds the text
+    await type(input, '.py')
+    expect(shape(el)).toEqual(['skills', '  get-transcript.py'])
+    // S24: no viewer in the app, so the OS opens it — ⌘ or not, there is no tab to open or to background.
+    await press(input, 'Enter')
+    await press(input, 'Enter', true)
+    expect(bridge.shell.openDefault.mock.calls).toEqual([[{ path: `${v}/skills/get-transcript.py` }], [{ path: `${v}/skills/get-transcript.py` }]])
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    // A file the app CAN show opens as a tab, as its tree row does.
+    await type(input, 'scan')
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/skills/scan.pdf`)
+    // S12: a note is found by its title and aliases, never by its file name.
+    await type(input, 'up-001')
+    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches')
+    await type(input, 'abdul')
+    expect(shape(el)).toEqual(['up-001']) // the row's label is the window index's business; the search found it by title
+  })
+
+  it('S35: with no index — not loaded, or unreadable — folders and files that are no notes are still found, from the tree, and no error shows; notes arrive with the index', async () => {
+    const { el, input, v, props, bridge, emit } = await search('transcript', {}, { nodes: TOOLS, records: toolRecords, tweak: (b) => b.index.mockRejectedValue(new Error('no index')) })
+    expect(shape(el)).toEqual(['skills', '  get-transcript.py'])
+    await type(input, 'skills')
+    expect(shape(el)).toEqual(['skills'])
+    expect(el.querySelector('.sidebar__msg--error')).toBeNull()
+    expect(props.onNotice).not.toHaveBeenCalled()
+    bridge.index.mockResolvedValue({ root: v, records: toolRecords(v), folders: [], generatedAt: 2, ids: true } as never)
+    await emit({ type: 'ready', root: v })
+    await type(input, 'transcript')
+    expect(shape(el)).toEqual(['skills', '  get-transcript.py', '  Transcript'])
+  })
+
+  it('S34: a file removed or added during a search — the results follow the new tree and the new index, and the highlight clamps onto a row (YAZ-808)', async () => {
+    const { el, input, v, nodes, records, bridge, props, emit } = await search('anchor')
+    await press(input, 'ArrowUp')
+    await press(input, 'ArrowDown')
+    expect(cursor(el)).toEqual(['Anchor']) // moved there by the keys: the second of two matches
+    const without = (list: readonly TreeNode[]): TreeNode[] => list.flatMap((n): TreeNode[] => (n.path === `${v}/Docs/Anchor.md` ? [] : n.type === 'dir' ? [{ ...n, children: without(n.children) }] : [n]))
+    bridge.tree.mockResolvedValue({ root: v, tree: without(nodes), generatedAt: 2 })
+    bridge.index.mockResolvedValue({ root: v, records: records.filter((r) => r.path !== `${v}/Docs/Anchor.md`), folders: [], generatedAt: 2, ids: true } as never)
+    await emit({ type: 'unlink', path: `${v}/Docs/Anchor.md` })
+    await afterQuiet()
+    expect(shape(el)).toEqual(['Docs', '  Guides', '    Anchor guide'])
+    expect(cursor(el)).toEqual(['Anchor guide']) // the stale position clamps onto the last match, not onto nothing
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Docs/Guides/Anchor guide.md`)
+    bridge.tree.mockResolvedValue({ root: v, tree: [...without(nodes), note(`${v}/Anchorage.md`)], generatedAt: 3 })
+    bridge.index.mockResolvedValue({ root: v, records: [...records.filter((r) => r.path !== `${v}/Docs/Anchor.md`), record(v, `${v}/Anchorage.md`)], folders: [], generatedAt: 3, ids: true } as never)
+    await emit({ type: 'add', path: `${v}/Anchorage.md`, mtime: 1 })
+    await afterQuiet()
+    expect(shape(el)).toEqual(['Docs', '  Guides', '    Anchor guide', 'Anchorage'])
+  })
+
+  it('the highlighted row is scrolled into view as the keys move it — the tree scrolls inside the body', async () => {
+    const scrolled: (string | undefined)[] = []
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value(this: HTMLElement) { scrolled.push(this.dataset.path) } })
+    try {
+      const { input, v } = await search('anchor')
+      expect(scrolled.at(-1)).toBe(`${v}/Docs/Anchor.md`)
+      await press(input, 'ArrowUp')
+      expect(scrolled.at(-1)).toBe(`${v}/Docs/Guides/Anchor guide.md`)
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
+    }
+  })
+
+  it('the search tree is memoised per level like every tree (YAZ-2194): a render that changes nothing for it re-renders no row', async () => {
+    const { rerender } = await search('readme')
+    labelRenders.names = []
+    await rerender({ width: 300 })
+    expect(labelRenders.names).toEqual([])
+  })
+
+  it('a reveal request for the current lens clears search so that lens tree can render', async () => {
+    const { el, input, v, rerender } = await search('a')
+    await rerender({ revealRequest: { id: 1, path: `${v}/Alpha.md` } })
+    expect(input.value).toBe('')
+    expect(shape(el)).toEqual(FILES_CLOSED)
+  })
+
+  it('a request that arrives while Favorites is showing does not disturb the current search', async () => {
+    const { input, v, rerender } = await search('a', { lens: 'favorites' })
+    await rerender({ revealRequest: { id: 1, path: `${v}/Alpha.md` } })
+    expect(input.value).toBe('a')
+  })
+
+  it('S31: right-clicking blank space in the results offers no menu — not even the OS one (YAZ-803, YAZ-2050)', async () => {
     const { el } = await search('a')
     let reached = true
     act(() => void (reached = el.querySelector('.sidebar__body')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))))
@@ -1348,7 +1668,7 @@ describe('search results (YAZ-803)', () => {
 })
 
 /**
- * A search row's right-click (YAZ-2050): the SAME menu its tree row gets. 🔒 D1: it follows the
+ * A search row's right-click (YAZ-2050, S30 on YAZ-2620): the SAME menu its row in Files gets. 🔒 D1: it follows the
  * FILES rules on every tab — a search row is a disk row. 🔒 D2: the items that draw INTO the tree
  * (Rename, the New group) leave the search through `onRevealInFiles` and then act;
  * everything else — the focus toggle too (YAZ-2619 S11) — acts in place and the query stays.
@@ -1365,7 +1685,8 @@ describe('search-row context menu (YAZ-2050)', () => {
   const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
   const closeMenu = (el: HTMLElement) => act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
   const labels = (el: HTMLElement) => menuItems(el).map((b) => b.textContent)
-  const result = (el: HTMLElement, dir = false) => el.querySelector(`.search-results__row${dir ? '--dir' : ':not(.search-results__row--dir)'}`)
+  /** The search tree's first note row, or its first folder row. */
+  const result = (el: HTMLElement, dir = false) => el.querySelector(`.sidebar__body .tree__row--${dir ? 'dir' : 'file'}`)
   /** What App does with `onRevealInFiles`: flip to Files and issue the reveal the Sidebar consumes. */
   const appReveals = (rerender: (next: Partial<SidebarProps>) => Promise<void>, path: string) =>
     rerender({ lens: 'files', revealRequest: { id: 1, path } })
@@ -1441,21 +1762,22 @@ describe('search-row context menu (YAZ-2050)', () => {
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(input.value).toBe('a')
-    expect(el.querySelector('.search-results')).not.toBeNull()
+    expect(result(el)?.classList.contains('tree__row--selected')).toBe(true) // still the search: its highlight is on the row
   })
 })
 
 /**
- * Folders in the search list (YAZ-1491). 🔒 D1: the rows come from the tree the Sidebar already
- * holds (`dirs`), not from the index feed. 🔒 D2: one flat list, the same matcher — a folder is
- * one row, a note still never matches on its folder. Choosing a folder row OPENS its page as a
- * tab, exactly as a note row opens the note — `onOpenFile`, ⌘ for a background tab — from EITHER
- * lens and by keyboard OR click. The Files reveal path still accepts a DIR (the row menu's door):
- * ancestors AND the dir itself open, the dir row flashes. 🔒 D4: the row looks like a folder.
+ * Folders in the search (YAZ-1491). 🔒 D1: the rows come from the tree the Sidebar already
+ * holds (`dirs`), not from the index feed. 🔒 D2: the same matcher — a folder is one row, a note
+ * still never matches on its folder. Since YAZ-2620 the row is the folder's own TREE row: Enter
+ * OPENS its page as a tab, exactly as it opens a note — `onOpenFile`, ⌘ for a background tab — from
+ * EITHER lens; a click folds it and a double-click opens it, as on Files (D1 there). The Files
+ * reveal path still accepts a DIR (the row menu's door): ancestors AND the dir itself open, the dir
+ * row flashes.
  */
 describe('folder rows in search (YAZ-1491)', () => {
-  const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
-  const dirResult = (el: HTMLElement) => el.querySelector<HTMLLIElement>('.search-results__row--dir')
+  const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__body .tree__row .tree__label')].map((n) => n.textContent)
+  const dirResult = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__body .tree__row--dir')
   const press = (input: HTMLInputElement, key: string, metaKey = false) =>
     act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey, bubbles: true })))
   const clickRow = (row: Element | null, metaKey = false) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey })))
@@ -1465,32 +1787,41 @@ describe('folder rows in search (YAZ-1491)', () => {
 
   /** A folder AND a note both called `sub`, so the tie-break is observable. */
   const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', title: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const SUB_TREE: TreeNode[] = [...TREE, { type: 'file', name: 'sub.md', path: '/v/sub.md', size: 1, mtime: 1, kind: 'markdown' }]
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
-    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], folders: [], generatedAt: 1, ids: true } as never))
+    const m = await mount(over, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree: SUB_TREE, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], folders: [], generatedAt: 1, ids: true } as never)
+    })
     const input = searchInput(m.el)!
     await type(input, query)
     return { ...m, input }
   }
 
-  it('a folder of the loaded tree is a row — above the same-named note — marked as a folder (🔒 D1/D2/D4)', async () => {
+  it('a folder of the loaded tree is a row — its own tree row, above the same-named note — and the tie is the folder\'s (🔒 D1/D2, S19)', async () => {
     const { el } = await search('sub')
     expect(rowLabels(el)).toEqual(['sub', 'sub'])
-    const [folder, note] = [...el.querySelectorAll('.search-results__row')]
-    expect(folder.classList.contains('search-results__row--dir')).toBe(true)
-    expect(folder.getAttribute('aria-label')).toBe('Search result sub, folder')
-    expect(folder.querySelector('.search-results__glyph')).not.toBeNull()
-    expect(note.classList.contains('search-results__row--dir')).toBe(false)
+    const [folder, note] = [...el.querySelectorAll('.sidebar__body .tree__row')]
+    expect(folder.classList.contains('tree__row--dir')).toBe(true)
+    expect(note.classList.contains('tree__row--dir')).toBe(false)
+    // Both names are exact: the folder is ranked first, so the highlight starts on it.
+    expect(folder.classList.contains('tree__row--selected')).toBe(true)
+    expect(note.classList.contains('tree__row--selected')).toBe(false)
   })
 
-  it('E: a folder is found and shown by its title, off the search\'s own index read (YAZ-2420 D14)', async () => {
-    const m = await mount({}, (b) => b.index.mockResolvedValue({ root: '/v', records: [], folders: [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }], generatedAt: 1, ids: true } as never))
+  it('E: a folder is found by its title, off the search\'s own index read, and its row shows that title (YAZ-2420 D14)', async () => {
+    const folders = [{ ...indexRecord('/v/sub/.folder.md'), title: 'Upwork 2026' }]
+    const indexSource = createWikilinkResolveSource()
+    act(() => indexSource.update(() => null, [], folders, true))
+    const m = await mount({ indexSource }, (b) => b.index.mockResolvedValue({ root: '/v', records: [], folders, generatedAt: 1, ids: true } as never))
     await type(searchInput(m.el)!, 'upwork')
-    expect(dirResult(m.el)?.getAttribute('aria-label')).toBe('Search result Upwork 2026, folder')
+    expect(dirResult(m.el)?.dataset.path).toBe('/v/sub')
+    expect(rowLabels(m.el)).toEqual(['Upwork 2026'])
   })
 
-  it('Enter on a folder in the search results opens the folder\'s page as a tab, exactly as a note hit opens the note — nothing is revealed', async () => {
+  it('S23: Enter on a folder in the search results opens the folder\'s page as a tab, exactly as a note hit opens the note — nothing is revealed', async () => {
     const { el, input, props } = await search('sub')
-    expect(dirResult(el)?.classList.contains('search-results__row--active')).toBe(true)
+    expect(dirResult(el)?.classList.contains('tree__row--selected')).toBe(true)
     await press(input, 'Enter')
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
@@ -1505,12 +1836,16 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
-  it('a click on a folder row goes through the SAME rule as Enter: click opens the page, ⌘-click a background tab', async () => {
+  it('S27: a click on a folder row folds it, as on Files — it no longer opens the page; a double-click does (YAZ-2620 D1)', async () => {
     const { el, props } = await search('sub')
+    const before = dirResult(el)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
     clickRow(dirResult(el))
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(dirResult(el)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).not.toBe(before)
     clickRow(dirResult(el), true)
-    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    act(() => void dirResult(el)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
@@ -1552,7 +1887,6 @@ describe('folder rows in search (YAZ-1491)', () => {
     // What `revealInFiles` in App does: the lens is already Files here, so only the request lands.
     await rerender({ revealRequest: { id: 1, path: '/v/sub' } })
     expect(input.value).toBe('')
-    expect(el.querySelector('.search-results')).toBeNull()
     expect(dirRow(el, 'sub')?.classList.contains('tree__row--revealed')).toBe(true)
     expect(props.onNotice).not.toHaveBeenCalled()
   })
@@ -1603,7 +1937,15 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
-  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
+  /** The vault those two notes live in: a search draws the tree, so its rows must be IN the tree (YAZ-2620). */
+  const SEARCHED: TreeNode[] = [
+    { type: 'dir', name: 'Docs', path: '/v/Docs', children: [{ type: 'file', name: 'Anchor.md', path: '/v/Docs/Anchor.md', size: 1, mtime: 1, kind: 'markdown' }] },
+    { type: 'file', name: 'Alpha.md', path: '/v/Alpha.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withIndex = (b: ReturnType<typeof installBridge>) => {
+    b.tree.mockResolvedValue({ root: '/v', tree: SEARCHED, generatedAt: 1 })
+    b.index.mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: true } as never)
+  }
 
   const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
   /** Favorites is a glyph (YAZ-1766 D1): its name is the `aria-label`, not text. */
@@ -1611,7 +1953,8 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
   const tabByLabel = (el: HTMLElement, label: string) => tabs(el).find((b) => tabName(b) === label)
   const selectedTabs = (el: HTMLElement) => tabs(el).filter((b) => b.getAttribute('aria-selected') === 'true').map(tabName)
   const bodyMsg = (el: HTMLElement) => el.querySelector('.sidebar__body .sidebar__msg')?.textContent ?? null
-  const resultLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
+  /** Every row the body draws, top to bottom: during a search, the matches and their parent folders. */
+  const resultLabels = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__body .tree__row .tree__label')].map((n) => n.textContent)
   const dirItem = (el: HTMLElement) => el.querySelector('.tree__row--dir')?.closest('[role="treeitem"]') ?? null
 
   it('renders a tablist of exactly Files, Focus, then Favorites (YAZ-1766 D1, YAZ-2619), the active one aria-selected and no other', async () => {
@@ -1659,14 +2002,14 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     expect(dirItem(el)?.getAttribute('aria-expanded')).toBe(toggled)
   })
 
-  it('a query on FAVORITES replaces the tab\'s body with the flat results; clearing brings the body back', async () => {
+  it('S33: a query on FAVORITES replaces the tab\'s body with the search tree — of the whole vault, favorited or not; clearing brings the body back', async () => {
     const { el } = await mount({ lens: 'favorites' }, withIndex)
     const input = searchInput(el)!
     await type(input, 'a')
-    expect(resultLabels(el)).toEqual(['Alpha', 'Anchor'])
+    expect(resultLabels(el)).toEqual(['Docs', 'Anchor', 'Alpha'])
     expect(bodyMsg(el)).toBeNull()
     await type(input, '')
-    expect(el.querySelector('.search-results')).toBeNull()
+    expect(resultLabels(el)).toEqual([])
     expect(bodyMsg(el)).toContain('No favorites yet')
   })
 
@@ -1679,10 +2022,10 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
     await rerender({ lens: 'files' })
     expect(input.value).toBe('a') // the query is untouched by the switch…
-    expect(resultLabels(el)).toEqual(['Alpha', 'Anchor']) // …and still replaces the ACTIVE tab's body
-    expect(el.querySelector('.tree')).toBeNull()
+    expect(resultLabels(el)).toEqual(['Docs', 'Anchor', 'Alpha']) // …and still replaces the ACTIVE tab's body
     await type(input, '')
     expect(el.querySelector('.tree')).not.toBeNull() // clearing lands on the lens that is now active
+    expect(bodyMsg(el)).toBeNull()
   })
 
   it('a typed query still offers nothing on either lens — a result list has no root to target (YAZ-803)', async () => {
@@ -1986,15 +2329,15 @@ describe('focus tab (YAZ-2619)', () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects'] })
     const input = searchInput(el)!
     await type(input, 'Notes')
-    const result = el.querySelector('.search-results__row--dir') // Notes is not in the list: the search is the vault's
-    expect(result?.getAttribute('aria-label')).toBe('Search result Notes, folder')
+    const result = rowByPath(el, `${v}/Notes`) // Notes is not in the list: the search is the vault's, drawn as its tree (YAZ-2620)
+    expect([result?.querySelector('.tree__mark')?.textContent, result?.classList.contains('tree__row--context')]).toEqual(['Notes', false])
     expect(countLine(el)).toBeNull()
     rightClick(result)
     await act(async () => itemByLabel(el, 'Add to focus')?.click())
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`, `${v}/Notes`] })
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(input.value).toBe('Notes')
-    expect(el.querySelector('.search-results__row--dir')).not.toBeNull()
+    expect(rowByPath(el, `${v}/Notes`)?.querySelector('.tree__mark')).not.toBeNull()
     act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(input.value).toBe('')
     expect(topLabels(el)).toEqual(['Projects', 'Notes'])
@@ -2262,14 +2605,14 @@ describe('favorites (YAZ-1766)', () => {
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     const input = searchInput(el)!
     await type(input, 'Alpha')
-    rightClick(el.querySelector('.search-results__row--dir'))
+    rightClick(rowByPath(el, `${v}/Projects/Alpha`))
     await act(async () => itemByLabel(el, 'Add to focus')?.click())
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`, `${v}/Projects/Alpha`] })
     expect(props.onLensChange).toHaveBeenCalledTimes(2)
     expect(props.onLensChange).toHaveBeenLastCalledWith('focus')
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(input.value).toBe('Alpha')
-    expect(el.querySelector('.search-results__row--dir')).not.toBeNull()
+    expect(rowByPath(el, `${v}/Projects/Alpha`)?.querySelector('.tree__mark')).not.toBeNull()
   })
 
   it('root rows drag to reorder: a drop indicator on the hovered edge, the new order persisted; nested rows do not drag; Files is untouched', async () => {
@@ -2837,8 +3180,8 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     const { el } = await mount()
     shiftClick(fileRow(el))
     expect(selectedRows(el)).toHaveLength(1)
-    // 🔒 the flat-list ruling (YAZ-739): a query REPLACES the tree, so a selection cannot survive
-    // underneath it and be waiting when the query clears.
+    // A query REPLACES the tab's tree — with the search's own (YAZ-2620), or with "No matches" as
+    // here — so a selection cannot survive underneath it and be waiting when the query clears.
     await type(searchInput(el) as HTMLInputElement, 'a')
     expect(el.querySelector('.tree')).toBeNull()
     await type(searchInput(el) as HTMLInputElement, '')
@@ -3782,6 +4125,17 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       const { el, props } = await mountLinked([PROJECTS_ID])
       act(() => shortcutRow(el)?.click())
       expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(HEALTH)
+    })
+
+    it('S7, S14 (YAZ-2620): a search draws the note ONCE, in the folder it lives in — no shortcut row — and a folder row keeps its full count', async () => {
+      const { el } = await mountLinked([PROJECTS_ID], {}, (bridge) => bridge.index.mockResolvedValue({ root: '/v', records: records([PROJECTS_ID]), folders: FOLDERS, generatedAt: 1, ids: true } as never))
+      const labels = () => [...el.querySelectorAll('.sidebar__body .tree__row .tree__label')].map((label) => label.textContent)
+      await type(searchInput(el)!, 'health')
+      expect(labels()).toEqual(['Areas', 'Health'])
+      expect(el.querySelector('.sidebar__body .shortcut-mark')).toBeNull()
+      await type(searchInput(el)!, 'alpha')
+      expect(labels()).toEqual(['Projects', 'Alpha'])
+      expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('3') // Alpha, Zeta and the shortcut: the folder's, not the matches'
     })
 
     it('is not draggable — a drag would move the note out of the folder it lives in — while its real row still is', async () => {

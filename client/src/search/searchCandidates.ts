@@ -5,12 +5,15 @@
  * frontmatter ALIASES only — `folder` rides along as the row's display label and is never matched.
  * Amended by 🔒 D2 on YAZ-1491: a note STILL never matches on its folder; the folder itself is one
  * row (`folderCandidates`, fed from the tree the Sidebar already holds — 🔒 D1), matched by its own
- * title through the same matcher, in the same flat list.
+ * title through the same matcher, in the same ranking. Amended again by 🔒 D3 on YAZ-2620: the
+ * search finds each row the tree shows, so a tree file that is no note is one row too
+ * (`fileCandidates`), matched by its file name. The sidebar draws the ranked rows as a tree
+ * (`searchTree`); the shortcut picker, over notes alone, as the flat list.
  *
  * Deliberately NOT `linkCandidates`: a link candidate must insert text that resolves back to its
  * own record, so duplicate basenames there are folder-disambiguated and only the shallowest keeps
  * the bare name. Search opens `path` directly, so there is nothing to disambiguate — every note
- * gets a row under its own title, and duplicates are told apart by the folder label.
+ * gets a row under its own title, and duplicates are told apart by the folder they stand in.
  */
 import type { IndexRecord } from '@shared/types'
 import { basename, relTo } from '../lib/paths'
@@ -19,9 +22,9 @@ import { foldersByDir } from '../links/shortcuts'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {
-  /** What the row is: a note (`file`) or a folder (`dir`). Activating either OPENS its page. */
+  /** What the row is: a note or another file (`file`), or a folder (`dir`). Activating a note or a folder OPENS its page. */
   kind: 'file' | 'dir'
-  /** The text the query matches: the note's title, one of its aliases, or the folder's title. */
+  /** The text the query matches: the note's title, one of its aliases, the folder's title, or another file's name. */
   name: string
   /** `name.toLowerCase()`, precomputed so the ranking scan (GRO-2197) allocates nothing per keystroke. */
   lower: string
@@ -35,7 +38,7 @@ export interface SearchCandidate {
   id?: string
 }
 
-/** Result cap for title search — a scrollable result list, not the `[[` picker's MAX_SUGGESTIONS popup. */
+/** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
 export const SEARCH_CAP = 50
 
 /**
@@ -68,6 +71,21 @@ export function folderCandidates(root: string, dirs: readonly string[], folders:
     const held = settings.get(dir)
     const name = held?.title ?? basename(dir)
     return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: cut === -1 ? '' : rel.slice(0, cut), id: held?.id }
+  })
+}
+
+/**
+ * One row per tree file that is not a note (🔒 D3, YAZ-2620) — a script, a PDF, an image — matched
+ * by its file name, extension included. `files` are ABSOLUTE paths in tree order (`otherFiles`,
+ * treeState.ts), off the tree the Sidebar already holds: no index read, no disk read. Spliced
+ * BEHIND `searchCandidates`, so a tie in a rank bucket reads folder, note, other file.
+ */
+export function fileCandidates(root: string, files: readonly string[]): SearchCandidate[] {
+  return files.map((path) => {
+    const name = basename(path)
+    const rel = relTo(root, path)
+    const cut = rel.lastIndexOf('/')
+    return { kind: 'file', name, lower: name.toLowerCase(), label: name, path, folder: cut === -1 ? '' : rel.slice(0, cut) }
   })
 }
 

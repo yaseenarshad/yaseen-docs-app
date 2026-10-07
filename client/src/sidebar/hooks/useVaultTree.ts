@@ -11,7 +11,7 @@ import type { NoticeKind } from '../../lib/notice'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, onTree } from '../../lib/treeFeed'
-import { allDirs, favoriteRoots, findNode, treeHasPath, treeReducer } from '../../lib/treeState'
+import { allDirs, favoriteRoots, findNode, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -40,9 +40,11 @@ export function useVaultTree(
   favoritesRef.current = favorites
 
   // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
-  // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
+  // (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one memo, no second
   // feed.
   const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only.
+  const files = useMemo(() => (tree === null ? [] : otherFiles(tree.tree)), [tree])
   // The Focus tab's rows (YAZ-2619 D2): the list in the order ADDED, off the live tree, by the
   // Favorites rule below (`favoriteRoots`) — a vanished path yields no row, and the prune below drops it.
   const focusNodes = useMemo(() => (tree === null ? [] : favoriteRoots(tree.tree, focusList)), [tree, focusList])
@@ -245,5 +247,5 @@ export function useVaultTree(
   const expandedSet = useMemo(() => new Set(expanded), [expanded])
   const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
 
-  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, favoriteNodes, favoriteDirs }
+  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, files, favoriteNodes, favoriteDirs }
 }
