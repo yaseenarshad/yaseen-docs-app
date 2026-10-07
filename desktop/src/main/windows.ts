@@ -86,7 +86,7 @@ export interface WindowManager extends WindowLookup {
   duplicateWindow(from: WindowEntry): void
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
-   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`. Probes
+   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, and the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main. Probes
    * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
@@ -387,8 +387,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         store.removeRecent(path)
         return false
       }
-      // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here.
-      store.pushRecent(path)
+      // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
+      // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
+      noteUsed(path)
       // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
       // copy — LEAST recently focused first, so the most recently focused one ends on top (a
       // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.

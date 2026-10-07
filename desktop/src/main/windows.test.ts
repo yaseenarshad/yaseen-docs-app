@@ -360,6 +360,10 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(store.get().recents[0]?.path).toBe('/v/other')
     expect(store.get().windows).toHaveLength(1)
     expect(store.get().windows[0].sidebarLens).toBe('favorites') // raising a window never touches its lens (YAZ-1846 B)
+    // The vault is on top now, so going to it again writes nothing (YAZ-2555 D5, S25): the door bumps through `noteUsed`.
+    const before = store.get()
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(store.get()).toBe(before)
   })
 
   it('D9: two windows on the vault, focus history A then B → raised A then B, so B (most recently focused) ends on top', () => {
