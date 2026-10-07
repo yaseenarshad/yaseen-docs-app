@@ -6,8 +6,8 @@ import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDra
 import './right-panel.css'
 
 export interface RightPanelProps {
-  /** The open root: its Files tree says which pages are folders (YAZ-2290). */
-  root: string
+  /** The vaults of the window (YAZ-2602): the Files tree of the vault that holds a page says whether it is a folder (YAZ-2290). */
+  roots: readonly string[]
   /** The window's titles (YAZ-2420 🔒 D14): a page is headed with its title. */
   titles: PathTitles
   items: readonly string[]
@@ -37,14 +37,14 @@ const Chevron = ({ d }: { d: string }) => (
   </svg>
 )
 
-export function RightPanel({ root, titles, items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
+export function RightPanel({ roots, titles, items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
   const [previewWidth, setPreviewWidth] = useState(width)
   const [dropAt, setDropAt] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const headerRefs = useRef(new Map<string, HTMLButtonElement>())
   const hideRef = useRef<HTMLButtonElement | null>(null)
   const resizeCleanup = useRef<(() => void) | null>(null)
-  const isFolder = useFolderPaths(root)
+  const isFolder = useFolderPaths(roots)
 
   useEffect(() => setPreviewWidth(width), [width])
   useEffect(() => () => resizeCleanup.current?.(), [])

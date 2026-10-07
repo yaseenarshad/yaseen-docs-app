@@ -8,8 +8,8 @@ import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDra
 import './tabs.css'
 
 export interface TabBarProps {
-  /** The open root: its Files tree says which tabs are folders (YAZ-2290). */
-  root: string
+  /** The vaults of the window (YAZ-2602): the Files tree of the vault that holds a tab says whether it is a folder (YAZ-2290). */
+  roots: readonly string[]
   /** Open tabs, absolute paths, left→right. */
   tabs: readonly string[]
   /** The active tab (the window's `file`); null with no tabs open. */
@@ -72,7 +72,7 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -81,7 +81,7 @@ export function TabBar({ root, tabs, active, onActivate, onClose, onMove, onDrop
   // was right-clicked; a null state hides it.
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; review: boolean | null } | null>(null)
   const activeRef = useRef<HTMLDivElement | null>(null)
-  const isFolder = useFolderPaths(root)
+  const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
 
   // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
