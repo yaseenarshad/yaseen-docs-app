@@ -13,7 +13,7 @@ The record is three comments there: "Locked decisions and scope (D1 to D4)", "Th
 
 - No Playwright, by anyone. No agent-started Electron. Never open or test on a real vault.
 - No release unless Yaseen asks.
-- Delivery path: open the pull request and stop. Yaseen does the hand walk. Merge only after he says it passed.
+- Delivery path: open the pull request and stop. Yaseen does the hand walk. Merge only after he says it passed, and after CI is green (his choice, 2026-10-07).
 - Commits go through the `/commit` skill.
 - One vault per window only. Several vaults in one window is YAZ-2602; its 2D (YAZ-2609) builds on this work.
 
@@ -34,22 +34,22 @@ The record is three comments there: "Locked decisions and scope (D1 to D4)", "Th
   - [x] 2- Sidebar (YAZ-2622), commit `6da0e48`
   - [x] 3- Polish and anti-slop (YAZ-2623): audit A1 to A8 on the issue; A1 to A3 applied, A7 and A8 declined
   - [x] 4- the gates, the end-to-end spec, the docs, the `mainBundleBytes` ceiling down to 517,985 (the ratchet)
-- Now: [→] 4- Verify and deliver (YAZ-2624): the pull request is open; it waits for Yaseen's hand walk
-- Remaining:
-  - [ ] Yaseen's hand walk (the steps are on YAZ-2624 and in `docs/REGRESSION.md`, "S12 The Focus tab")
-  - [ ] Merge, only after Yaseen says the walk passed. Then close YAZ-2624 and YAZ-2619.
+  - [x] 4- Verify and deliver (YAZ-2624): pull request #97 merged on 2026-10-07 (merge commit `fe411d4`), after CI was green and after Yaseen said the hand walk passed ("approved it all works").
+- Now: CLOSED 2026-10-07. Merged, NOT released. The Linear record on YAZ-2619 is the source of truth; its last comment is the handoff.
+- Remaining: nothing for an agent in this issue. YAZ-2602 takes this change when its branch merges (the note is on YAZ-2609).
 
 ## Open Questions
 
-- UNCONFIRMED: the tab row fits the 180 px minimum sidebar (the widths are estimates). Hand walk, S22.
+- CONFIRMED by Yaseen's hand walk: the tab row at the 180 px minimum sidebar (S22) and the accent of the active eye (S18).
 - UNCONFIRMED: `desktop/e2e/focus.spec.ts` is written again for the new flow and typechecks, but nobody has run it.
 - KNOWN: the renderer sizes pass only inside the 0.1% tolerance: `rendererEagerJsBytes` 1,956,962 (ceiling 1,956,581), `rendererEagerCssBytes` 137,729 (137,688), `rendererTotalBytes` 13,024,511 (13,012,712). The next renderer change can need a new ceiling.
-- KNOWN: `yaz-2602-multi-vault` changes the same lines. The branch that merges second fixes the conflicts. YAZ-2609 has the list of its cases that this work changes; Yaseen must approve them before 2D starts.
+- KNOWN: `yaz-2602-multi-vault` changes the same lines. It merges second, so it fixes the conflicts. YAZ-2609 has the list of its cases that this work changes; Yaseen must approve them before 2D starts.
 - KNOWN: YAZ-2620 (search results as tree rows) will need new selectors in the S11 tests.
 
 ## Working Set
 
-- Worktree `../yaseen-docs-app-yaz-2619`, branch `yaz-2619-focus-tab`, from `main` at `129ee9e`.
+- The work is on `main` (`fe411d4`). The worktree and the branch are removed.
 - Baseline at `129ee9e`: typecheck green; 294 test files, 5447 tests passed, 2 skipped. At the branch tip: 294 files, 5434 passed, 2 skipped.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skill at `~/.claude/skills/linear`.
+- A hand walk against a scratch vault: seed `<dir>/yaseendocs.json` in the shape of `seededState` (`desktop/e2e/helpers.ts`), with `"version": 1`; without it the app moves the file aside and starts on defaults. Then, from `desktop/`: `YASEEN_DOCS_USER_DATA_DIR=<dir> npx electron-vite dev`.
