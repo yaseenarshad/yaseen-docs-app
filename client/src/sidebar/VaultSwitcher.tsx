@@ -60,8 +60,15 @@
  * "Set shortcut" (YAZ-2555 D2) gives the vault a number, 1–9, in the same menu — the header's or a
  * row's: `storage.setVaultKey`, one vault per number — and the open panel's badges follow at once,
  * the one on the vault that lost the number too. "Remove from recent vaults" clears it (A2).
+ *
+ * Two or more vaults in the window (YAZ-2602 S15): the trigger names them, joined with " + " — two
+ * names, then "+ N more" — and a click drops the same panel. "Current" is every vault of this
+ * window: each is marked `aria-current`, the highlight starts on the first vault that is not one of
+ * them, and ⇧⏎ on one is a plain open. A right-click on the trigger then shows no menu: the menu is
+ * one vault's, and the trigger is several. A vault that is not in the window gets "Add to this
+ * window" (S8) above "Open in this window": App adds it beside the others and says why when it cannot.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { VaultEntry } from '@shared/types'
 import { api } from '../api'
@@ -70,14 +77,14 @@ import { matchLinkCandidates } from '../links/completion'
 import { basename } from '../lib/paths'
 import { relativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
-import { useVaultName } from '../lib/useVaultName'
 import { TextField } from '../views/view/TextField'
 import { InfoIcon, TriangleIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { buildVaultMenuSections } from './vaultMenuSections'
 
 export interface VaultSwitcherProps {
-  root: string
+  /** The vaults of this window, in the order they were added (YAZ-2602 D1); never empty. */
+  roots: readonly string[]
   /** "Open folder…" (D4): App's folder picker — the picked vault opens beside, never in place (YAZ-1914). */
   onPickFolder: () => void
   /** True while the native folder dialog is open; the "Open folder…" row is disabled meanwhile. */
@@ -86,6 +93,8 @@ export interface VaultSwitcherProps {
   openRequest: number
   /** The menu's "Open in this window" (YAZ-1798 D8): App's in-place switch; `false` = the folder is gone (MRU already pruned). */
   onOpenHere: (path: string) => Promise<boolean>
+  /** The menu's "Add to this window" (YAZ-2602 S8): App's add; `false` = not added, and App has said why. Absent: the menu has no such item. */
+  onAddHere?: (path: string) => Promise<boolean>
   /** The menu's OS verbs (D9): the Sidebar's own, stale-path notice included. */
   onReveal: (path: string) => void
   onOpenVsCode: (path: string) => void
@@ -133,15 +142,22 @@ export function rankVaultRows(rows: readonly VaultRow[], query: string): VaultRo
 
 /**
  * Where the highlight starts (D7). The index is over `[...matches, Open folder…]`, so with no
- * match at all it lands on the Open folder… row (= `matches.length`).
+ * match at all it lands on the Open folder… row (= `matches.length`). `roots` are the vaults of
+ * this window (YAZ-2602): an empty query starts on the first row that is none of them.
  */
-export function defaultHighlight(matches: readonly { path: string }[], query: string, root: string): number {
+export function defaultHighlight(matches: readonly { path: string }[], query: string, ...roots: string[]): number {
   if (query.trim() !== '') return 0
-  const other = matches.findIndex((m) => m.path !== root)
+  const other = matches.findIndex((m) => !roots.includes(m.path))
   return other === -1 ? 0 : other
 }
 
-export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, onOpenHere, onReveal, onOpenVsCode, onNotice }: VaultSwitcherProps) {
+/** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
+export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
+
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice }: VaultSwitcherProps) {
+  // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
+  const root = roots[0]
+  const several = roots.length > 1
   const inputRef = useRef<HTMLInputElement>(null)
   /** The header's name slot — the trigger, or its rename field (YAZ-1974 D5) — so the panel finds its anchor either way. */
   const slotRef = useRef<HTMLElement | null>(null)
@@ -162,7 +178,8 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   const dropClick = useRef(false)
   /** ⇧ held while the panel is up (YAZ-1974 D9) — tracked on window so the cue shows before any ⏎ or click. */
   const [shiftHeld, setShiftHeld] = useState(false)
-  const name = useVaultName(root)
+  // Each vault's display name, live (YAZ-1974 D4): a rename in ANY window lands through `storage.subscribe`.
+  const name = useSyncExternalStore(storage.subscribe, () => vaultsLabel(roots.map(storage.vaultName)))
   const open = panel !== null
 
   const openPanel = useCallback(() => {
@@ -227,9 +244,10 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   const openFolderIndex = matches.length
 
   // The highlight re-seeds exactly when `matches` does — on open and on every keystroke (D7).
+  const inWindow = roots.join('\n')
   useEffect(() => {
-    setActive(defaultHighlight(matches, query, root))
-  }, [matches, query, root])
+    setActive(defaultHighlight(matches, query, ...inWindow.split('\n')))
+  }, [matches, query, inWindow])
 
   /**
    * One rule for both ways a row opens — a click (beside, `openRecent`) and the menu's "Open in
@@ -297,7 +315,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all — and who has which number (YAZ-2555 D2). */
   const menuTarget = (path: string) => {
     const name = storage.vaultName(path)
-    return { path, name, isCurrent: path === root, renamed: name !== basename(path), keyed: storage.keyedVaults() }
+    return { path, name, isCurrent: roots.includes(path), renamed: name !== basename(path), keyed: storage.keyedVaults() }
   }
 
   /**
@@ -333,7 +351,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     }
     const row = matches[index]
     if (row === undefined || missing.has(row.path)) return
-    if (here && row.path !== root) settle(row.path, onOpenHere(row.path), 'openHere')
+    if (here && !roots.includes(row.path)) settle(row.path, onOpenHere(row.path), 'openHere')
     else choose(row.path)
   }
   const clickRow = (index: number, e: MouseEvent): void => {
@@ -378,12 +396,13 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
           ref={setSlot}
           type="button"
           className="sidebar__root"
-          title={root}
+          title={roots.join('\n')}
           aria-haspopup="menu"
           aria-expanded={open}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => (open ? closePanel() : openPanel())}
-          onContextMenu={(e) => openVaultMenu(root, 'header', e)}
+          // The menu is ONE vault's: with several the trigger has none (YAZ-2602 S15), and the native one stays swallowed (G1).
+          onContextMenu={(e) => (several ? e.preventDefault() : openVaultMenu(root, 'header', e))}
         >
           <span className="sidebar__root-name">{name}</span>
           <span className="sidebar__root-hint" aria-hidden="true"><TriangleIcon up={open} /></span>
@@ -409,7 +428,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               {matches.length === 0 && <div className="vault-switcher__empty">{NO_MATCH_TEXT}</div>}
               {matches.map((row, i) => {
                 const gone = missing.has(row.path)
-                const here = shiftHeld && i === active && row.path !== root && !gone
+                const here = shiftHeld && i === active && !roots.includes(row.path) && !gone
                 const when = (
                   <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here ? ' vault-switcher__when--here' : ''}`}>
                     {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : row.lastUsed === null ? '' : relativeTime(row.lastUsed, panel.now)}
@@ -428,7 +447,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                     role="menuitem"
                     tabIndex={-1}
                     className={`vault-switcher__row${i === active ? ' vault-switcher__row--active' : ''}`}
-                    aria-current={row.path === root ? 'true' : undefined}
+                    aria-current={roots.includes(row.path) ? 'true' : undefined}
                     disabled={gone}
                     onMouseDown={rowMouseDown}
                     onMouseEnter={() => setActive(i)}
@@ -501,6 +520,8 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
             menuTarget(vaultMenu.path),
             {
               onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
+              // A refusal keeps the panel up, and the row as it is: App's notice has said why (YAZ-2602 S4 to S7).
+              onAddHere: onAddHere === undefined ? undefined : (path) => void onAddHere(path).then((added) => (added ? closePanel() : inputRef.current?.focus()), () => undefined),
               onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
               onResetName: (path) => saveName(path, null),
               onSetKey: saveKey,

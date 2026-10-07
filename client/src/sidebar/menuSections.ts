@@ -9,7 +9,9 @@ import type { MenuTargets } from './Sidebar'
  * SEVEN groups, in this order (🔒 D7, amended three times): Open/View · Clipboard · Create ·
  * More create · This row · "Open in ▸" · Delete. The component draws a separator between
  * NON-EMPTY groups only, so a blank-space menu (no row to rename or delete) never ends in a
- * stray rule. Labels are the bare
+ * stray rule. The last group is where a row LEAVES — a file is deleted, a shortcut removed, a vault
+ * removed from the window (YAZ-2602 D7) — one item of it at most, so it always stands alone.
+ * Labels are the bare
  * text — a shortcut hint rides on `hint` and is drawn by CSS from `data-hint`, so `textContent`
  * and the accessible name stay what every test pins.
  *
@@ -99,6 +101,12 @@ export interface MenuHandlers {
   onRemoveShortcut: (path: string, dir: string) => void
   onRename: (path: string) => void
   onDelete: (path: string) => void
+  /** "Add vault to this window ▸" (YAZ-2602 D2): a known vault's path; the caller checks it and says why it cannot be added. */
+  onAddVault: (path: string) => void
+  /** Its "Open folder…" (S3): the system picker, and the picked folder is added. */
+  onPickVault: () => void
+  /** "Remove from this window" on a vault row (YAZ-2602 D7): the vault's root. */
+  onRemoveVault: (root: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -165,9 +173,10 @@ const copy = clipVerb('copy', 'Copy', '⌘C', (h) => h.onCopy)
  * DISABLED — not hidden — while the clipboard is empty, so the verb is discoverable before the
  * first Cut or Copy. With something clipped the label counts it: "Paste 1 item", "Paste 3 items".
  * Withheld on a SHORTCUT row with Cut and Copy (YAZ-2290 E5): the row is not a file in this folder.
+ * And where there is no folder to paste into: blank space under two or more vaults (YAZ-2602 S10).
  */
 const paste: Leaf = (t, h) => {
-  if (t.removeShortcut !== null) return null
+  if (t.removeShortcut !== null || t.targetDir === null) return null
   const clip = t.clip
   if (clip === null) return { id: 'paste', label: 'Paste', hint: '⌘V', disabled: true, onSelect: () => undefined }
   return { id: 'paste', label: `Paste ${countItems(clip.count)}`, hint: '⌘V', onSelect: h.onPaste }
@@ -218,15 +227,18 @@ const copyPath: Leaf = (t, h) => {
 
 // ---- (3) Create and (3b) More create: births BESIDE the right-clicked row — both target a DIRECTORY, never the row.
 // The everyday pair leads; the dated twins get their own section under it, lined
-// up with the pair, so they never crowd it (YAZ-2249 🔒 E1/E2). ----
+// up with the pair, so they never crowd it (YAZ-2249 🔒 E1/E2). With no directory to target —
+// blank space under two or more vaults (YAZ-2602 S10) — there is nothing to create in. ----
 
-const newNote: Leaf = (_t, h) => ({ id: 'new-note', label: 'New note', onSelect: h.onNewNote })
+const create = (id: string, label: string, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label, onSelect: pick(h) })
 
-const newFolder: Leaf = (_t, h) => ({ id: 'new-folder', label: 'New folder', onSelect: h.onNewFolder })
+const newNote = create('new-note', 'New note', (h) => h.onNewNote)
 
-const newDatedNote: Leaf = (_t, h) => ({ id: 'new-dated-note', label: 'New dated note', onSelect: h.onNewDatedNote })
+const newFolder = create('new-folder', 'New folder', (h) => h.onNewFolder)
 
-const newDatedFolder: Leaf = (_t, h) => ({ id: 'new-dated-folder', label: 'New dated folder', onSelect: h.onNewDatedFolder })
+const newDatedNote = create('new-dated-note', 'New dated note', (h) => h.onNewDatedNote)
+
+const newDatedFolder = create('new-dated-folder', 'New dated folder', (h) => h.onNewDatedFolder)
 
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the create groups ----
 
@@ -361,13 +373,43 @@ const removeShortcut: Leaf = (t, h) => {
   return { id: 'remove-shortcut', label: 'Remove shortcut', onSelect: () => h.onRemoveShortcut(row.path, row.dir) }
 }
 
+/**
+ * "Remove from this window" (YAZ-2602 D7) stands where Delete would on a VAULT row: the vault
+ * leaves the window with its tabs, and nothing on disk changes — so not `danger`, and no confirm.
+ * A window with one vault has no vault row, and so no such item (S51).
+ */
+const removeVault: Leaf = (t, h) => {
+  const root = t.removeVault
+  if (root === null) return null
+  return { id: 'remove-vault', label: 'Remove from this window', onSelect: () => h.onRemoveVault(root) }
+}
+
+/**
+ * "Add vault to this window ▸" (YAZ-2602 D2): blank space only, where it closes the menu — under
+ * "Open in ▸", the root's other parent, and alone once blank space is no one vault's (S10). The
+ * flyout lists the known vaults that are not in this window, in the caller's order, then "Open
+ * folder…" in its own section — so with no vault to list the parent still has a child.
+ */
+const addVault: Item = (t, h) => {
+  const vaults = t.addVaults
+  if (vaults === null) return null
+  return {
+    id: 'add-vault',
+    label: 'Add vault to this window',
+    children: [
+      vaults.map((vault) => ({ id: `add-vault-${vault.path}`, label: vault.name, onSelect: () => h.onAddVault(vault.path) })),
+      [{ id: 'add-vault-pick', label: 'Open folder…', onSelect: h.onPickVault }],
+    ],
+  }
+}
+
 const OPEN_GROUP: readonly Item[] = [open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openIn]
-const DELETE_GROUP: readonly Item[] = [del, removeShortcut]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openIn, addVault]
+const DELETE_GROUP: readonly Item[] = [del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>
