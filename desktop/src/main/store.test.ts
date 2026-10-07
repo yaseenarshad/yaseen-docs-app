@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openVaultRoots, rootOfPath, type AppState, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -28,7 +28,7 @@ afterEach(async () => {
 const seed = (v: unknown) => writeFile(file, typeof v === 'string' ? v : JSON.stringify(v))
 const onDisk = async (): Promise<AppState> => JSON.parse(await readFile(file, 'utf8')) as AppState
 const bounds = { x: 1, y: 2, width: 300, height: 200 }
-const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds, ...extra })
+const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds, ...extra, roots: extra.roots ?? (extra.root == null ? [] : [extra.root]) })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
 /** Each vault's number (YAZ-2555), root → key. */
@@ -46,6 +46,42 @@ describe('addRecentRoot', () => {
     for (let i = 0; i < 20; i++) list = addRecentRoot(list, `/x${i}`, 10 + i)
     expect(list).toHaveLength(MAX_RECENT_ROOTS)
     expect(list[0].path).toBe('/x19')
+  })
+})
+
+describe("a window's vault list (YAZ-2602 D1)", () => {
+  it('normalizeRoots: `root` is first, the rest keep their order with the trailing slash off, a vault appears once, the list is cut at MAX_WINDOW_ROOTS, and `root: null` ⇔ [] (S73, S74)', () => {
+    expect(normalizeRoots([], '/a')).toEqual(['/a'])
+    expect(normalizeRoots([], null)).toEqual([])
+    expect(normalizeRoots(['/a', '/b'], null)).toEqual([]) // a window with no vault shows none
+    expect(normalizeRoots(['/b', '/a', '/c'], '/a')).toEqual(['/a', '/b', '/c']) // `root` moves to the front
+    expect(normalizeRoots(['/a/', '/b/', '/c', '/b', '/c/'], '/a')).toEqual(['/a', '/b', '/c']) // `/b` and `/b/` are one vault
+    expect(normalizeRoots(['/b', '/a'], '/a/')).toEqual(['/a/', '/b']) // `root` as it is stored: roots[0] === root
+    const many = Array.from({ length: 12 }, (_, i) => `/v${i}`)
+    expect(normalizeRoots(many, '/v0')).toEqual(many.slice(0, MAX_WINDOW_ROOTS))
+    expect(normalizeRoots(many, '/v11')).toEqual(['/v11', ...many.slice(0, MAX_WINDOW_ROOTS - 1)]) // `root` is never the one cut
+    expect(many).toHaveLength(12) // the input is not changed
+  })
+
+  it('rootOfPath: the vault that holds a path — by SEGMENT, the most specific one, a vault holds itself, and none is null', () => {
+    expect(rootOfPath(['/a/b', '/c'], '/a/b/x.md')).toBe('/a/b')
+    expect(rootOfPath(['/a/b'], '/a/bc/x.md')).toBeNull() // `/a/b` does not hold `/a/bc/x.md`
+    expect(rootOfPath(['/a/b'], '/a/b')).toBe('/a/b')
+    expect(rootOfPath(['/a', '/a/b'], '/a/b/deep/x.md')).toBe('/a/b')
+    expect(rootOfPath(['/a/b', '/a'], '/a/b/deep/x.md')).toBe('/a/b') // the order of the list does not decide
+    expect(rootOfPath(['/a', '/a/b'], '/a/x.md')).toBe('/a')
+    expect(rootOfPath(['/a/'], '/a/x.md')).toBe('/a/') // the answer is the entry as the list holds it
+    expect(rootOfPath(['/'], '/x.md')).toBe('/')
+    expect(rootOfPath(['/a', '/b'], '/c/x.md')).toBeNull()
+    expect(rootOfPath([], '/a/x.md')).toBeNull()
+  })
+
+  it('openVaultRoots / listVaults: a vault that is only the SECOND vault of a window is open; a window object with no `roots` answers with its `root` (S59)', () => {
+    expect(openVaultRoots([{ root: '/a', roots: ['/a', '/b/'] }, { root: null, roots: [] }, { root: '/b', roots: ['/b', '/c'] }])).toEqual(['/a', '/b', '/c'])
+    // An old state file read raw: the entry has no `roots`.
+    expect(openVaultRoots([{ root: '/old' }, { root: null }, { root: '/a', roots: ['/a', '/b'] }])).toEqual(['/old', '/a', '/b'])
+    const vaults = listVaults({ recents: [{ path: '/b', lastOpened: 9 }, { path: '/closed', lastOpened: 3 }], windows: [{ root: '/a', roots: ['/a', '/b'] }, { root: '/old' }], folders: {} })
+    expect(vaults.map((v) => [v.path, v.open])).toEqual([['/b', true], ['/closed', false], ['/a', true], ['/old', true]])
   })
 })
 
@@ -429,6 +465,44 @@ describe('createStore: loading', () => {
     expect(windows[2]).toMatchObject({ focusDirs: [], focusFavorites: [] }) // junk voids the list, like `tabs`
   })
 
+  // The vault list (YAZ-2602 D1) is additive within version 1, like `tabs`: an old build's sanitizer drops
+  // the unknown `roots` key and opens `root` alone; this build repairs the other way.
+  it('roots: an entry without the key repairs from root ([root], or [] when root is null) — and the repaired list is what is written (YAZ-2602 S73)', async () => {
+    const legacy = (id: string, root: string | null) => ({ id, root, file: null, tabs: [], bounds })
+    await seed(valid({ windows: [legacy('w1', '/v'), legacy('w2', null)] }))
+    const store = createStore(file)
+    expect(store.get().windows.map((w) => w.roots)).toEqual([['/v'], []])
+    store.upsertWindow({ ...store.get().windows[0], sidebarCollapsed: true })
+    await store.flush()
+    expect((await onDisk()).windows.map((w) => w.roots)).toEqual([['/v'], []])
+  })
+
+  it('roots: non-strings and relative paths drop, a vault appears once, entries after the 8th drop, and `root` is put first (YAZ-2602 S74)', async () => {
+    const entry = (id: string, root: string | null, roots: unknown) => ({ id, root, file: null, tabs: [], bounds, roots })
+    await seed(
+      valid({
+        windows: [
+          entry('junk', '/a', ['/a', 5, 'rel', null, '/b', { path: '/x' }, '/c']), // each bad element drops; the others stay
+          entry('dupes', '/a', ['/a', '/b', '/b/', '/a/', '/b']),
+          entry('long', '/v0', Array.from({ length: 12 }, (_, i) => `/v${i}`)),
+          entry('order', '/b', ['/a', '/b', '/c']), // `root` is not the first entry
+          entry('missing', '/z', ['/a', '/b']), // `root` is not in the list at all
+          entry('not-a-list', '/a', '/b'),
+          entry('welcome', null, ['/a', '/b']), // no vault: no list
+        ],
+      }),
+    )
+    expect(Object.fromEntries(createStore(file).get().windows.map((w) => [w.id, w.roots]))).toEqual({
+      junk: ['/a', '/b', '/c'],
+      dupes: ['/a', '/b'],
+      long: ['/v0', '/v1', '/v2', '/v3', '/v4', '/v5', '/v6', '/v7'],
+      order: ['/b', '/a', '/c'],
+      missing: ['/z', '/a', '/b'],
+      'not-a-list': ['/a'],
+      welcome: [],
+    })
+  })
+
   it('a legacy per-vault focus (folders[root].focusDirs / focusTopics, pre-1628) is dropped on load and absent from the written file', async () => {
     await seed(
       valid({
@@ -633,6 +707,19 @@ describe('createStore: mutations', () => {
     expect(store.get().windows).toEqual([win('w2', { root: '/v' })])
   })
 
+  it('upsertWindow keeps the vault-list invariant on the entry as written: no `roots` is `root` alone, and `root` leads a list that does not start with it (YAZ-2602 D1)', () => {
+    const store = createStore(file)
+    const { roots: _, ...noRoots } = win('w1', { root: '/a' })
+    store.upsertWindow(noRoots)
+    expect(store.get().windows[0].roots).toEqual(['/a'])
+    store.upsertWindow(win('w1', { root: '/a', roots: ['/a', '/b', '/b/'] }))
+    expect(store.get().windows[0].roots).toEqual(['/a', '/b'])
+    store.upsertWindow({ ...store.get().windows[0], root: '/b' }) // a new first vault: the list follows
+    expect(store.get().windows[0]).toMatchObject({ root: '/b', roots: ['/b', '/a'] })
+    store.upsertWindow({ ...store.get().windows[0], root: null }) // Welcome shows no vault
+    expect(store.get().windows[0]).toMatchObject({ root: null, roots: [] })
+  })
+
   describe('renamePath (Links E1, GRO-2194: the store repair after an in-app rename)', () => {
     const OLD = '/v/B.md'
     const NEW = '/v/C.md'
@@ -767,6 +854,15 @@ describe('createStore: mutations', () => {
       expect(store.get().windows[0].tabs).toEqual([])
     })
 
+    it('leaves the vault LIST alone too: a deleted folder that is the second vault of a window stays in `roots`, and only its tabs go (YAZ-2602 S49)', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', roots: ['/v', '/w/Sub'], file: '/w/Sub/a.md', tabs: ['/w/Sub/a.md', '/v/x.md'] }))
+      store.removePath('/w/Sub')
+      expect(store.get().windows[0]).toMatchObject({ root: '/v', roots: ['/v', '/w/Sub'], file: '/v/x.md', tabs: ['/v/x.md'] })
+      store.removePath('/w') // a parent of it: the same
+      expect(store.get().windows[0].roots).toEqual(['/v', '/w/Sub'])
+    })
+
     it('a DIRECTORY removes by prefix: every file and tab under it goes, siblings stay', () => {
       const store = createStore(file)
       store.upsertWindow(win('w1', { root: '/v', file: '/v/Old/a.md', tabs: ['/v/Old/a.md', '/v/x.md', '/v/Old/deep/b.md'] }))
@@ -856,6 +952,26 @@ describe('createStore: mutations', () => {
         win('w2', { root: NEW, file: `${NEW}/a.md`, tabs: [`${NEW}/a.md`] }),
         win('w3', { root: `${NEW}/deep`, file: null, tabs: [] }),
         win('w4', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }),
+      ])
+    })
+
+    it('every vault of a window follows its folder: the SECOND vault moves in `roots`, and `roots[0] === root` holds when the first one is renamed (YAZ-2602 S48)', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/other', roots: ['/other', OLD, '/v/Older'], file: `${OLD}/a.md`, tabs: [`${OLD}/a.md`] })) // the subfolder is this window's second vault
+      store.upsertWindow(win('w2', { root: `${OLD}/deep`, roots: [`${OLD}/deep`, '/other'] })) // a first vault UNDER the renamed folder
+      store.upsertWindow(win('w3', { root: '/other', roots: ['/other', '/else'] }))
+      const untouched = store.get().windows[2]
+      store.renamePath(OLD, NEW)
+      const [w1, w2, w3] = store.get().windows
+      expect(w1).toMatchObject({ root: '/other', roots: ['/other', NEW, '/v/Older'], file: `${NEW}/a.md` }) // `/v/Older` is not under `/v/Old`
+      expect(w2).toMatchObject({ root: `${NEW}/deep`, roots: [`${NEW}/deep`, '/other'] })
+      expect(w2.roots[0]).toBe(w2.root)
+      expect(w3).toEqual(untouched)
+      store.renamePath('/other', '/moved') // the first vault of w1 and w3
+      expect(store.get().windows.map((w) => [w.root, w.roots])).toEqual([
+        ['/moved', ['/moved', NEW, '/v/Older']],
+        [`${NEW}/deep`, [`${NEW}/deep`, '/moved']],
+        ['/moved', ['/moved', '/else']],
       ])
     })
 
