@@ -101,9 +101,10 @@ export interface WindowManager extends WindowLookup {
    */
   closeWindow(id: string): void
   /**
-   * A path from outside the app — a `yaseendocs://` link, Finder's Open With, `open -a`, the Dock icon.
-   * A FOLDER is "Open Folder…" on it (YAZ-2556 D1): it goes to `openRecentBeside`, whatever vault
-   * contains it. A file (E1, GRO-2171): validate, then `resolveLinkTarget` routes it.
+   * A path from outside the app — a `yaseendocs://` link, Finder's Open With (files), `open -a`.
+   * A FOLDER is "Open Folder…" on it (YAZ-2556 D1): it goes to `openRecentBeside`, trailing slash
+   * off, whatever vault contains it and whatever `rootOverride` says. A file (E1, GRO-2171):
+   * validate, then `resolveLinkTarget` routes it.
    */
   routeToFile(path: string, rootOverride?: string | null): void
   /** The unobtrusive can't-open surface (E1): restore + focus a live window, send `link:notice`. Never a dialog. */
@@ -425,10 +426,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     routeToFile(path, rootOverride) {
-      // A FOLDER from outside — a link, Finder's Open With, `open -a`, the Dock icon — is "Open Folder…"
-      // on it (YAZ-2556 D1): the one open-recent door raises that vault's windows, or opens it.
+      // A FOLDER from outside — a link, or `open -a` — is "Open Folder…" on it
+      // (YAZ-2556 D1): the one open-recent door raises that vault's windows, or opens it. A link keeps
+      // a trailing slash, and the door keys the vault's bucket by the path it is given: slash off.
       if (host.dirExists(path)) {
-        openRecentBeside(path)
+        openRecentBeside(stripSlash(path))
         return
       }
       // Validate first (E1): a supported file kind and a live regular file. Anything off →

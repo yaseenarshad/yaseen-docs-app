@@ -96,14 +96,11 @@ file, so this is the place to read it. Given a folder, \`due\` lists the pages d
 each by title and path, most overdue first (\`--json\` for the raw shape of either). Nothing is due
 in a vault until upkeep is turned on for it, in the app's Settings.
 
-\`vaults\` lists the vaults the app knows, in the order of the app's own list (⌘O): the recent
-ones, last used first, then each other vault that is open or has a number. A line is the vault's
-name and its folder, then \`⌘<n>\` when it has number n, then \`(open)\` when a window is on it.
-\`--json\` gives each vault as \`path\`, \`name\` (the display name set in the app, else the
-folder's name), \`key\` (the number, or null), \`open\` and \`lastUsed\` (a time in milliseconds,
-or null for a vault that is not a recent one). It reads the app's state file and never writes it,
-and it does not talk to the app: with the app closed, \`open\` marks the windows the app opens
-again when it starts.
+\`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
+that is open or has a number. A line is the name, the folder, \`⌘<n>\` for number n, \`(open)\` for
+a window on it. \`--json\` gives \`path\`, \`name\` (display name, else folder name), \`key\` (1-9 or
+null), \`open\` and \`lastUsed\` (epoch ms, or null). It reads the app's state file and never
+writes it: with the app closed, \`open\` is a window the app opens again at its start.
 
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
@@ -262,9 +259,11 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
 }
 
 /**
- * `vaults` (YAZ-2556 🔒 D2): the vaults the app knows, the rows and the order of its ⌘O list — the
- * same `listVaults`, over the app's state file as the store itself reads it (`parseState`). It
- * only READS: no file yet is no vaults, and a damaged one is refused and left for the app to move aside.
+ * `vaults` (YAZ-2556 🔒 D2): the vaults the app knows — `listVaults`, over the app's state file as
+ * the store itself reads it (`parseState`) — in that function's order: the recents, last used first,
+ * then each other vault that is open or has a number. (The ⌘O panel draws the same rows and puts the
+ * open ones first.) It only READS: no file yet is no vaults, and a damaged one is refused and left
+ * for the app to move aside.
  */
 async function vaults(json: boolean, io: Io): Promise<void> {
   const file = join(userDataDir(process.env, process.platform, homedir()), STATE_FILE)

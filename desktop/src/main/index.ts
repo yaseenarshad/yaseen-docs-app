@@ -66,7 +66,7 @@ app.on('open-url', (event, url) => {
 // start. Encoding it as a yaseendocs:// link reuses the whole E1 pipeline (queue, parse, routing,
 // markdown/exists guards); fileLink ↔ parseFileLink is lossless (links.test.ts round trips). The
 // packaged bundle's `fileAssociations` (role Alternate) declaration is F1's job. A FOLDER comes the
-// same way (`open -a "Yaseen Docs" <folder>`, the Dock icon) and `routeToFile` opens it as a vault (YAZ-2556 D1).
+// same way (`open -a "Yaseen Docs" <folder>`) and `routeToFile` opens it as a vault (YAZ-2556 D1).
 app.on('open-file', (event, path) => {
   event.preventDefault()
   links.push(fileLink(path))
