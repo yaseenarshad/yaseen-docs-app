@@ -1,4 +1,4 @@
-import type { TreeNode } from '@shared/types'
+import { stripSlash, type TreeNode } from '@shared/types'
 
 /** Expanded-directory set for the sidebar tree (persisted per root; see storage.ts). */
 export type TreeAction =
@@ -80,6 +80,19 @@ export function notesAt(tree: readonly TreeNode[], path: string): string[] {
  */
 export function favoriteRoots(tree: readonly TreeNode[], favorites: readonly string[]): TreeNode[] {
   return favorites.flatMap((p) => findNode(tree, p) ?? [])
+}
+
+/**
+ * The Favorites tab (YAZ-2602 D5). One vault → its flat list, as before. Two or more → one row per
+ * vault that HAS a favorite the tree holds, in vault order, holding them in that vault's stored
+ * order; the row is the Files tab's vault row, so it opens and closes with it.
+ */
+export function favoriteForest(trees: readonly { root: string; name: string; tree: readonly TreeNode[] }[], favorites: Readonly<Record<string, readonly string[]>>): TreeNode[] {
+  if (trees.length === 1) return favoriteRoots(trees[0].tree, favorites[trees[0].root] ?? [])
+  return trees.flatMap((t) => {
+    const children = favoriteRoots(t.tree, favorites[t.root] ?? [])
+    return children.length === 0 ? [] : [{ type: 'dir' as const, name: t.name, path: stripSlash(t.root), children }]
+  })
 }
 
 /**
