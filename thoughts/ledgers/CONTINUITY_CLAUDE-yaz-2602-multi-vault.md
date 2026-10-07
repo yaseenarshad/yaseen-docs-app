@@ -13,7 +13,7 @@
 - The record is the source of truth: two comments on [YAZ-2602](https://linear.app/growprofit/issue/YAZ-2602/multi-vault-opening-in-single-window) — "Locked decisions and scope (D1 to D8)" and "The scenario record (S1 to S80) and the small rules (R1 to R12)". A case is stronger than a diff.
 - No Playwright, no Electron, no dev app from an agent. Proof is `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`.
 - Never a real vault. Fixtures and temp folders only.
-- A size row over its ceiling in `tools/perf/budget.json` needs Yaseen's OK.
+- Size ceilings: Yaseen gave the OK in chat on 2026-10-07 to raise them for this work. Set each row that is over to the measured value once, in 4A, and name it in the pull request.
 - Delivery path: the agent opens the pull request and stops; Yaseen does the hand walk (4B); the agent merges after he says it passed. No release.
 - Commits carry no Claude attribution.
 
@@ -30,11 +30,11 @@
 - Done:
   - [x] 1- Scope (YAZ-2603), 1A the map of `App.tsx` (YAZ-2604)
 - Now: [→] 2- Build (YAZ-2605)
-  - [→] 2A the window's vault list in main (YAZ-2606): code in `ed7fb64`; tests by an agent on `yaz-2602-m`
-  - [→] 2B one scope per vault in the renderer (YAZ-2607): an agent on `yaz-2602-r`
-  - [ ] 2C the sidebar: vault rows, add, remove (YAZ-2608) — the demo
-  - [ ] 2D focus, favorites, search, Inbox across vaults (YAZ-2609)
-  - [ ] 2E workspaces in `⌘O` (YAZ-2610)
+  - [x] 2A the window's vault list in main (YAZ-2606): merged at `723826a`
+  - [x] 2B one scope per vault in the renderer (YAZ-2607): merged at `2bf3b33`; the tree is green (5484 tests)
+  - [→] 2C the sidebar: vault rows, add, remove (YAZ-2608) — the demo; an agent on `yaz-2602-r`
+  - [ ] 2D focus, favorites, search, Inbox across vaults (YAZ-2609); also the vault name on the settings pages and the IDs ask, and one "latest" titles map per vault
+  - [→] 2E workspaces in `⌘O` (YAZ-2610): the main-process half by an agent on `yaz-2602-m`; the renderer half after 2C
 - Next: 3- Polish and anti-slop (YAZ-2611): 3A audit (YAZ-2612), 3B apply (YAZ-2613)
 - Remaining:
   - [ ] 4A scenario table, the e2e spec, the perf scenario, gates (YAZ-2615)
@@ -44,7 +44,6 @@
 
 ## Open Questions
 
-- UNCONFIRMED: whether the bundle crosses a ceiling in `tools/perf/budget.json` (measured in 2B and 4A).
 - A different session works on `yaz-2589-startup-windows`, which can touch `desktop/src/main/windows.ts`: reconcile in 4D if it merged.
 
 ## Working Set
