@@ -197,8 +197,8 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     // Focus Mode's lists (YAZ-1628) read with the `tabs` rule: relative paths drop, a missing or junk list is no focus.
     const focusDirs = isStringArray(w.focusDirs) ? w.focusDirs.filter(isAbsolute) : []
     const focusFavorites = isStringArray(w.focusFavorites) ? w.focusFavorites.filter(isAbsolute) : []
-    // The vault list (YAZ-2602) reads with the `tabs` rule too: junk drops, and a missing list repairs from `root`.
-    const roots = normalizeRoots(isStringArray(w.roots) ? w.roots.filter(isAbsolute) : [], w.root)
+    // The vault list (YAZ-2602 S74) reads with the `tabs` rule: a junk ELEMENT drops and the rest stay, and a missing list repairs from `root`.
+    const roots = normalizeRoots(Array.isArray(w.roots) ? w.roots.filter((r): r is string => typeof r === 'string' && isAbsolute(r)) : [], w.root)
     out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
