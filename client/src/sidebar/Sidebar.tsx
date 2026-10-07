@@ -250,13 +250,12 @@ export interface MenuTargets {
   /** "Open in default app" — the same target rule a third time (YAZ-1577); its OWN field, same doctrine. */
   openDefaultPath: string | null
   /**
-   * "Focus on folder" / "Focus on N folders" (YAZ-1605): the DIRS the active lens narrows to.
-   * Inside a 2+ selection that holds the right-clicked
-   * row it is the selection's eligible rows, in panel order — `copyPaths`' plural rule, counting
-   * only what can be focused. Otherwise the one row, or null
-   * on file rows and blank space. Its OWN field, per this split's doctrine.
+   * "Add to focus" / "Remove from focus" (YAZ-2619 D3): the row, or the ordered 2+ selection holding
+   * it — files and folders alike, every lens, a search row too; null on blank space (R7). Its OWN field.
    */
   focusPaths: string[] | null
+  /** True only when EVERY `focusPaths` entry is already in the focus list — a mixed selection reads as Add (R9). */
+  focusIsOn: boolean
   /**
    * "Add to favorites" / "Remove from favorites" (YAZ-1766 D3): the row, or the ordered 2+
    * selection holding it — files and folders alike, every lens; null on blank space. Its OWN field.
@@ -298,7 +297,7 @@ export interface MenuTargets {
   lens: SidebarLens
   /**
    * A search row's path (🔒 D2, YAZ-2050), null for every tree row and blank space: the items that
-   * draw INTO the tree (an inline input, Focus) reveal it in Files first, since the tree is hidden.
+   * draw INTO the tree (an inline input) reveal it in Files first, since the tree is hidden.
    */
   leaveSearchTo: string | null
 }
@@ -325,23 +324,8 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
   return { notes, folders }
 }
 
-/**
- * The rows a "Focus on …" may narrow to, out of the right-clicked row or its 2+ selection (YAZ-1605):
- * Files — and Favorites (YAZ-1766 D5), the same disk reading — keeps DIRS (a shift-selection may hold files — they are simply not focusable).
- * Null, not `[]`, hides the item.
- */
-function focusable(paths: readonly string[], tree: readonly TreeNode[] | null): string[] | null {
-  const kept = paths.filter((p) => tree !== null && findDirNode(tree, p) !== null)
-  return kept.length > 0 ? kept : null
-}
-
-/** "Focus on folder" / "Focus on 3 folders" — the plural items' own labelling rule (YAZ-1337). One vault row alone is "Focus on vault" (YAZ-2602 S13); among others it counts as a folder (S18). */
-function focusLabel(count: number, vault: boolean): string {
-  return count > 1 ? `Focus on ${count} folders` : vault ? 'Focus on vault' : 'Focus on folder'
-}
-
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
-const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', favorites: 'Favorites' }
+const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', focus: 'Focus', favorites: 'Favorites' }
 
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
@@ -390,7 +374,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, lens, onRootMissing, onFileMissing, onNotice)
+  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -446,8 +430,8 @@ export function Sidebar({
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
-  // What the chevrons button unfolds on the active lens.
-  const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
+  // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
+  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : dirs
   // One activation rule for keyboard AND click, and for a folder as for a note: the row's page
   // opens as a tab. The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the
   // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
@@ -500,11 +484,9 @@ export function Sidebar({
       onNotice(revealMissingMessage(nameOf(pendingReveal.path)), 'error')
       return
     }
-    // A reveal is "show me THIS" (YAZ-1605): a target outside every focused folder ends the focus first.
-    if (focusDirs.length > 0 && !focusDirs.some((dir) => pendingReveal.path === dir || pendingReveal.path.startsWith(`${dir}/`))) setFocusDirs([])
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses. Its vault's row opens with it.
     openTo(revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path)
-  }, [focusDirs, nameOf, onNotice, openTo, pendingReveal, revealIsDir, revealTargetPresent, revealTree])
+  }, [nameOf, onNotice, openTo, pendingReveal, revealIsDir, revealTargetPresent, revealTree])
 
   const filesRevealReady = revealTargetPresent && !closedVaults.includes(revealRoot) && ancestorDirs(revealRoot, pendingReveal.path).every((dir) => expanded.includes(dir))
 
@@ -533,8 +515,8 @@ export function Sidebar({
       // other target this menu pins.
       const plural = node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       // A VAULT row (YAZ-2602 D3) is its own kind: a folder that is a vault, with that vault's root.
-      // It creates, pastes and focuses like a folder; it is not opened, clipped, renamed, deleted,
-      // favorited or reviewed (S13). A selection that holds one keeps "Focus on N folders" as its only plural item (S18).
+      // It creates and pastes like a folder; it is not opened, clipped, renamed, deleted, favorited,
+      // reviewed or put in the focus list (S13, A2). A selection that holds one has no plural item (A3).
       const vaultRow = node !== null && vaultRows.has(node.path) ? rootOf(node.path) : null
       const holdsVault = plural !== null && plural.some((path) => vaultRows.has(path))
       const pluralRows = holdsVault ? null : plural
@@ -575,9 +557,10 @@ export function Sidebar({
         revealPath: node?.path ?? blank,
         openVsCodePath: node?.path ?? blank,
         openDefaultPath: vaultRow !== null ? null : node?.path ?? blank,
-        // Focus Mode (YAZ-1605): the plural selection's eligible rows, else the one row — DIRS only,
-        // a vault row among them (YAZ-2602 D4). Empty (a selection of files only) hides the item.
-        focusPaths: focusable(plural ?? (node === null ? [] : [node.path]), forest),
+        // Focus (YAZ-2619 D3): the row or its ordered selection, any kind, any lens, any vault of the
+        // window — the favorites rule below. A vault row is no item of the list (YAZ-2602 A2, A3).
+        focusPaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
+        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p)),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
         // Each row by the list of the vault that holds it (YAZ-2602 D5).
@@ -594,7 +577,7 @@ export function Sidebar({
         removeVault: vaultRow,
       })
     },
-    [root, roots, multi, forest, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, favoritesByRoot, reviewState],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, focusList, favoritesByRoot, reviewState],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
@@ -620,7 +603,7 @@ export function Sidebar({
     [rootOf],
   )
 
-  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(root, vaultOf, menu, setMenu, favoriteNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
+  const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
 
   /**
    * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
@@ -717,20 +700,40 @@ export function Sidebar({
   const removeShortcutRow = (path: string, dir: string): void =>
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
-  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, focusFavorites, rootOf, onNotice)
+  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, rootOf, onNotice)
 
   /**
-   * The Files and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
+   * The Files, Focus and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
    * its identity across renders that change nothing for them. The context menu handler reads the
    * selection and the tree, so it changes on every click; the rows call it through this stable door.
    */
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
+  // What the three trees share; each tab adds only what differs (`nodes`, `move`, `reorder`). It is
+  // SPREAD into each `<Tree>`, so the memo above compares the values, never this object.
+  const treeProps = {
+    // Above the vault rows no one directory stands (YAZ-2602 D3).
+    dirPath: multi ? '' : root,
+    vaultRows,
+    expanded: expandedSet,
+    activeFile,
+    onToggle: toggleDir,
+    onOpenFile,
+    onOpenFileBackground,
+    onOpenDefault: openDefault,
+    onNodeContextMenu: openRowMenu,
+    pending,
+    renaming,
+    selection,
+    counts,
+    shortcuts,
+    titles,
+  }
 
   // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through
-  // `onRevealInFiles`: App flips to Files; the reveal clears the query, ends a focus that would hide
-  // the row, expands and flashes it — and the item's input or focus lands beside the row it names.
+  // `onRevealInFiles`: App flips to Files; the reveal clears the query, expands and flashes the
+  // row — and the item's input lands beside the row it names.
   const viaTree =
     <A extends unknown[]>(run: (...args: A) => void) =>
     (...args: A): void => {
@@ -796,7 +799,7 @@ export function Sidebar({
         )
       })}
       {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Files (the file
-          explorer) ⇄ Favorites. The row stays VISIBLE and clickable during a search,
+          explorer), Focus, Favorites. The row stays VISIBLE and clickable during a search,
           and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`
           only — no `aria-controls`/`tabpanel`, because the body below is shared with the flat
           search results and belongs to neither lens while a query is typed. */}
@@ -807,27 +810,20 @@ export function Sidebar({
             type="button"
             role="tab"
             aria-selected={lens === id}
-            className={`sidebar__lens${id === 'favorites' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
+            className={`sidebar__lens${id !== 'files' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
             onClick={() => onLensChange(id)}
-            // Favorites is a glyph, not a word (YAZ-1766 D1): the label lives in `title` + `aria-label`.
-            title={id === 'favorites' ? LENS_LABEL[id] : undefined}
-            aria-label={id === 'favorites' ? LENS_LABEL[id] : undefined}
+            // Favorites and Focus are glyphs, not words (YAZ-1766 D1, YAZ-2619 D4): the label lives in `title` + `aria-label`.
+            title={id !== 'files' ? LENS_LABEL[id] : undefined}
+            aria-label={id !== 'files' ? LENS_LABEL[id] : undefined}
           >
-            {id === 'favorites' ? <HeartIcon /> : LENS_LABEL[id]}
+            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : LENS_LABEL[id]}
           </button>
         ))}
-        {/* One button for both directions AND both lenses (⚡ YAZ-862, ⚡ YAZ-873): anything open
+        {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
             collapses everything, and only a fully closed tree expands it. It acts on whichever
             lens is ACTIVE. Gone — not disabled — while a query is
             typed (the tree is not the body then) and whenever the active reading has nothing to
             unfold: a vault with no folders. */}
-        {/* Focus Mode's eye (YAZ-1605): lit ONLY while the active lens is focused, one slot left of
-            the chevrons; one click ends the focus. Gone while a query is typed, like its neighbour. */}
-        {!searching && focused && (
-          <button type="button" className="sidebar__focus-off" aria-label="Exit focus mode" title="Exit focus mode" onClick={exitFocus}>
-            <EyeIcon />
-          </button>
-        )}
         {!searching && bodyDirs.length > 0 && (
           <button
             type="button"
@@ -835,7 +831,7 @@ export function Sidebar({
             aria-label={allLabel}
             title={allLabel}
             onClick={() =>
-              // Only the dirs ON SCREEN move (YAZ-1605): folds outside a focus are exactly as they were when it ends.
+              // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
               dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
             }
           >
@@ -908,27 +904,27 @@ export function Sidebar({
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
             {!loaded && favoriteNodes.length === 0 && error === null && <p className="sidebar__msg">Loading…</p>}
             {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {favoriteNodes.length > 0 && (
-              <Tree
-                nodes={favoriteNodes}
-                dirPath={multi ? '' : root}
-                vaultRows={vaultRows}
-                expanded={expandedSet}
-                activeFile={activeFile}
-                onToggle={toggleDir}
-                onOpenFile={onOpenFile}
-                onOpenFileBackground={onOpenFileBackground}
-                onOpenDefault={openDefault}
-                onNodeContextMenu={openRowMenu}
-                pending={pending}
-                renaming={renaming}
-                move={INERT_MOVE}
-                reorder={favoriteReorder}
-                selection={selection}
-                counts={counts}
-                shortcuts={shortcuts}
-                titles={titles}
-              />
+            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={INERT_MOVE} reorder={favoriteReorder} />}
+          </>
+        ) : lens === 'focus' ? (
+          // The Focus tab (YAZ-2619 D2, D4): the window's focus list in the order added, each a full
+          // tree row with the same menu, under a line that counts the top rows (R11) and clears the
+          // list. A file drag moves the file on disk, as on Files. With two or more vaults the items
+          // of every vault stand in the one list, and each top row names its vault (YAZ-2602 A4).
+          <>
+            {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
+            {!loaded && focusNodes.length === 0 && error === null && <p className="sidebar__msg">Loading…</p>}
+            {loaded && focusNodes.length === 0 && <p className="sidebar__msg">Nothing in focus. Right-click a file or folder → Add to focus.</p>}
+            {focusNodes.length > 0 && (
+              <>
+                <div className="sidebar__focus-bar">
+                  <span>{focusNodes.length} in focus</span>
+                  <button type="button" className="sidebar__focus-clear" onClick={clearFocus}>
+                    Clear
+                  </button>
+                </div>
+                <Tree {...treeProps} nodes={focusNodes} move={fileMove} />
+              </>
             )}
           </>
         ) : (
@@ -938,28 +934,8 @@ export function Sidebar({
             {forest !== null && forest.length === 0 && pending === null && (
               <p className="sidebar__msg">No notes here.</p>
             )}
-            {forest !== null && (
-              <Tree
-                // One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), above which no directory stands.
-                nodes={focusNodes.length > 0 ? focusNodes : forest}
-                dirPath={multi ? '' : root}
-                vaultRows={vaultRows}
-                expanded={expandedSet}
-                activeFile={activeFile}
-                onToggle={toggleDir}
-                onOpenFile={onOpenFile}
-                onOpenFileBackground={onOpenFileBackground}
-                onOpenDefault={openDefault}
-                onNodeContextMenu={openRowMenu}
-                pending={pending}
-                renaming={renaming}
-                move={fileMove}
-                selection={selection}
-                counts={counts}
-                shortcuts={shortcuts}
-                titles={titles}
-              />
-            )}
+            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3). */}
+            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} />}
           </>
         )}
       </div>
@@ -981,8 +957,12 @@ export function Sidebar({
               onOpenVsCode: openVsCode,
               onOpenDefault: openDefault,
               onReveal: reveal,
-              focusLabel: focusLabel(menu.focusPaths?.length ?? 0, menu.focusPaths?.every((path) => vaultRows.has(path)) === true),
-              onFocus: viaTree((paths) => focusOn(paths, menu.lens)),
+              // An add shows the Focus tab (YAZ-2619 D3); a remove keeps the tab (R5). From a search
+              // row the query stays (S11), so this is not a `viaTree` item.
+              onToggleFocus: (paths, isOn) => {
+                toggleFocus(paths, isOn)
+                if (!isOn && lens !== 'focus') onLensChange('focus')
+              },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
               onPaste: () => menu.targetDir !== null && pasteInto(menu.targetDir),

@@ -93,7 +93,7 @@ interface TreeProps {
    * The paths that are VAULT rows (YAZ-2602 D3), each with its vault's name: with two or more vaults
    * each vault is one folder row, labelled as the app names the vault. It opens, closes, selects and
    * takes a drop like a folder, and is no page: it does not open as a tab. Empty with one vault.
-   * A top row that is NOT one — a focused folder (D4) — shows the name of the vault that holds it.
+   * A top row that is NOT one — a file or a folder of the Focus tab (A4) — shows the name of the vault that holds it.
    */
   vaultRows: ReadonlyMap<string, string>
   expanded: ReadonlySet<string>
@@ -162,7 +162,7 @@ function TreeLevel({
   // The reorder gesture lives on the favorites' own rows alone — the top rows, or the rows under each
   // vault's row where the window has two or more (YAZ-2602 D5); a vault row and every deeper row drag nothing.
   const rowReorder = reorder !== undefined && (vaultRows.size === 0 ? depth === 0 : vaultRows.has(dirPath)) ? reorder : null
-  /** The vault a focused top row is in (YAZ-2602 D4, S19): said only where the window has two or more. A vault row is in no vault's folder, so it says none. */
+  /** The vault a top row of the Focus tab is in, file or folder (YAZ-2602 A4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files and Favorites have no other top row. */
   const vaultTag = (path: string) => {
     const name = depth > 0 ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
     return name !== undefined && <span className="tree__vault">{name}</span>
@@ -325,6 +325,7 @@ function TreeLevel({
             >
               <span className="tree__label">{pageLabel(node.path, false, titles)}</span>
               {isShortcutRow(node) && <ShortcutIcon />}
+              {vaultTag(node.path)}
             </button>
           </li>
         ),

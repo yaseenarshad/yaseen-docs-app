@@ -200,7 +200,7 @@ const SEEDED_LENS = 'files' as const
 export function seededState(vault: string, file: string | null): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusFavorites: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusList: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, name: null, key: null } }
   return state
 }
@@ -256,9 +256,12 @@ export interface SeedWindow {
 /**
  * `seededState` for several windows (possibly on several roots): one `windows[]` entry per
  * seed, a `folders` entry per distinct root, `recents` exactly as given (most-recent first).
+ * "When the app starts: Reopen" is "All vaults" here, so every seeded window opens: the default,
+ * "Last vault", brings back only the windows on `recentRoots[0]` (YAZ-2589 D2).
  */
 export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
   const state = defaultAppState()
+  state.settings.startupWindows = 'all'
   const now = Date.now()
   state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
   state.windows = wins.map((w, i) => ({
@@ -270,8 +273,7 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     rightPanel: defaultRightPanelIdentity(),
     sidebarCollapsed: w.sidebarCollapsed ?? false,
     sidebarLens: SEEDED_LENS,
-    focusDirs: [],
-    focusFavorites: [],
+    focusList: [],
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {

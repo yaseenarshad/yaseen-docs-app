@@ -48,7 +48,7 @@ export function treeHasPath(tree: TreeNode[], path: string): boolean {
   return tree.some((n) => n.path === path || (n.type === 'dir' && treeHasPath(n.children, path)))
 }
 
-/** The dir node at `path`, any depth — Focus Mode's root (YAZ-1605); null once the tree no longer holds it. */
+/** The dir node at `path`, any depth (YAZ-1605); null once the tree no longer holds it. */
 export function findDirNode(tree: readonly TreeNode[], path: string): TreeNode | null {
   for (const n of tree) {
     if (n.type !== 'dir') continue
@@ -58,7 +58,7 @@ export function findDirNode(tree: readonly TreeNode[], path: string): TreeNode |
   return null
 }
 
-/** The node at `path`, file OR dir, any depth — `findDirNode`'s kind-agnostic twin for the Favorites list (YAZ-1766); null once the tree no longer holds it. */
+/** The node at `path`, file OR dir, any depth — `findDirNode`'s kind-agnostic twin for the Favorites list (YAZ-1766) and the focus list (YAZ-2619); null once the tree no longer holds it. */
 export function findNode(tree: readonly TreeNode[], path: string): TreeNode | null {
   for (const n of tree) {
     if (n.path === path) return n
@@ -73,10 +73,10 @@ export function notesAt(tree: readonly TreeNode[], path: string): string[] {
 }
 
 /**
- * The Favorites tab's top rows (YAZ-1766 D4): every favorite the tree still holds, in the list's
- * STORED order — the user's order, never the tree's — files and dirs alike. NOT `focusRoots`:
- * nesting is kept (a file favorited beside its favorited parent shows at the root AND inside it),
- * and a vanished path simply yields no row; the Sidebar prunes it from the stored list.
+ * The Favorites tab's top rows (YAZ-1766 D4), and the Focus tab's (YAZ-2619 D2): every listed path
+ * the tree still holds, in the list's STORED order — the user's order, never the tree's — files and
+ * dirs alike. Nesting is kept (a file listed beside its listed parent shows at the root AND inside
+ * it), and a vanished path simply yields no row.
  */
 export function favoriteRoots(tree: readonly TreeNode[], favorites: readonly string[]): TreeNode[] {
   return favorites.flatMap((p) => findNode(tree, p) ?? [])
@@ -93,13 +93,4 @@ export function favoriteForest(trees: readonly { root: string; name: string; tre
     const children = favoriteRoots(t.tree, favorites[t.root] ?? [])
     return children.length === 0 ? [] : [{ type: 'dir' as const, name: t.name, path: stripSlash(t.root), children }]
   })
-}
-
-/**
- * Focus Mode's top rows (YAZ-1605): every dir in `focus`, in TREE order, OUTERMOST only — a focused
- * dir inside another focused dir is drawn once, under its parent, never twice. A vanished path
- * simply yields no row; the Sidebar prunes it from the stored list.
- */
-export function focusRoots(tree: readonly TreeNode[], focus: readonly string[]): TreeNode[] {
-  return tree.flatMap((n) => (n.type !== 'dir' ? [] : focus.includes(n.path) ? [n] : focusRoots(n.children, focus)))
 }

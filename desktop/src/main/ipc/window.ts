@@ -31,12 +31,12 @@ function optionalRoots(raw: Record<string, unknown>): string[] | undefined {
   return v.map((r, i) => requireAbsPath(r, `roots[${i}]`))
 }
 
-/** `focusDirs` / `focusFavorites` in the patch (YAZ-1628, YAZ-1766): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
-function optionalFocusList(raw: Record<string, unknown>, key: 'focusDirs' | 'focusFavorites'): string[] | undefined {
-  const v = raw[key]
+/** `focusList` in the patch (YAZ-1628, YAZ-2619): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
+function optionalFocusList(raw: Record<string, unknown>): string[] | undefined {
+  const v = raw.focusList
   if (v === undefined) return undefined
-  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${key}' must be an array of absolute paths`)
-  return v.map((p, i) => requireAbsPath(p, `${key}[${i}]`))
+  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'focusList' must be an array of absolute paths`)
+  return v.map((p, i) => requireAbsPath(p, `focusList[${i}]`))
 }
 
 /** `rightPanel` is an all-or-nothing identity patch; store normalization repairs its invariants. */
@@ -64,11 +64,11 @@ function optionalSidebarCollapsed(raw: Record<string, unknown>): boolean | undef
   return v
 }
 
-/** `sidebarLens` (YAZ-1628): absent (untouched), or one of the lenses. */
+/** `sidebarLens` (YAZ-1628): absent (untouched), or one of the three lenses (YAZ-2619). */
 function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefined {
   const v = raw.sidebarLens
   if (v === undefined) return undefined
-  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files' or 'favorites'")
+  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files', 'focus' or 'favorites'")
   return v
 }
 
@@ -82,7 +82,8 @@ function requireString(v: unknown, param: 'id' | 'name'): string {
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
  * are D6 plumbing into the window manager (GRO-2160; the gestures land in D-), and
- * `app:flushed` is the renderer's half of the close/quit flush handshake.
+ * `app:flushed` is the renderer's half of the close/quit flush handshake. One door of `link.*` is
+ * answered here too, because it needs the caller's window: `link:ready` (YAZ-2589 A2).
  */
 export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
@@ -94,8 +95,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites } = entryFor(e)
-    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusDirs: [...focusDirs], focusFavorites: [...focusFavorites] }
+    const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusList } = entryFor(e)
+    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusList: [...focusList] }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -108,8 +109,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
-    const focusDirs = optionalFocusList(patch, 'focusDirs')
-    const focusFavorites = optionalFocusList(patch, 'focusFavorites')
+    const focusList = optionalFocusList(patch)
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
@@ -123,8 +123,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
       roots,
       ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       ...(sidebarLens !== undefined ? { sidebarLens } : {}),
-      ...(focusDirs !== undefined ? { focusDirs } : {}),
-      ...(focusFavorites !== undefined ? { focusFavorites } : {}),
+      ...(focusList !== undefined ? { focusList } : {}),
       file: nextFile,
       tabs: nextTabs,
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),
@@ -179,6 +178,10 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (windows.idFor(e.sender) === undefined || typeof text !== 'string') throw new BridgeFailure('BAD_REQUEST', 'invalid paste target or text')
     if (text !== '') await e.sender.insertText(text)
   })
+
+  // `link:ready` (YAZ-2589 A2): this renderer now listens for link pushes, so the manager sends
+  // what it held for it.
+  handleWithEvent(CONTRACT.link.ready, async (e) => windows.handleLinkReady(e.sender))
 
   // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
   ipcMain.on(SPECIAL.appFlushed, (e) => windows.handleFlushed(e.sender))

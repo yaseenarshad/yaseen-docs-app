@@ -43,7 +43,7 @@ The record is two comments there: "Locked decisions and scope (D1 to D8)" and "T
   - [x] 4D- Pull request #93 merged on 2026-10-07 (merge commit `9420586`). Yaseen chose to merge before his hand walk and to cut no release now.
 - Now: merged, released as 0.9.35 on 2026-10-07, NOT walked by hand.
 - Remaining:
-  - [ ] 4B- Yaseen's hand walk (YAZ-2568): 35 steps, setup in `~/Desktop/yaz-2555-demo/`. It is done one time before the next release, with the Alfred steps of YAZ-2556 (YAZ-2588).
+  - [x] 4B- Yaseen's hand walk (YAZ-2568): CLOSED WITHOUT A WALK by Yaseen on 2026-10-07 ("close those two hand walks too"). Canceled, not Done; the 35 steps are kept on the issue. The issue is closed.
 
 ## Open Questions
 

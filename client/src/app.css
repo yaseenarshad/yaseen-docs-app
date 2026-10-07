@@ -1214,7 +1214,7 @@ button {
   background: var(--accent-soft);
 }
 
-/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Files ⇄ Favorites.
+/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Files, Focus, Favorites.
    The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
    accent on the active one, pulled down over the row's own hairline so the two read as one line. */
 .sidebar__lenses {
@@ -1246,8 +1246,9 @@ button {
   border-bottom-color: var(--accent);
 }
 
-/* The Favorites tab is a heart, not a word (YAZ-1766 D1): sized to the text tabs' cap height,
-   stroked while idle and filled while active so the underline is not the only tell. */
+/* The Favorites tab is a heart and the Focus tab an eye, not words (YAZ-1766 D1, YAZ-2619 D4):
+   sized to the text tabs' cap height, and in the accent while active — the heart filled too — so
+   the underline is not the only tell. */
 .sidebar__lens--glyph {
   display: inline-flex;
   align-items: center;
@@ -1255,9 +1256,12 @@ button {
   padding-right: 8px;
 }
 
+.sidebar__lens--glyph.sidebar__lens--active {
+  color: var(--accent);
+}
+
 .sidebar__lens--active .heart-icon {
   fill: var(--accent);
-  stroke: var(--accent);
 }
 
 /* Expand / collapse all (YAZ-862) — the header collapse button's icon look, pushed to the far
@@ -1274,23 +1278,21 @@ button {
   background: var(--bg-hover);
 }
 
-/* Focus Mode's eye (YAZ-1605) — the expand-all look, one slot to its LEFT, in the accent so a lit
-   eye reads as "you are in a focus" and not as one more grey chrome button. It takes the push to
-   the far end when present; the chevrons then sit flush beside it. */
-.sidebar__focus-off {
-  flex: none;
-  margin-left: auto;
-  padding: 0 8px;
+/* The Focus tab's line above its list (YAZ-2619 D4): the count on the left, "Clear" on the right. */
+.sidebar__focus-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.sidebar__focus-clear {
   color: var(--accent);
 }
 
-.sidebar__focus-off:hover {
+.sidebar__focus-clear:hover {
   color: var(--fg);
-  background: var(--bg-hover);
-}
-
-.sidebar__focus-off + .sidebar__expand-all {
-  margin-left: 0;
 }
 
 /* Persistent search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
@@ -1833,8 +1835,8 @@ button {
   color: var(--fg-muted);
 }
 
-/* A focused top row's vault (YAZ-2602 D4), where the window has two or more: the count's quiet
-   text, to the left of the count. On one line, so a long folder name gives way to it. */
+/* The vault of a top row of the Focus tab (YAZ-2602 A4), where the window has two or more: the count's
+   quiet text, to the left of the count. On one line, so a long name gives way to it. */
 .tree__vault {
   white-space: nowrap;
 }

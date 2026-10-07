@@ -866,7 +866,7 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
     act(() =>
       broadcast(
         seeded({
-          windows: open.map((root, i) => ({ id: `w${i}`, root, roots: root === null ? [] : [root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })),
+          windows: open.map((root, i) => ({ id: `w${i}`, root, roots: root === null ? [] : [root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })),
           folders: Object.fromEntries(Object.entries(keys).map(([path, key]) => [path, { ...defaultFolderState(), key }])),
         }),
       ),

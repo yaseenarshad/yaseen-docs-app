@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type Theme } from '@shared/types'
+import { THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type StartupWindows, type Theme } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -29,6 +29,13 @@ export const CONTENT_WIDTH_OPTIONS: readonly Option<ContentWidth>[] = [
 export const COMMENTS_ORDER_OPTIONS: readonly Option<CommentsOrder>[] = [
   { label: 'Oldest first', value: 'oldest' },
   { label: 'Newest first', value: 'newest' },
+]
+
+/** What a plain launch brings back (YAZ-2589 D2); the main process reads the field when the app starts. */
+export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
+  { label: 'All vaults', value: 'all' },
+  { label: 'Last vault', value: 'last' },
+  { label: 'None', value: 'none' },
 ]
 
 /** Google-Docs-style presets (GRO-2024 D4). blockGap is per-side padding: visual gap = 2×. */
