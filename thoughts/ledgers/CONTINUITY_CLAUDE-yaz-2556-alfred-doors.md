@@ -32,10 +32,14 @@ The record is on the parent: "Scoping findings: the Alfred audit and the code fa
   - [x] 4A- Audit (YAZ-2582): 3 must fix, 11 should fix, 11 optional
   - [x] 4B- Apply the audit (YAZ-2583): A1 to A9 in the app, W1 to W5 in the workflow (15 workflow tests pass)
   - [x] 5B- Docs (YAZ-2586): `docs/CONTRACTS.md`, `docs/REGRESSION.md`, `README.md`, the `alfred` skill
-- Now: [→] 5C- the pull request is open (YAZ-2587). Yaseen said yes to the new ceiling; it is set, and the pull request merges when CI is green.
-- Remaining:
-  - [ ] 5A- the case table and the gate numbers as a comment (YAZ-2585)
-  - [ ] 5D- Yaseen cuts and installs one release, then the hand walk: the 35 steps of YAZ-2568, then the Alfred steps (YAZ-2588). One Alfred restart is needed first, to load the workflow.
+  - [x] 5A- the case table and the gate numbers (YAZ-2585)
+  - [x] 5C- pull request #94 merged on 2026-10-07 (merge commit `c011fd2`), after CI was green. The `mainBundleBytes` ceiling was raised to 516,780 with Yaseen's OK (`fbe4712`).
+  - [x] Released as 0.9.35 on 2026-10-07 (it carries YAZ-2555 and YAZ-2556).
+- Now: merged and released. NOT walked by hand. The Alfred workflow is NOT loaded in Alfred yet.
+- Remaining (all Yaseen's):
+  - [ ] Install 0.9.35. Restart Alfred one time.
+  - [ ] 5D- the hand walk (YAZ-2588): the 35 steps of YAZ-2568, then the 19 Alfred steps.
+  - [ ] Pick from the Gallery list (YAZ-2580). Nothing is installed.
 
 ## Open Questions
 
@@ -45,6 +49,6 @@ The record is on the parent: "Scoping findings: the Alfred audit and the code fa
 
 ## Working Set
 
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2556`, branch `yaz-2556-alfred-doors`, off `main` at `9420586`.
+- The work is on `main` (`c011fd2`). The worktree and the branch are removed. The scratch vaults for the walk are in `~/Desktop/yaz-2555-demo/` (`run.sh` starts the installed app on that folder's own profile).
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skill at `~/.claude/skills/linear`; issue writing follows `~/Documents/GitHub/growprofitai/_code-wiki/Linear-Simpler`.

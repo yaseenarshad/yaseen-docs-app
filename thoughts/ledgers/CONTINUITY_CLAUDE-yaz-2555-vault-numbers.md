@@ -41,7 +41,7 @@ The record is two comments there: "Locked decisions and scope (D1 to D8)" and "T
   - [x] 4C- Docs (YAZ-2569): `docs/CONTRACTS.md`, `docs/REGRESSION.md` S14, `README.md`. With it: the door bumps through `noteUsed`, so the vault that is already on top is not written again (S25).
   - [x] 4A- Scenario table and gates (YAZ-2567). Playwright not run (standing rule): step 6 and the changed step 2 of `desktop/e2e/vaultSwitcher.spec.ts` are written and typechecked only.
   - [x] 4D- Pull request #93 merged on 2026-10-07 (merge commit `9420586`). Yaseen chose to merge before his hand walk and to cut no release now.
-- Now: merged, NOT released, NOT walked by hand.
+- Now: merged, released as 0.9.35 on 2026-10-07, NOT walked by hand.
 - Remaining:
   - [ ] 4B- Yaseen's hand walk (YAZ-2568): 35 steps, setup in `~/Desktop/yaz-2555-demo/`. It is done one time before the next release, with the Alfred steps of YAZ-2556 (YAZ-2588).
 
