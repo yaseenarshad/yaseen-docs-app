@@ -2811,6 +2811,28 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
   })
 
+  it('with two or more vaults the Sync, Review and IDs settings say which vault they act on: the active tab\'s (R10, S39)', async () => {
+    const { el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
+      feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
+      upkeep({ '/v': true, '/w': true })(b)
+    })
+    const named = () => [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: '))
+    act(() => emitSettings())
+    expect(named()).toEqual(['Vault: v', 'Vault: v', 'Vault: v'])
+    act(() => button(el, 'Close settings')?.click())
+    show('/w/b.md')
+    act(() => emitSettings())
+    expect(named()).toEqual(['Vault: w', 'Vault: w', 'Vault: w'])
+  })
+
+  it('the ask names its vault, and the first vault\'s ask shares no key with the sidebar (S40)', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const ask = { notes: 3, folders: 0, foreign: 0 }
+    const { el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: false, ask }, '/w': { ids: true } }))
+    expect(sheetText(el)).toContain('Give the notes in v IDs? The app would write an ID into 3 notes.')
+    expect(errors.mock.calls.filter(([message]) => String(message).includes('same key'))).toEqual([])
+  })
+
   it('a vault that has not answered on IDs shows its own ask, and the answer is saved in that vault (S40)', async () => {
     const { bridge, el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: true }, '/w': { ids: false, ask: { notes: 3, folders: 0, foreign: 0 } } }))
     expect(sheetText(el)).toContain('The app would write an ID into 3 notes.')
