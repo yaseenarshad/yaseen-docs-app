@@ -80,7 +80,7 @@ export interface WindowHost {
 export interface WindowManager extends WindowLookup {
   /** One window per stored entry, bounds clamped; an empty state seeds a single Welcome window (D3). */
   restoreAll(): void
-  /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). */
+  /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
   /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
@@ -214,11 +214,27 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const focusOrder: string[] = []
   const noteFocused = (id: string): void => {
     const at = focusOrder.indexOf(id)
-    if (at !== -1) focusOrder.splice(at, 1)
+    if (at !== -1) {
+      // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
+      // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
+      // must not reorder the list.
+      noteUsed(entryOf(id)?.root ?? null)
+      focusOrder.splice(at, 1)
+    }
     focusOrder.unshift(id)
   }
 
   const entryOf = (id: string): WindowEntry | undefined => store.get().windows.find((w) => w.id === id)
+
+  /**
+   * Bump a window's vault to the top of the MRU (YAZ-2555 D5). Already on top → no write; a Welcome
+   * window (root null) is not a vault. Trailing slash off, like `resolveLinkTarget`: one row per vault.
+   */
+  const noteUsed = (root: string | null): void => {
+    if (root === null) return
+    const path = stripSlash(root)
+    if (store.get().recents[0]?.path !== path) store.pushRecent(path)
+  }
 
   /**
    * One handshake: send `app:flush`, resolve on `handleFlushed` from the same renderer or after
@@ -305,6 +321,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
+    // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
+    noteUsed(opts.root)
     open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
