@@ -58,7 +58,7 @@ function installBridge() {
     window: {
       open: vi.fn(async () => undefined),
       // Focus Mode is window identity (YAZ-1628): `storage.init()` boots from `identity`, writes go to `setIdentity`.
-      identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [] })),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })),
       setIdentity: vi.fn(async () => undefined),
     },
     // The file clipboard (YAZ-1674, 🔒 D1) lives in main behind `file.*`: two invokes and the
@@ -1625,10 +1625,11 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
   const resultLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
   const dirItem = (el: HTMLElement) => el.querySelector('.tree__row--dir')?.closest('[role="treeitem"]') ?? null
 
-  it('renders a tablist of exactly Files then Favorites (YAZ-1766 D1), the active one aria-selected and no other', async () => {
+  it('renders a tablist of exactly Files, Focus, then Favorites (YAZ-1766 D1, YAZ-2619), the active one aria-selected and no other', async () => {
     const { el } = await mount({ lens: 'files' })
-    expect(tabs(el).map(tabName)).toEqual(['Files', 'Favorites'])
+    expect(tabs(el).map(tabName)).toEqual(['Files', 'Focus', 'Favorites'])
     expect(selectedTabs(el)).toEqual(['Files'])
+    expect(selectedTabs((await mount({ lens: 'focus' })).el)).toEqual(['Focus'])
     const favorites = await mount({ lens: 'favorites' })
     expect(selectedTabs(favorites.el)).toEqual(['Favorites'])
     expect(searchInput(favorites.el)).not.toBeNull() // ALWAYS visible, on both lenses (the locked YAZ-739 rule)
@@ -1809,7 +1810,7 @@ describe('focus mode (YAZ-1605)', () => {
     const v = `/v-focus-${++vaults}`
     const m = await mount({ root: v, ...over }, async (b) => {
       b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FOCUS)(v), generatedAt: 1 } as never)
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: (opts.focus ?? []).map((p) => `${v}${p}`), focusFavorites: [] })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: (opts.focus ?? []).map((p) => `${v}${p}`) })
       await storage.init()
     })
     return { ...m, v }
@@ -1851,8 +1852,8 @@ describe('focus mode (YAZ-1605)', () => {
     expect(topLabels(el)).toEqual(['Projects'])
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     expect(dirLabels(el)).toEqual(['Projects', 'Alpha'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [`${v}/Projects`] })
-    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, expect.objectContaining({ focusDirs: expect.anything() })) // never the vault bucket (YAZ-1628)
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusList: [`${v}/Projects`] })
+    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, expect.objectContaining({ focusList: expect.anything() })) // never the vault bucket (YAZ-1628)
   })
 
   it('the eye is lit only while focused and sits directly before the chevrons', async () => {
@@ -1870,7 +1871,7 @@ describe('focus mode (YAZ-1605)', () => {
     await act(async () => eye(el)?.click())
     expect(eye(el)).toBeNull()
     expect(topLabels(el)).toEqual(['Notes', 'Projects', 'Projects-Archive', 'top'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusList: [] })
   })
 
   it('a focus restored from this window\'s identity narrows the first render and is never written back', async () => {
@@ -1971,7 +1972,7 @@ describe('focus mode (YAZ-1605)', () => {
     await afterQuiet()
     expect(eye(el)).toBeNull()
     expect(topLabels(el)).toEqual(['Notes', 'Projects-Archive', 'top'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusList: [] })
   })
 
   it('with two folders focused, the survivor keeps the focus when the other vanishes', async () => {
@@ -1986,7 +1987,7 @@ describe('focus mode (YAZ-1605)', () => {
     await afterQuiet()
     expect(eye(el)).not.toBeNull()
     expect(topLabels(el)).toEqual(['Notes'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [`${v}/Notes`] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusList: [`${v}/Notes`] })
   })
 
   it('a reveal OUTSIDE the focus ends it and still shows the target', async () => {
@@ -2017,11 +2018,11 @@ describe('focus mode (YAZ-1605)', () => {
     expect(topLabels(el)).toEqual(['Projects'])
   })
 
-  it('a Files focus survives a trip through Favorites — the eye belongs to the ACTIVE lens', async () => {
+  it('a Files focus survives a trip through Favorites — the heart tab has no focus of its own and no eye (YAZ-2619 S39)', async () => {
     const { el, v, rerender } = await mountVault()
     await focusRow(el, `${v}/Projects`)
     await rerender({ lens: 'favorites' })
-    expect(eye(el)).toBeNull() // Favorites carries its own focus, and it is empty
+    expect(eye(el)).toBeNull()
     await rerender({ lens: 'files' })
     expect(eye(el)).not.toBeNull()
     expect(topLabels(el)).toEqual(['Projects'])
@@ -2034,7 +2035,7 @@ describe('focus mode (YAZ-1605)', () => {
  * the Files tree's own expansion (D7), a pinned file inside a pinned folder shows twice (root and
  * nested), the toast names the kind, the list persists in the vault's `.yaseendocs/favorites.json`
  * through `favorites.get/set` (D2, in the vault since 6A/D11), root rows drag to reorder (D4), and
- * Focus keeps its own per-window list here (D5). One fresh vault and window per mount, as the Focus
+ * the tab has no focus of its own (YAZ-2619 S39). One fresh vault and window per mount, as the Focus
  * block above does it.
  */
 describe('favorites (YAZ-1766)', () => {
@@ -2049,8 +2050,8 @@ describe('favorites (YAZ-1766)', () => {
   ]
 
   let vaults = 0
-  /** A fresh vault + window; `favorites` seeds what `favorites.get` answers — the vault file's list, absolute, as main hands it over (6A). */
-  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { favorites?: string[]; focusFavorites?: string[]; nodes?: (v: string) => TreeNode[] } = {}) => {
+  /** A fresh vault + window; `favorites` seeds what `favorites.get` answers — the vault file's list, absolute, as main hands it over (6A); `focus` seeds the window's focus list. */
+  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { favorites?: string[]; focus?: string[]; nodes?: (v: string) => TreeNode[] } = {}) => {
     const v = `/v-fav-${++vaults}`
     let emit: ((c: { root: string }) => void) | undefined
     const m = await mount({ root: v, lens: 'files', ...over }, async (b) => {
@@ -2060,7 +2061,7 @@ describe('favorites (YAZ-1766)', () => {
         emit = l
         return () => undefined
       })
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: (opts.focusFavorites ?? []).map((p) => `${v}${p}`) })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: (opts.focus ?? []).map((p) => `${v}${p}`) })
       await storage.init()
     })
     return { ...m, v, emit: (c: { root: string }) => emit?.(c) }
@@ -2083,9 +2084,9 @@ describe('favorites (YAZ-1766)', () => {
   const drag = (target: Element | null | undefined, type: string, clientY = 0) =>
     act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
 
-  it('the tab is the second, and starts on the empty hint', async () => {
+  it('the tab is the third, right of Focus (YAZ-2619), and starts on the empty hint', async () => {
     const { el } = await mountVault({ lens: 'favorites' })
-    expect([...el.querySelectorAll('.sidebar__lenses [role="tab"]')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Favorites'])
+    expect([...el.querySelectorAll('.sidebar__lenses [role="tab"]')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Focus', 'Favorites'])
     expect(bodyMsg(el)).toBe('No favorites yet. Right-click a file or folder → Add to favorites.')
     expect(el.querySelector('.tree')).toBeNull()
   })
@@ -2213,31 +2214,18 @@ describe('favorites (YAZ-1766)', () => {
     expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/top.md`])
   })
 
-  it('Focus on the Favorites tab writes THIS window\'s focusFavorites — never focusDirs or the vault file — and the eye is lens-local', async () => {
+  it('"Focus on folder" on the Favorites tab writes THIS window\'s one focus list — never the vault file — and the tab itself is not narrowed and shows no eye (YAZ-2619 S39)', async () => {
     const { el, v, bridge, rerender } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     await pick(el, `${v}/Projects`, 'Focus on folder')
-    expect(topLabels(el)).toEqual(['Projects'])
+    expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusFavorites: [`${v}/Projects`] })
-    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ focusDirs: expect.anything() }))
-    expect(bridge.favorites.set).not.toHaveBeenCalled() // the fold it opened is the one write, and that is app state
-    expect(eye(el)?.getAttribute('aria-label')).toBe('Exit focus mode')
-    await rerender({ lens: 'files' })
-    expect(eye(el)).toBeNull() // Files carries its own focus, and it is empty
-    expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
-    await rerender({ lens: 'favorites' })
-    expect(eye(el)).not.toBeNull()
-    await act(async () => eye(el)?.click())
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusList: [`${v}/Projects`] })
+    expect(bridge.favorites.set).not.toHaveBeenCalled() // the fold it opened is the other write, and that is app state
     expect(eye(el)).toBeNull()
-    expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusFavorites: [] })
-  })
-
-  it('a restored focusFavorites narrows the first render and is never written back', async () => {
-    const { el, bridge } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects'], focusFavorites: ['/Notes'] })
-    expect(topLabels(el)).toEqual(['Notes'])
-    expect(eye(el)).not.toBeNull()
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    // Until the Focus tab is built (YAZ-2622) the one list still narrows the Files tree.
+    await rerender({ lens: 'files' })
+    expect(eye(el)?.getAttribute('aria-label')).toBe('Exit focus mode')
+    expect(topLabels(el)).toEqual(['Projects'])
   })
 
   it('root rows drag to reorder: a drop indicator on the hovered edge, the new order persisted; nested rows do not drag; Files is untouched', async () => {
@@ -2278,14 +2266,17 @@ describe('favorites (YAZ-1766)', () => {
     expect(el.querySelector('.tree__row--drop-before')).toBeNull()
   })
 
-  it('reorder is off while the tab is focused — the focus list is what is shown, not the favorites order', async () => {
-    const { el, v, bridge } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects'], focusFavorites: ['/Notes', '/Projects'] })
+  it('reorder is always on: a focus list in this window neither narrows the tab nor stops the drag (YAZ-2619 S39)', async () => {
+    const { el, v, bridge } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects'], focus: ['/Notes'] })
+    expect(topLabels(el)).toEqual(['Notes', 'Projects'])
+    expect(eye(el)).toBeNull()
     drag(rowByPath(el, `${v}/Projects`), 'dragstart')
     drag(rowByPath(el, `${v}/Notes`), 'dragover', -1)
-    expect(el.querySelector('.tree__row--drop-before')).toBeNull()
+    expect(rowByPath(el, `${v}/Notes`)?.classList.contains('tree__row--drop-before')).toBe(true)
     drag(rowByPath(el, `${v}/Notes`), 'drop')
-    expect(topLabels(el)).toEqual(['Notes', 'Projects'])
-    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(topLabels(el)).toEqual(['Projects', 'Notes'])
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/Notes`])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // the restored list is never written back
   })
 
   it('another window\'s — or a synced — write lands through favorites:changed for THIS root: re-read, never re-written', async () => {

@@ -1,6 +1,6 @@
 /**
  * The vault as this panel holds it (YAZ-2202, moved out of `Sidebar.tsx` as-is): the tree and its
- * watcher refresh, its expansion, the two Focus Mode lists, the Favorites list, and the checks
+ * watcher refresh, its expansion, the focus list, the Favorites list, and the checks
  * that close a tab whose file is gone.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
@@ -27,13 +27,12 @@ export function useVaultTree(
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  // Focus Mode (YAZ-1605): one path LIST of dirs per lens; empty
+  // The focus list (YAZ-2619): ONE path list for the window; empty
   // is no focus. Per WINDOW since YAZ-1628 (`sidebarCollapsed`'s rule), unlike the per-vault
   // expansion above: restored from this window's identity and written back the same way, so it
   // survives a lens switch and a restart and follows its own rename, ⌘⇧N inherits it, and another
   // window on the same vault is never affected.
-  const [focusDirs, setFocusDirs] = useState<readonly string[]>(storage.getFocusDirs)
-  const [focusFavorites, setFocusFavorites] = useState<readonly string[]>(storage.getFocusFavorites)
+  const [focusList, setFocusList] = useState<readonly string[]>(storage.getFocusList)
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): the vault's pinned files and folders in the
   // user's order, read from `.yaseendocs/favorites.json` through main (absolute paths). Another
   // window's — or another machine's, via sync — write lands here through `favorites:changed` (below).
@@ -47,12 +46,12 @@ export function useVaultTree(
   const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
   // The focused top rows (YAZ-1605), resolved off the LIVE tree in tree order — a vanished dir yields
   // no row, and the prune below drops it. `dirs` stays the WHOLE vault: reveal must still find what is hidden.
-  const focusNodes = useMemo(() => (tree === null || focusDirs.length === 0 ? [] : focusRoots(tree.tree, focusDirs)), [tree, focusDirs])
+  const focusNodes = useMemo(() => (tree === null || focusList.length === 0 ? [] : focusRoots(tree.tree, focusList)), [tree, focusList])
   // The expand/collapse-all button acts on the dirs ON SCREEN: the focused subtrees, or all of them.
   const shownDirs = useMemo(() => (focusNodes.length === 0 ? dirs : allDirs(focusNodes)), [dirs, focusNodes])
-  // The Favorites tab's rows (YAZ-1766 D4/D5): its own focus list when set, else the favorites — each
-  // in STORED order, off the live tree; nesting and redundancy are kept (`favoriteRoots`, not `focusRoots`).
-  const favoriteNodes = useMemo(() => (tree === null ? [] : favoriteRoots(tree.tree, focusFavorites.length > 0 ? focusFavorites : favorites)), [tree, favorites, focusFavorites])
+  // The Favorites tab's rows (YAZ-1766 D4): the favorites in STORED order, off the live tree; nesting
+  // and redundancy are kept (`favoriteRoots`, not `focusRoots`). The tab has no focus of its own (YAZ-2619).
+  const favoriteNodes = useMemo(() => (tree === null ? [] : favoriteRoots(tree.tree, favorites)), [tree, favorites])
   const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
 
   // The window's one tree feed (YAZ-2191): every answer lands here, whoever asked — this panel,
@@ -105,13 +104,9 @@ export function useVaultTree(
   // Focus Mode's write-back (YAZ-1605), idempotent like `expanded`'s above
   // — into this window's identity (YAZ-1628), not the vault bucket.
   useEffect(() => {
-    if (sameList(storage.getFocusDirs(), focusDirs)) return
-    storage.setFocusDirs(focusDirs)
-  }, [focusDirs])
-  useEffect(() => {
-    if (sameList(storage.getFocusFavorites(), focusFavorites)) return
-    storage.setFocusFavorites(focusFavorites)
-  }, [focusFavorites])
+    if (sameList(storage.getFocusList(), focusList)) return
+    storage.setFocusList(focusList)
+  }, [focusList])
 
   // Favorites (6A/6C): read once per root, then re-read on every `favorites:changed` for this root —
   // an own write's echo, another window's, or a synced file. A stale root's answer is dropped.
@@ -160,15 +155,10 @@ export function useVaultTree(
   // lit eye. The store repairs the FILE on delete; this component holds its own copy, so it prunes
   // against the live tree itself, as `useSelection` (rowGestures.ts) does for the selection.
   useEffect(() => {
-    if (tree === null || focusDirs.length === 0) return
-    const kept = focusDirs.filter((dir) => findDirNode(tree.tree, dir) !== null)
-    if (kept.length !== focusDirs.length) setFocusDirs(kept)
-  }, [tree, focusDirs])
-  useEffect(() => {
-    if (tree === null || focusFavorites.length === 0) return
-    const kept = focusFavorites.filter((dir) => findDirNode(tree.tree, dir) !== null)
-    if (kept.length !== focusFavorites.length) setFocusFavorites(kept)
-  }, [tree, focusFavorites])
+    if (tree === null || focusList.length === 0) return
+    const kept = focusList.filter((dir) => findDirNode(tree.tree, dir) !== null)
+    if (kept.length !== focusList.length) setFocusList(kept)
+  }, [tree, focusList])
   // Favorites are NOT pruned against the tree here (D14): a path missing on this machine may simply not
   // have synced yet, so it draws no row (`favoriteRoots`) and main heals dead entries on the next write.
 
@@ -216,22 +206,20 @@ export function useVaultTree(
   }, [activeFile, root, onFileMissing])
 
   /**
-   * Focus Mode (YAZ-1605): narrow `inLens` — the menu's pinned lens, FILES for a search row (🔒 D1,
-   * YAZ-2050) — to these folders, REPLACING any focus,
+   * Focus Mode (YAZ-1605): narrow the Files tree to these folders, REPLACING any focus,
    * one or many — and OPEN each row (the synthetic-child idiom `startCreate` uses), so the tree
-   * never lands on closed chevrons.
+   * never lands on closed chevrons. From any lens it writes the window's ONE list (YAZ-2619).
    */
   const focusOn = useCallback(
-    (paths: string[], inLens: SidebarLens) => {
-      // Favorites keeps its OWN list (YAZ-1766 D5); both lenses share the one expansion (D7).
-      if (inLens === 'favorites') setFocusFavorites(paths)
-      else setFocusDirs(paths)
+    (paths: string[]) => {
+      setFocusList(paths)
       for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
     },
     [root],
   )
-  const focused = lens === 'favorites' ? focusFavorites.length > 0 : focusNodes.length > 0
-  const exitFocus = useCallback(() => (lens === 'favorites' ? setFocusFavorites([]) : setFocusDirs([])), [lens])
+  // The Favorites tab has no focus of its own, and so no eye (YAZ-2619 S39).
+  const focused = lens !== 'favorites' && focusNodes.length > 0
+  const exitFocus = useCallback(() => setFocusList([]), [])
 
   /**
    * The favorite toggle (YAZ-1766 D3/D6): remove every path, or append the ones not yet pinned —
@@ -252,5 +240,5 @@ export function useVaultTree(
   const expandedSet = useMemo(() => new Set(expanded), [expanded])
   const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
 
-  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs }
+  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusList, setFocusList, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs }
 }

@@ -577,11 +577,13 @@ export function keyedVaults(folders: Readonly<Record<string, FolderState>>): Key
 
 /** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write. */
 export const MAX_FAVORITES = 500
+/** A window's focus list (YAZ-2619) holds at most this many paths. */
+export const MAX_FOCUS = 500
 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
- * `files` (the file explorer) or `favorites` (the pinned files and folders, YAZ-1766 D1 — the
- * tab right of Files).
+ * `files` (the file explorer), `focus` (this window's focus list, YAZ-2619 — the tab between
+ * the two) or `favorites` (the pinned files and folders, YAZ-1766 D1).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
  * and no `FolderState` entry. Default `DEFAULT_SIDEBAR_LENS` (`files` since YAZ-1846) — a
@@ -589,9 +591,9 @@ export const MAX_FAVORITES = 500
  * window that has none of its own. A state file that still names the retired `topics` lens reads
  * as the default one, and its two retired keys are ignored on load (`store.ts`).
  */
-export type SidebarLens = 'files' | 'favorites'
+export type SidebarLens = 'files' | 'focus' | 'favorites'
 /** The tabs' order, left→right — independent of the default lens (🔒 D3, YAZ-1846). */
-export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'favorites']
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favorites']
 /** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
 export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
@@ -749,16 +751,14 @@ export interface WindowEntry {
    */
   sidebarLens: SidebarLens
   /**
-   * Focus Mode (YAZ-1605; per window since YAZ-1628): the directories THIS window's Files tree
-   * is narrowed to — one or several (a shift-selection) — or empty for the whole vault. Window
-   * identity like `sidebarCollapsed`, so a second window on the same vault focuses on its own:
-   * a duplicate inherits the list by value and then diverges, a root change clears it. A flat
-   * list of absolute paths, so `store.renamePath` / `store.removePath` repair it as they repair
-   * `tabs` — a renamed focus follows its folder, a deleted one drops out.
+   * The focus list (YAZ-2619 D1): the files AND folders THIS window's Focus tab shows, in the
+   * order added, `MAX_FOCUS` at most — or empty. Window identity like `sidebarCollapsed`, so a
+   * second window on the same vault keeps a list of its own: a duplicate (⌘⇧N) inherits the list
+   * by value and then diverges, a root change clears it. A flat list of absolute paths, so
+   * `store.renamePath` / `store.removePath` repair it as they repair `tabs` — a renamed item
+   * follows its path, a deleted one drops out.
    */
-  focusDirs: string[]
-  /** Its Favorites twin (YAZ-1766 D5): the favorited DIRS this window's Favorites tab is narrowed to, or empty. */
-  focusFavorites: string[]
+  focusList: string[]
   bounds: WindowBounds
 }
 
@@ -1036,9 +1036,8 @@ export interface WindowIdentity {
   sidebarCollapsed: boolean
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
-  /** Focus Mode's lists (YAZ-1605, per window since YAZ-1628; Favorites' own since YAZ-1766): the same two as `WindowEntry`'s. */
-  focusDirs: string[]
-  focusFavorites: string[]
+  /** The focus list (YAZ-2619; per window, as focus is since YAZ-1628): the same one as `WindowEntry`'s. */
+  focusList: string[]
 }
 
 export interface OpenWindowOptions {

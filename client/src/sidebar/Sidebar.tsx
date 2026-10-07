@@ -312,7 +312,7 @@ function focusLabel(count: number): string {
 }
 
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
-const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', favorites: 'Favorites' }
+const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', focus: 'Focus', favorites: 'Favorites' }
 
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
@@ -361,7 +361,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(root, watch, activeFile, lens, onRootMissing, onFileMissing, onNotice)
+  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusList, setFocusList, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(root, watch, activeFile, lens, onRootMissing, onFileMissing, onNotice)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
@@ -442,10 +442,10 @@ export function Sidebar({
       return
     }
     // A reveal is "show me THIS" (YAZ-1605): a target outside every focused folder ends the focus first.
-    if (focusDirs.length > 0 && !focusDirs.some((dir) => pendingReveal.path === dir || pendingReveal.path.startsWith(`${dir}/`))) setFocusDirs([])
+    if (focusList.length > 0 && !focusList.some((dir) => pendingReveal.path === dir || pendingReveal.path.startsWith(`${dir}/`))) setFocusList([])
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses.
     dispatch({ type: 'expandTo', root, file: revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path })
-  }, [focusDirs, nameOf, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
+  }, [focusList, nameOf, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
 
   const filesRevealReady = revealTargetPresent && ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
 
@@ -642,7 +642,7 @@ export function Sidebar({
   const removeShortcutRow = (path: string, dir: string): void =>
     void removeShortcut(dir, path, indexSource.folders, root).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
-  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, focusFavorites)
+  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites)
 
   /**
    * The Files and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
@@ -896,7 +896,7 @@ export function Sidebar({
               onOpenDefault: openDefault,
               onReveal: reveal,
               focusLabel: focusLabel(menu.focusPaths?.length ?? 0),
-              onFocus: viaTree((paths) => focusOn(paths, menu.lens)),
+              onFocus: viaTree(focusOn),
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
               onPaste: () => pasteInto(menu.targetDir),

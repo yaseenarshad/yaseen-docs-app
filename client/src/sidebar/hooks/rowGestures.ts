@@ -79,7 +79,6 @@ export function useTreeDrag(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
   favoritesRef: RefObject<readonly string[]>,
   saveFavorites: (next: readonly string[]) => void,
-  focusFavorites: readonly string[],
 ) {
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
@@ -132,13 +131,11 @@ export function useTreeDrag(
     saveFavorites([...without.slice(0, at), from, ...without.slice(at)])
   }, [reorderDragging, reorderOver, saveFavorites])
 
-  /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
-  const reorderOff = focusFavorites.length > 0
   const favoriteReorder: TreeReorder = useMemo(
     () => ({
       dragging: reorderDragging,
       over: reorderOver,
-      start: reorderOff ? () => undefined : setReorderDragging,
+      start: setReorderDragging,
       hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
       drop: dropReorder,
       end: () => {
@@ -146,7 +143,7 @@ export function useTreeDrag(
         setReorderOver(null)
       },
     }),
-    [reorderDragging, reorderOver, reorderOff, dropReorder],
+    [reorderDragging, reorderOver, dropReorder],
   )
 
   return { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder }
