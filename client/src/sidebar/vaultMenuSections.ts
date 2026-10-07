@@ -1,3 +1,4 @@
+import type { KeyedVault } from '@shared/types'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
 
 /**
@@ -26,7 +27,7 @@ export interface VaultMenuTarget {
   /** A display name is set (YAZ-1974 D5): offers "Reset to folder name". */
   renamed: boolean
   /** Every vault that has a number (YAZ-2555 D2), this one included — who the "Set shortcut" flyout names beside each number. */
-  keyed: readonly { key: number; path: string; name: string }[]
+  keyed: readonly KeyedVault[]
 }
 
 export interface VaultMenuHandlers {

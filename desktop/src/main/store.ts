@@ -227,14 +227,14 @@ function sanitizeFolder(raw: unknown): FolderState | null {
 function sanitizeFolders(raw: unknown): Record<string, FolderState> {
   if (!isRecord(raw)) return {}
   const out: Record<string, FolderState> = {}
-  const keys = new Set<number>()
+  const taken = new Set<number>()
   for (const [root, folder] of Object.entries(raw)) {
     const clean = sanitizeFolder(folder)
     if (clean === null) continue
     // One vault per number (YAZ-2555 S21): in a damaged file the first vault keeps it.
     if (clean.key !== null) {
-      if (keys.has(clean.key)) clean.key = null
-      else keys.add(clean.key)
+      if (taken.has(clean.key)) clean.key = null
+      else taken.add(clean.key)
     }
     out[root] = clean
   }
