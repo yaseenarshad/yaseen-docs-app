@@ -35,7 +35,8 @@ const title = (w: Page) => layer(w).locator('.page-title__text')
 const titleInput = (w: Page) => layer(w).locator('.page-title__input')
 const inline = (w: Page) => w.locator('.create-inline__input')
 const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
-const results = (w: Page) => w.locator('[aria-label="Search results"] [role="option"]')
+/** A search result is a row of the search tree (YAZ-2620); a note found by its id stands alone in it. */
+const results = (w: Page) => w.locator('.sidebar__body .tree__row--file')
 
 const read = (p: string) => readFile(p, 'utf8').catch(() => '')
 
