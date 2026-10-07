@@ -1800,9 +1800,12 @@ button {
   white-space: nowrap;
 }
 
-/* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — weight alone, no colour of its own. */
+/* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
+   (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
+   translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */
 .tree__mark {
-  background: none;
+  background: var(--mark-bg);
+  border-radius: 2px;
   color: inherit;
   font-weight: 600;
 }
