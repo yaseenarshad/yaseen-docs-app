@@ -324,6 +324,7 @@ export function useInlineEdits(
   menu: MenuTargets | null,
   setMenu: (menu: MenuTargets | null) => void,
   favoriteNodes: TreeNode[],
+  focusNodes: TreeNode[],
   onLensChange: (lens: SidebarLens) => void,
   refresh: () => void,
   onOpenFile: (path: string) => void,
@@ -341,14 +342,16 @@ export function useInlineEdits(
       // The input renders inside the target dir's children, so that dir must be open;
       // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
-      // Favorites shows a SUBSET of the vault (YAZ-1766, 3B1): a target dir it does not hold would give
-      // the input nowhere to mount, so the create moves to Files — where the `expandTo` above has
-      // already opened that dir. The reveal hop's rule (D10), applied to the other gesture that needs a row.
-      if (menu.lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
+      // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
+      // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
+      // mount, so the create moves to Files, where the `expandTo` above has already opened that dir.
+      // The reveal hop's rule (D10), applied to the other gesture that needs a row.
+      const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
+      if (shown !== null && (menu.targetDir === root ? shown.length === 0 : findDirNode(shown, menu.targetDir) === null)) onLensChange('files')
       setCreating({ kind, seed, parentDir: menu.targetDir })
       setMenu(null)
     },
-    [menu, root, favoriteNodes, onLensChange],
+    [menu, root, favoriteNodes, focusNodes, onLensChange],
   )
 
   const submitCreate = useCallback(
