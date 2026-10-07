@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { defaultRightPanelIdentity, type WindowEntry } from '@shared/types'
+import { MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -169,6 +169,54 @@ describe('registerWindowIpc', () => {
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusFavorites: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusFavorites: ['/v/a', 'rel'] })).toEqual(bad('NOT_ABSOLUTE'))
     expect(store.get().windows).toEqual([{ ...entry, focusFavorites: ['/v/a'] }])
+  })
+
+  describe('the vault list (YAZ-2602 D1, S76)', () => {
+    const set = (patch: unknown) => registered(CONTRACT.window.setIdentity.channel)({ sender }, patch)
+    const stored = () => store.get().windows[0]
+
+    it('window:set-identity accepts `roots`: `root` follows roots[0], nothing else of the identity moves, and window:identity reads a COPY back', async () => {
+      expect(await set({ roots: ['/v', '/w'] })).toEqual(ok(undefined))
+      expect(store.get().windows).toEqual([{ ...entry, roots: ['/v', '/w'] }]) // the tabs, the panel, the lens and the focus lists stay
+      // A new first vault: `root` follows it. One vault under two spellings is one entry.
+      expect(await set({ roots: ['/w', '/v/', '/w/', '/x'] })).toEqual(ok(undefined))
+      expect(stored()).toEqual({ ...entry, root: '/w', roots: ['/w', '/v', '/x'] })
+      // The list leads: a `root` beside it in the patch does not decide.
+      expect(await set({ root: '/x', roots: ['/v', '/w'] })).toEqual(ok(undefined))
+      expect(stored()).toEqual({ ...entry, roots: ['/v', '/w'] })
+      const read = await registered(CONTRACT.window.identity.channel)({ sender })
+      expect(read).toEqual(ok(expect.objectContaining({ root: '/v', roots: ['/v', '/w'] })))
+      if (!read.ok) throw new Error('expected ok')
+      expect((read.value as WindowIdentity).roots).not.toBe(stored().roots)
+      // The empty list is the Welcome window.
+      expect(await set({ roots: [] })).toEqual(ok(undefined))
+      expect(stored()).toMatchObject({ root: null, roots: [] })
+    })
+
+    it('window:set-identity with `root` alone (the old patch): the SAME root keeps the list, a DIFFERENT root is the whole list, and null is no vault', async () => {
+      await set({ roots: ['/v', '/w'] })
+      expect(await set({ root: '/v' })).toEqual(ok(undefined))
+      expect(stored()).toMatchObject({ root: '/v', roots: ['/v', '/w'] })
+      expect(await set({ file: '/w/b.md', sidebarCollapsed: true })).toEqual(ok(undefined)) // a patch that names neither leaves both
+      expect(stored()).toMatchObject({ root: '/v', roots: ['/v', '/w'] })
+      expect(await set({ root: '/w' })).toEqual(ok(undefined)) // the window's SECOND vault is still a different root
+      expect(stored()).toMatchObject({ root: '/w', roots: ['/w'] })
+      await set({ roots: ['/w', '/v'] })
+      expect(await set({ root: null })).toEqual(ok(undefined))
+      expect(stored()).toMatchObject({ root: null, roots: [] })
+    })
+
+    it('window:set-identity rejects the whole call on a bad `roots`, leaving the entry untouched: not a list, one bad element, or more than MAX_WINDOW_ROOTS', async () => {
+      const vaults = (n: number) => Array.from({ length: n }, (_, i) => `/v${i}`)
+      expect(await set({ roots: '/w' })).toEqual(bad('BAD_REQUEST'))
+      expect(await set({ roots: ['/v', 'rel'], sidebarCollapsed: true })).toEqual(bad('NOT_ABSOLUTE')) // the `tabs` rule
+      expect(await set({ roots: ['/v', 5] })).toEqual(bad('NOT_ABSOLUTE'))
+      expect(await set({ roots: ['/v', ''] })).toEqual(bad('BAD_REQUEST'))
+      expect(await set({ roots: vaults(MAX_WINDOW_ROOTS + 1), sidebarCollapsed: true })).toEqual(bad('BAD_REQUEST'))
+      expect(store.get().windows).toEqual([entry])
+      expect(await set({ roots: vaults(MAX_WINDOW_ROOTS) })).toEqual(ok(undefined)) // 8 is the most a window holds (R7)
+      expect(stored().roots).toEqual(vaults(MAX_WINDOW_ROOTS))
+    })
   })
 
   it('window:set-identity rejects the whole call on any bad tabs element, leaving the entry untouched', async () => {
