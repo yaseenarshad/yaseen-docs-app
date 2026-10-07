@@ -8,11 +8,34 @@
  * latches it on for good. Both halves are asserted here, subscription included.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, act } from 'react'
+import { StrictMode, act, useMemo } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, WatchEvent } from '@shared/types'
 import type { WatchSource } from '../hooks/useWatch'
-import { useSearchResults } from './useSearchResults'
+
+/**
+ * What the hook asks of `searchCandidates.ts`, counted (YAZ-2602 R2): the REAL functions behind
+ * recording wrappers, so a test can say what a keystroke, a snapshot and a tree each cost.
+ */
+const asked = vi.hoisted(() => ({ ranked: [] as number[], notes: [] as unknown[], folders: [] as string[] }))
+vi.mock('./searchCandidates', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./searchCandidates')>()
+  const searchRows: typeof real.searchRows = (candidates, query) => {
+    asked.ranked.push(candidates.length)
+    return real.searchRows(candidates, query)
+  }
+  const searchCandidates: typeof real.searchCandidates = (records) => {
+    asked.notes.push(records)
+    return real.searchCandidates(records)
+  }
+  const folderCandidates: typeof real.folderCandidates = (root, dirs, folders) => {
+    asked.folders.push(root)
+    return real.folderCandidates(root, dirs, folders)
+  }
+  return { ...real, searchRows, searchCandidates, folderCandidates }
+})
+
+import { useSearchResults, type SearchVault } from './useSearchResults'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -48,7 +71,8 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 const NO_DIRS: readonly string[] = []
 
 function Harness({ watch, query, dirs = NO_DIRS }: { watch: WatchSource; query: string; dirs?: readonly string[] }) {
-  const results = useSearchResults('/v', watch, query, dirs)
+  // The window's one vault, as the Sidebar hands it: the same list while nothing in it changed.
+  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs }], [watch, dirs]), query)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
@@ -201,5 +225,127 @@ describe('useSearchResults (YAZ-803)', () => {
     expect(labels()).toEqual([])
     await fire({ type: 'add', path: '/v/Beta.md', mtime: 1 }) // …and a refetch that fails again is just as quiet
     expect(labels()).toEqual([])
+  })
+})
+
+/**
+ * The search over every vault of the window (YAZ-2602 R2, S38): one list, one ranking per
+ * keystroke however many vaults, and each vault read and rebuilt on its own.
+ */
+describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
+  const at = (root: string, basename: string): IndexRecord => ({ ...rec(basename), path: `${root}/${basename}.md` })
+  function Many({ vaults, query }: { vaults: readonly SearchVault[]; query: string }) {
+    const results = useSearchResults(vaults, query)
+    return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.path}|`)}</>
+  }
+  /** A vault with its own fan-out watcher, so a test can say which vault's watcher spoke and which subscriptions ended. */
+  const vault = (root: string, dirs: readonly string[] = NO_DIRS) => {
+    const listeners = new Set<(ev: WatchEvent) => void>()
+    const counts = { subscribed: 0, ended: 0 }
+    const watch: WatchSource = {
+      subscribe: (l) => {
+        counts.subscribed++
+        listeners.add(l)
+        return () => {
+          counts.ended++
+          listeners.delete(l)
+        }
+      },
+    }
+    return { root, watch, dirs, counts, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
+  }
+  const only = ({ root, watch, dirs }: SearchVault): SearchVault => ({ root, watch, dirs })
+  async function mountMany(byRoot: Record<string, IndexRecord[]>, vaults: readonly SearchVault[], query: string) {
+    const bridge = { index: vi.fn(async (root: string) => ({ root, records: byRoot[root] ?? [], folders: [], generatedAt: 1, ids: true })) }
+    Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    reactRoot = createRoot(container)
+    const render = (list: readonly SearchVault[], q: string) => act(async () => reactRoot?.render(<StrictMode><Many vaults={list} query={q} /></StrictMode>))
+    await render(vaults, query)
+    return { bridge, render }
+  }
+  const forget = () => {
+    asked.ranked.length = 0
+    asked.notes.length = 0
+    asked.folders.length = 0
+  }
+  const afterQuiet = () => act(() => new Promise<void>((r) => setTimeout(r, 150)))
+
+  it('one ranked list over every vault: a better match of a later vault leads, and a folder leads a note it ties with inside its own vault', async () => {
+    const [a, b] = [vault('/a', ['/a/Plan']), vault('/b')]
+    await mountMany({ '/a': [at('/a', 'Old plan'), at('/a', 'Plan')], '/b': [at('/b', 'Plan B')] }, [only(a), only(b)], 'plan')
+    expect(labels()).toEqual(['📁/a/Plan', '/a/Plan.md', '/b/Plan B.md', '/a/Old plan.md'])
+  })
+
+  it('a keystroke is ONE ranking of ONE list, with one vault and with three: it reads no index and rebuilds no row; the list is the sum of the vaults\' rows', async () => {
+    const notes = (root: string) => [at(root, 'Alpha'), at(root, 'Beta')]
+    const one = [only(vault('/a', ['/a/dir']))]
+    const single = await mountMany({ '/a': notes('/a') }, one, 'a')
+    forget()
+    single.bridge.index.mockClear()
+    await single.render(one, 'al')
+    const perKey = { ranked: [...asked.ranked], rebuilt: asked.notes.length + asked.folders.length, read: single.bridge.index.mock.calls.length }
+    expect(perKey.rebuilt).toBe(0)
+    expect(perKey.read).toBe(0)
+    expect(new Set(perKey.ranked)).toEqual(new Set([3])) // the vault's one folder and two notes
+    act(() => reactRoot?.unmount())
+    container?.remove()
+
+    const three = [only(vault('/a', ['/a/dir'])), only(vault('/b', ['/b/dir'])), only(vault('/c', ['/c/dir']))]
+    const many = await mountMany({ '/a': notes('/a'), '/b': notes('/b'), '/c': notes('/c') }, three, 'a')
+    expect(many.bridge.index.mock.calls.map(([root]) => root).sort()).toEqual(['/a', '/b', '/c'])
+    forget()
+    many.bridge.index.mockClear()
+    await many.render(three, 'al')
+    // The same number of rankings as with one vault, each over the one list of all three.
+    expect(asked.ranked).toHaveLength(perKey.ranked.length)
+    expect(new Set(asked.ranked)).toEqual(new Set([9]))
+    expect(asked.notes.length + asked.folders.length).toBe(0)
+    expect(many.bridge.index).not.toHaveBeenCalled()
+    expect(labels()).toEqual(['/a/Alpha.md', '/b/Alpha.md', '/c/Alpha.md'])
+  })
+
+  it('a vault\'s watcher re-reads that vault alone and rebuilds its rows alone; a tree of one vault rebuilds that vault\'s folder rows alone and reads nothing', async () => {
+    const [a, b] = [vault('/a', ['/a/dir']), vault('/b', ['/b/dir'])]
+    const byRoot = { '/a': [at('/a', 'Alpha')], '/b': [at('/b', 'Beta')] }
+    const list = [only(a), only(b)]
+    const { bridge, render } = await mountMany(byRoot, list, 'a')
+    expect(labels()).toEqual(['/a/Alpha.md', '/b/Beta.md'])
+    forget()
+    bridge.index.mockClear()
+    const next = [at('/b', 'Beta'), at('/b', 'Banana')]
+    byRoot['/b'] = next
+    await act(async () => b.fire({ type: 'add', path: '/b/Banana.md', mtime: 1 }))
+    await afterQuiet()
+    expect(new Set(bridge.index.mock.calls.map(([root]) => root))).toEqual(new Set(['/b']))
+    // A snapshot brings new records and new folder records, as it does with one vault: `/b`'s rows, and no row of `/a`.
+    expect(new Set(asked.notes)).toEqual(new Set([next]))
+    expect(new Set(asked.folders)).toEqual(new Set(['/b']))
+    expect(labels()).toEqual(['/a/Alpha.md', '/b/Beta.md', '/b/Banana.md'])
+
+    forget()
+    bridge.index.mockClear()
+    // The Sidebar's list after a tree of `/a` landed: a new list, `/a` with new folders, `/b` as it was.
+    await render([{ ...only(a), dirs: ['/a/dir', '/a/arch'] }, list[1]], 'a')
+    expect(new Set(asked.folders)).toEqual(new Set(['/a']))
+    expect(asked.notes).toEqual([])
+    expect(bridge.index).not.toHaveBeenCalled()
+    expect([a.counts, b.counts]).toEqual([{ subscribed: 1, ended: 0 }, { subscribed: 1, ended: 0 }])
+    expect(labels()).toEqual(['📁/a/arch', '/a/Alpha.md', '/b/Beta.md', '/b/Banana.md'])
+  })
+
+  it('a vault that joins is read once and the vault that stays is not read again; a vault that leaves ends its subscription and takes its rows', async () => {
+    const [a, b] = [vault('/a'), vault('/b')]
+    const { bridge, render } = await mountMany({ '/a': [at('/a', 'Alpha')], '/b': [at('/b', 'Alpha')] }, [only(a)], 'alpha')
+    expect(labels()).toEqual(['/a/Alpha.md'])
+    bridge.index.mockClear()
+    await render([only(a), only(b)], 'alpha')
+    expect(bridge.index.mock.calls).toEqual([['/b']])
+    expect(labels()).toEqual(['/a/Alpha.md', '/b/Alpha.md'])
+    await render([only(b)], 'alpha')
+    expect(labels()).toEqual(['/b/Alpha.md'])
+    expect([a.counts, b.counts]).toEqual([{ subscribed: 1, ended: 1 }, { subscribed: 1, ended: 0 }])
+    expect(bridge.index).toHaveBeenCalledTimes(1)
   })
 })

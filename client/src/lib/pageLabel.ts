@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { rootOfPath, type IndexRecord, type TreeResponse } from '@shared/types'
+import { MAX_WINDOW_ROOTS, rootOfPath, type IndexRecord, type TreeResponse } from '@shared/types'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, stripExt } from './paths'
 import { fetchTree, latestTree, onTree } from './treeFeed'
@@ -18,14 +18,20 @@ export function isFolderPath(root: string | null, path: string): boolean {
 export type PathTitles = ReadonlyMap<string, string>
 
 const titlesCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], PathTitles>>()
-let latest: PathTitles = new Map()
+const NO_TITLES: PathTitles = new Map()
+/**
+ * The Map last built for each vault of the window (YAZ-2602 D1), newest first. A snapshot does not
+ * say whose it is, and need not: the paths of two vaults never meet, so the Map that holds a
+ * snapshot's first path is its own vault's.
+ */
+const latest: PathTitles[] = []
 
 /**
  * The index snapshot as `PathTitles`: a folder's record is its `.folder.md`, so its directory is the
  * key. Built once per snapshot — keyed by the identity of its two arrays, as `rowsByFolder` is —
  * because every rendered id link, each label holder and each notice asks. A snapshot that changed
- * no title keeps the Map the last one had, so a save elsewhere in the vault re-renders nothing
- * that shows a name (YAZ-2194).
+ * no title keeps the Map its vault's last one had, so a save elsewhere in the vault — or in another
+ * vault of the window — re-renders nothing that shows a name (YAZ-2194).
  */
 export function pathTitles(records: readonly IndexRecord[], folders: readonly IndexRecord[]): PathTitles {
   let byFolders = titlesCache.get(records)
@@ -35,8 +41,17 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
     const built = new Map<string, string>()
     for (const record of records) built.set(record.path, record.title)
     for (const folder of folders) built.set(dirname(folder.path), folder.title)
-    if (built.size !== latest.size || [...built].some(([path, title]) => latest.get(path) !== title)) latest = built
-    byFolders.set(folders, (titles = latest))
+    const [path] = built.keys()
+    const at = path === undefined ? -1 : latest.findIndex((held) => held.has(path))
+    const last = path === undefined ? NO_TITLES : latest[at]
+    if (last !== undefined && built.size === last.size && [...built].every(([key, title]) => last.get(key) === title)) titles = last
+    else {
+      // Its vault's newer Map takes the older one's place; a vault not seen before joins the list.
+      if (at !== -1) latest.splice(at, 1)
+      latest.unshift((titles = built))
+      latest.length = Math.min(latest.length, MAX_WINDOW_ROOTS)
+    }
+    byFolders.set(folders, titles)
   }
   return titles
 }
@@ -53,8 +68,6 @@ export const pageName = (root: string | null, path: string, titles: PathTitles):
 
 /** The source's `PathTitles`, live. */
 export const usePathTitles = (source: WikilinkResolveSource): PathTitles => useSyncExternalStore(source.subscribe, () => pathTitles(source.records, source.folders))
-
-const NO_TITLES: PathTitles = new Map()
 
 /**
  * One `PathTitles` over the index of every vault of the window (YAZ-2602 D1), live: the strip, the

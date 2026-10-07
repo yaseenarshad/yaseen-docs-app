@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -29,7 +29,7 @@ import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
-/** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher and its index snapshot. */
+/** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher, its index snapshot and its review. */
 export interface SidebarVault {
   root: string
   /** Its display name, else its folder name (YAZ-1974 D4): the vault row's label. */
@@ -41,6 +41,15 @@ export interface SidebarVault {
    * is `[]` until the first index lands, so no row shows a number before then.
    */
   index: WikilinkResolveSource
+  /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
+  upkeep: boolean
+  /**
+   * Its Inbox row (YAZ-2322; one per vault with upkeep on, YAZ-2602 R5): how many notes are due, and
+   * whether its review is open. App counts and owns the session — this component is unmounted
+   * while collapsed, and the count has to be right the moment it comes back.
+   */
+  dueCount: number
+  reviewing: boolean
 }
 
 interface SidebarProps {
@@ -153,16 +162,6 @@ interface SidebarProps {
    * input changes and emptied on unmount. Each verb answers whether it acted, so App knows what to swallow.
    */
   clipboardRef: { current: SidebarClipboard | null }
-  /** Whether the vault has upkeep review on (YAZ-2322 🔒 D7): off, there is no Inbox row and no "Review this folder". */
-  upkeep: boolean
-  /**
-   * The Inbox row (YAZ-2322): how many notes are due, and whether a review is open. App counts
-   * and owns the session — this component is unmounted while collapsed, and the count has to be
-   * right the moment it comes back.
-   */
-  dueCount: number
-  reviewing: boolean
-  onOpenInbox: () => void
   /** The folder row's "Review this folder" (YAZ-2322): App starts a review of what is due inside it. */
   onReviewFolder: (dirPath: string) => void
   /**
@@ -171,6 +170,8 @@ interface SidebarProps {
    */
   reviewState: (path: string) => boolean | null
   onSetReview: (path: string, on: boolean) => void
+  /** An Inbox row was clicked (YAZ-2602 R5): App opens the review of THAT vault, or closes it when it is the one open. */
+  onInbox: (root: string) => void
 }
 
 /** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
@@ -382,23 +383,22 @@ export function Sidebar({
   onSearchFocusHandled,
   selectionRef,
   clipboardRef,
-  upkeep,
-  dueCount,
-  reviewing,
-  onOpenInbox,
   onReviewFolder,
   reviewState,
   onSetReview,
+  onInbox,
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, rootOf, trees, tree, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsOf, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, lens, onRootMissing, onFileMissing, onNotice)
-  // The FIRST vault: the one a window with one vault has, and the one the search bar and the Favorites tab stand on.
+  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, lens, onRootMissing, onFileMissing, onNotice)
+  // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = roots.length > 1
   const vaultsRef = useRef(vaults)
   vaultsRef.current = vaults
+  /** The vaults that have an Inbox row (YAZ-2602 R5): the ones with upkeep on. */
+  const inboxes = vaults.filter((vault) => vault.upkeep)
   /**
    * The vault that holds `path` — the most specific one, else the first (YAZ-2602): every rule
    * about "the vault of this row" asks it. Ref-backed, so the callbacks that ask keep their identity.
@@ -456,7 +456,10 @@ export function Sidebar({
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
-  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, vaults[0].watch, dirsOf(root), pendingSearchFocus, onSearchFocusHandled, activate)
+  // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own watcher, and its own folders.
+  const watches = useSameList(vaults.map((vault) => vault.watch))
+  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i] })), [roots, watches, dirsByVault])
+  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, pendingSearchFocus, onSearchFocusHandled, activate)
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -577,8 +580,10 @@ export function Sidebar({
         focusPaths: focusable(plural ?? (node === null ? [] : [node.path]), forest),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favorites.includes(p)),
-        reviewDir: upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        // Each row by the list of the vault that holds it (YAZ-2602 D5).
+        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true),
+        // By the upkeep of the vault that holds the folder (R5).
+        reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
         reviewPath: inReview === null ? null : filePath,
         reviewIsOn: inReview === true,
         // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
@@ -589,7 +594,7 @@ export function Sidebar({
         removeVault: vaultRow,
       })
     },
-    [root, roots, multi, forest, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState],
+    [root, roots, multi, forest, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, favoritesByRoot, reviewState],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
@@ -772,19 +777,24 @@ export function Sidebar({
           <SidebarPanelIcon />
         </button>
       </div>
-      {/* The Inbox (YAZ-2322), with upkeep on: above the lens tabs, so it shows in every lens and during a search. */}
-      {upkeep && (
-        <button
-          type="button"
-          className={`sidebar__inbox${reviewing ? ' sidebar__inbox--active' : ''}`}
-          aria-pressed={reviewing}
-          aria-label={dueCount > 0 ? `Inbox, ${dueCount} due` : 'Inbox'}
-          onClick={onOpenInbox}
-        >
-          Inbox
-          {dueCount > 0 && <span className="tree__count">{dueCount}</span>}
-        </button>
-      )}
+      {/* The Inbox (YAZ-2322), with upkeep on: above the lens tabs, so it shows in every lens and during a search.
+          One row per vault that has upkeep on (YAZ-2602 R5), in vault order; two or more say whose each is. */}
+      {inboxes.map((vault) => {
+        const label = inboxes.length > 1 ? `Inbox · ${vault.name}` : 'Inbox'
+        return (
+          <button
+            key={vault.root}
+            type="button"
+            className={`sidebar__inbox${vault.reviewing ? ' sidebar__inbox--active' : ''}`}
+            aria-pressed={vault.reviewing}
+            aria-label={vault.dueCount > 0 ? `${label}, ${vault.dueCount} due` : label}
+            onClick={() => onInbox(vault.root)}
+          >
+            {label}
+            {vault.dueCount > 0 && <span className="tree__count">{vault.dueCount}</span>}
+          </button>
+        )
+      })}
       {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Files (the file
           explorer) ⇄ Favorites. The row stays VISIBLE and clickable during a search,
           and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`
@@ -884,7 +894,7 @@ export function Sidebar({
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
-            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} onRowContextMenu={(hit, e) => openMenu({ type: hit.kind, path: hit.path }, e)} />
+            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} onRowContextMenu={(hit, e) => openMenu({ type: hit.kind, path: hit.path }, e)} vaultOf={multi ? (path) => vaultOf(path).name : undefined} />
           ) : (
             <p className="sidebar__msg">No matches</p>
           )
@@ -892,15 +902,16 @@ export function Sidebar({
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
           // every row carries the same menu. Nothing here drags to disk (an inert move); root rows
-          // drag to reorder the list (D4).
+          // drag to reorder the list (D4). With two or more vaults the favorites stand under their
+          // vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
-            {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
-            {tree !== null && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {tree !== null && favoriteNodes.length > 0 && (
+            {!loaded && favoriteNodes.length === 0 && error === null && <p className="sidebar__msg">Loading…</p>}
+            {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
+            {favoriteNodes.length > 0 && (
               <Tree
                 nodes={favoriteNodes}
-                dirPath={root}
+                dirPath={multi ? '' : root}
                 vaultRows={vaultRows}
                 expanded={expandedSet}
                 activeFile={activeFile}

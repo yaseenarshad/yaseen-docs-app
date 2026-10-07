@@ -479,6 +479,11 @@ export function App() {
     for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
     scope.review.start(folder)
   }, [])
+  const toggleInbox = useCallback((vault: string) => {
+    const scope = live.current.vaults[live.current.roots.indexOf(vault)]
+    if (scope.review.session === null) startReview(scope)
+    else scope.review.close()
+  }, [startReview])
   // The row menus ask and write by path: a note is in review by its own vault's settings (S42).
   const reviewState = useCallback((path: string) => scopeOf(path).review.inReview(path), [scopeOf])
   const setReview = useCallback((path: string, on: boolean) => scopeOf(path).review.setInReview(path, on), [scopeOf])
@@ -940,7 +945,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -981,7 +986,7 @@ export function App() {
           key={root}
           // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null }))}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}
@@ -1022,15 +1027,12 @@ export function App() {
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
           asideRef={sidebarRef}
-          // The Inbox row (YAZ-2322), there with upkeep on: it opens the review, and closes the one that is open.
-          upkeep={first.reviewSettings.settings.enabled}
-          dueCount={first.review.dueCount}
-          reviewing={first.review.session !== null}
-          onOpenInbox={() => (first.review.session === null ? startReview(first) : first.review.close())}
           // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
           onReviewFolder={(dir) => startReview(scopeOf(dir), relLabel(dir))}
           reviewState={reviewState}
           onSetReview={setReview}
+          // An Inbox row (YAZ-2322), one per vault with upkeep on (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
+          onInbox={toggleInbox}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -1157,8 +1159,9 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
-      {/* The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). */}
-      {asking !== undefined && asking.idsAsk !== null && <ConfirmIds key={asking.root} ask={asking.idsAsk} onAnswer={asking.saveIds} onDismiss={asking.closeIdsAsk} />}
+      {/* The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). Keyed apart from the sidebar, which the
+          first vault keys too; with two or more vaults it names the one it asks about (YAZ-2602 S40). */}
+      {asking !== undefined && asking.idsAsk !== null && <ConfirmIds key={`ids:${asking.root}`} ask={asking.idsAsk} vault={roots.length > 1 ? (asking.name ?? undefined) : undefined} onAnswer={asking.saveIds} onDismiss={asking.closeIdsAsk} />}
     </div>
   )
 }

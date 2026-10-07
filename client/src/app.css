@@ -1825,11 +1825,22 @@ button {
 }
 
 /* The folder's note count, pushed to the right edge of the row. */
-.tree__count {
+.tree__count,
+.tree__vault {
   margin-left: auto;
   padding-left: 6px;
   font-size: 11px;
   color: var(--fg-muted);
+}
+
+/* A focused top row's vault (YAZ-2602 D4), where the window has two or more: the count's quiet
+   text, to the left of the count. On one line, so a long folder name gives way to it. */
+.tree__vault {
+  white-space: nowrap;
+}
+
+.tree__vault + .tree__count {
+  margin-left: 0;
 }
 
 /* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the
