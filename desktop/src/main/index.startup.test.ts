@@ -79,6 +79,7 @@ vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
   buildMenuTemplate: vi.fn(() => []),
   createMenuHandlers: vi.fn(() => ({})),
+  menuKeyedVaults: vi.fn(() => []),
   pickMenuTargetWindow: vi.fn(),
   subscribeMenuRebuild: vi.fn(),
 }))

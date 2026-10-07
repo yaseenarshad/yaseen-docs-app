@@ -34,6 +34,9 @@ describe('HOTKEYS source of truth', () => {
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘B')?.label).toMatch(/outside editing surfaces/i)
     // ⌘O (YAZ-1767 D8): the switcher's two verbs, filter then open — in a NEW window, never in place.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘O')?.label).toMatch(/switch vault.*filter.*new window/i)
+    // ⌘1 … ⌘9 (YAZ-2555 D3, S33): right below ⌘O, and the label says where a vault gets its number.
+    expect(keys[keys.indexOf('⌘O') + 1]).toBe('⌘1 … ⌘9')
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘1 … ⌘9')?.label).toMatch(/vault with that number.*right-click a vault/i)
     // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback — the
     // order matters, so the label has to name both and in that order.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧C')?.label).toMatch(/selection.*else the open file/i)
