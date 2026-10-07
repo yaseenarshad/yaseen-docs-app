@@ -133,3 +133,25 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
     await vi.waitFor(() => expect(h.onNotice).toHaveBeenCalledWith("Can't copy path: denied"))
   })
 })
+
+/**
+ * "Add to this window" (YAZ-2602 D2, S8): offered where the switcher was handed the door to add a
+ * vault, above "Open in this window", on a vault that is not in the window.
+ */
+describe('Add to this window (YAZ-2602 S8)', () => {
+  const adding = () => ({ ...handlers(), onAddHere: vi.fn() })
+
+  it('a vault that is not in this window: "Add to this window" stands above "Open in this window", and hands its path over', () => {
+    const h = adding()
+    const sections = buildVaultMenuSections(target(), h)
+    expect(groupsOf(sections)[0]).toEqual(['Add to this window', 'Open in this window'])
+    item(sections, 'add-here').onSelect()
+    expect(h.onAddHere).toHaveBeenCalledExactlyOnceWith(OTHER)
+    expect(h.onOpenHere).not.toHaveBeenCalled()
+  })
+
+  it('a vault that is in this window has neither item, and no Remove', () => {
+    const labels = groupsOf(buildVaultMenuSections(target({ isCurrent: true }), adding())).flat()
+    expect(labels).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  })
+})
