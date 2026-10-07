@@ -32,15 +32,14 @@ The record is on the parent: "Scoping findings: the Alfred audit and the code fa
   - [x] 4A- Audit (YAZ-2582): 3 must fix, 11 should fix, 11 optional
   - [x] 4B- Apply the audit (YAZ-2583): A1 to A9 in the app, W1 to W5 in the workflow (15 workflow tests pass)
   - [x] 5B- Docs (YAZ-2586): `docs/CONTRACTS.md`, `docs/REGRESSION.md`, `README.md`, the `alfred` skill
-- Now: [→] 5C- the pull request is open (YAZ-2587). The size gate fails on `mainBundleBytes` (516,780, ceiling 514,690), so CI fails until Yaseen says yes to the new ceiling. Then: set the ceiling, merge.
+- Now: [→] 5C- the pull request is open (YAZ-2587). Yaseen said yes to the new ceiling; it is set, and the pull request merges when CI is green.
 - Remaining:
   - [ ] 5A- the case table and the gate numbers as a comment (YAZ-2585)
   - [ ] 5D- Yaseen cuts and installs one release, then the hand walk: the 35 steps of YAZ-2568, then the Alfred steps (YAZ-2588). One Alfred restart is needed first, to load the workflow.
 
 ## Open Questions
 
-- WAITING ON YASEEN: raise `mainBundleBytes` to the measured value (over by 2,090)?
-- WAITING ON YASEEN: case S8, a folder dropped on the Dock icon. The package declares only Markdown, so it is probably not true today. Drop it, or add a folder type to the package? Until he answers it is not claimed anywhere.
+- SETTLED 2026-10-07 by Yaseen: the `mainBundleBytes` ceiling is raised to the measured 516,780; case S8 (a folder dropped on the Dock icon) is dropped from this issue; pull request #94 merges.
 - UNCONFIRMED: macOS hands a folder to the app for `open -a "Yaseen Docs" <folder>`, and the right window comes to the front when a different app is in front. A 5-second check by Yaseen on the installed 0.9.34 (expect the "unsupported file type" notice), then the hand walk.
 - UNCONFIRMED in Alfred: the hotkey nodes fire (`modsmode` 0), `acceptsmulti` 1, the last space of `docs `, the notification for a folder that is gone, and whether `docs` `⏎` still picks the app (S15).
 
