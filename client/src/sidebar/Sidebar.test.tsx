@@ -4221,3 +4221,402 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
     expect(itemByLabel(el, 'Remove shortcut')).toBeUndefined()
   })
 })
+
+/**
+ * Two or more vaults in one window (YAZ-2602 D2, D3, D7). Each vault is one folder row of the Files
+ * tab, in the order added, with its tree below it; a rule about "the vault of this row" asks the
+ * vault that holds the row. A window with one vault has no vault row, and every test above runs on
+ * one. A fresh pair of vaults and a fresh window per mount: the app-state cache is module-level.
+ */
+describe('several vaults in one window (YAZ-2602)', () => {
+  let n = 0
+  /** This mount's two vaults: `a` is "Notes" — `a/sub/in.md`, `a/a.md` — and `b` is "Work" — `b/docs/d.md`, `b/b.md`. */
+  const pair = () => {
+    n++
+    return { a: `/mv${n}/notes`, b: `/mv${n}/work` }
+  }
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const treeOf = (root: string): TreeNode[] =>
+    root.endsWith('/notes')
+      ? [{ type: 'dir', name: 'sub', path: `${root}/sub`, children: [file(`${root}/sub/in.md`)] }, file(`${root}/a.md`)]
+      : [{ type: 'dir', name: 'docs', path: `${root}/docs`, children: [file(`${root}/docs/d.md`)] }, file(`${root}/b.md`)]
+  type Bridge = ReturnType<typeof installBridge>
+  /** A watcher that counts its subscriptions and the ones that ended, and can speak. */
+  const watcher = () => {
+    const listeners = new Set<(ev: WatchEvent) => void>()
+    const counts = { subscribed: 0, ended: 0 }
+    return {
+      counts,
+      fire: (ev: WatchEvent) => listeners.forEach((l) => l(ev)),
+      watch: {
+        subscribe: (l: (ev: WatchEvent) => void) => {
+          counts.subscribed++
+          listeners.add(l)
+          return () => {
+            counts.ended++
+            listeners.delete(l)
+          }
+        },
+      },
+    }
+  }
+  const vault = (root: string, name: string, over: Partial<Vault> = {}): Vault => ({ root, name, watch: { subscribe: () => () => undefined }, index: indexFor(true), ...over })
+  /** Mount a window on this test's vaults, each with its own tree, on a window identity of its own. */
+  const mountVaults = async (vaults: Vault[], over: Partial<SidebarProps> = {}, tweak?: (bridge: Bridge) => unknown) =>
+    mount({ vaults, ...over }, async (bridge) => {
+      bridge.tree.mockImplementation(async (root: string) => ({ root, tree: treeOf(root), generatedAt: 1 }))
+      bridge.window.identity.mockResolvedValue({ id: 'w1', root: vaults[0].root, roots: vaults.map((v) => v.root), file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
+      await tweak?.(bridge)
+      await storage.init()
+    })
+  const two = async (over: Partial<SidebarProps> = {}, tweak?: (bridge: Bridge, at: { a: string; b: string }) => unknown) => {
+    const at = pair()
+    const mounted = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], over, (bridge) => tweak?.(bridge, at))
+    return { ...mounted, ...at }
+  }
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const isOpen = (el: HTMLElement, path: string) => rowByPath(el, path)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  const topLabels = (el: HTMLElement) => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((l) => l.textContent)
+  const vaultRowLabels = (el: HTMLElement) => [...el.querySelectorAll('.tree__row--vault .tree__label')].map((l) => l.textContent)
+  const body = (el: HTMLElement) => el.querySelector<HTMLElement>('.sidebar__body')
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const shiftClick = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const fire = (target: Element | null | undefined, type: string) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+    act(() => void target?.dispatchEvent(event))
+    return event
+  }
+  const topItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__item, .ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item')].map((b) => b.textContent)
+  /** Open a parent's flyout and read its leaves (the click is outside any other `act`). */
+  const flyout = (el: HTMLElement, parent: string) => {
+    act(() => itemByLabel(el, parent)?.click())
+    return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')]
+  }
+  const clipOf = (op: 'copy' | 'cut', ...paths: string[]): FileClipState => ({ count: paths.length, op, paths })
+  /** Captures the clipboard push, so a test can play a Cut or a Copy. */
+  const clipboard = (bridge: Bridge) => {
+    const held: { push: ((state: FileClipState) => void) | null } = { push: null }
+    bridge.file.onClipChanged.mockImplementation((listener) => {
+      held.push = listener
+      return () => undefined
+    })
+    return held
+  }
+  const setFolderCalls = (bridge: Bridge) => bridge.state.setFolder.mock.calls as unknown as [string, { expanded?: string[] }][]
+
+  it('one vault: no vault row, and blank space gains "Add vault to this window ▸" — the known vaults that are not in the window, in the list\'s order, then "Open folder…" (S1 to S3, S11, S51)', async () => {
+    const { el, props } = await mount()
+    vi.spyOn(storage, 'listVaults').mockReturnValue([
+      { path: '/v', name: 'v', key: null, open: true, lastUsed: 3 },
+      { path: '/k/two', name: 'Second', key: null, open: false, lastUsed: 2 },
+      { path: '/k/one', name: 'First', key: 1, open: true, lastUsed: null },
+    ])
+    expect(el.querySelector('.tree__row--vault')).toBeNull()
+    expect(topLabels(el)).toEqual(['sub', 'a'])
+    for (const row of ['.tree__row--dir', '.tree__row--file']) {
+      rightClick(el.querySelector(row))
+      expect(itemByLabel(el, 'Remove from this window')).toBeUndefined()
+      expect(itemByLabel(el, 'Add vault to this window')).toBeUndefined()
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    }
+    rightClick(body(el))
+    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open in', 'Add vault to this window'])
+    const leaves = flyout(el, 'Add vault to this window')
+    expect(leaves.map((b) => b.textContent)).toEqual(['Second', 'First', 'Open folder…'])
+    act(() => leaves[1].click())
+    expect(props.onAddVault).toHaveBeenCalledExactlyOnceWith('/k/one')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    rightClick(body(el))
+    const pick = flyout(el, 'Add vault to this window').at(-1)
+    act(() => pick?.click())
+    expect(props.onPickVault).toHaveBeenCalledTimes(1)
+    expect(props.onAddVault).toHaveBeenCalledTimes(1)
+  })
+
+  it('two vaults: one top row per vault, in the order added, named as the app names the vault, each open with its tree below it (S12)', async () => {
+    const { el, a, b, bridge } = await two()
+    expect(topLabels(el)).toEqual(['Notes', 'Work'])
+    expect(vaultRowLabels(el)).toEqual(['Notes', 'Work'])
+    expect([isOpen(el, a), isOpen(el, b)]).toEqual(['true', 'true'])
+    // Each vault's own tree, one level in: its folders closed, its files shown.
+    expect([...el.querySelectorAll<HTMLElement>('.tree__row')].map((row) => row.dataset.path)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/docs`, `${b}/b.md`])
+    expect(rowByPath(el, `${a}/a.md`)?.style.paddingLeft).toBe('36px')
+    expect(bridge.tree.mock.calls.map(([root]) => root).sort()).toEqual([a, b])
+    expect(el.querySelector('.sidebar__msg')).toBeNull()
+  })
+
+  it('a vault row closes and opens through App, for the session: nothing goes to the store; it is no page, so no gesture opens it as a tab (R9)', async () => {
+    const { el, b, props, bridge, rerender } = await two()
+    bridge.state.setFolder.mockClear()
+    bridge.window.setIdentity.mockClear()
+    act(() => rowByPath(el, b)?.click())
+    expect(props.onSetVaultOpen).toHaveBeenCalledExactlyOnceWith(b, false)
+    expect(rowByPath(el, b)?.classList.contains('tree__row--selected')).toBe(true)
+    await rerender({ closedVaults: [b] })
+    expect(isOpen(el, b)).toBe('false')
+    expect(rowByPath(el, `${b}/b.md`)).toBeNull()
+    expect(rowByPath(el, `${b.replace('/work', '/notes')}/a.md`)).not.toBeNull()
+    act(() => rowByPath(el, b)?.click())
+    expect(props.onSetVaultOpen).toHaveBeenLastCalledWith(b, true)
+    act(() => void rowByPath(el, b)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    act(() => void rowByPath(el, b)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(rowByPath(el, b)?.draggable).toBe(false)
+  })
+
+  it('the vault row\'s menu: Focus on vault · Paste, Copy path · the two create pairs · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else (S13)', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { el, b, props } = await two({ upkeep: true })
+    rightClick(rowByPath(el, b))
+    expect(topItems(el)).toEqual(['Focus on vault', 'Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open in', 'Remove from this window'])
+    expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
+    await act(async () => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(b)
+    rightClick(rowByPath(el, b))
+    act(() => itemByLabel(el, 'Remove from this window')?.click())
+    expect(props.onRemoveVault).toHaveBeenCalledExactlyOnceWith(b)
+  })
+
+  it('"New note" on a vault row creates in that vault\'s root, as that vault makes a note, and opens the row if it was closed (S13, R4)', async () => {
+    const at = pair()
+    const { el, props, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { index: indexFor(false) })], { closedVaults: [at.b] })
+    rightClick(rowByPath(el, at.b))
+    act(() => itemByLabel(el, 'New note')?.click())
+    expect(props.onSetVaultOpen).toHaveBeenCalledExactlyOnceWith(at.b, true)
+    await act(async () => root?.render(<StrictMode><Sidebar {...props} closedVaults={[]} /></StrictMode>))
+    const field = el.querySelector<HTMLInputElement>('.create-inline__input')!
+    // The input stands at the head of the vault's own tree, under its row.
+    expect(field.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, at.b))
+    await act(async () => {
+      field.value = 'Growth'
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    // `b` does not use IDs (YAZ-2523 🔒 V3): the name typed is the file's name, and `a`'s answer is not asked.
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `${at.b}/Growth.md`, content: '' })
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${at.b}/Growth.md`)
+  })
+
+  it('blank space with two or more vaults offers only "Add vault to this window"; ⌘V with no selection pastes nothing and says what to select, and with a vault row selected pastes into that vault (S10)', async () => {
+    const clipboardRef = { current: null as SidebarClipboard | null }
+    let held: ReturnType<typeof clipboard> | undefined
+    const { el, b, props, bridge } = await two({ clipboardRef }, (bridge) => void (held = clipboard(bridge)))
+    rightClick(body(el))
+    expect(topItems(el)).toEqual(['Add vault to this window'])
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+
+    act(() => held?.push?.(clipOf('copy', '/elsewhere/x.md')))
+    expect(clipboardRef.current?.paste()).toBe(true)
+    expect(bridge.file.paste).not.toHaveBeenCalled()
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Select a vault or a folder first')
+
+    shiftClick(rowByPath(el, b))
+    // A vault is not a file to clip: ⌘C is not the panel's key while the selection holds one (S18).
+    expect(clipboardRef.current?.cutOrCopy('copy')).toBe(false)
+    expect(bridge.file.clip).not.toHaveBeenCalled()
+    await act(async () => void clipboardRef.current?.paste())
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: b })
+  })
+
+  it('a file dropped on its own vault\'s row moves to that vault\'s root; a drop on a folder or the row of a different vault is refused with a notice; the header is no drop target (S14, S45, R11)', async () => {
+    const { el, a, b, props } = await two()
+    act(() => rowByPath(el, `${a}/sub`)?.click())
+    const inner = `${a}/sub/in.md`
+    fire(rowByPath(el, inner), 'dragstart')
+    fire(rowByPath(el, a), 'dragover')
+    expect(rowByPath(el, a)?.classList.contains('tree__row--drop')).toBe(true)
+    fire(rowByPath(el, a), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith(inner, `${a}/in.md`, 'file')
+
+    for (const target of [`${b}/docs`, b]) {
+      fire(rowByPath(el, inner), 'dragstart')
+      fire(rowByPath(el, target), 'drop')
+      expect(props.onNotice).toHaveBeenLastCalledWith('To move between vaults, use cut and paste')
+    }
+    expect(props.onNotice).toHaveBeenCalledTimes(2)
+    expect(props.onRenameFile).toHaveBeenCalledTimes(1)
+
+    const header = el.querySelector<HTMLElement>('.sidebar__header')
+    fire(rowByPath(el, inner), 'dragstart')
+    expect(fire(header, 'dragover').defaultPrevented).toBe(false)
+    expect(header?.classList.contains('sidebar__header--drop')).toBe(false)
+    // Hovering the FIRST vault's own row lights that row alone: its path is the header's old target.
+    fire(rowByPath(el, a), 'dragover')
+    expect(header?.classList.contains('sidebar__header--drop')).toBe(false)
+    fire(header, 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a Copy made in one vault pastes into a folder of the other, judged by the vault it lands in — as a paste from another window is (S46)', async () => {
+    let held: ReturnType<typeof clipboard> | undefined
+    const { el, a, b, props, bridge } = await two({}, (bridge) => void (held = clipboard(bridge)))
+    rightClick(rowByPath(el, `${a}/a.md`))
+    await act(async () => itemByLabel(el, 'Copy')?.click())
+    expect(bridge.file.clip).toHaveBeenCalledExactlyOnceWith({ paths: [`${a}/a.md`], op: 'copy' })
+    act(() => held?.push?.(clipOf('copy', `${a}/a.md`)))
+
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: `${a}/a.md`, to: `${b}/docs/a.md`, kind: 'file' }], failed: [] })
+    bridge.tree.mockClear()
+    bridge.index.mockClear()
+    rightClick(rowByPath(el, `${b}/docs`))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: `${b}/docs` })
+    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item', 'paste')
+    // The folder it landed in opens, and the tree and the index read are the target vault's alone.
+    expect(isOpen(el, `${b}/docs`)).toBe('true')
+    expect(bridge.tree.mock.calls.every(([root]) => root === b)).toBe(true)
+    expect(bridge.index.mock.calls).toEqual([[b]])
+  })
+
+  it('a Cut made in one vault pastes into the other vault\'s row: the move is main\'s, to that vault\'s root (S46)', async () => {
+    let held: ReturnType<typeof clipboard> | undefined
+    const { el, a, b, props, bridge } = await two({}, (bridge) => void (held = clipboard(bridge)))
+    act(() => held?.push?.(clipOf('cut', `${a}/a.md`)))
+    bridge.file.paste.mockResolvedValueOnce({ pasted: [{ from: `${a}/a.md`, to: `${b}/a.md`, kind: 'file' }], failed: [] })
+    rightClick(rowByPath(el, b))
+    await act(async () => itemByLabel(el, 'Paste 1 item')?.click())
+    expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: b })
+    expect(props.onNotice).toHaveBeenLastCalledWith('Pasted 1 item', 'paste')
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('"Collapse all" closes the folders of every vault and leaves the vault rows open; each vault\'s open folders are stored under that vault (S16)', async () => {
+    const { el, a, b, props, bridge } = await two()
+    act(() => rowByPath(el, `${a}/sub`)?.click())
+    act(() => rowByPath(el, `${b}/docs`)?.click())
+    expect(setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
+    const button = () => el.querySelector<HTMLButtonElement>('.sidebar__expand-all')
+    expect(button()?.getAttribute('aria-label')).toBe('Collapse all')
+    act(() => button()?.click())
+    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`)]).toEqual(['false', 'false'])
+    expect([isOpen(el, a), isOpen(el, b)]).toEqual(['true', 'true'])
+    expect(button()?.getAttribute('aria-label')).toBe('Expand all')
+    act(() => button()?.click())
+    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`)]).toEqual(['true', 'true'])
+    expect(props.onSetVaultOpen).not.toHaveBeenCalled()
+  })
+
+  it('"Show in sidebar" for a file of a vault whose row is closed opens the row, then that vault\'s folders, and flashes the row (S17)', async () => {
+    const at = pair()
+    const target = `${at.b}/docs/d.md`
+    const { el, props, rerender } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { closedVaults: [at.b], revealRequest: { id: 1, path: target } })
+    expect(props.onSetVaultOpen).toHaveBeenCalledWith(at.b, true)
+    expect(props.onNotice).not.toHaveBeenCalled()
+    expect(rowByPath(el, target)).toBeNull()
+    await rerender({ closedVaults: [], revealRequest: { id: 1, path: target } })
+    expect(isOpen(el, `${at.b}/docs`)).toBe('true')
+    expect(isOpen(el, `${at.a}/sub`)).toBe('false')
+    expect(rowByPath(el, target)?.classList.contains('tree__row--revealed')).toBe(true)
+  })
+
+  it('a selection holds rows of two vaults; with a vault row in it the one plural item is "Focus on N folders" (S18)', async () => {
+    const { el, a, b } = await two()
+    shiftClick(rowByPath(el, `${a}/sub`))
+    shiftClick(rowByPath(el, b))
+    shiftClick(rowByPath(el, `${b}/b.md`))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(3)
+    for (const row of [b, `${a}/sub`, `${b}/b.md`]) {
+      rightClick(rowByPath(el, row))
+      const labels = topItems(el)
+      expect(labels.filter((label) => /\d/.test(label ?? ''))).toEqual(['Focus on 2 folders'])
+      for (const hidden of ['Cut', 'Copy', 'Add to favorites', 'Remove from favorites']) expect(labels).not.toContain(hidden)
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    }
+    // Without the vault row the same two vaults give the plural items back.
+    shiftClick(rowByPath(el, b))
+    rightClick(rowByPath(el, `${b}/b.md`))
+    expect(topItems(el)).toEqual(expect.arrayContaining(['Open 2 in new tabs', 'Cut 2 items', 'Copy 2 items', 'Copy 2 paths', 'Add 2 to favorites']))
+  })
+
+  it('a row is its own vault\'s: "Open in ▸ New window" opens that vault alone, the folder counts and the delete count come from that vault\'s index (S33)', async () => {
+    const at = pair()
+    const index = createWikilinkResolveSource()
+    index.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }])
+    const { el, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { index })])
+    expect(rowByPath(el, `${at.b}/docs`)?.querySelector('.tree__count')?.textContent).toBe('1')
+    expect(rowByPath(el, `${at.a}/sub`)?.querySelector('.tree__count')).toBeNull()
+    rightClick(rowByPath(el, `${at.b}/b.md`))
+    const newWindow = flyout(el, 'Open in').find((item) => item.textContent === 'New window')
+    act(() => newWindow?.click())
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: at.b, file: `${at.b}/b.md` })
+    bridge.index.mockClear()
+    rightClick(rowByPath(el, `${at.b}/b.md`))
+    await act(async () => itemByLabel(el, 'Delete')?.click())
+    expect(el.querySelector('.confirm')).not.toBeNull()
+    expect(bridge.index.mock.calls).toEqual([[at.b]])
+  })
+
+  it('a vault that joins does not remount the panel or read the first vault again, and its first tree is the walk App just made; a vault that leaves ends its watcher subscription', async () => {
+    const at = pair()
+    const first = watcher()
+    const second = watcher()
+    const { fetchTree } = await import('../lib/treeFeed')
+    vi.spyOn(storage, 'getExpanded').mockImplementation((root) => (root === at.b ? [`${at.b}/docs`] : []))
+    const { el, bridge, rerender } = await mountVaults([vault(at.a, 'Notes', { watch: first.watch })])
+    const [aside, search] = [el.querySelector('aside'), searchInput(el)]
+    expect(topLabels(el)).toEqual(['sub', 'a'])
+    const asked = () => ({ trees: bridge.tree.mock.calls.filter(([root]) => root === at.a).length, index: bridge.index.mock.calls.length, subscribed: first.counts.subscribed, ended: first.counts.ended })
+    const before = asked()
+    bridge.state.setFolder.mockClear()
+
+    // App's add: the probe walks the folder, then the vault is in the window.
+    await act(async () => void (await fetchTree(at.b)))
+    await rerender({ vaults: [vault(at.a, 'Notes', { watch: first.watch }), vault(at.b, 'Work', { watch: second.watch })] })
+    expect(topLabels(el)).toEqual(['Notes', 'Work'])
+    expect(isOpen(el, at.b)).toBe('true')
+    expect(isOpen(el, `${at.b}/docs`)).toBe('true') // the vault came with its own stored folders
+    expect(bridge.state.setFolder).not.toHaveBeenCalled() // and none of them was written back, or over
+    expect([el.querySelector('aside'), searchInput(el)]).toEqual([aside, search])
+    expect(asked()).toEqual(before)
+    expect(bridge.tree.mock.calls.filter(([root]) => root === at.b)).toHaveLength(1)
+    expect(second.counts).toEqual({ subscribed: 1, ended: 0 })
+    // Its own watcher refreshes its own tree, and no other.
+    await act(async () => second.fire({ type: 'ready' } as WatchEvent))
+    expect(bridge.tree.mock.calls.filter(([root]) => root === at.b)).toHaveLength(2)
+    expect(asked()).toEqual(before)
+
+    await rerender({ vaults: [vault(at.a, 'Notes', { watch: first.watch })] })
+    expect(second.counts).toEqual({ subscribed: 1, ended: 1 })
+    expect(asked()).toEqual(before)
+    expect(topLabels(el)).toEqual(['sub', 'a'])
+    expect(el.querySelector('.tree__row--vault')).toBeNull()
+    expect([el.querySelector('aside'), searchInput(el)]).toEqual([aside, search])
+    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+  })
+
+  it('a vault that leaves takes its focus entries and the selection with it; a tree that has not landed yet prunes nothing (S50)', async () => {
+    const at = pair()
+    let land: (() => void) | undefined
+    vi.spyOn(storage, 'getFocusDirs').mockReturnValue([`${at.a}/sub`, `${at.b}/docs`])
+    const both = [vault(at.a, 'Notes'), vault(at.b, 'Work')]
+    const { el, bridge, rerender } = await mountVaults(both, {}, (bridge) =>
+      bridge.tree.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (land = () => resolve({ root, tree: treeOf(root), generatedAt: 1 }))) : Promise.resolve({ root, tree: treeOf(root), generatedAt: 1 }))),
+    )
+    // Vault `b` is still loading: its focused folder has no row yet, and is NOT dropped from the list.
+    expect(topLabels(el)).toEqual(['sub'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    await act(async () => land?.())
+    expect(topLabels(el)).toEqual(['sub', 'docs'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+
+    shiftClick(rowByPath(el, `${at.a}/sub`))
+    shiftClick(rowByPath(el, `${at.b}/docs`))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
+    await rerender({ vaults: [both[0]] })
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusDirs: [`${at.a}/sub`] }]])
+    expect(topLabels(el)).toEqual(['sub'])
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+  })
+
+  it('a vault whose folder is gone is reported by its own root, and the other vault still shows (S53)', async () => {
+    const at = pair()
+    const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], {}, (bridge) =>
+      bridge.tree.mockImplementation((root: string) => (root === at.b ? Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist' }) : Promise.resolve({ root, tree: treeOf(root), generatedAt: 1 }))),
+    )
+    expect(props.onRootMissing).toHaveBeenCalledWith(at.b)
+    expect(props.onRootMissing).not.toHaveBeenCalledWith(at.a)
+    expect(topLabels(el)).toEqual(['Notes'])
+  })
+})

@@ -87,8 +87,14 @@ export interface TreeSelection {
 
 interface TreeProps {
   nodes: TreeNode[]
-  /** Absolute path of the directory these nodes are children of (the root at depth 0). */
+  /** Absolute path of the directory these nodes are children of (the root at depth 0; '' above the vault rows, which no one directory holds). */
   dirPath: string
+  /**
+   * The paths that are VAULT rows (YAZ-2602 D3): with two or more vaults each vault is one folder
+   * row, labelled as the app names the vault. It opens, closes, selects and takes a drop like a
+   * folder, and is no page: it does not open as a tab. Empty with one vault.
+   */
+  vaultRows: ReadonlySet<string>
   expanded: ReadonlySet<string>
   activeFile: string | null
   onToggle: (dir: string) => void
@@ -129,6 +135,7 @@ interface TreeProps {
 function TreeLevel({
   nodes,
   dirPath,
+  vaultRows,
   expanded,
   activeFile,
   onToggle,
@@ -146,7 +153,7 @@ function TreeLevel({
   reorder,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -180,7 +187,7 @@ function TreeLevel({
               <button
                 type="button"
                 // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
-                className={`tree__row tree__row--dir${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}`}
+                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
@@ -199,13 +206,14 @@ function TreeLevel({
                 }}
                 // The folder itself is the tab (YAZ-2290 D3, overturning YAZ-1578 D3): a double
                 // click opens it. Its two clicks have selected and folded as ever; shift never opens.
+                // A vault row is no page (YAZ-2602 D3): neither gesture opens one, and Enter folds it.
                 onDoubleClick={(e) => {
-                  if (!e.shiftKey) onOpenFile(node.path)
+                  if (!e.shiftKey && !vaultRows.has(node.path)) onOpenFile(node.path)
                 }}
                 // Enter opens it too, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold.
                 onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || e.shiftKey) return
+                  if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()
                   selection.set(node.path)
                   onOpenFile(node.path)
@@ -238,7 +246,7 @@ function TreeLevel({
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
-                <span className="tree__label">{pageLabel(node.path, true, titles)}</span>
+                <span className="tree__label">{vaultRows.has(node.path) ? node.name : pageLabel(node.path, true, titles)}</span>
                 {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}
