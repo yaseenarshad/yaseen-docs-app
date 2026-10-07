@@ -1,11 +1,11 @@
 /**
- * The search bar's result list (YAZ-803). 🔒 flat-list ruling on YAZ-739: a FLAT ranked list,
- * never a tree — the rows carry a folder label instead of a position. Presentational only:
- * selection is owned by the Sidebar, since the keyboard drives it from the search input — and so
- * is ACTIVATION (🔒 D3, YAZ-1491): a click reports the row and the ⌘ flag, and the Sidebar's one
- * rule opens the row's page, a folder's like a note's. Folder rows look like folders
- * (🔒 D4): a glyph before the label and a `, folder` suffix on the aria-label. A right-click
- * reports the row the same way (YAZ-2050): the Sidebar opens the tree row's own menu for it.
+ * The flat result list (YAZ-803). 🔒 flat-list ruling on YAZ-739: a FLAT ranked list, never a tree
+ * — the rows carry a folder label instead of a position. The shortcut picker's alone since
+ * YAZ-2620: the sidebar's search draws its results as a tree (`searchTree`). Presentational only:
+ * selection is owned by the caller, since the keyboard drives it from the search input — and so
+ * is ACTIVATION (🔒 D3, YAZ-1491): a click reports the row and the ⌘ flag. Folder rows look like
+ * folders (🔒 D4): a glyph before the label and a `, folder` suffix on the aria-label. A
+ * right-click reports the row the same way (YAZ-2050).
  */
 import { useEffect, useRef } from 'react'
 import type { SearchCandidate } from './searchCandidates'
@@ -19,12 +19,6 @@ interface SearchResultsProps {
   onActivate: (row: SearchCandidate, background: boolean) => void
   /** A row was right-clicked (YAZ-2050): the Sidebar opens the SAME menu the row's tree row gets. */
   onRowContextMenu: (row: SearchCandidate, e: React.MouseEvent) => void
-  /**
-   * What the app calls the vault that holds a path (YAZ-2602 S38) — handed over only where the
-   * window has two or more vaults: each row then names its vault ahead of its folder, in the same
-   * quiet line. Absent, the rows are as they always were.
-   */
-  vaultOf?: (path: string) => string
 }
 
 /** Small folder outline for a `dir` row (🔒 D4, YAZ-1491) — the `SidebarPanelIcon` idiom. */
@@ -36,7 +30,7 @@ function FolderGlyph() {
   )
 }
 
-export function SearchResults({ results, selected, onSelect, onActivate, onRowContextMenu, vaultOf }: SearchResultsProps) {
+export function SearchResults({ results, selected, onSelect, onActivate, onRowContextMenu }: SearchResultsProps) {
   const selectedRow = useRef<HTMLLIElement | null>(null)
 
   // The list scrolls inside `.sidebar__body`, so arrowing past its edge must bring the row along.
@@ -74,7 +68,7 @@ export function SearchResults({ results, selected, onSelect, onActivate, onRowCo
             {r.kind === 'dir' && <FolderGlyph />}
             {r.label}
           </span>
-          {vaultOf !== undefined ? <span className="search-results__folder">{r.folder === '' ? vaultOf(r.path) : `${vaultOf(r.path)} · ${r.folder}`}</span> : r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
+          {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
         </li>
       ))}
     </ul>

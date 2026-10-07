@@ -1214,7 +1214,7 @@ button {
   background: var(--accent-soft);
 }
 
-/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Files ⇄ Favorites.
+/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Files, Focus, Favorites.
    The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
    accent on the active one, pulled down over the row's own hairline so the two read as one line. */
 .sidebar__lenses {
@@ -1246,8 +1246,9 @@ button {
   border-bottom-color: var(--accent);
 }
 
-/* The Favorites tab is a heart, not a word (YAZ-1766 D1): sized to the text tabs' cap height,
-   stroked while idle and filled while active so the underline is not the only tell. */
+/* The Favorites tab is a heart and the Focus tab an eye, not words (YAZ-1766 D1, YAZ-2619 D4):
+   sized to the text tabs' cap height, and in the accent while active — the heart filled too — so
+   the underline is not the only tell. */
 .sidebar__lens--glyph {
   display: inline-flex;
   align-items: center;
@@ -1255,9 +1256,12 @@ button {
   padding-right: 8px;
 }
 
+.sidebar__lens--glyph.sidebar__lens--active {
+  color: var(--accent);
+}
+
 .sidebar__lens--active .heart-icon {
   fill: var(--accent);
-  stroke: var(--accent);
 }
 
 /* Expand / collapse all (YAZ-862) — the header collapse button's icon look, pushed to the far
@@ -1274,23 +1278,21 @@ button {
   background: var(--bg-hover);
 }
 
-/* Focus Mode's eye (YAZ-1605) — the expand-all look, one slot to its LEFT, in the accent so a lit
-   eye reads as "you are in a focus" and not as one more grey chrome button. It takes the push to
-   the far end when present; the chevrons then sit flush beside it. */
-.sidebar__focus-off {
-  flex: none;
-  margin-left: auto;
-  padding: 0 8px;
+/* The Focus tab's line above its list (YAZ-2619 D4): the count on the left, "Clear" on the right. */
+.sidebar__focus-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.sidebar__focus-clear {
   color: var(--accent);
 }
 
-.sidebar__focus-off:hover {
+.sidebar__focus-clear:hover {
   color: var(--fg);
-  background: var(--bg-hover);
-}
-
-.sidebar__focus-off + .sidebar__expand-all {
-  margin-left: 0;
 }
 
 /* Persistent search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
@@ -1325,6 +1327,24 @@ button {
   color: var(--fg-muted);
 }
 
+/* The way out of a search (D8, YAZ-2630): a keycap that names the key, and is the key on a click.
+   There only while a query is typed. */
+.sidebar__search-clear {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+
+.sidebar__search-clear:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg);
+}
+
 .sidebar__body {
   flex: 1;
   overflow: auto;
@@ -1341,9 +1361,9 @@ button {
   color: var(--danger);
 }
 
-/* Search results (YAZ-803) — a FLAT ranked list in place of the tree, scrolling inside
-   `.sidebar__body`; the rows borrow the tree row's metrics and wash so the swap reads as the
-   same surface. The folder rides under the label instead of an indent (🔒 flat-list ruling). */
+/* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and
+   wash; the folder rides under the label instead of an indent (🔒 flat-list ruling on YAZ-739).
+   The shortcut picker's alone since YAZ-2620: the sidebar's search draws the tree itself. */
 .search-results {
   list-style: none;
   margin: 0;
@@ -1732,6 +1752,13 @@ button {
   color: var(--fg-muted);
 }
 
+/* Search (YAZ-2620 🔒 D5): a row that is no match — a parent of one, or a row inside a matched
+   folder — steps back. Ahead of `--active`, `--selected` and `--revealed`, so the open file's row
+   keeps its own style under it (S39). */
+.tree__row--context {
+  color: var(--fg-muted);
+}
+
 .tree__row--active {
   background: var(--accent-soft);
   color: var(--accent);
@@ -1799,6 +1826,16 @@ button {
   white-space: nowrap;
 }
 
+/* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
+   (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
+   translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */
+.tree__mark {
+  background: var(--mark-bg);
+  border-radius: 2px;
+  color: inherit;
+  font-weight: 600;
+}
+
 .tree__chevron {
   flex: none;
   width: 14px;
@@ -1833,8 +1870,8 @@ button {
   color: var(--fg-muted);
 }
 
-/* A focused top row's vault (YAZ-2602 D4), where the window has two or more: the count's quiet
-   text, to the left of the count. On one line, so a long folder name gives way to it. */
+/* The vault of a top row of the Focus tab (YAZ-2602 A4), where the window has two or more: the count's
+   quiet text, to the left of the count. On one line, so a long name gives way to it. */
 .tree__vault {
   white-space: nowrap;
 }

@@ -7,6 +7,7 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
+  MAX_FOCUS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
   MAX_VAULT_SETS,
@@ -17,6 +18,7 @@ import {
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
+  STARTUP_WINDOWS,
   THEMES,
   THREAD_WIDTHS,
   addRecentRoot,
@@ -40,6 +42,7 @@ import {
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
+  type StartupWindows,
   type Theme,
   type VaultSet,
   type WindowBounds,
@@ -66,11 +69,12 @@ export interface Store {
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /** `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`). */
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel' | 'roots'> & Partial<Pick<WindowEntry, 'rightPanel' | 'roots'>>): void
-  removeWindow(id: string): void
+  /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). */
+  removeWindow(...ids: string[]): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
-   * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its Focus Mode
-   * lists `focusDirs`/`focusFavorites` (YAZ-1628, YAZ-1766), recents, each
+   * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its focus
+   * list `focusList` (YAZ-1628, YAZ-2619), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
    * baseGroups keys (`<basePath>::<view>`), and the vaults of each saved set (YAZ-2602 S71).
    * A dir remaps by prefix — everything at or under it follows,
@@ -83,8 +87,8 @@ export interface Store {
    * twin of `renamePath`. A directory removes BY PREFIX: everything at or under it goes.
    *
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
-   * deleted tabs are dropped as are its `focusDirs` / `focusFavorites` entries
-   * (YAZ-1628, YAZ-1766), `recents` loses the entry, and folder-state keys plus their
+   * deleted tabs are dropped as are its `focusList` entries
+   * (YAZ-1628, YAZ-2619), `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
    * (`<basePath>::<view>`) go too. A saved set loses the vault, and a set with fewer than two
    * vaults left is removed (YAZ-2602 S71).
@@ -137,6 +141,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
+  startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -158,7 +163,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusDirs?: unknown; focusFavorites?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusList?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -212,12 +217,12 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const rightPanel = normalizeRightPanel((w as { rightPanel?: unknown }).rightPanel, tabs)
     const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacySidebarCollapsed
     const sidebarLens = isSidebarLens(w.sidebarLens) ? w.sidebarLens : legacySidebarLens
-    // Focus Mode's lists (YAZ-1628) read with the `tabs` rule: relative paths drop, a missing or junk list is no focus.
-    const focusDirs = isStringArray(w.focusDirs) ? w.focusDirs.filter(isAbsolute) : []
-    const focusFavorites = isStringArray(w.focusFavorites) ? w.focusFavorites.filter(isAbsolute) : []
+    // The focus list (YAZ-2619) reads with the `tabs` rule: relative paths drop, a missing or junk list is empty —
+    // and a long one is cut (R2). The two lists it replaced are not read (R1): no migration.
+    const focusList = isStringArray(w.focusList) ? w.focusList.filter(isAbsolute).slice(0, MAX_FOCUS) : []
     // The vault list (YAZ-2602 S74) reads with the `tabs` rule: a junk ELEMENT drops and the rest stay, and a missing list repairs from `root`.
     const roots = normalizeRoots(Array.isArray(w.roots) ? w.roots.filter((r): r is string => typeof r === 'string' && isAbsolute(r)) : [], w.root)
-    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusList, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -449,9 +454,9 @@ export function createStore(filePath: string): Store {
       commit({ ...state, windows })
     },
 
-    removeWindow(id) {
-      if (!state.windows.some((w) => w.id === id)) return
-      commit({ ...state, windows: state.windows.filter((w) => w.id !== id) })
+    removeWindow(...ids) {
+      if (!state.windows.some((w) => ids.includes(w.id))) return
+      commit({ ...state, windows: state.windows.filter((w) => !ids.includes(w.id)) })
     },
 
     renamePath(oldPath, newPath) {
@@ -493,9 +498,8 @@ export function createStore(filePath: string): Store {
             items: w.rightPanel.items.map(remap),
             expanded: w.rightPanel.expanded === null ? null : remap(w.rightPanel.expanded),
           }, tabs),
-          // Focus Mode's lists (YAZ-1628, YAZ-1766): path lists like `tabs` — a renamed focus follows its folder.
-          focusDirs: w.focusDirs.map(remap),
-          focusFavorites: w.focusFavorites.map(remap),
+          // The focus list (YAZ-1628, YAZ-2619): a path list like `tabs` — a renamed item follows its path.
+          focusList: w.focusList.map(remap),
         }
       })
       const recents = state.recents.map((r) => ({ ...r, path: remap(r.path) }))
@@ -566,9 +570,8 @@ export function createStore(filePath: string): Store {
           file,
           tabs: normalizedTabs,
           rightPanel: normalizeRightPanel({ ...w.rightPanel, items: rightItems, expanded }, normalizedTabs),
-          // Focus Mode's lists (YAZ-1628, YAZ-1766): a deleted focus target drops out, exactly as a deleted tab does above.
-          focusDirs: drop(w.focusDirs),
-          focusFavorites: drop(w.focusFavorites),
+          // The focus list (YAZ-1628, YAZ-2619): a deleted item drops out, exactly as a deleted tab does above.
+          focusList: drop(w.focusList),
         }
       })
       const recents = state.recents.filter((r) => !gone(r.path))

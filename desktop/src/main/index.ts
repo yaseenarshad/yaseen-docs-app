@@ -55,7 +55,7 @@ function handleLink(url: string): void {
   manager.routeToFile(parsed.path, parsed.root)
 }
 
-/** macOS fires `open-url` before `ready` on cold start: queue until `restoreAll()` ran, then flush. */
+/** macOS fires `open-url` before `ready` on cold start: queue until `restore()` ran, then flush. */
 const links = createLinkQueue(handleLink)
 app.on('open-url', (event, url) => {
   event.preventDefault()
@@ -157,7 +157,7 @@ app.whenReady().then(() => {
   // A dev run wears the app's own Dock icon instead of Electron's; a packaged build gets it from the bundle.
   if (!app.isPackaged) app.dock?.setIcon(join(__dirname, '../../build/icon.png'))
   // Appearance (K, GRO-2218): the setting IS the themeSource vocabulary. Applied from the loaded
-  // store BEFORE any window is created (restoreAll below), re-applied whenever it changes — so
+  // store BEFORE any window is created (`restore` below), re-applied whenever it changes — so
   // `prefers-color-scheme` in every renderer and the OS chrome follow the setting.
   subscribeNativeTheme(store, (theme) => {
     nativeTheme.themeSource = theme
@@ -196,12 +196,19 @@ app.whenReady().then(() => {
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
-  manager.restoreAll()
+  // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
+  // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
+  // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
+  const asked = links.pending().flatMap((url) => {
+    const link = parseFileLink(url)
+    return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
+  })
+  manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
   links.flush()
 })
 
-// Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept so
-// relaunch restores them; then exit for real — `app.exit` re-runs no quit events.
+// Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept, so
+// the next launch can bring them back (YAZ-2589); then exit for real — `app.exit` re-runs no quit events.
 let quitting = false
 app.on('before-quit', (event) => {
   event.preventDefault()

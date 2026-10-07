@@ -28,7 +28,7 @@ import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, STARTUP_WINDOWS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -296,6 +296,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // A plain label-left / dropdown-right row, until the folder input needs the width.
             wide: ({ settings }) => settings.newNoteLocation === 'folder',
             render: ({ settings, onChange }) => <NewNoteLocationControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
+      {
+        // YAZ-2589 D2, A3: one row, in its own group here; no settings section for one row.
+        title: 'When the app starts',
+        items: [
+          {
+            id: 'startupWindows',
+            label: 'Reopen',
+            hint: 'A vault that you open from a link or a launcher always opens alone.',
+            keywords: ['startup', 'launch', 'restore', 'windows', 'quit'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={STARTUP_WINDOWS_OPTIONS} value={settings.startupWindows} onChange={(startupWindows) => onChange({ ...settings, startupWindows })} ariaLabel="Windows to reopen when the app starts" />
+            ),
           },
         ],
       },
