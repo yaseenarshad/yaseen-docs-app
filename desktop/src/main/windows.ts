@@ -1,10 +1,9 @@
 /**
  * The window manager (GRO-2160): creates windows from `AppState.windows`, keeps their bounds
  * current, brings back at launch the ones that were asked for or that the setting names
- * (YAZ-2589), and never lets one die with unsaved edits (the
- * `app:flush` → `app:flushed` handshake). Electron-free — `main/index.ts` injects the
- * `BrowserWindow` factory and display geometry as a `WindowHost` — so everything here runs
- * under vitest with fakes.
+ * (YAZ-2589), and never lets one die with unsaved edits (the `app:flush` → `app:flushed`
+ * handshake). Electron-free — `main/index.ts` injects the `BrowserWindow` factory and display
+ * geometry as a `WindowHost` — so everything here runs under vitest with fakes.
  */
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
@@ -72,7 +71,7 @@ export interface WindowHost {
   create(entry: WindowEntry): ManagedWindow
   /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
   workAreas(): WindowBounds[]
-  /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything. */
+  /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything, and `rootFor` before it counts the path as asked for (YAZ-2589 A6). */
   exists(path: string): boolean
   /** Whether `path` exists as a directory — `openRecentBeside` probes before touching the MRU (GRO-2211, moved here by YAZ-1767), and `routeToFile` asks it first: a folder goes to that door (YAZ-2556 D1). */
   dirExists(path: string): boolean
@@ -86,8 +85,8 @@ export interface WindowManager extends WindowLookup {
    * setting brings back nothing, a single Welcome window opens.
    */
   restore(which: readonly string[] | StartupWindows): void
-  /** The vault that a path from outside belongs to (YAZ-2589 D1): the folder itself, or the root `resolveLinkTarget` picks for a file. */
-  rootFor(path: string, rootOverride?: string | null): string
+  /** The vault that a path from outside belongs to (YAZ-2589 D1): the folder itself, or the root `resolveLinkTarget` picks for a file. `null` for a path that cannot open (A6): `routeToFile` answers it with a notice, so it is not a request for a vault. */
+  rootFor(path: string, rootOverride?: string | null): string | null
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
   /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
@@ -115,7 +114,7 @@ export interface WindowManager extends WindowLookup {
    * validate, then `resolveLinkTarget` routes it.
    */
   routeToFile(path: string, rootOverride?: string | null): void
-  /** The unobtrusive can't-open surface (E1): restore + focus a live window, send `link:notice`. Never a dialog. With no live window, the Welcome window opens and says it (YAZ-2589 A2). */
+  /** The unobtrusive can't-open surface (E1): un-minimize + focus a live window, send `link:notice`. Never a dialog. With no live window, the Welcome window opens and says it (YAZ-2589 A2). */
   linkNotice(message: string): void
   /** `link:ready` arrived from this renderer (wired in `ipc/window.ts`): it listens now, so the link pushes held for it go out (YAZ-2589 A2). */
   handleLinkReady(sender: { id: number }): void
@@ -174,7 +173,7 @@ const sameBounds = (a: WindowBounds, b: WindowBounds): boolean => a.x === b.x &&
 
 // ---------- deep-link routing (pure, E1 GRO-2171) ----------
 
-export type LinkTarget = { kind: 'existing'; id: string } | { kind: 'new'; root: string; file: string }
+export type LinkTarget = { kind: 'existing'; id: string; root: string } | { kind: 'new'; root: string; file: string }
 
 /** `root` is an ancestor directory of `path` (or its dirname) — by segment, so `/a/b` never contains `/a/bc/x.md`. */
 const rootContains = (root: string, path: string): boolean => {
@@ -188,6 +187,7 @@ const rootContains = (root: string, path: string): boolean => {
  * (2) a new window on the most recent `recents` folder containing it (the list is already
  * most-recent-first); (3) a new window on the file's parent folder. A containing `rootOverride`
  * pins the effective root instead: the open window on exactly that root, else a new window there.
+ * Both kinds say the `root`: the vault the path belongs to (`rootFor`, YAZ-2589 D1).
  */
 export function resolveLinkTarget(
   path: string,
@@ -196,15 +196,15 @@ export function resolveLinkTarget(
   rootOverride?: string | null,
 ): LinkTarget {
   if (rootOverride != null && rootContains(rootOverride, path)) {
-    const exact = windows.find((w) => w.root !== null && stripSlash(w.root) === stripSlash(rootOverride))
-    return exact === undefined ? { kind: 'new', root: rootOverride, file: path } : { kind: 'existing', id: exact.id }
+    for (const w of windows) if (w.root !== null && stripSlash(w.root) === stripSlash(rootOverride)) return { kind: 'existing', id: w.id, root: w.root }
+    return { kind: 'new', root: rootOverride, file: path }
   }
-  let best: { id: string; rootLength: number } | undefined
+  let best: { id: string; root: string } | undefined
   for (const w of windows) {
     if (w.root === null || !rootContains(w.root, path)) continue
-    if (best === undefined || w.root.length > best.rootLength) best = { id: w.id, rootLength: w.root.length }
+    if (best === undefined || w.root.length > best.root.length) best = { id: w.id, root: w.root }
   }
-  if (best !== undefined) return { kind: 'existing', id: best.id }
+  if (best !== undefined) return { kind: 'existing', ...best }
   const recent = recents.find((r) => rootContains(r.path, path))
   if (recent !== undefined) return { kind: 'new', root: recent.path, file: path }
   return { kind: 'new', root: posix.dirname(path), file: path }
@@ -365,12 +365,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   /**
-   * E1: restore + focus a live window and hand it the can't-open message.
+   * E1: un-minimize + focus a live window and hand it the can't-open message.
    * The window that had focus last comes first (YAZ-2555 S27): ⌘<n> on a folder that is gone says so
    * in the window you are in, and raises no other vault's window (D5 would make that vault "last used").
-   * No window at all (YAZ-2589 A2: a launch that asked for something that cannot open, and brought back
-   * nothing): the app never runs with no window, so the Welcome window opens and says it. Not during a
-   * quit, which has no window on purpose.
+   * No window at all (YAZ-2589 A2): the app never runs with no window, so the Welcome window opens and
+   * says it. A request that cannot open is not asked for at launch (A6), so this is the safety net for a
+   * folder that goes away between the launch's check and the open. Not during a quit, which has no
+   * window on purpose.
    */
   const linkNotice = (message: string): void => {
     if (live.size === 0 && !quitting) openWindow({ root: null, file: null })
@@ -379,6 +380,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     focusWindow(win)
     sendLink(win, CONTRACT.link.onNotice.channel, message)
   }
+
+  /**
+   * Why a path that is not a folder cannot open (E1): it needs a supported file kind and a live regular
+   * file. `null` when it can. The ONE place that says so (YAZ-2589 A6): `routeToFile` shows the reason
+   * as a notice, and `rootFor` leaves such a path out of what a launch was asked for.
+   */
+  const cannotOpen = (path: string): string | null => (fileKind(path) === null ? 'unsupported file type' : host.exists(path) ? null : 'file not found')
 
   /** The one open-recent door (see `WindowManager.openRecentBeside`). A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1). */
   const openRecentBeside = (path: string): boolean => {
@@ -417,9 +425,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     rootFor(path, rootOverride) {
       if (host.dirExists(path)) return stripSlash(path)
+      if (cannotOpen(path) !== null) return null
       const state = store.get()
-      const target = resolveLinkTarget(path, state.windows, state.recents, rootOverride)
-      return target.kind === 'new' ? target.root : (state.windows.find((w) => w.id === target.id)?.root ?? posix.dirname(path))
+      return resolveLinkTarget(path, state.windows, state.recents, rootOverride).root
     },
 
     restore(which) {
@@ -429,15 +437,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const keep = (w: WindowEntry): boolean => which === 'all' || (w.root !== null && roots.includes(stripSlash(w.root)))
       // A window that does not come back is forgotten, as a close forgets it (D3): its entry goes, in one commit.
       store.removeWindow(...state.windows.filter((w) => !keep(w)).map((w) => w.id))
-      let entries = state.windows.filter(keep)
+      const entries = state.windows.filter(keep)
       // Nothing comes back and nothing was asked for (the setting says so, or a first launch): one window on
       // the Welcome screen, with the list of vaults (root null; the screen itself is C2). A launch that
       // asked for a vault opens it itself (`routeToFile`, after this).
-      if (entries.length === 0 && typeof which === 'string') {
-        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: { ...DEFAULT_BOUNDS } }
-        store.upsertWindow(first)
-        entries = [first]
-      }
+      if (entries.length === 0 && typeof which === 'string') openWindow({ root: null, file: null })
       const areas = host.workAreas()
       for (const entry of entries) {
         const bounds = clampBounds(entry.bounds, areas)
@@ -484,12 +488,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       }
       // Validate first (E1): a supported file kind and a live regular file. Anything off →
       // notice, never a dialog; renderer dispatch decides Markdown editor vs read-only viewer.
-      if (fileKind(path) === null) {
-        linkNotice(`Can't open ${path}: unsupported file type`)
-        return
-      }
-      if (!host.exists(path)) {
-        linkNotice(`Can't open ${path}: file not found`)
+      const why = cannotOpen(path)
+      if (why !== null) {
+        linkNotice(`Can't open ${path}: ${why}`)
         return
       }
       const state = store.get()
@@ -501,8 +502,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const win = live.get(target.id)
       if (win === undefined || win.isDestroyed()) {
         // A stored entry with no live window (mid-close race): fall back to a fresh window on its root.
-        const entry = state.windows.find((w) => w.id === target.id)
-        openWindow({ root: entry?.root ?? posix.dirname(path), file: path })
+        openWindow({ root: target.root, file: path })
         return
       }
       focusWindow(win)
