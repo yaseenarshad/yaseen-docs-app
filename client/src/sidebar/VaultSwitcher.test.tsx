@@ -16,9 +16,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots, type VaultSet } from '@shared/types'
+import { MAX_VAULT_SETS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots, type VaultSet } from '@shared/types'
 import { storage } from '../lib/storage'
-import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_WORKSPACES_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
+import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_WORKSPACES_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SAVE_SET_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1109,10 +1109,10 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
     expect(pathOf(highlighted)).toBe(ARCHIVE)
   })
 
-  it('with two or more vaults a right-click on the header shows no menu, and the native one is swallowed', () => {
+  it('with two or more vaults a right-click on the header shows one item, "Save as workspace…" — never one vault\'s menu — and the native one is swallowed', () => {
     const { el } = render({ roots: [ROOT, ARCHIVE] })
     expect(rightClick(trigger(el))).toBe(true)
-    expect(vaultMenu()).toBeNull()
+    expect(menuLabels()).toEqual(['Save as workspace…'])
     expect(panel(el)).toBeNull()
   })
 
@@ -1164,11 +1164,12 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
 
 /**
  * Workspaces (YAZ-2602 D8): saved sets of vaults. The list shows them first, under "Workspaces";
- * a row opens through `window.openSet`, and its menu renames or removes it. The header shows a
- * workspace's name while the window's vaults are exactly that workspace. The doors are mocked
+ * a row opens through `window.openSet`, and its menu renames or removes it. A window with two or
+ * more vaults saves its own from the header — "Save as workspace…" — and the header shows a
+ * workspace's name while the window's vaults are exactly that workspace. The four doors are mocked
  * on the fake bridge; the saved workspaces are seeded into the cache, as main's broadcast lands them.
  */
-describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S64 to S67)', () => {
+describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
   const ARCHIVE = '/v/Archive'
   const WORK: VaultSet = { id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW - 3_600_000 }
   const READING: VaultSet = { id: 'set-reading', name: 'Reading', roots: [ROOT, ARCHIVE, '/v/Notes Archive'], lastUsed: NOW - 86_400_000 }
@@ -1179,6 +1180,12 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S64 to S67)', () => {
   const when = (row: HTMLElement) => row.querySelector('.vault-switcher__when')
   const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.vault-switcher__rename')
   const fieldKey = (el: HTMLElement, k: string) => act(() => void field(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+  /** Right-click the header → "Save as workspace…"; with `name`, type it into the field that opens. */
+  const saveAs = async (el: HTMLElement, name?: string) => {
+    rightClick(trigger(el))
+    pick(SAVE_SET_TEXT)
+    if (name !== undefined) await fill(field(el)!, name)
+  }
 
   let openSet: ReturnType<typeof vi.fn>
   let saveSet: ReturnType<typeof vi.fn>
@@ -1403,7 +1410,80 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S64 to S67)', () => {
     expect([panel(el), vaultMenu()]).toEqual([null, null])
   })
 
-  it('the header shows the workspace\'s name while the window\'s vaults are exactly a saved workspace — the first one that matches — and follows a save, a rename and a remove in the cache, and a vault added or removed (S15)', () => {
+  it('"Save as workspace…": the header\'s name becomes a field that holds every vault name joined with " + "; ⏎ saves this window\'s vaults through window.saveSet and says so; Esc or an empty name cancels (S63)', async () => {
+    act(() => broadcast(withNames({ [ARCHIVE]: 'Old notes' })))
+    const { el, props } = render({ roots: [ROOT, ARCHIVE, '/w/Notes'] })
+    expect(headerName(el)).toBe('Notes + Old notes + 1 more')
+    expect(rightClick(trigger(el))).toBe(true)
+    expect(menuLabels()).toEqual([SAVE_SET_TEXT])
+    expect(SAVE_SET_TEXT).toBe('Save as workspace…')
+    pick(SAVE_SET_TEXT)
+    const input = field(el)!
+    expect(trigger(el).tagName).toBe('DIV')
+    expect(document.activeElement).toBe(input)
+    const all = 'Notes + Old notes + Notes' // the full list, never "+ 1 more"
+    expect([input.value, input.selectionStart, input.selectionEnd]).toEqual([all, 0, all.length])
+    fieldKey(el, 'Enter') // the name is right as it stands
+    await settle()
+    expect(saveSet).toHaveBeenCalledExactlyOnceWith(all)
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith(`Saved workspace "${all}"`)
+    expect(trigger(el).tagName).toBe('BUTTON')
+    expect(panel(el)).toBeNull()
+
+    await saveAs(el, '  Work ')
+    fieldKey(el, 'Enter')
+    await settle()
+    expect(saveSet).toHaveBeenLastCalledWith('Work')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Saved workspace "Work"')
+
+    await saveAs(el, 'Never mind')
+    fieldKey(el, 'Escape')
+    expect(trigger(el).tagName).toBe('BUTTON')
+    await saveAs(el, '   ')
+    fieldKey(el, 'Enter')
+    expect(trigger(el).tagName).toBe('BUTTON')
+    // A click-away with the name untouched saves nothing: only ⏎ takes the name as it stands.
+    await saveAs(el)
+    act(() => field(el)!.blur())
+    await settle()
+    expect(trigger(el).tagName).toBe('BUTTON')
+    expect(saveSet).toHaveBeenCalledTimes(2)
+    expect(props.onNotice).toHaveBeenCalledTimes(2)
+  })
+
+  it(`workspace ${MAX_VAULT_SETS + 1} is refused before main is asked — "Remove a workspace first" — but a name that exists still saves, because it replaces; any other refusal says "Can't save the workspace" (S68, S69, R12)`, async () => {
+    const full = Array.from({ length: MAX_VAULT_SETS }, (_, i): VaultSet => ({ id: `set-${i}`, name: `Set ${i}`, roots: ['/x/a', `/x/b${i}`], lastUsed: NOW - i }))
+    seedSets(...full)
+    const { el, props } = render({ roots: [ROOT, ARCHIVE] })
+    await saveAs(el, 'One more')
+    fieldKey(el, 'Enter')
+    await settle()
+    expect(saveSet).not.toHaveBeenCalled()
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Remove a workspace first')
+
+    await saveAs(el, ' Set 7 ')
+    fieldKey(el, 'Enter')
+    await settle()
+    expect(saveSet).toHaveBeenCalledExactlyOnceWith('Set 7')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Saved workspace "Set 7"')
+
+    seedSets(...full.slice(1)) // room again: main's own "no" is the other refusal
+    saveSet.mockResolvedValueOnce(false)
+    await saveAs(el, 'One more')
+    fieldKey(el, 'Enter')
+    await settle()
+    expect(saveSet).toHaveBeenLastCalledWith('One more')
+    expect(props.onNotice).toHaveBeenLastCalledWith("Can't save the workspace")
+  })
+
+  it('a window with one vault has no "Save as workspace…": the header\'s right-click is the vault menu, as before (S70)', () => {
+    seedSets(WORK, READING)
+    const { el } = render()
+    rightClick(trigger(el))
+    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  })
+
+  it('the header shows the workspace\'s name while the window\'s vaults are exactly a saved workspace — the first one that matches — and follows a save, a rename and a remove in the cache, and a vault added or removed (S15)', async () => {
     const { el, rerender } = render({ roots: [ROOT, ARCHIVE] })
     expect(headerName(el)).toBe('Notes + Archive')
     const pair: VaultSet = { id: 'set-pair', name: 'Pair', roots: [`${ARCHIVE}/`, ROOT], lastUsed: NOW }
@@ -1414,6 +1494,10 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S64 to S67)', () => {
     expect(headerName(el)).toBe('Duo')
     seedSets({ ...pair, id: 'set-first', name: 'First' }, { ...pair, name: 'Duo' })
     expect(headerName(el)).toBe('First')
+    // "Save as workspace…" still starts from the vault names: a new name is a new workspace.
+    await saveAs(el)
+    expect(field(el)!.value).toBe('Notes + Archive')
+    fieldKey(el, 'Escape')
 
     seedSets(WORK, { ...pair, name: 'Duo' })
     rerender({ roots: [ROOT, ARCHIVE, '/w/Notes'] }) // one vault more is not that workspace
