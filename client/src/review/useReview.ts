@@ -67,9 +67,10 @@ export function useReview(root: string | null, source: IndexSource, settings: Re
   // "Due now" runs to local midnight, so the count moves at midnight with no file changing.
   const [day, setDay] = useState(0)
   useEffect(() => {
+    if (root === null) return // a slot with no vault (YAZ-2602) counts nothing: no timer
     const timer = setTimeout(() => setDay((d) => d + 1), new Date().setHours(24, 0, 0, 0) - Date.now())
     return () => clearTimeout(timer)
-  }, [day])
+  }, [day, root])
   // A session ends with its vault, and when upkeep is turned off.
   useEffect(() => setSession(null), [root, settings.enabled])
 
