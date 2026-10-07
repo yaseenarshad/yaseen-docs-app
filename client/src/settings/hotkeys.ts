@@ -45,6 +45,8 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧O', label: 'Open folder…' },
   // The vault switcher (YAZ-1767 D8): the sidebar header's panel, keyboard-first like ⌘K's bar.
   { keys: '⌘O', label: 'Switch vault (type to filter, ⏎ brings it to the front or opens a new window, ⇧⏎ opens it in this window)' },
+  // A vault's number (YAZ-2555 D3): the Window menu owns the key, so it answers from any window.
+  { keys: '⌘1 … ⌘9', label: 'Go to the vault with that number — right-click a vault to give it one' },
   { keys: '⌘K', label: 'Search the vault' },
   { keys: '⌘,', label: 'Settings' },
   { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
