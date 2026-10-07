@@ -390,8 +390,8 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, rootOf, trees, tree, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, lens, onRootMissing, onFileMissing, onNotice)
-  // The FIRST vault: the one a window with one vault has, and the one the Favorites tab stands on.
+  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, lens, onRootMissing, onFileMissing, onNotice)
+  // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
   const multi = roots.length > 1
@@ -580,8 +580,9 @@ export function Sidebar({
         focusPaths: focusable(plural ?? (node === null ? [] : [node.path]), forest),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favorites.includes(p)),
-        // By the upkeep of the vault that holds the folder (YAZ-2602 R5).
+        // Each row by the list of the vault that holds it (YAZ-2602 D5).
+        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true),
+        // By the upkeep of the vault that holds the folder (R5).
         reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
         reviewPath: inReview === null ? null : filePath,
         reviewIsOn: inReview === true,
@@ -593,7 +594,7 @@ export function Sidebar({
         removeVault: vaultRow,
       })
     },
-    [root, roots, multi, forest, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, favorites, reviewState],
+    [root, roots, multi, forest, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, favoritesByRoot, reviewState],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
@@ -901,15 +902,16 @@ export function Sidebar({
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
           // every row carries the same menu. Nothing here drags to disk (an inert move); root rows
-          // drag to reorder the list (D4).
+          // drag to reorder the list (D4). With two or more vaults the favorites stand under their
+          // vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
-            {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
-            {tree !== null && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {tree !== null && favoriteNodes.length > 0 && (
+            {!loaded && favoriteNodes.length === 0 && error === null && <p className="sidebar__msg">Loading…</p>}
+            {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
+            {favoriteNodes.length > 0 && (
               <Tree
                 nodes={favoriteNodes}
-                dirPath={root}
+                dirPath={multi ? '' : root}
                 vaultRows={vaultRows}
                 expanded={expandedSet}
                 activeFile={activeFile}
