@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOCUS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -28,7 +28,7 @@ afterEach(async () => {
 const seed = (v: unknown) => writeFile(file, typeof v === 'string' ? v : JSON.stringify(v))
 const onDisk = async (): Promise<AppState> => JSON.parse(await readFile(file, 'utf8')) as AppState
 const bounds = { x: 1, y: 2, width: 300, height: 200 }
-const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds, ...extra })
+const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds, ...extra })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
 /** Each vault's number (YAZ-2555), root → key. */
@@ -283,13 +283,13 @@ describe('createStore: loading', () => {
   it('an old file still carrying the retired Topics state loads cleanly: `focusTopics` and `topicsExpanded` are ignored, everything beside them is kept (YAZ-2290)', async () => {
     await seed(
       valid({
-        windows: [{ id: 'w', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds, sidebarLens: 'favorites', focusDirs: ['/v/sub'], focusTopics: ['/v/T.md'], focusFavorites: ['/v/f'] }],
+        windows: [{ id: 'w', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds, sidebarLens: 'favorites', focusList: ['/v/sub'], focusTopics: ['/v/T.md'] }],
         folders: { '/v': { lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, topicsExpanded: ['/v/Metrics.md'], name: 'Wiki' } },
       }),
     )
     const store = createStore(file)
     expect((await readdir(dir)).filter((n) => n.includes('.corrupt-'))).toEqual([])
-    expect(store.get().windows[0]).toEqual(win('w', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'favorites', focusDirs: ['/v/sub'], focusFavorites: ['/v/f'] }))
+    expect(store.get().windows[0]).toEqual(win('w', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'favorites', focusList: ['/v/sub'] }))
     expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: 'Wiki', key: null })
     // The next write drops both keys from disk.
     store.setSidebarWidth(321)
@@ -429,20 +429,38 @@ describe('createStore: loading', () => {
     expect(keysOf(createStore(file).get())).toEqual({ '/a': 3, '/b': null, '/c': null, '/d': null, '/e': null, '/f': 9, '/g': null })
   })
 
-  it('windows: focusDirs / focusFavorites load with the tabs rule — relative elements drop, a missing or junk list is no focus (YAZ-1628)', async () => {
+  it('windows: focusList loads with the tabs rule — relative elements drop, a missing or junk list is empty — and a long one is cut to the first MAX_FOCUS (YAZ-2619 R2)', async () => {
+    const long = Array.from({ length: MAX_FOCUS + 5 }, (_, i) => `/v/n${i}.md`)
     await seed(
       valid({
         windows: [
-          { id: 'a', root: '/v', file: null, tabs: [], bounds, focusDirs: ['/v/x', 'rel', '/v/y'], focusFavorites: ['/v/f'] },
-          { id: 'b', root: '/v', file: null, tabs: [], bounds }, // pre-1628 entry: no focus fields
-          { id: 'c', root: '/v', file: null, tabs: [], bounds, focusDirs: '/v/x', focusFavorites: [1] },
+          { id: 'a', root: '/v', file: null, tabs: [], bounds, focusList: ['/v/x', 'rel', '/v/y.md'] }, // folders AND files, in the order added
+          { id: 'b', root: '/v', file: null, tabs: [], bounds }, // pre-1628 entry: no focus field
+          { id: 'c', root: '/v', file: null, tabs: [], bounds, focusList: '/v/x' },
+          { id: 'd', root: '/v', file: null, tabs: [], bounds, focusList: ['/v/x', 1] },
+          { id: 'e', root: '/v', file: null, tabs: [], bounds, focusList: long },
         ],
       }),
     )
     const { windows } = createStore(file).get()
-    expect(windows[0]).toMatchObject({ focusDirs: ['/v/x', '/v/y'], focusFavorites: ['/v/f'] })
-    expect(windows[1]).toMatchObject({ focusDirs: [], focusFavorites: [] })
-    expect(windows[2]).toMatchObject({ focusDirs: [], focusFavorites: [] }) // junk voids the list, like `tabs`
+    expect(windows[0]).toMatchObject({ focusList: ['/v/x', '/v/y.md'] })
+    expect(windows[1]).toMatchObject({ focusList: [] })
+    expect(windows[2]).toMatchObject({ focusList: [] }) // junk voids the list
+    expect(windows[3]).toMatchObject({ focusList: [] })
+    expect(windows[4].focusList).toEqual(long.slice(0, MAX_FOCUS))
+  })
+
+  it('an old file\'s `focusDirs` / `focusFavorites` are not read — no migration: the list is empty, and the next write drops both keys (YAZ-2619 R1, S32)', async () => {
+    await seed(valid({ windows: [{ id: 'w', root: '/v', file: null, tabs: [], bounds, focusDirs: ['/v/sub'], focusFavorites: ['/v/f'] }] }))
+    const store = createStore(file)
+    expect((await readdir(dir)).filter((n) => n.includes('.corrupt-'))).toEqual([])
+    expect(store.get().windows[0]).toEqual(win('w', { root: '/v' }))
+    store.setSidebarWidth(321)
+    await store.flush()
+    const persisted = JSON.parse(await readFile(file, 'utf8')) as { windows: Array<Record<string, unknown>> }
+    expect(persisted.windows[0]).toMatchObject({ focusList: [] })
+    expect(persisted.windows[0]).not.toHaveProperty('focusDirs')
+    expect(persisted.windows[0]).not.toHaveProperty('focusFavorites')
   })
 
   it('a legacy per-vault focus (folders[root].focusDirs / focusTopics, pre-1628) is dropped on load and absent from the written file', async () => {
@@ -455,7 +473,7 @@ describe('createStore: loading', () => {
     const store = createStore(file)
     // No migration: the vault bucket could not say WHICH window was focused, so every window starts unfocused.
     expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
-    expect(store.get().windows[0]).toMatchObject({ focusDirs: [], focusFavorites: [] })
+    expect(store.get().windows[0]).toMatchObject({ focusList: [] })
     store.setSidebarWidth(321)
     await store.flush()
     const persisted = JSON.parse(await readFile(file, 'utf8')) as { folders: Record<string, Record<string, unknown>> }
@@ -595,15 +613,15 @@ describe('createStore: mutations', () => {
     expect(keysOf(store.get())).toEqual({ '/a': 2, '/b': null, '/c': null })
   })
 
-  it('two windows on one root hold independent focusDirs / focusFavorites — upsertWindow on one leaves the other untouched (YAZ-1628)', () => {
+  it('two windows on one root hold independent focus lists — upsertWindow on one leaves the other untouched (YAZ-2619 S25)', () => {
     const store = createStore(file)
-    store.upsertWindow(win('w1', { root: '/v', focusDirs: ['/v/a', '/v/b'], focusFavorites: ['/v/f'] }))
-    store.upsertWindow(win('w2', { root: '/v', focusDirs: ['/v/c'] }))
-    expect(store.get().windows[0]).toMatchObject({ focusDirs: ['/v/a', '/v/b'], focusFavorites: ['/v/f'] })
-    expect(store.get().windows[1]).toMatchObject({ focusDirs: ['/v/c'], focusFavorites: [] })
-    store.upsertWindow({ ...store.get().windows[0], focusDirs: [] }) // one window's exit leaves its other lens AND the other window alone
-    expect(store.get().windows[0]).toMatchObject({ focusDirs: [], focusFavorites: ['/v/f'] })
-    expect(store.get().windows[1]).toMatchObject({ focusDirs: ['/v/c'], focusFavorites: [] })
+    store.upsertWindow(win('w1', { root: '/v', focusList: ['/v/a', '/v/b.md'] }))
+    store.upsertWindow(win('w2', { root: '/v', focusList: ['/v/c'] }))
+    expect(store.get().windows[0]).toMatchObject({ focusList: ['/v/a', '/v/b.md'] })
+    expect(store.get().windows[1]).toMatchObject({ focusList: ['/v/c'] })
+    store.upsertWindow({ ...store.get().windows[0], focusList: [] }) // one window's "Clear" leaves the other window alone
+    expect(store.get().windows[0]).toMatchObject({ focusList: [] })
+    expect(store.get().windows[1]).toMatchObject({ focusList: ['/v/c'] })
   })
 
   it('setFolds is keyed by root then file, capped, and an empty list removes the file entry but keeps the folder', () => {
@@ -679,6 +697,15 @@ describe('createStore: mutations', () => {
       ])
     })
 
+    it('a renamed focus item follows its new path in every window that lists it (YAZ-2619 S28)', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', focusList: ['/v/Sub', OLD, '/v/x.md'] }))
+      store.upsertWindow(win('w2', { root: '/v', focusList: [OLD] }))
+      store.renamePath(OLD, NEW)
+      expect(store.get().windows[0]).toMatchObject({ focusList: ['/v/Sub', NEW, '/v/x.md'] })
+      expect(store.get().windows[1]).toMatchObject({ focusList: [NEW] })
+    })
+
     it('de-duplicates when the new path was somehow already a tab (normalizeTabs invariant)', () => {
       const store = createStore(file)
       store.upsertWindow(win('w1', { root: '/v', file: OLD, tabs: [OLD, NEW] }))
@@ -724,13 +751,15 @@ describe('createStore: mutations', () => {
   })
 
   describe('removePath (GRO-2272: the store repair after an in-app delete)', () => {
-    it('drops focusDirs / focusFavorites entries at or under the deleted path in every window, like tabs (YAZ-1628)', () => {
+    it('drops focusList entries at or under the deleted path in every window, like tabs — a file as a folder (YAZ-2619 S30)', () => {
       const store = createStore(file)
-      store.upsertWindow(win('w1', { root: '/v', focusDirs: ['/v/Sub', '/v/Sub/deep', '/v/other'], focusFavorites: ['/v/Sub/fav', '/v/keep'] }))
-      store.upsertWindow(win('w2', { root: '/v', focusDirs: ['/v/Sub'], focusFavorites: [] }))
+      store.upsertWindow(win('w1', { root: '/v', focusList: ['/v/Sub', '/v/a.md', '/v/Sub/deep/n.md', '/v/other'] }))
+      store.upsertWindow(win('w2', { root: '/v', focusList: ['/v/Sub'] }))
       store.removePath('/v/Sub')
-      expect(store.get().windows[0]).toMatchObject({ focusDirs: ['/v/other'], focusFavorites: ['/v/keep'] })
-      expect(store.get().windows[1]).toMatchObject({ focusDirs: [], focusFavorites: [] }) // the last one leaving ends the focus
+      expect(store.get().windows[0]).toMatchObject({ focusList: ['/v/a.md', '/v/other'] })
+      expect(store.get().windows[1]).toMatchObject({ focusList: [] }) // the last one leaving empties the list
+      store.removePath('/v/a.md')
+      expect(store.get().windows[0]).toMatchObject({ focusList: ['/v/other'] })
     })
 
     const GONE = '/v/B.md'
@@ -900,15 +929,15 @@ describe('createStore: mutations', () => {
       expect(store.get().folders['/v'].baseGroups).toEqual({})
     })
 
-    it('remaps focusDirs / focusFavorites at or under the dir in every window rooted there — a focused dir INSIDE the renamed folder follows it, one outside is untouched (YAZ-1628)', () => {
+    it('remaps focusList at or under the dir in every window rooted there — an item INSIDE the renamed folder follows it, one outside is untouched (YAZ-2619 S29)', () => {
       const store = createStore(file)
-      store.upsertWindow(win('w1', { root: '/v', focusDirs: [`${OLD}/deep`, '/v/other'], focusFavorites: [`${OLD}/fav`, '/v/keep'] }))
-      store.upsertWindow(win('w2', { root: '/v', focusDirs: [OLD], focusFavorites: [] }))
-      store.upsertWindow(win('w3', { root: '/other', focusDirs: ['/other/x'], focusFavorites: [] }))
+      store.upsertWindow(win('w1', { root: '/v', focusList: [`${OLD}/deep`, '/v/other', `${OLD}/n.md`] }))
+      store.upsertWindow(win('w2', { root: '/v', focusList: [OLD] }))
+      store.upsertWindow(win('w3', { root: '/other', focusList: ['/other/x'] }))
       store.renamePath(OLD, NEW)
-      expect(store.get().windows[0]).toMatchObject({ focusDirs: [`${NEW}/deep`, '/v/other'], focusFavorites: [`${NEW}/fav`, '/v/keep'] })
-      expect(store.get().windows[1]).toMatchObject({ focusDirs: [NEW], focusFavorites: [] })
-      expect(store.get().windows[2]).toMatchObject({ focusDirs: ['/other/x'], focusFavorites: [] })
+      expect(store.get().windows[0]).toMatchObject({ focusList: [`${NEW}/deep`, '/v/other', `${NEW}/n.md`] })
+      expect(store.get().windows[1]).toMatchObject({ focusList: [NEW] })
+      expect(store.get().windows[2]).toMatchObject({ focusList: ['/other/x'] })
     })
 
     it('remaps folder state under the dir: lastFile, expanded dirs, fold keys, baseGroups keys — and the folder-state KEY of a root at/under it', () => {
@@ -969,6 +998,14 @@ describe('createStore: persistence', () => {
       { id: 'open', sidebarCollapsed: false },
       { id: 'closed', sidebarCollapsed: true },
     ])
+  })
+
+  it('restores a window\'s focus list, in its order, and the Focus tab after a real flush and reload (YAZ-2619 S24)', async () => {
+    const store = createStore(file)
+    store.upsertWindow(win('w1', { root: '/v', sidebarLens: 'focus', focusList: ['/v/Sub', '/v/a.md'] }))
+    store.upsertWindow(win('w2', { root: '/v' }))
+    await store.flush()
+    expect(createStore(file).get().windows).toEqual([win('w1', { root: '/v', sidebarLens: 'focus', focusList: ['/v/Sub', '/v/a.md'] }), win('w2', { root: '/v' })])
   })
 
   it('coalesces a burst of changes into one debounced atomic write that matches get()', async () => {
@@ -1047,35 +1084,5 @@ describe('createStore: persistence', () => {
     expect(raw.split('\n').length).toBeGreaterThan(5)
     expect(JSON.parse(raw)).toEqual(store.get())
     expect(createStore(nested).get()).toEqual(store.get())
-  })
-})
-
-/**
- * Favorites' per-window focus list (YAZ-1766 D5): `WindowEntry.focusFavorites` rides `focusDirs`'
- * rules — path-keyed, so `renamePath` / `removePath` repair it exactly as they repair `focusDirs`.
- * (The favorites LIST itself left this store for `.yaseendocs/favorites.json` in 6A/D15 — see `favorites.test.ts`.)
- */
-describe('focusFavorites (YAZ-1766 D5)', () => {
-  it('windows: focusFavorites loads with the tabs rule, upserts and duplicates by value', async () => {
-    await seed(valid({ windows: [{ id: 'a', root: '/v', file: null, tabs: [], bounds, focusFavorites: ['/v/x', 'rel'] }, { id: 'b', root: '/v', file: null, tabs: [], bounds, focusFavorites: 1 }] }))
-    const store = createStore(file)
-    expect(store.get().windows[0]).toMatchObject({ focusFavorites: ['/v/x'] })
-    expect(store.get().windows[1]).toMatchObject({ focusFavorites: [] })
-    store.upsertWindow(win('c', { root: '/v', focusFavorites: ['/v/a'] }))
-    expect(store.get().windows[2]).toMatchObject({ focusFavorites: ['/v/a'] })
-  })
-
-  it('renamePath remaps a focused dir and everything under it in every window\'s focusFavorites', () => {
-    const store = createStore(file)
-    store.upsertWindow(win('w1', { root: '/v', focusFavorites: ['/v/Sub', '/v/Sub/deep', '/v/other'] }))
-    store.renamePath('/v/Sub', '/v/Moved')
-    expect(store.get().windows[0]).toMatchObject({ focusFavorites: ['/v/Moved', '/v/Moved/deep', '/v/other'] })
-  })
-
-  it('removePath drops a deleted focus dir from focusFavorites', () => {
-    const store = createStore(file)
-    store.upsertWindow(win('w1', { root: '/v', focusFavorites: ['/v/Sub', '/v/other'] }))
-    store.removePath('/v/Sub')
-    expect(store.get().windows[0]).toMatchObject({ focusFavorites: ['/v/other'] })
   })
 })
