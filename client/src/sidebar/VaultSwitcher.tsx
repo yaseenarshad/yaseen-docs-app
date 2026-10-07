@@ -73,9 +73,11 @@
  * Workspaces (YAZ-2602 D8): the saved sets of vaults — `vaultSets` in the code — stand FIRST, under
  * a "Workspaces" label, last used first: a name, and "N vaults" where a vault shows its time (S64).
  * With none saved the list is as it was. They are rows like the others: the filter matches the
- * name with the same ranking, and the highlight's index runs over them first — so with an empty
- * query it starts on the first workspace that is not the one this window shows, which is marked
- * `aria-current` and skipped like the current vault. Activating one asks main's `window.openSet`
+ * name with the same ranking, and the highlight's index runs over them first — ↑ reaches them, and
+ * a typed query starts on the top row, a workspace's when one matches. With an EMPTY query the
+ * highlight starts where it did before workspaces, on a vault row: ⌘O ⏎ stays "the vault you used
+ * last" (YAZ-2555), and a saved workspace never takes that key over. The workspace this window
+ * shows is marked `aria-current`, like the current vault. Activating one asks main's `window.openSet`
  * (S65): `opened` closes the panel, and a folder that is gone is named in a notice; with no folder
  * left the row is disabled with "Folders not found" and the panel stays (S66). ⇧ means nothing on a
  * workspace: no cue, and ⇧⏎ is ⏎. Its menu is "Rename" — the display name's inline field, saved
@@ -293,10 +295,9 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   // The highlight re-seeds exactly when `matches` does — on open and on every keystroke (D7).
   const inWindow = roots.join('\n')
   useEffect(() => {
-    const here = inWindow.split('\n')
-    // The same rule over the workspaces first (YAZ-2602 S64): the one this window shows is skipped like the current vault.
-    const other = sets.findIndex((s) => query.trim() !== '' || !sameVaults(s.roots, here))
-    setActive(other !== -1 ? other : sets.length + defaultHighlight(matches, query, ...here))
+    // A typed query starts on the top row, a workspace's or a vault's. An empty one starts where it did before
+    // workspaces, below their rows (YAZ-2602 S64): ⌘O ⏎ stays "the vault you used last" (YAZ-2555), never a workspace.
+    setActive(query.trim() === '' ? sets.length + defaultHighlight(matches, query, ...inWindow.split('\n')) : 0)
   }, [sets, matches, query, inWindow])
 
   /** A door that failed is logged, and reads as its "no". */
