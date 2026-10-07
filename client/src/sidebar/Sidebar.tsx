@@ -634,6 +634,24 @@ export function Sidebar({
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
+  // What the three trees share; each tab adds only what differs (`nodes`, `move`, `reorder`). It is
+  // SPREAD into each `<Tree>`, so the memo above compares the values, never this object.
+  const treeProps = {
+    dirPath: root,
+    expanded: expandedSet,
+    activeFile,
+    onToggle: toggleDir,
+    onOpenFile,
+    onOpenFileBackground,
+    onOpenDefault: openDefault,
+    onNodeContextMenu: openRowMenu,
+    pending,
+    renaming,
+    selection,
+    counts,
+    shortcuts,
+    titles,
+  }
 
   // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through
   // `onRevealInFiles`: App flips to Files; the reveal clears the query, expands and flashes the
@@ -801,25 +819,7 @@ export function Sidebar({
             {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
             {tree !== null && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
             {tree !== null && favoriteNodes.length > 0 && (
-              <Tree
-                nodes={favoriteNodes}
-                dirPath={root}
-                expanded={expandedSet}
-                activeFile={activeFile}
-                onToggle={toggleDir}
-                onOpenFile={onOpenFile}
-                onOpenFileBackground={onOpenFileBackground}
-                onOpenDefault={openDefault}
-                onNodeContextMenu={openRowMenu}
-                pending={pending}
-                renaming={renaming}
-                move={INERT_MOVE}
-                reorder={favoriteReorder}
-                selection={selection}
-                counts={counts}
-                shortcuts={shortcuts}
-                titles={titles}
-              />
+              <Tree {...treeProps} nodes={favoriteNodes} move={INERT_MOVE} reorder={favoriteReorder} />
             )}
           </>
         ) : lens === 'focus' ? (
@@ -838,24 +838,7 @@ export function Sidebar({
                     Clear
                   </button>
                 </div>
-                <Tree
-                  nodes={focusNodes}
-                  dirPath={root}
-                  expanded={expandedSet}
-                  activeFile={activeFile}
-                  onToggle={toggleDir}
-                  onOpenFile={onOpenFile}
-                  onOpenFileBackground={onOpenFileBackground}
-                  onOpenDefault={openDefault}
-                  onNodeContextMenu={openRowMenu}
-                  pending={pending}
-                  renaming={renaming}
-                  move={fileMove}
-                  selection={selection}
-                  counts={counts}
-                  shortcuts={shortcuts}
-                  titles={titles}
-                />
+                <Tree {...treeProps} nodes={focusNodes} move={fileMove} />
               </>
             )}
           </>
@@ -866,26 +849,7 @@ export function Sidebar({
             {tree !== null && tree.tree.length === 0 && pending === null && (
               <p className="sidebar__msg">No notes here.</p>
             )}
-            {tree !== null && (
-              <Tree
-                nodes={tree.tree}
-                dirPath={root}
-                expanded={expandedSet}
-                activeFile={activeFile}
-                onToggle={toggleDir}
-                onOpenFile={onOpenFile}
-                onOpenFileBackground={onOpenFileBackground}
-                onOpenDefault={openDefault}
-                onNodeContextMenu={openRowMenu}
-                pending={pending}
-                renaming={renaming}
-                move={fileMove}
-                selection={selection}
-                counts={counts}
-                shortcuts={shortcuts}
-                titles={titles}
-              />
-            )}
+            {tree !== null && <Tree {...treeProps} nodes={tree.tree} move={fileMove} />}
           </>
         )}
       </div>
