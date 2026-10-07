@@ -18,10 +18,12 @@ import {
   THEMES,
   THREAD_WIDTHS,
   addRecentRoot,
+  cleanVaultKey,
   cleanVaultName,
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
+  freeVaultKey,
   isSidebarLens,
   isValidNewNoteFolder,
   type AppState,
@@ -218,15 +220,23 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     name: cleanVaultName(raw.name),
+    key: cleanVaultKey(raw.key),
   }
 }
 
 function sanitizeFolders(raw: unknown): Record<string, FolderState> {
   if (!isRecord(raw)) return {}
   const out: Record<string, FolderState> = {}
+  const keys = new Set<number>()
   for (const [root, folder] of Object.entries(raw)) {
     const clean = sanitizeFolder(folder)
-    if (clean !== null) out[root] = clean
+    if (clean === null) continue
+    // One vault per number (YAZ-2555 S21): in a damaged file the first vault keeps it.
+    if (clean.key !== null) {
+      if (keys.has(clean.key)) clean.key = null
+      else keys.add(clean.key)
+    }
+    out[root] = clean
   }
   return out
 }
@@ -353,13 +363,16 @@ export function createStore(filePath: string): Store {
 
     setFolder(root, patch) {
       const cur = folderOf(root)
+      const key = patch.key === undefined ? undefined : cleanVaultKey(patch.key)
       const next: FolderState = {
         ...cur,
         ...(patch.expanded !== undefined ? { expanded: [...patch.expanded] } : {}),
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
         ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
+        ...(key !== undefined ? { key } : {}),
       }
-      commit({ ...state, folders: { ...state.folders, [root]: next } })
+      // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
+      commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
     },
 
     setFolds(root, file, keys) {

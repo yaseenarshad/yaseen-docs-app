@@ -45,6 +45,9 @@
  * the header or the row, a `<div>` in place of the `<button>` meanwhile. ⏎ or blur saves, Esc
  * cancels, an empty field is the folder name again; the field is the top layer while it stands:
  * Esc and click-away end it alone, and a click on another row only ends it, never opens a vault.
+ *
+ * "Set shortcut" (YAZ-2555 D2) gives the vault a number, 1–9, in the same menu — the header's or a
+ * row's: `storage.setVaultKey`, one vault per number. "Remove from recent vaults" clears it (A2).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -231,6 +234,8 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   /** Remove from recent vaults (D3): forgets the MRU entry only — the folder is untouched — and the row leaves at once. */
   const removeRow = (path: string): void => {
     storage.removeRecentRoot(path)
+    // Its number goes with it (YAZ-2555 A2): with no row, it would be a key you cannot see or change.
+    if (storage.vaultKey(path) !== null) storage.setVaultKey(path, null)
     setPanel((p) => (p === null ? p : { ...p, rows: p.rows.filter((r) => r.path !== path) }))
     inputRef.current?.focus()
   }
@@ -261,10 +266,10 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     />
   )
 
-  /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all. */
+  /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all — and who has which number (YAZ-2555 D2). */
   const menuTarget = (path: string) => {
     const name = storage.vaultName(path)
-    return { path, name, isCurrent: path === root, renamed: name !== basename(path) }
+    return { path, name, isCurrent: path === root, renamed: name !== basename(path), keyed: storage.keyedVaults() }
   }
 
   /** Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — its MRU entry is already gone. */
@@ -461,6 +466,11 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
               onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
               onResetName: (path) => saveName(path, null),
+              // The vault's number (YAZ-2555 D2), from the header's menu or a row's; the filter takes focus back, `saveName`'s idiom.
+              onSetKey: (path, key) => {
+                storage.setVaultKey(path, key)
+                inputRef.current?.focus()
+              },
               onReveal,
               onOpenVsCode,
               onRemove: removeRow,
