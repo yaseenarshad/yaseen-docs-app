@@ -158,21 +158,21 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
     expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync'])
     expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance', 'settings-editor', 'settings-files', 'settings-review', 'settings-sync'])
-    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'confirmRename', 'newNoteLocation', 'enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
+    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'commentsOrder', 'confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows', 'enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
     for (const r of el.querySelectorAll<HTMLElement>('.setting')) expect(r.dataset.setting).toBeTruthy()
     expect(el.querySelector('[data-setting^="hotkeys"]')).toBeNull()
   })
 
   it('group titles and hints render under their section; untitled groups are plain rows', () => {
     const { el } = mount()
-    expect(groupTitles(el)).toEqual(['Spacing', 'Bullet threading', 'Comments'])
+    expect(groupTitles(el)).toEqual(['Spacing', 'Bullet threading', 'Comments', 'When the app starts'])
     expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['Guide lines that connect nested bullets.'])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(row(el, 'bulletThreading')?.querySelector('.setting__label')?.textContent).toBe('Show')
     expect(row(el, 'threadWidth')?.querySelector('.setting__label')?.textContent).toBe('Line width')
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
-    // Files & Links has one untitled group: rows straight under the section title.
-    expect(el.querySelector('#settings-files .settings-group__title')).toBeNull()
+    // Files & Links starts with an untitled group: its rows sit straight under the section title.
+    expect(el.querySelector('#settings-files .settings-group')?.querySelector('.settings-group__title')).toBeNull()
   })
 
   it('the two per-vault sections, Review and Sync, carry a note under their titles; no other section does', () => {
@@ -284,6 +284,17 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(el, 'confirmRename').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
     act(() => rowButtons(el, 'confirmRename')[1].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
+  })
+
+  it('Reopen: All vaults · Last vault · None under "When the app starts", Last vault by default; None writes the whole object with only it flipped (YAZ-2589 D2, A3)', () => {
+    const { el, onChange } = mount()
+    expect(row(el, 'startupWindows')?.closest('[data-section]')?.id).toBe('settings-files')
+    expect(row(el, 'startupWindows')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('When the app starts')
+    expect(row(el, 'startupWindows')?.querySelector('.setting__label')?.textContent).toBe('Reopen')
+    expect(row(el, 'startupWindows')?.querySelector('.setting__hint')?.textContent).toBe('A vault that you open from a link or a launcher always opens alone.')
+    expect(rowButtons(el, 'startupWindows').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['All vaults', 'false'], ['Last vault', 'true'], ['None', 'false']])
+    act(() => rowButtons(el, 'startupWindows')[2].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, startupWindows: 'none' })
   })
 
   it('Default location: a dropdown of the three Obsidian options, writing the whole object with only the location flipped; the folder input and the wide row appear only for the third', () => {
@@ -544,7 +555,7 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(row(el, 'ids')).toBeNull()
     expect(groupTitles(el)).not.toContain('This vault')
     type(searchInput(el), 'files & links')
-    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation'])
+    expect(rowIds(el)).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows'])
   })
 
   it('a vault open: the row sits in Files & Links under "This vault", with its label and hint', () => {

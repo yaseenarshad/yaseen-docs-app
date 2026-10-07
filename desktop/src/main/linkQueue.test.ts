@@ -3,7 +3,7 @@ import { fileLink, parseFileLink } from '@shared/links'
 import { createLinkQueue } from './linkQueue'
 
 // E1 (GRO-2171): macOS delivers cold-start `open-url` before `ready`; URLs queue until
-// `flush()` runs after `restoreAll()`, then flow straight through.
+// `flush()` runs after `restore()`, then flow straight through.
 
 describe('createLinkQueue', () => {
   it('queues pushes before flush, then replays them in order', () => {
@@ -14,6 +14,17 @@ describe('createLinkQueue', () => {
     expect(handle).not.toHaveBeenCalled()
     q.flush()
     expect(handle.mock.calls).toEqual([['yaseendocs:///v/a.md'], ['yaseendocs:///v/b.md']])
+  })
+
+  it('pending() is what waits for flush(), in order: what this launch was asked to open (YAZ-2589 D1)', () => {
+    const q = createLinkQueue(vi.fn())
+    expect(q.pending()).toEqual([])
+    q.push('yaseendocs:///v/a.md')
+    q.push('yaseendocs:///w/')
+    expect(q.pending()).toEqual(['yaseendocs:///v/a.md', 'yaseendocs:///w/'])
+    q.flush()
+    q.push('yaseendocs:///v/b.md') // handled at once: it never waits
+    expect(q.pending()).toEqual([])
   })
 
   it('handles pushes directly once flushed', () => {

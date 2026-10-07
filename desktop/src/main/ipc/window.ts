@@ -68,7 +68,8 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
  * are D6 plumbing into the window manager (GRO-2160; the gestures land in D-), and
- * `app:flushed` is the renderer's half of the close/quit flush handshake.
+ * `app:flushed` is the renderer's half of the close/quit flush handshake. One door of `link.*` is
+ * answered here too, because it needs the caller's window: `link:ready` (YAZ-2589 A2).
  */
 export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
@@ -149,6 +150,10 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (windows.idFor(e.sender) === undefined || typeof text !== 'string') throw new BridgeFailure('BAD_REQUEST', 'invalid paste target or text')
     if (text !== '') await e.sender.insertText(text)
   })
+
+  // `link:ready` (YAZ-2589 A2): this renderer now listens for link pushes, so the manager sends
+  // what it held for it.
+  handleWithEvent(CONTRACT.link.ready, async (e) => windows.handleLinkReady(e.sender))
 
   // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
   ipcMain.on(SPECIAL.appFlushed, (e) => windows.handleFlushed(e.sender))

@@ -60,12 +60,13 @@ describe('registerStateIpc', () => {
   })
 
   it('state:set-settings takes a complete valid SettingsState and rejects anything else as BAD_REQUEST', async () => {
-    const next = { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff', contentWidth: 'full' }
+    const next = { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff', contentWidth: 'full', startupWindows: 'none' }
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, next)).toEqual(ok(undefined))
     expect(store.get().settings).toEqual(next)
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, lineSpacing: 'big' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, contentWidth: 'wide' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, confirmRename: 'no' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, startupWindows: 'some' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { lineSpacing: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().settings).toEqual(next)
