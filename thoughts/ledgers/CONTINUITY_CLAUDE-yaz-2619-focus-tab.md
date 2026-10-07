@@ -28,23 +28,28 @@ The record is three comments there: "Locked decisions and scope (D1 to D4)", "Th
 ## State
 
 - Done:
-  - [x] Scope: D1 to D5, S1 to S40, R1 to R14 (in the parent's comments)
+  - [x] Scope: D1 to D5, S1 to S40, R1 to R14 (in the parent's comments); Amendment 1 (S33 error code) and Amendment 2 (R15 to R20)
   - [x] The issue tree: YAZ-2621 to YAZ-2624
-- Now: [→] 1- State (YAZ-2621)
+  - [x] 1- State (YAZ-2621), commit `21d6615`
+  - [x] 2- Sidebar (YAZ-2622), commit `6da0e48`
+  - [x] 3- Polish and anti-slop (YAZ-2623): audit A1 to A8 on the issue; A1 to A3 applied, A7 and A8 declined
+  - [x] 4- the gates, the end-to-end spec, the docs, the `mainBundleBytes` ceiling down to 517,985 (the ratchet)
+- Now: [→] 4- Verify and deliver (YAZ-2624): the pull request is open; it waits for Yaseen's hand walk
 - Remaining:
-  - [ ] 2- Sidebar (YAZ-2622)
-  - [ ] 3- Polish and anti-slop (YAZ-2623)
-  - [ ] 4- Verify and deliver (YAZ-2624)
+  - [ ] Yaseen's hand walk (the steps are on YAZ-2624 and in `docs/REGRESSION.md`, "S12 The Focus tab")
+  - [ ] Merge, only after Yaseen says the walk passed. Then close YAZ-2624 and YAZ-2619.
 
 ## Open Questions
 
 - UNCONFIRMED: the tab row fits the 180 px minimum sidebar (the widths are estimates). Hand walk, S22.
-- KNOWN: `rendererTotalBytes` was about 1 KB under its tolerance at `4cb6a54`. This work removes code; measure in 4.
-- KNOWN: `desktop/e2e/focus.spec.ts` is updated but not run by an agent.
+- UNCONFIRMED: `desktop/e2e/focus.spec.ts` is written again for the new flow and typechecks, but nobody has run it.
+- KNOWN: the renderer sizes pass only inside the 0.1% tolerance: `rendererEagerJsBytes` 1,956,962 (ceiling 1,956,581), `rendererEagerCssBytes` 137,729 (137,688), `rendererTotalBytes` 13,024,511 (13,012,712). The next renderer change can need a new ceiling.
+- KNOWN: `yaz-2602-multi-vault` changes the same lines. The branch that merges second fixes the conflicts. YAZ-2609 has the list of its cases that this work changes; Yaseen must approve them before 2D starts.
+- KNOWN: YAZ-2620 (search results as tree rows) will need new selectors in the S11 tests.
 
 ## Working Set
 
 - Worktree `../yaseen-docs-app-yaz-2619`, branch `yaz-2619-focus-tab`, from `main` at `129ee9e`.
-- Baseline at `129ee9e`: typecheck green; 294 test files, 5447 tests passed, 2 skipped.
+- Baseline at `129ee9e`: typecheck green; 294 test files, 5447 tests passed, 2 skipped. At the branch tip: 294 files, 5434 passed, 2 skipped.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skill at `~/.claude/skills/linear`.
