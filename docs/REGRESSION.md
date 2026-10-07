@@ -69,7 +69,7 @@ Add a row when a feature ships. Never delete one unless the feature is removed o
 | S5 | External rename detection + repair. A file renamed outside the app keeps the name it was given, and a link that spells its `title:` still reaches it, so it is not counted (YAZ-2420 D5, D17) | A `externalRename` · U `links/renameDetector.test.ts`, `links/renameLinks.test.ts` |
 | S6 | Delete to Trash; tabs close | A `delete` |
 | S7 | File Cut / Copy / Paste; one app-wide clipboard across windows; a pasted copy of a note or a folder is its own page ([N13](#note-ids)), any other file lands under Finder's next free name | A `fileClipboard` · U `desktop/src/main/fileClip.test.ts`, `desktop/src/main/fs/copy.test.ts`, `lib/fileClipboardHotkey.test.ts` |
-| S8 | ⌘K search, ⌘⏎ background tab | A `search` |
+| S8 | ⌘K search: the results are the Files tree cut down to the matches and their parent folders, files that are no notes included, the typed text bold in a match (YAZ-2620); ⌘⏎ background tab | A `search` · U `search/searchTree.test.ts`, `sidebar/Sidebar.test.tsx` |
 | S9 | Folders start closed each launch | A `collapsedLaunch` |
 | S10 | Sidebar collapse / resize (180–520) | A `easyWave`, `settings` (in part) |
 | S11 | Copy path — the plain path, and the one copy item of a sidebar row, a tab and a view row (YAZ-2420 D7, D31) — multi-select, ⌘⇧C | A `multiselect`, `tabs`, `names` (step 10) · U `sidebar/menuSections.test.ts`, `sidebar/Sidebar.test.tsx`, `tabs/TabBar.test.tsx`, `views/view/PageContextMenu.test.tsx` |

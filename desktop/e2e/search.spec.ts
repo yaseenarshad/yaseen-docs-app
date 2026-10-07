@@ -1,14 +1,15 @@
 /**
  * Search E (YAZ-805): the ⌘K search feature driven end-to-end through the REAL app — the
- * persistent sidebar bar (YAZ-801), the flat ranked result list that replaces the tree
- * (YAZ-803) and the title/alias ranking behind it (YAZ-802), over a COPY of the committed
- * encyclopedia fixture (`fixtures/bible-vault`) plus ONE seeded note that makes the ranking
- * and the alias row deterministic.
+ * persistent sidebar bar (YAZ-801), the search TREE that replaces the active tab's tree while a
+ * query is typed (YAZ-2620: the Files tree cut down to the matches and their parent folders) and
+ * the title/alias ranking behind it (YAZ-802), over a COPY of the committed encyclopedia fixture
+ * (`fixtures/bible-vault`) plus ONE seeded note that makes the ranking and the alias deterministic.
  *
  * That seeded note is `Nurture.md` at the vault root, aliased `Zephyr Codename`. It turns the
- * query "Nurture" into one row of each rank bucket — exact `Nurture`, prefix `Nurture
- * Sequencing`, substring `Lead Nurture` — which is the only way this fixture can PROVE the
- * exact-first ordering, and it gives the keyboard steps their three rows.
+ * query "Nurture" into one match of each rank bucket — exact `Nurture`, prefix `Nurture
+ * Sequencing`, substring `Lead Nurture` — in three places of the tree: the root, `Problems/` and
+ * `Funnel Stages/`. The tree draws the exact match LAST, which is the only way this fixture can
+ * PROVE that the highlight starts on the best match and not on the top row.
  *
  * The ⌘K accelerator itself is NOT driven here: a native menu accelerator cannot be fired from
  * Playwright (`keyboard.press('Meta+K')` silently does nothing), so the shortcut is pinned by
@@ -18,8 +19,9 @@
  * Serial by design (the suite's idiom): each step continues the previous state, and every step
  * starts from `closeAllTabs` + an empty query so the one before it cannot colour it.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
+// Rewritten for YAZ-2290 (folders are the pages) and again for YAZ-2620 (the results are a tree). Not yet run:
+// Playwright was off limits both times, so every selector here was read from the source, not observed. Run it
+// once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -50,16 +52,11 @@ let win: Page
 const treeRows = (w: Page) => w.locator('.tree__row')
 
 const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
-const resultList = (w: Page) => w.locator('[aria-label="Search results"]')
-const resultRows = (w: Page) => resultList(w).locator('[role="option"]')
-
-/**
- * Every result row's aria-label, in list order — the assertion the ranking is really about.
- * Playwright's `hasText` cannot read aria-labels, so the rows are anchored by them throughout
- * (the feature was built with exactly this in mind).
- */
-const rowLabels = (w: Page): Promise<(string | null)[]> =>
-  resultRows(w).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+/** A result is a tree row (YAZ-2620): a MATCH, or — dim — a row that only gives a match its place. */
+const matchLabels = (w: Page) => w.locator('.sidebar__body .tree__row:not(.tree__row--context) .tree__label')
+const parentLabels = (w: Page) => w.locator('.sidebar__body .tree__row--context .tree__label')
+/** The typed text, bold where it sits in a match. */
+const marks = (w: Page) => w.locator('.sidebar__body .tree__mark')
 
 // ---------- gestures ----------
 
@@ -80,7 +77,8 @@ async function reset(w: Page): Promise<void> {
 }
 
 /**
- * Types `query` into the bar and waits for the rows it must rank, in order.
+ * Types `query` into the bar and waits for the matches it must show, top to bottom as the tree
+ * draws them.
  *
  * The fill lives INSIDE the retry: the bar is a controlled input, so a value set while React is
  * re-rendering it can be swallowed — the bar ends up empty and no rows ever arrive (seen under
@@ -88,19 +86,19 @@ async function reset(w: Page): Promise<void> {
  * when it did land, so a healthy run still settles on the first attempt.
  */
 async function search(w: Page, query: string, labels: readonly string[]): Promise<void> {
-  const want = labels.map((l) => `Search result ${l}`)
   await expect(async () => {
     await searchBar(w).fill(query)
-    expect(await rowLabels(w)).toEqual(want)
+    expect(await matchLabels(w).allTextContents()).toEqual(labels)
   }).toPass({ timeout: 15_000 })
 }
 
-/** The selected row: `aria-selected` and the active class are ONE state — assert them together. */
-async function expectSelected(w: Page, index: number): Promise<void> {
-  await expect(resultRows(w).nth(index)).toHaveAttribute('aria-selected', 'true')
-  await expect(resultRows(w).nth(index)).toHaveClass(/search-results__row--active/)
-  await expect(resultList(w).locator('[aria-selected="true"]')).toHaveCount(1)
+/** The highlight: the ONE row that wears the selected style, by its label. */
+async function expectHighlight(w: Page, label: string): Promise<void> {
+  await expect(w.locator('.sidebar__body .tree__row--selected .tree__label')).toHaveText([label])
 }
+
+/** "Nurture", as the tree draws its three matches: `Funnel Stages/`, `Problems/`, then the root. */
+const NURTURE = ['Lead Nurture', 'Nurture Sequencing', 'Nurture']
 
 // ---------- lifecycle ----------
 
@@ -119,9 +117,9 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-// ---------------------------------------------------------------- YAZ-802 / 803: rank and open
+// ---------------------------------------------------------------- YAZ-802 / 803 / 2620: find and open
 
-test('step 1 — a typed title replaces the tree with a ranked list; Enter opens the top row in the CURRENT tab', async () => {
+test('step 1 — a typed title cuts the tree down to the matches and their parents; Enter opens the BEST match in the CURRENT tab', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
@@ -129,28 +127,33 @@ test('step 1 — a typed title replaces the tree with a ranked list; Enter opens
   await expect(searchBar(win)).toBeVisible() // persistent: there before anyone asked for it
   await expect(treeRows(win).first()).toBeVisible() // …with the tree below it, as usual
 
-  // Exact → prefix → substring, the shared `[[` matcher's ranking (YAZ-802).
-  await search(win, 'Nurture', ['Nurture', 'Nurture Sequencing', 'Lead Nurture'])
-  await expect(treeRows(win)).toHaveCount(0) // the list REPLACES the tree while a query is typed
-  await expectSelected(win, 0)
-  await shoot(win, 'search-01-ranked-list')
+  // Each match keeps its place: below its folder, which is open and dim. Nothing else shows.
+  await search(win, 'Nurture', NURTURE)
+  await expect(parentLabels(win)).toHaveText(['Funnel Stages', 'Problems'])
+  await expect(treeRows(win)).toHaveCount(5)
+  await expect(marks(win)).toHaveText(['Nurture', 'Nurture', 'Nurture']) // the typed text, bold in each match
+  // Exact → prefix → substring, the shared `[[` matcher's ranking (YAZ-802): the highlight starts
+  // on the exact match, though the tree draws it last.
+  await expectHighlight(win, 'Nurture')
+  await shoot(win, 'search-01-tree')
 
-  // Enter opens the selection in the CURRENT tab: still ONE tab, now the seeded note.
+  // Enter opens the highlight in the CURRENT tab: still ONE tab, now the seeded note.
   await searchBar(win).press('Enter')
   await expect(activeTab(win)).toHaveText('Nurture')
   await expect(editorOf(win)).toContainText(SEEDED_BODY)
   await expect(tabsOf(win)).toHaveCount(1)
-  // Opening does not dismiss the list — the query is still typed, so the rows are still there.
-  await expect.poll(() => rowLabels(win)).toEqual(['Search result Nurture', 'Search result Nurture Sequencing', 'Search result Lead Nurture'])
+  // Opening does not dismiss the results — the query is still typed, so the rows are still there.
+  await expect(matchLabels(win)).toHaveText(NURTURE)
 })
 
-test('step 2 — a frontmatter alias is its own row, labelled "Alias — Basename", and opens the note', async () => {
+test('step 2 — a frontmatter alias finds its note: ONE row, under its title, with nothing bold', async () => {
   await reset(win)
   // Nothing in the vault is CALLED Zephyr: the only way to this row is through the alias.
-  await search(win, 'Zephyr', [`${ALIAS} — Nurture`])
+  await search(win, 'Zephyr', ['Nurture'])
+  await expect(marks(win)).toHaveCount(0)
   await shoot(win, 'search-02-alias-row')
 
-  await resultRows(win).first().click()
+  await fileRow(win, 'Nurture').click()
   await expect(activeTab(win)).toHaveText('Nurture')
   await expect(editorOf(win)).toContainText(SEEDED_BODY)
   await expect.poll(() => decodeURI(win.url())).toContain(SEEDED)
@@ -163,8 +166,8 @@ test('step 3 — ⌘-click on a row opens a BACKGROUND tab; the active tab never
   await fileRow(win, 'CEO').click() // an active tab to leave alone
   await expect(activeTab(win)).toHaveText('CEO')
 
-  await search(win, 'Nurture', ['Nurture', 'Nurture Sequencing', 'Lead Nurture'])
-  await resultRows(win).nth(1).click({ modifiers: ['Meta'] })
+  await search(win, 'Nurture', NURTURE)
+  await fileRow(win, 'Nurture Sequencing').click({ modifiers: ['Meta'] })
   await expect(tabsOf(win)).toHaveText(['CEO', 'Nurture Sequencing'])
   await expect(activeTab(win)).toHaveText('CEO')
   await expect(editorOf(win)).toContainText(CEO_BODY)
@@ -174,55 +177,76 @@ test('step 3 — ⌘-click on a row opens a BACKGROUND tab; the active tab never
   await expect(editorOf(win)).toContainText(SEQUENCING_BODY)
 })
 
-test('step 4 — ArrowDown / ArrowUp walk the rows from the input, clamped at BOTH ends', async () => {
+test('step 4 — ArrowDown / ArrowUp walk the MATCHES from the input, never a parent row, clamped at BOTH ends', async () => {
   await reset(win)
-  await search(win, 'Nurture', ['Nurture', 'Nurture Sequencing', 'Lead Nurture'])
-  await expectSelected(win, 0)
+  await search(win, 'Nurture', NURTURE)
+  await expectHighlight(win, 'Nurture') // the best match: the last row the tree draws
 
-  // At the top: ArrowUp holds, it never wraps to the bottom (the `[[` picker's rule).
+  // At the bottom: ArrowDown holds, it never wraps to the top (the `[[` picker's rule).
+  await searchBar(win).press('ArrowDown')
+  await expectHighlight(win, 'Nurture')
+
+  // Two presses cross two matches — and step over the `Problems` row between them.
   await searchBar(win).press('ArrowUp')
-  await expectSelected(win, 0)
+  await expectHighlight(win, 'Nurture Sequencing')
+  await searchBar(win).press('ArrowUp')
+  await expectHighlight(win, 'Lead Nurture')
 
-  await searchBar(win).press('ArrowDown')
-  await searchBar(win).press('ArrowDown')
-  await expectSelected(win, 2)
+  // At the top: ArrowUp holds too, and never lands on `Funnel Stages` above it.
+  await searchBar(win).press('ArrowUp')
+  await expectHighlight(win, 'Lead Nurture')
 
-  // At the bottom: ArrowDown holds too.
-  await searchBar(win).press('ArrowDown')
-  await expectSelected(win, 2)
-
-  // The keyboard's selection is what Enter opens.
+  // The keyboard's highlight is what Enter opens.
   await searchBar(win).press('Enter')
   await expect(activeTab(win)).toHaveText('Lead Nurture')
 })
 
-// ---------------------------------------------------------------- YAZ-803: the tree is waiting
+// ---------------------------------------------------------------- YAZ-2620: the folds are the search's own
 
-test('step 5 — Esc on a typed query brings the tree back, with the expansion it had', async () => {
+test('step 5 — a fold in the search lasts as long as its query; a matched folder opens to ALL it holds; Esc brings the Files tree back as it was', async () => {
   await reset(win)
   await dirRow(win, 'Industries').click()
   await expect(fileRow(win, 'PLG SaaS')).toBeVisible()
 
-  await search(win, 'Nurture', ['Nurture', 'Nurture Sequencing', 'Lead Nurture'])
-  await expect(treeRows(win)).toHaveCount(0)
+  // A click on a parent row folds it: its match leaves the screen, and the arrows no longer stop on it.
+  await search(win, 'Nurture', NURTURE)
+  await dirRow(win, 'Problems').click()
+  await expect(matchLabels(win)).toHaveText(['Lead Nurture', 'Nurture'])
+  await searchBar(win).press('ArrowUp')
+  await expectHighlight(win, 'Lead Nurture')
 
-  // Esc with text EMPTIES the query (it only gives up focus on a second press) — and the tree
-  // comes back untouched: the swap is a conditional render, never a teardown.
+  // A folder the query matched, with no match inside it, shows CLOSED — whatever Files has it as —
+  // and one click looks inside: everything it holds, dim.
+  await searchBar(win).fill('Industries')
+  await expect(dirRow(win, 'Industries')).not.toHaveClass(/tree__row--context/)
+  await expect(fileRow(win, 'PLG SaaS')).toHaveCount(0)
+  await dirRow(win, 'Industries').click()
+  await expect(fileRow(win, 'PLG SaaS')).toHaveClass(/tree__row--context/)
+  // …and a double-click opens the folder's own page as a tab.
+  await dirRow(win, 'Industries').dblclick()
+  await expect(activeTab(win)).toHaveText('Industries')
+
+  // Esc with text EMPTIES the query (it only gives up focus on a second press) — and the Files
+  // tree comes back with its own folds: the swap is a conditional render, never a teardown.
   await searchBar(win).press('Escape')
   await expect(searchBar(win)).toHaveValue('')
-  await expect(resultList(win)).toHaveCount(0)
+  await expect(marks(win)).toHaveCount(0)
+  await expect(parentLabels(win)).toHaveCount(0)
   await expect(fileRow(win, 'PLG SaaS')).toBeVisible()
 })
 
-test('step 6 — a query nothing answers to shows "No matches"; clearing it restores the tree', async () => {
+test('step 6 — a query nothing answers to shows "No matches"; the `esc` keycap clears it and restores the tree', async () => {
   await reset(win)
   await searchBar(win).fill('zzqqxvw')
   await expect(win.locator('p.sidebar__msg')).toHaveText('No matches')
-  await expect(resultList(win)).toHaveCount(0)
   await expect(treeRows(win)).toHaveCount(0)
   await shoot(win, 'search-06-no-matches')
 
-  await searchBar(win).fill('')
+  // The `esc` keycap is the way out in sight (YAZ-2630): there while a query is typed, and a click clears it.
+  await win.locator('.sidebar__search-clear').click()
+  await expect(searchBar(win)).toHaveValue('')
+  await expect(searchBar(win)).toBeFocused()
+  await expect(win.locator('.sidebar__search-clear')).toHaveCount(0)
   await expect(win.locator('p.sidebar__msg')).toHaveCount(0)
   await expect(fileRow(win, 'PLG SaaS')).toBeVisible()
   await quitApp(app)
