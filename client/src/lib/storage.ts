@@ -35,7 +35,7 @@ import { basename } from './paths'
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [] }
+let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -84,14 +84,14 @@ export const storage = {
 
   getRoot: (): string | null => identity.root,
   /**
-   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both
-   * Focus Mode lists (YAZ-1628, YAZ-1766), and lands the lens on Files (🔒 D2, YAZ-1846),
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and its
+   * focus list (YAZ-1628, YAZ-2619), and lands the lens on Files (🔒 D2, YAZ-1846),
    * in the same write; re-setting the same root keeps them.
    */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusFavorites: [] as string[] }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] as string[] }
     // The window is on that ONE vault (YAZ-2602 S61). The patch names `root` alone: main makes the list from it (S76).
     identity = { ...identity, ...patch, ...(root === identity.root ? {} : { roots: normalizeRoots([], root) }) }
     send('window.setIdentity', () => api.window.setIdentity(patch))
@@ -101,12 +101,15 @@ export const storage = {
   getRoots: (): string[] => identity.roots,
   /**
    * Add or remove a vault (YAZ-2602 D2, D7). Unlike `setRoot`, this keeps the tabs, the lens and
-   * the focus lists: the caller closes a removed vault's tabs first. `root` follows `roots[0]`.
+   * the focus list: the caller closes a removed vault's tabs first. `root` follows `roots[0]`.
+   * A vault that leaves takes its focus items with it, in the same write (A5).
    */
   setRoots(roots: readonly string[]): void {
     const next = normalizeRoots(roots, roots[0] ?? null)
-    identity = { ...identity, root: next[0] ?? null, roots: next }
-    send('window.setIdentity', () => api.window.setIdentity({ roots: next }))
+    const focusList = identity.focusList.filter((path) => rootOfPath(next, path) !== null)
+    const patch = focusList.length === identity.focusList.length ? { roots: next } : { roots: next, focusList }
+    identity = { ...identity, ...patch, root: next[0] ?? null }
+    send('window.setIdentity', () => api.window.setIdentity(patch))
   },
   /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. */
   mirrorRoots(roots: readonly string[]): void {
@@ -166,22 +169,16 @@ export const storage = {
   },
 
   /**
-   * Focus Mode (YAZ-1605): a path list per lens, empty when off. Window identity since YAZ-1628,
-   * like `sidebarCollapsed` below — no root argument, and a global state broadcast never follows
-   * another window's focus into this one; a root change clears both lists (`setRoot`).
+   * The focus list (YAZ-2619): files and folders in the order added, empty when there is none.
+   * Window identity since YAZ-1628, like `sidebarCollapsed` below — no root argument, and a global
+   * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`),
+   * and a vault that leaves the window takes its items (`setRoots`).
    */
-  getFocusDirs: (): string[] => identity.focusDirs,
-  setFocusDirs(dirs: readonly string[]): void {
-    const focusDirs = [...dirs]
-    identity = { ...identity, focusDirs }
-    send('window.setIdentity', () => api.window.setIdentity({ focusDirs }))
-  },
-  /** The Favorites tab's own focus list (YAZ-1766 D5): the favorited dirs it is narrowed to. */
-  getFocusFavorites: (): string[] => identity.focusFavorites,
-  setFocusFavorites(dirs: readonly string[]): void {
-    const focusFavorites = [...dirs]
-    identity = { ...identity, focusFavorites }
-    send('window.setIdentity', () => api.window.setIdentity({ focusFavorites }))
+  getFocusList: (): string[] => identity.focusList,
+  setFocusList(paths: readonly string[]): void {
+    const focusList = [...paths]
+    identity = { ...identity, focusList }
+    send('window.setIdentity', () => api.window.setIdentity({ focusList }))
   },
 
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */

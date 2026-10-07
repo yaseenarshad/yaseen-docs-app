@@ -123,6 +123,8 @@ export const CONTRACT = {
     onOpenFile: push<string>('link:open-file'),
     /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. */
     onNotice: push<string>('link:notice'),
+    /** This window's two listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */
+    ready: invoke<[], void>('link:ready', 0),
   },
   /** The file lifecycle (Links E1 GRO-2194, GRO-2272, YAZ-1674): each change is one invoke plus a push to EVERY window, its own included. */
   file: {

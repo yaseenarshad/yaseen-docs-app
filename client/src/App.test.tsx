@@ -128,7 +128,7 @@ import { App } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'>>
+type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
@@ -196,8 +196,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
         sidebarLens: identity.sidebarLens ?? 'favorites',
-        focusDirs: identity.focusDirs ?? [],
-        focusFavorites: identity.focusFavorites ?? [],
+        focusList: identity.focusList ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
@@ -231,6 +230,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkNotice.add(l)
         return () => linkNotice.delete(l)
       }),
+      ready: vi.fn(async () => undefined),
     },
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
     // the renamed push on mount; the banner's Update goes through repairRename.
@@ -575,7 +575,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }],
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }],
       [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
     expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
@@ -586,7 +586,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on Welcome', async () => {
@@ -2081,7 +2081,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
   })
 })
 
@@ -2998,7 +2998,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(stripLabels(el)).toEqual(['last'])
     expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/z', '/z/last.md']])
     expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }],
+      [{ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }],
       [{ tabs: ['/z/last.md'], file: '/z/last.md', rightPanel: defaultRightPanelIdentity() }],
     ])
     // A vault that leaves the window unloads its scope: each of its watcher subscriptions ended.
@@ -3033,7 +3033,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
  * first comes and goes with no remount of the sidebar and no reload of a vault that stays.
  */
 describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
-  const ONE: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'files', focusDirs: ['/v/sub'] }
+  const ONE: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'files', focusList: ['/v/sub'] }
   const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/w/b.md', tabs: ['/v/a.md', '/w/b.md', '/w/c.md'] }
   const named = (names: Record<string, string>): AppState => ({ ...defaultAppState(), folders: Object.fromEntries(Object.entries(names).map(([path, name]) => [path, { ...defaultFolderState(), name }])) })
   const add = async (path: string): Promise<boolean | undefined> => {
@@ -3062,7 +3062,7 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
 
   it('a known vault becomes the last vault: one identity write, the top of the recents, the sidebar not remounted and the first vault not reloaded (S2, S9)', async () => {
     // The vault is open in a second window too (S9): the add does not ask.
-    const other = { id: 'w2', root: '/w', roots: ['/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' as const, focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+    const other = { id: 'w2', root: '/w', roots: ['/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
     const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/v', 3), recent('/x', 2), recent('/w', 1)], windows: [other] as AppState['windows'] }, ONE)
     const aside = el.querySelector('[data-sidebar]')
     const before = askedOf(bridge, '/v')
@@ -3242,6 +3242,20 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(storage.getRoots()).toEqual(['/v'])
     expect(bridge.state.removeRecent).not.toHaveBeenCalled()
     expect(el.querySelector('.welcome')).toBeNull()
+  })
+
+  it.each([
+    ['"Remove from this window"', (root: string) => captured.sidebar?.onRemoveVault(root)],
+    ['a folder that is gone (S53)', (root: string) => captured.sidebar?.onRootMissing(root)],
+  ])('a vault that leaves by %s takes its focus items in the write that drops it — with the sidebar hidden too, where no panel prunes its own copy (A5)', async (_how, leave) => {
+    const { bridge, emitToggleSidebar } = await mount(defaultAppState(), { ...TWO, focusList: ['/w/docs', '/v/sub', '/w/b.md'] })
+    act(() => emitToggleSidebar())
+    bridge.window.setIdentity.mockClear()
+    act(() => void leave('/w'))
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(storage.getFocusList()).toEqual(['/v/sub'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v'], focusList: ['/v/sub'] })
   })
 
   it('a vault row the user closed stays closed while the sidebar is hidden and shown again, and a vault that is added again starts open (R9)', async () => {

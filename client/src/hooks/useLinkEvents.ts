@@ -13,6 +13,8 @@ export function useLinkEvents({ onOpenFile, onNotice }: UseLinkEventsOptions): v
   useEffect(() => {
     const offOpenFile = api.link.onOpenFile(onOpenFile)
     const offNotice = api.link.onNotice(onNotice)
+    // Main holds a link push until this window can hear it (YAZ-2589 A2): a page that is still loading hears nothing.
+    void api.link.ready()
     return () => {
       offOpenFile()
       offNotice()

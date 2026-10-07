@@ -28,6 +28,7 @@ github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FO
 index/1: invoke fs:index ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
 link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file
+link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
 menu.onNextTab/1: on menu:next-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:next-tab

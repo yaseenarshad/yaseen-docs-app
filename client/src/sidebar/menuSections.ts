@@ -22,7 +22,7 @@ import type { MenuTargets } from './Sidebar'
  * D7 amended (YAZ-1674): the OS verbs collapse into ONE "Open in ▸" parent whose flyout is itself
  * groups of leaves — the same renderer, the same separator rule, one level deep — and that parent
  * is its OWN group between the this-row group and Delete. The Open group keeps only a folder's
- * Open, the plural open and Focus and is EMPTY on a single file row, so the clipboard group then leads.
+ * Open, the plural open and the focus toggle — its one item on a single file row (YAZ-2619 R6).
  */
 interface MenuItemBase {
   id: string
@@ -70,9 +70,8 @@ export interface MenuHandlers {
   onOpenVsCode: (path: string) => void
   onOpenDefault: (path: string) => void
   onReveal: (path: string) => void
-  /** "Focus on folder" / "Focus on N folders" (YAZ-1605) — the caller spells the label: it knows the count. */
-  focusLabel: string
-  onFocus: (paths: string[]) => void
+  /** "Add to focus" / "Remove N from focus" (YAZ-2619 D3): the paths and the direction the menu read. */
+  onToggleFocus: (paths: string[], isOn: boolean) => void
   /** Cut / Copy (YAZ-1674): the paths go to main's ONE app-wide clipboard (🔒 D1); the caller reports. */
   onCut: (paths: string[]) => void
   onCopy: (paths: string[]) => void
@@ -118,7 +117,7 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 /** "1 item" / "3 items" — the one spelling the menu's labels and the Sidebar's notices share. */
 export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 
-// ---- (1) Open / View: a folder's Open, the plural open and Focus — read-only, and often empty on one row ----
+// ---- (1) Open / View: a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
 
 /**
  * "Open" — a FOLDER row (YAZ-2290 D3): the folder itself is a tab, and a click on its row only
@@ -143,14 +142,17 @@ const openInNewTabs: Leaf = (t, h) => {
 }
 
 /**
- * Focus on folder (YAZ-1605): a read-only VIEW verb, so it closes the Open group — it
- * changes what the tree shows, never what is on disk. An EMPTY list hides it too (the caller's
- * "nothing here can be focused" answer).
+ * The focus toggle (YAZ-2619 D3): the favorite toggle's rule on the window's focus list — ONE
+ * state-aware item on every ROW, file or dir, any lens, never on blank space (R7); a 2+ selection
+ * is counted, and a mixed one reads as Add (R9). A VIEW verb, so it closes the Open group (R6): it
+ * changes what the Focus tab shows, never what is on disk.
  */
 const focus: Leaf = (t, h) => {
   const paths = t.focusPaths
-  if (paths === null || paths.length === 0) return null
-  return { id: 'focus', label: h.focusLabel, onSelect: () => h.onFocus(paths) }
+  if (paths === null) return null
+  const isOn = t.focusIsOn
+  const n = paths.length > 1 ? `${paths.length} ` : ''
+  return { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, onSelect: () => h.onToggleFocus(paths, isOn) }
 }
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----

@@ -372,7 +372,7 @@ export function App() {
 
   /**
    * "Add vault to this window" (YAZ-2602 D2): `path` becomes the window's last vault, with its row
-   * open, and goes to the top of the recents (S2). The tabs, the lens and the focus lists stay: the
+   * open, and goes to the top of the recents (S2). The tabs, the lens and the focus list stay: the
    * list of vaults is the only identity write. A folder the window cannot take is refused with a
    * notice and nothing changes — one that is in the window (S4), one inside a vault of the window
    * or around one (R8, by path segment), one that is gone on disk, which also leaves the recents
@@ -846,8 +846,9 @@ export function App() {
    * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
    * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
    * Nothing on disk changes. The vaults that stay keep their slots, so nothing of theirs loads
-   * again, and the next vault is the root when the first one left (S52). The only vault of a
-   * window does not leave it this way (S51).
+   * again, and the next vault is the root when the first one left (S52). Its focus items leave
+   * with it, in the write that drops it (A5, `storage.setRoots`). The only vault of a window does
+   * not leave it this way (S51).
    */
   const removeVault = useCallback((gone: string) => {
     const now = live.current.roots

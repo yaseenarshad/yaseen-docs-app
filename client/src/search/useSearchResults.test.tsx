@@ -17,7 +17,7 @@ import type { WatchSource } from '../hooks/useWatch'
  * What the hook asks of `searchCandidates.ts`, counted (YAZ-2602 R2): the REAL functions behind
  * recording wrappers, so a test can say what a keystroke, a snapshot and a tree each cost.
  */
-const asked = vi.hoisted(() => ({ ranked: [] as number[], notes: [] as unknown[], folders: [] as string[] }))
+const asked = vi.hoisted(() => ({ ranked: [] as number[], notes: [] as unknown[], folders: [] as string[], files: [] as string[] }))
 vi.mock('./searchCandidates', async (importOriginal) => {
   const real = await importOriginal<typeof import('./searchCandidates')>()
   const searchRows: typeof real.searchRows = (candidates, query) => {
@@ -32,7 +32,11 @@ vi.mock('./searchCandidates', async (importOriginal) => {
     asked.folders.push(root)
     return real.folderCandidates(root, dirs, folders)
   }
-  return { ...real, searchRows, searchCandidates, folderCandidates }
+  const fileCandidates: typeof real.fileCandidates = (root, files) => {
+    asked.files.push(root)
+    return real.fileCandidates(root, files)
+  }
+  return { ...real, searchRows, searchCandidates, folderCandidates, fileCandidates }
 })
 
 import { useSearchResults, type SearchVault } from './useSearchResults'
@@ -69,14 +73,16 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 
 /** The Sidebar's own `dirs` (🔒 D1, YAZ-1491): folder rows need no index read at all. */
 const NO_DIRS: readonly string[] = []
+/** The Sidebar's own `files` (🔒 D3, YAZ-2620): the tree's files that are no notes, and no index read either. */
+const NO_FILES: readonly string[] = []
 
-function Harness({ watch, query, dirs = NO_DIRS }: { watch: WatchSource; query: string; dirs?: readonly string[] }) {
+function Harness({ watch, query, dirs = NO_DIRS, files = NO_FILES }: { watch: WatchSource; query: string; dirs?: readonly string[]; files?: readonly string[] }) {
   // The window's one vault, as the Sidebar hands it: the same list while nothing in it changed.
-  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs }], [watch, dirs]), query)
+  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs, files }], [watch, dirs, files]), query)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
-async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS, folders: IndexRecord[] = []) {
+async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS, folders: IndexRecord[] = [], files: readonly string[] = NO_FILES) {
   const bridge = installBridge(records, folders)
   tweak?.(bridge) // before the first render: the mount read is the one that can fail
   // A real fan-out watch (useWatch's shape), so "did search subscribe at all?" is answerable.
@@ -89,8 +95,8 @@ async function mount(records: IndexRecord[], query: string, tweak?: (bridge: Ret
   container = document.createElement('div')
   document.body.appendChild(container)
   reactRoot = createRoot(container)
-  await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} dirs={dirs} /></StrictMode>))
-  const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} dirs={dirs} /></StrictMode>))
+  await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} dirs={dirs} files={files} /></StrictMode>))
+  const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} dirs={dirs} files={files} /></StrictMode>))
   const emit = (ev: WatchEvent) => [...listeners].forEach((l) => l(ev))
   /** An event, then past the 100 ms quiet window a structural burst waits out (YAZ-2191). */
   const fire = async (ev: WatchEvent) => {
@@ -220,6 +226,20 @@ describe('useSearchResults (YAZ-803)', () => {
     expect(labels()).toEqual(['📁Archive'])
   })
 
+  it('S12: the tree\'s files that are no notes are rows too, by file name — behind a folder and a note of the same rank (🔒 D3, YAZ-2620)', async () => {
+    await mount([rec('Transcript')], 'transcript', undefined, ['/v/transcript'], [], ['/v/skills/transcript', '/v/skills/get-transcript.py'])
+    // Exact bucket: folder, note, then the file with no extension; substring bucket: the script.
+    expect(labels()).toEqual(['📁transcript', 'Transcript', 'transcript', 'get-transcript.py'])
+  })
+
+  it('S35: folders and files that are no notes survive an index that is not loaded or cannot be read — both come from the tree; the notes arrive with the index', async () => {
+    const { bridge, fire } = await mount([rec('Archive notes')], 'arch', (b) => b.index.mockRejectedValue(new Error('no index')), ['/v/Archive'], [], ['/v/archive.zip'])
+    expect(labels()).toEqual(['📁Archive', 'archive.zip'])
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Archive notes')], folders: [], generatedAt: 2, ids: true })
+    await fire({ type: 'add', path: '/v/Archive notes.md', mtime: 1 })
+    expect(labels()).toEqual(['📁Archive', 'Archive notes', 'archive.zip'])
+  })
+
   it('an unreadable index leaves search empty rather than throwing or surfacing anything', async () => {
     const { fire } = await mount([rec('Alpha')], 'a', (b) => b.index.mockRejectedValue(new Error('no index')))
     expect(labels()).toEqual([])
@@ -239,7 +259,7 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.path}|`)}</>
   }
   /** A vault with its own fan-out watcher, so a test can say which vault's watcher spoke and which subscriptions ended. */
-  const vault = (root: string, dirs: readonly string[] = NO_DIRS) => {
+  const vault = (root: string, dirs: readonly string[] = NO_DIRS, files: readonly string[] = NO_FILES) => {
     const listeners = new Set<(ev: WatchEvent) => void>()
     const counts = { subscribed: 0, ended: 0 }
     const watch: WatchSource = {
@@ -252,9 +272,9 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
         }
       },
     }
-    return { root, watch, dirs, counts, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
+    return { root, watch, dirs, files, counts, fire: (ev: WatchEvent) => [...listeners].forEach((l) => l(ev)) }
   }
-  const only = ({ root, watch, dirs }: SearchVault): SearchVault => ({ root, watch, dirs })
+  const only = ({ root, watch, dirs, files }: SearchVault): SearchVault => ({ root, watch, dirs, files })
   async function mountMany(byRoot: Record<string, IndexRecord[]>, vaults: readonly SearchVault[], query: string) {
     const bridge = { index: vi.fn(async (root: string) => ({ root, records: byRoot[root] ?? [], folders: [], generatedAt: 1, ids: true })) }
     Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
@@ -269,6 +289,7 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     asked.ranked.length = 0
     asked.notes.length = 0
     asked.folders.length = 0
+    asked.files.length = 0
   }
   const afterQuiet = () => act(() => new Promise<void>((r) => setTimeout(r, 150)))
 
@@ -333,6 +354,28 @@ describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
     expect(bridge.index).not.toHaveBeenCalled()
     expect([a.counts, b.counts]).toEqual([{ subscribed: 1, ended: 0 }, { subscribed: 1, ended: 0 }])
     expect(labels()).toEqual(['📁/a/arch', '/a/Alpha.md', '/b/Beta.md', '/b/Banana.md'])
+  })
+
+  it('the files that are no notes are rows of their own vault, behind its notes, in the one ranking; a keystroke rebuilds none of them, and a tree that changed one vault\'s files rebuilds that vault\'s file rows alone (YAZ-2620 D3, A9)', async () => {
+    const [a, b] = [vault('/a', ['/a/plan'], ['/a/plan', '/a/sub/plan.pdf']), vault('/b', NO_DIRS, ['/b/Plan'])]
+    const list = [only(a), only(b)]
+    const { bridge, render } = await mountMany({ '/a': [at('/a', 'Plan')], '/b': [at('/b', 'Plan B')] }, list, 'plan')
+    // Exact names first — folder, note, other file inside a vault, then the next vault's — then the names that start with the text.
+    expect(labels()).toEqual(['📁/a/plan', '/a/Plan.md', '/a/plan', '/b/Plan', '/a/sub/plan.pdf', '/b/Plan B.md'])
+    forget()
+    bridge.index.mockClear()
+    await render(list, 'plan.')
+    expect(labels()).toEqual(['/a/sub/plan.pdf'])
+    expect(asked.ranked.length).toBeGreaterThan(0)
+    expect(new Set(asked.ranked)).toEqual(new Set([6])) // one list: 1 folder, 2 notes, 3 other files
+    expect(asked.files.length + asked.notes.length + asked.folders.length).toBe(0)
+
+    // The Sidebar's list after a tree of `/b` landed with a new file: `/b`'s file rows, no row of `/a`, no read.
+    await render([list[0], { ...only(b), files: ['/b/Plan', '/b/plan.png'] }], 'plan.')
+    expect(new Set(asked.files)).toEqual(new Set(['/b']))
+    expect(asked.notes.length + asked.folders.length).toBe(0)
+    expect(bridge.index).not.toHaveBeenCalled()
+    expect(labels()).toEqual(['/a/sub/plan.pdf', '/b/plan.png'])
   })
 
   it('a vault that joins is read once and the vault that stays is not read again; a vault that leaves ends its subscription and takes its rows', async () => {
