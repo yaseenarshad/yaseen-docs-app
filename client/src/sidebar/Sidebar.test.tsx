@@ -1956,7 +1956,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(eye.title).toBe('Focus')
     expect(eye.className).toBe('sidebar__lens sidebar__lens--glyph sidebar__lens--active') // the accent rides on these two classes (app.css)
     expect(eye.getAttribute('aria-selected')).toBe('true')
-    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(3) // the tabs alone: no "Exit focus mode", nothing to unfold
+    expect(el.querySelectorAll('.sidebar__lenses button')).toHaveLength(3) // the tabs alone: no eye button at the far end, nothing to unfold
     expect(bodyMsg(el)).toBe(EMPTY)
     expect(countLine(el)).toBeNull()
     act(() => tabs[0].click())
