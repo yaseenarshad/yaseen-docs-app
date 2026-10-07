@@ -9,7 +9,7 @@ The record is two comments there: "Locked decisions and scope (D1 to D8)" and "T
 - A vault can have a number, 1 to 9 (`folders[root].key`), set by right-click → "Set shortcut".
 - `⌘1` to `⌘9` (Window menu rows) go to that vault through the one door, `openRecentBeside`.
 - A vault is "last used" when its window takes focus. The window title is `<vault> — <page>`.
-- Done means: 2A to 4D under YAZ-2555 are Done, the work is on `main`, and Yaseen has walked S1 to S42.
+- Done means: 2A to 4D under YAZ-2555 are Done, the work is on `main`, and Yaseen has done the hand walk (35 steps, the cases of S1 to S43 that need the real app).
 
 ## Constraints
 
@@ -31,22 +31,24 @@ The record is two comments there: "Locked decisions and scope (D1 to D8)" and "T
 
 - Done:
   - [x] 1- Scope (YAZ-2557): decisions and scenario record on the parent
-  - [x] 2A- The vault number in the store, and "Set shortcut" (YAZ-2559). Beyond the plan: `ipc/state.ts` lets `key` through; `freeVaultKey` is shared by the store and the cache; `storage.keyedVaults()`.
-- Now: [→] 2B, 2C (start from the 2A commit, own worktrees) and 2D (worktree `-2d`, from `749b5df`)
+  - [x] 2A- The vault number in the store, and "Set shortcut" (YAZ-2559, `4b47a90`). Beyond the plan: `ipc/state.ts` lets `key` through; `freeVaultKey` is shared by the store and the cache; `storage.keyedVaults()`.
+  - [x] 2B- The `⌘O` list: groups, labels, badges (YAZ-2560, `674c91d`)
+  - [x] 2C- Window menu rows and `⌘1` to `⌘9` (YAZ-2561, `509383c`)
+  - [x] 2D- "Last used" on focus, vault-first title (YAZ-2562, `19c5b80`)
+  - [x] 3A- Audit (YAZ-2564): 1 must fix, 13 should fix, 12 optional, as a comment there
+  - [x] 3B- Apply the audit (YAZ-2565, `7b99a1b`): 15 items done, 5 declined with reasons on the issue. The must fix: no focus bump during a quit.
+  - [x] D8: three size ceilings set to the measured values (`e9e2b9f`)
+  - [x] 4C- Docs (YAZ-2569): `docs/CONTRACTS.md`, `docs/REGRESSION.md` S14, `README.md`. With it: the door bumps through `noteUsed`, so the vault that is already on top is not written again (S25).
+  - [x] 4A- Scenario table and gates (YAZ-2567). Playwright not run (standing rule): step 6 and the changed step 2 of `desktop/e2e/vaultSwitcher.spec.ts` are written and typechecked only.
+- Now: [→] 4D- Pull request is open (YAZ-2570). STOP there until Yaseen's hand walk passes.
 - Remaining:
-  - [ ] 2B- The `⌘O` list: groups, labels, badges (YAZ-2560)
-  - [ ] 2C- Window menu rows and `⌘1` to `⌘9` (YAZ-2561)
-  - [ ] 2D- "Last used" on focus, vault-first title (YAZ-2562)
-  - [ ] 3A- Audit the change set (YAZ-2564)
-  - [ ] 3B- Apply the audit (YAZ-2565)
-  - [ ] 4A- Scenario tests match the record, gates green (YAZ-2567)
-  - [ ] 4C- Docs (YAZ-2569)
-  - [ ] 4D- Pull request (YAZ-2570), then stop
-  - [ ] 4B- Yaseen's hand walk (YAZ-2568), then merge
+  - [ ] 4B- Yaseen's hand walk (YAZ-2568): setup in `~/Desktop/yaz-2555-demo/` (`run.sh`, `reset.sh`), 35 steps on the issue
+  - [ ] Merge, handoff comment on the parent, remove the worktree and the branch
 
 ## Open Questions
 
-- None.
+- UNCONFIRMED: D5's "a window's first focus does not count". If macOS does not focus each restored window at launch, one switch per window after a relaunch is not recorded. Step 33 of the hand walk shows which it is. If it fails, it goes to Yaseen as a decision.
+- UNCONFIRMED: a `&` in a vault name in the Window menu (written as `&&`), and whether the menu misbehaves when it is built again inside its own click. Steps 13 and 14 of the hand walk.
 
 ## Working Set
 
