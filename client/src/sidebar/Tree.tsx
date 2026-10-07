@@ -90,11 +90,12 @@ interface TreeProps {
   /** Absolute path of the directory these nodes are children of (the root at depth 0; '' above the vault rows, which no one directory holds). */
   dirPath: string
   /**
-   * The paths that are VAULT rows (YAZ-2602 D3): with two or more vaults each vault is one folder
-   * row, labelled as the app names the vault. It opens, closes, selects and takes a drop like a
-   * folder, and is no page: it does not open as a tab. Empty with one vault.
+   * The paths that are VAULT rows (YAZ-2602 D3), each with its vault's name: with two or more vaults
+   * each vault is one folder row, labelled as the app names the vault. It opens, closes, selects and
+   * takes a drop like a folder, and is no page: it does not open as a tab. Empty with one vault.
+   * A top row that is NOT one — a focused folder (D4) — shows the name of the vault that holds it.
    */
-  vaultRows: ReadonlySet<string>
+  vaultRows: ReadonlyMap<string, string>
   expanded: ReadonlySet<string>
   activeFile: string | null
   onToggle: (dir: string) => void
@@ -158,8 +159,14 @@ function TreeLevel({
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
-  // The reorder gesture lives on depth-0 rows alone; deeper rows of a reorderable tree drag nothing.
-  const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
+  // The reorder gesture lives on the favorites' own rows alone — the top rows, or the rows under each
+  // vault's row where the window has two or more (YAZ-2602 D5); a vault row and every deeper row drag nothing.
+  const rowReorder = reorder !== undefined && (vaultRows.size === 0 ? depth === 0 : vaultRows.has(dirPath)) ? reorder : null
+  /** The vault a focused top row is in (YAZ-2602 D4, S19): said only where the window has two or more, and never on a vault row. */
+  const vaultTag = (path: string) => {
+    const name = depth > 0 || vaultRows.has(path) ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
+    return name !== undefined && <span className="tree__vault">{name}</span>
+  }
   // What a FILE row's drag does: move on disk (E1b) on an ordinary tree, reorder at depth 0 of a reorderable one, nothing below that.
   const fileDrag: Pick<TreeFileMove, 'start' | 'end'> | null = reorder === undefined ? move : rowReorder
   const dropEdge = (path: string) => (rowReorder?.over?.path === path ? ` tree__row--drop-${rowReorder.over.edge}` : '')
@@ -247,6 +254,7 @@ function TreeLevel({
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
                 <span className="tree__label">{vaultRows.has(node.path) ? node.name : pageLabel(node.path, true, titles)}</span>
+                {vaultTag(node.path)}
                 {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}

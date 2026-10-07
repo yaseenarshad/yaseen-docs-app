@@ -85,8 +85,9 @@ export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeNo
 
 export function useTreeDrag(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
-  favoritesRef: RefObject<readonly string[]>,
-  saveFavorites: (next: readonly string[]) => void,
+  /** Each vault's favorites, by its root (YAZ-2602 D5), and the writer of one vault's list. */
+  favoritesRef: RefObject<Readonly<Record<string, readonly string[]>>>,
+  saveFavorites: (vault: string, next: readonly string[]) => void,
   focusFavorites: readonly string[],
   rootOf: (path: string) => string,
   onNotice: (message: string, kind?: NoticeKind) => void,
@@ -136,13 +137,14 @@ export function useTreeDrag(
     setReorderDragging(null)
     setReorderOver(null)
     if (from === null || over === null || over.path === from) return
-    const prev = favoritesRef.current
-    const without = prev.filter((p) => p !== from)
+    // The order is its own vault's (YAZ-2602 S26): the list of the vault that holds the dragged row.
+    const vault = rootOf(from)
+    const without = (favoritesRef.current[vault] ?? []).filter((p) => p !== from)
     const i = without.indexOf(over.path)
     if (i < 0) return
     const at = over.edge === 'before' ? i : i + 1
-    saveFavorites([...without.slice(0, at), from, ...without.slice(at)])
-  }, [reorderDragging, reorderOver, saveFavorites])
+    saveFavorites(vault, [...without.slice(0, at), from, ...without.slice(at)])
+  }, [reorderDragging, reorderOver, rootOf, saveFavorites])
 
   /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
   const reorderOff = focusFavorites.length > 0
@@ -151,14 +153,15 @@ export function useTreeDrag(
       dragging: reorderDragging,
       over: reorderOver,
       start: reorderOff ? () => undefined : setReorderDragging,
-      hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
+      // A row of a different vault's group is no place for it (S26): no marker there, so a drop changes nothing.
+      hover: (path, edge) => setReorderOver((prev) => (reorderDragging === null || rootOf(path) !== rootOf(reorderDragging) ? null : prev?.path === path && prev.edge === edge ? prev : { path, edge })),
       drop: dropReorder,
       end: () => {
         setReorderDragging(null)
         setReorderOver(null)
       },
     }),
-    [reorderDragging, reorderOver, reorderOff, dropReorder],
+    [reorderDragging, reorderOver, reorderOff, dropReorder, rootOf],
   )
 
   return { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder }
@@ -170,7 +173,7 @@ export function useFileClipboard(
   /** The vault that holds a path (YAZ-2602): a paste is judged by the vault it lands in. */
   vaultOf: (path: string) => SidebarVault,
   /** The vault rows' paths; empty with one vault. */
-  vaultRows: ReadonlySet<string>,
+  vaultRows: ReadonlyMap<string, string>,
   menu: MenuTargets | null,
   selectedPaths: ReadonlySet<string>,
   orderedSelectedPaths: () => string[],
@@ -347,7 +350,7 @@ export function useFileClipboard(
 }
 
 export function useInlineEdits(
-  /** The first vault's root: the one the Favorites tab stands on. */
+  /** The first vault's root: blank space's target on the Favorites tab, in a window with one vault. */
   root: string,
   /** The vault that holds a path (YAZ-2602 R4): a new note is made as the vault it is made in makes one. */
   vaultOf: (path: string) => SidebarVault,
