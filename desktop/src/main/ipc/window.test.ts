@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -34,6 +34,7 @@ let manager: {
   openWindow: ReturnType<typeof vi.fn>
   duplicateWindow: ReturnType<typeof vi.fn>
   openRecentBeside: ReturnType<typeof vi.fn>
+  openVaultSet: ReturnType<typeof vi.fn>
   closeWindow: ReturnType<typeof vi.fn>
   handleFlushed: ReturnType<typeof vi.fn>
 }
@@ -47,7 +48,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), closeWindow: vi.fn(), handleFlushed: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -69,7 +70,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -274,6 +275,70 @@ describe('registerWindowIpc', () => {
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await registered(CONTRACT.window.openRecent.channel)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
     expect(manager.openRecentBeside).toHaveBeenCalledTimes(2)
+  })
+
+  describe('saved sets of vaults (YAZ-2602 D8)', () => {
+    const TWO = ['/v', '/w']
+    const showTwo = () => store.upsertWindow({ ...entry, roots: TWO })
+
+    it('window:open-set validates the id and returns the door\'s answer: what opened, and the folders that are gone (S65, S66)', async () => {
+      expect(await registered(CONTRACT.window.openSet.channel)({ sender }, 's1')).toEqual(ok({ opened: true, missing: [] }))
+      expect(manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('s1')
+      manager.openVaultSet.mockReturnValueOnce({ opened: false, missing: ['/v', '/w'] })
+      expect(await registered(CONTRACT.window.openSet.channel)({ sender: stranger }, 's2')).toEqual(ok({ opened: false, missing: ['/v', '/w'] })) // any window may ask
+      for (const junk of [undefined, 5, null, ['s1']]) expect(await registered(CONTRACT.window.openSet.channel)({ sender }, junk)).toEqual(bad('BAD_REQUEST'))
+      expect(manager.openVaultSet).toHaveBeenCalledTimes(2)
+    })
+
+    it('window:save-set saves the vaults of the CALLING window under the name; the same name replaces; false when the store refuses (S63, S68, S70)', async () => {
+      // S70: a window with one vault has nothing to save.
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, 'Work')).toEqual(ok(false))
+      expect(store.get().vaultSets).toEqual([])
+      showTwo()
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, '  Work  ')).toEqual(ok(true))
+      expect(store.get().vaultSets).toEqual([{ id: expect.any(String), name: 'Work', roots: TWO, lastUsed: expect.any(Number) }])
+      const { id } = store.get().vaultSets[0]
+      // The window's vaults change: the saved set does not (S69), until the same name is saved again.
+      store.upsertWindow({ ...entry, roots: ['/v', '/x', '/w'] })
+      expect(store.get().vaultSets[0].roots).toEqual(TWO)
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, 'Work')).toEqual(ok(true))
+      expect(store.get().vaultSets).toEqual([{ id, name: 'Work', roots: ['/v', '/x', '/w'], lastUsed: expect.any(Number) }])
+
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, '   ')).toEqual(ok(false))
+      for (let i = 1; i < MAX_VAULT_SETS; i++) store.saveVaultSet(`Set ${i}`, TWO)
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, 'The 21st')).toEqual(ok(false)) // R12
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, 'Work')).toEqual(ok(true))
+      expect(store.get().vaultSets).toHaveLength(MAX_VAULT_SETS)
+
+      const before = store.get()
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, 5)).toEqual(bad('BAD_REQUEST'))
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
+      expect(await registered(CONTRACT.window.saveSet.channel)({ sender: stranger }, 'Mine')).toEqual(bad('BAD_REQUEST'))
+      expect(store.get()).toBe(before)
+    })
+
+    it('window:rename-set and window:remove-set act on the set by id: a refused rename is false, a remove forgets the entry alone (S67)', async () => {
+      const a = store.saveVaultSet('A', TWO, 1)
+      const b = store.saveVaultSet('B', ['/x', '/y'], 2)
+      if (a === null || b === null) throw new Error('the store refused a set')
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, a.id, '  Alpha  ')).toEqual(ok(true))
+      expect(store.get().vaultSets).toEqual([b, { ...a, name: 'Alpha' }])
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, a.id, 'B')).toEqual(ok(false))
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, a.id, '')).toEqual(ok(false))
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, 'nope', 'New')).toEqual(ok(false))
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, 5, 'New')).toEqual(bad('BAD_REQUEST'))
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, a.id, 5)).toEqual(bad('BAD_REQUEST'))
+      expect(await registered(CONTRACT.window.renameSet.channel)({ sender }, a.id)).toEqual(bad('BAD_REQUEST'))
+      expect(store.get().vaultSets).toEqual([b, { ...a, name: 'Alpha' }])
+
+      const windowsBefore = store.get().windows
+      expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, b.id)).toEqual(ok(undefined))
+      expect(store.get().vaultSets).toEqual([{ ...a, name: 'Alpha' }])
+      expect(store.get().windows).toBe(windowsBefore)
+      expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, 'nope')).toEqual(ok(undefined)) // an unknown id is a no-op
+      expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, 5)).toEqual(bad('BAD_REQUEST'))
+      expect(store.get().vaultSets).toEqual([{ ...a, name: 'Alpha' }])
+    })
   })
 
   it('window:duplicate hands the caller entry to the manager; unknown callers are rejected', async () => {

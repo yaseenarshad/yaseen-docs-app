@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, stripSlash, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -95,6 +95,16 @@ export interface WindowManager extends WindowLookup {
    */
   openRecentBeside(path: string): boolean
   /**
+   * The door for a saved set of vaults (YAZ-2602 D8, `window:open-set`). Probes each folder: the
+   * vaults that are left, in the saved order, are what opens, and the ones that are gone come back
+   * in `missing` — the saved set itself keeps them, a folder can come back (S66). Every live window
+   * whose vaults are EXACTLY the ones left (`sameVaults`: the order does not count) is raised, as
+   * `openRecentBeside` raises; with none, ONE new window opens on them, on the first vault's
+   * remembered last file (S65). Either way the set becomes the last used. No folder left, or an
+   * unknown `id`, opens nothing and changes nothing → `opened: false`.
+   */
+  openVaultSet(id: string): OpenSetResult
+  /**
    * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
    * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
    * No live window for `id` (mid-close race) is a no-op.
@@ -116,7 +126,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'closeWindow' | 'handleFlushed'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openVaultSet' | 'closeWindow' | 'handleFlushed'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -352,6 +362,25 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     win.webContents.send(CONTRACT.link.onNotice.channel, message)
   }
 
+  /**
+   * Raise every live window whose entry matches (YAZ-1767 🔒 D9) — LEAST recently focused first, so
+   * the most recently focused one ends on top (a window never focused ranks last). False = none is
+   * live: the caller opens one.
+   */
+  const raiseWindows = (matches: (entry: WindowEntry) => boolean): boolean => {
+    const wins = store
+      .get()
+      .windows.filter(matches)
+      .map((w) => ({ id: w.id, win: live.get(w.id) }))
+      .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
+    const rank = (id: string): number => {
+      const at = focusOrder.indexOf(id)
+      return at === -1 ? Number.POSITIVE_INFINITY : at
+    }
+    for (const { win } of wins.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
+    return wins.length > 0
+  }
+
   /** The one open-recent door (see `WindowManager.openRecentBeside`). A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1). */
   const openRecentBeside = (path: string): boolean => {
     // Beside never passes through the renderer's validating openRoot, so probe here: a dead
@@ -364,24 +393,25 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
     noteUsed(path)
     // Already open (YAZ-1767 🔒 D9) — in a window that shows it, alone or beside others (YAZ-2602 D6): raise that vault's live windows instead of opening a third
-    // copy — LEAST recently focused first, so the most recently focused one ends on top (a
-    // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
+    // copy. Roots compare like `resolveLinkTarget`: trailing slash off.
     const wanted = stripSlash(path)
-    const alreadyOpen = store
-      .get()
-      .windows.filter((w) => w.roots.some((root) => stripSlash(root) === wanted))
-      .map((w) => ({ id: w.id, win: live.get(w.id) }))
-      .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
-    if (alreadyOpen.length > 0) {
-      const rank = (id: string): number => {
-        const at = focusOrder.indexOf(id)
-        return at === -1 ? Number.POSITIVE_INFINITY : at
-      }
-      for (const { win } of alreadyOpen.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
-      return true
-    }
+    if (raiseWindows((w) => w.roots.some((root) => stripSlash(root) === wanted))) return true
     openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
     return true
+  }
+
+  /** The door for a saved set of vaults (see `WindowManager.openVaultSet`). */
+  const openVaultSet = (id: string): OpenSetResult => {
+    const set = store.get().vaultSets.find((s) => s.id === id)
+    if (set === undefined) return { opened: false, missing: [] }
+    const missing = set.roots.filter((root) => !host.dirExists(root))
+    const found = set.roots.filter((root) => !missing.includes(root))
+    if (found.length === 0) return { opened: false, missing }
+    // The set's window is the one that shows exactly the vaults that are left (S66): a window opened
+    // earlier without the missing folder is raised, not doubled.
+    if (!raiseWindows((w) => sameVaults(w.roots, found))) openWindow({ root: found[0], roots: found, file: store.get().folders[found[0]]?.lastFile ?? null })
+    store.touchVaultSet(id)
+    return { opened: true, missing }
   }
 
   return {
@@ -426,6 +456,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     openRecentBeside,
+
+    openVaultSet,
 
     closeWindow(id) {
       const win = live.get(id)

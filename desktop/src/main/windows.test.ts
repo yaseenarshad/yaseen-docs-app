@@ -488,6 +488,130 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
   })
 })
 
+describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaults opens as ONE window)', () => {
+  const entry = (id: string, ...roots: string[]) => ({ id, root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+  /** Three saved sets; "Work" (`/v/b`, `/v/a`, in that order) is the least recently used. */
+  const seedSets = () => {
+    const work = store.saveVaultSet('Work', ['/v/b', '/v/a'], 1)
+    const home = store.saveVaultSet('Home', ['/v/c', '/v/d'], 2)
+    const three = store.saveVaultSet('Three', ['/v/a', '/v/b', '/v/c'], 3)
+    if (work === null || home === null || three === null) throw new Error('the store refused a set')
+    return { work, home, three }
+  }
+  const setIds = () => store.get().vaultSets.map((s) => s.id)
+
+  it('S65: no window shows exactly the set → ONE new window on its vaults in the SAVED order, on the first vault\'s last file; the set becomes the last used', () => {
+    const { work, home, three } = seedSets()
+    store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
+    store.setFolder('/v/a', { lastFile: '/v/a/Other.md' })
+    // Windows that show MORE vaults, FEWER vaults, or one different vault are not the set's window.
+    store.upsertWindow(entry('more', '/v/a', '/v/b', '/v/x'))
+    store.upsertWindow(entry('fewer', '/v/b'))
+    store.upsertWindow(entry('other', '/v/b', '/v/x'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    vi.setSystemTime(5000)
+    expect(manager.openVaultSet(work.id)).toEqual({ opened: true, missing: [] })
+    expect(created).toHaveLength(4)
+    expect(created.slice(0, 3).map((c) => c.win.focusCount)).toEqual([0, 0, 0])
+    expect(created[3].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/a'], file: '/v/b/Start here.md', tabs: ['/v/b/Start here.md'] })
+    expect(store.get().windows).toHaveLength(4)
+    expect(store.get().windows[3]).toEqual(created[3].entry)
+    expect(setIds()).toEqual([work.id, three.id, home.id])
+    expect(store.get().vaultSets[0]).toEqual({ ...work, lastUsed: 5000 })
+
+    // A set whose first vault has no remembered file opens on nothing.
+    expect(manager.openVaultSet(home.id)).toEqual({ opened: true, missing: [] })
+    expect(created[4].entry).toMatchObject({ root: '/v/c', roots: ['/v/c', '/v/d'], file: null, tabs: [] })
+    // An id that names no set opens nothing and changes nothing.
+    const before = store.get()
+    expect(manager.openVaultSet('nope')).toEqual({ opened: false, missing: [] })
+    expect(created).toHaveLength(5)
+    expect(store.get()).toBe(before)
+  })
+
+  it('S65: a window whose vaults are EXACTLY the set is raised — the order and a trailing slash do not count — and nothing opens; with several, the one focused last ends on top', () => {
+    const { work, home, three } = seedSets()
+    store.upsertWindow(entry('ab', '/v/a/', '/v/b')) // the set is saved as b, a
+    store.upsertWindow(entry('ba', '/v/b', '/v/a'))
+    store.upsertWindow(entry('abc', '/v/a', '/v/b', '/v/c'))
+    store.upsertWindow(entry('a', '/v/a'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    const [ab, ba, abc, a] = created.map((x) => x.win)
+    const order: string[] = []
+    ab.focus = () => order.push('ab')
+    ba.focus = () => order.push('ba')
+    abc.focus = () => order.push('abc')
+    a.focus = () => order.push('a')
+    ba.emit('focus')
+    ab.emit('focus')
+    ab.minimized = true
+    vi.setSystemTime(7000)
+    expect(manager.openVaultSet(work.id)).toEqual({ opened: true, missing: [] })
+    expect(order).toEqual(['ba', 'ab']) // `ab` had focus last: it ends on top
+    expect(ab.minimized).toBe(false)
+    expect(created).toHaveLength(4)
+    expect(store.get().windows.map((w) => w.roots)).toEqual([['/v/a/', '/v/b'], ['/v/b', '/v/a'], ['/v/a', '/v/b', '/v/c'], ['/v/a']])
+    expect(setIds()).toEqual([work.id, three.id, home.id])
+    expect(store.get().vaultSets[0].lastUsed).toBe(7000)
+
+    // The focus history moves, and a window never focused ranks last. The set of three raises its own window only.
+    order.length = 0
+    ba.emit('focus')
+    expect(manager.openVaultSet(work.id).opened).toBe(true)
+    expect(order).toEqual(['ab', 'ba'])
+    order.length = 0
+    expect(manager.openVaultSet(three.id)).toEqual({ opened: true, missing: [] })
+    expect(order).toEqual(['abc'])
+    expect(created).toHaveLength(4)
+    expect(setIds()).toEqual([three.id, work.id, home.id])
+
+    // The exact window is mid-close (an entry with no live window): a new window opens.
+    ab.destroy()
+    ba.destroy()
+    expect(manager.openVaultSet(work.id).opened).toBe(true)
+    expect(created).toHaveLength(5)
+    expect(created[4].entry.roots).toEqual(['/v/b', '/v/a'])
+  })
+
+  it('S66: a folder that is gone is left out and named in `missing`, and the saved set keeps it; a window that already shows exactly the vaults that are left is raised; all gone → nothing opens', () => {
+    const { work, home, three } = seedSets()
+    store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
+    const gone = new Set(['/v/a'])
+    const { host, created } = makeHost([AREA], () => true, (p) => !gone.has(p))
+    const manager = createWindowManager(store, host)
+    // `/v/a` is gone: "Three" opens on b and c, in the saved order, on the last file of the first vault that is left.
+    expect(manager.openVaultSet(three.id)).toEqual({ opened: true, missing: ['/v/a'] })
+    expect(created).toHaveLength(1)
+    expect(created[0].entry).toMatchObject({ root: '/v/b', roots: ['/v/b', '/v/c'], file: '/v/b/Start here.md' })
+    // The folder can come back (a drive that is not mounted): the set is as it was saved, and it is the last used.
+    expect(store.get().vaultSets[0]).toMatchObject({ id: three.id, roots: ['/v/a', '/v/b', '/v/c'] })
+    // Again: the window that opened without the folder is the set's window now. It is raised; no second one opens.
+    expect(manager.openVaultSet(three.id)).toEqual({ opened: true, missing: ['/v/a'] })
+    expect(created).toHaveLength(1)
+    expect(created[0].win.focusCount).toBe(1)
+
+    // The folder is back: the window on b and c is one vault short of the set, so the full set opens beside it.
+    gone.clear()
+    expect(manager.openVaultSet(three.id)).toEqual({ opened: true, missing: [] })
+    expect(created).toHaveLength(2)
+    expect(created[1].entry.roots).toEqual(['/v/a', '/v/b', '/v/c'])
+
+    // Every folder of "Home" is gone: no window, no raise, and the set is neither changed nor made the last used.
+    gone.add('/v/c').add('/v/d')
+    const before = store.get()
+    expect(manager.openVaultSet(home.id)).toEqual({ opened: false, missing: ['/v/c', '/v/d'] })
+    expect(created).toHaveLength(2)
+    expect(created.map((c) => c.win.focusCount)).toEqual([1, 0])
+    expect(store.get()).toBe(before)
+    expect(setIds()).toEqual([three.id, home.id, work.id])
+    expect(work.roots).toEqual(['/v/b', '/v/a'])
+  })
+})
+
 describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'s window bumps it in the MRU)', () => {
   const mru = (): string[] => store.get().recents.map((r) => r.path)
 
