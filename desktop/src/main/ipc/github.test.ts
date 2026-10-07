@@ -7,7 +7,7 @@ import { defaultAppState, defaultRightPanelIdentity, VAULT_CONFIG_DIR, type AppS
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { activeConfigWatcherRoots } from '../vaultConfig'
-import { rootsOf } from './broadcast'
+import { rootsOf, syncPerRoot } from './broadcast'
 import { registerGithubIpc } from './github'
 
 vi.mock('electron', () => ({
@@ -76,6 +76,32 @@ describe('rootsOf', () => {
     expect(rootsOf(stateWith([]))).toEqual([])
     expect(rootsOf(stateWith([win('w1', null)]))).toEqual([])
     expect(rootsOf(stateWith([win('w1', '/a'), win('w2', '/a'), win('w3', null), win('w4', '/b')]))).toEqual(['/a', '/b'])
+  })
+
+  /** A window that shows `roots`, the first one its `root` (YAZ-2602 D1). */
+  const showing = (id: string, ...roots: string[]): WindowEntry => ({ ...win(id, roots[0] ?? null), roots })
+
+  it('is every vault of every window, once: a vault that is only the SECOND vault of a window counts (YAZ-2602 S77)', () => {
+    expect(rootsOf(stateWith([showing('w1', '/a', '/b'), showing('w2', '/b', '/c'), win('w3', null), win('w4', '/a')]))).toEqual(['/a', '/b', '/c'])
+  })
+
+  it("syncPerRoot keeps one subscription per vault that any window shows: a window's second vault is subscribed when it joins, and dropped when the last window that shows it lets go (YAZ-2602 S77)", async () => {
+    const own = createStore(path.join(dir, 'own.json')) // no github IPC on this one: its vaults are not folders on disk
+    const subscribed: string[] = []
+    syncPerRoot(own, (root) => {
+      subscribed.push(root)
+      return () => void subscribed.splice(subscribed.indexOf(root), 1)
+    })
+    own.upsertWindow(showing('w1', '/a'))
+    expect(subscribed).toEqual(['/a'])
+    own.upsertWindow(showing('w1', '/a', '/b'))
+    own.upsertWindow(showing('w2', '/b'))
+    expect(subscribed).toEqual(['/a', '/b']) // one each, however many windows show it
+    own.upsertWindow(showing('w1', '/a')) // w2 still shows /b
+    expect(subscribed).toEqual(['/a', '/b'])
+    own.removeWindow('w2')
+    expect(subscribed).toEqual(['/a'])
+    await own.flush()
   })
 })
 
