@@ -21,7 +21,7 @@
 
 - Merge order: the search (PR #96, YAZ-2620) first — DONE, merged as `7c77c93` by this agent. Then this work.
 - "its going to be up to you to get allll the prs merged to main": this agent merges. PR #45 (`windows-fixes`) stays as it is ("no PR 45 you can leave for now").
-- The hand walk comes BEFORE the merge of this work: "you can launch a demo vault and then i'll approve and then we can merge to main".
+- The hand walk comes BEFORE the merge of this work: "you can launch a demo vault and then i'll approve and then we can merge to main". The agent STARTS the dev app itself on scratch vaults with an isolated user-data dir ("no start command needed, you just launch the test vault automatically and then i'll go through it hand walk"). The agent does not drive the app; Yaseen does each step.
 - A vault row has no focus item ("1 is fine, keep going"). Amendments A1 to A9 on YAZ-2602 are locked.
 - Size ceilings can rise for this work ("no ok needed to raise the size gate, u have permission").
 - CLOSEOUT is authorized for after the merge. Follow `~/Documents/GitHub/skills-growprofit-eng/yaseen-skills-and-prompts/1-yaseen-engineering-workflow/references/4-closeout.md`. Also: close out the OTHER issues if they are still open, attach each PR to its Linear issue (#95 YAZ-2589, #96 YAZ-2620, #97 YAZ-2619, this work's PR to YAZ-2602), and delete ALL the worktrees after the PRs are merged and everything is verified (`…-yaz-2602`, `-m`, `-r`, `…-yaz-2620`, `…-yaz-2589`), "cause u are the last one working".
