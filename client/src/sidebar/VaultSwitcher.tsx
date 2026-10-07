@@ -13,7 +13,7 @@
  *
  * Two groups (YAZ-2555 D1): the vaults that have a window stand first, under a small "Open" label;
  * then a hairline and "Not open". The labels are not rows — never focused, never highlighted. The
- * rows (A1) are the recents, plus every open vault (`openVaultRoots` over the cache's windows),
+ * rows (A1) are `listVaults`'s (shared with `yaseendocs vaults`, YAZ-2556 D2): the recents, plus every open vault,
  * plus every vault that has a number: each group is the recents in last-used order, then — with no
  * time, they have none — "Open" the open vaults that fell out of the recents, "Not open" the
  * numbered ones, in number order. A numbered row wears its key, `⌘<n>`, between the name and the
@@ -63,7 +63,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { openVaultRoots } from '@shared/types'
+import { listVaults } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
@@ -173,11 +173,9 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   const openPanel = useCallback(() => {
     // Anchor = the `.sidebar__header` rect (the name slot's parent): the panel hangs off the whole header, flush with the sidebar (D5).
     const rect = slotRef.current?.parentElement?.getBoundingClientRect()
-    // The rows (YAZ-2555 A1): the recents, then the open vaults and the numbered ones (in number order) that are not among them.
-    const open = openVaultRoots(storage.getWindows())
-    const recents = new Map(storage.getRecentRoots().map((r) => [r.path, r.lastOpened]))
-    const paths = new Set([...recents.keys(), ...open, ...storage.keyedVaults().map((v) => v.path)])
-    const rows = [...paths].map((path) => ({ name: storage.vaultName(path), folder: basename(path), path, lastOpened: recents.get(path) ?? null, open: open.includes(path), key: storage.vaultKey(path) }))
+    // The rows (YAZ-2555 A1) are `listVaults`'s: the one list that `yaseendocs vaults` prints too (YAZ-2556 D2).
+    const vaults = listVaults({ recents: storage.getRecentRoots(), windows: storage.getWindows(), folders: storage.getFolders() })
+    const rows = vaults.map(({ lastUsed, ...vault }) => ({ ...vault, folder: basename(vault.path), lastOpened: lastUsed }))
     setPanel({ rows, now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
     setQuery('')
     setMissing(new Set())

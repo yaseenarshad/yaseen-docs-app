@@ -18,13 +18,13 @@ import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
 import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
-import { applyUserDataOverride } from './userData'
+import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
 import { createWindowManager } from './windows'
 import { createWindowOpenHandler } from './windowOpenPolicy'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
-app.setName('Yaseen Docs')
+app.setName(APP_NAME)
 applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
 
 /** One running instance (GRO-2160): a second launch focuses the first; a link in its argv routes (E1). */
@@ -65,7 +65,8 @@ app.on('open-url', (event, url) => {
 // Finder "Open With" (E2, GRO-2172) hands a plain absolute path — also before `ready` on cold
 // start. Encoding it as a yaseendocs:// link reuses the whole E1 pipeline (queue, parse, routing,
 // markdown/exists guards); fileLink ↔ parseFileLink is lossless (links.test.ts round trips). The
-// packaged bundle's `fileAssociations` (role Alternate) declaration is F1's job.
+// packaged bundle's `fileAssociations` (role Alternate) declaration is F1's job. A FOLDER comes the
+// same way (`open -a "Yaseen Docs" <folder>`, the Dock icon) and `routeToFile` opens it as a vault (YAZ-2556 D1).
 app.on('open-file', (event, path) => {
   event.preventDefault()
   links.push(fileLink(path))
@@ -76,7 +77,7 @@ protocol.registerSchemesAsPrivileged([APP_SCHEME])
 const RENDERER_DIR = join(__dirname, '../renderer')
 
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
-const store = createStore(join(app.getPath('userData'), 'yaseendocs.json'))
+const store = createStore(join(app.getPath('userData'), STATE_FILE))
 
 /** Persistent vault-index cache (GRO-2223 D1): one JSON per vault under userData, never in the vault. */
 initIndexCache(join(app.getPath('userData'), 'index-cache'))
@@ -122,7 +123,8 @@ const manager = createWindowManager(store, {
       return false
     }
   },
-  // The open-recent door's probe (YAZ-1767 D1; was the menu host's until the switcher shared the path).
+  // The open-recent door's probe (YAZ-1767 D1; was the menu host's until the switcher shared the path),
+  // and `routeToFile`'s first question: a folder from outside goes to that door (YAZ-2556 D1).
   dirExists(path) {
     try {
       return statSync(path).isDirectory()

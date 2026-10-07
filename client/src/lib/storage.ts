@@ -93,7 +93,9 @@ export const storage = {
 
   getRecentRoots: (): RecentRoots => state.recents,
   /** Every window's entry (YAZ-2555 D1: the open vaults come from it). */
-  getWindows: (): readonly WindowEntry[] => state.windows,
+  getWindows: (): WindowEntry[] => state.windows,
+  /** Every folder's bucket, by root (YAZ-2556 D2: with the two above, what `listVaults` reads — the names and the numbers are here). */
+  getFolders: (): Record<string, FolderState> => state.folders,
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }

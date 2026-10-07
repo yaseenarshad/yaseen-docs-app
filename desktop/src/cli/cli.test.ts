@@ -2,7 +2,7 @@
  * `yaseendocs` (YAZ-1617): the program runs in-process against real temp files — `main(argv, io)`
  * with captured stdio — so every receipt, refusal and exit code is pinned without spawning.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,6 +11,7 @@ import { readComments } from '@shared/comments'
 import { IDS_FILE, isNoteId } from '@shared/noteId'
 import { addReview } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
+import { createStore } from '../main/store'
 import { sweepIds } from '../main/vaultIndex/idSweep'
 import { scanFile } from '../main/vaultIndex/scan'
 import { HELP, USAGE, find, label, main, transformOnDisk } from './cli'
@@ -91,7 +92,7 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs due ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
@@ -647,6 +648,87 @@ describe('due (YAZ-2322)', () => {
     expect((await run(['due', path.join(dir, 'nope.md')])).code).toBe(1)
     expect((await run(['due', await page('notes.txt', 'x')])).code).toBe(1)
     expect((await run(['due'])).code).toBe(2)
+  })
+})
+
+describe('vaults (YAZ-2556 D2)', () => {
+  /** The app's state file, in a profile of its own: the temp dir stands in for the user-data folder (S13), so no test reads the real one. */
+  let stateFile: string
+  beforeEach(() => {
+    vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', dir)
+    stateFile = path.join(dir, 'yaseendocs.json')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  /**
+   * A state file as the APP writes it — through the real store: two recent vaults (`/v/wiki` used
+   * last), a window on `/v/notes` and one on `/v/old` (open, not among the recents), `/v/notes`
+   * renamed "Notes ✎" with number 1, and `/v/archive` with number 7 and nothing else.
+   */
+  async function seedState(file = stateFile): Promise<void> {
+    const store = createStore(file)
+    const win = (id: string, root: string | null) => ({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.pushRecent('/v/notes', 1000)
+    store.pushRecent('/v/wiki', 2000)
+    store.upsertWindow(win('w1', '/v/notes'))
+    store.upsertWindow(win('w2', '/v/old'))
+    store.upsertWindow(win('w3', null))
+    store.setFolder('/v/notes', { name: 'Notes ✎', key: 1 })
+    store.setFolder('/v/archive', { key: 7 })
+    await store.flush()
+  }
+
+  const ROWS = [
+    { path: '/v/wiki', name: 'wiki', key: null, open: false, lastUsed: 2000 },
+    { path: '/v/notes', name: 'Notes ✎', key: 1, open: true, lastUsed: 1000 },
+    { path: '/v/old', name: 'old', key: null, open: true, lastUsed: null },
+    { path: '/v/archive', name: 'archive', key: 7, open: false, lastUsed: null },
+  ]
+
+  it('S9, S14: `--json` prints `{ path, name, key, open, lastUsed }` per vault, in the order of the app\'s list, from the file alone — which it never writes', async () => {
+    await seedState()
+    const before = { bytes: await readFile(stateFile, 'utf8'), mtime: (await stat(stateFile)).mtimeMs }
+    expect(await run(['vaults', '--json'])).toEqual({ code: 0, out: `${JSON.stringify(ROWS, null, 2)}\n`, err: '' })
+    expect({ bytes: await readFile(stateFile, 'utf8'), mtime: (await stat(stateFile)).mtimeMs }).toEqual(before)
+    expect(await readdir(dir)).toEqual(['yaseendocs.json'])
+  })
+
+  it('S10: without `--json`, one line per vault: its name and folder, then its number and `(open)`', async () => {
+    await seedState()
+    expect(await run(['vaults'])).toEqual({ code: 0, out: 'wiki  /v/wiki\nNotes ✎  /v/notes  ⌘1  (open)\nold  /v/old  (open)\narchive  /v/archive  ⌘7\n', err: '' })
+  })
+
+  it('S11: no state file (the app never ran) is no vaults, exit 0 — and none is made', async () => {
+    expect(await run(['vaults', '--json'])).toEqual({ code: 0, out: '[]\n', err: '' })
+    expect(await run(['vaults'])).toEqual({ code: 0, out: 'no vaults\n', err: '' })
+    expect(await readdir(dir)).toEqual([])
+  })
+
+  it.each([
+    ['not JSON', '{ "version": 1, "recents": ['],
+    ['not a version-1 state', '{ "version": 2, "recents": [] }'],
+  ])('S12: a damaged state file (%s) is refused with the reason, exit 1, and left as it is for the app to move aside', async (_name, raw) => {
+    await writeFile(stateFile, raw, 'utf8')
+    for (const argv of [['vaults'], ['vaults', '--json']]) {
+      expect(await run(argv)).toEqual({ code: 1, out: '', err: `${stateFile} is not a valid app state\n` })
+    }
+    expect(await readdir(dir)).toEqual(['yaseendocs.json'])
+    expect(await readFile(stateFile, 'utf8')).toBe(raw)
+  })
+
+  it('S13: reads the state file of the folder YASEEN_DOCS_USER_DATA_DIR names', async () => {
+    const other = path.join(dir, 'other profile')
+    await seedState(path.join(other, 'yaseendocs.json'))
+    expect((await run(['vaults', '--json'])).out).toBe('[]\n') // `dir` holds no state file
+    vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', ` ${other} `)
+    expect(JSON.parse((await run(['vaults', '--json'])).out)).toEqual(ROWS)
+  })
+
+  it('the contract says what each field of a row is, and that `open` does not mean the app is running', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['`path`', '`name`', '`key`', '`open`', '`lastUsed`', 'never writes']) expect(help).toContain(said)
   })
 })
 

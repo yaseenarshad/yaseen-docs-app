@@ -40,10 +40,10 @@ The record is two comments there: "Locked decisions and scope (D1 to D8)" and "T
   - [x] D8: three size ceilings set to the measured values (`e9e2b9f`)
   - [x] 4C- Docs (YAZ-2569): `docs/CONTRACTS.md`, `docs/REGRESSION.md` S14, `README.md`. With it: the door bumps through `noteUsed`, so the vault that is already on top is not written again (S25).
   - [x] 4A- Scenario table and gates (YAZ-2567). Playwright not run (standing rule): step 6 and the changed step 2 of `desktop/e2e/vaultSwitcher.spec.ts` are written and typechecked only.
-- Now: [→] 4D- Pull request is open (YAZ-2570). STOP there until Yaseen's hand walk passes.
+  - [x] 4D- Pull request #93 merged on 2026-10-07 (merge commit `9420586`). Yaseen chose to merge before his hand walk and to cut no release now.
+- Now: merged, NOT released, NOT walked by hand.
 - Remaining:
-  - [ ] 4B- Yaseen's hand walk (YAZ-2568): setup in `~/Desktop/yaz-2555-demo/` (`run.sh`, `reset.sh`), 35 steps on the issue
-  - [ ] Merge, handoff comment on the parent, remove the worktree and the branch
+  - [ ] 4B- Yaseen's hand walk (YAZ-2568): 35 steps, setup in `~/Desktop/yaz-2555-demo/`. It is done one time before the next release, with the Alfred steps of YAZ-2556 (YAZ-2588).
 
 ## Open Questions
 
@@ -52,6 +52,6 @@ The record is two comments there: "Locked decisions and scope (D1 to D8)" and "T
 
 ## Working Set
 
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2555`, branch `yaz-2555-vault-numbers`, off `main` at `749b5df`.
+- The work is on `main` (`9420586`). The worktree became the YAZ-2556 worktree; the branch is deleted.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skill at `~/.claude/skills/linear`; issue writing follows `~/Documents/GitHub/growprofitai/_code-wiki/Linear-Simpler`.

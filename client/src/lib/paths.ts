@@ -1,8 +1,5 @@
-/** Last path segment (trailing slashes ignored); the input itself for `/`. */
-export function basename(p: string): string {
-  const trimmed = p.replace(/\/+$/, '')
-  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || p
-}
+/** Last path segment (trailing slashes ignored); the input itself for `/`. It lives in `shared/types.ts`, where `listVaults` names a vault's folder with it too (YAZ-2556). */
+export { basename } from '@shared/types'
 
 /** Parent directory of `p`: everything before its last `/` ('' when it has none). */
 export const dirname = (p: string): string => p.slice(0, Math.max(0, p.lastIndexOf('/')))
