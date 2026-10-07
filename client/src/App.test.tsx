@@ -24,7 +24,7 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean }[]
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
   closedVaults: readonly string[]
   onSetVaultOpen: (root: string, open: boolean) => void
@@ -76,6 +76,8 @@ interface SidebarStubProps {
   dueCount: number
   reviewing: boolean
   onOpenInbox: () => void
+  /** An Inbox row's click (YAZ-2602 R5): the vault whose row it is. */
+  onInbox: (root: string) => void
   /** "Review this folder" (YAZ-2322): the sidebar hands the folder's ABSOLUTE path. */
   onReviewFolder: (dirPath: string) => void
   /** The row menu's review toggle (YAZ-2322): the hook's lookup and its write, straight through. */
@@ -112,9 +114,10 @@ vi.mock('./editor/Editor', () => ({
   },
 }))
 vi.mock('./sidebar/Sidebar', () => ({
-  Sidebar: (props: Omit<SidebarStubProps, 'root'>) => {
-    const root = props.vaults[0].root
-    captured.sidebar = { ...props, root }
+  Sidebar: (props: Omit<SidebarStubProps, 'root' | 'upkeep' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
+    // The first vault's own, as a window with one vault reads them: its folder and its Inbox row (YAZ-2602 R5).
+    const { root, upkeep, dueCount, reviewing } = props.vaults[0]
+    captured.sidebar = { ...props, root, upkeep, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
     captured.sidebarRenders++
     return <aside ref={props.asideRef} data-sidebar data-root={root} />
   },
@@ -2889,6 +2892,27 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(captured.sidebar?.reviewing).toBe(true)
     act(() => button(el, 'Close review')?.click())
     expect(el.querySelector('.review-bar')).toBeNull() // the review of /w is not waiting under it
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
+  })
+
+  it('the sidebar is handed each vault\'s own Inbox — upkeep, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
+    const { el } = await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
+      upkeep({ '/v': true, '/w': true })(b)
+      feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/p.md'), due('/w/q.md')] }, '/x': { records: [due('/x/z.md')] } })(b)
+    })
+    const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.upkeep, vault.dueCount, vault.reviewing])
+    expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, false], ['/x', false, 0, false]])
+    act(() => captured.sidebar?.onInbox('/w'))
+    expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, true], ['/x', false, 0, false]])
+    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
+    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
+    act(() => captured.sidebar?.onInbox('/v'))
+    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
+    expect(el.querySelectorAll('.review-bar')).toHaveLength(1)
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
+    act(() => captured.sidebar?.onInbox('/v'))
+    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([false, false, false])
+    expect(el.querySelector('.review-bar')).toBeNull()
     expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
   })
 
