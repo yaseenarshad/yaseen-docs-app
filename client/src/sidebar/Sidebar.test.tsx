@@ -1467,6 +1467,23 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(cursor(el)).toEqual(['Anchor'])
   })
 
+  it('S41 to S44: while text is typed an `esc` keycap says how to clear it, and a click on it does — the caret back in the bar; it is no Tab stop', async () => {
+    const { el, input } = await search('plan')
+    const keycap = () => el.querySelector<HTMLButtonElement>('.sidebar__search .sidebar__search-clear')
+    expect(keycap()?.textContent).toBe('esc')
+    expect([keycap()?.title, keycap()?.getAttribute('aria-label'), keycap()?.tabIndex]).toEqual(['Clear search (Esc)', 'Clear search', -1])
+    // The bar does not have the focus: the click still clears, and puts the caret there.
+    expect(document.activeElement).not.toBe(input)
+    click(keycap())
+    expect(input.value).toBe('')
+    expect(shape(el)).toEqual(FILES_CLOSED)
+    expect(document.activeElement).toBe(input)
+    expect(keycap()).toBeNull() // S41: nothing typed, nothing to clear
+    // S42: spaces are text too — what Esc would clear, the keycap offers to.
+    await type(input, '  ')
+    expect(keycap()).not.toBeNull()
+  })
+
   it('S32: a drag does nothing — no row is a drop target and nothing moves on disk', async () => {
     const { el, v, props } = await search('plan')
     act(() => void row(el, `${v}/plan.md`)?.dispatchEvent(new Event('dragstart', { bubbles: true })))

@@ -235,14 +235,18 @@ test('step 5 — a fold in the search lasts as long as its query; a matched fold
   await expect(fileRow(win, 'PLG SaaS')).toBeVisible()
 })
 
-test('step 6 — a query nothing answers to shows "No matches"; clearing it restores the tree', async () => {
+test('step 6 — a query nothing answers to shows "No matches"; the `esc` keycap clears it and restores the tree', async () => {
   await reset(win)
   await searchBar(win).fill('zzqqxvw')
   await expect(win.locator('p.sidebar__msg')).toHaveText('No matches')
   await expect(treeRows(win)).toHaveCount(0)
   await shoot(win, 'search-06-no-matches')
 
-  await searchBar(win).fill('')
+  // The `esc` keycap is the way out in sight (YAZ-2630): there while a query is typed, and a click clears it.
+  await win.locator('.sidebar__search-clear').click()
+  await expect(searchBar(win)).toHaveValue('')
+  await expect(searchBar(win)).toBeFocused()
+  await expect(win.locator('.sidebar__search-clear')).toHaveCount(0)
   await expect(win.locator('p.sidebar__msg')).toHaveCount(0)
   await expect(fileRow(win, 'PLG SaaS')).toBeVisible()
   await quitApp(app)
