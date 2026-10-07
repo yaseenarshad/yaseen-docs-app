@@ -60,12 +60,13 @@ describe('registerStateIpc', () => {
   })
 
   it('state:set-settings takes a complete valid SettingsState and rejects anything else as BAD_REQUEST', async () => {
-    const next = { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff', contentWidth: 'full' }
+    const next = { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff', contentWidth: 'full', startupWindows: 'none' }
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, next)).toEqual(ok(undefined))
     expect(store.get().settings).toEqual(next)
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, lineSpacing: 'big' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, contentWidth: 'wide' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, confirmRename: 'no' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, startupWindows: 'some' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { lineSpacing: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().settings).toEqual(next)
@@ -122,8 +123,8 @@ describe('registerStateIpc', () => {
     expect(store.get().folders['/v'].key).toBe(3)
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { key: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].key).toBeNull()
-    // Focus Mode's lists are window identity since YAZ-1628 (`window.setIdentity`): here they are unknown keys, ignored like any other.
-    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { focusDirs: ['/v/sub'] })).toEqual(ok(undefined))
+    // The focus list is window identity (`window.setIdentity`, YAZ-1628, YAZ-2619): here it is an unknown key, ignored like any other.
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { focusList: ['/v/sub'] })).toEqual(ok(undefined))
     expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
   })
 

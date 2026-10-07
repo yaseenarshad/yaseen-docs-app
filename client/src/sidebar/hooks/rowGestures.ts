@@ -88,7 +88,6 @@ export function useTreeDrag(
   /** Each vault's favorites, by its root (YAZ-2602 D5), and the writer of one vault's list. */
   favoritesRef: RefObject<Readonly<Record<string, readonly string[]>>>,
   saveFavorites: (vault: string, next: readonly string[]) => void,
-  focusFavorites: readonly string[],
   rootOf: (path: string) => string,
   onNotice: (message: string, kind?: NoticeKind) => void,
 ) {
@@ -146,13 +145,11 @@ export function useTreeDrag(
     saveFavorites(vault, [...without.slice(0, at), from, ...without.slice(at)])
   }, [reorderDragging, reorderOver, rootOf, saveFavorites])
 
-  /** Off while the tab is focused: the focus list is what is shown then, not the favorites order. */
-  const reorderOff = focusFavorites.length > 0
   const favoriteReorder: TreeReorder = useMemo(
     () => ({
       dragging: reorderDragging,
       over: reorderOver,
-      start: reorderOff ? () => undefined : setReorderDragging,
+      start: setReorderDragging,
       // A row of a different vault's group is no place for it (S26): no marker there, so a drop changes nothing.
       hover: (path, edge) => setReorderOver((prev) => (reorderDragging === null || rootOf(path) !== rootOf(reorderDragging) ? null : prev?.path === path && prev.edge === edge ? prev : { path, edge })),
       drop: dropReorder,
@@ -161,7 +158,7 @@ export function useTreeDrag(
         setReorderOver(null)
       },
     }),
-    [reorderDragging, reorderOver, reorderOff, dropReorder, rootOf],
+    [reorderDragging, reorderOver, dropReorder, rootOf],
   )
 
   return { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder }
@@ -350,13 +347,14 @@ export function useFileClipboard(
 }
 
 export function useInlineEdits(
-  /** The first vault's root: blank space's target on the Favorites tab, in a window with one vault. */
-  root: string,
+  /** The top of a list tab, in a window with one vault: its root. Null with two or more, where no one folder stands above the rows. */
+  root: string | null,
   /** The vault that holds a path (YAZ-2602 R4): a new note is made as the vault it is made in makes one. */
   vaultOf: (path: string) => SidebarVault,
   menu: MenuTargets | null,
   setMenu: (menu: MenuTargets | null) => void,
   favoriteNodes: TreeNode[],
+  focusNodes: TreeNode[],
   onLensChange: (lens: SidebarLens) => void,
   refresh: (root: string) => void,
   onOpenFile: (path: string) => void,
@@ -373,14 +371,17 @@ export function useInlineEdits(
       // The input renders inside the target dir's children, so that dir must be open — and its
       // vault's row with it; `openTo` opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       openTo(`${menu.targetDir}/x`)
-      // Favorites shows a SUBSET of the vault (YAZ-1766, 3B1): a target dir it does not hold would give
-      // the input nowhere to mount, so the create moves to Files — where the `expandTo` above has
-      // already opened that dir. The reveal hop's rule (D10), applied to the other gesture that needs a row.
-      if (menu.lens === 'favorites' && menu.targetDir !== root && findDirNode(favoriteNodes, menu.targetDir) === null) onLensChange('files')
+      // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
+      // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
+      // mount, so the create moves to Files, where the `openTo` above has already opened that dir.
+      // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
+      // vaults a vault's root is held only as its row (YAZ-2602): Favorites has it, Focus never does.
+      const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
+      if (shown !== null && (menu.targetDir === root ? shown.length === 0 : findDirNode(shown, menu.targetDir) === null)) onLensChange('files')
       setCreating({ kind, seed, parentDir: menu.targetDir })
       setMenu(null)
     },
-    [menu, root, favoriteNodes, onLensChange, openTo],
+    [menu, root, favoriteNodes, focusNodes, onLensChange, openTo],
   )
 
   const submitCreate = useCallback(

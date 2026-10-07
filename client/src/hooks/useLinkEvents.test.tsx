@@ -1,6 +1,7 @@
 /**
  * useLinkEvents (E1, GRO-2171): the renderer's half of the yaseendocs:// deep-link pushes —
- * subscribed on mount, unsubscribed on unmount, latest callbacks win.
+ * subscribed on mount, unsubscribed on unmount, latest callbacks win. Once subscribed it tells
+ * main so (`link.ready`, YAZ-2589 A2): main holds a push for a window that cannot hear it yet.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -22,6 +23,7 @@ function installBridge() {
         noticeListeners.add(l)
         return () => noticeListeners.delete(l)
       }),
+      ready: vi.fn(async () => undefined),
     },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
@@ -29,6 +31,7 @@ function installBridge() {
     emitOpenFile: (path: string) => openFileListeners.forEach((l) => l(path)),
     emitNotice: (message: string) => noticeListeners.forEach((l) => l(message)),
     count: () => openFileListeners.size + noticeListeners.size,
+    bridge,
   }
 }
 
@@ -60,5 +63,15 @@ describe('useLinkEvents', () => {
     act(() => root?.unmount())
     root = null
     expect(b.count()).toBe(0)
+  })
+
+  it('says it is ready only after both listeners are on, so main can send what it held (YAZ-2589 A2)', () => {
+    const b = installBridge()
+    let listening = -1
+    b.bridge.link.ready.mockImplementation(async () => void (listening = b.count()))
+    root = createRoot(document.createElement('div'))
+    act(() => root?.render(<Probe onOpenFile={vi.fn()} onNotice={vi.fn()} />))
+    expect(b.bridge.link.ready).toHaveBeenCalledOnce()
+    expect(listening).toBe(2)
   })
 })

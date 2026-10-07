@@ -37,6 +37,7 @@ describe('settingCandidates', () => {
       'confirmDelete',
       'confirmRename',
       'newNoteLocation',
+      'startupWindows',
       'ids',
       'hotkeys-keyboard',
       'hotkeys-views',
@@ -88,7 +89,11 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'ids'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows', 'ids'])
+  })
+
+  it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
+    for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
   })
 
   it('matches on the group title: "threading" finds the three threading rows', () => {

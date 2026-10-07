@@ -38,7 +38,7 @@ The record is on the parent: "Scoping findings: the Alfred audit and the code fa
 - Now: merged and released. NOT walked by hand. The Alfred workflow is NOT loaded in Alfred yet.
 - Remaining (all Yaseen's):
   - [ ] Install 0.9.35. Restart Alfred one time.
-  - [ ] 5D- the hand walk (YAZ-2588): the 35 steps of YAZ-2568, then the 19 Alfred steps.
+  - [x] 5D- the hand walk (YAZ-2588): CLOSED WITHOUT A WALK by Yaseen on 2026-10-07 ("close those two hand walks too"). Canceled, not Done; the 19 steps are kept on the issue. The Alfred word is `dc` (Amendment 3). The issue is closed.
   - [ ] Pick from the Gallery list (YAZ-2580). Nothing is installed.
 
 ## Open Questions
