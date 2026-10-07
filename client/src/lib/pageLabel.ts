@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import type { IndexRecord } from '@shared/types'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { rootOfPath, type IndexRecord, type TreeResponse } from '@shared/types'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, stripExt } from './paths'
 import { fetchTree, latestTree, onTree } from './treeFeed'
@@ -54,13 +54,60 @@ export const pageName = (root: string | null, path: string, titles: PathTitles):
 /** The source's `PathTitles`, live. */
 export const usePathTitles = (source: WikilinkResolveSource): PathTitles => useSyncExternalStore(source.subscribe, () => pathTitles(source.records, source.folders))
 
-/** The subscribe half of both hooks below: a tree for `root` landed. */
+const NO_TITLES: PathTitles = new Map()
+
+/**
+ * One `PathTitles` over the index of every vault of the window (YAZ-2602 D1), live: the strip, the
+ * right panel and the sheets name a page of any vault. The paths of two vaults never meet, so the
+ * maps add up. One vault → that vault's own Map, as `usePathTitles`; more → a Map that is kept
+ * while no title changed, whichever vault's snapshot landed.
+ */
+export function useAllPathTitles(sources: readonly WikilinkResolveSource[]): PathTitles {
+  const subscribe = useCallback(
+    (poke: () => void) => {
+      const offs = sources.map((source) => source.subscribe(poke))
+      return () => offs.forEach((off) => off())
+    },
+    [sources],
+  )
+  const held = useRef<{ parts: readonly PathTitles[]; all: PathTitles }>({ parts: [], all: NO_TITLES })
+  return useSyncExternalStore(subscribe, () => {
+    const parts = sources.map((source) => pathTitles(source.records, source.folders))
+    if (parts.length === 1) return parts[0]
+    const last = held.current
+    if (parts.length === last.parts.length && parts.every((part, i) => part === last.parts[i])) return last.all
+    const built = new Map(parts.flatMap((part) => [...part]))
+    const same = built.size === last.all.size && [...built].every(([path, title]) => last.all.get(path) === title)
+    held.current = { parts, all: same ? last.all : built }
+    return held.current.all
+  })
+}
+
+/** The subscribe half of `useTreeKind`: a tree for `root` landed. */
 const useTreeLanded = (root: string) => useCallback((poke: () => void) => onTree(root, poke), [root])
 
-/** `isFolderPath` for a component: it re-renders when a tree for `root` lands, so its labels follow the tree. */
-export function useFolderPaths(root: string): (path: string) => boolean {
-  useSyncExternalStore(useTreeLanded(root), () => latestTree(root))
-  return (path) => isFolderPath(root, path)
+/**
+ * `isFolderPath` for a component that shows pages of every vault of the window (YAZ-2602 S31): each
+ * path is asked of the tree of the vault that holds it, and one in no vault of the first. The
+ * component re-renders when a tree for any of `roots` lands, so its labels follow the trees.
+ */
+export function useFolderPaths(roots: readonly string[]): (path: string) => boolean {
+  const key = roots.join('\n')
+  // Keyed by the vaults themselves: a caller may hand a new array of the same roots on each render.
+  const subscribe = useCallback(
+    (poke: () => void) => {
+      const offs = (key === '' ? [] : key.split('\n')).map((root) => onTree(root, poke))
+      return () => offs.forEach((off) => off())
+    },
+    [key],
+  )
+  const held = useRef<readonly (TreeResponse | null)[]>([])
+  useSyncExternalStore(subscribe, () => {
+    const trees = roots.map(latestTree)
+    if (trees.length !== held.current.length || trees.some((tree, i) => tree !== held.current[i])) held.current = trees
+    return held.current
+  })
+  return (path) => isFolderPath(rootOfPath(roots, path) ?? roots[0] ?? null, path)
 }
 
 /**

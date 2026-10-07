@@ -178,6 +178,38 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual([])
   })
 
+  it('the vaults of the window (YAZ-2602 D1): `setRoot` leaves that one vault and names `root` alone in its write; `setRoots` keeps the tabs; `mirrorRoots` writes nothing', () => {
+    storage.setRoot('/v')
+    expect(storage.getRoots()).toEqual(['/v'])
+    storage.setWorkspace('/v', ['/v/a.md'], '/v/a.md', defaultRightPanelIdentity())
+    storage.setRoots(['/v', '/w/'])
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+    expect(storage.getRoot()).toBe('/v')
+    expect(storage.getTabs()).toEqual(['/v/a.md'])
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v', '/w'] })
+    // A file is the last file of the vault that holds it.
+    storage.setWorkspace('/v', ['/v/a.md', '/w/b.md'], '/w/b.md', defaultRightPanelIdentity())
+    expect(storage.getLastFile('/w')).toBe('/w/b.md')
+    expect(storage.getLastFile('/v')).toBe('/v/a.md')
+
+    const writes = b.bridge.window.setIdentity.mock.calls.length
+    storage.mirrorRoots(['/v', '/w2'])
+    expect(storage.getRoots()).toEqual(['/v', '/w2'])
+    expect(b.bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
+
+    storage.setRoots(['/w2'])
+    expect(storage.getRoot()).toBe('/w2')
+    // The same root again keeps the list; another root is the whole list (S61). Main makes the list from `root` (S76).
+    storage.setRoots(['/w2', '/x'])
+    storage.setRoot('/w2')
+    expect(storage.getRoots()).toEqual(['/w2', '/x'])
+    storage.setRoot('/z')
+    expect(storage.getRoots()).toEqual(['/z'])
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
+    storage.setRoot(null)
+    expect(storage.getRoots()).toEqual([])
+  })
+
   it('setWorkspace mirrors main and right identity in one call and keeps independent item arrays', () => {
     const rightPanel = { open: true, width: 600, items: ['/v/b.md'], expanded: '/v/b.md' }
     storage.setWorkspace('/v', ['/v/a.md'], '/v/a.md', rightPanel)

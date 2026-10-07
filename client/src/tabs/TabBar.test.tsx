@@ -26,11 +26,11 @@ const openVsCode = vi.mocked(api.shell.openVsCode)
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(props: Omit<TabBarProps, 'root' | 'titles'> & Partial<Pick<TabBarProps, 'root' | 'titles'>>) {
+function mount(props: Omit<TabBarProps, 'roots' | 'titles'> & Partial<Pick<TabBarProps, 'roots' | 'titles'>>) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<TabBar root="/v" titles={new Map()} {...props} />))
+  act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} {...props} />))
   return container
 }
 
@@ -69,7 +69,7 @@ describe('TabBar', () => {
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
-    const el = mount({ root: '/named', tabs: ['/named/Notes.md', '/named/Plan.md'], active: '/named/Notes.md', ...noop, ...noNav })
+    const el = mount({ roots: ['/named'], tabs: ['/named/Notes.md', '/named/Plan.md'], active: '/named/Notes.md', ...noop, ...noNav })
     const labels = () => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)
     expect(labels()).toEqual(['Notes', 'Plan']) // no tree yet: nothing says it is a folder
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
@@ -214,7 +214,7 @@ describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
     ;(HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView = spy
     try {
       mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
-      act(() => root?.render(<TabBar root="/v" titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
+      act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
       const activeTab = spy.mock.contexts.at(-1) as HTMLElement
       expect(activeTab.classList.contains('tabbar__tab--active')).toBe(true)
       expect(activeTab.querySelector('[role="tab"]')?.textContent).toBe('b')
@@ -313,7 +313,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   it('"Copy path" is a tab\'s one copy item, a note\'s and a folder\'s: nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/one', tree: [{ type: 'dir', name: 'Projects', path: '/one/Projects', children: [] }], generatedAt: 1 })
     await fetchTree('/one')
-    const el = mount({ ...props, root: '/one', tabs: ['/one/Note.md', '/one/Projects'] })
+    const el = mount({ ...props, roots: ['/one'], tabs: ['/one/Note.md', '/one/Projects'] })
     for (const i of [0, 1]) {
       rightClick(tabAt(el, i))
       expect(items(el).map((b) => b.textContent).filter((label) => label?.startsWith('Copy'))).toEqual(['Copy path'])
@@ -456,7 +456,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     document.body.appendChild(host)
     root2 = createRoot(host)
     const base: TabBarProps = {
-      root: '/vault',
+      roots: ['/vault'],
       titles: new Map(),
       tabs: ['/vault/A.md', '/vault/sub/Deep Note.md'],
       active: '/vault/A.md',
