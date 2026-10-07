@@ -1187,6 +1187,11 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     if (name !== undefined) await fill(field(el)!, name)
   }
 
+  /** ↑ to the first row — the first workspace — from wherever the highlight starts: ↑ clamps at the top. */
+  const toFirstRow = (el: HTMLElement) => {
+    for (let i = 0; i < 8; i++) key(el, 'ArrowUp')
+  }
+
   let openSet: ReturnType<typeof vi.fn>
   let saveSet: ReturnType<typeof vi.fn>
   let renameSet: ReturnType<typeof vi.fn>
@@ -1199,7 +1204,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openSet, saveSet, renameSet, removeSet })
   })
 
-  it('"Workspaces" stands first — a label, not a row — with one row per saved workspace, last used first: its name and "N vaults"; then the vault groups as before. The highlight starts on the first workspace, and the rows take ↑/↓ and hover (S64)', () => {
+  it('"Workspaces" stands first — a label, not a row — with one row per saved workspace, last used first: its name and "N vaults"; then the vault groups as before. The highlight still starts on the first vault that is not in this window; ↑ reaches the workspace rows, and they take hover (S64)', () => {
     const { el } = render()
     openPanel(el)
     expect(listing(el)).toEqual(VAULTS) // no saved workspace: the list of today, no label
@@ -1211,7 +1216,13 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     // A workspace row is a name and its count: no ⌘ number, no ⓘ — it is not one folder.
     expect([...rows(el)[0].children].map((part) => `${part.tagName}.${part.className}`)).toEqual(['SPAN.vault-switcher__name', 'SPAN.vault-switcher__when'])
     expect(rows(el)[0].getAttribute('role')).toBe('menuitem')
-    expect(activeRow(el)).toBe(rows(el)[0])
+    // The start is where it was before workspaces (YAZ-2555): the last used vault that is not this window's.
+    expect(activeRow(el)).toBe(rows(el)[3])
+    expect(pathOf(activeRow(el)!)).toBe('/w/Notes')
+    key(el, 'ArrowUp') // pathOf hovered the row: the highlight is still on it
+    key(el, 'ArrowUp')
+    expect(activeRow(el)).toBe(rows(el)[1])
+    key(el, 'ArrowUp')
     key(el, 'ArrowUp')
     expect(activeRow(el)).toBe(rows(el)[0])
     key(el, 'ArrowDown')
@@ -1249,18 +1260,30 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(openSet).toHaveBeenCalledExactlyOnceWith('set-homework')
   })
 
-  it('the workspace that this window shows is marked and skipped like the current vault: the highlight starts on the first row that is neither', () => {
+  it('⌘O ⏎ with a saved workspace still goes to the last used OTHER vault, through window.openRecent — a workspace never takes that key over (YAZ-2555)', async () => {
+    seedSets(WORK, READING)
+    const { el, rerender } = render()
+    rerender({ openRequest: 1 })
+    expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults'])
+    key(el, 'Enter')
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openSet).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
+  })
+
+  it('the workspace that this window shows is marked like the current vault; with an empty query the highlight never starts on a workspace row — with no vault outside this window it is the first vault row, as before workspaces', () => {
     seedSets(WORK, READING)
     // Work's vaults in the other order, one with a trailing slash: still exactly that workspace.
-    const { el } = render({ roots: ['/w/Notes', `${ARCHIVE}/`] })
+    const { el, rerender } = render({ roots: ['/w/Notes', `${ARCHIVE}/`] })
     openPanel(el)
     expect(rows(el).slice(0, 2).map((r) => r.getAttribute('aria-current'))).toEqual(['true', null])
-    expect(activeRow(el)).toBe(rows(el)[1])
+    expect(activeRow(el)).toBe(rows(el)[2])
+    expect(pathOf(activeRow(el)!)).toBe(ROOT)
     openPanel(el)
-    seedSets(WORK) // the one saved workspace is this window's: on to the first vault that is not in the window
+    rerender({ roots: RECENTS.map((r) => r.path) }) // every listed vault is in this window
     openPanel(el)
-    expect(listing(el).slice(0, 2)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults'])
-    expect(activeRow(el)).toBe(rows(el)[1])
+    expect(activeRow(el)).toBe(rows(el)[2])
     expect(pathOf(activeRow(el)!)).toBe(ROOT)
   })
 
@@ -1268,12 +1291,14 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     seedSets(WORK, READING)
     const { el, props } = render()
     openPanel(el)
+    toFirstRow(el)
     key(el, 'Enter')
     await settle()
     expect(openSet).toHaveBeenCalledExactlyOnceWith('set-work')
     expect(panel(el)).toBeNull()
 
     openPanel(el)
+    toFirstRow(el)
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true })))
     expect(when(activeRow(el)!)?.textContent).toBe('2 vaults')
     act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
@@ -1296,6 +1321,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     const { el, props } = render()
     openSet.mockResolvedValueOnce({ opened: true, missing: [ARCHIVE, '/w/Notes'] })
     openPanel(el)
+    toFirstRow(el)
     key(el, 'Enter')
     await settle()
     expect(panel(el)).toBeNull()
@@ -1313,7 +1339,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(document.activeElement).toBe(filter(el))
     expect(props.onNotice).toHaveBeenCalledTimes(1)
     // The dead row opens nothing more; the workspace is still saved, so its menu still stands.
-    key(el, 'ArrowUp')
+    toFirstRow(el)
     key(el, 'Enter')
     await settle()
     expect(openSet).toHaveBeenCalledTimes(2)
@@ -1327,6 +1353,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     // A door that fails reads as "nothing opened".
     openSet.mockRejectedValueOnce(new Error('ipc down'))
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    toFirstRow(el)
     key(el, 'Enter')
     await settle()
     expect(rows(el)[0].disabled).toBe(true)
@@ -1403,11 +1430,13 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     seedSets(WORK, READING)
     const { el } = render()
     openPanel(el)
+    const before = activeRow(el)
     rightClick(rows(el)[1])
     key(el, 'ArrowDown')
     key(el, 'Enter')
-    expect(activeRow(el)).toBe(rows(el)[0])
+    expect(activeRow(el)).toBe(before)
     expect(openSet).not.toHaveBeenCalled()
+    expect(openRecent).not.toHaveBeenCalled()
     key(el, 'Escape')
     expect([vaultMenu(), panel(el) === null]).toEqual([null, false])
     rightClick(rows(el)[1])
