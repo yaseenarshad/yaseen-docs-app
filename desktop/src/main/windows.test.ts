@@ -439,6 +439,68 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
   })
 })
 
+describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'s window bumps it in the MRU)', () => {
+  const mru = (): string[] => store.get().recents.map((r) => r.path)
+
+  /** Stored windows restored over a seeded MRU (most recent first); the store's commits are counted from the restore on. */
+  function seedFocus(windows: Array<[id: string, root: string | null]>, recents: string[]) {
+    for (const [i, p] of [...recents].reverse().entries()) store.pushRecent(p, i)
+    for (const [id, root] of windows) store.upsertWindow({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    createWindowManager(store, host).restoreAll()
+    let commits = 0
+    store.onChange(() => commits++)
+    return { wins: created.map((c) => c.win), commits: () => commits }
+  }
+
+  it('S34/S35: a window\'s FIRST focus does not bump its vault; a later one does, stamped with the time of use (S38); already on top → no commit', () => {
+    const { wins: [a, b], commits } = seedFocus([['a', '/v/a'], ['b', '/v/b']], ['/v/a', '/v/b'])
+    b.emit('focus') // the launch focusing it, not a use
+    a.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(0)
+
+    vi.setSystemTime(5000)
+    b.emit('focus') // a click on B's window, or ⌘`
+    expect(store.get().recents).toEqual([{ path: '/v/b', lastOpened: 5000 }, { path: '/v/a', lastOpened: 1 }])
+    expect(commits()).toBe(1)
+    b.emit('focus') // already on top
+    expect(commits()).toBe(1)
+    a.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(2)
+  })
+
+  it('S36: a relaunch restores three windows and focuses each in turn → `recents` is as the quit left it', () => {
+    const { wins, commits } = seedFocus([['a', '/v/a'], ['b', '/v/b'], ['c', '/v/c']], ['/v/b', '/v/c', '/v/a'])
+    for (const w of wins) w.emit('focus')
+    expect(mru()).toEqual(['/v/b', '/v/c', '/v/a'])
+    expect(commits()).toBe(0)
+  })
+
+  it('S37: focus moving between two windows of ONE vault (a trailing slash on a stored root is the same vault), or onto a Welcome window, makes no write', () => {
+    const { wins: [a1, a2, welcome], commits } = seedFocus([['a1', '/v/a'], ['a2', '/v/a/'], ['w', null]], ['/v/a', '/v/b'])
+    for (const w of [a1, a2, welcome]) w.emit('focus') // each one's first focus
+    for (const w of [a2, a1, welcome, a2]) w.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(0)
+  })
+
+  it('openWindow on a vault is a use of it: bumped (already on top → `recents` untouched), and the new window\'s first focus adds nothing; a Welcome window is not a vault', () => {
+    store.pushRecent('/v/b', 1)
+    store.pushRecent('/v/a', 2)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.openWindow({ root: '/v/b', file: null })
+    expect(mru()).toEqual(['/v/b', '/v/a'])
+    const bumped = store.get().recents
+    manager.openWindow({ root: '/v/b', file: '/v/b/x.md' }) // already on top
+    manager.openWindow({ root: null, file: null })
+    for (const c of created) c.win.emit('focus')
+    expect(store.get().recents).toBe(bumped) // the same snapshot: nothing wrote `recents` again
+  })
+})
+
 describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () => {
   it('openWindow creates an independent window and persists its entry', () => {
     const { host, created } = makeHost()

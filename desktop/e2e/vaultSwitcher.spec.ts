@@ -35,8 +35,8 @@ const DISPLAY = 'Work Vault'
 /** Bodies of the fixture's files (helpers.buildFixtureVault). */
 const IDEAS_BODY = 'synthetic-idea-body'
 
-/** The OS window title contract (client/src/lib/windowTitle.ts): `<file — vault NAME>`. */
-const titleOf = (file: string, vaultName: string): string => `${path.basename(file).replace(/\.md$/, '')} — ${vaultName}`
+/** The OS window title contract (client/src/lib/windowTitle.ts): `<vault NAME — file>`, the vault first (YAZ-2555 D6). */
+const titleOf = (file: string, vaultName: string): string => `${vaultName} — ${path.basename(file).replace(/\.md$/, '')}`
 
 let userData: string
 let vaultSrc: string

@@ -637,13 +637,13 @@ describe('App boot on a window entry with a file (D2, GRO-2168)', () => {
   })
 })
 
-describe('App window title (C3, GRO-2165)', () => {
-  it('is the app name on Welcome, then "<file> — <folder>" once a folder with a file opens', async () => {
+describe('App window title (C3, GRO-2165; vault first, YAZ-2555 D6)', () => {
+  it('is the app name on Welcome, then "<folder> — <file>" once a folder with a file opens', async () => {
     const state = withFolder(defaultAppState(), '/vaults/w', '/vaults/w/Note.md')
     const { emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     expect(document.title).toBe('Yaseen Docs')
     await act(async () => emitOpenRoot('/vaults/w'))
-    expect(document.title).toBe('Note — w')
+    expect(document.title).toBe('w — Note')
   })
 
   it('is the folder alone with no file open', async () => {
@@ -655,7 +655,7 @@ describe('App window title (C3, GRO-2165)', () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/vaults/named', file: '/vaults/named/Notes.md', tabs: ['/vaults/named/Notes.md'] })
     bridge.tree.mockResolvedValueOnce({ root: '/vaults/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/vaults/named/Notes.md', children: [] }], generatedAt: 2 })
     await act(async () => void (await fetchTree('/vaults/named')))
-    expect(document.title).toBe('Notes.md — named')
+    expect(document.title).toBe('named — Notes.md')
     expect(el.querySelector('.tabbar [role="tab"]')?.textContent).toBe('Notes.md')
   })
 })
@@ -693,7 +693,7 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('C')
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/C.md')
     expect(location.hash).toBe('#/v/C.md')
-    expect(document.title).toBe('C — v')
+    expect(document.title).toBe('v — C')
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md', rightPanel: defaultRightPanelIdentity() })
   })
@@ -1024,9 +1024,9 @@ describe('App tabs (I2, GRO-2234)', () => {
   })
 
   it.each([
-    ['/v/data.json', '/v/report.PDF', ['data.json', 'report.PDF'], 'data.json — v'],
-    ['/v/report.PDF', '/v/data.json', ['report.PDF', 'data.json'], 'report.PDF — v'],
-    ['/v/photo.PNG', '/v/data.json', ['photo.PNG', 'data.json'], 'photo.PNG — v'],
+    ['/v/data.json', '/v/report.PDF', ['data.json', 'report.PDF'], 'v — data.json'],
+    ['/v/report.PDF', '/v/data.json', ['report.PDF', 'data.json'], 'v — report.PDF'],
+    ['/v/photo.PNG', '/v/data.json', ['photo.PNG', 'data.json'], 'v — photo.PNG'],
   ] as const)('restores view-only tabs with exact extension labels and title for %s', async (active, other, labels, title) => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: active, tabs: [active, other] })
     expect(stripLabels(el)).toEqual(labels)
@@ -1051,7 +1051,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/report.PDF', false],
     ])
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/data.json', '/v/report.PDF'], file: '/v/report.PDF', rightPanel: defaultRightPanelIdentity() })
-    expect(document.title).toBe('report.PDF — v')
+    expect(document.title).toBe('v — report.PDF')
   })
 
   it('a pasted #hash wins as the active tab and is prepended when missing from the stored tabs (rule 12)', async () => {
@@ -1109,7 +1109,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     ])
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     // Title and hash follow the ACTIVE tab (rule 12).
-    expect(document.title).toBe('b — v')
+    expect(document.title).toBe('v — b')
     expect(location.hash).toBe('#/v/b.md')
   })
 
@@ -1206,7 +1206,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       {},
       (b) => b.bridge.index.mockResolvedValue({ root: '/v', records: [note('/v/b.md', 'b'), note('/v/c.md', 'Side Note'), note(ABDUL, 'UP-001 - Abdul')], folders: [], generatedAt: 1, ids: true }),
     )
-    expect(document.title).toBe('UP-001 - Abdul — v')
+    expect(document.title).toBe('v — UP-001 - Abdul')
     expect(stripLabels(el)).toEqual(['UP-001 - Abdul', 'b'])
     expect(el.querySelector('.right-panel__label')?.textContent).toBe('Side Note')
     await act(async () => void captured.sidebar?.onRenameFile(ABDUL, '/v/renamed.md', 'file'))
@@ -2195,7 +2195,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     bridge.window.setIdentity.mockClear()
     openInbox()
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
-    expect(document.title).toBe('b — v')
+    expect(document.title).toBe('v — b')
     expect(location.hash).toBe('#/v/b.md')
     expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
     act(() => button(el, 'Close review')?.click())

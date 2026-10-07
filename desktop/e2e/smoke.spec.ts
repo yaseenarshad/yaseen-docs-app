@@ -74,7 +74,7 @@ test('step 2 — seeded relaunch opens the vault without the native dialog', asy
   await expandDirs(win, [path.join(vault, 'Projects')])
   await expect(win.locator('.tree__row--file', { hasText: 'Roadmap' })).toBeVisible()
   await expect(win.locator('.tree__row--active')).toContainText('Welcome note')
-  await expect.poll(() => win.title()).toBe(`Welcome note — ${path.basename(vault)}`) // `<file — folder>`
+  await expect.poll(() => win.title()).toBe(`${path.basename(vault)} — Welcome note`) // `<folder — file>` (YAZ-2555 D6)
   expect(await windowCount(app)).toBe(1)
   await shoot(win, '02-seeded-vault-open')
 })
@@ -123,7 +123,7 @@ test('step 5 — real quit flushes, relaunch restores window, file and fold', as
   await expect(win.locator('[data-outline-folded="true"]').first()).toBeAttached() // fold APPLIED in the DOM
   await expect(win.locator('.ProseMirror').getByText(CHILD_BULLET)).toBeHidden()
   expect(await windowCount(app)).toBe(1)
-  await expect.poll(() => win.title()).toBe(`Welcome note — ${path.basename(vault)}`)
+  await expect.poll(() => win.title()).toBe(`${path.basename(vault)} — Welcome note`)
   await shoot(win, '05-relaunch-restored')
   await quitApp(app)
 })
