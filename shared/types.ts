@@ -528,6 +528,11 @@ export function cleanVaultName(raw: unknown): string | null {
   return name === '' ? null : name
 }
 
+/** A vault's number (YAZ-2555 D2): a whole number 1–9, else null. */
+export function cleanVaultKey(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 9 ? raw : null
+}
+
 /** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write. */
 export const MAX_FAVORITES = 500
 
@@ -722,10 +727,17 @@ export interface FolderState {
   baseGroups: Record<string, string[]>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
+  /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
+  key: number | null
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key'>>
+
+/** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
+export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
+  return Object.fromEntries(Object.entries(folders).map(([root, folder]) => [root, folder.key === key ? { ...folder, key: null } : folder]))
+}
 
 /**
  * The whole persisted app state — one user-global JSON file, owned by the main process
@@ -749,7 +761,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------

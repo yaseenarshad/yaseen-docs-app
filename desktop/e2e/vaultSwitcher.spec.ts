@@ -86,7 +86,7 @@ function twoVaultState(): AppState {
     { path: vaultA, lastOpened: now },
     { path: vaultB, lastOpened: now - 60_000 },
   ]
-  state.folders[vaultB] = { expanded: [], lastFile: path.join(vaultB, 'Ideas.md'), folds: {}, baseGroups: {}, name: null }
+  state.folders[vaultB] = { expanded: [], lastFile: path.join(vaultB, 'Ideas.md'), folds: {}, baseGroups: {}, name: null, key: null }
   return state
 }
 
@@ -211,7 +211,7 @@ test('step 4 — "Set display name" from the header menu renames the header, the
   // The header IS the current vault (YAZ-1798): its menu has the middle three groups only — no
   // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Set display name').click()
 
   // The name becomes a field WHERE it stood — the header — the folder name as its placeholder (D5).
@@ -242,7 +242,7 @@ test('step 5 — the display name survives quit → relaunch; "Reset to folder n
 
   // With a display name set the menu gains "Reset to folder name" — never "Rename" (D5).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Reset to folder name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Reset to folder name').click()
   await expect(headerName(win)).toHaveText(BETA)
   await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', BETA))

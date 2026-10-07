@@ -526,19 +526,19 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
   it('the trigger opens the CURRENT vault\'s menu (no Open in this window, no Remove) and leaves the panel closed; the native menu is swallowed', () => {
     const { el } = render()
     expect(rightClick(trigger(el))).toBe(true)
-    expect(menuLabels()).toEqual(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     expect(panel(el)).toBeNull()
   })
 
-  it('the current vault\'s own row gets the same five; another row gets all eight — and the highlight never moves', () => {
+  it('the current vault\'s own row gets the same six; another row gets all eight — and the highlight never moves', () => {
     const { el } = render()
     openPanel(el)
     const before = activeRow(el)
     rightClick(rows(el)[0])
-    expect(menuLabels()).toEqual(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     rightClick(otherRow(el))
-    expect(menuLabels()).toEqual(['Open in this window', 'Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(activeRow(el)).toBe(before)
   })
 
@@ -574,6 +574,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     rightClick(otherRow(el))
     pick('Remove from recent vaults')
     expect(remove).toHaveBeenCalledWith(OTHER)
+    expect(setFolder).not.toHaveBeenCalled() // it has no number to clear (YAZ-2555 A2)
     expect(rows(el).map(pathOf)).not.toContain(OTHER)
     expect(panel(el)).not.toBeNull()
     expect(document.activeElement).toBe(filter(el))
@@ -779,6 +780,59 @@ describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
     expect(trigger(el).querySelector('.sidebar__root-name')?.textContent).toBe('Docs Vault')
     expect(setFolder).toHaveBeenLastCalledWith(ROOT, { name: 'Docs Vault' })
     expect(panel(el)).toBeNull()
+  })
+})
+
+describe('VaultSwitcher: a vault\'s number (YAZ-2555 D2)', () => {
+  const OTHER = RECENTS[2].path // '/v/Archive'
+  const otherRow = (el: HTMLElement) => rows(el)[2]
+  /** The current vault is "Docs" and has ⌘2. */
+  const docsHasTwo = (): AppState => ({ ...defaultAppState(), folders: { [ROOT]: { ...defaultFolderState(), name: 'Docs', key: 2 } } })
+  /** Right-click → Set shortcut on `target`: the flyout's lines as "label hint". */
+  const openKeys = (target: HTMLElement) => {
+    rightClick(target)
+    pick('Set shortcut')
+    return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].map((b) => `${b.textContent} ${b.dataset.hint ?? ''}`.trim())
+  }
+
+  it('Set shortcut on a row: the flyout names each number\'s vault; a number another vault has moves here at once, and No shortcut clears it (S13, S15, S17)', () => {
+    act(() => broadcast(docsHasTwo()))
+    const { el } = render()
+    openPanel(el)
+    expect(openKeys(otherRow(el))).toEqual(['⌘1 free', '⌘2 Docs', '⌘3 free', '⌘4 free', '⌘5 free', '⌘6 free', '⌘7 free', '⌘8 free', '⌘9 free'])
+    pick('⌘2')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { key: 2 })
+    expect([storage.vaultKey(OTHER), storage.vaultKey(ROOT)]).toEqual([2, null])
+    expect(vaultMenu()).toBeNull()
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+    expect(openKeys(otherRow(el))).toEqual(['⌘1 free', '⌘2 ✓ Archive', '⌘3 free', '⌘4 free', '⌘5 free', '⌘6 free', '⌘7 free', '⌘8 free', '⌘9 free', 'No shortcut'])
+    pick('No shortcut')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { key: null })
+    expect(storage.vaultKey(OTHER)).toBeNull()
+  })
+
+  it('Set shortcut on the header gives the CURRENT vault its number, the panel closed (S16: its old number is free again)', () => {
+    act(() => broadcast(docsHasTwo()))
+    const { el } = render()
+    expect(openKeys(trigger(el))).toContain('⌘2 ✓ Docs')
+    pick('⌘5')
+    expect(setFolder).toHaveBeenLastCalledWith(ROOT, { key: 5 })
+    expect(panel(el)).toBeNull()
+    expect(openKeys(trigger(el)).slice(0, 5)).toEqual(['⌘1 free', '⌘2 free', '⌘3 free', '⌘4 free', '⌘5 ✓ Docs'])
+  })
+
+  it('Remove from recent vaults also clears the vault\'s number (A2, S19)', () => {
+    act(() => broadcast({ ...defaultAppState(), folders: { [OTHER]: { ...defaultFolderState(), key: 3 } } }))
+    const remove = vi.spyOn(storage, 'removeRecentRoot').mockImplementation(() => undefined)
+    const { el } = render()
+    openPanel(el)
+    rightClick(otherRow(el))
+    pick('Remove from recent vaults')
+    expect(remove).toHaveBeenCalledWith(OTHER)
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { key: null })
+    expect(storage.vaultKey(OTHER)).toBeNull()
+    remove.mockRestore()
   })
 })
 

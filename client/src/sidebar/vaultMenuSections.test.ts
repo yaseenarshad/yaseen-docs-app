@@ -3,20 +3,22 @@
  * which groups, and what each hands its handler. `ContextMenu.test.tsx` owns the drawing.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MenuAction, MenuSection } from './menuSections'
+import type { MenuAction, MenuParent, MenuSection } from './menuSections'
 import { buildVaultMenuSections, type VaultMenuHandlers, type VaultMenuTarget } from './vaultMenuSections'
 
 const OTHER = '/v/Émojis 🚀 & spaces'
 /** A target as the switcher builds it: the folder name, no display name set. */
-const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, renamed: false, ...over })
+const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, renamed: false, keyed: [], ...over })
 
 function handlers(): VaultMenuHandlers {
-  return { onOpenHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
+  return { onOpenHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onSetKey: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
 }
 
 /** The non-empty groups' labels — what `ContextMenu` draws, a hairline between each. */
 const groupsOf = (sections: MenuSection[]) => sections.filter((s) => s.length > 0).map((s) => s.map((i) => i.label))
 const item = (sections: MenuSection[], id: string) => sections.flat().find((i) => i.id === id) as MenuAction
+/** The "Set shortcut" flyout's two groups (YAZ-2555 D2): the nine numbers, then "No shortcut". */
+const keyFlyout = (sections: MenuSection[]) => (sections.flat().find((i) => i.id === 'key') as MenuParent).children
 
 function installClipboard(fail?: Error) {
   const writeText = vi.fn(async () => {
@@ -31,10 +33,10 @@ afterEach(() => {
 })
 
 describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
-  it('another vault: Open in this window · Set display name · the two copies · Reveal and VS Code · Remove — five groups in that order', () => {
+  it('another vault: Open in this window · Set display name, Set shortcut · the two copies · Reveal and VS Code · Remove — five groups in that order', () => {
     expect(groupsOf(buildVaultMenuSections(target(), handlers()))).toEqual([
       ['Open in this window'],
-      ['Set display name'],
+      ['Set display name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
       ['Remove from recent vaults'],
@@ -45,24 +47,24 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
     expect(buildVaultMenuSections(target(), handlers())[0][0].hint).toBe('⇧⏎')
   })
 
-  it('a renamed vault also offers Reset to folder name, beside Set display name (YAZ-1974 D5)', () => {
+  it('a renamed vault also offers Reset to folder name, beside Set display name (YAZ-1974 D5) — Set shortcut stays below both (YAZ-2555 S13)', () => {
     expect(groupsOf(buildVaultMenuSections(target({ name: 'Launch', renamed: true }), handlers()))).toEqual([
       ['Open in this window'],
-      ['Set display name', 'Reset to folder name'],
+      ['Set display name', 'Reset to folder name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
       ['Remove from recent vaults'],
     ])
   })
 
-  it('the current vault: no Open in this window (you are there) and no Remove (it would come straight back, D3) — the display name items stay', () => {
+  it('the current vault: no Open in this window (you are there) and no Remove (it would come straight back, D3) — the display name items and Set shortcut stay', () => {
     expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true }), handlers()))).toEqual([
-      ['Set display name'],
+      ['Set display name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
     ])
     expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, renamed: true }), handlers()))).toEqual([
-      ['Set display name', 'Reset to folder name'],
+      ['Set display name', 'Reset to folder name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
     ])
@@ -87,6 +89,25 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
       item(sections, id).onSelect()
       expect(fn).toHaveBeenCalledWith(OTHER)
     }
+  })
+
+  it('Set shortcut (YAZ-2555 D2, S13–S17): ⌘1–⌘9, each with the vault that has the number or "free", a check mark on this vault\'s own; No shortcut only while it has one', () => {
+    const keyed = [
+      { key: 1, path: '/v/Main', name: 'Main vault' },
+      { key: 5, path: OTHER, name: 'Launch' },
+    ]
+    const h = handlers()
+    const [numbers, none] = keyFlyout(buildVaultMenuSections(target({ name: 'Launch', renamed: true, keyed }), h))
+    expect(numbers.map((i) => `${i.label} ${i.hint}`)).toEqual(['⌘1 Main vault', '⌘2 free', '⌘3 free', '⌘4 free', '⌘5 ✓ Launch', '⌘6 free', '⌘7 free', '⌘8 free', '⌘9 free'])
+    expect(none.map((i) => i.label)).toEqual(['No shortcut'])
+    numbers[0].onSelect() // S15: a number that a different vault has is offered like a free one — no confirm
+    expect(h.onSetKey).toHaveBeenLastCalledWith(OTHER, 1)
+    none[0].onSelect()
+    expect(h.onSetKey).toHaveBeenLastCalledWith(OTHER, null)
+    // A vault with no number: no check mark anywhere, and nothing to clear.
+    const [bare, noNone] = keyFlyout(buildVaultMenuSections(target({ keyed: [keyed[0]] }), h))
+    expect(bare.map((i) => i.hint)).toEqual(['Main vault', 'free', 'free', 'free', 'free', 'free', 'free', 'free', 'free'])
+    expect(noNone).toEqual([])
   })
 
   it('Copy vault name writes the display name verbatim and confirms (YAZ-1974 D4)', async () => {
