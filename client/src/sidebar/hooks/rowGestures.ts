@@ -39,9 +39,9 @@ export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeNo
   }, [roots])
 
   // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
-  // other lens is a different reading of the vault, and a typed query swaps the body for the flat
-  // list entirely (🔒 the flat-list ruling on YAZ-739). `clear` on an empty selection returns the
-  // same set, so the mount pass and every ordinary render below cost nothing.
+  // other lens is a different reading of the vault, and a typed query swaps the body for the
+  // search tree (YAZ-2620), which has a highlight of its own and no multi-select. `clear` on an
+  // empty selection returns the same set, so the mount pass and every ordinary render below cost nothing.
   useEffect(() => {
     dispatchSelection({ type: 'clear' })
   }, [lens, searching])

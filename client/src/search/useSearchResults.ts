@@ -4,9 +4,12 @@
  * list, however many vaults. No debounce — the ranking scan is synchronous over title-scale data
  * (guarded by `searchCandidates.perf.test.ts`). Since YAZ-1491 the list also carries the tree's
  * FOLDERS (🔒 D1): `dirs` is the Sidebar's own `allDirs` memo — no second feed, no extra read —
- * spliced in FIRST so a folder sits above a note it ties with (tree order: dirs before files),
- * vault by vault in the order of the window's vaults. A query that holds an id is answered by it
- * alone (`searchRows`, 🔒 D32); a folder's title (YAZ-2420 🔒 D14) and id are on the snapshot's `folders`.
+ * spliced in FIRST so a folder ranks above a note it ties with (tree order: dirs before files).
+ * Since YAZ-2620 it carries the tree's files that are no notes as well (🔒 D3): `files` is the
+ * Sidebar's `otherFiles` memo, spliced in LAST. Vault by vault, in the order of the window's
+ * vaults. A query that holds an id is answered by it alone (`searchRows`, 🔒 D32); a folder's title
+ * (YAZ-2420 🔒 D14) and id are on the snapshot's `folders`. The rows come back RANKED; the sidebar
+ * draws them as a tree (`searchTree`).
  *
  * The feed is LAZY (F1 finding 1, YAZ-808). The ALWAYS-ON per-window index feed is
  * WikilinkIndexBridge's; search must not duplicate it in every window for a bar nobody typed
@@ -17,20 +20,21 @@ import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
-import { folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
+import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
 
-/** One vault the search covers: its folder, its watcher and its folders (the Sidebar's own `allDirs`). */
+/** One vault the search covers: its folder, its watcher, and its folders and its files that are no notes (the Sidebar's own `allDirs` and `otherFiles`). */
 export interface SearchVault {
   root: string
   watch: WatchSource
   dirs: readonly string[]
+  files: readonly string[]
 }
 
 type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[] }>
 const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
 
-/** One vault's rows as they were last built, with what each half was built from. */
-type Rows = Snapshot & { dirs: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; all: SearchCandidate[] }
+/** One vault's rows as they were last built, with what each part was built from. */
+type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; all: SearchCandidate[] }
 
 export function useSearchResults(vaults: readonly SearchVault[], query: string): SearchCandidate[] {
   // Each vault's index snapshot, by its root, once it has landed.
@@ -63,8 +67,9 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string):
       let generation = 0
       const load = () => {
         const mine = ++generation
-        // An unreadable index leaves search with no rows — quietly. Search is an accelerator, not a
-        // view: a banner here would shout about something the tree below is already showing fine.
+        // An unreadable index leaves search with no NOTE rows — quietly (the folders and the other
+        // files come from the tree, S35 on YAZ-2620). Search is an accelerator, not a view: a banner
+        // here would shout about something the tree below is already showing fine.
         api.index(root).then(
           (res) => {
             if (mine === generation) setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders }))
@@ -101,18 +106,21 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string):
     [],
   )
 
-  // One list over every vault. Each vault's folder rows and note rows are rebuilt only when what
-  // they were built from changed — its `dirs` or folder records, its records — so a snapshot or a
-  // tree of one vault rebuilds no row of another. One vault → its own list, as before.
+  // One list over every vault. Each vault's folder rows, note rows and other-file rows are rebuilt
+  // only when what they were built from changed — its `dirs` or folder records, its records, its
+  // `files` — so a snapshot or a tree of one vault rebuilds no row of another. One vault → its own
+  // list, as before: folders, notes, other files (a tie in a rank reads in that order, YAZ-2620 S19).
   const built = useRef(new Map<string, Rows>())
   const candidates = useMemo(() => {
     const next = new Map<string, Rows>()
-    for (const { root, dirs } of vaults) {
+    for (const { root, dirs, files } of vaults) {
       const { records, folders } = snapshots.get(root) ?? NO_SNAPSHOT
       const last = built.current.get(root)
       const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders)
       const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records)
-      next.set(root, { dirs, records, folders, folderRows, noteRows, all: last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows ? last.all : [...folderRows, ...noteRows] })
+      const fileRows = last !== undefined && last.files === files ? last.fileRows : fileCandidates(root, files)
+      const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows
+      next.set(root, { dirs, files, records, folders, folderRows, noteRows, fileRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows] })
     }
     built.current = next
     const lists = [...next.values()].map((rows) => rows.all)

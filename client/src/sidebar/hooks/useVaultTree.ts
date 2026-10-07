@@ -11,7 +11,7 @@ import type { NoticeKind } from '../../lib/notice'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
-import { allDirs, favoriteForest, favoriteRoots, findNode, treeHasPath, treeReducer } from '../../lib/treeState'
+import { allDirs, favoriteForest, favoriteRoots, findNode, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 import type { SidebarVault } from '../Sidebar'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
@@ -84,13 +84,15 @@ export function useVaultTree(
   vaultRowsRef.current = vaultRows
 
   // Every directory of the CURRENT trees, outer before inner (`allDirs`), vault by vault: the
-  // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one
+  // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
   // memo, no second feed. The REAL folders only: a vault row is not one, so "Collapse all" leaves
   // the vault rows open (YAZ-2602 S16).
   const dirsByVault = useMemo(() => roots.map((vault) => allDirs(trees.get(vault)?.tree ?? [])), [trees, roots])
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
+  // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
+  const filesByVault = useMemo(() => roots.map((vault) => otherFiles(trees.get(vault)?.tree ?? [])), [trees, roots])
   // The Focus tab's rows (YAZ-2619 D2): the list in the order ADDED, off the live trees, by the
   // Favorites rule (`favoriteRoots`) — a vanished path yields no row, and the prune below drops it.
   // It resolves over the forest, so the items of every vault stand in the one list (YAZ-2602 A1, A4).
@@ -387,5 +389,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, favoriteNodes, favoriteDirs }
+  return { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }

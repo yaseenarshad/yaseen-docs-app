@@ -1,8 +1,8 @@
 /**
  * "Add note shortcut" (YAZ-2290 D2): pick ONE note to also appear in a folder. Not a second
- * search — the search bar's own candidates, matcher and result list (`searchCandidates`,
- * `searchTitles`, `SearchResults`) inside the confirm sheet's shell, so it ranks like the bar and
- * closes like a sheet. Notes only (the index holds nothing else), and none the folder already
+ * search — the search bar's own candidates and matcher (`searchCandidates`, `searchTitles`), drawn
+ * as the flat result list (`SearchResults`; the bar itself draws a tree since YAZ-2620) inside the
+ * confirm sheet's shell, so it ranks like the bar and closes like a sheet. Notes only (the index holds nothing else), and none the folder already
  * shows: one living under it or already a shortcut there has nothing to add.
  *
  * The input keeps focus, as the bar's does: type to filter, ↑/↓ move the highlight (clamped, never

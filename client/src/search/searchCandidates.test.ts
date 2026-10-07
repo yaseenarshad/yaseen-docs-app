@@ -1,12 +1,13 @@
 /**
  * Title search candidates (YAZ-802): basename + alias rows over an index snapshot, matched
  * through the shared completion matcher at SEARCH_CAP — and, since YAZ-1491, one row per FOLDER
- * of the loaded tree (🔒 D1), ranked through the very same matcher (🔒 D2). The perf smoke lives
- * in searchCandidates.perf.test.ts (YAZ-740).
+ * of the loaded tree (🔒 D1), ranked through the very same matcher (🔒 D2); since YAZ-2620, one row
+ * per tree file that is no note (🔒 D3 there), the same way. The perf smoke lives in
+ * searchCandidates.perf.test.ts (YAZ-740).
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { SEARCH_CAP, folderCandidates, searchCandidates, searchRows, searchTitles } from './searchCandidates'
+import { SEARCH_CAP, fileCandidates, folderCandidates, searchCandidates, searchRows, searchTitles } from './searchCandidates'
 
 const rec = (path: string, aliases: string[] = [], title?: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -102,6 +103,28 @@ describe('folderCandidates (🔒 D1, YAZ-1491)', () => {
 
   it('no folders, no rows', () => {
     expect(folderCandidates('/vault', [], [])).toEqual([])
+  })
+})
+
+describe('fileCandidates (🔒 D3, YAZ-2620)', () => {
+  it('S12: one `file` row per file that is no note — matched by its file name WITH the extension, labelled by its root-relative folder', () => {
+    const rows = fileCandidates('/vault', ['/vault/skills/yt/get-transcript.py', '/vault/scan.pdf'])
+    expect(rows).toEqual([
+      { kind: 'file', name: 'get-transcript.py', lower: 'get-transcript.py', label: 'get-transcript.py', path: '/vault/skills/yt/get-transcript.py', folder: 'skills/yt' },
+      { kind: 'file', name: 'scan.pdf', lower: 'scan.pdf', label: 'scan.pdf', path: '/vault/scan.pdf', folder: '' },
+    ])
+    expect(searchTitles(rows, '.py').map((c) => c.path)).toEqual(['/vault/skills/yt/get-transcript.py'])
+    expect(searchTitles(rows, 'Get-Transcript').map((c) => c.path)).toEqual(['/vault/skills/yt/get-transcript.py'])
+    expect(searchTitles(rows, 'skills')).toEqual([]) // its folder is a label, never matched — a note's rule (🔒 D3, YAZ-739)
+    expect(fileCandidates('/vault/', ['/vault/a/b.txt']).map((c) => c.folder)).toEqual(['a'])
+  })
+
+  it('S12, S19: a note still matches by its title and aliases, never by its file name; a tie is folder, then note, then other file', () => {
+    const notes = searchCandidates([rec('/vault/up-001-abdul.md', ['Plan'], 'UP-001 - Abdul')])
+    const rows = [...folderCandidates('/vault', ['/vault/plan'], []), ...notes, ...fileCandidates('/vault', ['/vault/bin/plan', '/vault/up-001-abdul.py'])]
+    expect(searchTitles(rows, 'up-001-abdul').map((c) => c.path)).toEqual(['/vault/up-001-abdul.py'])
+    // `plan` three times, each an exact name: the folder, the note's alias, the file with no extension.
+    expect(searchTitles(rows, 'plan').map((c) => [c.kind, c.label])).toEqual([['dir', 'plan'], ['file', 'Plan — UP-001 - Abdul'], ['file', 'plan']])
   })
 })
 

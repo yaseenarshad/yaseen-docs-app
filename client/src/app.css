@@ -1327,6 +1327,24 @@ button {
   color: var(--fg-muted);
 }
 
+/* The way out of a search (D8, YAZ-2630): a keycap that names the key, and is the key on a click.
+   There only while a query is typed. */
+.sidebar__search-clear {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+
+.sidebar__search-clear:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg);
+}
+
 .sidebar__body {
   flex: 1;
   overflow: auto;
@@ -1343,9 +1361,9 @@ button {
   color: var(--danger);
 }
 
-/* Search results (YAZ-803) — a FLAT ranked list in place of the tree, scrolling inside
-   `.sidebar__body`; the rows borrow the tree row's metrics and wash so the swap reads as the
-   same surface. The folder rides under the label instead of an indent (🔒 flat-list ruling). */
+/* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and
+   wash; the folder rides under the label instead of an indent (🔒 flat-list ruling on YAZ-739).
+   The shortcut picker's alone since YAZ-2620: the sidebar's search draws the tree itself. */
 .search-results {
   list-style: none;
   margin: 0;
@@ -1734,6 +1752,13 @@ button {
   color: var(--fg-muted);
 }
 
+/* Search (YAZ-2620 🔒 D5): a row that is no match — a parent of one, or a row inside a matched
+   folder — steps back. Ahead of `--active`, `--selected` and `--revealed`, so the open file's row
+   keeps its own style under it (S39). */
+.tree__row--context {
+  color: var(--fg-muted);
+}
+
 .tree__row--active {
   background: var(--accent-soft);
   color: var(--accent);
@@ -1799,6 +1824,16 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
+   (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
+   translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */
+.tree__mark {
+  background: var(--mark-bg);
+  border-radius: 2px;
+  color: inherit;
+  font-weight: 600;
 }
 
 .tree__chevron {

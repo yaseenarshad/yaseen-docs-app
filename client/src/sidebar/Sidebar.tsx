@@ -10,9 +10,8 @@ import { relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, treeHasFile } from '../lib/treeState'
-import { SearchResults } from '../search/SearchResults'
-import type { SearchCandidate } from '../search/searchCandidates'
+import { ancestorDirs, findDirNode, findNode, treeHasFile } from '../lib/treeState'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
@@ -330,8 +329,12 @@ const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', focus: 'Focus'
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
-/** The Favorites tree's file move (YAZ-1766 D4): nothing on that tab drags to disk, so every callback is a no-op. */
+/** The Favorites tree's file move (YAZ-1766 D4), and the search tree's (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
 const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
+
+/** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
+const NO_NODES: readonly TreeNode[] = []
+const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
 
 /** Mounted with `key={its first vault}` by App, so all state below lives while that vault leads the window. */
 export function Sidebar({
@@ -374,7 +377,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
+  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -432,18 +435,37 @@ export function Sidebar({
 
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
   const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : dirs
-  // One activation rule for keyboard AND click, and for a folder as for a note: the row's page
-  // opens as a tab. The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the
-  // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
+  // Enter in the search bar, on a folder as on a note: the highlighted row's page opens as a tab.
+  // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
+  // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
+  // row's own (YAZ-2620 🔒 D1): it opens a note the same way, and folds a folder.
   const activate = (hit: SearchCandidate, background: boolean) => {
-    if (background) onOpenFileBackground(hit.path)
+    const node = forest === null ? null : findNode(forest, hit.path)
+    // A file with no viewer in the app opens in its default app, as its tree row does (YAZ-1577 D2;
+    // S24 on YAZ-2620): no tab, so nothing for ⌘ to background either.
+    if (node?.type === 'file' && node.kind === null) openDefault(hit.path)
+    else if (background) onOpenFileBackground(hit.path)
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
-  // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own watcher, and its own folders.
+  // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
+  // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
+  // draws — the forest, with two or more vaults (A9).
   const watches = useSameList(vaults.map((vault) => vault.watch))
-  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i] })), [roots, watches, dirsByVault])
-  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, pendingSearchFocus, onSearchFocusHandled, activate)
+  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
+  const { setQuery, searchInput, query, results, searching, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pendingSearchFocus, onSearchFocusHandled, activate)
+  // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
+  // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
+  const menuRow = menu?.leaveSearchTo ?? null
+  const searchSelection = useMemo(() => (menuRow === null || searchCursor.paths.has(menuRow) ? searchCursor : { ...searchCursor, paths: new Set([...searchCursor.paths, menuRow]) }), [searchCursor, menuRow])
+  // The search tree scrolls inside `.sidebar__body`, so arrowing past its edge must bring the
+  // highlighted row along. jsdom has no scrollIntoView — hence the `?.()` (the TabBar idiom).
+  useEffect(() => {
+    const [path] = searchCursor.paths
+    if (path === undefined || bodyRef.current === null) return
+    const row = [...bodyRef.current.querySelectorAll<HTMLElement>('.tree__row[data-path]')].find((r) => r.dataset.path === path)
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }, [searchCursor.paths])
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -471,10 +493,11 @@ export function Sidebar({
 
   // A Files reveal targets a file — or, from a folder search row's menu (YAZ-2050), a DIR of the
   // tree. Both questions are asked once here and read by the two steps below — of the tree of the
-  // vault that holds the target (YAZ-2602 S17).
+  // vault that holds the target (YAZ-2602 S17). A vault's row is a dir of the tree too: the cut
+  // tree of a search draws it, with its menu (A9).
   const revealRoot = pendingReveal === null ? root : rootOf(pendingReveal.path)
   const revealTree = trees.get(revealRoot) ?? null
-  const revealIsDir = pendingReveal !== null && dirs.includes(pendingReveal.path)
+  const revealIsDir = pendingReveal !== null && (dirs.includes(pendingReveal.path) || vaultRows.has(pendingReveal.path))
   const revealTargetPresent = revealTree !== null && pendingReveal !== null && (revealIsDir || treeHasFile(revealTree.tree, pendingReveal.path))
 
   useEffect(() => {
@@ -509,6 +532,8 @@ export function Sidebar({
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
       if (node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
+      // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
+      if (searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
@@ -577,7 +602,7 @@ export function Sidebar({
         removeVault: vaultRow,
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, focusList, favoritesByRoot, reviewState],
+    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
@@ -710,8 +735,9 @@ export function Sidebar({
   const openMenuRef = useRef(openMenu)
   openMenuRef.current = openMenu
   const openRowMenu = useCallback((node: MenuRow, e: React.MouseEvent) => openMenuRef.current(node, e), [])
-  // What the three trees share; each tab adds only what differs (`nodes`, `move`, `reorder`). It is
-  // SPREAD into each `<Tree>`, so the memo above compares the values, never this object.
+  // What the trees share; each tab adds only what differs (`nodes`, `move`, `reorder`), and the
+  // search tree puts its own folds, highlight and marks over it (YAZ-2620). It is SPREAD into each
+  // `<Tree>`, so the memo above compares the values, never this object.
   const treeProps = {
     // Above the vault rows no one directory stands (YAZ-2602 D3).
     dirPath: multi ? '' : root,
@@ -801,8 +827,8 @@ export function Sidebar({
       {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Files (the file
           explorer), Focus, Favorites. The row stays VISIBLE and clickable during a search,
           and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`
-          only — no `aria-controls`/`tabpanel`, because the body below is shared with the flat
-          search results and belongs to neither lens while a query is typed. */}
+          only — no `aria-controls`/`tabpanel`, because the body below is shared with the search
+          tree and belongs to neither lens while a query is typed. */}
       <div className="sidebar__lenses" role="tablist" aria-label="Sidebar lens">
         {SIDEBAR_LENSES.map((id) => (
           <button
@@ -855,11 +881,29 @@ export function Sidebar({
           onChange={changeQuery}
           onKeyDown={searchKeyDown}
         />
+        {/* The way out, in sight (D8, YAZ-2630): Esc clears a typed query, and while there is one
+            this keycap says so — and does it on a click, the caret landing in the bar. No Tab stop:
+            the key it names is the keyboard's way. */}
+        {query !== '' && (
+          <button
+            type="button"
+            className="sidebar__search-clear"
+            title="Clear search (Esc)"
+            aria-label="Clear search"
+            tabIndex={-1}
+            onClick={() => {
+              setQuery('')
+              searchInput.current?.focus()
+            }}
+          >
+            esc
+          </button>
+        )}
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
-          results list has no such target, so right-clicking it offers nothing (YAZ-803) — not even
-          Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the full menu.
-          Blank space means the same thing in either lens: the vault ROOT. */}
+          search results have no such target, so right-clicking beside them offers nothing (YAZ-803)
+          — not even Electron's text menu, which leaked through until YAZ-2050. Their ROWS get the
+          full menu. Blank space means the same thing in either lens: the vault ROOT. */}
       <div
         ref={bodyRef}
         className="sidebar__body"
@@ -888,9 +932,18 @@ export function Sidebar({
         }}
       >
         {searching ? (
-          // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
-          results.length > 0 ? (
-            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} onRowContextMenu={(hit, e) => openMenu({ type: hit.kind, path: hit.path }, e)} vaultOf={multi ? (path) => vaultOf(path).name : undefined} />
+          // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5), with the
+          // Files tree cut down to the matches and their parents (YAZ-2620 🔒 D1): full tree rows,
+          // each with its own menu. The folds and the highlight are the search's own; nothing here
+          // creates, renames or drags, and a note shows once, where it lives (S7). Only this tree
+          // gets `marks` (🔒 D5): the typed text bold in a match, every other row dim. With two or
+          // more vaults each match stands under its vault's row, a parent like any folder (YAZ-2602 A9).
+          found.nodes.length > 0 ? (
+            <>
+              <Tree {...treeProps} nodes={found.nodes} expanded={searchOpen} onToggle={toggleSearchDir} pending={null} renaming={null} move={INERT_MOVE} selection={searchSelection} shortcuts={NO_SHORTCUTS} marks={marks} />
+              {/* The limit (🔒 D6): the ranking keeps the best `SEARCH_CAP` candidate rows — of every vault together — and a line says so once it is reached. */}
+              {results.length === SEARCH_CAP && <p className="sidebar__msg">Showing {SEARCH_CAP} matches. Type more to narrow.</p>}
+            </>
           ) : (
             <p className="sidebar__msg">No matches</p>
           )

@@ -64,6 +64,19 @@ export interface TreeReorder {
 /** A level's order as main sorts it (`fs/fsUtils.ts`): by name, case-insensitively. */
 const byName = (a: TreeNode, b: TreeNode): number => a.name.toLowerCase().localeCompare(b.name.toLowerCase())
 
+/** `label` with the typed text marked where it first sits (🔒 D5, YAZ-2620); a label that does not hold it (an alias or an id matched) is drawn plain. */
+function marked(label: string, needle: string | undefined) {
+  const at = needle === undefined ? -1 : label.toLowerCase().indexOf(needle)
+  if (needle === undefined || at === -1) return label
+  return (
+    <>
+      {label.slice(0, at)}
+      <mark className="tree__mark">{label.slice(at, at + needle.length)}</mark>
+      {label.slice(at + needle.length)}
+    </>
+  )
+}
+
 /** Which half of the hovered row the pointer is in — jsdom's zero rect and 0 clientY read as `after`. */
 const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
   const r = e.currentTarget.getBoundingClientRect()
@@ -83,6 +96,12 @@ export interface TreeSelection {
   toggle: (path: string) => void
   /** D9 (YAZ-1674): a plain click or ⌘-click makes the selection EXACTLY this row — then opens or folds as before. */
   set: (path: string) => void
+}
+
+/** What a search tree marks (🔒 D5, YAZ-2620): the paths the query matched, and the query as the matcher reads it — trimmed, lowercased. */
+export interface TreeMarks {
+  hits: ReadonlySet<string>
+  needle: string
 }
 
 interface TreeProps {
@@ -114,7 +133,7 @@ interface TreeProps {
   renaming: PendingRename | null
   /** File drag-to-move state + callbacks (E1b); owned by the Sidebar. */
   move: TreeFileMove
-  /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. */
+  /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. The search tree hands in its one highlighted match in this shape instead (YAZ-2620). */
   selection: TreeSelection
   /** Notes each folder shows, by its path (🔒 E6, YAZ-2290) — the ones under it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
   counts: ReadonlyMap<string, number>
@@ -130,6 +149,12 @@ interface TreeProps {
   titles: PathTitles
   /** Favorites-only (YAZ-1766 D4): root rows reorder the list instead of moving files; nested rows do not drag. */
   reorder?: TreeReorder
+  /**
+   * Search only (🔒 D5, YAZ-2620): the matched rows and the typed text, lowercased. A row in `hits`
+   * shows that text marked in its label; a row outside it — a parent of a match, or a row inside a
+   * matched folder — is drawn dim. Without it a tree draws, and re-renders, exactly as before.
+   */
+  marks?: TreeMarks
   depth?: number
 }
 
@@ -152,9 +177,10 @@ function TreeLevel({
   shortcuts,
   titles,
   reorder,
+  marks,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder, marks }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -170,6 +196,9 @@ function TreeLevel({
   // What a FILE row's drag does: move on disk (E1b) on an ordinary tree, reorder at depth 0 of a reorderable one, nothing below that.
   const fileDrag: Pick<TreeFileMove, 'start' | 'end'> | null = reorder === undefined ? move : rowReorder
   const dropEdge = (path: string) => (rowReorder?.over?.path === path ? ` tree__row--drop-${rowReorder.over.edge}` : '')
+  // In a search tree (🔒 D5, YAZ-2620) a row the query did not match only gives a match its place.
+  const context = (path: string) => (marks !== undefined && !marks.hits.has(path) ? ' tree__row--context' : '')
+  const needleFor = (path: string) => (marks?.hits.has(path) ? marks.needle : undefined)
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -194,7 +223,7 @@ function TreeLevel({
               <button
                 type="button"
                 // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
-                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}`}
+                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}${context(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
@@ -253,7 +282,7 @@ function TreeLevel({
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
-                <span className="tree__label">{vaultRows.has(node.path) ? node.name : pageLabel(node.path, true, titles)}</span>
+                <span className="tree__label">{vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}</span>
                 {vaultTag(node.path)}
                 {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
@@ -272,7 +301,7 @@ function TreeLevel({
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${dropEdge(node.path)}`}
+              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${dropEdge(node.path)}${context(node.path)}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={(e) => {
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
@@ -323,7 +352,7 @@ function TreeLevel({
                 rowReorder.drop()
               }}
             >
-              <span className="tree__label">{pageLabel(node.path, false, titles)}</span>
+              <span className="tree__label">{marked(pageLabel(node.path, false, titles), needleFor(node.path))}</span>
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
             </button>
