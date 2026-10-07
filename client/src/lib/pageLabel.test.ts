@@ -48,6 +48,19 @@ describe('pathTitles', () => {
     expect(pathTitles([titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')])).toBe(first)
     expect(pathTitles([titled('/v/a.md', 'A2')], [titled('/v/dir/.folder.md', 'Dir')]).get('/v/a.md')).toBe('A2')
   })
+
+  it('two vaults: each keeps its own Map while its titles stand, whichever vault\'s snapshot was read between (YAZ-2602)', () => {
+    const a = pathTitles([titled('/pa/a.md', 'A')], [])
+    const b = pathTitles([titled('/pb/b.md', 'B')], [])
+    // A save in /pa that changes no title, read after /pb's snapshot: the Map /pa's name holders already have.
+    expect(pathTitles([titled('/pa/a.md', 'A')], [])).toBe(a)
+    expect(pathTitles([titled('/pb/b.md', 'B')], [])).toBe(b)
+    // A changed title is a new Map for its own vault, and the other vault's stands.
+    const a2 = pathTitles([titled('/pa/a.md', 'A2')], [])
+    expect(a2).not.toBe(a)
+    expect(pathTitles([titled('/pb/b.md', 'B')], [])).toBe(b)
+    expect(pathTitles([titled('/pa/a.md', 'A2')], [])).toBe(a2)
+  })
 })
 
 describe('isFolderPath', () => {
