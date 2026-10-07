@@ -23,7 +23,7 @@ const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
 const RIGHT = { open: true, width: 520, items: ['/v/right.md'], expanded: '/v/right.md' }
-const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds }
+const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }
 
 let dir: string
 let store: Store
@@ -85,7 +85,7 @@ describe('registerWindowIpc', () => {
   })
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [] }))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [] }))
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {
@@ -97,12 +97,12 @@ describe('registerWindowIpc', () => {
   it('window:set-identity merges root / file into the entry, keeping id and bounds; tabs follow the invariant', async () => {
     // file → null clears tabs (tabs [] ⇔ file null); a new file not in tabs is prepended.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { root: '/other', file: null })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: null, tabs: [], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: null, tabs: [], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }])
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { file: '/other/b.md' })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }])
     // Unknown keys cannot touch id / bounds.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { id: 'hijack', bounds: { x: 0, y: 0, width: 1, height: 1 } })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }])
   })
 
   it('window:set-identity accepts a tabs patch: de-duplicated, and the active file is prepended when missing (GRO-2232)', async () => {
@@ -113,7 +113,7 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
     // file and tabs patched together: the new file leads.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'] })).toEqual(ok(undefined))
-    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds })
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds })
   })
 
   it('window:set-identity accepts one complete right-panel patch and enforces main/right exclusivity', async () => {
@@ -141,35 +141,32 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true }])
   })
 
-  it('window:set-identity validates and patches the lens, and identity reads it back (YAZ-1628)', async () => {
+  it('window:set-identity validates and patches the lens, and identity reads it back (YAZ-1628; the `focus` tab, YAZ-2619 S33)', async () => {
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'focus' })).toEqual(ok(undefined))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'focus' }])
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites', focusDirs: [], focusFavorites: [] }))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites', focusList: [] }))
+    // A value that is not a tab is refused, and the message names the three tabs.
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: "'sidebarLens' must be 'files', 'focus' or 'favorites'" }) })
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'topics' })).toEqual(bad('BAD_REQUEST')) // the retired lens (YAZ-2290)
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
   })
 
-  it('window:set-identity validates and patches the Focus Mode lists with the tabs rule, and identity reads them back (YAZ-1628)', async () => {
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusDirs: ['/v/a', '/v/b'], focusFavorites: ['/v/c'] })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ ...entry, focusDirs: ['/v/a', '/v/b'], focusFavorites: ['/v/c'] }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: ['/v/a', '/v/b'], focusFavorites: ['/v/c'] }))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusDirs: [] })).toEqual(ok(undefined)) // one lens' exit leaves the other alone
-    expect(store.get().windows).toEqual([{ ...entry, focusDirs: [], focusFavorites: ['/v/c'] }])
-    // A non-array, or one relative element, rejects the whole call and leaves the entry untouched.
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusDirs: 'nope' })).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusDirs: ['/v/a', 5] })).toEqual(bad('NOT_ABSOLUTE'))
-    expect(store.get().windows).toEqual([{ ...entry, focusDirs: [], focusFavorites: ['/v/c'] }])
-  })
-
-  it('window:set-identity validates and patches focusFavorites with the same tabs rule, and identity reads it back (YAZ-1766 D5)', async () => {
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusFavorites: ['/v/a'] })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ ...entry, focusFavorites: ['/v/a'] }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: ['/v/a'] }))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusFavorites: 'nope' })).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusFavorites: ['/v/a', 'rel'] })).toEqual(bad('NOT_ABSOLUTE'))
-    expect(store.get().windows).toEqual([{ ...entry, focusFavorites: ['/v/a'] }])
+  it('window:set-identity validates and patches the focus list, and identity reads it back (YAZ-2619 S33)', async () => {
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/a', '/v/b.md'] })).toEqual(ok(undefined))
+    expect(store.get().windows).toEqual([{ ...entry, focusList: ['/v/a', '/v/b.md'] }])
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: ['/v/a', '/v/b.md'] }))
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarCollapsed: true })).toEqual(ok(undefined)) // absent = untouched
+    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true, focusList: ['/v/a', '/v/b.md'] }])
+    // A non-array, or one element that is not an absolute path, rejects the whole call and leaves the entry untouched.
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/a', 5] })).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/c', 'rel'] })).toEqual(bad('NOT_ABSOLUTE'))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true, focusList: ['/v/a', '/v/b.md'] }])
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: [] })).toEqual(ok(undefined))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true }])
   })
 
   it('window:set-identity rejects the whole call on any bad tabs element, leaving the entry untouched', async () => {

@@ -26,6 +26,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   openVsCodePath: null,
   openDefaultPath: null,
   focusPaths: null,
+  focusIsOn: false,
   favoritePaths: null,
   favoriteIsOn: false,
   reviewDir: null,
@@ -46,8 +47,7 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onOpenVsCode: vi.fn(),
   onOpenDefault: vi.fn(),
   onReveal: vi.fn(),
-  focusLabel: 'Focus on folder',
-  onFocus: vi.fn(),
+  onToggleFocus: vi.fn(),
   onCut: vi.fn(),
   onCopy: vi.fn(),
   onPaste: vi.fn(),
@@ -111,6 +111,7 @@ const FILE_ROW: Partial<MenuSectionTargets> = {
   revealPath: '/v/Note.md',
   openVsCodePath: '/v/Note.md',
   openDefaultPath: '/v/Note.md',
+  focusPaths: ['/v/Note.md'],
 }
 
 /** Blank space: every row-only target null, the root fallbacks in place (GRO-2273, GRO-2274). */
@@ -122,10 +123,11 @@ describe('the seven groups (🔒 D7, amended)', () => {
     expect(build(FILE_ROW)).toHaveLength(7)
   })
 
-  it('a Markdown FILE row fills six of the seven (the Open group is empty), in the pinned order', () => {
-    // The Open group is EMPTY on one file row (no plural open, nothing to focus), so the clipboard
-    // group leads; the OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
+  it('a Markdown FILE row fills all seven, in the pinned order — the focus toggle is the Open group\'s one item there (YAZ-2619 R6)', () => {
+    // No plural open and no folder to open, so the focus toggle stands alone above the clipboard
+    // group; the OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
     expect(groupsOf(build(FILE_ROW))).toEqual([
+      ['Add to focus'],
       ['Cut', 'Copy', 'Paste', 'Copy path'],
       ['New note', 'New folder'],
       ['New dated note', 'New dated folder'],
@@ -217,7 +219,7 @@ describe('"Open in ▸" (D7 amended)', () => {
   it('the parent is a parent: no onSelect, and it stands ALONE in its own group between the this-row items and Delete', () => {
     const sections = build({ ...FILE_ROW, openTabPaths: ['/v/a.md', '/v/b.md'] })
     expect(itemOf(sections, 'Open in')?.onSelect).toBeUndefined()
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs'])
+    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Add to focus'])
     expect(sections[4].map((i) => i.label)).toEqual(['Rename'])
     expect(sections[5].map((i) => i.label)).toEqual(['Open in'])
   })
@@ -252,11 +254,6 @@ describe('"Open in ▸" (D7 amended)', () => {
   })
 })
 
-/**
- * "Focus on …" (YAZ-1605): a VIEW verb, so it CLOSES the Open group — after the plural open,
- * ahead of the clipboard group. An EMPTY list hides it too (the caller's "nothing here
- * can be focused" answer), and the caller spells the label: it knows the count.
- */
 describe('Open item (YAZ-2290 D3)', () => {
   it('is absent without a target — a file row, blank space, a 2+ selection', () => {
     expect(itemOf(build(FILE_ROW), 'Open')).toBeUndefined()
@@ -266,31 +263,37 @@ describe('Open item (YAZ-2290 D3)', () => {
   it('a folder row: it LEADS the menu, above Focus, and hands the caller the folder', () => {
     const onOpen = vi.fn()
     const sections = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'] }, { onOpen })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open', 'Focus on folder'])
+    expect(sections[0].map((i) => i.label)).toEqual(['Open', 'Add to focus'])
     select(sections, 'Open')
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })
 
-describe('Focus item (YAZ-1605)', () => {
-  it.each<[string, Partial<MenuSectionTargets>]>([
-    ['null', { focusPaths: null }],
-    ['empty', { focusPaths: [] }],
-  ])('is absent when focusPaths is %s', (_case, over) => {
-    expect(labelsOf(build(over)).some((l) => l.startsWith('Focus'))).toBe(false)
+/**
+ * The focus toggle (YAZ-2619 D3): ONE state-aware item on every ROW — file or dir — never on blank
+ * space (R7). It CLOSES the Open group (R6): after the plural open, ahead of the clipboard group.
+ * The label counts a 2+ selection (R9), and the handler gets the paths and the direction it read.
+ */
+describe('Focus item (YAZ-2619 D3)', () => {
+  it('R7: is absent on blank space — no target, no item', () => {
+    expect(labelsOf(build(BLANK)).some((l) => l.endsWith('focus'))).toBe(false)
   })
 
-  it('renders the caller\'s own label and hands the select the exact array', () => {
-    const onFocus = vi.fn()
-    const sections = build({ focusPaths: ['/v/a', '/v/b'] }, { focusLabel: 'Focus on 2 folders', onFocus })
-    expect(labelsOf(sections)).toContain('Focus on 2 folders')
-    select(sections, 'Focus on 2 folders')
-    expect(onFocus).toHaveBeenCalledExactlyOnceWith(['/v/a', '/v/b'])
+  it('S5, S6, R9: reads Add or Remove by `focusIsOn`, counts a 2+ selection, and hands over the exact paths and the direction', () => {
+    expect(labelsOf(build({ focusPaths: ['/v/a.md'] }))).toContain('Add to focus')
+    expect(labelsOf(build({ focusPaths: ['/v/dir'], focusIsOn: true }))).toContain('Remove from focus')
+    expect(labelsOf(build({ focusPaths: ['/v/a.md', '/v/b', '/v/c.md'], focusIsOn: true }))).toContain('Remove 3 from focus')
+    const onToggleFocus = vi.fn()
+    select(build({ focusPaths: ['/v/a.md', '/v/b'] }, { onToggleFocus }), 'Add 2 to focus')
+    expect(onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/v/a.md', '/v/b'], false)
+    const onRemove = vi.fn()
+    select(build({ focusPaths: ['/v/a.md'], focusIsOn: true }, { onToggleFocus: onRemove }), 'Remove from focus')
+    expect(onRemove).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
   })
 
-  it('closes the Open group — after the plural open, before the clipboard group', () => {
-    const sections = build({ ...FILE_ROW, focusPaths: ['/v/a'], openTabPaths: ['/v/a.md', '/v/b.md'] })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Focus on folder'])
+  it('R6: closes the Open group — after the plural open, before the clipboard group', () => {
+    const sections = build({ ...FILE_ROW, focusPaths: ['/v/a.md', '/v/b.md'], openTabPaths: ['/v/a.md', '/v/b.md'] })
+    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Add 2 to focus'])
     expect(sections[1][0]?.label).toBe('Cut')
   })
 })
@@ -532,8 +535,9 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
     expect(onRemoveShortcut).toHaveBeenCalledExactlyOnceWith('/v/Note.md', '/v/Projects')
   })
 
-  it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items', () => {
+  it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items, the focus toggle among them (YAZ-2619 R8)', () => {
     expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
+      ['Add to focus'],
       ['Copy path'],
       ['New note', 'New folder'],
       ['New dated note', 'New dated folder'],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, notesAt, otherFiles, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -76,7 +76,7 @@ describe('allDirs', () => {
 })
 
 /**
- * Focus Mode's two lookups (YAZ-1605). `PROJECTS` sits AFTER its prefix-sharing sibling on
+ * The dir lookup (YAZ-1605). `PROJECTS` sits AFTER its prefix-sharing sibling on
  * purpose: the descent test is `startsWith(`${path}/`)`, so `/v/Projects-Archive` must never
  * swallow a search for `/v/Projects`.
  */
@@ -111,36 +111,9 @@ describe('findDirNode (YAZ-1605)', () => {
   })
 })
 
-describe('focusRoots (YAZ-1605)', () => {
-  const tree: TreeNode[] = [
-    { type: 'dir', name: 'Notes', path: '/v/Notes', children: [] },
-    {
-      type: 'dir',
-      name: 'Projects',
-      path: '/v/Projects',
-      children: [{ type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [] }],
-    },
-    { type: 'file', name: 'top.md', path: '/v/top.md', size: 1, mtime: 1, kind: 'markdown' },
-  ]
-
-  it('returns the focused dirs in TREE order, whatever order they were focused in', () => {
-    expect(focusRoots(tree, ['/v/Projects', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes', '/v/Projects'])
-  })
-
-  it('stops at the OUTERMOST match — a focused dir inside a focused dir is drawn once, under its parent', () => {
-    expect(focusRoots(tree, ['/v/Projects', '/v/Projects/Alpha']).map((n) => n.path)).toEqual(['/v/Projects'])
-  })
-
-  it('a path the tree no longer holds yields no row, and no focus yields nothing', () => {
-    expect(focusRoots(tree, ['/v/Gone']).map((n) => n.path)).toEqual([])
-    expect(focusRoots(tree, ['/v/Gone', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes'])
-    expect(focusRoots(tree, [])).toEqual([])
-  })
-})
-
 /**
- * The Favorites tab's two lookups (YAZ-1766 D4). `findNode` is `findDirNode`'s kind-agnostic twin;
- * `favoriteRoots` keeps the STORED order and every nesting — it is deliberately not `focusRoots`.
+ * The Favorites tab's two lookups (YAZ-1766 D4), the Focus tab's too (YAZ-2619 D2). `findNode` is
+ * `findDirNode`'s kind-agnostic twin; `favoriteRoots` keeps the STORED order and every nesting.
  */
 describe('findNode (YAZ-1766)', () => {
   const tree: TreeNode[] = [
@@ -186,7 +159,7 @@ describe('favoriteRoots (YAZ-1766 D4)', () => {
     expect(favoriteRoots(tree, ['/v/top.md', '/v/Projects', '/v/Notes']).map((n) => n.path)).toEqual(['/v/top.md', '/v/Projects', '/v/Notes'])
   })
 
-  it('keeps a favorite INSIDE a favorited folder as its own root row too (redundancy, not focusRoots)', () => {
+  it('keeps a favorite INSIDE a favorited folder as its own root row too (redundancy; YAZ-2619 S7, S8 on the Focus tab)', () => {
     expect(favoriteRoots(tree, ['/v/Projects/p.md', '/v/Projects']).map((n) => n.path)).toEqual(['/v/Projects/p.md', '/v/Projects'])
   })
 

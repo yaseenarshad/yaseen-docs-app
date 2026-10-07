@@ -181,7 +181,7 @@ describe('selecting and closing', () => {
  */
 describe('the "Open in ▸" flyout (D7 amended)', () => {
   const OPEN_IN = () => parent('Open in', [[item('New window'), item('VS Code')], [item('Reveal in Finder')]])
-  const WITH_FLYOUT = (): MenuSection[] => [[item('Open 2 in new tabs'), OPEN_IN(), item('Focus on folder')], [item('Cut')]]
+  const WITH_FLYOUT = (): MenuSection[] => [[item('Open 2 in new tabs'), OPEN_IN(), item('Add to focus')], [item('Cut')]]
 
   it('the parent renders as a menuitem with aria-haspopup, collapsed, bare-labelled, chevron class on — no flyout yet', () => {
     const el = mount(0, 0, WITH_FLYOUT())
@@ -192,7 +192,7 @@ describe('the "Open in ▸" flyout (D7 amended)', () => {
     expect(p?.textContent).toBe('Open in')
     expect(p?.classList.contains('ctx-menu__item--parent')).toBe(true)
     expect(flyout(el)).toBeNull()
-    expect(labelsOf(el)).toEqual(['Open 2 in new tabs', 'Open in', 'Focus on folder', 'Cut'])
+    expect(labelsOf(el)).toEqual(['Open 2 in new tabs', 'Open in', 'Add to focus', 'Cut'])
   })
 
   it('hover opens: the flyout is a second role="menu" drawn with the same groups — a separator between its two sections', () => {
@@ -223,7 +223,7 @@ describe('the "Open in ▸" flyout (D7 amended)', () => {
     hover(buttonOf(el, 'Open in'))
     hover(buttonOf(el, 'VS Code'))
     expect(flyout(el)).not.toBeNull()
-    hover(buttonOf(el, 'Focus on folder'))
+    hover(buttonOf(el, 'Add to focus'))
     expect(flyout(el)).toBeNull()
     expect(buttonOf(el, 'Open in')?.getAttribute('aria-expanded')).toBe('false')
   })
