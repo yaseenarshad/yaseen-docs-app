@@ -6,11 +6,12 @@
  * ⌘O request. Every CLICK goes through the mocked `window.yaseenDocs.window.openRecent` — the one
  * back-end door (D1). The right-click menu (YAZ-1798) is pinned below: its "Open in this
  * window" is the only in-place open, through the `onOpenHere` prop. Display names, their inline
- * field and the one-line rows' ⓘ path tooltip (YAZ-1974) are pinned last, over the REAL `storage`
- * on a fake bridge, so a name set in one test never leaks into the next. The two groups, the key
- * badges and the close on the window's blur (YAZ-2555 D1, D4, A1, A4, A6) are pinned the same way:
- * the open windows and the numbers are seeded into that cache. With no window seeded — every
- * older test — the whole list is the "Not open" group, in MRU order as before.
+ * field and the one-line rows' ⓘ path tooltip (YAZ-1974) are pinned last. Every test runs over the
+ * REAL `storage` on a fake bridge — `storage.listVaults()` is the panel's one read (YAZ-2556 D2), so
+ * the recents are seeded into that cache — and a name set in one test never leaks into the next. The
+ * two groups, the key badges and the close on the window's blur (YAZ-2555 D1, D4, A1, A4, A6) are
+ * pinned the same way: the open windows and the numbers are seeded into that cache. With no window
+ * seeded — every older test — the whole list is the "Not open" group, in MRU order as before.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -35,22 +36,24 @@ let openRecent: ReturnType<typeof vi.fn>
 let setFolder: ReturnType<typeof vi.fn>
 /** Main's `state.onChange` broadcast into this window — another window's write landing here. */
 let broadcast: (state: AppState) => void
-let recentsSpy: ReturnType<typeof vi.spyOn>
+/** Counts the panel's reads of the list: `storage.listVaults`, called through. */
+let listSpy: ReturnType<typeof vi.spyOn>
 let root: Root | null = null
 let container: HTMLElement | null = null
 
+/** The cache a test starts from — the four recents, no window, no name, no number — with `over` on top. */
+const seeded = (over: Partial<AppState> = {}): AppState => ({ ...defaultAppState(), recents: RECENTS, ...over })
+
 /** Seeds the storage cache with display names (YAZ-1974 D3), path → name. */
-const withNames = (names: Record<string, string>): AppState => ({
-  ...defaultAppState(),
-  folders: Object.fromEntries(Object.entries(names).map(([path, name]) => [path, { ...defaultFolderState(), name }])),
-})
+const withNames = (names: Record<string, string>): AppState =>
+  seeded({ folders: Object.fromEntries(Object.entries(names).map(([path, name]) => [path, { ...defaultFolderState(), name }])) })
 
 beforeEach(async () => {
   vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
   openRecent = vi.fn(async () => true)
   setFolder = vi.fn(async () => undefined)
   const state = {
-    get: async () => defaultAppState(),
+    get: async () => seeded(),
     setFolder,
     removeRecent: async () => undefined,
     onChange: (listener: (s: AppState) => void) => {
@@ -60,7 +63,7 @@ beforeEach(async () => {
   }
   Object.defineProperty(window, 'yaseenDocs', { value: { window: { openRecent, identity: async () => ({}) }, state }, configurable: true, writable: true })
   await storage.init()
-  recentsSpy = vi.spyOn(storage, 'getRecentRoots').mockReturnValue(RECENTS)
+  listSpy = vi.spyOn(storage, 'listVaults')
 })
 
 afterEach(() => {
@@ -68,7 +71,7 @@ afterEach(() => {
   root = null
   container?.remove()
   container = null
-  recentsSpy.mockRestore()
+  listSpy.mockRestore()
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.useRealTimers()
 })
@@ -222,10 +225,10 @@ describe('VaultSwitcher: the rows (D3/D4/D5)', () => {
     openPanel(el)
     expect(names(el)).toHaveLength(4)
     openPanel(el)
-    recentsSpy.mockReturnValue(RECENTS.slice(0, 2))
+    act(() => broadcast(seeded({ recents: RECENTS.slice(0, 2) })))
     openPanel(el)
     expect(names(el)).toEqual(['Notes', 'Notes'])
-    expect(recentsSpy).toHaveBeenCalledTimes(2)
+    expect(listSpy).toHaveBeenCalledTimes(2)
   })
 
   it('clicking a row — the current vault too (one rule for every row) — opens it through window.openRecent and closes the panel', async () => {
@@ -318,7 +321,7 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
   })
 
   it('when every row is the current vault the highlight starts on the first row', () => {
-    recentsSpy.mockReturnValue([RECENTS[0]])
+    act(() => broadcast(seeded({ recents: [RECENTS[0]] })))
     const { el } = render()
     openPanel(el)
     expect(activeRow(el)).toBe(rows(el)[0])
@@ -471,13 +474,13 @@ describe('VaultSwitcher: ⌘O (D8)', () => {
     // Still open: a second ⌘O closes it (the ⌘K rule) — no re-read of the rows.
     rerender({ openRequest: 2 })
     expect(panel(el)).toBeNull()
-    expect(recentsSpy).toHaveBeenCalledTimes(1)
+    expect(listSpy).toHaveBeenCalledTimes(1)
     // A third opens afresh: rows re-read, query cleared, filter focused.
     rerender({ openRequest: 3 })
     expect(panel(el)).not.toBeNull()
     expect(filter(el).value).toBe('')
     expect(document.activeElement).toBe(filter(el))
-    expect(recentsSpy).toHaveBeenCalledTimes(2)
+    expect(listSpy).toHaveBeenCalledTimes(2)
   })
 
   it('a request already consumed does not reopen after Esc; the next one does', () => {
@@ -493,7 +496,7 @@ describe('VaultSwitcher: ⌘O (D8)', () => {
 })
 
 describe('VaultSwitcher: pure helpers', () => {
-  const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), folder: path.slice(path.lastIndexOf('/') + 1), path, lastOpened: i, open: false, key: null }))
+  const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), folder: path.slice(path.lastIndexOf('/') + 1), path, lastUsed: i, open: false, key: null }))
 
   it('rankVaultRows: empty query keeps MRU order, otherwise exact > prefix > substring, uncapped', () => {
     const list = rowsOf('/a/Notes', '/b/Old Notes', '/c/Notes Archive', '/d/Other', '/e/n1', '/f/n2', '/g/n3', '/h/n4', '/i/n5', '/j/n6')
@@ -794,7 +797,7 @@ describe('VaultSwitcher: a vault\'s number (YAZ-2555 D2)', () => {
   const OTHER = RECENTS[2].path // '/v/Archive'
   const otherRow = (el: HTMLElement) => rows(el)[2]
   /** The current vault is "Docs" and has ⌘2. */
-  const docsHasTwo = (): AppState => ({ ...defaultAppState(), folders: { [ROOT]: { ...defaultFolderState(), name: 'Docs', key: 2 } } })
+  const docsHasTwo = (): AppState => seeded({ folders: { [ROOT]: { ...defaultFolderState(), name: 'Docs', key: 2 } } })
   /** Right-click → Set shortcut on `target`: the flyout's lines as "label hint". */
   const openKeys = (target: HTMLElement) => {
     rightClick(target)
@@ -833,7 +836,7 @@ describe('VaultSwitcher: a vault\'s number (YAZ-2555 D2)', () => {
   })
 
   it('Remove from recent vaults also clears the vault\'s number (A2, S19)', () => {
-    act(() => broadcast({ ...defaultAppState(), folders: { [OTHER]: { ...defaultFolderState(), key: 3 } } }))
+    act(() => broadcast(seeded({ folders: { [OTHER]: { ...defaultFolderState(), key: 3 } } })))
     const remove = vi.spyOn(storage, 'removeRecentRoot').mockImplementation(() => undefined)
     const { el } = render()
     openPanel(el)
@@ -849,15 +852,15 @@ describe('VaultSwitcher: a vault\'s number (YAZ-2555 D2)', () => {
 describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ-2555 D1, D4, A1, A4, A6)', () => {
   const ARCHIVE = RECENTS[2].path
   const NOTES_ARCHIVE = RECENTS[3].path
-  /** Seeds the cache: one window per `open` root (null = a Welcome window), each vault's number, and — for a test that drops the `getRecentRoots` spy — the recents. */
-  const seed = (open: (string | null)[], keys: Record<string, number> = {}, recents: RecentRoots = []) =>
+  /** Seeds the cache, beside the four recents: one window per `open` root (null = a Welcome window), and each vault's number. */
+  const seed = (open: (string | null)[], keys: Record<string, number> = {}) =>
     act(() =>
-      broadcast({
-        ...defaultAppState(),
-        recents,
-        windows: open.map((root, i) => ({ id: `w${i}`, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })),
-        folders: Object.fromEntries(Object.entries(keys).map(([path, key]) => [path, { ...defaultFolderState(), key }])),
-      }),
+      broadcast(
+        seeded({
+          windows: open.map((root, i) => ({ id: `w${i}`, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })),
+          folders: Object.fromEntries(Object.entries(keys).map(([path, key]) => [path, { ...defaultFolderState(), key }])),
+        }),
+      ),
     )
   /** The list as it reads, top to bottom: a group label as "# Open", a row as its name, badge and time — the parts it has. */
   const listing = (el: HTMLElement) =>
@@ -956,8 +959,7 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
   })
 
   it('"Remove from recent vaults" on a vault that has a window: the row goes at once, and the next open lists it under "Open" with no time and no number (A1, A2, ruled on YAZ-2560)', () => {
-    recentsSpy.mockRestore() // the real cache, so the remove is what the next open reads
-    seed([ROOT, ARCHIVE], { [ARCHIVE]: 3 }, RECENTS)
+    seed([ROOT, ARCHIVE], { [ARCHIVE]: 3 })
     const { el } = render()
     openPanel(el)
     expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Archive · ⌘3 · yesterday', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
@@ -1021,7 +1023,7 @@ describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', 
   })
 
   it('hovering the ⓘ draws the WHOLE path in a tooltip portalled to <body>, breakable after every slash; leaving clears it', () => {
-    recentsSpy.mockReturnValue([RECENTS[0], { path: LONG, lastOpened: NOW }])
+    act(() => broadcast(seeded({ recents: [RECENTS[0], { path: LONG, lastOpened: NOW }] })))
     const { el } = render()
     openPanel(el)
     hoverInfo(rows(el)[1])

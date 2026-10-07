@@ -726,7 +726,7 @@ describe('vaults (YAZ-2556 D2)', () => {
     expect(JSON.parse((await run(['vaults', '--json'])).out)).toEqual(ROWS)
   })
 
-  it('the contract says what each field of a row is, and that `open` does not mean the app is running', () => {
+  it('the contract names each field of a row — `path`, `name`, `key`, `open`, `lastUsed` — and says the tool never writes the state file', () => {
     const help = HELP.replace(/\s+/g, ' ')
     for (const said of ['`path`', '`name`', '`key`', '`open`', '`lastUsed`', 'never writes']) expect(help).toContain(said)
   })

@@ -241,7 +241,6 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
   return out
 }
 
-/** Null when the document is not a version-1 state object at all (→ treated as corrupt). */
 /** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
 function toDisk(state: AppState): unknown {
   const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))

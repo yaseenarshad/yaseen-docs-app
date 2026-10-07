@@ -5,9 +5,8 @@
  * window, external links). The `Menu.buildFromTemplate`/`setApplicationMenu` apply layer
  * lives in `main/index.ts`.
  */
-import { posix } from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
-import type { AppState, ClipboardPasteRequest, KeyedVault, RecentRoots, ZoomStep } from '@shared/types'
+import { keyedVaults, type AppState, type ClipboardPasteRequest, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
@@ -338,11 +337,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
   }
 }
 
-/** The Window menu's vault rows (YAZ-2555 D3): every vault with a number, in number order, by display name else folder name. */
+/** The Window menu's vault rows (YAZ-2555 D3): every vault with a number, in number order, by display name else folder name — the shared `keyedVaults` (YAZ-2556). */
 export function menuKeyedVaults(state: AppState): KeyedVault[] {
-  return Object.entries(state.folders)
-    .flatMap(([path, f]) => (f.key === null ? [] : [{ key: f.key, path, name: f.name ?? posix.basename(path) }]))
-    .sort((a, b) => a.key - b.key)
+  return keyedVaults(state.folders)
 }
 
 /**

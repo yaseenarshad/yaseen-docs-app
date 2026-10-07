@@ -515,7 +515,7 @@ export function addRecentRoot(list: RecentRoots, path: string, now: number): Rec
 /** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
 export const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
 
-/** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` names a folder the same way (YAZ-2556). */
+/** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` and `keyedVaults` name a folder the same way (YAZ-2556). */
 export function basename(p: string): string {
   const trimmed = p.replace(/\/+$/, '')
   return trimmed.slice(trimmed.lastIndexOf('/') + 1) || p
@@ -562,6 +562,17 @@ export interface KeyedVault {
   key: number
   path: string
   name: string
+}
+
+/**
+ * The vaults that have a number, in number order (YAZ-2555 D2). ONE function since YAZ-2556: the
+ * Window menu's rows (`menuKeyedVaults`), the "Set shortcut" flyout (`storage.keyedVaults`) and
+ * `listVaults` all call it, so the three cannot name or order a numbered vault differently.
+ */
+export function keyedVaults(folders: Readonly<Record<string, FolderState>>): KeyedVault[] {
+  return Object.entries(folders)
+    .flatMap(([path, folder]) => (folder.key === null ? [] : [{ key: folder.key, path, name: folder.name ?? basename(path) }]))
+    .sort((a, b) => a.key - b.key)
 }
 
 /** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write. */
@@ -813,13 +824,10 @@ export interface VaultEntry {
  * used first, then the open vaults and the numbered ones (in number order) that are not among them.
  * ONE list for the ⌘O panel and for `yaseendocs vaults`, so the two cannot disagree.
  */
-export function listVaults(state: Pick<AppState, 'recents' | 'windows' | 'folders'>): VaultEntry[] {
+export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { root: string | null }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
   const open = openVaultRoots(state.windows)
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
-  const keyed = Object.entries(state.folders)
-    .flatMap(([path, folder]) => (folder.key === null ? [] : [{ path, key: folder.key }]))
-    .sort((a, b) => a.key - b.key)
-  return [...new Set([...recents.keys(), ...open, ...keyed.map((v) => v.path)])].map((path) => {
+  return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
     const folder = state.folders[path]
     return { path, name: folder?.name ?? basename(path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
   })
