@@ -512,6 +512,20 @@ export function addRecentRoot(list: RecentRoots, path: string, now: number): Rec
   return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
 }
 
+/**
+ * The open vaults (YAZ-2555 D1): each window's root, once per vault, Welcome windows (root null)
+ * left out. Pure, so main and the renderer cannot disagree.
+ */
+export function openVaultRoots(windows: readonly { root: string | null }[]): string[] {
+  const roots: string[] = []
+  for (const w of windows) {
+    if (w.root === null) continue
+    const root = w.root.length > 1 && w.root.endsWith('/') ? w.root.slice(0, -1) : w.root
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
+}
+
 /** Collapsed outline fold keys per file (see client `outlineFoldKeys.ts`) are capped at this many. */
 export const MAX_FOLD_KEYS_PER_FILE = 500
 
