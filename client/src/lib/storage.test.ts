@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultRightPanelIdentity, openVaultRoots, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
@@ -70,13 +70,20 @@ describe('addRecentRoot', () => {
   })
 })
 
+describe('openVaultRoots (YAZ-2555 D1)', () => {
+  it('is each window\'s root in window order, once per vault — a trailing slash off, never off "/" — with Welcome windows left out', () => {
+    expect(openVaultRoots([{ root: '/v/b' }, { root: null }, { root: '/v/a/' }, { root: '/v/b/' }, { root: '/v/a' }, { root: '/' }])).toEqual(['/v/b', '/v/a', '/'])
+    expect(openVaultRoots([{ root: null }])).toEqual([])
+  })
+})
+
 describe('storage.init', () => {
   it('loads the state and this window\'s identity from the bridge and subscribes to changes', async () => {
     const seeded: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null, key: null } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -239,7 +246,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, name: null } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, name: null, key: null } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -302,6 +309,27 @@ describe('storage', () => {
     storage.setVaultName('/v/business-wiki-MASTER', '')
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/v/business-wiki-MASTER', { name: null })
     expect(storage.vaultName('/v/business-wiki-MASTER')).toBe('business-wiki-MASTER')
+  })
+
+  it('vaultKey is null until set; setVaultKey rides setFolder ONCE and the cache takes the number from its old holder at once; keyedVaults names the holders in number order (YAZ-2555 D2)', () => {
+    expect(storage.vaultKey('/v/a')).toBeNull()
+    storage.setVaultName('/v/a', 'Wiki')
+    storage.setVaultKey('/v/a', 2)
+    storage.setVaultKey('/v/b', 1)
+    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/v/b', { key: 1 })
+    expect(storage.keyedVaults()).toEqual([
+      { key: 1, path: '/v/b', name: 'b' },
+      { key: 2, path: '/v/a', name: 'Wiki' },
+    ])
+    storage.setVaultKey('/v/b', 2) // one vault per number — right before any broadcast comes back; main frees /v/a in its own commit
+    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/v/b', { key: 2 })
+    expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(4)
+    expect(storage.vaultKey('/v/a')).toBeNull()
+    expect(storage.vaultName('/v/a')).toBe('Wiki')
+    expect(storage.keyedVaults()).toEqual([{ key: 2, path: '/v/b', name: 'b' }])
+    storage.setVaultKey('/v/b', null)
+    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/v/b', { key: null })
+    expect(storage.keyedVaults()).toEqual([])
   })
 
   it('focusFavorites is this window identity (YAZ-1766 D5), focusDirs\' rule: setIdentity, deaf to broadcasts, cleared by a root change', async () => {
@@ -400,7 +428,7 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, name: null } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, name: null, key: null } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

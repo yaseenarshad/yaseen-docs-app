@@ -1,12 +1,13 @@
 /**
  * The application menu (B3, GRO-2161). `buildMenuTemplate` is a pure function of its inputs
- * (recents, isDev, handlers) so structure, accelerators and roles unit-test without Electron;
+ * (recents, keyedVaults, isDev, handlers) so structure, accelerators and roles unit-test without Electron;
  * `createMenuHandlers` needs only the injected `MenuHost` for the Electron bits (focused
  * window, external links). The `Menu.buildFromTemplate`/`setApplicationMenu` apply layer
  * lives in `main/index.ts`.
  */
+import { posix } from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
-import type { ClipboardPasteRequest, RecentRoots, ZoomStep } from '@shared/types'
+import type { AppState, ClipboardPasteRequest, KeyedVault, RecentRoots, ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
@@ -25,6 +26,8 @@ export interface MenuHandlers {
   openFolder(): void
   /** File › Open Recent › item: the focused window's renderer applies the one vault-open rule (YAZ-1914). */
   openRecent(path: string): void
+  /** Window › <vault> (⌘1–⌘9, YAZ-2555 D3): raise that vault, or open it, through the one open-recent door. */
+  goToVault(path: string, name: string): void
   /** File › Search Vault (⌘K, YAZ-804): the focused window's renderer focuses its sidebar search bar. */
   search(): void
   /** Yaseen Docs › Settings… (⌘,, YAZ-1679): the focused window's renderer opens its settings dialog. */
@@ -45,21 +48,26 @@ export interface MenuHandlers {
 export interface MenuInputs {
   /** MRU order, straight from `AppState.recents`. */
   recents: RecentRoots
+  /** The vaults that have a number, in number order (YAZ-2555 D3): `menuKeyedVaults`. */
+  keyedVaults: readonly KeyedVault[]
   /** Dev builds get View › Toggle Developer Tools. */
   isDev: boolean
 }
+
+/** A label that shows `text` as it is (YAZ-2555): Electron reads a single `&` as a mnemonic mark and drops it — "R&D" would read "RD". */
+const menuLabel = (text: string): string => text.replace(/&/g, '&&')
 
 /**
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
       : recents.map((r, i) => ({
           id: `menu.file.open-recent.${i}`,
-          label: r.path,
+          label: menuLabel(r.path),
           click: () => handlers.openRecent(r.path),
         }))
   return [
@@ -138,6 +146,15 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
         { id: 'menu.window.next-tab-alt', label: 'Next Tab', accelerator: 'CmdOrCtrl+Shift+]', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.nextTab() },
         { id: 'menu.window.prev-tab-alt', label: 'Previous Tab', accelerator: 'CmdOrCtrl+Shift+[', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.prevTab() },
         { type: 'separator' },
+        // The numbered vaults (YAZ-2555 D3): one row each, ⌘<its number>. The MENU owns the key, so
+        // it answers from any window, with the caret anywhere, and with every window minimized.
+        ...keyedVaults.map((v): MenuItemConstructorOptions => ({
+          id: `menu.window.vault.${v.key}`,
+          label: menuLabel(v.name),
+          accelerator: `CmdOrCtrl+${v.key}`,
+          click: () => handlers.goToVault(v.path, v.name),
+        })),
+        ...(keyedVaults.length === 0 ? [] : [{ type: 'separator' } satisfies MenuItemConstructorOptions]),
         { role: 'front' },
       ],
     },
@@ -256,7 +273,7 @@ export interface MenuHost {
   openExternal(url: string): void
 }
 
-type MenuWindows = Pick<WindowManager, 'idFor' | 'duplicateWindow'>
+type MenuWindows = Pick<WindowManager, 'idFor' | 'duplicateWindow' | 'openRecentBeside' | 'linkNotice'>
 
 export function createMenuHandlers(store: Store, windows: MenuWindows, host: MenuHost): MenuHandlers {
   /** The focused window's `AppState.windows` entry (lookup: `webContents.id` → entry id). */
@@ -287,6 +304,13 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
       // The renderer owns the vault-open rule (YAZ-1914): Welcome switches in place, a vault window opens beside.
       host.focusedWebContents()?.send(CONTRACT.menu.onOpenRoot.channel, path)
     },
+    goToVault(path, name) {
+      // Straight to the door in main, never through the focused renderer (YAZ-2555 A5): a Welcome
+      // window would switch in place, and with every window minimized no renderer is in front.
+      // A folder that is gone says so in a window; a key that does nothing is the worst answer.
+      // The door pruned it from the recents; its number stays (A3).
+      if (!windows.openRecentBeside(path)) windows.linkNotice(`Can't open ${name}: folder not found`)
+    },
     search() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSearch.channel)
     },
@@ -314,15 +338,29 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
   }
 }
 
+/** The Window menu's vault rows (YAZ-2555 D3): every vault with a number, in number order, by display name else folder name. */
+export function menuKeyedVaults(state: AppState): KeyedVault[] {
+  return Object.entries(state.folders)
+    .flatMap(([path, f]) => (f.key === null ? [] : [{ key: f.key, path, name: f.name ?? posix.basename(path) }]))
+    .sort((a, b) => a.key - b.key)
+}
+
 /**
- * Rebuild only when `recents` actually changed: store snapshots reuse untouched sub-objects,
- * so reference identity of `state.recents` skips every settings/window/folder write for free.
+ * Rebuild only when `recents` or the vault rows actually changed: store snapshots reuse untouched
+ * sub-objects, so reference identity of `state.recents` and `state.folders` skips every
+ * settings/window write for free. `state.folders` is a new object on every folder write (a fold, a
+ * last file), so the rows (YAZ-2555 D3) compare by value: one pass over the folders per FOLDER write.
  */
 export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => void {
   let last = store.get().recents
+  let lastFolders = store.get().folders
+  let lastVaults = JSON.stringify(menuKeyedVaults(store.get()))
   return store.onChange((state) => {
-    if (state.recents === last) return
+    const vaults = state.folders === lastFolders ? lastVaults : JSON.stringify(menuKeyedVaults(state))
+    lastFolders = state.folders
+    if (state.recents === last && vaults === lastVaults) return
     last = state.recents
+    lastVaults = vaults
     rebuild()
   })
 }

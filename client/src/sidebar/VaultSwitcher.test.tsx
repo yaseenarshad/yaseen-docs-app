@@ -7,14 +7,17 @@
  * back-end door (D1). The right-click menu (YAZ-1798) is pinned below: its "Open in this
  * window" is the only in-place open, through the `onOpenHere` prop. Display names, their inline
  * field and the one-line rows' ⓘ path tooltip (YAZ-1974) are pinned last, over the REAL `storage`
- * on a fake bridge, so a name set in one test never leaks into the next.
+ * on a fake bridge, so a name set in one test never leaks into the next. The two groups, the key
+ * badges and the close on the window's blur (YAZ-2555 D1, D4, A1, A4, A6) are pinned the same way:
+ * the open windows and the numbers are seeded into that cache. With no window seeded — every
+ * older test — the whole list is the "Not open" group, in MRU order as before.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, type AppState, type RecentRoots } from '@shared/types'
+import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots } from '@shared/types'
 import { storage } from '../lib/storage'
-import { MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
+import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -49,6 +52,7 @@ beforeEach(async () => {
   const state = {
     get: async () => defaultAppState(),
     setFolder,
+    removeRecent: async () => undefined,
     onChange: (listener: (s: AppState) => void) => {
       broadcast = listener
       return () => undefined
@@ -110,6 +114,8 @@ const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.v
 const openFolderRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.vault-switcher__open')!
 const activeRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.vault-switcher__row--active')
 const names = (el: HTMLElement) => rows(el).map((r) => r.querySelector('.vault-switcher__name')?.textContent)
+/** Each row's key badge (YAZ-2555 D4), or null where the vault has no number. */
+const badges = (el: HTMLElement) => rows(el).map((r) => r.querySelector('.vault-switcher__key')?.textContent ?? null)
 const tooltip = () => document.querySelector<HTMLElement>('[role="tooltip"]')
 const hoverInfo = (row: HTMLElement) => act(() => void row.querySelector('.vault-switcher__info')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
 const leaveInfo = (row: HTMLElement) => act(() => void row.querySelector('.vault-switcher__info')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: row })))
@@ -487,7 +493,7 @@ describe('VaultSwitcher: ⌘O (D8)', () => {
 })
 
 describe('VaultSwitcher: pure helpers', () => {
-  const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), folder: path.slice(path.lastIndexOf('/') + 1), path, lastOpened: i }))
+  const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), folder: path.slice(path.lastIndexOf('/') + 1), path, lastOpened: i, open: false, key: null }))
 
   it('rankVaultRows: empty query keeps MRU order, otherwise exact > prefix > substring, uncapped', () => {
     const list = rowsOf('/a/Notes', '/b/Old Notes', '/c/Notes Archive', '/d/Other', '/e/n1', '/f/n2', '/g/n3', '/h/n4', '/i/n5', '/j/n6')
@@ -526,30 +532,31 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
   it('the trigger opens the CURRENT vault\'s menu (no Open in this window, no Remove) and leaves the panel closed; the native menu is swallowed', () => {
     const { el } = render()
     expect(rightClick(trigger(el))).toBe(true)
-    expect(menuLabels()).toEqual(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     expect(panel(el)).toBeNull()
   })
 
-  it('the current vault\'s own row gets the same five; another row gets all eight — and the highlight never moves', () => {
+  it('the current vault\'s own row gets the same six; another row gets all eight — and the highlight never moves', () => {
     const { el } = render()
     openPanel(el)
     const before = activeRow(el)
     rightClick(rows(el)[0])
-    expect(menuLabels()).toEqual(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     rightClick(otherRow(el))
-    expect(menuLabels()).toEqual(['Open in this window', 'Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(activeRow(el)).toBe(before)
   })
 
-  it('Reveal in Finder / Open in VS Code hand the row\'s path to the Sidebar\'s verbs; the menu closes, the panel stays', () => {
+  it('Reveal in Finder / Open in VS Code hand the row\'s path to the Sidebar\'s verbs; the menu closes', () => {
     const { el, props } = render()
     openPanel(el)
     rightClick(otherRow(el))
     pick('Reveal in Finder')
     expect(props.onReveal).toHaveBeenCalledWith(OTHER)
     expect(vaultMenu()).toBeNull()
-    expect(panel(el)).not.toBeNull()
+    // Nothing here about the panel: in the app both verbs move focus to another app, and the window's
+    // blur closes it (YAZ-2555 A4). jsdom has no real focus, so the panel is still up for the second verb.
     rightClick(otherRow(el))
     pick('Open in VS Code')
     expect(props.onOpenVsCode).toHaveBeenCalledWith(OTHER)
@@ -574,6 +581,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     rightClick(otherRow(el))
     pick('Remove from recent vaults')
     expect(remove).toHaveBeenCalledWith(OTHER)
+    expect(setFolder).not.toHaveBeenCalled() // it has no number to clear (YAZ-2555 A2)
     expect(rows(el).map(pathOf)).not.toContain(OTHER)
     expect(panel(el)).not.toBeNull()
     expect(document.activeElement).toBe(filter(el))
@@ -779,6 +787,220 @@ describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
     expect(trigger(el).querySelector('.sidebar__root-name')?.textContent).toBe('Docs Vault')
     expect(setFolder).toHaveBeenLastCalledWith(ROOT, { name: 'Docs Vault' })
     expect(panel(el)).toBeNull()
+  })
+})
+
+describe('VaultSwitcher: a vault\'s number (YAZ-2555 D2)', () => {
+  const OTHER = RECENTS[2].path // '/v/Archive'
+  const otherRow = (el: HTMLElement) => rows(el)[2]
+  /** The current vault is "Docs" and has ⌘2. */
+  const docsHasTwo = (): AppState => ({ ...defaultAppState(), folders: { [ROOT]: { ...defaultFolderState(), name: 'Docs', key: 2 } } })
+  /** Right-click → Set shortcut on `target`: the flyout's lines as "label hint". */
+  const openKeys = (target: HTMLElement) => {
+    rightClick(target)
+    pick('Set shortcut')
+    return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].map((b) => `${b.textContent} ${b.dataset.hint ?? ''}`.trim())
+  }
+
+  it('Set shortcut on a row: the flyout names each number\'s vault; a number another vault has moves here at once — the open panel\'s badges with it (S14) — and No shortcut clears it (S13, S15, S17)', () => {
+    act(() => broadcast(docsHasTwo()))
+    const { el } = render()
+    openPanel(el)
+    expect(badges(el)).toEqual(['⌘2', null, null, null])
+    expect(openKeys(otherRow(el))).toEqual(['⌘1 free', '⌘2 Docs', '⌘3 free', '⌘4 free', '⌘5 free', '⌘6 free', '⌘7 free', '⌘8 free', '⌘9 free'])
+    pick('⌘2')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { key: 2 })
+    expect([storage.vaultKey(OTHER), storage.vaultKey(ROOT)]).toEqual([2, null])
+    expect(badges(el)).toEqual([null, null, '⌘2', null]) // the row that lost the number redraws too
+    expect(vaultMenu()).toBeNull()
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+    expect(openKeys(otherRow(el))).toEqual(['⌘1 free', '⌘2 ✓ Archive', '⌘3 free', '⌘4 free', '⌘5 free', '⌘6 free', '⌘7 free', '⌘8 free', '⌘9 free', 'No shortcut'])
+    pick('No shortcut')
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { key: null })
+    expect(storage.vaultKey(OTHER)).toBeNull()
+    expect(badges(el)).toEqual([null, null, null, null])
+  })
+
+  it('Set shortcut on the header gives the CURRENT vault its number, the panel closed (S16: its old number is free again)', () => {
+    act(() => broadcast(docsHasTwo()))
+    const { el } = render()
+    expect(openKeys(trigger(el))).toContain('⌘2 ✓ Docs')
+    pick('⌘5')
+    expect(setFolder).toHaveBeenLastCalledWith(ROOT, { key: 5 })
+    expect(panel(el)).toBeNull()
+    expect(openKeys(trigger(el)).slice(0, 5)).toEqual(['⌘1 free', '⌘2 free', '⌘3 free', '⌘4 free', '⌘5 ✓ Docs'])
+  })
+
+  it('Remove from recent vaults also clears the vault\'s number (A2, S19)', () => {
+    act(() => broadcast({ ...defaultAppState(), folders: { [OTHER]: { ...defaultFolderState(), key: 3 } } }))
+    const remove = vi.spyOn(storage, 'removeRecentRoot').mockImplementation(() => undefined)
+    const { el } = render()
+    openPanel(el)
+    rightClick(otherRow(el))
+    pick('Remove from recent vaults')
+    expect(remove).toHaveBeenCalledWith(OTHER)
+    expect(setFolder).toHaveBeenLastCalledWith(OTHER, { key: null })
+    expect(storage.vaultKey(OTHER)).toBeNull()
+    remove.mockRestore()
+  })
+})
+
+describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ-2555 D1, D4, A1, A4, A6)', () => {
+  const ARCHIVE = RECENTS[2].path
+  const NOTES_ARCHIVE = RECENTS[3].path
+  /** Seeds the cache: one window per `open` root (null = a Welcome window), each vault's number, and — for a test that drops the `getRecentRoots` spy — the recents. */
+  const seed = (open: (string | null)[], keys: Record<string, number> = {}, recents: RecentRoots = []) =>
+    act(() =>
+      broadcast({
+        ...defaultAppState(),
+        recents,
+        windows: open.map((root, i) => ({ id: `w${i}`, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })),
+        folders: Object.fromEntries(Object.entries(keys).map(([path, key]) => [path, { ...defaultFolderState(), key }])),
+      }),
+    )
+  /** The list as it reads, top to bottom: a group label as "# Open", a row as its name, badge and time — the parts it has. */
+  const listing = (el: HTMLElement) =>
+    [...el.querySelector('.vault-switcher__rows')!.children].map((line) =>
+      line.classList.contains('vault-switcher__label')
+        ? `# ${line.textContent}`
+        : ['.vault-switcher__name', '.vault-switcher__key', '.vault-switcher__when'].map((part) => line.querySelector(part)?.textContent ?? '').filter((text) => text !== '').join(' · '),
+    )
+
+  it('open vaults first under "Open", the rest under "Not open" — recents, then open or numbered vaults that fell out of them, with no time — and a ⌘<n> badge on every numbered row (S1, S3–S6, S8, S9, S18)', async () => {
+    // Archive is open in two windows and Loose (trailing slash, not a recent) in one; a Welcome window is no vault.
+    // Two and Seven have a number but no window and no place in the recents.
+    seed([ROOT, null, ARCHIVE, ARCHIVE, '/x/Loose/'], { [ARCHIVE]: 3, '/w/Notes': 1, '/x/Seven': 7, '/x/Two': 2 })
+    const { el } = render()
+    openPanel(el)
+    expect(listing(el)).toEqual([
+      `# ${GROUP_OPEN_TEXT}`,
+      'Notes · 1 minute ago',
+      'Archive · ⌘3 · yesterday',
+      'Loose',
+      `# ${GROUP_NOT_OPEN_TEXT}`,
+      'Notes · ⌘1 · 2 hours ago',
+      'Notes Archive · 3 days ago',
+      'Two · ⌘2',
+      'Seven · ⌘7',
+    ])
+    // The badge is a <kbd> between the name and the ⓘ; a row with no time keeps its (empty) time slot.
+    expect([...rows(el)[1].children].map((part) => `${part.tagName}.${part.className}`)).toEqual(['SPAN.vault-switcher__name', 'KBD.vault-switcher__key', 'SPAN.vault-switcher__info', 'SPAN.vault-switcher__when'])
+    expect(rows(el)[2].querySelector('.vault-switcher__when')?.textContent).toBe('')
+    // The labels are not rows: no menuitem role, never highlighted — ↓ walks the seven rows, then Open folder….
+    const labels = [...el.querySelectorAll('.vault-switcher__label')]
+    expect(labels.map((label) => label.getAttribute('role'))).toEqual([null, null])
+    expect(activeRow(el)).toBe(rows(el)[1]) // S3: the open vault used before this one
+    for (let i = 0; i < 5; i++) key(el, 'ArrowDown')
+    expect(activeRow(el)).toBe(rows(el)[6])
+    key(el, 'ArrowDown')
+    expect(activeRow(el)).toBe(openFolderRow(el))
+    expect(el.querySelectorAll('.vault-switcher__row--active')).toHaveLength(1)
+    expect(rows(el).map(pathOf)).toEqual([ROOT, ARCHIVE, '/x/Loose', '/w/Notes', NOTES_ARCHIVE, '/x/Two', '/x/Seven']) // one row per vault, the slash off
+    // ⌘O ⏎ (S3–S5): one call to the one door, whatever the vault's windows are doing.
+    openPanel(el)
+    openPanel(el)
+    key(el, 'Enter')
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+  })
+
+  it('with only this window\'s vault open, "Open" is its one row and the highlight starts on the first "Not open" row (S2)', () => {
+    seed([ROOT])
+    const { el } = render()
+    openPanel(el)
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago'])
+    expect(rows(el)[0].getAttribute('aria-current')).toBe('true')
+    expect(activeRow(el)).toBe(rows(el)[1])
+    expect(pathOf(activeRow(el)!)).toBe('/w/Notes')
+  })
+
+  it('a filter ranks the matches as before, THEN puts them in the two groups, badges kept; a group with no match shows no label (S7, A6)', async () => {
+    seed([ROOT, NOTES_ARCHIVE], { [NOTES_ARCHIVE]: 4 })
+    const { el } = render()
+    openPanel(el)
+    // "notes": both exact matches outrank the prefix match, but Notes Archive is open, so it stands above the Notes that is not.
+    await type(el, 'notes')
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes Archive · ⌘4 · 3 days ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago'])
+    await type(el, 'arch')
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes Archive · ⌘4 · 3 days ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday'])
+    expect(activeRow(el)).toBe(rows(el)[0])
+    await type(el, 'archive')
+    await type(el, 'w') // no vault name has a "w": nothing matches
+    expect(el.querySelectorAll('.vault-switcher__label')).toHaveLength(0)
+    expect(panel(el)!.querySelector('.vault-switcher__empty')?.textContent).toBe(NO_MATCH_TEXT)
+    // Only a vault that is not open matches: its group alone, with its label.
+    act(() => broadcast(withNames({ [ARCHIVE]: 'Old Stuff' })))
+    openPanel(el)
+    openPanel(el)
+    await type(el, 'old')
+    expect(listing(el)).toEqual([`# ${GROUP_NOT_OPEN_TEXT}`, 'Old Stuff · yesterday'])
+    key(el, 'Enter')
+    await settle()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+  })
+
+  it('a row that is listed only for its number, and loses it, stays until the panel closes; the next open does not list it (A1, ruled on YAZ-2560)', () => {
+    seed([ROOT], { '/x/Two': 2 })
+    const { el } = render()
+    openPanel(el)
+    expect(listing(el).slice(-2)).toEqual(['Notes Archive · 3 days ago', 'Two · ⌘2'])
+    rightClick(rows(el)[4])
+    pick('Set shortcut')
+    pick('No shortcut')
+    expect(storage.vaultKey('/x/Two')).toBeNull()
+    expect(listing(el).slice(-2)).toEqual(['Notes Archive · 3 days ago', 'Two']) // the badge goes at once, the row does not
+    openPanel(el)
+    openPanel(el)
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago'])
+  })
+
+  it('"Remove from recent vaults" on a vault that has a window: the row goes at once, and the next open lists it under "Open" with no time and no number (A1, A2, ruled on YAZ-2560)', () => {
+    recentsSpy.mockRestore() // the real cache, so the remove is what the next open reads
+    seed([ROOT, ARCHIVE], { [ARCHIVE]: 3 }, RECENTS)
+    const { el } = render()
+    openPanel(el)
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Archive · ⌘3 · yesterday', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    rightClick(rows(el)[1])
+    pick('Remove from recent vaults')
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    openPanel(el)
+    openPanel(el)
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Archive', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+  })
+
+  it('the panel closes when its window loses focus — a row\'s menu with it, the ⇧ cue dropped — and a rename under way is saved by its own blur first (S10, A4)', async () => {
+    seed([ROOT])
+    const { el } = render()
+    openPanel(el)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true })))
+    expect(activeRow(el)?.querySelector('.vault-switcher__when')?.textContent).toBe(OPEN_HERE_TEXT)
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect(panel(el)).toBeNull()
+    openPanel(el)
+    expect(panel(el)!.textContent).not.toContain(OPEN_HERE_TEXT)
+
+    rightClick(rows(el)[2])
+    expect(vaultMenu()).not.toBeNull()
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect([panel(el), vaultMenu()]).toEqual([null, null])
+
+    // The browser blurs the focused field before the window: the name is saved, then the panel goes.
+    openPanel(el)
+    rightClick(rows(el)[2])
+    pick('Set display name')
+    const field = el.querySelector<HTMLInputElement>('.vault-switcher__rename')!
+    await fill(field, 'Old Stuff')
+    act(() => {
+      field.blur()
+      window.dispatchEvent(new Event('blur'))
+    })
+    expect(panel(el)).toBeNull()
+    expect(storage.vaultName(ARCHIVE)).toBe('Old Stuff')
+    // The header's menu is no part of the panel: it stays.
+    rightClick(trigger(el))
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect(vaultMenu()).not.toBeNull()
   })
 })
 

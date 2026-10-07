@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultName, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -31,6 +31,8 @@ const bounds = { x: 1, y: 2, width: 300, height: 200 }
 const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds, ...extra })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
+/** Each vault's number (YAZ-2555), root → key. */
+const keysOf = (state: AppState) => Object.fromEntries(Object.entries(state.folders).map(([root, folder]) => [root, folder.key]))
 
 describe('addRecentRoot', () => {
   it('prepends, de-dupes and caps at MAX_RECENT_ROOTS', () => {
@@ -61,6 +63,13 @@ describe('cleanVaultName (YAZ-1974 D3)', () => {
   })
 })
 
+describe('cleanVaultKey (YAZ-2555 D2)', () => {
+  it('keeps a whole number 1–9; anything else is no number', () => {
+    expect([1, 5, 9].map((raw) => cleanVaultKey(raw))).toEqual([1, 5, 9])
+    expect([0, 10, -1, 2.5, Number.NaN, '3', null, undefined, true].map((raw) => cleanVaultKey(raw))).toEqual(Array.from({ length: 9 }, () => null))
+  })
+})
+
 describe('createStore: loading', () => {
   it('a missing file yields the defaults and creates nothing until the first change', () => {
     const store = createStore(file)
@@ -75,10 +84,10 @@ describe('createStore: loading', () => {
       sidebarWidth: 320,
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites' })],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null, key: null } },
     }
     await seed(state)
-    expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null } } })
+    expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
   })
 
   it('settings fall back field by field (partial shapes, junk types, width/colour ranges)', async () => {
@@ -265,7 +274,7 @@ describe('createStore: loading', () => {
     const store = createStore(file)
     expect((await readdir(dir)).filter((n) => n.includes('.corrupt-'))).toEqual([])
     expect(store.get().windows[0]).toEqual(win('w', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'favorites', focusDirs: ['/v/sub'], focusFavorites: ['/v/f'] }))
-    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: 'Wiki' })
+    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: 'Wiki', key: null })
     // The next write drops both keys from disk.
     store.setSidebarWidth(321)
     await store.flush()
@@ -373,12 +382,12 @@ describe('createStore: loading', () => {
       }),
     )
     const { folders } = createStore(file).get()
-    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, name: null })
+    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, name: null, key: null })
     expect(folders['/b']).toBeUndefined()
     expect(folders['/c'].expanded).toEqual([]) // a session list: the file's value is ignored (YAZ-1642)
     expect(folders['/c'].lastFile).toBe('/c/a.md')
     expect(folders['/c'].folds['/c/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
-    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     await seed(valid({ folders: [] }))
     expect(createStore(file).get().folders).toEqual({})
   })
@@ -395,8 +404,13 @@ describe('createStore: loading', () => {
     )
     const { folders } = createStore(file).get()
     expect(folders['/a'].baseGroups).toEqual({ '/a/x.md::T': ['v:idea'] })
-    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     expect(folders['/c'].baseGroups['/c/x.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
+  })
+
+  it('folders: a damaged file — a number that is not a whole number 1–9 reads as none, and one number on two vaults stays with the first (YAZ-2555 S21)', async () => {
+    await seed(valid({ folders: { '/a': { key: 3 }, '/b': { key: 12 }, '/c': { key: '2' }, '/d': { key: 3 }, '/e': { key: 1.5 }, '/f': { key: 9 }, '/g': {} } }))
+    expect(keysOf(createStore(file).get())).toEqual({ '/a': 3, '/b': null, '/c': null, '/d': null, '/e': null, '/f': 9, '/g': null })
   })
 
   it('windows: focusDirs / focusFavorites load with the tabs rule — relative elements drop, a missing or junk list is no focus (YAZ-1628)', async () => {
@@ -424,7 +438,7 @@ describe('createStore: loading', () => {
     )
     const store = createStore(file)
     // No migration: the vault bucket could not say WHICH window was focused, so every window starts unfocused.
-    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     expect(store.get().windows[0]).toMatchObject({ focusDirs: [], focusFavorites: [] })
     store.setSidebarWidth(321)
     await store.flush()
@@ -518,13 +532,13 @@ describe('createStore: mutations', () => {
   it('setFolder creates the entry with defaults, merges the patch and ignores unknown keys', () => {
     const store = createStore(file)
     store.setFolder('/r1', { expanded: ['/r1/a'] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     store.setFolder('/r1', { lastFile: '/r1/a/x.md' })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, name: null, key: null })
     store.setFolder('/r1', { lastFile: null, folds: { '/r1/a.md': ['k'] } } as never)
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     store.setFolder('/r2', {})
-    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
   })
 
   it('setFolder cleans the display name, other patches leave it alone, and removeRecent keeps it (YAZ-1974 D3)', () => {
@@ -539,6 +553,30 @@ describe('createStore: mutations', () => {
     expect(store.get().folders['/v'].name).toHaveLength(MAX_VAULT_NAME)
     store.setFolder('/v', { name: '   ' })
     expect(store.get().folders['/v'].name).toBeNull()
+  })
+
+  it('setFolder gives a vault its number: one vault per number in ONE commit, null clears it, and it is there after a relaunch (YAZ-2555 D2, S14–S17)', async () => {
+    const store = createStore(file)
+    store.setFolder('/a', { key: 2, name: 'Wiki' })
+    store.setFolder('/b', { key: 1 })
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    store.setFolder('/b', { key: 2 }) // S15: the number moves from /a, and /a keeps everything else
+    expect(seen).toHaveLength(1)
+    expect(keysOf(seen[0])).toEqual({ '/a': null, '/b': 2 })
+    expect(store.get().folders['/a'].name).toBe('Wiki')
+    store.setFolder('/b', { key: 5 }) // S16: 2 is free again
+    store.setFolder('/a', { key: 2 })
+    store.setFolder('/a', { lastFile: '/a/x.md' }) // any other patch leaves the number alone
+    expect(keysOf(store.get())).toEqual({ '/a': 2, '/b': 5 })
+    store.setFolder('/c', { key: 12 }) // not 1–9: no number, and nobody loses theirs
+    store.pushRecent('/b', 1)
+    store.removeRecent('/b') // A3: a folder that is gone leaves the recents — its number stays
+    expect(keysOf(store.get())).toEqual({ '/a': 2, '/b': 5, '/c': null })
+    await store.flush()
+    expect(keysOf(createStore(file).get())).toEqual({ '/a': 2, '/b': 5, '/c': null })
+    store.setFolder('/b', { key: null }) // S17: "No shortcut"
+    expect(keysOf(store.get())).toEqual({ '/a': 2, '/b': null, '/c': null })
   })
 
   it('two windows on one root hold independent focusDirs / focusFavorites — upsertWindow on one leaves the other untouched (YAZ-1628)', () => {
@@ -557,13 +595,13 @@ describe('createStore: mutations', () => {
     store.setFolds('/r1', '/r1/a.md', ['k1', 'k2'])
     store.setFolds('/r1', '/r1/b.md', ['k3'])
     store.setFolds('/r2', '/r2/a.md', ['k4'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, name: null, key: null })
     store.setFolds('/r1', '/r1/a.md', ['k2']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].folds['/r1/a.md']).toEqual(['k2'])
     store.setFolder('/r1', { lastFile: '/r1/a.md' })
     store.setFolds('/r1', '/r1/a.md', [])
     store.setFolds('/r1', '/r1/b.md', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, name: null, key: null })
     store.setFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `k${i}`))
     expect(store.get().folders['/r2'].folds['/r2/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
   })
@@ -573,12 +611,12 @@ describe('createStore: mutations', () => {
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:idea', 'v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', ['∅'])
     store.setBaseGroups('/r2', '/r2/a.md::T', ['v:x'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, name: null, key: null })
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:done']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].baseGroups['/r1/a.md::T']).toEqual(['v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T', [])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     store.setBaseGroups('/r2', '/r2/a.md::T', Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`))
     expect(store.get().folders['/r2'].baseGroups['/r2/a.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
@@ -858,17 +896,20 @@ describe('createStore: mutations', () => {
         folds: { [`${NEW}/a.md`]: ['k1'], '/v/x.md': ['k2'] },
         baseGroups: { [`${NEW}/T.md::Table`]: ['g1'] },
         name: null,
+        key: null,
       })
       expect(store.get().folders[OLD]).toBeUndefined()
-      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, name: null })
+      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, name: null, key: null })
     })
 
-    it('a renamed vault ROOT keeps its display name under the new key (YAZ-1974 D3)', () => {
+    it('a renamed vault ROOT keeps its display name and its number under the new key (YAZ-1974 D3, YAZ-2555 S20); a deleted one loses both', () => {
       const store = createStore(file)
-      store.setFolder(OLD, { name: 'Old Notes' })
+      store.setFolder(OLD, { name: 'Old Notes', key: 4 })
       store.renamePath(OLD, NEW)
-      expect(store.get().folders[NEW].name).toBe('Old Notes')
+      expect(store.get().folders[NEW]).toMatchObject({ name: 'Old Notes', key: 4 })
       expect(store.get().folders[OLD]).toBeUndefined()
+      store.removePath(NEW)
+      expect(store.get().folders[NEW]).toBeUndefined()
     })
 
     it('remaps a recents entry at or under the dir (a subfolder that was opened as a vault)', () => {
@@ -912,17 +953,17 @@ describe('createStore: persistence', () => {
     await vi.advanceTimersByTimeAsync(60)
     await store.flush()
     expect(renames()).toHaveLength(1)
-    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: null } } })
+    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: null, key: null } } })
     expect((await readdir(dir)).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 
   it('the session list lives in get() for every window but never reaches disk, so a relaunch starts collapsed (YAZ-1642)', async () => {
     const store = createStore(file)
     store.setFolder('/v', { expanded: ['/v/sub'] })
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
     await store.flush()
-    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {}, name: null })
-    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null })
+    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
   })
 
   it('a change that leaves the file byte-identical (folder expand / collapse) writes nothing; the next real change does (YAZ-2198)', async () => {

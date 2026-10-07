@@ -7,12 +7,15 @@ import {
   defaultAppState,
   defaultFolderState,
   defaultRightPanelIdentity,
+  freeVaultKey,
   type AppState,
   type FolderState,
+  type KeyedVault,
   type RecentRoots,
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
+  type WindowEntry,
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
@@ -89,6 +92,8 @@ export const storage = {
   },
 
   getRecentRoots: (): RecentRoots => state.recents,
+  /** Every window's entry (YAZ-2555 D1: the open vaults come from it). */
+  getWindows: (): readonly WindowEntry[] => state.windows,
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
@@ -110,6 +115,23 @@ export const storage = {
     const name = clean === basename(root) ? null : clean
     patchFolder(root, { name })
     send('state.setFolder', () => api.state.setFolder(root, { name }))
+  },
+
+  /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */
+  vaultKey: (root: string): number | null => folderOf(root).key,
+  /** Every vault that has a number, in number order, by what the app calls it — who holds which key. */
+  keyedVaults: (): KeyedVault[] =>
+    Object.entries(state.folders)
+      .flatMap(([path, folder]) => (folder.key === null ? [] : [{ key: folder.key, path, name: folder.name ?? basename(path) }]))
+      .sort((a, b) => a.key - b.key),
+  /**
+   * Give a vault its number, or with null take it away (D2). One vault per number: the cache takes
+   * it from the vault that had it at once, as the store does in its own commit.
+   */
+  setVaultKey(root: string, key: number | null): void {
+    if (key !== null) state = { ...state, folders: freeVaultKey(state.folders, key) }
+    patchFolder(root, { key })
+    send('state.setFolder', () => api.state.setFolder(root, { key }))
   },
 
   getExpanded: (root: string): string[] => folderOf(root).expanded,
