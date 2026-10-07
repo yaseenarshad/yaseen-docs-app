@@ -198,7 +198,7 @@ describe('createWindowManager: bounds', () => {
     expect(changes).toBe(0)
     vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS)
     expect(changes).toBe(1)
-    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 50, y: 60, width: 900, height: 700 } })
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 50, y: 60, width: 900, height: 700 } })
   })
 })
 
@@ -226,7 +226,7 @@ describe('createWindowManager: close', () => {
     manager.handleFlushed(win.webContents)
     await vi.advanceTimersByTimeAsync(0)
     expect(win.isDestroyed()).toBe(true)
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 200, y: 100, width: 800, height: 600 } }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 200, y: 100, width: 800, height: 600 } }])
   })
 
   it('a hung renderer cannot block close: the handshake times out after FLUSH_TIMEOUT_MS', async () => {
