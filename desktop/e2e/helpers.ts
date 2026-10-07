@@ -256,9 +256,12 @@ export interface SeedWindow {
 /**
  * `seededState` for several windows (possibly on several roots): one `windows[]` entry per
  * seed, a `folders` entry per distinct root, `recents` exactly as given (most-recent first).
+ * "When the app starts: Reopen" is "All vaults" here, so every seeded window opens: the default,
+ * "Last vault", brings back only the windows on `recentRoots[0]` (YAZ-2589 D2).
  */
 export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
   const state = defaultAppState()
+  state.settings.startupWindows = 'all'
   const now = Date.now()
   state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
   state.windows = wins.map((w, i) => ({

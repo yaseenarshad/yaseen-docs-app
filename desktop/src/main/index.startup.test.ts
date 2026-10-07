@@ -33,14 +33,15 @@ const h = vi.hoisted(() => {
     exit: vi.fn(log('exit')),
   }
   const manager = {
-    restoreAll: vi.fn(log('restoreAll')),
+    rootFor: vi.fn((path: string) => `root-of:${path}`),
+    restore: vi.fn((which: readonly string[] | string) => void s.order.push(`restore:${String(which)}`)),
     routeToFile: vi.fn((path: string) => s.order.push(`route:${path}`)),
     linkNotice: vi.fn(),
     idFor: vi.fn(),
     flushAllForQuit: vi.fn(async (): Promise<void> => void s.order.push('flushAllForQuit')),
   }
   const store = {
-    get: () => ({ settings: { theme: 'system' }, windows: [], recents: [] }),
+    get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: [], recents: [] }),
     flush: vi.fn(async () => void s.order.push('store.flush')),
   }
   const gitSync = { notifyFocus: vi.fn(), notifyWake: vi.fn(), flushForQuit: vi.fn(async (): Promise<void> => void s.order.push('gitSync.flushForQuit')) }
@@ -124,7 +125,7 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.s.order).not.toContain('ready')
   })
 
-  it('listens for open-url and open-file before ready, and routes a cold-start link only after the windows are restored', async () => {
+  it('listens for open-url and open-file before ready; a launch with a waiting link asks the manager for that link\'s vault only, and routes the link after the windows are restored (YAZ-2589 D1)', async () => {
     expect(h.s.order).toEqual(expect.arrayContaining(['on:second-instance', 'on:open-url', 'on:open-file']))
     expect(h.s.order).not.toContain('ready')
     const e = event()
@@ -136,8 +137,36 @@ describe('main startup order (YAZ-2172)', () => {
     // Every door registered before the windows restore; the cold-start link routes only after them.
     const at = (entry: string) => h.s.order.indexOf(entry)
     for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeGreaterThan(at('ready'))
-    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at('restoreAll'))
-    expect(at(`route:${NOTE}`)).toBeGreaterThan(at('restoreAll'))
+    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at(`restore:root-of:${NOTE}`))
+    expect(at(`route:${NOTE}`)).toBeGreaterThan(at(`restore:root-of:${NOTE}`))
+    expect(h.manager.rootFor).toHaveBeenCalledExactlyOnceWith(NOTE, null)
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([`root-of:${NOTE}`])
+  })
+
+  it('a launch with two waiting links asks for both vaults; a link that cannot be read asks for nothing (YAZ-2589 S6, S7)', async () => {
+    h.s.on.get('open-url')!(event(), 'https://example.com')
+    h.s.on.get('open-url')!(event(), `${fileLink('/work/a.md')}?root=${encodeURIComponent('/work')}`)
+    h.s.on.get('open-file')!(event(), '/vault')
+    h.s.ready()
+    await settle()
+    expect(h.manager.rootFor.mock.calls).toEqual([['/work/a.md', '/work'], ['/vault', null]])
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith(['root-of:/work/a.md', 'root-of:/vault'])
+    expect(h.manager.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open link: https://example.com")
+  })
+
+  it('a plain launch gives the manager the setting (YAZ-2589 D2)', async () => {
+    h.s.ready()
+    await settle()
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
+    expect(h.manager.rootFor).not.toHaveBeenCalled()
+  })
+
+  it('a launch whose only link cannot be read is a plain launch, and then the notice (YAZ-2589 S7)', async () => {
+    h.s.on.get('open-url')!(event(), 'https://example.com')
+    h.s.ready()
+    await settle()
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
+    expect(h.manager.restore.mock.invocationCallOrder[0]).toBeLessThan(h.manager.linkNotice.mock.invocationCallOrder[0])
   })
 
   it('after ready a link routes at once, and a bad one gets the notice instead of a route', async () => {
