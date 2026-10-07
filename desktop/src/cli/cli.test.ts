@@ -669,7 +669,7 @@ describe('vaults (YAZ-2556 D2)', () => {
    */
   async function seedState(file = stateFile): Promise<void> {
     const store = createStore(file)
-    const win = (id: string, root: string | null) => ({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const win = (id: string, root: string | null) => ({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
     store.pushRecent('/v/notes', 1000)
     store.pushRecent('/v/wiki', 2000)
     store.upsertWindow(win('w1', '/v/notes'))

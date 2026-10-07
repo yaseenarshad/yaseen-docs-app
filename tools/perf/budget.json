@@ -12,10 +12,10 @@
     "chromiumLocaleBytes": { "max": 1121390 },
     "lprojCount": { "max": 55, "min": 55, "$comment": "The app-level .lproj markers keep Open/Save panels in the OS language: exactly 55." },
     "asarNodeModulesFiles": { "max": 0 },
-    "rendererEagerJsBytes": { "max": 1960186 },
+    "rendererEagerJsBytes": { "max": 1960027 },
     "rendererEagerCssBytes": { "max": 138038 },
     "rendererTotalBytes": { "max": 13027772 },
     "rendererMapBytes": { "max": 0 },
-    "mainBundleBytes": { "max": 518434 }
+    "mainBundleBytes": { "max": 517985 }
   }
 }
