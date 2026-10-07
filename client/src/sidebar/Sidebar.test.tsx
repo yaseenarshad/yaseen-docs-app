@@ -92,7 +92,18 @@ function installBridge() {
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-type SidebarProps = Parameters<typeof Sidebar>[0]
+type PanelProps = Parameters<typeof Sidebar>[0]
+type Vault = PanelProps['vaults'][number]
+/**
+ * What a test hands the harness: the panel's props, and for a window with ONE vault that vault's
+ * own three — its folder, its watcher and its index source — which the harness makes the vault of.
+ */
+type SidebarProps = PanelProps & { root?: string; watch?: Vault['watch']; indexSource?: Vault['index'] }
+
+/** The window's one vault, as App hands it: `/v`, a silent watcher and an empty index unless a test says otherwise. */
+const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true) }: Partial<SidebarProps>): Vault[] => [
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource },
+]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
   const bridge = installBridge()
@@ -101,11 +112,18 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
   document.body.appendChild(el)
   container = el
   root = createRoot(el)
-  const props: SidebarProps = {
-    root: '/v',
+  // Split the one vault's three from the panel's props: the harness makes the vault of them.
+  const panel = ({ root: _root, watch: _watch, indexSource: _indexSource, ...rest }: Partial<SidebarProps>): Partial<PanelProps> => rest
+  const props: PanelProps = {
+    vaults: oneVault(over),
+    // Vault rows (YAZ-2602 R9): none is closed, and App's four doors for the window's list of vaults.
+    closedVaults: [],
+    onSetVaultOpen: vi.fn(),
+    onAddVault: vi.fn(async () => true),
+    onPickVault: vi.fn(),
+    onRemoveVault: vi.fn(),
     width: 260,
     activeFile: null,
-    watch: { subscribe: () => () => undefined },
     onOpenFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
     // A search row's tree-drawing menu items (🔒 D2, YAZ-2050): App flips to Files and issues the reveal request.
@@ -139,9 +157,8 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     selectionRef: { current: EMPTY_SELECTION },
     // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App's listener asks it; the chord tests hold their own box.
     clipboardRef: { current: null },
-    // The folder rows' counts (🔒 E6, YAZ-2290) read the window's index source: empty unless a test feeds it,
-    // and of a vault that uses IDs unless a test says otherwise (YAZ-2523).
-    indexSource: indexFor(true),
+    // The folder rows' counts (🔒 E6, YAZ-2290) read the vault's index source (`oneVault`): empty unless a test
+    // feeds it, and of a vault that uses IDs unless a test says otherwise (YAZ-2523).
     // Upkeep review (YAZ-2322) is off, as in a new vault, unless a test turns it on; App counts and
     // owns the session, with nothing due and no review open by default.
     upkeep: false,
@@ -152,11 +169,11 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // No row is a note the index knows unless a test says so: null hides the review toggle.
     reviewState: () => null,
     onSetReview: vi.fn(),
-    ...over,
+    ...panel(over),
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
   /** Re-render the SAME Sidebar instance with changed props (the App-driven activation path). */
-  const rerender = async (next: Partial<SidebarProps>) =>
+  const rerender = async (next: Partial<PanelProps>) =>
     act(async () => root?.render(<StrictMode><Sidebar {...props} {...next} /></StrictMode>))
   return { bridge, props, el, rerender }
 }

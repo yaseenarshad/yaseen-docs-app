@@ -28,14 +28,37 @@ import { useVaultTree } from './hooks/useVaultTree'
 import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
-interface SidebarProps {
+/** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher and its index snapshot. */
+export interface SidebarVault {
   root: string
+  /** Its display name, else its folder name (YAZ-1974 D4): the vault row's label. */
+  name: string
+  watch: WatchSource
+  /**
+   * The vault's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME object
+   * its `WikilinkIndexBridge` already feeds — read, never written, and no second feed. `records`
+   * is `[]` until the first index lands, so no row shows a number before then.
+   */
+  index: WikilinkResolveSource
+}
+
+interface SidebarProps {
+  /** The window's vaults, in the order they were added (YAZ-2602 D1); never empty. App keys this panel on the first. */
+  vaults: readonly SidebarVault[]
+  /** The vault rows the user closed (YAZ-2602 R9): App's, so they stay closed while this panel is unmounted. */
+  closedVaults: readonly string[]
+  onSetVaultOpen: (root: string, open: boolean) => void
+  /** "Add vault to this window" (YAZ-2602 D2): App checks the folder and says why it cannot be added; resolves whether it was. */
+  onAddVault: (path: string) => Promise<boolean>
+  /** Its "Open folder…" (S3): the system picker, and the picked folder is added. */
+  onPickVault: () => void
+  /** "Remove from this window" (YAZ-2602 D7): App closes the vault's pages and drops it from the window. */
+  onRemoveVault: (root: string) => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
   asideRef?: Ref<HTMLElement>
   activeFile: string | null
-  watch: WatchSource
   onOpenFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
@@ -82,8 +105,8 @@ interface SidebarProps {
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
-  /** The stored root could not be read (e.g. deleted); parent decides what to do. */
-  onRootMissing: () => void
+  /** A vault's folder could not be read (e.g. deleted): which one; parent decides what to do. */
+  onRootMissing: (root: string) => void
   /** The restored last file is not in the tree any more (checked once per root). */
   onFileMissing: () => void
   /**
@@ -104,13 +127,6 @@ interface SidebarProps {
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
-  /**
-   * The window's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME
-   * object `WikilinkIndexBridge` already feeds — App's one per-window index source — read, never
-   * written, and no second feed. `records` is `[]` until the first index lands, so no row shows a
-   * number before then.
-   */
-  indexSource: WikilinkResolveSource
   /**
    * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
    * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
@@ -322,9 +338,8 @@ const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => u
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
 export function Sidebar({
-  root,
+  vaults,
   activeFile,
-  watch,
   onOpenFile,
   onOpenFileBackground,
   onRevealInFiles,
@@ -346,7 +361,6 @@ export function Sidebar({
   onRetitle,
   onDeleteFile,
   onNotice,
-  indexSource,
   pendingSearchFocus,
   onSearchFocusHandled,
   selectionRef,
@@ -361,7 +375,8 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(root, watch, activeFile, lens, onRootMissing, onFileMissing, onNotice)
+  const { root, watch, index: indexSource } = vaults[0]
+  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(root, watch, activeFile, lens, useCallback(() => onRootMissing(root), [onRootMissing, root]), onFileMissing, onNotice)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)

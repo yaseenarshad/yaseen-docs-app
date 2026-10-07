@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, stripSlash, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -29,7 +29,7 @@ import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
-import { onTree } from './lib/treeFeed'
+import { fetchTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
@@ -72,9 +72,13 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 
 export function App() {
   // The vaults this window shows (YAZ-2602 D1), in the order they were added. `root` is the FIRST:
-  // null is the Welcome window, and the sidebar stands on it until it shows every vault.
+  // null is the Welcome window, and the sidebar is keyed on it.
   const [roots, setRoots] = useState<string[]>(storage.getRoots)
   const root = roots[0] ?? null
+  // The vault rows the user closed (YAZ-2602 R9): for the session and for this window, so never in
+  // the store — and App's, like the lens below: the sidebar unmounts while it is hidden.
+  const [closedVaults, setClosedVaults] = useState<readonly string[]>([])
+  const setVaultOpen = useCallback((vault: string, open: boolean) => setClosedVaults((closed) => (closed.includes(vault) === !open ? closed : open ? closed.filter((v) => v !== vault) : [...closed, vault])), [])
   // Workspace (Tabs I2 + YAZ-966): one renderer-owned model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
@@ -365,6 +369,54 @@ export function App() {
   }, [root, openRoot])
 
   const { pick, picking } = usePickFolder({ onPicked: openVault })
+
+  /**
+   * "Add vault to this window" (YAZ-2602 D2): `path` becomes the window's last vault, with its row
+   * open, and goes to the top of the recents (S2). The tabs, the lens and the focus lists stay: the
+   * list of vaults is the only identity write. A folder the window cannot take is refused with a
+   * notice and nothing changes — one that is in the window (S4), one inside a vault of the window
+   * or around one (R8, by path segment), one that is gone on disk, which also leaves the recents
+   * (S6), and the ninth (R7). The probe is the tree feed's read, so the sidebar's first tree of the
+   * vault is that walk's. Resolves whether the vault was added.
+   */
+  const addVault = useCallback(async (folder: string): Promise<boolean> => {
+    const path = stripSlash(folder)
+    const name = storage.vaultName(path)
+    /** Why the window as it stands cannot take the folder; asked again after the probe, which waits. */
+    const refusal = (): string | null => {
+      const now = live.current.roots
+      if (now.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
+      const holder = rootOfPath(now, path)
+      if (holder !== null) return `Can't add ${name}: it is inside ${storage.vaultName(holder)}`
+      const held = now.find((vault) => rootOfPath([path], stripSlash(vault)) !== null)
+      return held === undefined ? null : `Can't add ${name}: it contains ${storage.vaultName(held)}`
+    }
+    let refused = refusal()
+    if (refused === null) {
+      try {
+        await fetchTree(path)
+      } catch (err) {
+        // Any other probe failure still adds, and the sidebar shows the error (`openRoot`'s rule).
+        if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
+          storage.removeRecentRoot(path)
+          refused = `Can't add ${name}: folder not found`
+        }
+      }
+      refused ??= refusal() ?? (live.current.roots.length >= MAX_WINDOW_ROOTS ? `A window holds ${MAX_WINDOW_ROOTS} vaults at most` : null)
+    }
+    if (refused !== null) {
+      notify(refused)
+      return false
+    }
+    storage.setRoots([...live.current.roots, path])
+    storage.pushRecentRoot(path)
+    setRoots(storage.getRoots())
+    setVaultOpen(path, true)
+    return true
+  }, [notify, setVaultOpen])
+  // The flyout's "Open folder…" (S3): the system picker, and the picked folder is added. File ›
+  // Open Folder… stays the picker above: its folder opens beside (S62).
+  const { pick: pickVault } = usePickFolder({ onPicked: addVault })
 
   // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
   // the WINDOW through the real close path so the close/flush handshake runs.
@@ -785,25 +837,41 @@ export function App() {
   }, [nameOf])
 
   /**
-   * A vault's folder is gone on disk (YAZ-2602 S53). The only vault of the window: the Welcome
-   * screen, as before. One of several: it leaves the window with its pages, and the vaults that
-   * stay keep their slots, so nothing of theirs loads again.
+   * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its
+   * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
+   * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
+   * Nothing on disk changes. The vaults that stay keep their slots, so nothing of theirs loads
+   * again, and the next vault is the root when the first one left (S52). The only vault of a
+   * window does not leave it this way (S51).
+   */
+  const removeVault = useCallback((gone: string) => {
+    const now = live.current.roots
+    const rest = now.filter((vault) => vault !== gone)
+    if (rest.length === 0 || rest.length === now.length) return
+    setSidebarRevealRequest(null)
+    deleteWorkspaceDir(stripSlash(gone))
+    storage.setRoots(rest)
+    setRoots(storage.getRoots())
+    setVaultOpen(gone, true) // a vault that comes back starts open (R9)
+  }, [deleteWorkspaceDir, setVaultOpen])
+
+  /**
+   * A vault's folder is gone on disk (YAZ-2602 S53, R6). The only vault of the window: the Welcome
+   * screen, as before. One of several: it leaves as a removed one does, the notice names it, and
+   * the folder leaves the recents.
    */
   const dropVault = useCallback((gone: string) => {
-    const rest = live.current.roots.filter((vault) => vault !== gone)
-    setSidebarRevealRequest(null)
-    if (rest.length === 0) {
+    if (live.current.roots.every((vault) => vault === gone)) {
+      setSidebarRevealRequest(null)
       storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
       setRoots([])
       resetTabs(null, null)
       return
     }
-    deleteWorkspaceDir(gone)
-    storage.setRoots(rest)
-    setRoots(rest)
-  }, [resetTabs, deleteWorkspaceDir])
-  // The sidebar stands on the first vault, so the folder it finds missing is that vault's.
-  const onRootMissing = useCallback(() => dropVault(live.current.roots[0] ?? ''), [dropVault])
+    removeVault(gone)
+    storage.removeRecentRoot(gone)
+    notify(`${storage.vaultName(gone)} is gone: its folder was not found`)
+  }, [resetTabs, removeVault, notify])
   // The ACTIVE file vanished on disk: close its tab, ⌘W-style (a neighbour takes over).
   const onFileMissing = useCallback(() => void closeActive(), [closeActive])
 
@@ -907,10 +975,17 @@ export function App() {
       )}
       {root !== null && !sidebarCollapsed && (
         <Sidebar
+          // Keyed on the FIRST vault alone (YAZ-2602): a vault that joins or leaves behind it does not remount the panel.
           key={root}
-          root={root}
+          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of each vault
+          // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
+          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks }))}
+          closedVaults={closedVaults}
+          onSetVaultOpen={setVaultOpen}
+          onAddVault={addVault}
+          onPickVault={pickVault}
+          onRemoveVault={removeVault}
           activeFile={file}
-          watch={first.watch}
           onOpenFile={openCurrent}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
@@ -925,7 +1000,7 @@ export function App() {
           settings={settings}
           onChangeSettings={changeSettings}
           onOpenSettings={openSettings}
-          onRootMissing={onRootMissing}
+          onRootMissing={dropVault}
           onFileMissing={onFileMissing}
           onRenameFile={requestPathRename}
           onRetitle={requestRetitle}
@@ -935,9 +1010,6 @@ export function App() {
           selectionRef={sidebarSelection}
           // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
           clipboardRef={sidebarClipboard}
-          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of the vault
-          // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          indexSource={first.wikilinks}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
           // ⌘O (YAZ-1767 D8): only a request made on THIS root counts; any other reads as none.
