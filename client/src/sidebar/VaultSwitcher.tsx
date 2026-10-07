@@ -62,11 +62,12 @@
  * the one on the vault that lost the number too. "Remove from recent vaults" clears it (A2).
  *
  * Two or more vaults in the window (YAZ-2602 S15): the trigger names them, joined with " + " — two
- * names, then "+ N more" — and a click drops the same panel. "Current" is every vault of this
- * window: each is marked `aria-current`, the highlight starts on the first vault that is not one of
- * them, and ⇧⏎ on one is a plain open. A right-click on the trigger then shows no menu: the menu is
- * one vault's, and the trigger is several. A vault that is not in the window gets "Add to this
- * window" (S8) above "Open in this window": App adds it beside the others and says why when it cannot.
+ * names, then "+ N more" — or, while they are exactly a saved workspace, shows that workspace's
+ * name; a click drops the same panel. "Current" is every vault of this window: each is marked
+ * `aria-current`, the highlight starts on the first vault that is not one of them, and ⇧⏎ on one
+ * is a plain open. A right-click on the trigger then shows no menu: the menu is one vault's, and
+ * the trigger is several. A vault that is not in the window gets "Add to this window" (S8) above
+ * "Open in this window": App adds it beside the others and says why when it cannot.
  *
  * Workspaces (YAZ-2602 D8): the saved sets of vaults — `vaultSets` in the code — stand FIRST, under
  * a "Workspaces" label, last used first: a name, and "N vaults" where a vault shows its time (S64).
@@ -204,8 +205,9 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const dropClick = useRef(false)
   /** ⇧ held while the panel is up (YAZ-1974 D9) — tracked on window so the cue shows before any ⏎ or click. */
   const [shiftHeld, setShiftHeld] = useState(false)
-  // Each vault's display name, live (YAZ-1974 D4): a rename in ANY window lands through `storage.subscribe`.
-  const name = useSyncExternalStore(storage.subscribe, () => vaultsLabel(roots.map(storage.vaultName)))
+  // The trigger's text, live: a change made in ANY window lands through `storage.subscribe`. The saved workspace that is
+  // exactly this window's vaults (YAZ-2602 S15) — the first that matches — else each vault's display name (YAZ-1974 D4).
+  const name = useSyncExternalStore(storage.subscribe, () => storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name ?? vaultsLabel(roots.map(storage.vaultName)))
   const open = panel !== null
 
   const openPanel = useCallback(() => {
