@@ -1720,6 +1720,12 @@ button {
   color: var(--fg-dir);
 }
 
+/* A vault row (YAZ-2602 D3): a folder row that is a whole vault, so its name reads as the parent
+   of the tree below it — the weight the header's vault name has. */
+.tree__row--vault .tree__label {
+  font-weight: 600;
+}
+
 /* A file with no in-app viewer (YAZ-1577 D2): listed, but a click leaves the app — quieter, so the
    difference is visible before the click. */
 .tree__row--external {
