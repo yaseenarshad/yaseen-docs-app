@@ -24,10 +24,11 @@
   - [x] 4- YAZ-2628 audit (9 items) and its corrections, docs
 - Now: [→] 5- YAZ-2629 verify and deliver: PR open, waits for Yasin
 - Remaining:
-  - [ ] Yasin: OK for the bundle ceilings (below), the hand walk, the merge
+  - [x] Yasin: OK for the bundle ceilings (2026-10-07)
+  - [ ] Yasin: the hand walk, the merge
 
 ## Open Questions
-- UNCONFIRMED: `npm run perf:budget:ci` fails. `rendererEagerJsBytes` 1,960,186 > ceiling 1,956,581; `rendererTotalBytes` 13,027,772 > ceiling 13,012,712. Main at `129ee9e` already measures 1,957,202 and 13,024,710 (inside the 0.1% tolerance). A higher ceiling needs Yasin's OK in the PR description (`tools/perf/budget.json`).
+- Settled 2026-10-07: Yasin gave his OK in chat. `tools/perf/budget.json`: `rendererEagerJsBytes` 1,956,581 → 1,960,186 and `rendererTotalBytes` 13,012,712 → 13,027,772, the values this branch measures. Main at `129ee9e` already measured 1,957,202 and 13,024,710. `npm run perf:budget:ci` passes.
 - UNCONFIRMED: `desktop/e2e/search.spec.ts` and `names.spec.ts` (step 9) are rewritten for the tree and were never run.
 - YAZ-2609 (several vaults) and YAZ-2622 (the Focus tab) change `Sidebar.tsx` and `useSidebarSearch.ts` too. The branch that merges second reconciles.
 
