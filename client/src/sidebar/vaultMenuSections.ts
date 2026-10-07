@@ -53,6 +53,18 @@ export interface VaultMenuHandlers {
   onNotice: (message: string) => void
 }
 
+/**
+ * A saved workspace's menu AS DATA (YAZ-2602 D8, S67), for its row in the ⌘O list. "Rename" is the
+ * word here: a workspace has one name and no folder behind it. "Remove from workspaces" only
+ * forgets the entry — the folders are untouched — so nothing is `danger`.
+ */
+export interface VaultSetMenuHandlers {
+  /** Turn the workspace's name into an inline field on its row. */
+  onRename: (id: string) => void
+  /** Forget the workspace: no confirm. */
+  onRemove: (id: string) => void
+}
+
 /** A clipboard copy that says what it did — or why it could not. */
 const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers): MenuAction => ({
   id,
@@ -96,5 +108,14 @@ export function buildVaultMenuSections({ path, name, isCurrent, renamed, keyed }
       { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => h.onOpenVsCode(path) },
     ],
     isCurrent ? [] : [{ id: 'remove', label: 'Remove from recent vaults', onSelect: () => h.onRemove(path) }],
+  ]
+}
+
+export function buildVaultSetMenuSections(id: string, h: VaultSetMenuHandlers): MenuSection[] {
+  return [
+    [
+      { id: 'rename-set', label: 'Rename', onSelect: () => h.onRename(id) },
+      { id: 'remove-set', label: 'Remove from workspaces', onSelect: () => h.onRemove(id) },
+    ],
   ]
 }

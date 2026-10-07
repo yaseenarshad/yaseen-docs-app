@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MenuAction, MenuParent, MenuSection } from './menuSections'
-import { buildVaultMenuSections, type VaultMenuHandlers, type VaultMenuTarget } from './vaultMenuSections'
+import { buildVaultMenuSections, buildVaultSetMenuSections, type VaultMenuHandlers, type VaultMenuTarget } from './vaultMenuSections'
 
 const OTHER = '/v/Émojis 🚀 & spaces'
 /** A target as the switcher builds it: the folder name, no display name set. */
@@ -148,5 +148,20 @@ describe('Add to this window (YAZ-2602 S8)', () => {
   it('a vault that is in this window has neither item, and no Remove', () => {
     const labels = groupsOf(buildVaultMenuSections(target({ isCurrent: true }), handlers())).flat()
     expect(labels).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  })
+})
+
+/** A saved workspace's menu (YAZ-2602 D8, S67): the row of the ⌘O list's "Workspaces" group. */
+describe('buildVaultSetMenuSections (YAZ-2602 S67)', () => {
+  it('"Rename", then "Remove from workspaces": one group, nothing danger-styled, and each hands its handler the workspace\'s id', () => {
+    const h = { onRename: vi.fn(), onRemove: vi.fn() }
+    const sections = buildVaultSetMenuSections('set-1', h)
+    expect(groupsOf(sections)).toEqual([['Rename', 'Remove from workspaces']])
+    expect(sections.flat().some((i) => i.danger === true || (i as MenuAction).disabled === true)).toBe(false)
+    item(sections, 'rename-set').onSelect()
+    expect(h.onRename).toHaveBeenCalledExactlyOnceWith('set-1')
+    expect(h.onRemove).not.toHaveBeenCalled()
+    item(sections, 'remove-set').onSelect()
+    expect(h.onRemove).toHaveBeenCalledExactlyOnceWith('set-1')
   })
 })

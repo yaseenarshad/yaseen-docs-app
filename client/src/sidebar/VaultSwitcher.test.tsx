@@ -16,9 +16,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots } from '@shared/types'
+import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots, type VaultSet } from '@shared/types'
 import { storage } from '../lib/storage'
-import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
+import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_WORKSPACES_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -130,6 +130,14 @@ const pathOf = (row: HTMLElement) => {
   leaveInfo(row)
   return path
 }
+
+/** The list as it reads, top to bottom: a group label as "# Open", a row as its name, badge and time — the parts it has. */
+const listing = (el: HTMLElement) =>
+  [...el.querySelector('.vault-switcher__rows')!.children].map((line) =>
+    line.classList.contains('vault-switcher__label')
+      ? `# ${line.textContent}`
+      : ['.vault-switcher__name', '.vault-switcher__key', '.vault-switcher__when'].map((part) => line.querySelector(part)?.textContent ?? '').filter((text) => text !== '').join(' · '),
+  )
 
 const openPanel = (el: HTMLElement) => act(() => trigger(el).click())
 const key = (el: HTMLElement, k: string) => act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
@@ -863,13 +871,6 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
         }),
       ),
     )
-  /** The list as it reads, top to bottom: a group label as "# Open", a row as its name, badge and time — the parts it has. */
-  const listing = (el: HTMLElement) =>
-    [...el.querySelector('.vault-switcher__rows')!.children].map((line) =>
-      line.classList.contains('vault-switcher__label')
-        ? `# ${line.textContent}`
-        : ['.vault-switcher__name', '.vault-switcher__key', '.vault-switcher__when'].map((part) => line.querySelector(part)?.textContent ?? '').filter((text) => text !== '').join(' · '),
-    )
 
   it('open vaults first under "Open", the rest under "Not open" — recents, then open or numbered vaults that fell out of them, with no time — and a ⌘<n> badge on every numbered row (S1, S3–S6, S8, S9, S18)', async () => {
     // Archive is open in two windows and Loose (trailing slash, not a recent) in one; a Welcome window is no vault.
@@ -1158,5 +1159,245 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
     await settle()
     expect(props.onOpenHere).not.toHaveBeenCalled()
     expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+  })
+})
+
+/**
+ * Workspaces (YAZ-2602 D8): saved sets of vaults. The list shows them first, under "Workspaces";
+ * a row opens through `window.openSet`, and its menu renames or removes it. The doors are mocked
+ * on the fake bridge; the saved workspaces are seeded into the cache, as main's broadcast lands them.
+ */
+describe('VaultSwitcher: workspaces (YAZ-2602 D8, S64 to S67)', () => {
+  const ARCHIVE = '/v/Archive'
+  const WORK: VaultSet = { id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW - 3_600_000 }
+  const READING: VaultSet = { id: 'set-reading', name: 'Reading', roots: [ROOT, ARCHIVE, '/v/Notes Archive'], lastUsed: NOW - 86_400_000 }
+  /** The list with no workspace, and no window seeded: the four recents under "Not open" — as every older test reads it. */
+  const VAULTS = [`# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago']
+  const seedSets = (...vaultSets: VaultSet[]) => act(() => broadcast(seeded({ vaultSets })))
+  const when = (row: HTMLElement) => row.querySelector('.vault-switcher__when')
+  const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.vault-switcher__rename')
+  const fieldKey = (el: HTMLElement, k: string) => act(() => void field(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+
+  let openSet: ReturnType<typeof vi.fn>
+  let saveSet: ReturnType<typeof vi.fn>
+  let renameSet: ReturnType<typeof vi.fn>
+  let removeSet: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    openSet = vi.fn(async () => ({ opened: true, missing: [] }))
+    saveSet = vi.fn(async () => true)
+    renameSet = vi.fn(async () => true)
+    removeSet = vi.fn(async () => undefined)
+    Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openSet, saveSet, renameSet, removeSet })
+  })
+
+  it('"Workspaces" stands first — a label, not a row — with one row per saved workspace, last used first: its name and "N vaults"; then the vault groups as before. The highlight starts on the first workspace, and the rows take ↑/↓ and hover (S64)', () => {
+    const { el } = render()
+    openPanel(el)
+    expect(listing(el)).toEqual(VAULTS) // no saved workspace: the list of today, no label
+    openPanel(el)
+    seedSets(WORK, READING)
+    openPanel(el)
+    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults', ...VAULTS])
+    expect(el.querySelector('.vault-switcher__label')?.getAttribute('role')).toBeNull()
+    // A workspace row is a name and its count: no ⌘ number, no ⓘ — it is not one folder.
+    expect([...rows(el)[0].children].map((part) => `${part.tagName}.${part.className}`)).toEqual(['SPAN.vault-switcher__name', 'SPAN.vault-switcher__when'])
+    expect(rows(el)[0].getAttribute('role')).toBe('menuitem')
+    expect(activeRow(el)).toBe(rows(el)[0])
+    key(el, 'ArrowUp')
+    expect(activeRow(el)).toBe(rows(el)[0])
+    key(el, 'ArrowDown')
+    expect(activeRow(el)).toBe(rows(el)[1])
+    for (let i = 0; i < 4; i++) key(el, 'ArrowDown')
+    expect(activeRow(el)).toBe(rows(el)[5])
+    key(el, 'ArrowDown')
+    key(el, 'ArrowDown')
+    expect(activeRow(el)).toBe(openFolderRow(el))
+    act(() => void rows(el)[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(activeRow(el)).toBe(rows(el)[1])
+    expect(el.querySelectorAll('.vault-switcher__row--active')).toHaveLength(1)
+  })
+
+  it('the filter matches a workspace by its name, ranked like a vault; a group with no match shows no label (S64)', async () => {
+    seedSets({ ...READING, id: 'set-homework', name: 'Homework' }, WORK, { ...READING, id: 'set-plan', name: 'Notes plan' })
+    const { el } = render()
+    openPanel(el)
+    await type(el, 'work') // exact, then substring — whatever was used last
+    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Homework · 3 vaults'])
+    expect(el.querySelector('.vault-switcher__empty')).toBeNull()
+    expect(activeRow(el)).toBe(rows(el)[0])
+    await type(el, 'notes') // a workspace and vaults: the workspaces still stand first
+    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Notes plan · 3 vaults', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    expect(activeRow(el)).toBe(rows(el)[0])
+    await type(el, 'arch') // vaults only
+    expect(listing(el)).toEqual([`# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday', 'Notes Archive · 3 days ago'])
+    await type(el, 'zzz')
+    expect(el.querySelectorAll('.vault-switcher__label')).toHaveLength(0)
+    expect(el.querySelector('.vault-switcher__empty')?.textContent).toBe(NO_MATCH_TEXT)
+    expect(activeRow(el)).toBe(openFolderRow(el))
+    await type(el, 'homew')
+    key(el, 'Enter')
+    await settle()
+    expect(openSet).toHaveBeenCalledExactlyOnceWith('set-homework')
+  })
+
+  it('the workspace that this window shows is marked and skipped like the current vault: the highlight starts on the first row that is neither', () => {
+    seedSets(WORK, READING)
+    // Work's vaults in the other order, one with a trailing slash: still exactly that workspace.
+    const { el } = render({ roots: ['/w/Notes', `${ARCHIVE}/`] })
+    openPanel(el)
+    expect(rows(el).slice(0, 2).map((r) => r.getAttribute('aria-current'))).toEqual(['true', null])
+    expect(activeRow(el)).toBe(rows(el)[1])
+    openPanel(el)
+    seedSets(WORK) // the one saved workspace is this window's: on to the first vault that is not in the window
+    openPanel(el)
+    expect(listing(el).slice(0, 2)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults'])
+    expect(activeRow(el)).toBe(rows(el)[1])
+    expect(pathOf(activeRow(el)!)).toBe(ROOT)
+  })
+
+  it('⏎ or a click opens the workspace through window.openSet — never openRecent — and closes the panel; ⇧ has no "open here" for a workspace: no cue, and ⇧⏎ / ⇧-click are a plain open (S65)', async () => {
+    seedSets(WORK, READING)
+    const { el, props } = render()
+    openPanel(el)
+    key(el, 'Enter')
+    await settle()
+    expect(openSet).toHaveBeenCalledExactlyOnceWith('set-work')
+    expect(panel(el)).toBeNull()
+
+    openPanel(el)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true })))
+    expect(when(activeRow(el)!)?.textContent).toBe('2 vaults')
+    act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
+    await settle()
+    expect(openSet).toHaveBeenCalledTimes(2)
+    expect(panel(el)).toBeNull()
+
+    openPanel(el)
+    act(() => void rows(el)[1].dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true })))
+    await settle()
+    expect(openSet).toHaveBeenLastCalledWith('set-reading')
+    expect(panel(el)).toBeNull()
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a folder of the workspace is gone: it opens without it and a notice names it. Every folder gone: nothing opens, the row says "Folders not found" like a dead vault row, and the panel stays (S66)', async () => {
+    act(() => broadcast(seeded({ vaultSets: [WORK, READING], folders: { '/w/Notes': { ...defaultFolderState(), name: 'Field notes' } } })))
+    const { el, props } = render()
+    openSet.mockResolvedValueOnce({ opened: true, missing: [ARCHIVE, '/w/Notes'] })
+    openPanel(el)
+    key(el, 'Enter')
+    await settle()
+    expect(panel(el)).toBeNull()
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Not found: Archive, Field notes')
+
+    openSet.mockResolvedValueOnce({ opened: false, missing: WORK.roots })
+    openPanel(el)
+    act(() => rows(el)[0].click())
+    await settle()
+    expect(rows(el)[0].disabled).toBe(true)
+    expect(when(rows(el)[0])?.textContent).toBe(SETS_MISSING_TEXT)
+    expect(when(rows(el)[0])?.className).toContain('vault-switcher__when--missing')
+    expect(listing(el)[2]).toBe('Reading · 3 vaults') // the other rows are as they were
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+    expect(props.onNotice).toHaveBeenCalledTimes(1)
+    // The dead row opens nothing more; the workspace is still saved, so its menu still stands.
+    key(el, 'ArrowUp')
+    key(el, 'Enter')
+    await settle()
+    expect(openSet).toHaveBeenCalledTimes(2)
+    rightClick(rows(el)[0])
+    expect(menuLabels()).toEqual(['Rename', 'Remove from workspaces'])
+    // The next open asks again: the folders can come back (a drive that was not mounted).
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    openPanel(el)
+    openPanel(el)
+    expect(rows(el)[0].disabled).toBe(false)
+    // A door that fails reads as "nothing opened".
+    openSet.mockRejectedValueOnce(new Error('ipc down'))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    key(el, 'Enter')
+    await settle()
+    expect(rows(el)[0].disabled).toBe(true)
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
+  })
+
+  it('a workspace row\'s menu is "Rename" and "Remove from workspaces". Rename is the display name\'s inline field: ⏎ or blur saves through window.renameSet, Esc or an empty field cancels, a refused name says so and changes nothing. Remove forgets the workspace at once (S67)', async () => {
+    seedSets(WORK, READING)
+    const { el, props } = render()
+    openPanel(el)
+    const before = activeRow(el)
+    expect(rightClick(rows(el)[1])).toBe(true)
+    expect(menuLabels()).toEqual(['Rename', 'Remove from workspaces'])
+    expect(activeRow(el)).toBe(before)
+    pick('Rename')
+    const input = field(el)!
+    expect(rows(el)[1].tagName).toBe('DIV') // no input inside a <button>
+    expect(document.activeElement).toBe(input)
+    expect([input.value, input.selectionStart, input.selectionEnd]).toEqual(['Reading', 0, 'Reading'.length])
+    expect(when(rows(el)[1])?.textContent).toBe('3 vaults')
+    await fill(input, '  Books ')
+    fieldKey(el, 'Enter')
+    await settle()
+    expect(renameSet).toHaveBeenCalledExactlyOnceWith('set-reading', 'Books')
+    expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Books · 3 vaults'])
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+
+    // Blur saves too; a name that another workspace has is refused, and the old name stays.
+    renameSet.mockResolvedValueOnce(false)
+    rightClick(rows(el)[1])
+    pick('Rename')
+    await fill(field(el)!, 'Work')
+    act(() => filter(el).focus())
+    await settle()
+    expect(renameSet).toHaveBeenLastCalledWith('set-reading', 'Work')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith("Can't rename: a workspace has that name")
+    expect(names(el).slice(0, 2)).toEqual(['Work', 'Books'])
+
+    // Esc throws the edit away and closes only the field; an empty field is no name.
+    rightClick(rows(el)[1])
+    pick('Rename')
+    await fill(field(el)!, 'Other')
+    fieldKey(el, 'Escape')
+    expect(field(el)).toBeNull()
+    expect(panel(el)).not.toBeNull()
+    rightClick(rows(el)[1])
+    pick('Rename')
+    await fill(field(el)!, '   ')
+    fieldKey(el, 'Enter')
+    await settle()
+    expect(renameSet).toHaveBeenCalledTimes(2)
+    expect(names(el).slice(0, 2)).toEqual(['Work', 'Books'])
+
+    rightClick(rows(el)[1])
+    pick('Remove from workspaces')
+    expect(removeSet).toHaveBeenCalledExactlyOnceWith('set-reading')
+    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', ...VAULTS])
+    expect(panel(el)).not.toBeNull()
+    expect(document.activeElement).toBe(filter(el))
+    rightClick(rows(el)[0])
+    pick('Remove from workspaces')
+    expect(listing(el)).toEqual(VAULTS) // the label goes with its last row
+    expect(props.onNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('the workspace menu is the top layer like the vault menu: ↑/↓/⏎ do not reach the panel, Esc closes it alone, and it goes with the panel when the window loses focus', () => {
+    seedSets(WORK, READING)
+    const { el } = render()
+    openPanel(el)
+    rightClick(rows(el)[1])
+    key(el, 'ArrowDown')
+    key(el, 'Enter')
+    expect(activeRow(el)).toBe(rows(el)[0])
+    expect(openSet).not.toHaveBeenCalled()
+    key(el, 'Escape')
+    expect([vaultMenu(), panel(el) === null]).toEqual([null, false])
+    rightClick(rows(el)[1])
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect([panel(el), vaultMenu()]).toEqual([null, null])
   })
 })
