@@ -23,7 +23,7 @@ const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
 const RIGHT = { open: true, width: 520, items: ['/v/right.md'], expanded: '/v/right.md' }
-const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds }
+const entry: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds }
 
 let dir: string
 let store: Store
