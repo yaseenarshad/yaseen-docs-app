@@ -14,6 +14,7 @@ import {
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
+  type WindowEntry,
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
@@ -90,6 +91,8 @@ export const storage = {
   },
 
   getRecentRoots: (): RecentRoots => state.recents,
+  /** Every window's entry (YAZ-2555 D1: the open vaults come from it). */
+  getWindows: (): readonly WindowEntry[] => state.windows,
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
