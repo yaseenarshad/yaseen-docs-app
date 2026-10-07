@@ -107,6 +107,22 @@ describe('listVaults (YAZ-2556 D2: the one vault list of ⌘O and `yaseendocs va
   })
 })
 
+describe('storage.getVaultSets (YAZ-2602 D8)', () => {
+  it('is the cache\'s saved sets, last used first as main keeps them, and follows a change made in any window', async () => {
+    expect(storage.getVaultSets()).toEqual([])
+    const work = { id: 's1', name: 'Work', roots: ['/v/a', '/v/b'], lastUsed: 20 }
+    const reading = { id: 's2', name: 'Reading', roots: ['/v/c', '/v/a'], lastUsed: 10 }
+    b = installBridge({ ...defaultAppState(), vaultSets: [work, reading] }, { id: 'w1', root: '/v/a', file: null, tabs: [] })
+    await storage.init()
+    expect(storage.getVaultSets()).toEqual([work, reading])
+    const woke = vi.fn()
+    storage.subscribe(woke)
+    b.emit({ ...defaultAppState(), vaultSets: [reading] })
+    expect(storage.getVaultSets()).toEqual([reading])
+    expect(woke).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('storage.init', () => {
   it('loads the state and this window\'s identity from the bridge and subscribes to changes', async () => {
     const seeded: AppState = {
