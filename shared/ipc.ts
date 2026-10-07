@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -81,6 +81,14 @@ export const CONTRACT = {
     duplicate: invoke<[], void>('window:duplicate', 0),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
+    /** Open a saved set of vaults (YAZ-2602 D8, S65, S66): raise the window that shows exactly its vaults, else open one on them; a vault whose folder is gone is left out and named in `missing`; `opened: false` = no folder is left. */
+    openSet: invoke<[id: string], OpenSetResult>('window:open-set', 1),
+    /** Save THIS window's vaults as a set under `name` (S63); the same name replaces. `false` = refused: fewer than two vaults, an empty name, or a new name when MAX_VAULT_SETS exist (R12). */
+    saveSet: invoke<[name: string], boolean>('window:save-set', 1),
+    /** Rename a saved set (S67); `false` = refused: an unknown id, an empty name, or a name another set has. */
+    renameSet: invoke<[id: string, name: string], boolean>('window:rename-set', 2),
+    /** Forget a saved set (S67); the folders are not touched. */
+    removeSet: invoke<[id: string], void>('window:remove-set', 1),
     /** Close THIS window through the REAL close path, so the flush handshake runs (GRO-2232). */
     closeSelf: invoke<[], void>('window:close-self', 0),
     /** App-wide zoom for THIS window (YAZ-1710): what the stock `zoomIn` / `zoomOut` / `resetZoom` roles did — level ± 0.5, or back to 0. */

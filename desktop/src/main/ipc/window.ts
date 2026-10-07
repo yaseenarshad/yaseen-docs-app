@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_WINDOW_ROOTS, isSidebarLens, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_WINDOW_ROOTS, isSidebarLens, type OpenSetResult, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -69,6 +69,12 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
   const v = raw.sidebarLens
   if (v === undefined) return undefined
   if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files' or 'favorites'")
+  return v
+}
+
+/** A saved set's `id` or `name` (YAZ-2602 D8): a string; the store decides what it names. */
+function requireString(v: unknown, param: 'id' | 'name'): string {
+  if (typeof v !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${param}' must be a string`)
   return v
 }
 
@@ -156,6 +162,17 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
   // window may ask; the caller is not consulted.
   handle(CONTRACT.window.openRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+
+  // Saved sets of vaults (YAZ-2602 D8; the user reads "workspace"). `window:open-set` is the
+  // manager's door: what opened, and the folders that are gone. Any window may ask it, and may
+  // rename or remove a set. `window:save-set` saves the CALLER's own vaults, so the renderer never
+  // sends a list; false = the store refused (fewer than two vaults, an empty name, or R12).
+  handle(CONTRACT.window.openSet, async (id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id')))
+  handleWithEvent(CONTRACT.window.saveSet, async (e, name: unknown): Promise<boolean> => store.saveVaultSet(requireString(name, 'name'), entryFor(e).roots) !== null)
+  handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))
+  handle(CONTRACT.window.removeSet, async (id: unknown) => {
+    store.removeVaultSet(requireString(id, 'id'))
+  })
 
   // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.
   handleWithEvent(SPECIAL.menuPasteTextFallback, async (e, text: unknown) => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 import {
@@ -8,6 +9,7 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
+  MAX_VAULT_SETS,
   NEW_NOTE_LOCATIONS,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
@@ -27,6 +29,7 @@ import {
   isSidebarLens,
   isValidNewNoteFolder,
   normalizeRoots,
+  stripSlash,
   type AppState,
   type CommentsOrder,
   type ContentWidth,
@@ -38,6 +41,7 @@ import {
   type SettingsState,
   type SidebarLens,
   type Theme,
+  type VaultSet,
   type WindowBounds,
   type WindowEntry,
 } from '@shared/types'
@@ -68,7 +72,7 @@ export interface Store {
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its Focus Mode
    * lists `focusDirs`/`focusFavorites` (YAZ-1628, YAZ-1766), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
-   * baseGroups keys (`<basePath>::<view>`).
+   * baseGroups keys (`<basePath>::<view>`), and the vaults of each saved set (YAZ-2602 S71).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
    * references it.
@@ -82,12 +86,26 @@ export interface Store {
    * deleted tabs are dropped as are its `focusDirs` / `focusFavorites` entries
    * (YAZ-1628, YAZ-1766), `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
-   * (`<basePath>::<view>`) go too.
+   * (`<basePath>::<view>`) go too. A saved set loses the vault, and a set with fewer than two
+   * vaults left is removed (YAZ-2602 S71).
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
    * race it. One commit; a no-op when nothing references the path.
    */
   removePath(path: string): void
+  /**
+   * Save `roots` as a set of vaults under `name` (YAZ-2602 D8) and answer the saved set. A set with
+   * the same cleaned name is REPLACED: it keeps its `id`, takes the new vaults and moves to the front
+   * (S63, S69). Refused with null, and no commit: fewer than two vaults after cleaning, an empty
+   * name, or a NEW name when MAX_VAULT_SETS sets exist (S68, R12).
+   */
+  saveVaultSet(name: string, roots: readonly string[], now?: number): VaultSet | null
+  /** Rename a saved set (S67). False, and no commit: an unknown `id`, an empty name, or a name a DIFFERENT set has. */
+  renameVaultSet(id: string, name: string): boolean
+  /** Forget a saved set (S67); its folders are never touched. An unknown `id` is a no-op. */
+  removeVaultSet(id: string): void
+  /** The set was just used (S65): `lastUsed` is `now`, and it moves to the front. An unknown `id` is a no-op. */
+  touchVaultSet(id: string, now?: number): void
   onChange(listener: (state: AppState) => void): () => void
   flush(): Promise<void>
 }
@@ -245,6 +263,29 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
   return out
 }
 
+/** A saved set's vaults as the store keeps them (YAZ-2602 D8): absolute paths, trailing slash off, each once, MAX_WINDOW_ROOTS at most. */
+function cleanSetRoots(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const roots = raw.filter((r): r is string => typeof r === 'string' && isAbsolute(r)).map(stripSlash)
+  return normalizeRoots(roots, roots[0] ?? null)
+}
+
+/** The saved sets (YAZ-2602 D8) read with the windows' rule: a bad entry drops alone. A set needs a string id of its own, a name and two vaults. */
+function sanitizeVaultSets(raw: unknown): VaultSet[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: VaultSet[] = []
+  for (const s of raw) {
+    if (!isRecord(s) || typeof s.id !== 'string' || seen.has(s.id)) continue
+    const name = cleanVaultName(s.name)
+    const roots = cleanSetRoots(s.roots)
+    if (name === null || roots.length < 2) continue
+    seen.add(s.id)
+    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0 })
+  }
+  return out.slice(0, MAX_VAULT_SETS)
+}
+
 /** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
 function toDisk(state: AppState): unknown {
   const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))
@@ -267,6 +308,7 @@ function sanitizeState(raw: unknown): AppState | null {
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
     windows: sanitizeWindows(raw.windows, legacySidebarCollapsed, legacySidebarLens),
     folders: sanitizeFolders(raw.folders),
+    vaultSets: sanitizeVaultSets(raw.vaultSets),
   }
 }
 
@@ -469,8 +511,10 @@ export function createStore(filePath: string): Store {
           },
         ]),
       )
+      // A saved set follows its vault's folder (YAZ-2602 S71), and stays a set: each vault once, two at least.
+      const vaultSets = state.vaultSets.map((s) => ({ ...s, roots: cleanSetRoots(s.roots.map(remap)) })).filter((s) => s.roots.length >= 2)
       if (!changed) return
-      commit({ ...state, windows, recents, folders })
+      commit({ ...state, windows, recents, folders, vaultSets })
     },
 
     removePath(deleted) {
@@ -547,8 +591,41 @@ export function createStore(filePath: string): Store {
             },
           ]),
       )
+      // A deleted folder leaves each saved set (YAZ-2602 S71); a set with fewer than two vaults left is no set.
+      const vaultSets = state.vaultSets.map((s) => ({ ...s, roots: drop(s.roots) })).filter((s) => s.roots.length >= 2)
       if (!changed) return
-      commit({ ...state, windows, recents, folders })
+      commit({ ...state, windows, recents, folders, vaultSets })
+    },
+
+    saveVaultSet(rawName, rawRoots, now = Date.now()) {
+      const name = cleanVaultName(rawName)
+      const roots = cleanSetRoots(rawRoots)
+      if (name === null || roots.length < 2) return null
+      const existing = state.vaultSets.find((s) => s.name === name)
+      // R12 counts sets, so a save under a name that exists is never the one refused.
+      if (existing === undefined && state.vaultSets.length >= MAX_VAULT_SETS) return null
+      const saved: VaultSet = { id: existing?.id ?? randomUUID(), name, roots, lastUsed: now }
+      commit({ ...state, vaultSets: [saved, ...state.vaultSets.filter((s) => s !== existing)] })
+      return saved
+    },
+
+    renameVaultSet(id, rawName) {
+      const name = cleanVaultName(rawName)
+      const set = state.vaultSets.find((s) => s.id === id)
+      if (name === null || set === undefined || state.vaultSets.some((s) => s !== set && s.name === name)) return false
+      if (set.name !== name) commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? { ...s, name } : s)) })
+      return true
+    },
+
+    removeVaultSet(id) {
+      if (!state.vaultSets.some((s) => s.id === id)) return
+      commit({ ...state, vaultSets: state.vaultSets.filter((s) => s.id !== id) })
+    },
+
+    touchVaultSet(id, now = Date.now()) {
+      const set = state.vaultSets.find((s) => s.id === id)
+      if (set === undefined || (state.vaultSets[0] === set && set.lastUsed === now)) return
+      commit({ ...state, vaultSets: [{ ...set, lastUsed: now }, ...state.vaultSets.filter((s) => s !== set)] })
     },
 
     onChange(listener) {

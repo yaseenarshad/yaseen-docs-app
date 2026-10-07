@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openVaultRoots, rootOfPath, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openVaultRoots, rootOfPath, sameVaults, type AppState, type VaultSet, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -83,6 +83,19 @@ describe("a window's vault list (YAZ-2602 D1)", () => {
     const vaults = listVaults({ recents: [{ path: '/b', lastOpened: 9 }, { path: '/closed', lastOpened: 3 }], windows: [{ root: '/a', roots: ['/a', '/b'] }, { root: '/old' }], folders: {} })
     expect(vaults.map((v) => [v.path, v.open])).toEqual([['/b', true], ['/closed', false], ['/a', true], ['/old', true]])
   })
+
+  it('sameVaults: the same SET of vaults — the order and a trailing slash do not count, one vault more or fewer does (D8, S65)', () => {
+    expect(sameVaults(['/a', '/b'], ['/b', '/a'])).toBe(true)
+    expect(sameVaults(['/a/', '/b'], ['/b/', '/a'])).toBe(true)
+    expect(sameVaults(['/a', '/b'], ['/a', '/b', '/c'])).toBe(false)
+    expect(sameVaults(['/a', '/b', '/c'], ['/a', '/b'])).toBe(false)
+    expect(sameVaults(['/a', '/b'], ['/a', '/c'])).toBe(false)
+    expect(sameVaults(['/a', '/a/'], ['/a'])).toBe(true) // a vault counts once
+    expect(sameVaults(['/a', '/a'], ['/a', '/b'])).toBe(false)
+    expect(sameVaults(['/a/b'], ['/a/bc'])).toBe(false)
+    expect(sameVaults([], [])).toBe(true)
+    expect(sameVaults([], ['/a'])).toBe(false)
+  })
 })
 
 describe('cleanVaultName (YAZ-1974 D3)', () => {
@@ -121,6 +134,7 @@ describe('createStore: loading', () => {
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites' })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null, key: null } },
+      vaultSets: [],
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
@@ -535,6 +549,42 @@ describe('createStore: loading', () => {
     for (const root of ['/a', '/b', '/c']) {
       expect(folders[root].expanded).toEqual([])
     }
+  })
+
+  it('vaultSets (YAZ-2602 D8): a missing or junk list is []; a bad entry drops alone, its vaults are cleaned like a window\'s, a junk `lastUsed` reads 0, and the list is cut at MAX_VAULT_SETS', async () => {
+    // A state file from before the key: additive within version 1, so it loads.
+    const { vaultSets: _omitted, ...before } = valid({ recents: [{ path: '/v', lastOpened: 5 }] })
+    await seed(before)
+    expect(createStore(file).get()).toEqual({ ...defaultAppState(), recents: [{ path: '/v', lastOpened: 5 }] })
+    for (const junk of ['nope', { a: 1 }, 5, null]) {
+      await seed(valid({ vaultSets: junk }))
+      expect(createStore(file).get().vaultSets).toEqual([])
+    }
+    const many = Array.from({ length: MAX_WINDOW_ROOTS + 4 }, (_, i) => `/v${i}`)
+    await seed(
+      valid({
+        vaultSets: [
+          { id: 'ok', name: '  Work  ', roots: ['/a/', 'rel', 5, '/b', '/a', '/b/'], lastUsed: 7, extra: true },
+          'junk',
+          { name: 'No id', roots: ['/a', '/b'], lastUsed: 1 },
+          { id: 5, name: 'Id is not a string', roots: ['/a', '/b'], lastUsed: 1 },
+          { id: 'ok', name: 'The id again', roots: ['/c', '/d'], lastUsed: 1 },
+          { id: 'blank', name: '   ', roots: ['/a', '/b'], lastUsed: 1 },
+          { id: 'named-5', name: 5, roots: ['/a', '/b'], lastUsed: 1 },
+          { id: 'one', name: 'One vault twice', roots: ['/a', '/a/', 'b'], lastUsed: 1 },
+          { id: 'none', name: 'No list', lastUsed: 1 },
+          { id: 'time', name: 'Time', roots: ['/a', '/b'], lastUsed: 'yesterday' },
+          { id: 'many', name: 'Many', roots: many, lastUsed: 3 },
+        ],
+      }),
+    )
+    expect(createStore(file).get().vaultSets).toEqual([
+      { id: 'ok', name: 'Work', roots: ['/a', '/b'], lastUsed: 7 },
+      { id: 'time', name: 'Time', roots: ['/a', '/b'], lastUsed: 0 },
+      { id: 'many', name: 'Many', roots: many.slice(0, MAX_WINDOW_ROOTS), lastUsed: 3 },
+    ])
+    await seed(valid({ vaultSets: Array.from({ length: MAX_VAULT_SETS + 5 }, (_, i) => ({ id: `s${i}`, name: `Set ${i}`, roots: ['/a', '/b'], lastUsed: i })) }))
+    expect(createStore(file).get().vaultSets.map((s) => s.id)).toEqual(Array.from({ length: MAX_VAULT_SETS }, (_, i) => `s${i}`))
   })
 
   it('unknown top-level keys are dropped', async () => {
@@ -1164,5 +1214,162 @@ describe('focusFavorites (YAZ-1766 D5)', () => {
     store.upsertWindow(win('w1', { root: '/v', focusFavorites: ['/v/Sub', '/v/other'] }))
     store.removePath('/v/Sub')
     expect(store.get().windows[0]).toMatchObject({ focusFavorites: ['/v/other'] })
+  })
+})
+
+/**
+ * Saved sets of vaults (YAZ-2602 D8): what the user reads as a "workspace". The store keeps the list
+ * last used first, and `renamePath` / `removePath` repair each set as they repair a window's lists.
+ */
+describe('vaultSets (YAZ-2602 D8)', () => {
+  /** A store that counts its commits: each one is a `state:changed`. */
+  const counted = () => {
+    const store = createStore(file)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    return { store, seen }
+  }
+  const names = (store: { get(): AppState }) => store.get().vaultSets.map((s) => s.name)
+
+  it('saveVaultSet: a new name is a new set at the front; the SAME name replaces — it keeps its id, takes the new vaults and moves to the front (S63); a window that changes its vaults changes no set (S69)', async () => {
+    const { store, seen } = counted()
+    const work = store.saveVaultSet('  Work  ', ['/a/', '/b', '/a'], 10) as VaultSet
+    expect(work).toEqual({ id: expect.any(String), name: 'Work', roots: ['/a', '/b'], lastUsed: 10 })
+    const home = store.saveVaultSet('Home', ['/c', '/d'], 20) as VaultSet
+    expect(home.id).not.toBe(work.id)
+    expect(store.get().vaultSets).toEqual([home, work])
+    expect(seen).toHaveLength(2)
+
+    const again = store.saveVaultSet(' Work ', ['/b', '/c', '/d'], 30)
+    expect(again).toEqual({ id: work.id, name: 'Work', roots: ['/b', '/c', '/d'], lastUsed: 30 })
+    expect(store.get().vaultSets).toEqual([again, home])
+    expect(seen).toHaveLength(3) // a replace is one commit
+
+    // S69: the set is a saved copy. A window on the same vaults that adds, removes or closes changes nothing here.
+    store.upsertWindow(win('w1', { root: '/b', roots: ['/b', '/c', '/d'] }))
+    store.upsertWindow(win('w1', { root: '/b', roots: ['/b', '/x'] }))
+    store.removeWindow('w1')
+    expect(store.get().vaultSets).toEqual([again, home])
+    // …and the list a caller passed in is not the list the store keeps.
+    const mine = ['/p', '/q']
+    store.saveVaultSet('Copy', mine, 40)
+    mine.push('/r')
+    expect(store.get().vaultSets[0].roots).toEqual(['/p', '/q'])
+
+    // Per machine, in the app state file: a relaunch reads the same sets back.
+    await store.flush()
+    expect((await onDisk()).vaultSets).toEqual(store.get().vaultSets)
+    expect(createStore(file).get().vaultSets).toEqual(store.get().vaultSets)
+  })
+
+  it('saveVaultSet refuses with null and no commit: fewer than two vaults after cleaning, an empty name, and a NEW name when MAX_VAULT_SETS exist — a replace at the limit is still saved (S68, R12)', () => {
+    const { store, seen } = counted()
+    expect(store.saveVaultSet('One', ['/a'], 1)).toBeNull()
+    expect(store.saveVaultSet('One twice', ['/a', '/a/'], 1)).toBeNull()
+    expect(store.saveVaultSet('Relative', ['/a', 'b'], 1)).toBeNull()
+    expect(store.saveVaultSet('   ', ['/a', '/b'], 1)).toBeNull()
+    expect(seen).toHaveLength(0)
+    expect(store.get().vaultSets).toEqual([])
+    // More vaults than a window shows: the set is cut like a window's list.
+    const many = Array.from({ length: MAX_WINDOW_ROOTS + 2 }, (_, i) => `/v${i}`)
+    expect(store.saveVaultSet('Many', many, 1)?.roots).toEqual(many.slice(0, MAX_WINDOW_ROOTS))
+
+    for (let i = 1; i < MAX_VAULT_SETS; i++) expect(store.saveVaultSet(`Set ${i}`, ['/a', '/b'], 10 + i)).not.toBeNull()
+    expect(store.get().vaultSets).toHaveLength(MAX_VAULT_SETS)
+    const full = store.get()
+    expect(store.saveVaultSet('The 21st', ['/a', '/b'], 99)).toBeNull()
+    expect(store.get()).toBe(full) // refused: the same snapshot, no commit
+    // The same name is not a 21st set: it replaces at the limit.
+    const oldest = full.vaultSets[MAX_VAULT_SETS - 1]
+    expect(store.saveVaultSet('Many', ['/x', '/y'], 100)).toEqual({ id: oldest.id, name: 'Many', roots: ['/x', '/y'], lastUsed: 100 })
+    expect(store.get().vaultSets).toHaveLength(MAX_VAULT_SETS)
+    expect(names(store)[0]).toBe('Many')
+  })
+
+  it('renameVaultSet, removeVaultSet (S67) and touchVaultSet (S65): one commit each; an unknown id, an empty name or a name another set has changes nothing', () => {
+    const { store, seen } = counted()
+    const a = store.saveVaultSet('A', ['/a', '/b'], 1) as VaultSet
+    const b = store.saveVaultSet('B', ['/c', '/d'], 2) as VaultSet
+    const c = store.saveVaultSet('C', ['/e', '/f'], 3) as VaultSet
+    seen.length = 0
+
+    // Rename: the name alone moves. The id, the vaults, the time and the place in the list stay.
+    expect(store.renameVaultSet(b.id, '  Bee  ')).toBe(true)
+    expect(store.get().vaultSets).toEqual([c, { ...b, name: 'Bee' }, a])
+    expect(seen).toHaveLength(1)
+    expect(store.renameVaultSet(b.id, 'A')).toBe(false) // a different set has the name
+    expect(store.renameVaultSet(b.id, '   ')).toBe(false)
+    expect(store.renameVaultSet('nope', 'New')).toBe(false)
+    expect(store.renameVaultSet(b.id, 'Bee')).toBe(true) // its own name: nothing to write
+    expect(seen).toHaveLength(1)
+
+    // Touch: the set is the last used one — the time, and the front of the list.
+    store.touchVaultSet(a.id, 50)
+    expect(store.get().vaultSets).toEqual([{ ...a, lastUsed: 50 }, c, { ...b, name: 'Bee' }])
+    expect(seen).toHaveLength(2)
+    store.touchVaultSet(a.id, 50) // already in front, at that time
+    store.touchVaultSet('nope', 60)
+    expect(seen).toHaveLength(2)
+    store.touchVaultSet(a.id, 70) // in front already: the time still moves
+    expect(store.get().vaultSets[0]).toEqual({ ...a, lastUsed: 70 })
+    expect(seen).toHaveLength(3)
+
+    // Remove forgets the entry and nothing else: no window, recent or folder bucket is touched.
+    store.upsertWindow(win('w1', { root: '/e', roots: ['/e', '/f'] }))
+    store.pushRecent('/e', 5)
+    store.setFolder('/e', { name: 'E' })
+    seen.length = 0
+    const before = store.get()
+    store.removeVaultSet(c.id)
+    expect(store.get()).toEqual({ ...before, vaultSets: [{ ...a, lastUsed: 70 }, { ...b, name: 'Bee' }] })
+    expect(seen).toHaveLength(1)
+    store.removeVaultSet(c.id)
+    store.removeVaultSet('nope')
+    expect(seen).toHaveLength(1)
+  })
+
+  it('renamePath moves a renamed folder inside every set, and removePath drops a deleted one — a set with fewer than two vaults left is removed (S71); each is still ONE commit', () => {
+    const { store, seen } = counted()
+    store.saveVaultSet('Pair', ['/v/a', '/v/b'], 1)
+    store.saveVaultSet('Three', ['/v/b', '/v/a', '/w/c'], 2)
+    store.saveVaultSet('Nested', ['/v/a/sub', '/w/c', '/w/d'], 3)
+    store.saveVaultSet('Other', ['/w/c', '/w/d'], 4)
+    const sets = () => Object.fromEntries(store.get().vaultSets.map((s) => [s.name, s.roots]))
+    const ids = store.get().vaultSets.map((s) => s.id)
+    store.upsertWindow(win('w1', { root: '/v/a', roots: ['/v/a', '/v/b'], file: '/v/a/n.md', tabs: ['/v/a/n.md'] }))
+    seen.length = 0
+
+    // A vault's folder is renamed: it follows in each set, and so does a vault inside it. `/v/ab` is not inside `/v/a`.
+    store.renamePath('/v/a', '/v/z')
+    expect(sets()).toEqual({ Other: ['/w/c', '/w/d'], Nested: ['/v/z/sub', '/w/c', '/w/d'], Three: ['/v/b', '/v/z', '/w/c'], Pair: ['/v/z', '/v/b'] })
+    expect(store.get().vaultSets.map((s) => s.id)).toEqual(ids) // the same sets, in the same order
+    expect(store.get().windows[0].roots).toEqual(['/v/z', '/v/b'])
+    expect(seen).toHaveLength(1)
+    store.renamePath('/v/nowhere', '/v/else')
+    expect(seen).toHaveLength(1)
+
+    // A set alone references the folder (no window, recent or bucket does): the rename still commits.
+    store.renamePath('/w/d', '/w/e')
+    expect(sets().Other).toEqual(['/w/c', '/w/e'])
+    expect(seen).toHaveLength(2)
+
+    // A deleted folder leaves each set, with what is under it. "Pair" is down to one vault: it is removed.
+    store.removePath('/v/z')
+    expect(sets()).toEqual({ Other: ['/w/c', '/w/e'], Nested: ['/w/c', '/w/e'], Three: ['/v/b', '/w/c'] })
+    expect(seen).toHaveLength(3)
+    // A deleted FILE inside a vault is not a vault: no set moves.
+    const kept = store.get().vaultSets
+    store.removePath('/w/c/note.md')
+    expect(store.get().vaultSets).toEqual(kept)
+    expect(seen).toHaveLength(3)
+    store.removePath('/w/c')
+    expect(sets()).toEqual({}) // each set fell under two vaults
+    expect(seen).toHaveLength(4)
+
+    // A rename onto a path the set already holds (that folder was gone from the disk): the set keeps each vault once.
+    store.saveVaultSet('Gone', ['/x/a', '/x/gone', '/x/b'], 5)
+    store.saveVaultSet('Two', ['/x/a', '/x/gone'], 6)
+    store.renamePath('/x/a', '/x/gone')
+    expect(sets()).toEqual({ Gone: ['/x/gone', '/x/b'] })
   })
 })
