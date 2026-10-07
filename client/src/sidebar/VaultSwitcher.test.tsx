@@ -1356,13 +1356,18 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(panel(el)).not.toBeNull()
     expect(document.activeElement).toBe(filter(el))
 
-    // Blur saves too; a name that another workspace has is refused, and the old name stays.
+    // A click on another row only ends the rename — its blur saves — and opens nothing. A name that another workspace has is refused, and the old name stays.
     renameSet.mockResolvedValueOnce(false)
     rightClick(rows(el)[1])
     pick('Rename')
     await fill(field(el)!, 'Work')
-    act(() => filter(el).focus())
+    act(() => {
+      rows(el)[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      rows(el)[0].click()
+    })
     await settle()
+    expect(field(el)).toBeNull()
+    expect(openSet).not.toHaveBeenCalled()
     expect(renameSet).toHaveBeenLastCalledWith('set-reading', 'Work')
     expect(props.onNotice).toHaveBeenCalledExactlyOnceWith("Can't rename: a workspace has that name")
     expect(names(el).slice(0, 2)).toEqual(['Work', 'Books'])
