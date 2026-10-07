@@ -479,6 +479,11 @@ export function App() {
     for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
     scope.review.start(folder)
   }, [])
+  const toggleInbox = useCallback((vault: string) => {
+    const scope = live.current.vaults[live.current.roots.indexOf(vault)]
+    if (scope.review.session === null) startReview(scope)
+    else scope.review.close()
+  }, [startReview])
   // The row menus ask and write by path: a note is in review by its own vault's settings (S42).
   const reviewState = useCallback((path: string) => scopeOf(path).review.inReview(path), [scopeOf])
   const setReview = useCallback((path: string, on: boolean) => scopeOf(path).review.setInReview(path, on), [scopeOf])
@@ -981,7 +986,7 @@ export function App() {
           key={root}
           // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null }))}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}
@@ -1022,15 +1027,12 @@ export function App() {
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
           asideRef={sidebarRef}
-          // The Inbox row (YAZ-2322), there with upkeep on: it opens the review, and closes the one that is open.
-          upkeep={first.reviewSettings.settings.enabled}
-          dueCount={first.review.dueCount}
-          reviewing={first.review.session !== null}
-          onOpenInbox={() => (first.review.session === null ? startReview(first) : first.review.close())}
           // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
           onReviewFolder={(dir) => startReview(scopeOf(dir), relLabel(dir))}
           reviewState={reviewState}
           onSetReview={setReview}
+          // An Inbox row (YAZ-2322), one per vault with upkeep on (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
+          onInbox={toggleInbox}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}

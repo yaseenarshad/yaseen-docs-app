@@ -94,15 +94,24 @@ let container: HTMLElement | null = null
 
 type PanelProps = Parameters<typeof Sidebar>[0]
 type Vault = PanelProps['vaults'][number]
+/** A vault's own review facts (YAZ-2602 R5): upkeep on or off, what is due, whether its review is open; and the Inbox row's click. */
+type Inbox = Partial<Pick<Vault, 'upkeep' | 'dueCount' | 'reviewing'>> & { onOpenInbox?: () => void }
 /**
  * What a test hands the harness: the panel's props, and for a window with ONE vault that vault's
- * own three — its folder, its watcher and its index source — which the harness makes the vault of.
+ * own — its folder, its watcher, its index source and its review facts — which the harness makes
+ * the vault of. Handed with `vaults`, the review facts are every vault's.
  */
-type SidebarProps = PanelProps & { root?: string; watch?: Vault['watch']; indexSource?: Vault['index'] }
+type SidebarProps = PanelProps & { root?: string; watch?: Vault['watch']; indexSource?: Vault['index'] } & Inbox
 
-/** The window's one vault, as App hands it: `/v`, a silent watcher and an empty index unless a test says otherwise. */
-const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true) }: Partial<SidebarProps>): Vault[] => [
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource },
+/** The review facts a test named, and no others. */
+const inboxOf = ({ upkeep, dueCount, reviewing }: Inbox): Partial<Vault> => ({ ...(upkeep !== undefined && { upkeep }), ...(dueCount !== undefined && { dueCount }), ...(reviewing !== undefined && { reviewing }) })
+
+/**
+ * The window's one vault, as App hands it: `/v`, a silent watcher and an empty index unless a test
+ * says otherwise. Upkeep review (YAZ-2322) is off, as in a new vault, with nothing due and no review open.
+ */
+const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, upkeep: false, dueCount: 0, reviewing: false, ...inboxOf(over) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -112,9 +121,14 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
   document.body.appendChild(el)
   container = el
   root = createRoot(el)
-  // Split the one vault's three from the panel's props: the harness makes the vault of them.
-  const panel = ({ root: _root, watch: _watch, indexSource: _indexSource, ...rest }: Partial<SidebarProps>): Partial<PanelProps> => rest
-  const props: PanelProps = {
+  // Split the one vault's own from the panel's props: the harness makes the vault of them.
+  const panel = ({ root: _root, watch: _watch, indexSource: _indexSource, upkeep: _upkeep, dueCount: _dueCount, reviewing: _reviewing, onOpenInbox: _onOpenInbox, ...rest }: Partial<SidebarProps>): Partial<PanelProps> => rest
+  /** The window's vaults with a test's review facts on each. */
+  const withInbox = (vaults: readonly Vault[], facts: Inbox): Vault[] => vaults.map((vault) => ({ ...vault, ...inboxOf(facts) }))
+  // The Inbox row's click, as the tests of a window with one vault read it: App's door without the vault it names.
+  const onOpenInbox = over.onOpenInbox ?? vi.fn()
+  const props: PanelProps & { onOpenInbox: () => void } = {
+    onOpenInbox,
     vaults: oneVault(over),
     // Vault rows (YAZ-2602 R9): none is closed, and App's four doors for the window's list of vaults.
     closedVaults: [],
@@ -159,22 +173,20 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     clipboardRef: { current: null },
     // The folder rows' counts (🔒 E6, YAZ-2290) read the vault's index source (`oneVault`): empty unless a test
     // feeds it, and of a vault that uses IDs unless a test says otherwise (YAZ-2523).
-    // Upkeep review (YAZ-2322) is off, as in a new vault, unless a test turns it on; App counts and
-    // owns the session, with nothing due and no review open by default.
-    upkeep: false,
-    dueCount: 0,
-    reviewing: false,
-    onOpenInbox: vi.fn(),
     onReviewFolder: vi.fn(),
     // No row is a note the index knows unless a test says so: null hides the review toggle.
     reviewState: () => null,
     onSetReview: vi.fn(),
+    // An Inbox row's click (YAZ-2602 R5) names its vault.
+    onInbox: vi.fn(() => onOpenInbox()),
     ...panel(over),
+    ...(over.vaults !== undefined && { vaults: withInbox(over.vaults, over) }),
   }
-  await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
-  /** Re-render the SAME Sidebar instance with changed props (the App-driven activation path). */
-  const rerender = async (next: Partial<PanelProps>) =>
-    act(async () => root?.render(<StrictMode><Sidebar {...props} {...next} /></StrictMode>))
+  const { onOpenInbox: _door, ...panelProps } = props
+  await act(async () => root?.render(<StrictMode><Sidebar {...panelProps} /></StrictMode>))
+  /** Re-render the SAME Sidebar instance with changed props (the App-driven activation path); a review fact changes on the vaults as they stand. */
+  const rerender = async (next: Partial<PanelProps> & Inbox) =>
+    act(async () => root?.render(<StrictMode><Sidebar {...panelProps} {...panel(next)} vaults={withInbox(next.vaults ?? panelProps.vaults, { ...over, ...next })} /></StrictMode>))
   return { bridge, props, el, rerender }
 }
 
@@ -4260,7 +4272,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
       },
     }
   }
-  const vault = (root: string, name: string, over: Partial<Vault> = {}): Vault => ({ root, name, watch: { subscribe: () => () => undefined }, index: indexFor(true), ...over })
+  const vault = (root: string, name: string, over: Partial<Vault> = {}): Vault => ({ root, name, watch: { subscribe: () => () => undefined }, index: indexFor(true), upkeep: false, dueCount: 0, reviewing: false, ...over })
   /** Mount a window on this test's vaults, each with its own tree, on a window identity of its own. */
   const mountVaults = async (vaults: Vault[], over: Partial<SidebarProps> = {}, tweak?: (bridge: Bridge) => unknown) =>
     mount({ vaults, ...over }, async (bridge) => {
@@ -4303,6 +4315,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     return held
   }
   const setFolderCalls = (bridge: Bridge) => bridge.state.setFolder.mock.calls as unknown as [string, { expanded?: string[] }][]
+  const choose = (el: HTMLElement, label: string) => act(async () => itemByLabel(el, label)?.click())
+  const inboxes = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__inbox')]
   const results = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.search-results__row')]
 
   it('one vault: no vault row, and blank space gains "Add vault to this window ▸" — the known vaults that are not in the window, in the list\'s order, then "Open folder…" (S1 to S3, S11, S51)', async () => {
@@ -4660,5 +4674,41 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const { el } = await mount({}, (bridge) => bridge.index.mockResolvedValue({ root: '/v', records: [indexRecord('/v/a.md'), { ...indexRecord('/v/sub/a2.md'), folder: 'sub' }], folders: [], generatedAt: 1, ids: true }))
     await type(searchInput(el)!, 'a')
     expect(results(el).map((row) => row.textContent)).toEqual(['a', 'a2sub'])
+  })
+
+  it('the Inbox: one row per vault that has upkeep on, in vault order, named for its vault when there are two or more; each shows its own count and state and opens its own vault\'s review (R5, S41)', async () => {
+    const at = pair()
+    const plain = at.b.replace('/work', '/plain')
+    const all = [vault(at.a, 'Notes', { upkeep: true, dueCount: 2 }), vault(plain, 'Plain', { dueCount: 9 }), vault(at.b, 'Work', { upkeep: true, reviewing: true })]
+    const { el, props, rerender } = await mountVaults(all)
+    expect(inboxes(el).map((row) => row.textContent)).toEqual(['Inbox · Notes2', 'Inbox · Work'])
+    expect(inboxes(el).map((row) => row.getAttribute('aria-label'))).toEqual(['Inbox · Notes, 2 due', 'Inbox · Work'])
+    expect(inboxes(el).map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    expect(inboxes(el).map((row) => row.classList.contains('sidebar__inbox--active'))).toEqual([false, true])
+    act(() => inboxes(el)[1].click())
+    expect(props.onInbox).toHaveBeenCalledExactlyOnceWith(at.b)
+    act(() => inboxes(el)[0].click())
+    expect(props.onInbox).toHaveBeenLastCalledWith(at.a)
+    // Exactly one vault with upkeep on: the row reads "Inbox", as in a window with one vault.
+    await rerender({ vaults: [{ ...all[0], upkeep: false }, all[1], { ...all[2], reviewing: false, dueCount: 4 }] })
+    expect(inboxes(el).map((row) => [row.textContent, row.getAttribute('aria-label'), row.getAttribute('aria-pressed')])).toEqual([['Inbox4', 'Inbox, 4 due', 'false']])
+    act(() => inboxes(el)[0].click())
+    expect(props.onInbox).toHaveBeenLastCalledWith(at.b)
+    await rerender({ vaults: all.map((one) => ({ ...one, upkeep: false })) })
+    expect(inboxes(el)).toEqual([])
+  })
+
+  it('"Review this folder" is offered by the upkeep of the vault that holds the folder, whatever the first vault has (R5)', async () => {
+    const at = pair()
+    const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { upkeep: true })])
+    rightClick(rowByPath(el, `${at.a}/sub`))
+    expect(itemByLabel(el, 'Review this folder')).toBeUndefined()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    rightClick(rowByPath(el, at.b))
+    expect(itemByLabel(el, 'Review this folder')).toBeUndefined() // a vault row is not reviewed (S13)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    rightClick(rowByPath(el, `${at.b}/docs`))
+    await choose(el, 'Review this folder')
+    expect(props.onReviewFolder).toHaveBeenCalledExactlyOnceWith(`${at.b}/docs`)
   })
 })
