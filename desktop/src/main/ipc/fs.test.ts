@@ -8,6 +8,7 @@ import { CONTRACT, type Envelope } from '@shared/ipc'
 import { makeFixture, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
+import { giveId } from '../vaultIndex/idSweep'
 import { fileClip } from '../fileClip'
 import * as favorites from '../favorites'
 import { registerFsIpc } from './fs'
@@ -419,6 +420,11 @@ describe('registerFsIpc', () => {
       const no = await open(false)
       const roots = order(yes, no)
       store.upsertWindow({ id: 'w-kind', root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      // The id a vault gives the note at `Plans/Name.md` with these bytes: the same in every vault and on every device.
+      const twin = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-twin-'))
+      await mkdir(path.join(twin, 'Plans'))
+      await writeFile(path.join(twin, 'Plans', 'Name.md'), NOTE)
+      const given = await giveId(twin, path.join(twin, 'Plans', 'Name.md'), undefined)
       try {
         const inYes = (...p: string[]) => path.join(yes, ...p)
         const inNo = (...p: string[]) => path.join(no, ...p)
@@ -426,7 +432,9 @@ describe('registerFsIpc', () => {
         expect(await call(CONTRACT.createFile, { path: inYes(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: true, value: { id: ID } })
         expect(await call(CONTRACT.createDir, { path: inYes('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
         expect(await paste(inNo('Plans', 'Name.md'), inYes('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-[0-9a-z]{12}\.md$/) }] } })
-        expect(await call(CONTRACT.file.retitle, { path: inYes('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: expect.stringMatching(/\/Plans\/big-plan-[0-9a-z]{12}\.md$/) } })
+        // The title edit gives the note the id its OWN vault gives it, and refuses that vault's folder, wherever the vault sits in the window's list (S47).
+        expect(await call(CONTRACT.file.retitle, { path: inYes('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: inYes('Plans', `big-plan-${given}.md`) } })
+        expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: yes } })
         // In the vault that said no, from the SAME window: what Finder would make, and no title edit.
         expect(await call(CONTRACT.createFile, { path: inNo(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createDir, { path: inNo('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
@@ -435,7 +443,7 @@ describe('registerFsIpc', () => {
         expect(await call(CONTRACT.file.retitle, { path: inNo('Plans', 'Name.md'), title: 'Big Plan' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'this vault does not use IDs' } })
         expect(await vaultFiles(no)).toEqual({ '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}', 'Meeting notes.md': NOTE, 'Plans/': '', 'Plans/Name.md': NOTE, 'Plans/Name copy.md': NOTE })
       } finally {
-        await close(yes, no)
+        await close(yes, no, twin)
       }
     })
 
