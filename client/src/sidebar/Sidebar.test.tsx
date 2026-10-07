@@ -4303,6 +4303,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     return held
   }
   const setFolderCalls = (bridge: Bridge) => bridge.state.setFolder.mock.calls as unknown as [string, { expanded?: string[] }][]
+  const results = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.search-results__row')]
 
   it('one vault: no vault row, and blank space gains "Add vault to this window ▸" — the known vaults that are not in the window, in the list\'s order, then "Open folder…" (S1 to S3, S11, S51)', async () => {
     const { el, props } = await mount()
@@ -4618,5 +4619,46 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onRootMissing).toHaveBeenCalledWith(at.b)
     expect(props.onRootMissing).not.toHaveBeenCalledWith(at.a)
     expect(topLabels(el)).toEqual(['Notes'])
+  })
+
+  it('the search lists the matches of every vault in one ranked list, a row naming its vault before its folder; each vault\'s index is read once, and its own watcher re-reads it alone (R2, S38)', async () => {
+    const at = pair()
+    const work = watcher()
+    const titled = (path: string, title: string, folder = ''): IndexRecord => ({ ...indexRecord(path), title, folder })
+    const byRoot: Record<string, IndexRecord[]> = {
+      [at.a]: [titled(`${at.a}/a.md`, 'Alpha plan'), titled(`${at.a}/sub/in.md`, 'Inner', 'sub')],
+      [at.b]: [titled(`${at.b}/b.md`, 'Plan beta'), titled(`${at.b}/docs/d.md`, 'Deep plan', 'docs')],
+    }
+    const { el, bridge, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { watch: work.watch })], {}, (bridge) =>
+      bridge.index.mockImplementation(async (root: string) => ({ root, records: byRoot[root] ?? [], folders: [], generatedAt: 1, ids: true })),
+    )
+    expect(bridge.index).not.toHaveBeenCalled()
+    await type(searchInput(el)!, 'plan')
+    // One ranking over both vaults: the prefix match of the SECOND vault leads the substring matches of both.
+    expect(results(el).map((row) => row.getAttribute('title'))).toEqual([`${at.b}/b.md`, `${at.a}/a.md`, `${at.b}/docs/d.md`])
+    expect(results(el).map((row) => row.querySelector('.search-results__folder')?.textContent)).toEqual(['Work', 'Notes', 'Work · docs'])
+    expect(bridge.index.mock.calls.map(([root]) => root).sort()).toEqual([at.a, at.b].sort())
+    // A keystroke reads nothing.
+    await type(searchInput(el)!, 'pla')
+    expect(bridge.index).toHaveBeenCalledTimes(2)
+    // The folders of each vault are rows too, by its own tree.
+    await type(searchInput(el)!, 's')
+    expect(results(el).filter((row) => row.classList.contains('search-results__row--dir')).map((row) => [row.getAttribute('title'), row.querySelector('.search-results__folder')?.textContent])).toEqual([[`${at.a}/sub`, 'Notes'], [`${at.b}/docs`, 'Work']])
+
+    bridge.index.mockClear()
+    byRoot[at.b] = [titled(`${at.b}/b.md`, 'Plan gamma')]
+    await act(async () => work.fire({ type: 'add', path: `${at.b}/x.md` } as WatchEvent))
+    await afterQuiet()
+    expect(new Set(bridge.index.mock.calls.map(([root]) => root))).toEqual(new Set([at.b]))
+    await type(searchInput(el)!, 'plan')
+    expect(results(el).map((row) => row.textContent)).toEqual(['Plan gammaWork', 'Alpha planNotes'])
+    act(() => results(el)[0].click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${at.b}/b.md`)
+  })
+
+  it('one vault: a search row names no vault (S11)', async () => {
+    const { el } = await mount({}, (bridge) => bridge.index.mockResolvedValue({ root: '/v', records: [indexRecord('/v/a.md'), { ...indexRecord('/v/sub/a2.md'), folder: 'sub' }], folders: [], generatedAt: 1, ids: true }))
+    await type(searchInput(el)!, 'a')
+    expect(results(el).map((row) => row.textContent)).toEqual(['a', 'a2sub'])
   })
 })
