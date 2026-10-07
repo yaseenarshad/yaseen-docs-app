@@ -67,10 +67,22 @@
  * them, and ⇧⏎ on one is a plain open. A right-click on the trigger then shows no menu: the menu is
  * one vault's, and the trigger is several. A vault that is not in the window gets "Add to this
  * window" (S8) above "Open in this window": App adds it beside the others and says why when it cannot.
+ *
+ * Workspaces (YAZ-2602 D8): the saved sets of vaults — `vaultSets` in the code — stand FIRST, under
+ * a "Workspaces" label, last used first: a name, and "N vaults" where a vault shows its time (S64).
+ * With none saved the list is as it was. They are rows like the others: the filter matches the
+ * name with the same ranking, and the highlight's index runs over them first — so with an empty
+ * query it starts on the first workspace that is not the one this window shows, which is marked
+ * `aria-current` and skipped like the current vault. Activating one asks main's `window.openSet`
+ * (S65): `opened` closes the panel, and a folder that is gone is named in a notice; with no folder
+ * left the row is disabled with "Folders not found" and the panel stays (S66). ⇧ means nothing on a
+ * workspace: no cue, and ⇧⏎ is ⏎. Its menu is "Rename" — the display name's inline field, saved
+ * through `window.renameSet`, an empty field or a name another workspace has changing nothing —
+ * and "Remove from workspaces" (S67), and it stands on a dead row too: the workspace is still saved.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import type { VaultEntry } from '@shared/types'
+import { cleanVaultName, sameVaults, type VaultEntry, type VaultSet } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
@@ -80,7 +92,7 @@ import { storage } from '../lib/storage'
 import { TextField } from '../views/view/TextField'
 import { InfoIcon, TriangleIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
-import { buildVaultMenuSections } from './vaultMenuSections'
+import { buildVaultMenuSections, buildVaultSetMenuSections } from './vaultMenuSections'
 
 export interface VaultSwitcherProps {
   /** The vaults of this window, in the order they were added (YAZ-2602 D1); never empty. */
@@ -115,6 +127,8 @@ type RenameAt = 'header' | 'row'
 
 interface PanelState {
   rows: VaultRow[]
+  /** The saved workspaces (YAZ-2602 D8), read with the rows: last used first. */
+  sets: VaultSet[]
   /** Captured once per open, so every row's relative time is measured against the same instant. */
   now: number
   anchor: { x: number; y: number; width: number }
@@ -128,6 +142,10 @@ export const OPEN_HERE_TEXT = 'Open here'
 /** The two groups' labels (YAZ-2555 D1): the vaults that have a window, then the ones that have none. */
 export const GROUP_OPEN_TEXT = 'Open'
 export const GROUP_NOT_OPEN_TEXT = 'Not open'
+/** The label of the group that stands first (YAZ-2602 S64): the saved workspaces. */
+export const GROUP_WORKSPACES_TEXT = 'Workspaces'
+/** A workspace with no folder left (YAZ-2602 S66): `MISSING_TEXT`, for several. */
+export const SETS_MISSING_TEXT = 'Folders not found'
 
 /**
  * The rows `query` keeps, ranked (D7): an empty query is MRU order untouched; otherwise the `[[`
@@ -167,11 +185,19 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const [panel, setPanel] = useState<PanelState | null>(null)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  /** The rows whose folder is gone: a vault by its path, a workspace (YAZ-2602 S66) by its id. */
   const [missing, setMissing] = useState<ReadonlySet<string>>(() => new Set())
   /** The right-click menu (YAZ-1798), pinned to the vault it was opened on — and where: its rename happens there (YAZ-1974 D5). */
   const [vaultMenu, setVaultMenu] = useState<{ path: string; at: RenameAt; x: number; y: number } | null>(null)
   /** The name currently an inline field (YAZ-1974 D5): the header's, or a row's. */
   const [renaming, setRenaming] = useState<{ path: string; at: RenameAt } | null>(null)
+  /** A workspace row's menu (YAZ-2602 S67), pinned to the workspace it was opened on. */
+  const [workspaceMenu, setWorkspaceMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  /** The workspace whose name is an inline field on its row (S67). */
+  const [workspaceField, setWorkspaceField] = useState<{ id: string } | null>(null)
+  // One menu and one field stand at a time, a vault's or a workspace's: the layer rules below are about either.
+  const menuUp = vaultMenu !== null || workspaceMenu !== null
+  const fieldUp = renaming !== null || workspaceField !== null
   /** The ⓘ tooltip (YAZ-1974 D2): the hovered row's path and rect, while the pointer is on its ⓘ. */
   const [pathTip, setPathTip] = useState<{ path: string; rect: DOMRect } | null>(null)
   /** Set by a row's mousedown mid-rename, so the click it starts only ends the rename (D5). */
@@ -187,7 +213,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     const rect = slotRef.current?.parentElement?.getBoundingClientRect()
     // The rows (YAZ-2555 A1) are `listVaults`'s: the one list that `yaseendocs vaults` prints too (YAZ-2556 D2).
     const rows = storage.listVaults().map((vault) => ({ ...vault, folder: basename(vault.path) }))
-    setPanel({ rows, now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
+    setPanel({ rows, sets: storage.getVaultSets(), now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
     setQuery('')
     setMissing(new Set())
   }, [])
@@ -196,9 +222,14 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     setPanel(null)
     setRenaming((r) => (r?.at === 'row' ? null : r))
     setVaultMenu((m) => (m?.at === 'row' ? null : m))
+    setWorkspaceField(null)
+    setWorkspaceMenu(null)
     setPathTip(null)
   }, [])
-  const closeVaultMenu = useCallback(() => setVaultMenu(null), [])
+  const closeMenu = useCallback(() => {
+    setVaultMenu(null)
+    setWorkspaceMenu(null)
+  }, [])
 
   // The filter takes focus whenever the panel mounts (D7).
   useEffect(() => {
@@ -240,36 +271,58 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     const ranked = panel === null ? [] : rankVaultRows(panel.rows, query)
     return [...ranked.filter((r) => r.open), ...ranked.filter((r) => !r.open)]
   }, [panel, query])
+  // The workspaces (YAZ-2602 S64) stand above the two groups: last used first, or ranked by name like a vault.
+  const sets = useMemo(() => (panel === null ? [] : matchLinkCandidates(panel.sets, query, panel.sets.length)), [panel, query])
+  /** The first vault row's index in the highlight space: the workspace rows come before it. */
+  const first = sets.length
   /** The Open folder… row's index in the highlight space. */
-  const openFolderIndex = matches.length
+  const openFolderIndex = first + matches.length
 
   // The highlight re-seeds exactly when `matches` does — on open and on every keystroke (D7).
   const inWindow = roots.join('\n')
   useEffect(() => {
-    setActive(defaultHighlight(matches, query, ...inWindow.split('\n')))
-  }, [matches, query, inWindow])
+    const here = inWindow.split('\n')
+    // The same rule over the workspaces first (YAZ-2602 S64): the one this window shows is skipped like the current vault.
+    const set = sets.findIndex((s) => query.trim() !== '' || !sameVaults(s.roots, here))
+    setActive(set !== -1 ? set : sets.length + defaultHighlight(matches, query, ...here))
+  }, [sets, matches, query, inWindow])
 
+  /** A door that failed is logged, and reads as its "no". */
+  const failed = (what: string) => (err: unknown): false => {
+    console.error(`[vault-switcher] ${what} failed:`, err)
+    return false
+  }
   /**
    * One rule for both ways a row opens — a click (beside, `openRecent`) and the menu's "Open in
    * this window" (in place, D8): `true` closes the panel; `false` or a rejection greys the row with
-   * "Folder not found" and keeps the panel up, the filter focused (D5).
+   * "Folder not found" and keeps the panel up, the filter focused (D5). `row` is the row's key in
+   * `missing`: a vault's path, or a workspace's id.
    */
-  const settle = (path: string, opening: Promise<boolean>, what: string): void => {
-    void opening
-      .catch((err: unknown) => {
-        console.error(`[vault-switcher] ${what} failed:`, err)
-        return false
-      })
-      .then((opened) => {
-        if (opened) {
-          closePanel()
-          return
-        }
-        setMissing((prev) => new Set(prev).add(path))
-        inputRef.current?.focus()
-      })
+  const settle = (row: string, opening: Promise<boolean>, what: string): void => {
+    void opening.catch(failed(what)).then((opened) => {
+      if (opened) {
+        closePanel()
+        return
+      }
+      setMissing((prev) => new Set(prev).add(row))
+      inputRef.current?.focus()
+    })
   }
   const choose = (path: string): void => settle(path, api.window.openRecent(path), 'openRecent')
+  /**
+   * A workspace row opens through its own door (YAZ-2602 S65): main raises the window that shows
+   * exactly its vaults, else opens one on them. A folder that is gone is left out, and named here
+   * as the app names a vault (S66); with no folder left the answer is a dead row's — `settle`'s rule.
+   */
+  const chooseSet = (id: string): void =>
+    settle(
+      id,
+      api.window.openSet(id).then(({ opened, missing: gone }) => {
+        if (opened && gone.length > 0) onNotice(`Not found: ${gone.map(storage.vaultName).join(', ')}`)
+        return opened
+      }),
+      'openSet',
+    )
 
   /** Remove from recent vaults (D3): forgets the MRU entry and the vault's number (YAZ-2555 A2) — the folder is untouched — and the row leaves at once. */
   const removeRow = (path: string): void => {
@@ -293,8 +346,25 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     setPanel((p) => (p === null ? p : { ...p, rows: p.rows.map((r) => ({ ...r, key: storage.vaultKey(r.path) })) }))
     inputRef.current?.focus()
   }
+  /** Rename a workspace (YAZ-2602 S67). Main refuses a name that another workspace has; the open panel's row follows a yes, `saveName`'s idiom. */
+  const renameSet = (id: string, name: string): void => {
+    void api.window
+      .renameSet(id, name)
+      .catch(failed('renameSet'))
+      .then((renamed) => {
+        if (renamed) setPanel((p) => (p === null ? p : { ...p, sets: p.sets.map((s) => (s.id === id ? { ...s, name } : s)) }))
+        else onNotice("Can't rename: a workspace has that name")
+      })
+  }
+  /** Remove from workspaces (YAZ-2602 S67): main forgets the entry — the folders are untouched — and the row leaves at once, `removeRow`'s idiom. */
+  const removeSet = (id: string): void => {
+    void api.window.removeSet(id).catch(failed('removeSet'))
+    setPanel((p) => (p === null ? p : { ...p, sets: p.sets.filter((s) => s.id !== id) }))
+    inputRef.current?.focus()
+  }
   const endRename = (): void => {
     setRenaming(null)
+    setWorkspaceField(null)
     inputRef.current?.focus()
   }
   /** The inline field (D5): the display name selected, the folder name as placeholder; ⏎ / blur save, Esc cancels, empty = the folder name. */
@@ -310,6 +380,11 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
       onCommit={(next) => saveName(path, next)}
       onDone={endRename}
     />
+  )
+
+  /** The same field for a workspace's name (YAZ-2602 S67). No folder name stands behind it, so an empty field is no name: nothing is saved. */
+  const workspaceNameField = (value: string, onCommit: (name: string) => void) => (
+    <TextField className="vault-switcher__rename" value={value} aria-label="Workspace name" autoFocus selectOnMount normalize={cleanVaultName} onCommit={onCommit} onDone={endRename} />
   )
 
   /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all — and who has which number (YAZ-2555 D2). */
@@ -330,6 +405,12 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     setVaultMenu({ path, at, x: e.clientX, y: e.clientY })
   }
 
+  /** A workspace row's right-click (YAZ-2602 S67): a dead row's too — its workspace is still saved, and can be removed. */
+  const openWorkspaceMenu = (id: string, e: MouseEvent): void => {
+    e.preventDefault()
+    setWorkspaceMenu({ id, x: e.clientX, y: e.clientY })
+  }
+
   /**
    * Rows swallow their mousedown so typing never leaves the filter (D7). Mid-rename (YAZ-1974 D5)
    * it ends the rename instead — the filter takes focus, the field's blur saves — and the click it
@@ -337,7 +418,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
    */
   const rowMouseDown = (e: MouseEvent): void => {
     e.preventDefault()
-    dropClick.current = renaming !== null
+    dropClick.current = fieldUp
     if (dropClick.current) inputRef.current?.focus()
   }
 
@@ -349,7 +430,13 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
       onPickFolder()
       return
     }
-    const row = matches[index]
+    // A workspace has no "open here" (YAZ-2602 S65): ⇧ or not, it opens through its one door.
+    const set = sets[index]
+    if (set !== undefined) {
+      if (!missing.has(set.id)) chooseSet(set.id)
+      return
+    }
+    const row = matches[index - first]
     if (row === undefined || missing.has(row.path)) return
     if (here && !roots.includes(row.path)) settle(row.path, onOpenHere(row.path), 'openHere')
     else choose(row.path)
@@ -360,7 +447,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     // The menu is the top layer (D4): its own window listener takes Esc; nothing else reaches the panel.
-    if (vaultMenu !== null) return
+    if (menuUp) return
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
@@ -410,7 +497,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
       )}
       {panel !== null && (
         // The top layer closes alone (D4): the vault menu first; a rename field ends on its own blur, so click-away keeps the panel.
-        <ContextMenuSurface x={panel.anchor.x} y={panel.anchor.y} minWidth={panel.anchor.width} className="ctx-menu--panel" onClose={vaultMenu !== null ? closeVaultMenu : renaming !== null ? () => undefined : closePanel}>
+        <ContextMenuSurface x={panel.anchor.x} y={panel.anchor.y} minWidth={panel.anchor.width} className="ctx-menu--panel" onClose={menuUp ? closeMenu : fieldUp ? () => undefined : closePanel}>
           <div className="vault-switcher" onWheel={() => setPathTip(null)}>
             <input
               ref={inputRef}
@@ -425,8 +512,41 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
               onKeyDown={onKeyDown}
             />
             <div className="vault-switcher__rows">
-              {matches.length === 0 && <div className="vault-switcher__empty">{NO_MATCH_TEXT}</div>}
-              {matches.map((row, i) => {
+              {sets.length === 0 && matches.length === 0 && <div className="vault-switcher__empty">{NO_MATCH_TEXT}</div>}
+              {sets.map((set, i) => {
+                const gone = missing.has(set.id)
+                const when = <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : ''}`}>{gone ? SETS_MISSING_TEXT : `${set.roots.length} vaults`}</span>
+                return (
+                  <Fragment key={set.id}>
+                    {/* The label stands above the first workspace (YAZ-2602 S64), like a group's below: not a row. */}
+                    {i === 0 && <div className="vault-switcher__label">{GROUP_WORKSPACES_TEXT}</div>}
+                    {workspaceField?.id === set.id ? (
+                      <div className="vault-switcher__row vault-switcher__row--renaming">
+                        {workspaceNameField(set.name, (name) => renameSet(set.id, name))}
+                        {when}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        tabIndex={-1}
+                        className={`vault-switcher__row${i === active ? ' vault-switcher__row--active' : ''}`}
+                        aria-current={sameVaults(set.roots, roots) ? 'true' : undefined}
+                        disabled={gone}
+                        onMouseDown={rowMouseDown}
+                        onMouseEnter={() => setActive(i)}
+                        onClick={(e) => clickRow(i, e)}
+                        onContextMenu={(e) => openWorkspaceMenu(set.id, e)}
+                      >
+                        <span className="vault-switcher__name">{set.name}</span>
+                        {when}
+                      </button>
+                    )}
+                  </Fragment>
+                )
+              })}
+              {matches.map((row, at) => {
+                const i = first + at
                 const gone = missing.has(row.path)
                 const here = shiftHeld && i === active && !roots.includes(row.path) && !gone
                 const when = (
@@ -435,7 +555,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
                   </span>
                 )
                 // A group's label stands above its first row (YAZ-2555 D1) — not a row itself, so outside the highlight's index space.
-                const label = row.open !== matches[i - 1]?.open && <div className="vault-switcher__label">{row.open ? GROUP_OPEN_TEXT : GROUP_NOT_OPEN_TEXT}</div>
+                const label = row.open !== matches[at - 1]?.open && <div className="vault-switcher__label">{row.open ? GROUP_OPEN_TEXT : GROUP_NOT_OPEN_TEXT}</div>
                 const line = renaming?.at === 'row' && renaming.path === row.path ? (
                   <div className="vault-switcher__row vault-switcher__row--renaming">
                     {nameField(row.path, row.name)}
@@ -531,7 +651,15 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
               onNotice,
             },
           )}
-          onClose={closeVaultMenu}
+          onClose={closeMenu}
+        />
+      )}
+      {workspaceMenu !== null && (
+        <ContextMenu
+          x={workspaceMenu.x}
+          y={workspaceMenu.y}
+          sections={buildVaultSetMenuSections(workspaceMenu.id, { onRename: (id) => setWorkspaceField({ id }), onRemove: removeSet })}
+          onClose={closeMenu}
         />
       )}
     </>
