@@ -1325,6 +1325,24 @@ button {
   color: var(--fg-muted);
 }
 
+/* The way out of a search (D8, YAZ-2630): a keycap that names the key, and is the key on a click.
+   There only while a query is typed. */
+.sidebar__search-clear {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+
+.sidebar__search-clear:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg);
+}
+
 .sidebar__body {
   flex: 1;
   overflow: auto;

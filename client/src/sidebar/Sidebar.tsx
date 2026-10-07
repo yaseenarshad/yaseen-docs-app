@@ -799,6 +799,24 @@ export function Sidebar({
           onChange={changeQuery}
           onKeyDown={searchKeyDown}
         />
+        {/* The way out, in sight (D8, YAZ-2630): Esc clears a typed query, and while there is one
+            this keycap says so — and does it on a click, the caret landing in the bar. No Tab stop:
+            the key it names is the keyboard's way. */}
+        {query !== '' && (
+          <button
+            type="button"
+            className="sidebar__search-clear"
+            title="Clear search (Esc)"
+            aria-label="Clear search"
+            tabIndex={-1}
+            onClick={() => {
+              setQuery('')
+              searchInput.current?.focus()
+            }}
+          >
+            esc
+          </button>
+        )}
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
           search results have no such target, so right-clicking beside them offers nothing (YAZ-803)
