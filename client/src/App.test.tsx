@@ -3189,6 +3189,13 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(storage.getRecentRoots().map((r) => r.path)).toEqual(['/v'])
     expect(el.querySelector('.welcome')).toBeNull()
     expect(askedOf(bridge, '/v')).toEqual(before)
+
+    // A late report for a vault that already left the window changes nothing and says nothing more.
+    bridge.state.removeRecent.mockClear()
+    act(() => captured.sidebar?.onRootMissing('/w'))
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.state.removeRecent).not.toHaveBeenCalled()
+    expect(el.querySelector('.welcome')).toBeNull()
   })
 
   it('a vault row the user closed stays closed while the sidebar is hidden and shown again, and a vault that is added again starts open (R9)', async () => {
