@@ -121,9 +121,9 @@ export const MISSING_TEXT = 'Folder not found'
 export const OPEN_FOLDER_TEXT = 'Open folder…'
 /** The highlighted row's time slot while ⇧ is held (YAZ-1974 D9): what ⇧⏎ / ⇧-click will do. */
 export const OPEN_HERE_TEXT = 'Open here'
-/** The two groups' labels (YAZ-2555 D1): the vaults that have a window, then the rest. */
+/** The two groups' labels (YAZ-2555 D1): the vaults that have a window, then the ones that have none. */
 export const GROUP_OPEN_TEXT = 'Open'
-export const GROUP_REST_TEXT = 'Not open'
+export const GROUP_NOT_OPEN_TEXT = 'Not open'
 
 /**
  * The rows `query` keeps, ranked (D7): an empty query is MRU order untouched; otherwise the `[[`
@@ -261,7 +261,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   }
   const choose = (path: string): void => settle(path, api.window.openRecent(path), 'openRecent')
 
-  /** Remove from recent vaults (D3): forgets the MRU entry only — the folder is untouched — and the row leaves at once. */
+  /** Remove from recent vaults (D3): forgets the MRU entry and the vault's number (YAZ-2555 A2) — the folder is untouched — and the row leaves at once. */
   const removeRow = (path: string): void => {
     storage.removeRecentRoot(path)
     // Its number goes with it (YAZ-2555 A2): with no row, it would be a key you cannot see or change.
@@ -308,7 +308,11 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     return { path, name, isCurrent: path === root, renamed: name !== basename(path), keyed: storage.keyedVaults() }
   }
 
-  /** Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — its MRU entry is already gone. */
+  /**
+   * Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — the
+   * door has pruned its MRU entry. A vault that has a number is listed again on the next open
+   * (YAZ-2555 A1), and that row's menu can clear the number (A3).
+   */
   const openVaultMenu = (path: string, at: RenameAt, e: MouseEvent): void => {
     e.preventDefault()
     if (missing.has(path)) return
@@ -420,46 +424,43 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                   </span>
                 )
                 // A group's label stands above its first row (YAZ-2555 D1) — not a row itself, so outside the highlight's index space.
-                const label = row.open !== matches[i - 1]?.open && <div className="vault-switcher__label">{row.open ? GROUP_OPEN_TEXT : GROUP_REST_TEXT}</div>
-                if (renaming?.at === 'row' && renaming.path === row.path) {
-                  return (
-                    <Fragment key={row.path}>
-                      {label}
-                      <div className="vault-switcher__row vault-switcher__row--renaming">
-                        {nameField(row.path, row.name)}
-                        {when}
-                      </div>
-                    </Fragment>
-                  )
-                }
+                const label = row.open !== matches[i - 1]?.open && <div className="vault-switcher__label">{row.open ? GROUP_OPEN_TEXT : GROUP_NOT_OPEN_TEXT}</div>
+                const line = renaming?.at === 'row' && renaming.path === row.path ? (
+                  <div className="vault-switcher__row vault-switcher__row--renaming">
+                    {nameField(row.path, row.name)}
+                    {when}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    className={`vault-switcher__row${i === active ? ' vault-switcher__row--active' : ''}`}
+                    aria-current={row.path === root ? 'true' : undefined}
+                    disabled={gone}
+                    onMouseDown={rowMouseDown}
+                    onMouseEnter={() => setActive(i)}
+                    onClick={(e) => clickRow(i, e)}
+                    onContextMenu={(e) => openVaultMenu(row.path, 'row', e)}
+                  >
+                    <span className="vault-switcher__name">{row.name}</span>
+                    {row.key !== null && <kbd className="vault-switcher__key">⌘{row.key}</kbd>}
+                    {/* Part of its row (D2): a click is the row's click, a right-click the row's menu. */}
+                    <span
+                      className="vault-switcher__info"
+                      aria-hidden="true"
+                      onMouseEnter={(e) => setPathTip({ path: row.path, rect: e.currentTarget.parentElement!.getBoundingClientRect() })}
+                      onMouseLeave={() => setPathTip(null)}
+                    >
+                      <InfoIcon />
+                    </span>
+                    {when}
+                  </button>
+                )
                 return (
                   <Fragment key={row.path}>
                     {label}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      tabIndex={-1}
-                      className={`vault-switcher__row${i === active ? ' vault-switcher__row--active' : ''}`}
-                      aria-current={row.path === root ? 'true' : undefined}
-                      disabled={gone}
-                      onMouseDown={rowMouseDown}
-                      onMouseEnter={() => setActive(i)}
-                      onClick={(e) => clickRow(i, e)}
-                      onContextMenu={(e) => openVaultMenu(row.path, 'row', e)}
-                    >
-                      <span className="vault-switcher__name">{row.name}</span>
-                      {row.key !== null && <kbd className="vault-switcher__key">⌘{row.key}</kbd>}
-                      {/* Part of its row (D2): a click is the row's click, a right-click the row's menu. */}
-                      <span
-                        className="vault-switcher__info"
-                        aria-hidden="true"
-                        onMouseEnter={(e) => setPathTip({ path: row.path, rect: e.currentTarget.parentElement!.getBoundingClientRect() })}
-                        onMouseLeave={() => setPathTip(null)}
-                      >
-                        <InfoIcon />
-                      </span>
-                      {when}
-                    </button>
+                    {line}
                   </Fragment>
                 )
               })}

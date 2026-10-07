@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, stripSlash, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -160,9 +160,6 @@ const sameBounds = (a: WindowBounds, b: WindowBounds): boolean => a.x === b.x &&
 
 export type LinkTarget = { kind: 'existing'; id: string } | { kind: 'new'; root: string; file: string }
 
-/** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
-const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
-
 /** `root` is an ancestor directory of `path` (or its dirname) — by segment, so `/a/b` never contains `/a/bc/x.md`. */
 const rootContains = (root: string, path: string): boolean => {
   const r = stripSlash(root)
@@ -217,8 +214,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (at !== -1) {
       // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
       // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
-      // must not reorder the list.
-      noteUsed(entryOf(id)?.root ?? null)
+      // must not reorder the list. Not during a quit either (S36): each window destroyed hands focus to the next.
+      if (!quitting) noteUsed(entryOf(id)?.root ?? null)
       focusOrder.splice(at, 1)
     }
     focusOrder.unshift(id)
@@ -331,9 +328,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     win.focus()
   }
 
-  /** E1: restore + focus a live window and hand it the can't-open message. No live window → nothing to say it in. */
+  /**
+   * E1: restore + focus a live window and hand it the can't-open message. No live window → nothing to say it in.
+   * The window that had focus last comes first (YAZ-2555 S27): ⌘<n> on a folder that is gone says so
+   * in the window you are in, and raises no other vault's window (D5 would make that vault "last used").
+   */
   const linkNotice = (message: string): void => {
-    const win = [...live.values()].find((w) => !w.isDestroyed())
+    const win = [live.get(focusOrder[0]), ...live.values()].find((w) => w !== undefined && !w.isDestroyed())
     if (win === undefined) return
     focusWindow(win)
     win.webContents.send(CONTRACT.link.onNotice.channel, message)

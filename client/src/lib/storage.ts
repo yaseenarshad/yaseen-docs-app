@@ -10,6 +10,7 @@ import {
   freeVaultKey,
   type AppState,
   type FolderState,
+  type KeyedVault,
   type RecentRoots,
   type RightPanelIdentity,
   type SettingsState,
@@ -119,7 +120,7 @@ export const storage = {
   /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */
   vaultKey: (root: string): number | null => folderOf(root).key,
   /** Every vault that has a number, in number order, by what the app calls it — who holds which key. */
-  keyedVaults: (): { key: number; path: string; name: string }[] =>
+  keyedVaults: (): KeyedVault[] =>
     Object.entries(state.folders)
       .flatMap(([path, folder]) => (folder.key === null ? [] : [{ key: folder.key, path, name: folder.name ?? basename(path) }]))
       .sort((a, b) => a.key - b.key),

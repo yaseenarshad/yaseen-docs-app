@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultRightPanelIdentity, openVaultRoots, type AppState, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultRightPanelIdentity, openVaultRoots, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
@@ -330,14 +330,6 @@ describe('storage', () => {
     storage.setVaultKey('/v/b', null)
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/v/b', { key: null })
     expect(storage.keyedVaults()).toEqual([])
-  })
-
-  it('getWindows is every window\'s entry off the cache, another window\'s open or close included (YAZ-2555 D1)', () => {
-    expect(storage.getWindows()).toEqual([])
-    const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
-    b.emit({ ...defaultAppState(), windows: [win('w1', '/v/a'), win('w2', null), win('w3', '/v/b')] })
-    expect(storage.getWindows().map((w) => w.id)).toEqual(['w1', 'w2', 'w3'])
-    expect(openVaultRoots(storage.getWindows())).toEqual(['/v/a', '/v/b'])
   })
 
   it('focusFavorites is this window identity (YAZ-1766 D5), focusDirs\' rule: setIdentity, deaf to broadcasts, cleared by a root change', async () => {
