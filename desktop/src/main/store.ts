@@ -241,7 +241,6 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
   return out
 }
 
-/** Null when the document is not a version-1 state object at all (→ treated as corrupt). */
 /** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
 function toDisk(state: AppState): unknown {
   const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))
@@ -269,6 +268,19 @@ function sanitizeState(raw: unknown): AppState | null {
 
 // ---------- loading ----------
 
+/**
+ * A state file's text as a state, or null when it is not one: bad JSON, or not a version-1 object.
+ * `yaseendocs vaults` reads the file through it too (YAZ-2556 D2), so the command sees the state
+ * the app would load, field for field — and, unlike `load`, it never moves a file aside.
+ */
+export function parseState(text: string): AppState | null {
+  try {
+    return sanitizeState(JSON.parse(text))
+  } catch {
+    return null
+  }
+}
+
 /** Reads the file synchronously; a corrupt one is moved aside as `<file>.corrupt-<epoch>` and defaults are used. */
 function load(filePath: string): AppState {
   let raw: string
@@ -278,14 +290,7 @@ function load(filePath: string): AppState {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAppState()
     throw err
   }
-  let parsed: unknown
-  let state: AppState | null = null
-  try {
-    parsed = JSON.parse(raw)
-    state = sanitizeState(parsed)
-  } catch {
-    state = null
-  }
+  const state = parseState(raw)
   if (state !== null) return state
   const backup = `${filePath}.corrupt-${Date.now()}`
   try {
