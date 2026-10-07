@@ -164,6 +164,17 @@ describe('createWindowManager: restore', () => {
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
+  it('the Welcome window of a first launch shows no vault: `roots: []` beside `root: null`; a restored window keeps every vault it showed (YAZ-2602 D1)', () => {
+    const first = makeHost()
+    createWindowManager(store, first.host).restoreAll()
+    expect(first.created[0].entry).toMatchObject({ root: null, roots: [] })
+    expect(store.get().windows[0].roots).toEqual([])
+    store.upsertWindow({ ...store.get().windows[0], root: '/a', roots: ['/a', '/b'] })
+    const next = makeHost()
+    createWindowManager(store, next.host).restoreAll() // the next launch
+    expect(next.created.map((c) => c.entry.roots)).toEqual([['/a', '/b']])
+  })
+
   it('restores every stored entry, clamping lost bounds back onto a display and persisting the clamp', () => {
     store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
@@ -408,6 +419,38 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(order).toEqual(['b', 'a'])
   })
 
+  it('YAZ-2602 S55/S56: a window is on EACH vault it shows — the door raises a window that shows the vault beside another, opens nothing, and with several such windows the one focused last ends on top', () => {
+    const entry = (id: string, ...roots: string[]) => ({ id, root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow(entry('ab', '/v/a', '/v/b'))
+    store.upsertWindow(entry('b', '/v/b'))
+    store.upsertWindow(entry('cd', '/v/c', '/v/d'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    const [ab, b, cd] = created.map((x) => x.win)
+    const order: string[] = []
+    ab.focus = () => order.push('ab')
+    b.focus = () => order.push('b')
+    cd.focus = () => order.push('cd')
+    // A vault that is ONLY the second vault of one window: that window comes to the front.
+    expect(manager.openRecentBeside('/v/d')).toBe(true)
+    expect(order).toEqual(['cd'])
+    expect(store.get().recents[0]?.path).toBe('/v/d')
+    // Two windows show /v/b, one of them beside /v/a: both are raised, the one focused last on top.
+    order.length = 0
+    ab.emit('focus')
+    b.emit('focus')
+    ab.emit('focus')
+    expect(manager.openRecentBeside('/v/b')).toBe(true)
+    expect(order).toEqual(['b', 'ab'])
+    order.length = 0
+    b.emit('focus')
+    expect(manager.openRecentBeside('/v/b/')).toBe(true) // a trailing slash is the same vault
+    expect(order).toEqual(['ab', 'b'])
+    expect(created).toHaveLength(3) // never a new window
+    expect(store.get().windows.map((w) => w.roots)).toEqual([['/v/a', '/v/b'], ['/v/b'], ['/v/c', '/v/d']])
+  })
+
   it('D9: a matching entry with NO live window (mid-close) falls through to a new window', () => {
     store.upsertWindow({ id: 'w1', root: '/v/other', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
     const { host, created } = makeHost()
@@ -506,6 +549,24 @@ describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'
     expect(commits()).toBe(0)
   })
 
+  it('YAZ-2602 S60: a later focus on a window that shows several vaults bumps its ACTIVE vault — the one that holds its active file, else its first', () => {
+    const { wins: [ab, c] } = seedFocus([['ab', '/v/a'], ['c', '/v/c']], ['/v/c', '/v/a', '/v/b'])
+    const patch = (over: Partial<WindowEntry>) => store.upsertWindow({ ...store.get().windows[0], ...over })
+    patch({ roots: ['/v/a', '/v/b'], file: '/v/b/sub/x.md', tabs: ['/v/b/sub/x.md'] })
+    for (const w of [c, ab]) w.emit('focus') // each one's first focus
+    expect(mru()).toEqual(['/v/c', '/v/a', '/v/b'])
+    ab.emit('focus') // its active file is in its SECOND vault
+    expect(mru()).toEqual(['/v/b', '/v/c', '/v/a'])
+    patch({ file: null, tabs: [] }) // no tab: the first vault
+    c.emit('focus')
+    ab.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/c', '/v/b'])
+    patch({ file: '/elsewhere/y.md', tabs: ['/elsewhere/y.md'] }) // a file in no vault of the window: the first vault
+    c.emit('focus')
+    ab.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/c', '/v/b'])
+  })
+
   it('openWindow on a vault is a use of it: bumped (already on top → `recents` untouched), and the new window\'s first focus adds nothing; a Welcome window is not a vault', () => {
     store.pushRecent('/v/b', 1)
     store.pushRecent('/v/a', 2)
@@ -568,6 +629,33 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     from.focusFavorites.push('/v/mutated')
     expect(entry.focusDirs).toEqual(['/v/a'])
     expect(entry.focusFavorites).toEqual(['/v/f'])
+  })
+
+  it('openWindow takes more vaults for the window: `root` first, each vault once — and a vault another window already shows is shown by both (YAZ-2602 S9)', () => {
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.openWindow({ root: '/b', file: null })
+    manager.openWindow({ root: '/a', file: '/b/x.md', roots: ['/b', '/a/', '/c', '/b/'] })
+    manager.openWindow({ root: null, file: null, roots: ['/a'] }) // no first vault: a Welcome window
+    expect(created.map((c) => c.entry.roots)).toEqual([['/b'], ['/a', '/b', '/c'], []])
+    expect(created[1].entry).toMatchObject({ root: '/a', file: '/b/x.md', tabs: ['/b/x.md'] })
+    expect(created.map((c) => c.win.focusCount)).toEqual([0, 0, 0]) // the first window on /b is not raised instead
+    expect(store.get().windows).toEqual(created.map((c) => c.entry))
+  })
+
+  it('duplicateWindow copies every vault of the window, BY VALUE (YAZ-2602 S34)', () => {
+    const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/b/x.md', tabs: ['/b/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    createWindowManager(store, host).duplicateWindow(from)
+    const entry = created[0].entry
+    expect(entry).toMatchObject({ root: '/a', roots: ['/a', '/b'], file: '/b/x.md', tabs: ['/b/x.md'] })
+    expect(entry.roots).not.toBe(from.roots)
+    from.roots.push('/mutated') // mutating the source afterwards never reaches the copy
+    expect(entry.roots).toEqual(['/a', '/b'])
+    expect(store.get().windows.map((w) => w.roots)).toEqual([['/a', '/b'], ['/a', '/b']])
+    store.upsertWindow({ ...entry, roots: ['/a'] }) // the copy drops a vault: the source keeps its own
+    expect(store.get().windows.map((w) => w.roots)).toEqual([['/a', '/b'], ['/a']])
   })
 
   it('duplicating a Welcome window keeps root and file null — Welcome → Welcome (⌘⇧N, GRO-2167)', () => {
@@ -634,6 +722,24 @@ describe('resolveLinkTarget (pure)', () => {
     // Without the override, the more specific /v/sub would win; the override pins /v.
     expect(resolveLinkTarget('/v/sub/a.md', windows, [], '/v')).toEqual({ kind: 'existing', id: 'w1' })
     expect(resolveLinkTarget('/v/sub/a.md', [], [], '/v')).toEqual({ kind: 'new', root: '/v', file: '/v/sub/a.md' })
+  })
+
+  it('YAZ-2602 S57: a window is on EVERY vault it shows — a file in its second vault routes to it; the most specific vault wins across windows, a tie keeps the first window, and a rootOverride matches a window that shows that vault as its second', () => {
+    const showing = (id: string, ...roots: string[]): WindowEntry => ({ ...win(id, roots[0]), roots })
+    const ab = showing('ab', '/a', '/b')
+    const deep = showing('deep', '/c', '/b/sub')
+    expect(resolveLinkTarget('/b/x.md', [win('w0', '/other'), ab], recents('/b'))).toEqual({ kind: 'existing', id: 'ab' }) // not a new window on the recent /b
+    expect(resolveLinkTarget('/bc/x.md', [ab], [])).toEqual({ kind: 'new', root: '/bc', file: '/bc/x.md' }) // by segment, for a second vault too
+    // The most specific vault, wherever it sits in its window's list and in windows[].
+    expect(resolveLinkTarget('/b/sub/x.md', [ab, deep], [])).toEqual({ kind: 'existing', id: 'deep' })
+    expect(resolveLinkTarget('/b/sub/x.md', [deep, ab], [])).toEqual({ kind: 'existing', id: 'deep' })
+    expect(resolveLinkTarget('/b/x.md', [deep, ab], [])).toEqual({ kind: 'existing', id: 'ab' })
+    // A tie: the first window in windows[], whether the vault is its first or its second.
+    expect(resolveLinkTarget('/b/x.md', [ab, win('b', '/b')], [])).toEqual({ kind: 'existing', id: 'ab' })
+    expect(resolveLinkTarget('/b/x.md', [win('b', '/b'), ab], [])).toEqual({ kind: 'existing', id: 'b' })
+    // The override pins /b: the window that shows /b, not the more specific /b/sub.
+    expect(resolveLinkTarget('/b/sub/x.md', [deep, ab], [], '/b/')).toEqual({ kind: 'existing', id: 'ab' })
+    expect(resolveLinkTarget('/b/sub/x.md', [deep], [], '/b')).toEqual({ kind: 'new', root: '/b', file: '/b/sub/x.md' })
   })
 
   it('a rootOverride that does not contain the path is ignored', () => {
@@ -713,6 +819,31 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(created[2].entry.id).not.toBe('w3') // a fresh window, not a resurrection of the dead entry
     expect(created[2].entry.root).toBe('/v/deeper')
     expect(created[2].entry.file).toBe('/v/deeper/n.md')
+  })
+
+  it('YAZ-2602 S57/S58: a file in the SECOND vault of a window opens as a tab there, and that vault\'s folder from outside raises the window — no new window either way', () => {
+    store.upsertWindow({ id: 'ab', root: '/a', roots: ['/a', '/b'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    const { host, created } = makeHost([AREA], (p) => p !== '/b', (p) => p === '/b' || p === '/b/')
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    const ab = created[0].win
+    manager.routeToFile('/b/sub/x.md')
+    expect(ab.focusCount).toBe(1)
+    expect(ab.webContents.send.mock.calls).toEqual([[CONTRACT.link.onOpenFile.channel, '/b/sub/x.md']])
+    manager.routeToFile('/b/') // the folder itself, as a link keeps it
+    expect(ab.focusCount).toBe(2)
+    expect(ab.webContents.send).toHaveBeenCalledTimes(1) // no file to open, no notice
+    expect(store.get().recents[0]?.path).toBe('/b')
+    expect(created).toHaveLength(1)
+    expect(store.get().windows).toHaveLength(1)
+  })
+
+  it('YAZ-2602: a stored entry with no live window falls back to a fresh window on the vault OF THAT ENTRY that holds the file, not on its first', () => {
+    const { manager, created } = seedRouting()
+    store.upsertWindow({ id: 'w3', root: '/q', roots: ['/q', '/v/deeper'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 20, y: 20, width: 800, height: 600 } })
+    manager.routeToFile('/v/deeper/n.md') // the most specific vault is the dead w3's second
+    expect(created).toHaveLength(3)
+    expect(created[2].entry).toMatchObject({ root: '/v/deeper', roots: ['/v/deeper'], file: '/v/deeper/n.md' })
   })
 
   it('S6: an unsupported path (a path that does not exist and names no supported file kind is one) opens nothing and reports “unsupported file type” passively', () => {
