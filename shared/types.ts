@@ -515,9 +515,15 @@ export function addRecentRoot(list: RecentRoots, path: string, now: number): Rec
 /** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
 export const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
 
+/** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` names a folder the same way (YAZ-2556). */
+export function basename(p: string): string {
+  const trimmed = p.replace(/\/+$/, '')
+  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || p
+}
+
 /**
  * The open vaults (YAZ-2555 D1): each window's root, once per vault, Welcome windows (root null)
- * left out. The vault switcher's list reads it; main's door (`openRecentBeside`) has its own filter
+ * left out. `listVaults` reads it for the vault switcher's list; main's door (`openRecentBeside`) has its own filter
  * over the live windows, and both compare roots through `stripSlash`.
  */
 export function openVaultRoots(windows: readonly { root: string | null }[]): string[] {
@@ -787,6 +793,36 @@ export function defaultAppState(): AppState {
 
 export function defaultFolderState(): FolderState {
   return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null }
+}
+
+/** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */
+export interface VaultEntry {
+  path: string
+  /** Its display name (YAZ-1974 D3), else its folder name. */
+  name: string
+  /** Its number, 1–9, or null (YAZ-2555 D2). */
+  key: number | null
+  /** A window is on it. */
+  open: boolean
+  /** When it was last used (ms): its time in the recents, or null for a vault that is not among them. */
+  lastUsed: number | null
+}
+
+/**
+ * Every vault the app knows (YAZ-2556 D2), the rows and the order of YAZ-2555 A1: the recents, last
+ * used first, then the open vaults and the numbered ones (in number order) that are not among them.
+ * ONE list for the ⌘O panel and for `yaseendocs vaults`, so the two cannot disagree.
+ */
+export function listVaults(state: Pick<AppState, 'recents' | 'windows' | 'folders'>): VaultEntry[] {
+  const open = openVaultRoots(state.windows)
+  const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
+  const keyed = Object.entries(state.folders)
+    .flatMap(([path, folder]) => (folder.key === null ? [] : [{ path, key: folder.key }]))
+    .sort((a, b) => a.key - b.key)
+  return [...new Set([...recents.keys(), ...open, ...keyed.map((v) => v.path)])].map((path) => {
+    const folder = state.folders[path]
+    return { path, name: folder?.name ?? basename(path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
+  })
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
