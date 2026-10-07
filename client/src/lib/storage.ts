@@ -20,6 +20,7 @@ import {
   type SettingsState,
   type SidebarLens,
   type VaultEntry,
+  type VaultSet,
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
@@ -115,6 +116,12 @@ export const storage = {
   getRecentRoots: (): RecentRoots => state.recents,
   /** Every vault the app knows, as the ⌘O panel lists it (YAZ-2556 D2): the shared `listVaults` over the cache — what `yaseendocs vaults` prints from the state file. */
   listVaults: (): VaultEntry[] => listVaults(state),
+  /**
+   * The saved sets of vaults (YAZ-2602 D8; the user reads "workspaces"), last used first. Read-only
+   * here: main saves, renames and removes one through its own doors (`api.window.saveSet` and its
+   * neighbours), and the cache follows the broadcast.
+   */
+  getVaultSets: (): VaultSet[] => state.vaultSets,
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
