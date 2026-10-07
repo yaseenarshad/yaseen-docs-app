@@ -1164,16 +1164,18 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
 
 /**
  * Workspaces (YAZ-2602 D8): saved sets of vaults. The list shows them first, under "Workspaces";
- * a row opens through `window.openSet`, and its menu renames or removes it. The doors are mocked
+ * a row opens through `window.openSet`, and its menu renames or removes it. The header shows a
+ * workspace's name while the window's vaults are exactly that workspace. The doors are mocked
  * on the fake bridge; the saved workspaces are seeded into the cache, as main's broadcast lands them.
  */
-describe('VaultSwitcher: workspaces (YAZ-2602 D8, S64 to S67)', () => {
+describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S64 to S67)', () => {
   const ARCHIVE = '/v/Archive'
   const WORK: VaultSet = { id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW - 3_600_000 }
   const READING: VaultSet = { id: 'set-reading', name: 'Reading', roots: [ROOT, ARCHIVE, '/v/Notes Archive'], lastUsed: NOW - 86_400_000 }
   /** The list with no workspace, and no window seeded: the four recents under "Not open" — as every older test reads it. */
   const VAULTS = [`# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago']
   const seedSets = (...vaultSets: VaultSet[]) => act(() => broadcast(seeded({ vaultSets })))
+  const headerName = (el: HTMLElement) => trigger(el).querySelector('.sidebar__root-name')?.textContent
   const when = (row: HTMLElement) => row.querySelector('.vault-switcher__when')
   const field = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.vault-switcher__rename')
   const fieldKey = (el: HTMLElement, k: string) => act(() => void field(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
@@ -1399,5 +1401,29 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S64 to S67)', () => {
     rightClick(rows(el)[1])
     act(() => void window.dispatchEvent(new Event('blur')))
     expect([panel(el), vaultMenu()]).toEqual([null, null])
+  })
+
+  it('the header shows the workspace\'s name while the window\'s vaults are exactly a saved workspace — the first one that matches — and follows a save, a rename and a remove in the cache, and a vault added or removed (S15)', () => {
+    const { el, rerender } = render({ roots: [ROOT, ARCHIVE] })
+    expect(headerName(el)).toBe('Notes + Archive')
+    const pair: VaultSet = { id: 'set-pair', name: 'Pair', roots: [`${ARCHIVE}/`, ROOT], lastUsed: NOW }
+    seedSets(WORK, pair) // saved, here or in any window: the order and a trailing slash do not count
+    expect(headerName(el)).toBe('Pair')
+    expect(trigger(el).title).toBe(`${ROOT}\n${ARCHIVE}`)
+    seedSets(WORK, { ...pair, name: 'Duo' })
+    expect(headerName(el)).toBe('Duo')
+    seedSets({ ...pair, id: 'set-first', name: 'First' }, { ...pair, name: 'Duo' })
+    expect(headerName(el)).toBe('First')
+
+    seedSets(WORK, { ...pair, name: 'Duo' })
+    rerender({ roots: [ROOT, ARCHIVE, '/w/Notes'] }) // one vault more is not that workspace
+    expect(headerName(el)).toBe('Notes + Archive + 1 more')
+    rerender({ roots: [ARCHIVE, '/w/Notes'] })
+    expect(headerName(el)).toBe('Work')
+    seedSets()
+    expect(headerName(el)).toBe('Archive + Notes')
+    seedSets(WORK)
+    rerender({ roots: [ARCHIVE] }) // one vault is never a workspace
+    expect(headerName(el)).toBe('Archive')
   })
 })
