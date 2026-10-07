@@ -11,7 +11,7 @@ const OTHER = '/v/Émojis 🚀 & spaces'
 const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, renamed: false, keyed: [], ...over })
 
 function handlers(): VaultMenuHandlers {
-  return { onOpenHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onSetKey: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
+  return { onOpenHere: vi.fn(), onAddHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onSetKey: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
 }
 
 /** The non-empty groups' labels — what `ContextMenu` draws, a hairline between each. */
@@ -33,9 +33,9 @@ afterEach(() => {
 })
 
 describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
-  it('another vault: Open in this window · Set display name, Set shortcut · the two copies · Reveal and VS Code · Remove — five groups in that order', () => {
+  it('another vault: Add to this window, Open in this window · Set display name, Set shortcut · the two copies · Reveal and VS Code · Remove — five groups in that order', () => {
     expect(groupsOf(buildVaultMenuSections(target(), handlers()))).toEqual([
-      ['Open in this window'],
+      ['Add to this window', 'Open in this window'],
       ['Set display name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
@@ -44,12 +44,12 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
   })
 
   it('Open in this window names its hotkey, ⇧⏎ (YAZ-1974 D8)', () => {
-    expect(buildVaultMenuSections(target(), handlers())[0][0].hint).toBe('⇧⏎')
+    expect(item(buildVaultMenuSections(target(), handlers()), 'open-here').hint).toBe('⇧⏎')
   })
 
   it('a renamed vault also offers Reset to folder name, beside Set display name (YAZ-1974 D5) — Set shortcut stays below both (YAZ-2555 S13)', () => {
     expect(groupsOf(buildVaultMenuSections(target({ name: 'Launch', renamed: true }), handlers()))).toEqual([
-      ['Open in this window'],
+      ['Add to this window', 'Open in this window'],
       ['Set display name', 'Reset to folder name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
@@ -134,15 +134,10 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
   })
 })
 
-/**
- * "Add to this window" (YAZ-2602 D2, S8): offered where the switcher was handed the door to add a
- * vault, above "Open in this window", on a vault that is not in the window.
- */
+/** "Add to this window" (YAZ-2602 D2, S8): above "Open in this window", on a vault that is not in the window. */
 describe('Add to this window (YAZ-2602 S8)', () => {
-  const adding = () => ({ ...handlers(), onAddHere: vi.fn() })
-
   it('a vault that is not in this window: "Add to this window" stands above "Open in this window", and hands its path over', () => {
-    const h = adding()
+    const h = handlers()
     const sections = buildVaultMenuSections(target(), h)
     expect(groupsOf(sections)[0]).toEqual(['Add to this window', 'Open in this window'])
     item(sections, 'add-here').onSelect()
@@ -151,7 +146,7 @@ describe('Add to this window (YAZ-2602 S8)', () => {
   })
 
   it('a vault that is in this window has neither item, and no Remove', () => {
-    const labels = groupsOf(buildVaultMenuSections(target({ isCurrent: true }), adding())).flat()
+    const labels = groupsOf(buildVaultMenuSections(target({ isCurrent: true }), handlers())).flat()
     expect(labels).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 })
