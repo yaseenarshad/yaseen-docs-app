@@ -26,6 +26,7 @@ import {
   freeVaultKey,
   isSidebarLens,
   isValidNewNoteFolder,
+  normalizeRoots,
   type AppState,
   type CommentsOrder,
   type ContentWidth,
@@ -59,7 +60,8 @@ export interface Store {
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
-  upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
+  /** `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`). */
+  upsertWindow(entry: Omit<WindowEntry, 'rightPanel' | 'roots'> & Partial<Pick<WindowEntry, 'rightPanel' | 'roots'>>): void
   removeWindow(id: string): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
@@ -138,7 +140,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusDirs?: unknown; focusFavorites?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusDirs?: unknown; focusFavorites?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -195,7 +197,9 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     // Focus Mode's lists (YAZ-1628) read with the `tabs` rule: relative paths drop, a missing or junk list is no focus.
     const focusDirs = isStringArray(w.focusDirs) ? w.focusDirs.filter(isAbsolute) : []
     const focusFavorites = isStringArray(w.focusFavorites) ? w.focusFavorites.filter(isAbsolute) : []
-    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    // The vault list (YAZ-2602) reads with the `tabs` rule too: junk drops, and a missing list repairs from `root`.
+    const roots = normalizeRoots(isStringArray(w.roots) ? w.roots.filter(isAbsolute) : [], w.root)
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusFavorites, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -398,7 +402,7 @@ export function createStore(filePath: string): Store {
 
     upsertWindow(entry) {
       const tabs = normalizeTabs(entry.tabs, entry.file)
-      const normalized: WindowEntry = { ...entry, tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }
+      const normalized: WindowEntry = { ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       commit({ ...state, windows })
     },
@@ -438,6 +442,8 @@ export function createStore(filePath: string): Store {
         return {
           ...w,
           root,
+          // Every vault of the window follows its folder, as `root` does (YAZ-2602 S48).
+          roots: w.roots.map(remap),
           file,
           tabs,
           rightPanel: normalizeRightPanel({
@@ -488,7 +494,7 @@ export function createStore(filePath: string): Store {
         return Object.fromEntries(kept)
       }
       const windows = state.windows.map((w) => {
-        // `root` is NOT touched here — see the interface doc: the renderer's onRootMissing owns it.
+        // `root` and `roots` are NOT touched here — see the interface doc: the renderer's missing-folder probe owns them (YAZ-2602 S49).
         const tabs = drop(w.tabs)
         let file = w.file
         if (file !== null && gone(file)) {

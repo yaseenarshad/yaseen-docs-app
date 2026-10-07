@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, stripSlash, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, stripSlash, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -173,8 +173,8 @@ const rootContains = (root: string, path: string): boolean => {
 }
 
 /**
- * Where a `yaseendocs://` link to `path` should land: (1) the open window whose root contains
- * it — most specific root wins, ties keep the first in `windows[]`, Welcome windows never match;
+ * Where a `yaseendocs://` link to `path` should land: (1) the open window one of whose vaults contains
+ * it (YAZ-2602 D6) — most specific vault wins, ties keep the first in `windows[]`, Welcome windows never match;
  * (2) a new window on the most recent `recents` folder containing it (the list is already
  * most-recent-first); (3) a new window on the file's parent folder. A containing `rootOverride`
  * pins the effective root instead: the open window on exactly that root, else a new window there.
@@ -186,13 +186,15 @@ export function resolveLinkTarget(
   rootOverride?: string | null,
 ): LinkTarget {
   if (rootOverride != null && rootContains(rootOverride, path)) {
-    const exact = windows.find((w) => w.root !== null && stripSlash(w.root) === stripSlash(rootOverride))
+    const exact = windows.find((w) => w.roots.some((root) => stripSlash(root) === stripSlash(rootOverride)))
     return exact === undefined ? { kind: 'new', root: rootOverride, file: path } : { kind: 'existing', id: exact.id }
   }
   let best: { id: string; rootLength: number } | undefined
   for (const w of windows) {
-    if (w.root === null || !rootContains(w.root, path)) continue
-    if (best === undefined || w.root.length > best.rootLength) best = { id: w.id, rootLength: w.root.length }
+    for (const root of w.roots) {
+      if (!rootContains(root, path)) continue
+      if (best === undefined || root.length > best.rootLength) best = { id: w.id, rootLength: root.length }
+    }
   }
   if (best !== undefined) return { kind: 'existing', id: best.id }
   const recent = recents.find((r) => rootContains(r.path, path))
@@ -221,13 +223,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
       // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
       // must not reorder the list. Not during a quit either (S36): each window destroyed hands focus to the next.
-      if (!quitting) noteUsed(entryOf(id)?.root ?? null)
+      if (!quitting) noteUsed(activeVault(entryOf(id)))
       focusOrder.splice(at, 1)
     }
     focusOrder.unshift(id)
   }
 
   const entryOf = (id: string): WindowEntry | undefined => store.get().windows.find((w) => w.id === id)
+
+  /** The vault a window is working in (YAZ-2602 S60): the one that holds its active file, else its first. */
+  const activeVault = (entry: WindowEntry | undefined): string | null =>
+    entry === undefined ? null : ((entry.file === null ? null : rootOfPath(entry.roots, entry.file)) ?? entry.root)
 
   /**
    * Bump a window's vault to the top of the MRU (YAZ-2555 D5). Already on top → no write; a Welcome
@@ -326,7 +332,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const openWindow = (opts: OpenWindowOptions): void => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
     noteUsed(opts.root)
-    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -357,13 +363,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
     // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
     noteUsed(path)
-    // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
+    // Already open (YAZ-1767 🔒 D9) — in a window that shows it, alone or beside others (YAZ-2602 D6): raise that vault's live windows instead of opening a third
     // copy — LEAST recently focused first, so the most recently focused one ends on top (a
     // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
     const wanted = stripSlash(path)
     const alreadyOpen = store
       .get()
-      .windows.filter((w) => w.root !== null && stripSlash(w.root) === wanted)
+      .windows.filter((w) => w.roots.some((root) => stripSlash(root) === wanted))
       .map((w) => ({ id: w.id, win: live.get(w.id) }))
       .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
     if (alreadyOpen.length > 0) {
@@ -385,7 +391,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       let entries = store.get().windows
       if (entries.length === 0) {
         // First launch: one window on the Welcome screen (root null; the screen itself is C2).
-        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: { ...DEFAULT_BOUNDS } }
+        const first: WindowEntry = { id: randomUUID(), root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: { ...DEFAULT_BOUNDS } }
         store.upsertWindow(first)
         entries = [first]
       }
@@ -407,6 +413,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         open({
           id: randomUUID(),
           root: from.root,
+          roots: [...from.roots],
           file: from.file,
           tabs: [...from.tabs],
           rightPanel: { ...from.rightPanel, items: [...from.rightPanel.items] },
@@ -453,7 +460,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (win === undefined || win.isDestroyed()) {
         // A stored entry with no live window (mid-close race): fall back to a fresh window on its root.
         const entry = state.windows.find((w) => w.id === target.id)
-        openWindow({ root: entry?.root ?? posix.dirname(path), file: path })
+        openWindow({ root: (entry === undefined ? null : rootOfPath(entry.roots, path)) ?? posix.dirname(path), file: path })
         return
       }
       focusWindow(win)

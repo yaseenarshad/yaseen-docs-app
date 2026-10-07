@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
-import type { RenameFileResponse } from '@shared/types'
+import { rootOfPath, type RenameFileResponse } from '@shared/types'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
 import { readAsset, writeAsset } from '../fs/assets'
@@ -40,16 +40,16 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
   handle(CONTRACT.writeFile, writeFile)
-  /** The vault the calling window is on; null or undefined when it has none. */
-  const rootOf = (e: IpcMainInvokeEvent): string | null | undefined => store.get().windows.find((w) => w.id === windows.idFor(e.sender))?.root
+  /** The vaults the calling window shows (YAZ-2602 D1); none for Welcome or an unknown sender. */
+  const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => store.get().windows.find((w) => w.id === windows.idFor(e.sender))?.roots ?? []
   /**
-   * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when the calling window has a vault, the
-   * path is in it and the vault said yes. A create, a title edit and a paste each ask once, here.
+   * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when a vault of the calling window holds
+   * the path (YAZ-2602 S78) and that vault said yes. A create, a title edit and a paste each ask once, here.
    */
   const usesIds = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<boolean> => {
-    const root = rootOf(e)
     const p = typeof req === 'string' ? req : (req as Record<string, unknown> | null)?.[key]
-    return root != null && typeof p === 'string' && (p === root || p.startsWith(`${root}${path.sep}`)) && givesIds(root)
+    const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
+    return root !== null && givesIds(root)
   }
   handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await usesIds(e, req)))
   handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await usesIds(e, req)))
@@ -93,8 +93,8 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     // identity then means), out of E1b's scope. ANOTHER window rooted at a subfolder of
     // this vault is fine: `store.renamePath` below remaps its `WindowEntry.root`.
     const oldPath = typeof (req as { oldPath?: unknown } | null)?.oldPath === 'string' ? path.resolve((req as { oldPath: string }).oldPath) : null
-    const senderRoot = rootOf(e)
-    if (oldPath !== null && senderRoot != null && senderRoot === oldPath) {
+    // Any vault of the calling window (YAZ-2602 S47).
+    if (oldPath !== null && rootsOfSender(e).includes(oldPath)) {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be renamed', { path: oldPath })
     }
     return afterRename(await renameFile(req))
@@ -103,8 +103,10 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // then takes the rename handler's downstream (`afterRename`). One that kept its name moved
   // nothing, so there is nothing to repair or push: the index reads the new title off the watcher.
   handleWithEvent(CONTRACT.file.retitle, async (e, req: unknown) => {
-    const root = rootOf(e)
-    if (root == null) throw new BridgeFailure('BAD_REQUEST', 'no vault is open in this window')
+    // The vault of the calling window that holds the note (YAZ-2602 S78): its title rules build the name.
+    const target = (req as { path?: unknown } | null)?.path
+    const root = typeof target === 'string' ? rootOfPath(rootsOfSender(e), target) : null
+    if (root === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that path')
     // Only a vault that uses IDs has titles (YAZ-2523 🔒 V3): where it does not, a name changes by `fs:rename`.
     if (!(await usesIds(e, req))) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs')
     const res = await retitle(root, req)
@@ -127,8 +129,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     // window rooted inside the deleted folder IS allowed; it falls through to that window's
     // existing onRootMissing probe, which also drops the dead MRU entry.
     const target = typeof (req as { path?: unknown } | null)?.path === 'string' ? path.resolve((req as { path: string }).path) : null
-    const senderRoot = rootOf(e)
-    if (target !== null && senderRoot != null && senderRoot === target) {
+    if (target !== null && rootsOfSender(e).includes(target)) {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be deleted', { path: target })
     }
     const res = await removeEntry(req)

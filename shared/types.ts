@@ -515,6 +515,38 @@ export function addRecentRoot(list: RecentRoots, path: string, now: number): Rec
 /** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
 export const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
 
+/** A window shows this many vaults at most (YAZ-2602 R7): each one holds a watcher and an index. */
+export const MAX_WINDOW_ROOTS = 8
+
+/**
+ * The vault-list invariant (YAZ-2602 D1), shared by the loader, the IPC boundary and the client cache:
+ * `root` is the FIRST entry, the rest follow in their order with the trailing slash off, a vault
+ * appears once, the list is cut at MAX_WINDOW_ROOTS, and `root: null` ⇔ `[]`.
+ */
+export function normalizeRoots(roots: readonly string[], root: string | null): string[] {
+  if (root === null) return []
+  const seen = new Set([stripSlash(root)])
+  const out = [root]
+  for (const r of roots) {
+    const vault = stripSlash(r)
+    if (seen.has(vault)) continue
+    seen.add(vault)
+    out.push(vault)
+  }
+  return out.slice(0, MAX_WINDOW_ROOTS)
+}
+
+/** The vault of `roots` that holds `path` (or is it) — the most specific one, by segment; null when none does (YAZ-2602). */
+export function rootOfPath(roots: readonly string[], path: string): string | null {
+  let best: string | null = null
+  for (const root of roots) {
+    const r = stripSlash(root)
+    if (path !== r && !path.startsWith(r === '/' ? '/' : `${r}/`)) continue
+    if (best === null || r.length > stripSlash(best).length) best = root
+  }
+  return best
+}
+
 /** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` and `keyedVaults` name a folder the same way (YAZ-2556). */
 export function basename(p: string): string {
   const trimmed = p.replace(/\/+$/, '')
@@ -522,16 +554,18 @@ export function basename(p: string): string {
 }
 
 /**
- * The open vaults (YAZ-2555 D1): each window's root, once per vault, Welcome windows (root null)
- * left out. `listVaults` reads it for the vault switcher's list; main's door (`openRecentBeside`) has its own filter
- * over the live windows, and both compare roots through `stripSlash`.
+ * The open vaults (YAZ-2555 D1): every vault of every window (YAZ-2602 D6), once per vault, Welcome
+ * windows (no vault) left out. `listVaults` reads it for the vault switcher's list; main's door (`openRecentBeside`) has its own filter
+ * over the live windows, and both compare roots through `stripSlash`. A window read straight off an
+ * old state file has no `roots`: its `root` answers.
  */
-export function openVaultRoots(windows: readonly { root: string | null }[]): string[] {
+export function openVaultRoots(windows: readonly { root: string | null; roots?: readonly string[] }[]): string[] {
   const roots: string[] = []
   for (const w of windows) {
-    if (w.root === null) continue
-    const root = stripSlash(w.root)
-    if (!roots.includes(root)) roots.push(root)
+    for (const vault of w.roots ?? (w.root === null ? [] : [w.root])) {
+      const root = stripSlash(vault)
+      if (!roots.includes(root)) roots.push(root)
+    }
   }
   return roots
 }
@@ -728,6 +762,13 @@ export interface WindowBounds {
 export interface WindowEntry {
   id: string
   root: string | null
+  /**
+   * Every vault this window shows, in the order they were added (YAZ-2602 D1). `root` is the FIRST.
+   * Invariants, like `tabs` / `file` (`normalizeRoots`): `roots[0] === root`, and `roots: []` ⇔
+   * `root: null`. Additive within version 1: a file without it repairs from `root`, and an old build
+   * drops the key and opens `root` alone.
+   */
+  roots: string[]
   file: string | null
   tabs: string[]
   rightPanel: RightPanelIdentity
@@ -824,7 +865,7 @@ export interface VaultEntry {
  * used first, then the open vaults and the numbered ones (in number order) that are not among them.
  * ONE list for the ⌘O panel and for `yaseendocs vaults`, so the two cannot disagree.
  */
-export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { root: string | null }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
+export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { root: string | null; roots?: readonly string[] }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
   const open = openVaultRoots(state.windows)
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
   return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
@@ -1020,6 +1061,8 @@ export interface FileDeletedEvent {
 export interface WindowIdentity {
   id: string
   root: string | null
+  /** Every vault this window shows, `root` first (YAZ-2602 D1; the same list as `WindowEntry.roots`). */
+  roots: string[]
   file: string | null
   /** Open tabs left→right (GRO-2232); `file` is the active one (same invariants as `WindowEntry.tabs`). */
   tabs: string[]
@@ -1036,6 +1079,8 @@ export interface WindowIdentity {
 export interface OpenWindowOptions {
   root: string | null
   file: string | null
+  /** More vaults for the window, after `root` (YAZ-2602); absent = `root` alone. */
+  roots?: string[]
 }
 
 /** Clipboard text captured when the user chooses an explicit paste mode. */
