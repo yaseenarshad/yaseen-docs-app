@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultRightPanelIdentity, openVaultRoots, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultFolderState, defaultRightPanelIdentity, listVaults, openVaultRoots, type AppState, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
@@ -74,6 +74,35 @@ describe('openVaultRoots (YAZ-2555 D1)', () => {
   it('is each window\'s root in window order, once per vault — a trailing slash off, never off "/" — with Welcome windows left out', () => {
     expect(openVaultRoots([{ root: '/v/b' }, { root: null }, { root: '/v/a/' }, { root: '/v/b/' }, { root: '/v/a' }, { root: '/' }])).toEqual(['/v/b', '/v/a', '/'])
     expect(openVaultRoots([{ root: null }])).toEqual([])
+  })
+})
+
+describe('listVaults (YAZ-2556 D2: the one vault list of ⌘O and `yaseendocs vaults`)', () => {
+  const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+
+  it('is the recents, last used first, then the open vaults and the numbered ones (in number order) that are not among them — each by its display name, else its folder name', () => {
+    const vaults = listVaults({
+      recents: [{ path: '/v/b', lastOpened: 30 }, { path: '/v/a', lastOpened: 20 }],
+      windows: [win('w1', '/v/c/'), win('w2', null), win('w3', '/v/a'), win('w4', '/v/c')],
+      folders: {
+        '/v/a': { ...defaultFolderState(), name: 'Alpha', key: 2 },
+        '/v/e': { ...defaultFolderState(), key: 9 },
+        '/v/d': { ...defaultFolderState(), name: 'Delta', key: 1 },
+        '/v/x': { ...defaultFolderState(), name: 'A folder that is no vault now: not recent, not open, no number' },
+      },
+    })
+    expect(vaults).toEqual([
+      { path: '/v/b', name: 'b', key: null, open: false, lastUsed: 30 },
+      { path: '/v/a', name: 'Alpha', key: 2, open: true, lastUsed: 20 },
+      { path: '/v/c', name: 'c', key: null, open: true, lastUsed: null },
+      { path: '/v/d', name: 'Delta', key: 1, open: false, lastUsed: null },
+      { path: '/v/e', name: 'e', key: 9, open: false, lastUsed: null },
+    ])
+    expect(Object.keys(vaults[0])).toEqual(['path', 'name', 'key', 'open', 'lastUsed']) // the order `--json` prints
+  })
+
+  it('a state with no vault is an empty list', () => {
+    expect(listVaults({ ...defaultAppState(), windows: [win('w1', null)] })).toEqual([])
   })
 })
 

@@ -73,7 +73,7 @@ export interface WindowHost {
   workAreas(): WindowBounds[]
   /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything. */
   exists(path: string): boolean
-  /** Whether `path` exists as a directory — `openRecentBeside` probes before touching the MRU (GRO-2211, moved here by YAZ-1767). */
+  /** Whether `path` exists as a directory — `openRecentBeside` probes before touching the MRU (GRO-2211, moved here by YAZ-1767), and `routeToFile` asks it first: a folder goes to that door (YAZ-2556 D1). */
   dirExists(path: string): boolean
 }
 
@@ -86,7 +86,8 @@ export interface WindowManager extends WindowLookup {
   duplicateWindow(from: WindowEntry): void
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
-   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, and the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main. Probes
+   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main, and so does
+   * `routeToFile` for a FOLDER that comes from outside the app (YAZ-2556 D1). Probes
    * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
@@ -99,7 +100,12 @@ export interface WindowManager extends WindowLookup {
    * No live window for `id` (mid-close race) is a no-op.
    */
   closeWindow(id: string): void
-  /** A `yaseendocs://` link resolved to `path` (E1, GRO-2171): validate, then `resolveLinkTarget` routes it. */
+  /**
+   * A path from outside the app — a `yaseendocs://` link, Finder's Open With (files), `open -a`.
+   * A FOLDER is "Open Folder…" on it (YAZ-2556 D1): it goes to `openRecentBeside`, trailing slash
+   * off, whatever vault contains it and whatever `rootOverride` says. A file (E1, GRO-2171):
+   * validate, then `resolveLinkTarget` routes it.
+   */
   routeToFile(path: string, rootOverride?: string | null): void
   /** The unobtrusive can't-open surface (E1): restore + focus a live window, send `link:notice`. Never a dialog. */
   linkNotice(message: string): void
@@ -340,6 +346,38 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     win.webContents.send(CONTRACT.link.onNotice.channel, message)
   }
 
+  /** The one open-recent door (see `WindowManager.openRecentBeside`). A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1). */
+  const openRecentBeside = (path: string): boolean => {
+    // Beside never passes through the renderer's validating openRoot, so probe here: a dead
+    // folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
+    if (!host.dirExists(path)) {
+      store.removeRecent(path)
+      return false
+    }
+    // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
+    // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
+    noteUsed(path)
+    // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
+    // copy — LEAST recently focused first, so the most recently focused one ends on top (a
+    // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
+    const wanted = stripSlash(path)
+    const alreadyOpen = store
+      .get()
+      .windows.filter((w) => w.root !== null && stripSlash(w.root) === wanted)
+      .map((w) => ({ id: w.id, win: live.get(w.id) }))
+      .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
+    if (alreadyOpen.length > 0) {
+      const rank = (id: string): number => {
+        const at = focusOrder.indexOf(id)
+        return at === -1 ? Number.POSITIVE_INFINITY : at
+      }
+      for (const { win } of alreadyOpen.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
+      return true
+    }
+    openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
+    return true
+  }
+
   return {
     idFor,
 
@@ -380,36 +418,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         })
     },
 
-    openRecentBeside(path) {
-      // Beside never passes through the renderer's validating openRoot, so probe here: a dead
-      // folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
-      if (!host.dirExists(path)) {
-        store.removeRecent(path)
-        return false
-      }
-      // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
-      // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
-      noteUsed(path)
-      // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
-      // copy — LEAST recently focused first, so the most recently focused one ends on top (a
-      // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
-      const wanted = stripSlash(path)
-      const alreadyOpen = store
-        .get()
-        .windows.filter((w) => w.root !== null && stripSlash(w.root) === wanted)
-        .map((w) => ({ id: w.id, win: live.get(w.id) }))
-        .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
-      if (alreadyOpen.length > 0) {
-        const rank = (id: string): number => {
-          const at = focusOrder.indexOf(id)
-          return at === -1 ? Number.POSITIVE_INFINITY : at
-        }
-        for (const { win } of alreadyOpen.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
-        return true
-      }
-      openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
-      return true
-    },
+    openRecentBeside,
 
     closeWindow(id) {
       const win = live.get(id)
@@ -417,6 +426,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     routeToFile(path, rootOverride) {
+      // A FOLDER from outside — a link, or `open -a` — is "Open Folder…" on it
+      // (YAZ-2556 D1): the one open-recent door raises that vault's windows, or opens it. A link keeps
+      // a trailing slash, and the door keys the vault's bucket by the path it is given: slash off.
+      if (host.dirExists(path)) {
+        openRecentBeside(stripSlash(path))
+        return
+      }
       // Validate first (E1): a supported file kind and a live regular file. Anything off →
       // notice, never a dialog; renderer dispatch decides Markdown editor vs read-only viewer.
       if (fileKind(path) === null) {

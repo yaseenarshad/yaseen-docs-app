@@ -13,7 +13,7 @@
  *
  * Two groups (YAZ-2555 D1): the vaults that have a window stand first, under a small "Open" label;
  * then a hairline and "Not open". The labels are not rows — never focused, never highlighted. The
- * rows (A1) are the recents, plus every open vault (`openVaultRoots` over the cache's windows),
+ * rows (A1) are `listVaults`'s (shared with `yaseendocs vaults`, YAZ-2556 D2): the recents, plus every open vault,
  * plus every vault that has a number: each group is the recents in last-used order, then — with no
  * time, they have none — "Open" the open vaults that fell out of the recents, "Not open" the
  * numbered ones, in number order. A numbered row wears its key, `⌘<n>`, between the name and the
@@ -26,9 +26,9 @@
  * the row is disabled with "Folder not found" in the time slot and the panel STAYS open
  * (Welcome's behaviour), so the next choice is one keystroke away. `true` closes the panel.
  *
- * Names (YAZ-1974 D4): the trigger and every row show the vault's display name
- * (`storage.vaultName`, the folder name when none is set). The filter matches the display name
- * AND the folder name (D6) — one row per vault, at its better rank.
+ * Names (YAZ-1974 D4): the trigger and every row show the vault's display name, the folder name
+ * when none is set — the trigger through `storage.vaultName`, a row as `listVaults` names it. The
+ * filter matches the display name AND the folder name (D6) — one row per vault, at its better rank.
  *
  * The keyboard model (D7): ranking is `matchLinkCandidates` over those names (the `[[` picker's
  * ranking: exact, then prefix, then substring; an empty query is MRU order), and the ranked rows
@@ -63,7 +63,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { openVaultRoots } from '@shared/types'
+import type { VaultEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
@@ -93,18 +93,13 @@ export interface VaultSwitcherProps {
   onNotice: (message: string) => void
 }
 
-/** One vault as the panel ranks and draws it: `name` is its display name, `folder` its basename — the filter matches both (YAZ-1974 D6). */
-export interface VaultRow {
-  name: string
-  folder: string
-  path: string
-  /** Null for a vault that is not in the recents (YAZ-2555 A1): its time slot is empty. */
-  lastOpened: number | null
-  /** A window is on this vault (YAZ-2555 D1): it stands in the first group. */
-  open: boolean
-  /** The vault's number, 1–9, or null (YAZ-2555 D4): ⌘<key> goes to it. */
-  key: number | null
-}
+/**
+ * One vault as the panel ranks and draws it: `listVaults`'s row (YAZ-2556 D2) plus `folder`, its
+ * basename — the filter matches `name` (the display name) and `folder` (YAZ-1974 D6). `lastUsed`
+ * null is an empty time slot (a vault that is not in the recents, YAZ-2555 A1), `open` puts the row
+ * in the first group (D1), and `key` is its ⌘<key> badge (D4).
+ */
+export type VaultRow = VaultEntry & { folder: string }
 
 /** Where a vault's name stands — and so where "Set display name" turns it into a field (YAZ-1974 D5). */
 type RenameAt = 'header' | 'row'
@@ -173,11 +168,8 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   const openPanel = useCallback(() => {
     // Anchor = the `.sidebar__header` rect (the name slot's parent): the panel hangs off the whole header, flush with the sidebar (D5).
     const rect = slotRef.current?.parentElement?.getBoundingClientRect()
-    // The rows (YAZ-2555 A1): the recents, then the open vaults and the numbered ones (in number order) that are not among them.
-    const open = openVaultRoots(storage.getWindows())
-    const recents = new Map(storage.getRecentRoots().map((r) => [r.path, r.lastOpened]))
-    const paths = new Set([...recents.keys(), ...open, ...storage.keyedVaults().map((v) => v.path)])
-    const rows = [...paths].map((path) => ({ name: storage.vaultName(path), folder: basename(path), path, lastOpened: recents.get(path) ?? null, open: open.includes(path), key: storage.vaultKey(path) }))
+    // The rows (YAZ-2555 A1) are `listVaults`'s: the one list that `yaseendocs vaults` prints too (YAZ-2556 D2).
+    const rows = storage.listVaults().map((vault) => ({ ...vault, folder: basename(vault.path) }))
     setPanel({ rows, now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
     setQuery('')
     setMissing(new Set())
@@ -420,7 +412,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                 const here = shiftHeld && i === active && row.path !== root && !gone
                 const when = (
                   <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here ? ' vault-switcher__when--here' : ''}`}>
-                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : row.lastOpened === null ? '' : relativeTime(row.lastOpened, panel.now)}
+                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : row.lastUsed === null ? '' : relativeTime(row.lastUsed, panel.now)}
                   </span>
                 )
                 // A group's label stands above its first row (YAZ-2555 D1) — not a row itself, so outside the highlight's index space.

@@ -1,8 +1,9 @@
 /**
  * `yaseendocs` (YAZ-1617 🔒 D1, D4, D5): the door an agent uses to work with a page from the
- * shell — its comments, and its id and the ids it points at (YAZ-2293). Plain Node — this module
- * and its entry never import `electron`; the packaged shim runs it under `ELECTRON_RUN_AS_NODE=1`
- * with the app's own binary (VS Code's `code` pattern).
+ * shell — its comments, and its id and the ids it points at (YAZ-2293) — and to read the app's
+ * list of vaults (YAZ-2556 🔒 D2). Plain Node — this module and its entry never import
+ * `electron`; the packaged shim runs it under `ELECTRON_RUN_AS_NODE=1` with the app's own binary
+ * (VS Code's `code` pattern).
  *
  * It writes through the SAME `shared/comments.ts` the block uses, guarded the same way as the
  * renderer's `transformFile` (YAZ-1472 🔒 D8): fresh bytes, `expectedMtime`, one retry on
@@ -12,6 +13,7 @@
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
 import { readFile as readRaw, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
   addComment,
@@ -29,9 +31,11 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
-import { VAULT_CONFIG_DIR, isFolderSettingsPath } from '@shared/types'
+import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults } from '@shared/types'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
+import { parseState } from '../main/store'
+import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, idsOf, readPage } from '../main/vaultIndex/idSweep'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { scanFile, walk } from '../main/vaultIndex/scan'
@@ -51,9 +55,10 @@ export const USAGE = `usage:
   yaseendocs id       <page.md>
   yaseendocs links    <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
+  yaseendocs vaults   [--json]
   yaseendocs --help`
 
-export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, and when it is next due for review, from the shell.
+export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, when it is next due for review, and the app's list of vaults, from the shell.
 
 ${USAGE}
 
@@ -90,6 +95,12 @@ those folders after the links, each by id and the title and path of the folder i
 file, so this is the place to read it. Given a folder, \`due\` lists the pages due now under it,
 each by title and path, most overdue first (\`--json\` for the raw shape of either). Nothing is due
 in a vault until upkeep is turned on for it, in the app's Settings.
+
+\`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
+that is open or has a number. A line is the name, the folder, \`⌘<n>\` for number n, \`(open)\` for
+a window on it. \`--json\` gives \`path\`, \`name\` (display name, else folder name), \`key\` (1-9 or
+null), \`open\` and \`lastUsed\` (epoch ms, or null). It reads the app's state file and never
+writes it: with the app closed, \`open\` is a window the app opens again at its start.
 
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
@@ -247,12 +258,33 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.title}  ${q.path}\n`).join(''))
 }
 
+/**
+ * `vaults` (YAZ-2556 🔒 D2): the vaults the app knows — `listVaults`, over the app's state file as
+ * the store itself reads it (`parseState`) — in that function's order: the recents, last used first,
+ * then each other vault that is open or has a number. (The ⌘O panel draws the same rows and puts the
+ * open ones first.) It only READS: no file yet is no vaults, and a damaged one is refused and left
+ * for the app to move aside.
+ */
+async function vaults(json: boolean, io: Io): Promise<void> {
+  const file = join(userDataDir(process.env, process.platform, homedir()), STATE_FILE)
+  const text = await readRaw(file, 'utf8').catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return null
+    throw err
+  })
+  const state = text === null ? defaultAppState() : parseState(text)
+  if (state === null) throw new Error(`${file} is not a valid app state`)
+  const rows = listVaults(state)
+  if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+  else io.stdout(rows.length === 0 ? 'no vaults\n' : rows.map((v) => `${v.name}  ${v.path}${v.key === null ? '' : `  ⌘${v.key}`}${v.open ? '  (open)' : ''}\n`).join(''))
+}
+
 async function run(argv: readonly string[], io: Io): Promise<void> {
   const { verb, args, flags } = parse(argv)
   if (verb === '' || verb === 'help' || flags.has('--help') || flags.has('-h')) {
     io.stdout(HELP)
     return
   }
+  if (verb === 'vaults') return vaults(flags.has('--json'), io)
   if (verb === 'due') {
     if (args[0] === undefined) throw new Usage('due needs a page or a folder')
     return due(resolve(args[0]), flags.has('--json'), io)

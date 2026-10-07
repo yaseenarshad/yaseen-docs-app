@@ -8,6 +8,8 @@ import {
   defaultFolderState,
   defaultRightPanelIdentity,
   freeVaultKey,
+  keyedVaults,
+  listVaults,
   type AppState,
   type FolderState,
   type KeyedVault,
@@ -15,7 +17,7 @@ import {
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
-  type WindowEntry,
+  type VaultEntry,
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
@@ -92,8 +94,8 @@ export const storage = {
   },
 
   getRecentRoots: (): RecentRoots => state.recents,
-  /** Every window's entry (YAZ-2555 D1: the open vaults come from it). */
-  getWindows: (): readonly WindowEntry[] => state.windows,
+  /** Every vault the app knows, as the ⌘O panel lists it (YAZ-2556 D2): the shared `listVaults` over the cache — what `yaseendocs vaults` prints from the state file. */
+  listVaults: (): VaultEntry[] => listVaults(state),
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
@@ -120,10 +122,7 @@ export const storage = {
   /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */
   vaultKey: (root: string): number | null => folderOf(root).key,
   /** Every vault that has a number, in number order, by what the app calls it — who holds which key. */
-  keyedVaults: (): KeyedVault[] =>
-    Object.entries(state.folders)
-      .flatMap(([path, folder]) => (folder.key === null ? [] : [{ key: folder.key, path, name: folder.name ?? basename(path) }]))
-      .sort((a, b) => a.key - b.key),
+  keyedVaults: (): KeyedVault[] => keyedVaults(state.folders),
   /**
    * Give a vault its number, or with null take it away (D2). One vault per number: the cache takes
    * it from the vault that had it at once, as the store does in its own commit.
