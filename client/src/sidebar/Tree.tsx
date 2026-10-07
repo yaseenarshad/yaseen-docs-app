@@ -162,9 +162,9 @@ function TreeLevel({
   // The reorder gesture lives on the favorites' own rows alone — the top rows, or the rows under each
   // vault's row where the window has two or more (YAZ-2602 D5); a vault row and every deeper row drag nothing.
   const rowReorder = reorder !== undefined && (vaultRows.size === 0 ? depth === 0 : vaultRows.has(dirPath)) ? reorder : null
-  /** The vault a focused top row is in (YAZ-2602 D4, S19): said only where the window has two or more, and never on a vault row. */
+  /** The vault a focused top row is in (YAZ-2602 D4, S19): said only where the window has two or more. A vault row is in no vault's folder, so it says none. */
   const vaultTag = (path: string) => {
-    const name = depth > 0 || vaultRows.has(path) ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
+    const name = depth > 0 ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
     return name !== undefined && <span className="tree__vault">{name}</span>
   }
   // What a FILE row's drag does: move on disk (E1b) on an ordinary tree, reorder at depth 0 of a reorderable one, nothing below that.

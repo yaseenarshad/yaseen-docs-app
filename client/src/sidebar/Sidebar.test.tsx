@@ -4744,6 +4744,32 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.tree__vault')).toBeNull()
   })
 
+  it('a Favorites focus restored at launch waits for every vault\'s tree: a vault still loading prunes nothing (S23)', async () => {
+    const at = pair()
+    let land: (() => void) | undefined
+    vi.spyOn(storage, 'getFocusFavorites').mockReturnValue([`${at.a}/sub`, `${at.b}/docs`])
+    const { el, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens: 'favorites' }, (bridge) =>
+      bridge.tree.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (land = () => resolve({ root, tree: treeOf(root), generatedAt: 1 }))) : Promise.resolve({ root, tree: treeOf(root), generatedAt: 1 }))),
+    )
+    expect(topLabels(el)).toEqual(['sub'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    await act(async () => land?.())
+    expect(topLabels(el)).toEqual(['sub', 'docs'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+
+  it('"Expand all" on the Favorites tab opens the favorited folders of every vault; a vault row is not one of them, so none is stored as an open folder (S16)', async () => {
+    const { el, a, b, bridge, props } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/sub`], [at.b]: [`${at.b}/docs`] }))
+    const button = () => el.querySelector<HTMLButtonElement>('.sidebar__expand-all')
+    expect(button()?.getAttribute('aria-label')).toBe('Expand all')
+    act(() => button()?.click())
+    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`)]).toEqual(['true', 'true'])
+    expect(setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
+    act(() => button()?.click())
+    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`), isOpen(el, a), isOpen(el, b)]).toEqual(['false', 'false', 'true', 'true'])
+    expect(props.onSetVaultOpen).not.toHaveBeenCalled()
+  })
+
   it('the Favorites tab with two or more vaults: one row per vault that has a favorite that exists, its favorites below it in that vault\'s stored order; the row is the Files tab\'s vault row, closed and open with it (D5, S24)', async () => {
     const at = pair()
     const plain = at.b.replace('/work', '/plain')
@@ -4834,6 +4860,13 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/sub`, `${a}/a.md`]]])
     expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/docs`, `${b}/b.md`])
     expect(marker(el)).toBeNull()
+    // The second vault's order is its own file's.
+    drag(rowByPath(el, `${b}/docs`), 'dragstart')
+    drag(rowByPath(el, `${b}/b.md`), 'dragover', 1)
+    expect(rowByPath(el, `${b}/b.md`)?.classList.contains('tree__row--drop-after')).toBe(true)
+    drag(rowByPath(el, `${b}/b.md`), 'drop')
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(b, [`${b}/b.md`, `${b}/docs`])
+    expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/b.md`, `${b}/docs`])
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
@@ -4872,6 +4905,13 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await rerender({ vaults: [both[0]] })
     expect(allRows(el)).toEqual([`${at.a}/a.md`])
     expect(bridge.favorites.get).toHaveBeenCalledTimes(1)
+    // It took its list with it: back in the window, its group waits for its own read.
+    let answer: ((paths: string[]) => void) | undefined
+    bridge.favorites.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([`${at.a}/a.md`])))
+    await rerender({ vaults: both })
+    expect(allRows(el)).toEqual([at.a, `${at.a}/a.md`])
+    await act(async () => answer?.([`${at.b}/docs`]))
+    expect(allRows(el)).toEqual([at.a, `${at.a}/a.md`, at.b, `${at.b}/docs`])
   })
 
   it('the search lists the matches of every vault in one ranked list, a row naming its vault before its folder; each vault\'s index is read once, and its own watcher re-reads it alone (R2, S38)', async () => {
