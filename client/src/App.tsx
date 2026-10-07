@@ -861,7 +861,9 @@ export function App() {
    * the folder leaves the recents.
    */
   const dropVault = useCallback((gone: string) => {
-    if (live.current.roots.every((vault) => vault === gone)) {
+    // A read that failed after its vault left the window has nothing to drop, and nothing to say.
+    if (!live.current.roots.includes(gone)) return
+    if (live.current.roots.length === 1) {
       setSidebarRevealRequest(null)
       storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
       setRoots([])
