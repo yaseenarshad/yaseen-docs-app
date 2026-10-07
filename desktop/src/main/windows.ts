@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, stripSlash, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -80,13 +80,13 @@ export interface WindowHost {
 export interface WindowManager extends WindowLookup {
   /** One window per stored entry, bounds clamped; an empty state seeds a single Welcome window (D3). */
   restoreAll(): void
-  /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). */
+  /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
   /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
-   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`. Probes
+   * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, and the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main. Probes
    * the directory FIRST (GRO-2211): a dead folder is pruned from the MRU and opens nothing →
    * `false`. A live one is bumped to the top of the MRU, then (🔒 D9) every live window already
    * on that vault is RAISED — most recently focused on top — and nothing new opens; with none
@@ -160,9 +160,6 @@ const sameBounds = (a: WindowBounds, b: WindowBounds): boolean => a.x === b.x &&
 
 export type LinkTarget = { kind: 'existing'; id: string } | { kind: 'new'; root: string; file: string }
 
-/** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
-const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
-
 /** `root` is an ancestor directory of `path` (or its dirname) — by segment, so `/a/b` never contains `/a/bc/x.md`. */
 const rootContains = (root: string, path: string): boolean => {
   const r = stripSlash(root)
@@ -214,11 +211,27 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const focusOrder: string[] = []
   const noteFocused = (id: string): void => {
     const at = focusOrder.indexOf(id)
-    if (at !== -1) focusOrder.splice(at, 1)
+    if (at !== -1) {
+      // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
+      // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
+      // must not reorder the list. Not during a quit either (S36): each window destroyed hands focus to the next.
+      if (!quitting) noteUsed(entryOf(id)?.root ?? null)
+      focusOrder.splice(at, 1)
+    }
     focusOrder.unshift(id)
   }
 
   const entryOf = (id: string): WindowEntry | undefined => store.get().windows.find((w) => w.id === id)
+
+  /**
+   * Bump a window's vault to the top of the MRU (YAZ-2555 D5). Already on top → no write; a Welcome
+   * window (root null) is not a vault. Trailing slash off, like `resolveLinkTarget`: one row per vault.
+   */
+  const noteUsed = (root: string | null): void => {
+    if (root === null) return
+    const path = stripSlash(root)
+    if (store.get().recents[0]?.path !== path) store.pushRecent(path)
+  }
 
   /**
    * One handshake: send `app:flush`, resolve on `handleFlushed` from the same renderer or after
@@ -305,6 +318,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
+    // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
+    noteUsed(opts.root)
     open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
@@ -313,9 +328,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     win.focus()
   }
 
-  /** E1: restore + focus a live window and hand it the can't-open message. No live window → nothing to say it in. */
+  /**
+   * E1: restore + focus a live window and hand it the can't-open message. No live window → nothing to say it in.
+   * The window that had focus last comes first (YAZ-2555 S27): ⌘<n> on a folder that is gone says so
+   * in the window you are in, and raises no other vault's window (D5 would make that vault "last used").
+   */
   const linkNotice = (message: string): void => {
-    const win = [...live.values()].find((w) => !w.isDestroyed())
+    const win = [live.get(focusOrder[0]), ...live.values()].find((w) => w !== undefined && !w.isDestroyed())
     if (win === undefined) return
     focusWindow(win)
     win.webContents.send(CONTRACT.link.onNotice.channel, message)
@@ -368,8 +387,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         store.removeRecent(path)
         return false
       }
-      // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here.
-      store.pushRecent(path)
+      // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
+      // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
+      noteUsed(path)
       // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
       // copy — LEAST recently focused first, so the most recently focused one ends on top (a
       // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.

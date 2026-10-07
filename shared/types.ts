@@ -512,6 +512,24 @@ export function addRecentRoot(list: RecentRoots, path: string, now: number): Rec
   return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
 }
 
+/** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
+export const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
+
+/**
+ * The open vaults (YAZ-2555 D1): each window's root, once per vault, Welcome windows (root null)
+ * left out. The vault switcher's list reads it; main's door (`openRecentBeside`) has its own filter
+ * over the live windows, and both compare roots through `stripSlash`.
+ */
+export function openVaultRoots(windows: readonly { root: string | null }[]): string[] {
+  const roots: string[] = []
+  for (const w of windows) {
+    if (w.root === null) continue
+    const root = stripSlash(w.root)
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
+}
+
 /** Collapsed outline fold keys per file (see client `outlineFoldKeys.ts`) are capped at this many. */
 export const MAX_FOLD_KEYS_PER_FILE = 500
 
@@ -526,6 +544,18 @@ export function cleanVaultName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const name = [...raw.trim()].slice(0, MAX_VAULT_NAME).join('')
   return name === '' ? null : name
+}
+
+/** A vault's number (YAZ-2555 D2): a whole number 1–9, else null. */
+export function cleanVaultKey(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 9 ? raw : null
+}
+
+/** A vault that has a number (YAZ-2555 D2), as the Window menu and the "Set shortcut" flyout list it: `name` is its display name, else its folder name. */
+export interface KeyedVault {
+  key: number
+  path: string
+  name: string
 }
 
 /** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write. */
@@ -722,10 +752,17 @@ export interface FolderState {
   baseGroups: Record<string, string[]>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
+  /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
+  key: number | null
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key'>>
+
+/** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
+export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
+  return Object.fromEntries(Object.entries(folders).map(([root, folder]) => [root, folder.key === key ? { ...folder, key: null } : folder]))
+}
 
 /**
  * The whole persisted app state — one user-global JSON file, owned by the main process
@@ -749,7 +786,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------

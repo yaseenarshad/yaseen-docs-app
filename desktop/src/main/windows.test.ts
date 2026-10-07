@@ -360,6 +360,10 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(store.get().recents[0]?.path).toBe('/v/other')
     expect(store.get().windows).toHaveLength(1)
     expect(store.get().windows[0].sidebarLens).toBe('favorites') // raising a window never touches its lens (YAZ-1846 B)
+    // The vault is on top now, so going to it again writes nothing (YAZ-2555 D5, S25): the door bumps through `noteUsed`.
+    const before = store.get()
+    expect(manager.openRecentBeside('/v/other')).toBe(true)
+    expect(store.get()).toBe(before)
   })
 
   it('D9: two windows on the vault, focus history A then B → raised A then B, so B (most recently focused) ends on top', () => {
@@ -428,14 +432,92 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
     expect(store.get().windows.find((w) => w.id === 'w1')?.root).toBe('/v/notes')
   })
 
-  it('a dead folder: pruned from the MRU, no window, returns false (GRO-2211)', () => {
+  it('a dead folder: pruned from the MRU, no window, returns false (GRO-2211); its number stays (YAZ-2555 A3, S27)', () => {
     store.pushRecent('/v/gone', 1)
     store.pushRecent('/v/notes', 2)
+    store.setFolder('/v/gone', { key: 3 })
     const { host, created } = makeHost([AREA], () => true, (p) => p !== '/v/gone')
     expect(createWindowManager(store, host).openRecentBeside('/v/gone')).toBe(false)
     expect(created).toHaveLength(0)
     expect(store.get().windows).toEqual([])
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v/notes'])
+    expect(store.get().folders['/v/gone']?.key).toBe(3)
+  })
+})
+
+describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'s window bumps it in the MRU)', () => {
+  const mru = (): string[] => store.get().recents.map((r) => r.path)
+
+  /** Stored windows restored over a seeded MRU (most recent first); the store's commits are counted from the restore on. */
+  function seedFocus(windows: Array<[id: string, root: string | null]>, recents: string[]) {
+    for (const [i, p] of [...recents].reverse().entries()) store.pushRecent(p, i)
+    for (const [id, root] of windows) store.upsertWindow({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    let commits = 0
+    store.onChange(() => commits++)
+    return { manager, wins: created.map((c) => c.win), commits: () => commits }
+  }
+
+  it('S34/S35: a window\'s FIRST focus does not bump its vault; a later one does, stamped with the time of use (S38); already on top → no commit', () => {
+    const { wins: [a, b], commits } = seedFocus([['a', '/v/a'], ['b', '/v/b']], ['/v/a', '/v/b'])
+    b.emit('focus') // the launch focusing it, not a use
+    a.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(0)
+
+    vi.setSystemTime(5000)
+    b.emit('focus') // a click on B's window, or ⌘`
+    expect(store.get().recents).toEqual([{ path: '/v/b', lastOpened: 5000 }, { path: '/v/a', lastOpened: 1 }])
+    expect(commits()).toBe(1)
+    b.emit('focus') // already on top
+    expect(commits()).toBe(1)
+    a.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(2)
+  })
+
+  it('S36: a relaunch restores three windows and focuses each in turn → `recents` is as the quit left it', () => {
+    const { wins, commits } = seedFocus([['a', '/v/a'], ['b', '/v/b'], ['c', '/v/c']], ['/v/b', '/v/c', '/v/a'])
+    for (const w of wins) w.emit('focus')
+    expect(mru()).toEqual(['/v/b', '/v/c', '/v/a'])
+    expect(commits()).toBe(0)
+  })
+
+  it('S36: a quit does not reorder `recents` — once flushAllForQuit has started, the focus macOS hands the next window as each one is destroyed makes no commit', async () => {
+    const { manager, wins: [a, b], commits } = seedFocus([['a', '/v/a'], ['b', '/v/b']], ['/v/a', '/v/b'])
+    for (const w of [b, a]) w.emit('focus') // each one's first focus; A is in front
+    void manager.flushAllForQuit()
+    await vi.advanceTimersByTimeAsync(0)
+    manager.handleFlushed(a.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(a.isDestroyed()).toBe(true)
+    b.emit('focus') // not a first focus: without the guard this is a use of B
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(0)
+  })
+
+  it('S37: focus moving between two windows of ONE vault (a trailing slash on a stored root is the same vault), or onto a Welcome window, makes no write', () => {
+    const { wins: [a1, a2, welcome], commits } = seedFocus([['a1', '/v/a'], ['a2', '/v/a/'], ['w', null]], ['/v/a', '/v/b'])
+    for (const w of [a1, a2, welcome]) w.emit('focus') // each one's first focus
+    for (const w of [a2, a1, welcome, a2]) w.emit('focus')
+    expect(mru()).toEqual(['/v/a', '/v/b'])
+    expect(commits()).toBe(0)
+  })
+
+  it('openWindow on a vault is a use of it: bumped (already on top → `recents` untouched), and the new window\'s first focus adds nothing; a Welcome window is not a vault', () => {
+    store.pushRecent('/v/b', 1)
+    store.pushRecent('/v/a', 2)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.openWindow({ root: '/v/b', file: null })
+    expect(mru()).toEqual(['/v/b', '/v/a'])
+    const bumped = store.get().recents
+    manager.openWindow({ root: '/v/b', file: '/v/b/x.md' }) // already on top
+    manager.openWindow({ root: null, file: null })
+    for (const c of created) c.win.emit('focus')
+    expect(store.get().recents).toBe(bumped) // the same snapshot: nothing wrote `recents` again
   })
 })
 
@@ -660,12 +742,19 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(sentOn(w1, CONTRACT.link.onOpenFile.channel)).toHaveLength(0)
   })
 
-  it('linkNotice (the parse-failure path) restores + focuses a live window and delivers the message', () => {
-    const { manager, w1 } = seedRouting()
+  it('linkNotice (the parse-failure path) restores + focuses a live window and delivers the message: the window that had focus last (YAZ-2555 S27), else the first live one', () => {
+    const { manager, w1, w2 } = seedRouting()
     w1.minimized = true
     manager.linkNotice("Can't open link")
     expect(w1.isMinimized()).toBe(false)
     expect(w1.focusCount).toBe(1)
     expect(w1.webContents.send).toHaveBeenCalledWith(CONTRACT.link.onNotice.channel, "Can't open link")
+
+    // You are in w2: the notice shows there, and w1 (a different vault) is not raised — D5 would make it "last used".
+    w2.emit('focus')
+    manager.linkNotice("Can't open Work: folder not found")
+    expect(sentOn(w2, CONTRACT.link.onNotice.channel)).toEqual([[CONTRACT.link.onNotice.channel, "Can't open Work: folder not found"]])
+    expect([w1.focusCount, w2.focusCount]).toEqual([1, 1])
+    expect(sentOn(w1, CONTRACT.link.onNotice.channel)).toHaveLength(1)
   })
 })

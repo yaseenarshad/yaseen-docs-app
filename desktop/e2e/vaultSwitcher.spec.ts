@@ -12,9 +12,14 @@
  * right-click menu reaches the header, the OS window title and `folders[root].name` on disk,
  * survives quit → relaunch, and "Reset to folder name" undoes all three.
  *
- * ⌘O is a native accelerator Playwright cannot press, so step 2 drives its menu item by id
- * (`menu.file.switch-vault`); every other open is the trigger's own click. Two vaults are seeded in
- * `recents` under FIXED folder names so the titles and the rows read as sentences.
+ * A vault's number (YAZ-2555 D2, D3) is the last claim: the Window menu's row for vault 2 goes
+ * through the same door from ANOTHER window — a minimized window is restored and comes to the
+ * front, and nothing new opens (S23).
+ *
+ * ⌘O and ⌘2 are native accelerators Playwright cannot press, so steps 2 and 6 drive their menu
+ * items by id (`menu.file.switch-vault`, `menu.window.vault.2`); every other open is the trigger's
+ * own click. Two vaults are seeded in `recents` under FIXED folder names so the titles and the rows
+ * read as sentences.
  * Same harness as the rest of the suite: temp `--user-data-dir`, copies of the generated fixture,
  * `vault-switcher-` step screenshots, serial.
  */
@@ -23,7 +28,7 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState } from '../../shared/types'
-import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, lensTab, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, editorOf, extraWindow, launchApp, lensTab, multiWindowState, quitApp, readState, SEED_FILE, seededState, shoot, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -35,8 +40,8 @@ const DISPLAY = 'Work Vault'
 /** Bodies of the fixture's files (helpers.buildFixtureVault). */
 const IDEAS_BODY = 'synthetic-idea-body'
 
-/** The OS window title contract (client/src/lib/windowTitle.ts): `<file — vault NAME>`. */
-const titleOf = (file: string, vaultName: string): string => `${path.basename(file).replace(/\.md$/, '')} — ${vaultName}`
+/** The OS window title contract (client/src/lib/windowTitle.ts): `<vault NAME — file>`, the vault first (YAZ-2555 D6). */
+const titleOf = (file: string, vaultName: string): string => `${vaultName} — ${path.basename(file).replace(/\.md$/, '')}`
 
 let userData: string
 let vaultSrc: string
@@ -59,6 +64,8 @@ const filter = (w: Page) => w.locator('.vault-switcher__filter')
 const rows = (w: Page) => w.locator('.vault-switcher__rows .vault-switcher__row')
 const rowNames = (w: Page) => rows(w).locator('.vault-switcher__name')
 const rowNamed = (w: Page, name: string) => rows(w).filter({ has: w.locator('.vault-switcher__name', { hasText: new RegExp(`^${name}$`) }) })
+/** The group labels (YAZ-2555 D1): "Open" above the vaults that have a window, "Not open" above the others. */
+const groupLabels = (w: Page) => w.locator('.vault-switcher__rows .vault-switcher__label')
 /** The ONE highlighted row (D7) — a vault row or the Open folder… row. */
 const highlighted = (w: Page) => w.locator('.vault-switcher__row--active')
 const openFolderRow = (w: Page) => w.locator('.vault-switcher__open')
@@ -86,9 +93,16 @@ function twoVaultState(): AppState {
     { path: vaultA, lastOpened: now },
     { path: vaultB, lastOpened: now - 60_000 },
   ]
-  state.folders[vaultB] = { expanded: [], lastFile: path.join(vaultB, 'Ideas.md'), folds: {}, baseGroups: {}, name: null }
+  state.folders[vaultB] = { expanded: [], lastFile: path.join(vaultB, 'Ideas.md'), folds: {}, baseGroups: {}, name: null, key: null }
   return state
 }
+
+/** The window of state entry `winId` as main sees it: minimized or not, and whether it is the focused one — in front. */
+const windowIs = (a: ElectronApplication, winId: string): Promise<{ minimized: boolean; focused: boolean } | null> =>
+  a.evaluate(({ BrowserWindow }, id) => {
+    const w = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes(`win=${id}`))
+    return w === undefined ? null : { minimized: w.isMinimized(), focused: w.isFocused() }
+  }, winId)
 
 // ---------- lifecycle ----------
 
@@ -167,7 +181,12 @@ test('step 2 — ⌘O then ⏎ opens the other vault BESIDE, on its remembered f
   // opens nothing. The panel closing is the door's `true`; the count is read after it, when any
   // third window would already exist.
   await openPanel(win)
-  await expect(rowNames(win)).toHaveText([BETA, ALPHA]) // the MRU bump, drawn
+  // Both vaults have a window now, so both rows stand under "Open" and there is no "Not open" group
+  // (YAZ-2555 D1). Their ORDER is not asserted: it is last-used order, and a real focus on Alpha's
+  // window since Beta's opened is a use (D5) — whether one landed is the OS's call. The highlight
+  // does not depend on it: the first row that is not THIS window's vault is Beta either way.
+  await expect(groupLabels(win)).toHaveText(['Open'])
+  await expect.poll(async () => (await rowNames(win).allTextContents()).sort()).toEqual([ALPHA, BETA])
   await expect(highlighted(win)).toContainText(BETA)
   await win.keyboard.press('Enter')
   await expect(panel(win)).toHaveCount(0)
@@ -211,7 +230,7 @@ test('step 4 — "Set display name" from the header menu renames the header, the
   // The header IS the current vault (YAZ-1798): its menu has the middle three groups only — no
   // "Open in this window", no "Remove", and no "Reset" while no display name is set (YAZ-1974 D5).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Set display name').click()
 
   // The name becomes a field WHERE it stood — the header — the folder name as its placeholder (D5).
@@ -242,11 +261,49 @@ test('step 5 — the display name survives quit → relaunch; "Reset to folder n
 
   // With a display name set the menu gains "Reset to folder name" — never "Rename" (D5).
   await trigger(win).click({ button: 'right' })
-  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Reset to folder name', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  await expect(vaultMenuItems(win)).toHaveText(['Set display name', 'Reset to folder name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   await vaultMenuItem(win, 'Reset to folder name').click()
   await expect(headerName(win)).toHaveText(BETA)
   await expect.poll(() => win.title()).toBe(titleOf('Ideas.md', BETA))
   await expect.poll(async () => (await readState(userData)).folders[vaultB]?.name).toBeNull()
   await shoot(win, 'vault-switcher-08-name-reset')
+  await quitApp(app)
+})
+
+// ---------------------------------------------------------------- ⌘<n>: the Window menu's vault row
+
+test('step 6 — ⌘2 from another window restores vault 2\'s minimized window and brings it to the front; nothing new opens', async () => {
+  // Both vaults open, one window each, and Beta has number 2 (`folders[root].key`, YAZ-2555 D2).
+  const state = multiWindowState(
+    [
+      { id: 'w1', root: vaultA, file: path.join(vaultA, SEED_FILE) },
+      { id: 'w2', root: vaultB, file: path.join(vaultB, 'Ideas.md') },
+    ],
+    [vaultA, vaultB],
+  )
+  state.folders[vaultB].key = 2
+  app = await launchApp({ userData, seedState: state })
+  win = await appWindow(app, 'w1')
+  const winB = await appWindow(app, 'w2')
+  await expect.poll(() => win.title()).toBe(titleOf(SEED_FILE, ALPHA))
+  await expect.poll(() => winB.title()).toBe(titleOf('Ideas.md', BETA))
+  expect(await windowCount(app)).toBe(2)
+
+  // Beta's window goes to the Dock — the case ⌘` cannot reach (the reason for the key).
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().includes('win=w2'))
+      ?.minimize()
+  })
+  await expect.poll(async () => (await windowIs(app, 'w2'))?.minimized).toBe(true)
+
+  // ⌘2 is the Window menu's row for vault 2 (D3), pressed from Alpha's window: main's one door
+  // restores Beta's window and raises it (S23) — it never asks the focused renderer (A5).
+  await clickMenuItem(app, 'menu.window.vault.2', 'w1')
+  await expect.poll(() => windowIs(app, 'w2')).toEqual({ minimized: false, focused: true })
+  // RAISE, not copy (🔒 D9): read after the raise, when any third window would already exist.
+  expect(await windowCount(app)).toBe(2)
+  await expect.poll(async () => (await readState(userData)).windows.map((w) => w.id)).toEqual(['w1', 'w2'])
+  await shoot(winB, 'vault-switcher-09-vault-key')
   await quitApp(app)
 })

@@ -34,6 +34,9 @@ describe('HOTKEYS source of truth', () => {
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘B')?.label).toMatch(/outside editing surfaces/i)
     // ⌘O (YAZ-1767 D8): the switcher's two verbs, filter then open — in a NEW window, never in place.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘O')?.label).toMatch(/switch vault.*filter.*new window/i)
+    // ⌘1 … ⌘9 (YAZ-2555 D3, S33): right below ⌘O, and the label says where a vault gets its number.
+    expect(keys[keys.indexOf('⌘O') + 1]).toBe('⌘1 … ⌘9')
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘1 … ⌘9')?.label).toMatch(/vault with that number.*right-click a vault/i)
     // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback — the
     // order matters, so the label has to name both and in that order.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧C')?.label).toMatch(/selection.*else the open file/i)
@@ -59,9 +62,9 @@ describe('HOTKEYS source of truth', () => {
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
     // Copy path is that menu's one copy item (YAZ-2420 🔒 D22, D31), so the tip names no other.
     expect(byKeys('Right-click file')?.label).toMatch(/Copy path, New note/)
-    // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5).
+    // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5) and the number (YAZ-2555 D2).
     expect(byKeys('Right-click vault')?.label).toMatch(/Open in this window/)
-    expect(byKeys('Right-click vault')?.label).toMatch(/Set display name/)
+    expect(byKeys('Right-click vault')?.label).toMatch(/Set display name, Set shortcut/)
     // Multi-select (YAZ-1336 🔒 D2 → YAZ-1337): ⇧-click toggles rows, and the tip has to say what
     // that is FOR — the two plural items a right-click then offers.
     expect(byKeys('⇧-click file or folder')?.label).toMatch(/multi-selection/i)

@@ -53,8 +53,8 @@ const EXTERNAL_BODY = 'external-overwrite-b2e'
 const IDEAS_BODY = 'synthetic-idea-body'
 const ROADMAP_BODY = 'synthetic-roadmap-body'
 
-/** The OS window title contract (client/src/lib/windowTitle.ts): `<file — folder>`. */
-const titleOf = (root: string, file: string): string => `${path.basename(file).replace(/\.md$/, '')} — ${path.basename(root)}`
+/** The OS window title contract (client/src/lib/windowTitle.ts): `<folder — file>`, the vault first (YAZ-2555 D6). */
+const titleOf = (root: string, file: string): string => `${path.basename(root)} — ${path.basename(file).replace(/\.md$/, '')}`
 
 let userData: string
 let vaultSrc: string

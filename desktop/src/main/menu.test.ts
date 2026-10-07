@@ -6,7 +6,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 import { defaultRightPanelIdentity, type RecentRoots, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
-import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild, type ContextMenuActions, type MenuHandlers, type MenuHost } from './menu'
+import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -17,6 +17,7 @@ const noopHandlers = (): MenuHandlers => ({
   switchVault: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
+  goToVault: vi.fn(),
   search: vi.fn(),
   settings: vi.fn(),
   closeTab: vi.fn(),
@@ -33,8 +34,8 @@ const RECENTS: RecentRoots = [
   { path: '/vaults/old', lastOpened: 1 },
 ]
 
-function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers()) {
-  return buildMenuTemplate({ recents, isDev }, handlers)
+function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers(), keyedVaults: MenuInputs['keyedVaults'] = []) {
+  return buildMenuTemplate({ recents, keyedVaults, isDev }, handlers)
 }
 
 function menuOf(template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] {
@@ -167,7 +168,7 @@ describe('buildMenuTemplate', () => {
     expect(vi.mocked(handlers.zoom).mock.calls).toEqual([[0], [1], [1], [-1]])
   })
 
-  it('Window menu: role window (macOS window list) with minimize / zoom, the tab-switching items, front', () => {
+  it('Window menu: role window (macOS window list) with minimize / zoom, the tab-switching items, front — no vault has a number, so no row and no extra separator (YAZ-2555 S26)', () => {
     const handlers = noopHandlers()
     const top = build(RECENTS, false, handlers).find((m) => m.label === 'Window')
     expect(top?.role).toBe('window')
@@ -216,6 +217,32 @@ describe('buildMenuTemplate', () => {
     expect(prevAlt?.acceleratorWorksWhenHidden).toBe(true)
     click(prevAlt)
     expect(handlers.prevTab).toHaveBeenCalledTimes(2)
+  })
+
+  it('Window menu lists the numbered vaults above front (YAZ-2555 D3, S32): one row each, by name, ⌘<its number>, then one separator; a click hands the path and the name to goToVault; a `&` in a label is written `&&`', () => {
+    const handlers = noopHandlers()
+    const keyed = [
+      { key: 2, path: '/vaults/work', name: 'Work' },
+      { key: 9, path: '/vaults/notes', name: 'notes' },
+    ]
+    const items = menuOf(build(RECENTS, false, handlers, keyed), 'Window')
+    // The rows stand in the order they were given (number order is `menuKeyedVaults`' job).
+    expect(items.slice(items.findIndex((i) => i.id === 'menu.window.prev-tab-alt') + 1).map((i) => [i.role ?? i.id ?? i.type, i.label, i.accelerator])).toEqual([
+      ['separator', undefined, undefined],
+      ['menu.window.vault.2', 'Work', 'CmdOrCtrl+2'],
+      ['menu.window.vault.9', 'notes', 'CmdOrCtrl+9'],
+      ['separator', undefined, undefined],
+      ['front', undefined, undefined],
+    ])
+    click(items.find((i) => i.id === 'menu.window.vault.9'))
+    click(items.find((i) => i.id === 'menu.window.vault.2'))
+    expect(vi.mocked(handlers.goToVault).mock.calls).toEqual([['/vaults/notes', 'notes'], ['/vaults/work', 'Work']])
+    // The menu owns the key (S28): a plain click item, never a role, and nothing else in the bar has ⌘1–⌘9.
+    const accelerators = build(RECENTS, true, handlers, keyed).flatMap((m) => (m.submenu as MenuItemConstructorOptions[]).flatMap((i) => [i, ...((i.submenu as MenuItemConstructorOptions[] | undefined) ?? [])]).map((i) => i.accelerator))
+    expect(accelerators.filter((a) => /^CmdOrCtrl\+[1-9]$/.test(String(a)))).toEqual(['CmdOrCtrl+2', 'CmdOrCtrl+9'])
+    // Electron reads a single `&` in a label as a mnemonic mark and drops it: a vault row and an Open Recent row write it `&&`.
+    const amp = build([{ path: '/vaults/R&D', lastOpened: 1 }], false, handlers, [{ key: 1, path: '/vaults/R&D', name: 'R&D' }])
+    expect([...(menuOf(amp, 'File').find((i) => i.id === 'menu.file.open-recent')?.submenu as MenuItemConstructorOptions[]), ...menuOf(amp, 'Window').filter((i) => i.id === 'menu.window.vault.1')].map((i) => i.label)).toEqual(['/vaults/R&&D', 'R&&D'])
   })
 
   it('Help menu: role help, GitHub link item', () => {
@@ -384,8 +411,9 @@ afterEach(async () => {
 
 const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
-function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }) {
-  const windows = { idFor: vi.fn(), duplicateWindow: vi.fn() }
+/** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
+function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
+  const windows = { idFor: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
@@ -478,6 +506,26 @@ describe('createMenuHandlers', () => {
     expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onOpenRoot.channel, '/vaults/work')
   })
 
+  it('goToVault goes through the one open-recent door in main, never through the focused renderer (YAZ-2555 D3, A5); a folder that is gone gets the passive notice (S27)', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.goToVault('/vaults/work', 'Work')
+    expect(windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
+    expect(windows.linkNotice).not.toHaveBeenCalled()
+    expect(wc.send).not.toHaveBeenCalled()
+
+    // No focused window at all (every window minimized, S30): the door is still called.
+    const unfocused = makeHandlers(undefined)
+    unfocused.handlers.goToVault('/vaults/work', 'Work')
+    expect(unfocused.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
+
+    const gone = makeHandlers(wc, false)
+    gone.handlers.goToVault('/vaults/work', 'Work')
+    expect(gone.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work')
+    expect(gone.windows.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open Work: folder not found")
+    expect(wc.send).not.toHaveBeenCalled()
+  })
+
   it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers } = makeHandlers(wc)
@@ -544,11 +592,51 @@ describe('subscribeMenuRebuild', () => {
     expect(rebuild).toHaveBeenCalledTimes(2)
   })
 
+  it('rebuilds when a vault row changes — a number or a numbered vault\'s name — and not on another folder write (YAZ-2555 D3, S14–S17, S22, S32)', () => {
+    const rebuild = vi.fn()
+    subscribeMenuRebuild(store, rebuild)
+    const rows = () => menuKeyedVaults(store.get())
+    expect(rows()).toEqual([])
+
+    // A number makes a row (S14); the rows are in number order, not in the order they were given.
+    store.setFolder('/vaults/work', { key: 5 })
+    store.setFolder('/vaults/notes', { key: 1, name: 'Notes' })
+    expect(rebuild).toHaveBeenCalledTimes(2)
+    expect(rows()).toEqual([
+      { key: 1, path: '/vaults/notes', name: 'Notes' },
+      { key: 5, path: '/vaults/work', name: 'work' },
+    ])
+
+    // `state.folders` is a new object on each of these writes, and no row changed: no rebuild.
+    store.setFolder('/vaults/work', { lastFile: '/vaults/work/a.md', expanded: ['/vaults/work/sub'] })
+    store.setFolds('/vaults/work', '/vaults/work/a.md', ['k1'])
+    store.setFolder('/vaults/old', { name: 'Archive' })
+    store.setFolder('/vaults/work', { key: 5 })
+    expect(rebuild).toHaveBeenCalledTimes(2)
+
+    // A numbered vault's display name is its row's label (S22); reset → the folder's name again.
+    store.setFolder('/vaults/work', { name: 'Work' })
+    expect(rebuild).toHaveBeenCalledTimes(3)
+    expect(rows()[1]).toEqual({ key: 5, path: '/vaults/work', name: 'Work' })
+    store.setFolder('/vaults/notes', { name: null })
+    expect(rebuild).toHaveBeenCalledTimes(4)
+    expect(rows()[0]).toEqual({ key: 1, path: '/vaults/notes', name: 'notes' })
+
+    // A number that moves (S15) is one commit, so one rebuild; a cleared number (S17) drops the row.
+    store.setFolder('/vaults/old', { key: 5 })
+    expect(rebuild).toHaveBeenCalledTimes(5)
+    expect(rows().map((v) => [v.key, v.name])).toEqual([[1, 'notes'], [5, 'Archive']])
+    store.setFolder('/vaults/notes', { key: null })
+    expect(rebuild).toHaveBeenCalledTimes(6)
+    expect(rows().map((v) => v.path)).toEqual(['/vaults/old'])
+  })
+
   it('returns an unsubscribe', () => {
     const rebuild = vi.fn()
     const off = subscribeMenuRebuild(store, rebuild)
     off()
     store.pushRecent('/vaults/notes')
+    store.setFolder('/vaults/notes', { key: 1 })
     expect(rebuild).not.toHaveBeenCalled()
   })
 })

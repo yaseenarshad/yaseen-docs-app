@@ -7,7 +7,7 @@ import { isSettings, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name`, each type-checked. */
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key`, each type-checked. */
 function requireFolderPatch(raw: unknown): FolderPatch {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
   const patch: FolderPatch = {}
@@ -20,6 +20,11 @@ function requireFolderPatch(raw: unknown): FolderPatch {
   if (raw.name !== undefined) {
     if (raw.name !== null && typeof raw.name !== 'string') throw new BridgeFailure('BAD_REQUEST', "'name' must be a string or null")
     patch.name = raw.name
+  }
+  // The vault's number (YAZ-2555 D2): the store keeps a whole number 1–9 and gives each number to one vault.
+  if (raw.key !== undefined) {
+    if (raw.key !== null && typeof raw.key !== 'number') throw new BridgeFailure('BAD_REQUEST', "'key' must be a number or null")
+    patch.key = raw.key
   }
   return patch
 }

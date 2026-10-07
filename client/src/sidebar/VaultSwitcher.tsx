@@ -4,12 +4,20 @@
  * panel it drops is a `ContextMenuSurface` hung off the header's own rect (D5), flush with the
  * sidebar and at least as wide — wider when a name needs it, so no name is ever cut (YAZ-1974 D7).
  * Its first element is the filter input, autofocused, query reset on every open (D7);
- * below it every recent vault as ONE line — name, then relative time (YAZ-1974 D2) — the CURRENT
+ * below it every vault as ONE line — name, then relative time (YAZ-1974 D2) — the CURRENT
  * vault included and marked `aria-current` (D3); and LAST, under a hairline, "Open folder…" — the
  * folder picker (D4), which opens the picked folder beside like a vault row does (YAZ-1914
  * amended D4 — it was in place). Two vaults can share a name, so the full path is one hover away:
  * a row's ⓘ, shown while the row is hovered, draws the WHOLE path wrapped at its slashes in a
  * tooltip portalled to <body> — the panel's scroll box never clips it. Mouse-only, by design.
+ *
+ * Two groups (YAZ-2555 D1): the vaults that have a window stand first, under a small "Open" label;
+ * then a hairline and "Not open". The labels are not rows — never focused, never highlighted. The
+ * rows (A1) are the recents, plus every open vault (`openVaultRoots` over the cache's windows),
+ * plus every vault that has a number: each group is the recents in last-used order, then — with no
+ * time, they have none — "Open" the open vaults that fell out of the recents, "Not open" the
+ * numbered ones, in number order. A numbered row wears its key, `⌘<n>`, between the name and the
+ * ⓘ (D4), always: ⌘<n> works with the panel up or down, so nothing is held to see it.
  *
  * ONE rule for every vault row (D1/D3): activating it — click or ⏎ — asks main's one open-recent
  * door, `window.openRecent(path)`, which brings that vault to the front: its open windows raised
@@ -23,9 +31,10 @@
  * AND the folder name (D6) — one row per vault, at its better rank.
  *
  * The keyboard model (D7): ranking is `matchLinkCandidates` over those names (the `[[` picker's
- * ranking: exact, then prefix, then substring; an empty query is MRU order). One highlighted row;
+ * ranking: exact, then prefix, then substring; an empty query is MRU order), and the ranked rows
+ * are then put in the two groups (YAZ-2555 A6) — a group with no match shows no label. One highlighted row;
  * with an EMPTY query it starts on the first row that is NOT the current vault — so ⌘O ⏎ jumps to
- * the last-used OTHER vault, like ⌘Tab — with a typed query on the top match, and with no match on
+ * the last-used OTHER vault, an open one first, like ⌘Tab — with a typed query on the top row, and with no match on
  * Open folder…. ↑/↓ clamp at both ends (the `[[` picker's no-wrap rule), hover moves it too, ⏎
  * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8), and
  * while ⇧ is held the highlighted row says so: "Open here" in its time slot (D9) — Esc
@@ -33,7 +42,9 @@
  * it is visible whatever the query; a query with no vault match shows "No matching vaults" above it.
  *
  * ⌘O (D8): App bumps `openRequest`; each new value toggles the panel — opens it with the filter focused, or closes it.
- * Rows are read fresh from `storage.getRecentRoots()` on every open, never cached across opens.
+ * Rows are read fresh from `storage` on every open, never cached across opens. The panel also closes
+ * when its window loses focus (YAZ-2555 A4): ⌘<n> can take you to another window, and a panel left
+ * up behind would show an old list. A row's menu and rename field go with it.
  *
  * Right-click (YAZ-1798): the trigger (= the current vault) and every live row open the vault
  * menu — `buildVaultMenuSections` drawn by the sidebar's own `ContextMenu`. "Open in this window"
@@ -45,9 +56,14 @@
  * the header or the row, a `<div>` in place of the `<button>` meanwhile. ⏎ or blur saves, Esc
  * cancels, an empty field is the folder name again; the field is the top layer while it stands:
  * Esc and click-away end it alone, and a click on another row only ends it, never opens a vault.
+ *
+ * "Set shortcut" (YAZ-2555 D2) gives the vault a number, 1–9, in the same menu — the header's or a
+ * row's: `storage.setVaultKey`, one vault per number — and the open panel's badges follow at once,
+ * the one on the vault that lost the number too. "Remove from recent vaults" clears it (A2).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { openVaultRoots } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
@@ -77,12 +93,17 @@ export interface VaultSwitcherProps {
   onNotice: (message: string) => void
 }
 
-/** One recent vault as the panel ranks and draws it: `name` is its display name, `folder` its basename — the filter matches both (YAZ-1974 D6). */
+/** One vault as the panel ranks and draws it: `name` is its display name, `folder` its basename — the filter matches both (YAZ-1974 D6). */
 export interface VaultRow {
   name: string
   folder: string
   path: string
-  lastOpened: number
+  /** Null for a vault that is not in the recents (YAZ-2555 A1): its time slot is empty. */
+  lastOpened: number | null
+  /** A window is on this vault (YAZ-2555 D1): it stands in the first group. */
+  open: boolean
+  /** The vault's number, 1–9, or null (YAZ-2555 D4): ⌘<key> goes to it. */
+  key: number | null
 }
 
 /** Where a vault's name stands — and so where "Set display name" turns it into a field (YAZ-1974 D5). */
@@ -100,6 +121,9 @@ export const MISSING_TEXT = 'Folder not found'
 export const OPEN_FOLDER_TEXT = 'Open folder…'
 /** The highlighted row's time slot while ⇧ is held (YAZ-1974 D9): what ⇧⏎ / ⇧-click will do. */
 export const OPEN_HERE_TEXT = 'Open here'
+/** The two groups' labels (YAZ-2555 D1): the vaults that have a window, then the ones that have none. */
+export const GROUP_OPEN_TEXT = 'Open'
+export const GROUP_NOT_OPEN_TEXT = 'Not open'
 
 /**
  * The rows `query` keeps, ranked (D7): an empty query is MRU order untouched; otherwise the `[[`
@@ -149,15 +173,20 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   const openPanel = useCallback(() => {
     // Anchor = the `.sidebar__header` rect (the name slot's parent): the panel hangs off the whole header, flush with the sidebar (D5).
     const rect = slotRef.current?.parentElement?.getBoundingClientRect()
-    const rows = storage.getRecentRoots().map((r) => ({ name: storage.vaultName(r.path), folder: basename(r.path), path: r.path, lastOpened: r.lastOpened }))
+    // The rows (YAZ-2555 A1): the recents, then the open vaults and the numbered ones (in number order) that are not among them.
+    const open = openVaultRoots(storage.getWindows())
+    const recents = new Map(storage.getRecentRoots().map((r) => [r.path, r.lastOpened]))
+    const paths = new Set([...recents.keys(), ...open, ...storage.keyedVaults().map((v) => v.path)])
+    const rows = [...paths].map((path) => ({ name: storage.vaultName(path), folder: basename(path), path, lastOpened: recents.get(path) ?? null, open: open.includes(path), key: storage.vaultKey(path) }))
     setPanel({ rows, now: Date.now(), anchor: rect === undefined ? { x: 0, y: 0, width: 280 } : { x: rect.left, y: rect.bottom, width: rect.width } })
     setQuery('')
     setMissing(new Set())
   }, [])
-  // A row's rename field and the ⓘ tooltip go with the panel (a field that unmounts is a cancel); the header's stays.
+  // A row's rename field, its menu and the ⓘ tooltip go with the panel (a field that unmounts is a cancel); the header's stay.
   const closePanel = useCallback(() => {
     setPanel(null)
     setRenaming((r) => (r?.at === 'row' ? null : r))
+    setVaultMenu((m) => (m?.at === 'row' ? null : m))
     setPathTip(null)
   }, [])
   const closeVaultMenu = useCallback(() => setVaultMenu(null), [])
@@ -170,17 +199,17 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   useEffect(() => {
     if (!open) return
     const sync = (e: globalThis.KeyboardEvent) => setShiftHeld(e.shiftKey)
-    const release = () => setShiftHeld(false)
     window.addEventListener('keydown', sync)
     window.addEventListener('keyup', sync)
-    window.addEventListener('blur', release)
+    // The panel goes when its window loses focus (YAZ-2555 A4), and the ⇧ cue with it (the cleanup below).
+    window.addEventListener('blur', closePanel)
     return () => {
       window.removeEventListener('keydown', sync)
       window.removeEventListener('keyup', sync)
-      window.removeEventListener('blur', release)
+      window.removeEventListener('blur', closePanel)
       setShiftHeld(false)
     }
-  }, [open])
+  }, [open, closePanel])
 
   // ⌘O (D8) TOGGLES: each new request value opens the panel with a fresh query, or closes it when
   // it is already up — so ⌘O ⌘O is a no-op round trip, the way ⌘K's search bar answers a second press.
@@ -197,7 +226,11 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     inputRef.current?.focus()
   }, [openRequest, openPanel, closePanel])
 
-  const matches = useMemo(() => (panel === null ? [] : rankVaultRows(panel.rows, query)), [panel, query])
+  // The two groups (YAZ-2555 D1, A6): the ranked rows, open vaults first — a stable split, so each group keeps its rank (last-used order with no query).
+  const matches = useMemo(() => {
+    const ranked = panel === null ? [] : rankVaultRows(panel.rows, query)
+    return [...ranked.filter((r) => r.open), ...ranked.filter((r) => !r.open)]
+  }, [panel, query])
   /** The Open folder… row's index in the highlight space. */
   const openFolderIndex = matches.length
 
@@ -228,9 +261,11 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
   }
   const choose = (path: string): void => settle(path, api.window.openRecent(path), 'openRecent')
 
-  /** Remove from recent vaults (D3): forgets the MRU entry only — the folder is untouched — and the row leaves at once. */
+  /** Remove from recent vaults (D3): forgets the MRU entry and the vault's number (YAZ-2555 A2) — the folder is untouched — and the row leaves at once. */
   const removeRow = (path: string): void => {
     storage.removeRecentRoot(path)
+    // Its number goes with it (YAZ-2555 A2): with no row, it would be a key you cannot see or change.
+    if (storage.vaultKey(path) !== null) storage.setVaultKey(path, null)
     setPanel((p) => (p === null ? p : { ...p, rows: p.rows.filter((r) => r.path !== path) }))
     inputRef.current?.focus()
   }
@@ -240,6 +275,12 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     storage.setVaultName(path, raw)
     const next = storage.vaultName(path)
     setPanel((p) => (p === null ? p : { ...p, rows: p.rows.map((r) => (r.path === path ? { ...r, name: next } : r)) }))
+    inputRef.current?.focus()
+  }
+  /** Give a vault its number, or with `null` take it away (YAZ-2555 D2), and redraw the open panel's badges — every row's, the number may have left another vault — `saveName`'s idiom. */
+  const saveKey = (path: string, key: number | null): void => {
+    storage.setVaultKey(path, key)
+    setPanel((p) => (p === null ? p : { ...p, rows: p.rows.map((r) => ({ ...r, key: storage.vaultKey(r.path) })) }))
     inputRef.current?.focus()
   }
   const endRename = (): void => {
@@ -261,13 +302,17 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
     />
   )
 
-  /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all. */
+  /** The vault menu's target (YAZ-1974 D4/D5): what the app calls it, and whether that is a display name at all — and who has which number (YAZ-2555 D2). */
   const menuTarget = (path: string) => {
     const name = storage.vaultName(path)
-    return { path, name, isCurrent: path === root, renamed: name !== basename(path) }
+    return { path, name, isCurrent: path === root, renamed: name !== basename(path), keyed: storage.keyedVaults() }
   }
 
-  /** Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — its MRU entry is already gone. */
+  /**
+   * Right-click (D1): ALWAYS swallow the native text menu (G1); a dead row gets no vault menu — the
+   * door has pruned its MRU entry. A vault that has a number is listed again on the next open
+   * (YAZ-2555 A1), and that row's menu can clear the number (A3).
+   */
   const openVaultMenu = (path: string, at: RenameAt, e: MouseEvent): void => {
     e.preventDefault()
     if (missing.has(path)) return
@@ -375,20 +420,18 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                 const here = shiftHeld && i === active && row.path !== root && !gone
                 const when = (
                   <span className={`vault-switcher__when${gone ? ' vault-switcher__when--missing' : here ? ' vault-switcher__when--here' : ''}`}>
-                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : relativeTime(row.lastOpened, panel.now)}
+                    {gone ? MISSING_TEXT : here ? OPEN_HERE_TEXT : row.lastOpened === null ? '' : relativeTime(row.lastOpened, panel.now)}
                   </span>
                 )
-                if (renaming?.at === 'row' && renaming.path === row.path) {
-                  return (
-                    <div key={row.path} className="vault-switcher__row vault-switcher__row--renaming">
-                      {nameField(row.path, row.name)}
-                      {when}
-                    </div>
-                  )
-                }
-                return (
+                // A group's label stands above its first row (YAZ-2555 D1) — not a row itself, so outside the highlight's index space.
+                const label = row.open !== matches[i - 1]?.open && <div className="vault-switcher__label">{row.open ? GROUP_OPEN_TEXT : GROUP_NOT_OPEN_TEXT}</div>
+                const line = renaming?.at === 'row' && renaming.path === row.path ? (
+                  <div className="vault-switcher__row vault-switcher__row--renaming">
+                    {nameField(row.path, row.name)}
+                    {when}
+                  </div>
+                ) : (
                   <button
-                    key={row.path}
                     type="button"
                     role="menuitem"
                     tabIndex={-1}
@@ -401,6 +444,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                     onContextMenu={(e) => openVaultMenu(row.path, 'row', e)}
                   >
                     <span className="vault-switcher__name">{row.name}</span>
+                    {row.key !== null && <kbd className="vault-switcher__key">⌘{row.key}</kbd>}
                     {/* Part of its row (D2): a click is the row's click, a right-click the row's menu. */}
                     <span
                       className="vault-switcher__info"
@@ -412,6 +456,12 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
                     </span>
                     {when}
                   </button>
+                )
+                return (
+                  <Fragment key={row.path}>
+                    {label}
+                    {line}
+                  </Fragment>
                 )
               })}
             </div>
@@ -461,6 +511,7 @@ export function VaultSwitcher({ root, onPickFolder, pickDisabled, openRequest, o
               onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
               onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
               onResetName: (path) => saveName(path, null),
+              onSetKey: saveKey,
               onReveal,
               onOpenVsCode,
               onRemove: removeRow,

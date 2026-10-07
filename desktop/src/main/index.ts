@@ -12,7 +12,7 @@ import { registerClipboardIpc } from './ipc/clipboard'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
+import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
@@ -184,7 +184,7 @@ app.whenReady().then(() => {
     openExternal: (url) => void shell.openExternal(url),
   })
   const applyMenu = (): void =>
-    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, isDev: !app.isPackaged }, handlers)))
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged }, handlers)))
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
   const sync = registerIpc(store, manager)
