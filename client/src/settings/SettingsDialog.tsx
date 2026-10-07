@@ -134,10 +134,13 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
       {item.render(ctx)}
     </SettingRow>
   )
+  /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
+  const vaultLine = (className: string) => ctx.vaultName !== undefined && <p className={className}>Vault: {ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
   const group = (g: SettingsGroup, items: readonly SettingDef[], key: number, titled = true) => items.length > 0 && (
     <div key={key} className="settings-group">
       {titled && g.title !== undefined && <h3 className="settings-group__title">{g.title}</h3>}
+      {g.vault === true && vaultLine('settings-group__hint')}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
       <div className="settings-group__card">{items.map(row)}</div>
     </div>
@@ -145,6 +148,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
   const section = (s: SettingsSection) => (
     <section key={s.id} id={anchorId(s.id)} data-section={s.id} className="settings-section">
       <h2 className="settings-section__title">{s.title}</h2>
+      {s.vault === true && vaultLine('settings-section__note')}
       {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
       {s.groups.map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), i))}
     </section>

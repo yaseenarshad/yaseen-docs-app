@@ -38,6 +38,12 @@ export interface SettingsCtx {
   review?: ReviewSettingsState
   /** This vault's answer on IDs (YAZ-2523 🔒 V4; undefined: it has not answered), whether any note holds one, and the switch; absent until a vault's index has loaded. */
   ids?: { enabled: boolean | undefined; held: boolean; set: (enabled: boolean) => void }
+  /**
+   * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
+   * over only where the window has two or more vaults, and each per-vault page then says which one
+   * it acts on; with one vault the pages read as they always did.
+   */
+  vaultName?: string
 }
 
 export interface SettingDef {
@@ -59,6 +65,8 @@ export type SettingsSectionId = 'appearance' | 'editor' | 'files' | 'review' | '
 export interface SettingsGroup {
   title?: string
   hint?: string
+  /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
+  vault?: true
   items: readonly SettingDef[]
 }
 
@@ -69,6 +77,8 @@ export interface SettingsSection {
   available?: (ctx: SettingsCtx) => boolean
   /** One line under the section title, for the section whose settings do not live where the rest do. */
   note?: string
+  /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
+  vault?: true
   /**
    * Its own page in the dialog rather than a stretch of the scrolling settings page — the
    * hotkey reference, which is a table to look things up in, not settings to scroll past.
@@ -291,6 +301,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'This vault',
+        vault: true,
         items: [
           {
             id: 'ids',
@@ -307,6 +318,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'review',
     title: 'Review',
     available: (ctx) => ctx.review !== undefined,
+    vault: true,
     note: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
     groups: [
       {
@@ -337,6 +349,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'sync',
     title: 'Sync',
     available: (ctx) => ctx.sync !== undefined,
+    vault: true,
     note: "These settings are saved in this vault's .yaseendocs folder, not app-wide.",
     groups: [
       {

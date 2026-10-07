@@ -940,7 +940,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids }} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -1157,8 +1157,9 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
-      {/* The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). */}
-      {asking !== undefined && asking.idsAsk !== null && <ConfirmIds key={asking.root} ask={asking.idsAsk} onAnswer={asking.saveIds} onDismiss={asking.closeIdsAsk} />}
+      {/* The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). Keyed apart from the sidebar, which the
+          first vault keys too; with two or more vaults it names the one it asks about (YAZ-2602 S40). */}
+      {asking !== undefined && asking.idsAsk !== null && <ConfirmIds key={`ids:${asking.root}`} ask={asking.idsAsk} vault={roots.length > 1 ? (asking.name ?? undefined) : undefined} onAnswer={asking.saveIds} onDismiss={asking.closeIdsAsk} />}
     </div>
   )
 }
