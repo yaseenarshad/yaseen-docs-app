@@ -35,9 +35,10 @@ The record is the comment there: "Locked decisions, the audit, and the cases (D1
   - [x] 4B docs (YAZ-2599): `docs/CONTRACTS.md` (Restore overturns D3 of GRO-2160), `docs/REGRESSION.md`, `README.md`, `LAUNCH.md`
   - [x] The `mainBundleBytes` ceiling set to the measured 518,434 (Yaseen's OK, Amendment 4)
   - [x] 4A cases and gates (YAZ-2598)
-- Now: [→] 4C the pull request (YAZ-2600): merge when CI is green (Amendment 5), then the closeout.
-- Remaining:
-  - [ ] 4D Yaseen's hand walk (YAZ-2601): S1, S4, S7, S8, S9, S10, S12, S13, S21 on the real app. It needs a build with this change (a release, or the dev build).
+  - [x] 4C pull request #95 merged on 2026-10-07 (merge commit `4cb6a54`), after CI was green (YAZ-2600).
+  - [x] 4D the guided hand walk (YAZ-2601): CLOSED WITHOUT A WALK by Yaseen ("i'll test it later, i dont need to do it manually", Amendment 7). Canceled, not Done; the steps are kept there and in `docs/REGRESSION.md`.
+- Now: CLOSED 2026-10-07. Merged, NOT released (the installed app is 0.9.35, without this change). The Linear record on YAZ-2589 is the source of truth.
+- Remaining: nothing for an agent. Yaseen cuts the next release when he wants it.
 
 ## Open Questions
 
@@ -48,6 +49,6 @@ The record is the comment there: "Locked decisions, the audit, and the cases (D1
 
 ## Working Set
 
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2589`, branch `yaz-2589-startup-windows`, off `main` at `4e0d302`.
+- The work is on `main` (`4cb6a54`). The worktree and the branch are removed.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skill at `~/.claude/skills/linear`; issue writing follows `~/Documents/GitHub/growprofitai/_code-wiki/Linear-Simpler`.
