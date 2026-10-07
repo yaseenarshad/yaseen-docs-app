@@ -9,8 +9,10 @@ import { errorText, type MenuAction, type MenuSection } from './menuSections'
  *   Open in this window · Set display name, Reset to folder name, Set shortcut ▸ · Copy vault name,
  *   Copy path · Reveal in Finder, Open in VS Code · Remove from recent vaults
  *
- * The current vault (the header's name, or its own row) gets neither "Open in this window" (you
- * are there) nor "Remove" (it is recents[0] and would come straight back, D3). "Reset to folder
+ * A vault that is in this window (the header's name, or its own row — "current", YAZ-2602 S8)
+ * gets neither "Open in this window" (you are there) nor "Remove" (it is in the recents and would
+ * come straight back, D3). A vault that is not gets "Add to this window" above "Open in this
+ * window" (YAZ-2602 D2), where the caller has the door to add one. "Reset to folder
  * name" shows only while a display name is set (YAZ-1974 D5) — never "Rename": that word renames
  * on disk in the file menu. Nothing is `danger`: Remove only forgets an MRU entry, the folder is untouched.
  *
@@ -23,6 +25,7 @@ export interface VaultMenuTarget {
   path: string
   /** The vault's display name, else its folder name (YAZ-1974 D4) — what "Copy vault name" copies. */
   name: string
+  /** The vault is one of this window's (YAZ-2602 S8). */
   isCurrent: boolean
   /** A display name is set (YAZ-1974 D5): offers "Reset to folder name". */
   renamed: boolean
@@ -33,6 +36,8 @@ export interface VaultMenuTarget {
 export interface VaultMenuHandlers {
   /** Switch THIS window to the vault in place (D8, D11) — the one deliberate overwrite; every plain gesture opens beside. */
   onOpenHere: (path: string) => void
+  /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). Absent: no such item. */
+  onAddHere?: (path: string) => void
   /** Turn the vault's name into an inline field where it stands (YAZ-1974 D5). */
   onRename: (path: string) => void
   /** Drop the display name — back to the folder name (D5). */
@@ -65,8 +70,14 @@ export function buildVaultMenuSections({ path, name, isCurrent, renamed, keyed }
     const vault = keyed.find((v) => v.key === n)
     return vault === undefined ? 'free' : vault.path === path ? `✓ ${vault.name}` : vault.name
   }
+  const { onAddHere } = h
   return [
-    isCurrent ? [] : [{ id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) }],
+    isCurrent
+      ? []
+      : [
+          ...(onAddHere === undefined ? [] : [{ id: 'add-here', label: 'Add to this window', onSelect: () => onAddHere(path) }]),
+          { id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) },
+        ],
     [
       { id: 'rename', label: 'Set display name', onSelect: () => h.onRename(path) },
       ...(renamed ? [{ id: 'reset-name', label: 'Reset to folder name', onSelect: () => h.onResetName(path) }] : []),

@@ -80,7 +80,7 @@ type Props = Parameters<typeof VaultSwitcher>[0]
 
 function render(over: Partial<Props> = {}) {
   const props: Props = {
-    root: ROOT,
+    roots: [ROOT],
     onPickFolder: vi.fn(),
     pickDisabled: false,
     openRequest: 0,
@@ -1064,5 +1064,98 @@ describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', 
     hoverInfo(rows(el)[1])
     key(el, 'Escape')
     expect(tooltip()).toBeNull()
+  })
+})
+
+/**
+ * A window with two or more vaults (YAZ-2602 S15, S8). The header names the vaults — two names,
+ * then a count — and opens the same list; "is current" is "is in this window". A vault that is not
+ * in the window can be added to it from its row's menu.
+ */
+describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () => {
+  const ARCHIVE = '/v/Archive'
+  const headerName = (el: HTMLElement) => trigger(el).querySelector('.sidebar__root-name')?.textContent
+  const currentPaths = (el: HTMLElement) => rows(el).filter((r) => r.getAttribute('aria-current') === 'true').map(pathOf)
+  /** The row of `path`, found by its ⓘ tooltip: two vaults share the name "Notes". */
+  const rowOf = (el: HTMLElement, path: string) => rows(el).find((r) => pathOf(r) === path)!
+
+  it('the header joins the vault names with " + ": two names, then "+ N more"; one vault reads as before (S15)', () => {
+    const { el, rerender } = render()
+    expect(headerName(el)).toBe('Notes')
+    rerender({ roots: [ROOT, ARCHIVE] })
+    expect(headerName(el)).toBe('Notes + Archive')
+    expect(trigger(el).title).toBe(`${ROOT}\n${ARCHIVE}`)
+    rerender({ roots: [ROOT, ARCHIVE, '/w/Notes'] })
+    expect(headerName(el)).toBe('Notes + Archive + 1 more')
+    rerender({ roots: [ROOT, ARCHIVE, '/w/Notes', '/v/Notes Archive'] })
+    expect(headerName(el)).toBe('Notes + Archive + 2 more')
+  })
+
+  it('the header uses each vault\'s display name, and follows a rename made in another window', () => {
+    const { el } = render({ roots: [ROOT, ARCHIVE] })
+    act(() => broadcast(withNames({ [ARCHIVE]: 'Old notes' })))
+    expect(headerName(el)).toBe('Notes + Old notes')
+  })
+
+  it('a click opens the same list: each vault of this window is marked current, and the highlight starts on the first vault that is not in it', () => {
+    const { el } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    expect(panel(el)).not.toBeNull()
+    // Read first: a hover moves the highlight, and a row's path is read by hovering its ⓘ.
+    const highlighted = activeRow(el)!
+    expect(currentPaths(el)).toEqual([ROOT, '/w/Notes'])
+    expect(pathOf(highlighted)).toBe(ARCHIVE)
+  })
+
+  it('with two or more vaults a right-click on the header shows no menu, and the native one is swallowed', () => {
+    const { el } = render({ roots: [ROOT, ARCHIVE] })
+    expect(rightClick(trigger(el))).toBe(true)
+    expect(vaultMenu()).toBeNull()
+    expect(panel(el)).toBeNull()
+  })
+
+  it('a row\'s menu: a vault that is not in this window leads with "Add to this window", then "Open in this window"; a vault that is in it has neither, and no Remove (S8)', () => {
+    const { el } = render({ roots: [ROOT, '/w/Notes'], onAddHere: vi.fn(async () => true) })
+    openPanel(el)
+    rightClick(rowOf(el, ARCHIVE))
+    expect(menuLabels()).toEqual(['Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    for (const inWindow of [ROOT, '/w/Notes']) {
+      rightClick(rowOf(el, inWindow))
+      expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    }
+  })
+
+  it('"Add to this window" asks App through onAddHere — never openRecent, never onOpenHere — and closes the panel once the vault is added (S8)', async () => {
+    const { el, props } = render({ onAddHere: vi.fn(async () => true) })
+    openPanel(el)
+    rightClick(rowOf(el, ARCHIVE))
+    pick('Add to this window')
+    await settle()
+    expect(props.onAddHere).toHaveBeenCalledExactlyOnceWith(ARCHIVE)
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
+  })
+
+  it('a refused add leaves the panel up: App has said why', async () => {
+    const { el } = render({ onAddHere: vi.fn(async () => false) })
+    openPanel(el)
+    rightClick(rowOf(el, ARCHIVE))
+    pick('Add to this window')
+    await settle()
+    expect(panel(el)).not.toBeNull()
+    expect(rowOf(el, ARCHIVE).disabled).toBe(false)
+  })
+
+  it('⇧⏎ on a vault of this window that is not the first is a plain open, as on the first: you are there', async () => {
+    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    const second = rowOf(el, '/w/Notes')
+    act(() => void second.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+    await settle()
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
   })
 })
