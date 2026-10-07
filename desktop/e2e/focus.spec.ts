@@ -4,7 +4,7 @@
  * lens row, and one click on it brings the whole tree back.
  *
  * What only the real app can prove is WHERE the focus lives: it is WINDOW identity since YAZ-1628
- * (`WindowEntry.focusDirs`, next to the lens), written to `yaseendocs.json` through main and
+ * (`WindowEntry.focusList`, next to the lens), written to `yaseendocs.json` through main and
  * restored from it — so quit → relaunch comes back NARROWED, on a tree that is otherwise folded
  * (expansion is session state, YAZ-1642: the focused folder's row is there, its children are not).
  *
@@ -53,7 +53,7 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- the focus
 
-test('step 1 — "Focus on folder" makes the folder the only top row, opens it, lights the eye and writes `focusDirs` to the window\'s state entry', async () => {
+test('step 1 — "Focus on folder" makes the folder the only top row, opens it, lights the eye and writes `focusList` to the window\'s state entry', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
@@ -74,8 +74,8 @@ test('step 1 — "Focus on folder" makes the folder the only top row, opens it, 
   await expect(fileRow(win, 'Welcome note')).toHaveCount(0) // the ACTIVE file's row is hidden too
   await expect(eye(win)).toHaveAttribute('aria-label', 'Exit focus mode')
   // Window identity (YAZ-1628): the window's entry, never the vault bucket.
-  await expect.poll(async () => (await readState(userData)).windows[0]?.focusDirs).toEqual([path.join(vault, 'Projects')])
-  expect((await readState(userData)).folders[vault]).not.toHaveProperty('focusDirs')
+  await expect.poll(async () => (await readState(userData)).windows[0]?.focusList).toEqual([path.join(vault, 'Projects')])
+  expect((await readState(userData)).folders[vault]).not.toHaveProperty('focusList')
   await shoot(win, 'focus-01-folder-focused')
 })
 
@@ -83,7 +83,7 @@ test('step 1 — "Focus on folder" makes the folder the only top row, opens it, 
 
 test('step 2 — the focus survives quit → relaunch: the Files lens comes back narrowed, the folder folded, the eye lit', async () => {
   await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
-  expect((await readState(userData)).windows[0]?.focusDirs).toEqual([path.join(vault, 'Projects')])
+  expect((await readState(userData)).windows[0]?.focusList).toEqual([path.join(vault, 'Projects')])
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
@@ -99,14 +99,14 @@ test('step 2 — the focus survives quit → relaunch: the Files lens comes back
 
 // ---------------------------------------------------------------- the eye
 
-test('step 3 — one click on the eye ends the focus: the whole tree is back, the eye is gone, `focusDirs` is empty', async () => {
+test('step 3 — one click on the eye ends the focus: the whole tree is back, the eye is gone, `focusList` is empty', async () => {
   await eye(win).click()
   await expect(eye(win)).toHaveCount(0)
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   await expect(fileRow(win, 'Welcome note')).toBeVisible()
   await expect(dirRow(win, 'Projects')).toBeVisible()
   await expect(topLabels(win)).toHaveCount(3) // Projects + Ideas, Welcome note
-  await expect.poll(async () => (await readState(userData)).windows[0]?.focusDirs).toEqual([])
+  await expect.poll(async () => (await readState(userData)).windows[0]?.focusList).toEqual([])
   await shoot(win, 'focus-03-exited')
   await quitApp(app)
 })

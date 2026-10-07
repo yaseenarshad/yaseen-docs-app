@@ -106,7 +106,7 @@ import { App } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusFavorites'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
@@ -173,8 +173,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
         sidebarLens: identity.sidebarLens ?? 'favorites',
-        focusDirs: identity.focusDirs ?? [],
-        focusFavorites: identity.focusFavorites ?? [],
+        focusList: identity.focusList ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
@@ -552,7 +551,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }],
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }],
       [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
     expect(captured.sidebar?.lens).toBe('files') // the Welcome window's stored lens was Favorites; the vault lands on Files (YAZ-1846 D2)
@@ -563,7 +562,7 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on Welcome', async () => {
@@ -2058,7 +2057,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusDirs: [], focusFavorites: [] })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
   })
 })
 

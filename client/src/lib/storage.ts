@@ -32,7 +32,7 @@ import { basename } from './paths'
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [], focusFavorites: [] }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -81,14 +81,14 @@ export const storage = {
 
   getRoot: (): string | null => identity.root,
   /**
-   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both
-   * Focus Mode lists (YAZ-1628, YAZ-1766), and lands the lens on Files (🔒 D2, YAZ-1846),
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and its
+   * focus list (YAZ-1628, YAZ-2619), and lands the lens on Files (🔒 D2, YAZ-1846),
    * in the same write; re-setting the same root keeps them.
    */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusDirs: [] as string[], focusFavorites: [] as string[] }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] as string[] }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => api.window.setIdentity(patch))
   },
@@ -140,22 +140,15 @@ export const storage = {
   },
 
   /**
-   * Focus Mode (YAZ-1605): a path list per lens, empty when off. Window identity since YAZ-1628,
-   * like `sidebarCollapsed` below — no root argument, and a global state broadcast never follows
-   * another window's focus into this one; a root change clears both lists (`setRoot`).
+   * The focus list (YAZ-2619): files and folders in the order added, empty when there is none.
+   * Window identity since YAZ-1628, like `sidebarCollapsed` below — no root argument, and a global
+   * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`).
    */
-  getFocusDirs: (): string[] => identity.focusDirs,
-  setFocusDirs(dirs: readonly string[]): void {
-    const focusDirs = [...dirs]
-    identity = { ...identity, focusDirs }
-    send('window.setIdentity', () => api.window.setIdentity({ focusDirs }))
-  },
-  /** The Favorites tab's own focus list (YAZ-1766 D5): the favorited dirs it is narrowed to. */
-  getFocusFavorites: (): string[] => identity.focusFavorites,
-  setFocusFavorites(dirs: readonly string[]): void {
-    const focusFavorites = [...dirs]
-    identity = { ...identity, focusFavorites }
-    send('window.setIdentity', () => api.window.setIdentity({ focusFavorites }))
+  getFocusList: (): string[] => identity.focusList,
+  setFocusList(paths: readonly string[]): void {
+    const focusList = [...paths]
+    identity = { ...identity, focusList }
+    send('window.setIdentity', () => api.window.setIdentity({ focusList }))
   },
 
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */

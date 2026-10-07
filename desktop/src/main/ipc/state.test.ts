@@ -123,8 +123,8 @@ describe('registerStateIpc', () => {
     expect(store.get().folders['/v'].key).toBe(3)
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { key: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].key).toBeNull()
-    // Focus Mode's lists are window identity since YAZ-1628 (`window.setIdentity`): here they are unknown keys, ignored like any other.
-    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { focusDirs: ['/v/sub'] })).toEqual(ok(undefined))
+    // The focus list is window identity (`window.setIdentity`, YAZ-1628, YAZ-2619): here it is an unknown key, ignored like any other.
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { focusList: ['/v/sub'] })).toEqual(ok(undefined))
     expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
   })
 
