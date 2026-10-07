@@ -38,6 +38,11 @@ export function allDirs(tree: TreeNode[]): string[] {
   return tree.flatMap((n) => (n.type === 'dir' ? [n.path, ...allDirs(n.children)] : []))
 }
 
+/** Every file in `tree` that is not a note, in tree order: the search's rows the index does not hold (YAZ-2620 🔒 D3). */
+export function otherFiles(tree: readonly TreeNode[]): string[] {
+  return tree.flatMap((n) => (n.type === 'dir' ? otherFiles(n.children) : n.kind === 'markdown' ? [] : [n.path]))
+}
+
 /** True when `path` is a file somewhere in `tree`. */
 export function treeHasFile(tree: TreeNode[], path: string): boolean {
   return tree.some((n) => (n.type === 'file' ? n.path === path : treeHasFile(n.children, path)))

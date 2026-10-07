@@ -11,7 +11,7 @@ import type { NoticeKind } from '../../lib/notice'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, onTree } from '../../lib/treeFeed'
-import { allDirs, favoriteRoots, findDirNode, focusRoots, treeHasPath, treeReducer } from '../../lib/treeState'
+import { allDirs, favoriteRoots, findDirNode, focusRoots, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -42,9 +42,11 @@ export function useVaultTree(
   favoritesRef.current = favorites
 
   // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
-  // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
+  // (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one memo, no second
   // feed.
   const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only.
+  const files = useMemo(() => (tree === null ? [] : otherFiles(tree.tree)), [tree])
   // The focused top rows (YAZ-1605), resolved off the LIVE tree in tree order — a vanished dir yields
   // no row, and the prune below drops it. `dirs` stays the WHOLE vault: reveal must still find what is hidden.
   const focusNodes = useMemo(() => (tree === null || focusDirs.length === 0 ? [] : focusRoots(tree.tree, focusDirs)), [tree, focusDirs])
@@ -252,5 +254,5 @@ export function useVaultTree(
   const expandedSet = useMemo(() => new Set(expanded), [expanded])
   const toggleDir = useCallback((dir: string) => dispatch({ type: 'toggle', dir }), [])
 
-  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs }
+  return { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, files, shownDirs, favoriteNodes, favoriteDirs }
 }

@@ -46,13 +46,15 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 
 /** The Sidebar's own `dirs` (🔒 D1, YAZ-1491): folder rows need no index read at all. */
 const NO_DIRS: readonly string[] = []
+/** The Sidebar's own `files` (🔒 D3, YAZ-2620): the tree's files that are no notes, and no index read either. */
+const NO_FILES: readonly string[] = []
 
-function Harness({ watch, query, dirs = NO_DIRS }: { watch: WatchSource; query: string; dirs?: readonly string[] }) {
-  const results = useSearchResults('/v', watch, query, dirs)
+function Harness({ watch, query, dirs = NO_DIRS, files = NO_FILES }: { watch: WatchSource; query: string; dirs?: readonly string[]; files?: readonly string[] }) {
+  const results = useSearchResults('/v', watch, query, dirs, files)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
-async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS, folders: IndexRecord[] = []) {
+async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS, folders: IndexRecord[] = [], files: readonly string[] = NO_FILES) {
   const bridge = installBridge(records, folders)
   tweak?.(bridge) // before the first render: the mount read is the one that can fail
   // A real fan-out watch (useWatch's shape), so "did search subscribe at all?" is answerable.
@@ -65,8 +67,8 @@ async function mount(records: IndexRecord[], query: string, tweak?: (bridge: Ret
   container = document.createElement('div')
   document.body.appendChild(container)
   reactRoot = createRoot(container)
-  await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} dirs={dirs} /></StrictMode>))
-  const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} dirs={dirs} /></StrictMode>))
+  await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} dirs={dirs} files={files} /></StrictMode>))
+  const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} dirs={dirs} files={files} /></StrictMode>))
   const emit = (ev: WatchEvent) => [...listeners].forEach((l) => l(ev))
   /** An event, then past the 100 ms quiet window a structural burst waits out (YAZ-2191). */
   const fire = async (ev: WatchEvent) => {
@@ -194,6 +196,20 @@ describe('useSearchResults (YAZ-803)', () => {
   it('folder rows survive an unreadable index — they come from the tree, not the feed', async () => {
     await mount([rec('Alpha')], 'arch', (b) => b.index.mockRejectedValue(new Error('no index')), ['/v/Archive'])
     expect(labels()).toEqual(['📁Archive'])
+  })
+
+  it('S12: the tree\'s files that are no notes are rows too, by file name — behind a folder and a note of the same rank (🔒 D3, YAZ-2620)', async () => {
+    await mount([rec('Transcript')], 'transcript', undefined, ['/v/transcript'], [], ['/v/skills/transcript', '/v/skills/get-transcript.py'])
+    // Exact bucket: folder, note, then the file with no extension; substring bucket: the script.
+    expect(labels()).toEqual(['📁transcript', 'Transcript', 'transcript', 'get-transcript.py'])
+  })
+
+  it('S35: folders and files that are no notes survive an index that is not loaded or cannot be read — both come from the tree; the notes arrive with the index', async () => {
+    const { bridge, fire } = await mount([rec('Archive notes')], 'arch', (b) => b.index.mockRejectedValue(new Error('no index')), ['/v/Archive'], [], ['/v/archive.zip'])
+    expect(labels()).toEqual(['📁Archive', 'archive.zip'])
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Archive notes')], folders: [], generatedAt: 2, ids: true })
+    await fire({ type: 'add', path: '/v/Archive notes.md', mtime: 1 })
+    expect(labels()).toEqual(['📁Archive', 'Archive notes', 'archive.zip'])
   })
 
   it('an unreadable index leaves search empty rather than throwing or surfacing anything', async () => {
