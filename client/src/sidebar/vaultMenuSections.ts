@@ -6,15 +6,16 @@ import { errorText, type MenuAction, type MenuSection } from './menuSections'
  * what means something for a vault. Drawn by the sidebar's own `ContextMenu`, which skips empty
  * groups — so the CURRENT vault simply returns three of the five. Five groups, in this order:
  *
- *   Open in this window · Set display name, Reset to folder name, Set shortcut ▸ · Copy vault name,
- *   Copy path · Reveal in Finder, Open in VS Code · Remove from recent vaults
+ *   Add to this window, Open in this window · Set display name, Reset to folder name,
+ *   Set shortcut ▸ · Copy vault name, Copy path · Reveal in Finder, Open in VS Code ·
+ *   Remove from recent vaults
  *
  * A vault that is in this window (the header's name, or its own row — "current", YAZ-2602 S8)
  * gets neither "Open in this window" (you are there) nor "Remove" (it is in the recents and would
  * come straight back, D3). A vault that is not gets "Add to this window" above "Open in this
- * window" (YAZ-2602 D2), where the caller has the door to add one. "Reset to folder
- * name" shows only while a display name is set (YAZ-1974 D5) — never "Rename": that word renames
- * on disk in the file menu. Nothing is `danger`: Remove only forgets an MRU entry, the folder is untouched.
+ * window" (YAZ-2602 D2). "Reset to folder name" shows only while a display name is set
+ * (YAZ-1974 D5) — never "Rename": that word renames on disk in the file menu. Nothing is `danger`:
+ * Remove only forgets an MRU entry, the folder is untouched.
  *
  * "Set shortcut" (YAZ-2555 D2) is a parent: its flyout lists ⌘1–⌘9, each with the name of the vault
  * that has the number or "free", and a check mark on this vault's own. A number that a different
@@ -36,8 +37,8 @@ export interface VaultMenuTarget {
 export interface VaultMenuHandlers {
   /** Switch THIS window to the vault in place (D8, D11) — the one deliberate overwrite; every plain gesture opens beside. */
   onOpenHere: (path: string) => void
-  /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). Absent: no such item. */
-  onAddHere?: (path: string) => void
+  /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). */
+  onAddHere: (path: string) => void
   /** Turn the vault's name into an inline field where it stands (YAZ-1974 D5). */
   onRename: (path: string) => void
   /** Drop the display name — back to the folder name (D5). */
@@ -70,12 +71,11 @@ export function buildVaultMenuSections({ path, name, isCurrent, renamed, keyed }
     const vault = keyed.find((v) => v.key === n)
     return vault === undefined ? 'free' : vault.path === path ? `✓ ${vault.name}` : vault.name
   }
-  const { onAddHere } = h
   return [
     isCurrent
       ? []
       : [
-          ...(onAddHere === undefined ? [] : [{ id: 'add-here', label: 'Add to this window', onSelect: () => onAddHere(path) }]),
+          { id: 'add-here', label: 'Add to this window', onSelect: () => h.onAddHere(path) },
           { id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) },
         ],
     [

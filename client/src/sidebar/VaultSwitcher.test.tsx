@@ -85,6 +85,7 @@ function render(over: Partial<Props> = {}) {
     pickDisabled: false,
     openRequest: 0,
     onOpenHere: vi.fn(async () => true),
+    onAddHere: vi.fn(async () => true),
     onReveal: vi.fn(),
     onOpenVsCode: vi.fn(),
     onNotice: vi.fn(),
@@ -539,7 +540,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(panel(el)).toBeNull()
   })
 
-  it('the current vault\'s own row gets the same six; another row gets all eight — and the highlight never moves', () => {
+  it('the current vault\'s own row gets the same six; another row gets all nine — and the highlight never moves', () => {
     const { el } = render()
     openPanel(el)
     const before = activeRow(el)
@@ -547,7 +548,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     rightClick(otherRow(el))
-    expect(menuLabels()).toEqual(['Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(activeRow(el)).toBe(before)
   })
 

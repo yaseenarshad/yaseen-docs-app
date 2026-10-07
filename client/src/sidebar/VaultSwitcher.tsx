@@ -93,8 +93,8 @@ export interface VaultSwitcherProps {
   openRequest: number
   /** The menu's "Open in this window" (YAZ-1798 D8): App's in-place switch; `false` = the folder is gone (MRU already pruned). */
   onOpenHere: (path: string) => Promise<boolean>
-  /** The menu's "Add to this window" (YAZ-2602 S8): App's add; `false` = not added, and App has said why. Absent: the menu has no such item. */
-  onAddHere?: (path: string) => Promise<boolean>
+  /** The menu's "Add to this window" (YAZ-2602 S8): App's add; `false` = not added, and App has said why. */
+  onAddHere: (path: string) => Promise<boolean>
   /** The menu's OS verbs (D9): the Sidebar's own, stale-path notice included. */
   onReveal: (path: string) => void
   onOpenVsCode: (path: string) => void
@@ -521,7 +521,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
             {
               onOpenHere: (path) => settle(path, onOpenHere(path), 'openHere'),
               // A refusal keeps the panel up, and the row as it is: App's notice has said why (YAZ-2602 S4 to S7).
-              onAddHere: onAddHere === undefined ? undefined : (path) => void onAddHere(path).then((added) => (added ? closePanel() : inputRef.current?.focus()), () => undefined),
+              onAddHere: (path) => void onAddHere(path).then((added) => (added ? closePanel() : inputRef.current?.focus()), () => undefined),
               onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
               onResetName: (path) => saveName(path, null),
               onSetKey: saveKey,
