@@ -36,6 +36,7 @@ let manager: {
   openRecentBeside: ReturnType<typeof vi.fn>
   closeWindow: ReturnType<typeof vi.fn>
   handleFlushed: ReturnType<typeof vi.fn>
+  handleLinkReady: ReturnType<typeof vi.fn>
 }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
@@ -47,7 +48,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), closeWindow: vi.fn(), handleFlushed: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -69,7 +70,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -241,5 +242,10 @@ describe('registerWindowIpc', () => {
     const handler = call?.[1] as unknown as (e: { sender: { id: number } }) => void
     handler({ sender })
     expect(manager.handleFlushed).toHaveBeenCalledWith(sender)
+  })
+
+  it('link:ready tells the manager which renderer now listens for link pushes (YAZ-2589 A2)', async () => {
+    expect(await registered(CONTRACT.link.ready.channel)({ sender })).toEqual(ok(undefined))
+    expect(manager.handleLinkReady).toHaveBeenCalledExactlyOnceWith(sender)
   })
 })

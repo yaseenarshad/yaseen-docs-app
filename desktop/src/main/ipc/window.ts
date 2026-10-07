@@ -150,6 +150,10 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (text !== '') await e.sender.insertText(text)
   })
 
+  // `link:ready` (YAZ-2589 A2): this renderer now listens for link pushes, so the manager sends
+  // what it held for it.
+  handleWithEvent(CONTRACT.link.ready, async (e) => windows.handleLinkReady(e.sender))
+
   // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
   ipcMain.on(SPECIAL.appFlushed, (e) => windows.handleFlushed(e.sender))
 }

@@ -15,6 +15,7 @@ import {
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
+  STARTUP_WINDOWS,
   THEMES,
   THREAD_WIDTHS,
   addRecentRoot,
@@ -36,6 +37,7 @@ import {
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
+  type StartupWindows,
   type Theme,
   type WindowBounds,
   type WindowEntry,
@@ -60,7 +62,8 @@ export interface Store {
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
-  removeWindow(id: string): void
+  /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). */
+  removeWindow(...ids: string[]): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its Focus Mode
@@ -117,6 +120,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
+  startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -403,9 +407,9 @@ export function createStore(filePath: string): Store {
       commit({ ...state, windows })
     },
 
-    removeWindow(id) {
-      if (!state.windows.some((w) => w.id === id)) return
-      commit({ ...state, windows: state.windows.filter((w) => w.id !== id) })
+    removeWindow(...ids) {
+      if (!state.windows.some((w) => ids.includes(w.id))) return
+      commit({ ...state, windows: state.windows.filter((w) => !ids.includes(w.id)) })
     },
 
     renamePath(oldPath, newPath) {

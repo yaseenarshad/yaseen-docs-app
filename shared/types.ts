@@ -660,6 +660,8 @@ export interface SettingsState {
   confirmRename: boolean
   /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
   commentsOrder: CommentsOrder
+  /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
+  startupWindows: StartupWindows
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -678,6 +680,10 @@ export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current'
 /** Comment stream order (YAZ-1515): oldest-first (the model's order) or newest-first by the ROOT's `at`. */
 export type CommentsOrder = 'oldest' | 'newest'
 export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
+
+/** What a plain launch brings back (YAZ-2589 D2): every window · the windows of the vault used last · none (the list of vaults). */
+export type StartupWindows = 'all' | 'last' | 'none'
+export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
 
 /**
  * Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no
@@ -705,6 +711,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   confirmDelete: true,
   confirmRename: true,
   commentsOrder: 'oldest',
+  startupWindows: 'last',
 }
 
 export interface WindowBounds {
@@ -715,7 +722,8 @@ export interface WindowBounds {
 }
 
 /**
- * One open window; restored on relaunch (GRO-2160). `root` null = Welcome screen.
+ * One open window, saved for the next launch (GRO-2160), which brings back the ones it is asked for or
+ * the ones `settings.startupWindows` names (YAZ-2589). `root` null = Welcome screen.
  *
  * Tabs (GRO-2232): `tabs` is every open file as absolute paths, de-duplicated, ordered
  * left→right; `file` doubles as the ACTIVE tab — there is no separate activeTab field.
