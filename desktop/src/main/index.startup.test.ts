@@ -33,7 +33,8 @@ const h = vi.hoisted(() => {
     exit: vi.fn(log('exit')),
   }
   const manager = {
-    rootFor: vi.fn((path: string) => `root-of:${path}`),
+    // A path under `/gone` cannot open: the manager says it has no vault (YAZ-2589 A6).
+    rootFor: vi.fn((path: string): string | null => (path.startsWith('/gone') ? null : `root-of:${path}`)),
     restore: vi.fn((which: readonly string[] | string) => void s.order.push(`restore:${String(which)}`)),
     routeToFile: vi.fn((path: string) => s.order.push(`route:${path}`)),
     linkNotice: vi.fn(),
@@ -143,30 +144,33 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([`root-of:${NOTE}`])
   })
 
-  it('a launch with two waiting links asks for both vaults; a link that cannot be read asks for nothing (YAZ-2589 S6, S7)', async () => {
+  it('a launch with two waiting links asks for both vaults; a link that cannot be read and a path that cannot open ask for nothing, and are handled all the same (YAZ-2589 S6, S7, A6)', async () => {
     h.s.on.get('open-url')!(event(), 'https://example.com')
     h.s.on.get('open-url')!(event(), `${fileLink('/work/a.md')}?root=${encodeURIComponent('/work')}`)
+    h.s.on.get('open-file')!(event(), '/gone/x.md')
     h.s.on.get('open-file')!(event(), '/vault')
     h.s.ready()
     await settle()
-    expect(h.manager.rootFor.mock.calls).toEqual([['/work/a.md', '/work'], ['/vault', null]])
+    expect(h.manager.rootFor.mock.calls).toEqual([['/work/a.md', '/work'], ['/gone/x.md', null], ['/vault', null]])
     expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith(['root-of:/work/a.md', 'root-of:/vault'])
     expect(h.manager.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open link: https://example.com")
+    expect(h.manager.routeToFile.mock.calls).toEqual([['/work/a.md', '/work'], ['/gone/x.md', null], ['/vault', null]]) // the manager says why the dead one cannot open
   })
 
-  it('a plain launch gives the manager the setting (YAZ-2589 D2)', async () => {
+  it.each<[string, string[], Array<[string]>, Array<[string, null]>]>([
+    ['nothing waits', [], [], []],
+    ['the only link cannot be read (S7)', ['https://example.com'], [["Can't open link: https://example.com"]], []],
+    ['the only request is a file that is gone (S8, A6)', [fileLink('/gone/x.md')], [], [['/gone/x.md', null]]],
+  ])('a plain launch gives the manager the setting, and only then handles what waits (YAZ-2589 D2): %s', async (_case, urls, notices, routes) => {
+    for (const url of urls) h.s.on.get('open-url')!(event(), url)
     h.s.ready()
     await settle()
     expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
-    expect(h.manager.rootFor).not.toHaveBeenCalled()
-  })
-
-  it('a launch whose only link cannot be read is a plain launch, and then the notice (YAZ-2589 S7)', async () => {
-    h.s.on.get('open-url')!(event(), 'https://example.com')
-    h.s.ready()
-    await settle()
-    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
-    expect(h.manager.restore.mock.invocationCallOrder[0]).toBeLessThan(h.manager.linkNotice.mock.invocationCallOrder[0])
+    expect(h.manager.rootFor.mock.calls).toEqual(routes)
+    expect(h.manager.linkNotice.mock.calls).toEqual(notices)
+    expect(h.manager.routeToFile.mock.calls).toEqual(routes)
+    const restored = h.manager.restore.mock.invocationCallOrder[0]
+    for (const handled of [...h.manager.linkNotice.mock.invocationCallOrder, ...h.manager.routeToFile.mock.invocationCallOrder]) expect(handled).toBeGreaterThan(restored)
   })
 
   it('after ready a link routes at once, and a bad one gets the notice instead of a route', async () => {

@@ -197,10 +197,11 @@ app.whenReady().then(() => {
   powerMonitor.on('resume', () => sync.notifyWake())
   powerMonitor.on('unlock-screen', () => sync.notifyWake())
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
-  // each waiting link belongs to. A plain launch follows the setting (D2).
+  // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
+  // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
   const asked = links.pending().flatMap((url) => {
     const link = parseFileLink(url)
-    return link === null ? [] : [manager.rootFor(link.path, link.root)]
+    return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
   })
   manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
   links.flush()

@@ -164,17 +164,6 @@ describe('createWindowManager: restore', () => {
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
-  it('restores every stored entry, clamping lost bounds back onto a display and persisting the clamp', () => {
-    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
-    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
-    const { host, created } = makeHost()
-    createWindowManager(store, host).restore('all')
-    expect(created.map((c) => c.entry.id)).toEqual(['w1', 'w2'])
-    expect(created[0].entry.bounds).toEqual({ x: 10, y: 10, width: 800, height: 600 })
-    expect(created[1].entry.bounds).toEqual({ x: 640, y: 300, width: 800, height: 600 })
-    expect(store.get().windows.find((w) => w.id === 'w2')?.bounds).toEqual({ x: 640, y: 300, width: 800, height: 600 })
-  })
-
   it('registers every window it creates so IPC can resolve its caller', () => {
     const { manager, w1 } = seedTwo()
     expect(manager.idFor(w1.webContents)).toBe('w1')
@@ -203,7 +192,7 @@ describe('createWindowManager: bounds', () => {
 })
 
 describe('createWindowManager: close', () => {
-  it('intercepts close, waits for app:flushed, then destroys and drops the entry', async () => {
+  it('intercepts close, waits for app:flushed, then destroys and drops the entry; a close with other windows open records no vault (YAZ-2589 A1, S22)', async () => {
     const { manager, w1 } = seedTwo()
     w1.close()
     expect(w1.flushCount()).toBe(1)
@@ -213,9 +202,11 @@ describe('createWindowManager: close', () => {
     expect(w1.isDestroyed()).toBe(true)
     expect(store.get().windows.map((w) => w.id)).toEqual(['w2'])
     expect(manager.idFor(w1.webContents)).toBeUndefined()
+    expect(store.get().recents).toEqual([])
   })
 
-  it('the last window keeps its entry (its close is the quit) and saves its final bounds', async () => {
+  it('the last window keeps its entry (its close is the quit), saves its final bounds, and its vault is recorded as the "last vault" (YAZ-2589 A1, S23)', async () => {
+    store.pushRecent('/v/other', 1)
     store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
@@ -227,6 +218,7 @@ describe('createWindowManager: close', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(win.isDestroyed()).toBe(true)
     expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 200, y: 100, width: 800, height: 600 } }])
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v', '/v/other'])
   })
 
   it('a hung renderer cannot block close: the handshake times out after FLUSH_TIMEOUT_MS', async () => {
@@ -358,23 +350,33 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
     expect(ids(store.get().windows)).toEqual(['a', 'c'])
   })
 
-  it('D1 (S2, S18): asked for a vault with no saved window → nothing comes back and no Welcome window opens; the request then opens the vault in a new window on its last page', () => {
-    const { manager, created } = seedSaved(['/v/b', '/v/a'], () => false, (p) => p === '/v/a' || p === '/v/a/')
+  it('D1 (S2, S18): asked for a vault with no saved window → nothing comes back and no Welcome window opens; the request then opens the vault in a new window on its last page, and a second request for that vault waits for that window\'s page', () => {
+    const { manager, created } = seedSaved(['/v/b', '/v/a'], (p) => p === '/v/a/note.md', (p) => p === '/v/a' || p === '/v/a/')
     store.removeWindow('a')
-    manager.restore([manager.rootFor('/v/a/')])
+    manager.restore([manager.rootFor('/v/a/')!])
     expect(created).toHaveLength(0)
     expect(store.get().windows).toEqual([])
     manager.routeToFile('/v/a/')
     expect(created.map((c) => [c.entry.root, c.entry.file])).toEqual([['/v/a', '/v/a/Start here.md']])
     expect(store.get().folders['/v/a']).toMatchObject({ key: 1, name: 'Alpha' })
+    // A window that a request opened is still loading too: the hold is per window, not only for the ones `restore` brought back.
+    const win = created[0].win
+    manager.routeToFile('/v/a/note.md')
+    expect(created).toHaveLength(1)
+    expect(win.webContents.send).not.toHaveBeenCalled()
+    manager.handleLinkReady(win.webContents)
+    expect(win.webContents.send.mock.calls).toEqual([[CONTRACT.link.onOpenFile.channel, '/v/a/note.md']])
   })
 
-  it('D2 "All vaults" (S12, S25): every saved window comes back, the Welcome window too', () => {
+  it('D2 "All vaults" (S12, S24, S25): every saved window comes back, the Welcome window too; a place on a display that is gone is clamped onto one, and the clamp is saved', () => {
     const { manager, created, commits } = seedSaved()
     manager.restore('all')
     expect(ids(created.map((c) => c.entry))).toEqual(['a', 'b1', 'b2', 'c', 'w'])
     expect(ids(store.get().windows)).toEqual(['a', 'b1', 'b2', 'c', 'w'])
-    expect(commits()).toBe(1) // b1's clamped place (S24); nothing is forgotten
+    expect(created[0].entry.bounds).toEqual({ x: 0, y: 0, width: 800, height: 600 }) // on a display: as it was saved
+    expect(created[1].entry.bounds).toEqual({ x: 740, y: 400, width: 700, height: 500 })
+    expect(store.get().windows.find((w) => w.id === 'b1')?.bounds).toEqual({ x: 740, y: 400, width: 700, height: 500 })
+    expect(commits()).toBe(1) // b1's clamped place; nothing is forgotten
   })
 
   it('D2 "Last vault" (S10): the windows of the vault used last come back; the others, and the Welcome window (S25), are forgotten', () => {
@@ -386,6 +388,7 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
 
   it.each([
     ['"Last vault", and the vault used last has no saved window (S11)', 'last', ['/v/z', '/v/a']],
+    ['"Last vault", and no vault is on record (an empty `recents`)', 'last', []],
     ['"None" (S13)', 'none', ['/v/a', '/v/b']],
   ] as const)('D2 %s: one new Welcome window, and every saved window is forgotten', (_case, setting, recents) => {
     const { manager, created } = seedSaved([...recents])
@@ -396,19 +399,24 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
     expect(store.get().recents.map((r) => r.path)).toEqual(recents) // the list of vaults the Welcome window shows
   })
 
-  it('rootFor (D1, S4, S5): a folder is its own vault, slash off; a file belongs to the root `resolveLinkTarget` picks: the saved window that contains it, else the recent root, else its parent folder', () => {
-    const { manager } = seedSaved(['/v/a', '/r/known'], () => true, (p) => p === '/v/a/sub/' || p === '/elsewhere')
+  it('rootFor (D1, S4, S5): a folder is its own vault, slash off; a file belongs to the root `resolveLinkTarget` picks: the saved window that contains it, else the recent root, else its parent folder. A path that cannot open has no vault (A6)', () => {
+    const { manager } = seedSaved(['/v/a', '/r/known'], (p) => !p.endsWith('/gone.md'), (p) => p === '/v/a/sub/' || p === '/elsewhere')
     expect(manager.rootFor('/v/a/sub/')).toBe('/v/a/sub') // a folder inside a vault is its own vault (YAZ-2556 D1)
     expect(manager.rootFor('/elsewhere')).toBe('/elsewhere')
     expect(manager.rootFor('/v/c/deep/note.md')).toBe('/v/c')
     expect(manager.rootFor('/r/known/deep/note.md')).toBe('/r/known')
     expect(manager.rootFor('/nowhere/deep/note.md')).toBe('/nowhere/deep')
     expect(manager.rootFor('/v/b/deep/note.md', '/v/b/deep')).toBe('/v/b/deep') // `?root=` names the vault
+    // What `routeToFile` answers with a notice is not a request: a file that is gone, a kind the app does not open, a folder that is gone.
+    expect(manager.rootFor('/v/b/gone.md')).toBeNull()
+    expect(manager.rootFor('/v/b/gone.md', '/v/b')).toBeNull()
+    expect(manager.rootFor('/v/b/archive.zip')).toBeNull()
+    expect(manager.rootFor('/v/b/was-a-folder')).toBeNull()
   })
 
   it('D1 (S4): asked for a FILE in vault B → B\'s windows come back, nothing else opens, and the file opens in B\'s window once its page listens', () => {
     const { manager, created } = seedSaved()
-    manager.restore([manager.rootFor('/v/b/deep/note.md')])
+    manager.restore([manager.rootFor('/v/b/deep/note.md')!])
     manager.routeToFile('/v/b/deep/note.md')
     const sent = () => created.flatMap((c) => c.win.webContents.send.mock.calls)
     expect(ids(created.map((c) => c.entry))).toEqual(['b1', 'b2'])
@@ -418,13 +426,54 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
   })
 })
 
-describe('createWindowManager: the app never runs with no window, and a notice is never lost (YAZ-2589 A2)', () => {
-  it('S8: asked for a file that is gone, and its vault has no saved window → the Welcome window opens, and the notice shows there once its page listens', () => {
-    const { host, created } = makeHost([AREA], () => false, () => false)
+describe('createWindowManager: a request that cannot open is not a request (YAZ-2589 A6), the app never runs with no window, and a notice is never lost (A2)', () => {
+  const entry = (id: string, root: string): Omit<WindowEntry, 'rightPanel'> => ({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+
+  /** A quit left windows on A, B and C, with A used last. Only `/v/b/note.md` is a file that exists; no path is a folder. */
+  function seedThree() {
+    for (const [i, p] of ['/v/c', '/v/b', '/v/a'].entries()) store.pushRecent(p, i)
+    for (const id of ['a', 'b', 'c']) store.upsertWindow(entry(id, `/v/${id}`))
+    const { host, created } = makeHost([AREA], (p) => p === '/v/b/note.md', () => false)
+    return { manager: createWindowManager(store, host), created }
+  }
+  /** What `index.ts` does at launch: only the requests that can open are asked for; with none, the setting decides. Then each request is handled. */
+  function launch(manager: ReturnType<typeof createWindowManager>, paths: string[]): void {
+    const asked = paths.flatMap((p) => manager.rootFor(p) ?? [])
+    manager.restore(asked.length > 0 ? asked : 'last')
+    for (const p of paths) manager.routeToFile(p)
+  }
+
+  it('S8: asked for a file that is gone → a plain launch: the setting decides which windows come back, none is forgotten for the dead request, and the notice shows in a window that came back once its page listens', () => {
+    const { manager, created } = seedThree()
+    launch(manager, ['/v/b/gone.md'])
+    expect(created.map((c) => c.entry.id)).toEqual(['a']) // "Last vault", not vault B and not the Welcome window
+    const win = created[0].win
+    expect(win.webContents.send).not.toHaveBeenCalled()
+    manager.handleLinkReady(win.webContents)
+    expect(win.webContents.send.mock.calls).toEqual([[CONTRACT.link.onNotice.channel, "Can't open /v/b/gone.md: file not found"]])
+  })
+
+  it('one request that can open and one that cannot → only the vault of the good one comes back, and the notice shows there', () => {
+    const { manager, created } = seedThree()
+    launch(manager, ['/v/c/archive.zip', '/v/b/note.md'])
+    expect(created.map((c) => c.entry.id)).toEqual(['b'])
+    expect(store.get().windows.map((w) => w.id)).toEqual(['b'])
+    const win = created[0].win
+    manager.handleLinkReady(win.webContents)
+    expect(win.webContents.send.mock.calls).toEqual([
+      [CONTRACT.link.onNotice.channel, "Can't open /v/c/archive.zip: unsupported file type"],
+      [CONTRACT.link.onOpenFile.channel, '/v/b/note.md'],
+    ])
+  })
+
+  it('A2, the safety net: a folder that goes away between the launch\'s check and the open, with no window back → the Welcome window opens, and the notice shows there once its page listens', () => {
+    let there = true
+    const { host, created } = makeHost([AREA], () => false, () => there)
     const manager = createWindowManager(store, host)
-    manager.restore([manager.rootFor('/v/gone/x.md')])
+    manager.restore([manager.rootFor('/v/gone')!])
     expect(created).toHaveLength(0)
-    manager.routeToFile('/v/gone/x.md')
+    there = false
+    manager.routeToFile('/v/gone')
     manager.linkNotice("Can't open link: nope") // a second one finds the window that is there
     expect(created).toHaveLength(1)
     expect(created[0].entry.root).toBeNull()
@@ -433,7 +482,7 @@ describe('createWindowManager: the app never runs with no window, and a notice i
     expect(win.webContents.send).not.toHaveBeenCalled()
     manager.handleLinkReady(win.webContents)
     expect(win.webContents.send.mock.calls).toEqual([
-      [CONTRACT.link.onNotice.channel, "Can't open /v/gone/x.md: file not found"],
+      [CONTRACT.link.onNotice.channel, "Can't open /v/gone: unsupported file type"],
       [CONTRACT.link.onNotice.channel, "Can't open link: nope"],
     ])
     // From then on a notice goes out at once, and nothing is sent twice.
@@ -662,22 +711,6 @@ describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'
     expect(commits()).toBe(0)
   })
 
-  it('YAZ-2589 A1 (S22, S23): closing one window of two forgets it and records nothing; closing the LAST one keeps it and records its vault (that close is the quit)', async () => {
-    const { manager, wins: [a, b] } = seedFocus([['a', '/v/a'], ['b', '/v/b']], ['/v/a', '/v/b'])
-    const close = async (w: FakeWindow) => {
-      w.close()
-      manager.handleFlushed(w.webContents)
-      await vi.advanceTimersByTimeAsync(0)
-    }
-    await close(a)
-    expect(store.get().windows.map((w) => w.id)).toEqual(['b'])
-    expect(mru()).toEqual(['/v/a', '/v/b'])
-    await close(b)
-    expect(b.isDestroyed()).toBe(true)
-    expect(store.get().windows.map((w) => w.id)).toEqual(['b'])
-    expect(mru()).toEqual(['/v/b', '/v/a'])
-  })
-
   it('S37: focus moving between two windows of ONE vault (a trailing slash on a stored root is the same vault), or onto a Welcome window, makes no write', () => {
     const { wins: [a1, a2, welcome], commits } = seedFocus([['a1', '/v/a'], ['a2', '/v/a/'], ['w', null]], ['/v/a', '/v/b'])
     for (const w of [a1, a2, welcome]) w.emit('focus') // each one's first focus
@@ -778,9 +811,9 @@ describe('resolveLinkTarget (pure)', () => {
   const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
   const recents = (...paths: string[]): RecentRoots => paths.map((path, i) => ({ path, lastOpened: 100 - i }))
 
-  it('picks the open window whose root contains the path (root = dirname included)', () => {
-    expect(resolveLinkTarget('/v/a.md', [win('w1', '/v')], [])).toEqual({ kind: 'existing', id: 'w1' })
-    expect(resolveLinkTarget('/v/sub/deep/a.md', [win('w1', '/v')], [])).toEqual({ kind: 'existing', id: 'w1' })
+  it('picks the open window whose root contains the path (root = dirname included), and says its root', () => {
+    expect(resolveLinkTarget('/v/a.md', [win('w1', '/v')], [])).toEqual({ kind: 'existing', id: 'w1', root: '/v' })
+    expect(resolveLinkTarget('/v/sub/deep/a.md', [win('w1', '/v')], [])).toEqual({ kind: 'existing', id: 'w1', root: '/v' })
   })
 
   it('containment is by path segment: /a/b does not contain /a/bc/x.md', () => {
@@ -789,7 +822,7 @@ describe('resolveLinkTarget (pure)', () => {
 
   it('the most specific (longest) containing root wins; a tie keeps the first in windows[]', () => {
     const windows = [win('w1', '/v'), win('w2', '/v/sub'), win('w3', '/v/sub')]
-    expect(resolveLinkTarget('/v/sub/a.md', windows, [])).toEqual({ kind: 'existing', id: 'w2' })
+    expect(resolveLinkTarget('/v/sub/a.md', windows, [])).toEqual({ kind: 'existing', id: 'w2', root: '/v/sub' })
   })
 
   it('Welcome windows (root null) are never targets', () => {
@@ -812,12 +845,12 @@ describe('resolveLinkTarget (pure)', () => {
   it('a containing rootOverride wins: the open window on exactly that root first, else a new window there', () => {
     const windows = [win('w1', '/v'), win('w2', '/v/sub')]
     // Without the override, the more specific /v/sub would win; the override pins /v.
-    expect(resolveLinkTarget('/v/sub/a.md', windows, [], '/v')).toEqual({ kind: 'existing', id: 'w1' })
+    expect(resolveLinkTarget('/v/sub/a.md', windows, [], '/v')).toEqual({ kind: 'existing', id: 'w1', root: '/v' })
     expect(resolveLinkTarget('/v/sub/a.md', [], [], '/v')).toEqual({ kind: 'new', root: '/v', file: '/v/sub/a.md' })
   })
 
   it('a rootOverride that does not contain the path is ignored', () => {
-    expect(resolveLinkTarget('/v/a.md', [win('w1', '/v')], [], '/w')).toEqual({ kind: 'existing', id: 'w1' })
+    expect(resolveLinkTarget('/v/a.md', [win('w1', '/v')], [], '/w')).toEqual({ kind: 'existing', id: 'w1', root: '/v' })
     expect(resolveLinkTarget('/v/a.md', [], [], null)).toEqual({ kind: 'new', root: '/v', file: '/v/a.md' })
   })
 })
