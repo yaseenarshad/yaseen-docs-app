@@ -643,11 +643,11 @@ describe('resolveLinkTarget (pure)', () => {
 })
 
 describe('createWindowManager: routeToFile (E1)', () => {
-  /** One folder window on /v plus a Welcome window — the routing fixture. */
-  function seedRouting(exists: (path: string) => boolean = () => true) {
+  /** One folder window on /v plus a Welcome window — the routing fixture. No path is a folder unless a test says so (YAZ-2556 D1: `routeToFile` asks `dirExists` first). */
+  function seedRouting(exists: (path: string) => boolean = () => true, dirExists: (path: string) => boolean = () => false) {
     store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusDirs: [], focusFavorites: [], bounds: { x: 40, y: 40, width: 800, height: 600 } })
-    const { host, created } = makeHost([AREA], exists)
+    const { host, created } = makeHost([AREA], exists, dirExists)
     const manager = createWindowManager(store, host)
     manager.restoreAll()
     return { manager, created, w1: created[0].win, w2: created[1].win }
@@ -733,12 +733,68 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(sentOn(w1, CONTRACT.link.onOpenFile.channel)).toHaveLength(0)
   })
 
-  it('a directory with a supported-looking suffix is refused passively by the regular-file probe', () => {
-    const directory = '/v/folder.pdf'
-    const { manager, created, w1 } = seedRouting((candidate) => candidate !== directory)
-    manager.routeToFile(directory)
+  // ---------- a FOLDER from outside (YAZ-2556 D1): "Open Folder…" on it, through the one open-recent door ----------
+
+  /** What a real folder answers: not a regular file, and a directory. */
+  const seedFolder = (folder: string) => seedRouting((p) => p !== folder, (p) => p === folder)
+
+  it('S1: a vault\'s folder, and the vault has a window → that window is restored if minimized and raised; nothing new opens, nothing is sent to it', () => {
+    const { manager, created, w1, w2 } = seedFolder('/v')
+    w1.minimized = true
+    manager.routeToFile('/v')
+    expect(w1.isMinimized()).toBe(false)
+    expect(w1.focusCount).toBe(1)
+    expect(w2.focusCount).toBe(0)
     expect(created).toHaveLength(2)
-    expect(sentOn(w1, CONTRACT.link.onNotice.channel)).toEqual([[CONTRACT.link.onNotice.channel, `Can't open ${directory}: file not found`]])
+    expect(w1.webContents.send).not.toHaveBeenCalled() // no file to open, no notice
+    expect(store.get().recents[0]?.path).toBe('/v') // the door's bump: the vault is "last used"
+  })
+
+  it('S2: a known vault\'s folder with no window → a new window on its remembered last file', () => {
+    const { manager, created, w1 } = seedFolder('/w')
+    store.pushRecent('/w', 1)
+    store.setFolder('/w', { lastFile: '/w/Start here.md' })
+    manager.routeToFile('/w')
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.root).toBe('/w')
+    expect(created[2].entry.file).toBe('/w/Start here.md')
+    expect(w1.focusCount).toBe(0)
+  })
+
+  it('S4: a folder the app never opened → it opens as a vault, on no file, and enters the recents', () => {
+    const { manager, created } = seedFolder('/elsewhere/fresh')
+    manager.routeToFile('/elsewhere/fresh')
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.root).toBe('/elsewhere/fresh')
+    expect(created[2].entry.file).toBeNull()
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/elsewhere/fresh'])
+    expect(store.get().windows).toContainEqual(created[2].entry)
+  })
+
+  it('S5: a folder INSIDE an open vault → its own vault window; the vault that contains it is not raised and is sent nothing', () => {
+    const { manager, created, w1 } = seedFolder('/v/sub')
+    manager.routeToFile('/v/sub')
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.root).toBe('/v/sub')
+    expect(w1.focusCount).toBe(0)
+    expect(w1.webContents.send).not.toHaveBeenCalled()
+    expect(store.get().windows.find((w) => w.id === 'w1')?.root).toBe('/v')
+  })
+
+  it('a folder whose name ends like a supported file is a folder all the same: it opens as a vault (the regular-file probe refused it before YAZ-2556 D1)', () => {
+    const { manager, created, w1 } = seedFolder('/v/folder.pdf')
+    manager.routeToFile('/v/folder.pdf')
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.root).toBe('/v/folder.pdf')
+    expect(w1.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('S6: a path that does not exist is not a folder → the notice of before, and nothing opens', () => {
+    const { manager, created, w1 } = seedRouting(() => false)
+    manager.routeToFile('/v/gone')
+    manager.routeToFile('/v/gone.md')
+    expect(created).toHaveLength(2)
+    expect(sentOn(w1, CONTRACT.link.onNotice.channel).map(([, message]) => message)).toEqual(["Can't open /v/gone: unsupported file type", "Can't open /v/gone.md: file not found"])
     expect(sentOn(w1, CONTRACT.link.onOpenFile.channel)).toHaveLength(0)
   })
 
