@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, notesAt, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, favoriteRoots, findDirNode, findNode, focusRoots, notesAt, otherFiles, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -209,5 +209,19 @@ describe('notesAt (YAZ-2420 3E1)', () => {
     expect(notesAt(tree, '/v/a')).toEqual(['/v/a/b/deep.md', '/v/a/one.md'])
     expect(notesAt(tree, '/v/a/b/scan.pdf')).toEqual([])
     expect(notesAt(tree, '/v/gone')).toEqual([])
+  })
+})
+
+describe('otherFiles (YAZ-2620 D3)', () => {
+  const file = (path: string, kind: 'markdown' | 'pdf' | null): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'skills', path: '/r/skills', children: [{ type: 'dir', name: 'empty', path: '/r/skills/empty', children: [] }, file('/r/skills/get-transcript.py', null), file('/r/skills/SKILL.md', 'markdown')] },
+    file('/r/a.md', 'markdown'),
+    file('/r/scan.pdf', 'pdf'),
+  ]
+
+  it('every file that is no note, at any depth, in tree order — one the app can show and one it cannot alike; never a note, never a folder', () => {
+    expect(otherFiles(tree)).toEqual(['/r/skills/get-transcript.py', '/r/scan.pdf'])
+    expect(otherFiles([])).toEqual([])
   })
 })

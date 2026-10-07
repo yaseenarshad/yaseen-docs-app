@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -9,9 +9,8 @@ import { pageName, usePathTitles } from '../lib/pageLabel'
 import { relTo } from '../lib/paths'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, treeHasFile } from '../lib/treeState'
-import { SearchResults } from '../search/SearchResults'
-import type { SearchCandidate } from '../search/searchCandidates'
+import { ancestorDirs, findDirNode, findNode, treeHasFile } from '../lib/treeState'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
@@ -317,8 +316,12 @@ const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', favorites: 'Fa
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
-/** The Favorites tree's file move (YAZ-1766 D4): nothing on that tab drags to disk, so every callback is a no-op. */
+/** The Favorites tree's file move (YAZ-1766 D4), and the search tree's (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
 const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
+
+/** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
+const NO_NODES: readonly TreeNode[] = []
+const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
 export function Sidebar({
@@ -361,7 +364,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(root, watch, activeFile, lens, onRootMissing, onFileMissing, onNotice)
+  const { tree, error, refresh, expanded, dispatch, expandedSet, toggleDir, focusDirs, setFocusDirs, focusFavorites, focusNodes, focused, focusOn, exitFocus, favorites, favoritesRef, saveFavorites, toggleFavorite, dirs, files, shownDirs, favoriteNodes, favoriteDirs } = useVaultTree(root, watch, activeFile, lens, onRootMissing, onFileMissing, onNotice)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
@@ -395,15 +398,32 @@ export function Sidebar({
 
   // What the chevrons button unfolds on the active lens.
   const bodyDirs = lens === 'favorites' ? favoriteDirs : shownDirs
-  // One activation rule for keyboard AND click, and for a folder as for a note: the row's page
-  // opens as a tab. The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the
-  // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
+  // Enter in the search bar, on a folder as on a note: the highlighted row's page opens as a tab.
+  // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
+  // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
+  // row's own (YAZ-2620 🔒 D1): it opens a note the same way, and folds a folder.
   const activate = (hit: SearchCandidate, background: boolean) => {
-    if (background) onOpenFileBackground(hit.path)
+    const node = tree === null ? null : findNode(tree.tree, hit.path)
+    // A file with no viewer in the app opens in its default app, as its tree row does (YAZ-1577 D2;
+    // S24 on YAZ-2620): no tab, so nothing for ⌘ to background either.
+    if (node?.type === 'file' && node.kind === null) openDefault(hit.path)
+    else if (background) onOpenFileBackground(hit.path)
     else if (hit.path === activeFile) focusOpenDocument()
     else onOpenFile(hit.path)
   }
-  const { setQuery, searchInput, query, results, searching, sel, setSelected, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, dirs, pendingSearchFocus, onSearchFocusHandled, activate)
+  const { setQuery, searchInput, query, results, searching, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(root, watch, tree?.tree ?? NO_NODES, dirs, files, pendingSearchFocus, onSearchFocusHandled, activate)
+  // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
+  // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
+  const menuRow = menu?.leaveSearchTo ?? null
+  const searchSelection = useMemo(() => (menuRow === null || searchCursor.paths.has(menuRow) ? searchCursor : { ...searchCursor, paths: new Set([...searchCursor.paths, menuRow]) }), [searchCursor, menuRow])
+  // The search tree scrolls inside `.sidebar__body`, so arrowing past its edge must bring the
+  // highlighted row along. jsdom has no scrollIntoView — hence the `?.()` (the TabBar idiom).
+  useEffect(() => {
+    const [path] = searchCursor.paths
+    if (path === undefined || bodyRef.current === null) return
+    const row = [...bodyRef.current.querySelectorAll<HTMLElement>('.tree__row[data-path]')].find((r) => r.dataset.path === path)
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }, [searchCursor.paths])
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -468,6 +488,8 @@ export function Sidebar({
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
       if (node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
+      // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
+      if (searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
@@ -521,7 +543,7 @@ export function Sidebar({
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
       })
     },
-    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, favorites, upkeep, reviewState, indexSource],
+    [root, tree, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, favorites, upkeep, reviewState, indexSource],
   )
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, dispatch, clipboardRef, onNotice, indexSource)
@@ -716,8 +738,8 @@ export function Sidebar({
       {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Files (the file
           explorer) ⇄ Favorites. The row stays VISIBLE and clickable during a search,
           and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`
-          only — no `aria-controls`/`tabpanel`, because the body below is shared with the flat
-          search results and belongs to neither lens while a query is typed. */}
+          only — no `aria-controls`/`tabpanel`, because the body below is shared with the search
+          tree and belongs to neither lens while a query is typed. */}
       <div className="sidebar__lenses" role="tablist" aria-label="Sidebar lens">
         {SIDEBAR_LENSES.map((id) => (
           <button
@@ -779,9 +801,9 @@ export function Sidebar({
         />
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
-          results list has no such target, so right-clicking it offers nothing (YAZ-803) — not even
-          Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the full menu.
-          Blank space means the same thing in either lens: the vault ROOT. */}
+          search results have no such target, so right-clicking beside them offers nothing (YAZ-803)
+          — not even Electron's text menu, which leaked through until YAZ-2050. Their ROWS get the
+          full menu. Blank space means the same thing in either lens: the vault ROOT. */}
       <div
         ref={bodyRef}
         className="sidebar__body"
@@ -810,9 +832,35 @@ export function Sidebar({
         }}
       >
         {searching ? (
-          // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
-          results.length > 0 ? (
-            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} onRowContextMenu={(hit, e) => openMenu({ type: hit.kind, path: hit.path }, e)} />
+          // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5), with the
+          // Files tree cut down to the matches and their parents (YAZ-2620 🔒 D1): full tree rows,
+          // each with its own menu. The folds and the highlight are the search's own; nothing here
+          // creates, renames or drags, and a note shows once, where it lives (S7). Only this tree
+          // gets `marks` (🔒 D5): the typed text bold in a match, every other row dim.
+          found.nodes.length > 0 ? (
+            <>
+              <Tree
+                nodes={found.nodes}
+                dirPath={root}
+                expanded={searchOpen}
+                activeFile={activeFile}
+                onToggle={toggleSearchDir}
+                onOpenFile={onOpenFile}
+                onOpenFileBackground={onOpenFileBackground}
+                onOpenDefault={openDefault}
+                onNodeContextMenu={openRowMenu}
+                pending={null}
+                renaming={null}
+                move={INERT_MOVE}
+                selection={searchSelection}
+                counts={counts}
+                shortcuts={NO_SHORTCUTS}
+                titles={titles}
+                marks={marks}
+              />
+              {/* The limit (🔒 D6): the ranking keeps the best `SEARCH_CAP` candidate rows, and a line says so once it is reached. */}
+              {results.length === SEARCH_CAP && <p className="sidebar__msg">Showing {SEARCH_CAP} matches. Type more to narrow.</p>}
+            </>
           ) : (
             <p className="sidebar__msg">No matches</p>
           )
