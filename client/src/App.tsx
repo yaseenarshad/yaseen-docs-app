@@ -845,17 +845,19 @@ export function App() {
    * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its
    * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
    * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
-   * Nothing on disk changes. The vaults that stay keep their slots, so nothing of theirs loads
-   * again, and the next vault is the root when the first one left (S52). Its focus items leave
-   * with it, in the write that drops it (A5, `storage.setRoots`). The only vault of a window does
-   * not leave it this way (S51).
+   * Nothing on disk changes. The vaults that stay keep their slots, so no scope of theirs loads
+   * again, and the next vault is the root when the first one left (S52): the sidebar, keyed on the
+   * first vault, then mounts again. Its focus items leave with it, in the write that drops it (A5,
+   * `storage.setRoots`). The only vault of a window does not leave it this way (S51).
    */
   const removeVault = useCallback((gone: string) => {
     const now = live.current.roots
     const rest = now.filter((vault) => vault !== gone)
     if (rest.length === 0 || rest.length === now.length) return
     setSidebarRevealRequest(null)
-    deleteWorkspaceDir(stripSlash(gone))
+    // The pages close against the vaults that stay: with none left open, the empty window is the
+    // new first vault's to remember, and the vault that left keeps its last file (S52).
+    deleteWorkspaceDir(stripSlash(gone), rest[0])
     storage.setRoots(rest)
     setRoots(storage.getRoots())
     setVaultOpen(gone, true) // a vault that comes back starts open (R9)
@@ -863,7 +865,7 @@ export function App() {
 
   /**
    * A vault's folder is gone on disk (YAZ-2602 S53, R6). The only vault of the window: the Welcome
-   * screen, as before. One of several: it leaves as a removed one does, the notice names it, and
+   * screen. One of several: it leaves as a removed one does, the notice names it, and
    * the folder leaves the recents.
    */
   const dropVault = useCallback((gone: string) => {

@@ -108,7 +108,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     const root = typeof target === 'string' ? rootOfPath(rootsOfSender(e), target) : null
     if (root === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that path')
     // Only a vault that uses IDs has titles (YAZ-2523 🔒 V3): where it does not, a name changes by `fs:rename`.
-    if (!(await usesIds(e, req))) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs')
+    if (!(await givesIds(root))) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs')
     const res = await retitle(root, req)
     return res.newPath === res.oldPath ? res : afterRename(res)
   })

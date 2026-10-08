@@ -115,7 +115,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     // applied to whichever of `file` / `tabs` the patch left untouched.
     const nextFile = file !== undefined ? file : entry.file
     const nextTabs = normalizeTabs(tabs ?? entry.tabs, nextFile)
-    // `root` alone keeps the list when it names the vault the window is already on, and is the whole list otherwise.
+    // `root` alone keeps the list when it names the vault the window is already on, and is the whole list otherwise (YAZ-2602 A10).
     const roots = patchRoots ?? (root === undefined || root === entry.root ? entry.roots : [])
     store.upsertWindow({
       ...entry,

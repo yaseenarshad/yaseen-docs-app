@@ -72,8 +72,8 @@ describe('addRecentRoot', () => {
 
 describe('openVaultRoots (YAZ-2555 D1)', () => {
   it('is each window\'s root in window order, once per vault — a trailing slash off, never off "/" — with Welcome windows left out', () => {
-    expect(openVaultRoots([{ root: '/v/b' }, { root: null }, { root: '/v/a/' }, { root: '/v/b/' }, { root: '/v/a' }, { root: '/' }])).toEqual(['/v/b', '/v/a', '/'])
-    expect(openVaultRoots([{ root: null }])).toEqual([])
+    expect(openVaultRoots([{ roots: ['/v/b'] }, { roots: [] }, { roots: ['/v/a/'] }, { roots: ['/v/b/'] }, { roots: ['/v/a'] }, { roots: ['/'] }])).toEqual(['/v/b', '/v/a', '/'])
+    expect(openVaultRoots([{ roots: [] }])).toEqual([])
   })
 })
 
