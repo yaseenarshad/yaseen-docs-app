@@ -1214,7 +1214,7 @@ button {
   background: var(--accent-soft);
 }
 
-/* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Files, Focus, Favorites.
+/* Lens tabs (YAZ-847) — chrome v2 ROW 1, under the header: Files, Search (YAZ-2638 D2), Focus, Favorites.
    The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
    accent on the active one, pulled down over the row's own hairline so the two read as one line. */
 .sidebar__lenses {
@@ -1246,9 +1246,9 @@ button {
   border-bottom-color: var(--accent);
 }
 
-/* The Favorites tab is a heart and the Focus tab an eye, not words (YAZ-1766 D1, YAZ-2619 D4):
-   sized to the text tabs' cap height, and in the accent while active — the heart filled too — so
-   the underline is not the only tell. */
+/* The Favorites tab is a heart, the Focus tab an eye and the Search tab a magnifier, not words
+   (YAZ-1766 D1, YAZ-2619 D4, YAZ-2638 D2): sized to the text tabs' cap height, and in the accent
+   while active — the heart filled too — so the underline is not the only tell. */
 .sidebar__lens--glyph {
   display: inline-flex;
   align-items: center;
@@ -1295,8 +1295,8 @@ button {
   color: var(--fg);
 }
 
-/* Persistent search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
-   tabs above it: it is ALWAYS visible, on both lenses (YAZ-847). */
+/* The search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
+   tabs above it. It is on the Search tab only (YAZ-2638 D2); the shortcut picker draws the same row. */
 .sidebar__search {
   flex: none;
   display: flex;
@@ -1327,8 +1327,8 @@ button {
   color: var(--fg-muted);
 }
 
-/* The way out of a search (D8, YAZ-2630): a keycap that names the key, and is the key on a click.
-   There only while a query is typed. */
+/* The way out of the Search tab (YAZ-2638 D2): a keycap that names the key, and is the key on a
+   click — back to the lens the window last showed. Always in the bar. */
 .sidebar__search-clear {
   flex: none;
   padding: 0 5px;

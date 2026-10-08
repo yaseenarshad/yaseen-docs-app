@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type SidebarLens, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type SidebarTab, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -51,8 +51,8 @@ interface SidebarStubProps {
   /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
   switcherOpenRequest: number
   /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
-  lens: SidebarLens
-  onLensChange: (lens: SidebarLens) => void
+  lens: SidebarTab
+  onLensChange: (lens: SidebarTab) => void
   onCollapse: () => void
   revealRequest?: { id: number; path: string }
   onRevealConsumed?: (id: number) => void
@@ -973,14 +973,43 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    expect(captured.sidebar?.lens).toBe('search') // S3 (YAZ-2638): the sidebar shows first, and it mounts on the Search tab
   })
 
-  it('with the sidebar already open it only raises the focus flag', async () => {
+  it('with the sidebar already open it shows the Search tab and raises the focus flag (YAZ-2638 S2)', async () => {
     const { bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(captured.sidebar?.pendingSearchFocus).toBe(false)
     act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
+  })
+
+  it('S15 (YAZ-2638): the Search tab is never stored — ⌘K and a click on the tab show it, `storage.setSidebarLens` never gets `search`, and the stored lens is the last lens', async () => {
+    const setLens = vi.spyOn(storage, 'setSidebarLens')
+    const { bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+    expect(storage.getSidebarLens()).toBe('favorites') // the fixture's lens: what a window that starts again opens on
+    // Esc in the bar: the sidebar asks for the lens the window last showed.
+    act(() => captured.sidebar?.onLensChange(storage.getSidebarLens()))
+    expect(captured.sidebar?.lens).toBe('favorites')
+    act(() => captured.sidebar?.onLensChange('files'))
+    // S5: a click on the Search tab.
+    act(() => captured.sidebar?.onLensChange('search'))
+    expect(captured.sidebar?.lens).toBe('search')
+    expect(storage.getSidebarLens()).toBe('files')
+    expect(setLens.mock.calls).toEqual([['favorites'], ['files']])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ sidebarLens: 'search' }))
+  })
+
+  it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {
+    const { el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitSearch())
+    expect([captured.sidebar?.lens, el.querySelector('[data-sidebar]')?.getAttribute('data-root')]).toEqual(['search', '/v'])
+    // The vault menu's "Open in this window" (YAZ-1798): the one in-place switch of a window that has a vault.
+    await act(async () => void (await captured.sidebar?.onOpenVaultHere('/w')))
+    expect([captured.sidebar?.lens, el.querySelector('[data-sidebar]')?.getAttribute('data-root')]).toEqual(['files', '/w'])
   })
 })
 

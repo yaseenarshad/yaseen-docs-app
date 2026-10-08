@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type SettingsState, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -103,7 +103,7 @@ export function App() {
   // mounted on one vault (`sidebarKey`) and only while open; sidebar-local view state would reset on every
   // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
   // `WindowEntry.sidebarLens`; never a second flag.
-  const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
+  const [sidebarLens, setSidebarLens] = useState<SidebarTab>(storage.getSidebarLens)
   // ⌘⇧C's read-only window onto the sidebar's multi-selection (🔒 D4, YAZ-1338). App owns the
   // BOX and the chord; the Sidebar owns the selection (🔒 D1) and writes it in here, emptying it
   // when it unmounts. A ref rather than state on purpose: App needs the answer only at the
@@ -265,8 +265,9 @@ export function App() {
   }, [])
 
   /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */
-  const changeLens = useCallback((next: SidebarLens) => {
-    storage.setSidebarLens(next)
+  const changeLens = useCallback((next: SidebarTab) => {
+    // Search is never stored (YAZ-2638 D2): a window opens again on its last lens.
+    if (next !== 'search') storage.setSidebarLens(next)
     setSidebarLens(next)
   }, [])
 
@@ -428,12 +429,13 @@ export function App() {
     if (!closeActive()) void api.window.closeSelf()
   }, [closeActive])
 
-  // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, then ask
-  // the sidebar to focus its search bar (it mounts with the flag already true).
+  // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, show the
+  // Search tab (YAZ-2638 D2), then ask the sidebar to focus its search bar (it mounts with the flag already true).
   const openSearch = useCallback(() => {
     if (sidebarCollapsed) toggleSidebar()
+    changeLens('search')
     setPendingSearchFocus(true)
-  }, [sidebarCollapsed, toggleSidebar])
+  }, [sidebarCollapsed, toggleSidebar, changeLens])
 
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
   // request counter the sidebar header's panel consumes. The request is pinned to the sidebar it was
@@ -454,9 +456,9 @@ export function App() {
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
 
-  // A search row's menu item that draws into the tree (🔒 D2, YAZ-2050): always the FILES lens,
-  // whichever tab was showing. The sidebar is necessarily open (the row was clicked in it), so no
-  // un-collapse step here.
+  // A search row's menu item that draws into the tree (🔒 D2, YAZ-2050), and "Show in sidebar" on a
+  // row of Search, Focus or Favorites (YAZ-2638 D1, D3): always the FILES lens, whichever tab was
+  // showing. The sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
   const revealInFiles = useCallback((path: string) => {
     changeLens('files')
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
