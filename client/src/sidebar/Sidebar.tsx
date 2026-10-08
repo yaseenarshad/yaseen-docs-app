@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import { SIDEBAR_LENSES, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { SIDEBAR_TABS, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -74,9 +74,10 @@ interface SidebarProps {
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
   /**
-   * A search row's menu item that draws into the tree was chosen (🔒 D2, YAZ-2050): App flips the
-   * lens to Files and issues the same reveal request the tab menu uses, so the row unfolds and
-   * flashes below — whichever lens was showing.
+   * A search row's menu item that draws into the tree was chosen (🔒 D2, YAZ-2050), or "Show in
+   * sidebar" on a row of Search, Focus or Favorites (YAZ-2638 D1, D3): App flips the lens to Files
+   * and issues the same reveal request the tab menu uses, so the row unfolds and flashes below —
+   * whichever tab was showing.
    */
   onRevealInFiles: (path: string) => void
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
@@ -95,14 +96,14 @@ interface SidebarProps {
   /** Hide the sidebar (GRO-2023); TabBar leads its nav row with the Show-sidebar button while hidden (YAZ-1759). */
   onCollapse: () => void
   /**
-   * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity
+   * Which tab the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity
    * (`WindowEntry.sidebarLens`, per window since YAZ-1628), never Sidebar-local: this component
    * is mounted on one vault of the window and only while the sidebar is open, so local state would forget the
-   * choice on every collapse/reopen and every root switch.
+   * choice on every collapse/reopen and every root switch. Search is a tab too (YAZ-2638 D2): App's, and never stored.
    */
-  lens: SidebarLens
-  /** A lens tab was clicked; App writes it through to the window identity and passes the new value back down. */
-  onLensChange: (lens: SidebarLens) => void
+  lens: SidebarTab
+  /** A tab was clicked; App writes a lens through to the window identity — never Search — and passes the new value back down. */
+  onLensChange: (lens: SidebarTab) => void
   /** One reveal in Files; a request that arrives on another lens is dropped. */
   revealRequest: SidebarRevealRequest | null
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
@@ -139,9 +140,9 @@ interface SidebarProps {
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
   /**
-   * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
-   * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
-   * edge case. Nothing sets it true yet — YAZ-804 wires the shortcut.
+   * ⌘K asked for the search bar (YAZ-801): App shows the Search tab with it (YAZ-2638 D2), and the bar
+   * focuses its input and selects its text. True at MOUNT is the ⌘K-while-collapsed path (App
+   * un-collapses, so the sidebar mounts with it already set), not an edge case.
    */
   pendingSearchFocus: boolean
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
@@ -292,8 +293,8 @@ export interface MenuTargets {
   /** "Remove from this window" (YAZ-2602 D7) — a VAULT row only: that vault's root. */
   removeVault: string | null
   /**
-   * The lens the items act in (🔒 D1, YAZ-2050): the active one, or FILES for a search row — a search
-   * row is a disk row, whichever tab sits under the query. Every lens rule in the menu path reads this.
+   * The lens the items act in (🔒 D1, YAZ-2050): the active one, or FILES for a row of the Search
+   * tab — a search row is a disk row. Every lens rule in the menu path reads this.
    */
   lens: SidebarLens
   /**
@@ -301,6 +302,11 @@ export interface MenuTargets {
    * draw INTO the tree (an inline input) reveal it in Files first, since the tree is hidden.
    */
   leaveSearchTo: string | null
+  /**
+   * "Show in sidebar" (YAZ-2638 D1, D3) — a row of Search, Focus or Favorites outside a plural
+   * selection: the row to show in Files. Null on a row of the Files tab and on blank space. Its OWN field.
+   */
+  showPath: string | null
 }
 
 /**
@@ -325,8 +331,8 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
   return { notes, folders }
 }
 
-/** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
-const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', focus: 'Focus', favorites: 'Favorites' }
+/** The tabs' copy; the ORDER is `SIDEBAR_TABS`', so the default lens leads (YAZ-847) and Search stands right after it (YAZ-2638 D2). */
+const LENS_LABEL: Record<SidebarTab, string> = { files: 'Files', search: 'Search', focus: 'Focus', favorites: 'Favorites' }
 
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
@@ -458,7 +464,11 @@ export function Sidebar({
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
   const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
-  const { setQuery, searchInput, query, results, searching, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pendingSearchFocus, onSearchFocusHandled, activate)
+  // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
+  const searching = lens === 'search'
+  // Esc and its keycap: back to the lens the window last showed.
+  const leaveSearch = useCallback(() => onLensChange(storage.getSidebarLens()), [onLensChange])
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate)
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null
@@ -480,7 +490,6 @@ export function Sidebar({
       setPendingReveal(null)
       return
     }
-    setQuery('')
     setPendingReveal(revealRequest)
   }, [lens, onRevealConsumed, revealRequest])
 
@@ -557,8 +566,8 @@ export function Sidebar({
       const blank = multi ? null : root.replace(/\/+$/, '')
       // App's answer for the row (YAZ-2322), asked ONCE here like every other target this menu pins.
       const inReview = filePath === null ? null : reviewState(filePath)
-      // Only a search ROW opens a menu while searching (blank space there offers none), so `searching` names the origin.
-      const menuLens: SidebarLens = searching ? 'files' : lens
+      // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
+      const menuLens: SidebarLens = lens === 'search' ? 'files' : lens
       // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       setMenu({
@@ -566,6 +575,8 @@ export function Sidebar({
         y: e.clientY,
         lens: menuLens,
         leaveSearchTo: searching ? (node?.path ?? null) : null,
+        // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
+        showPath: lens !== 'files' && plural === null ? (node?.path ?? null) : null,
         targetDir: node === null && multi ? null : targetDirFor(node, root),
         rowKind: node?.type ?? null,
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
@@ -776,8 +787,8 @@ export function Sidebar({
   ))
 
   // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through
-  // `onRevealInFiles`: App flips to Files; the reveal clears the query, expands and flashes the
-  // row — and the item's input lands beside the row it names.
+  // `onRevealInFiles`: App flips to Files; the reveal expands and flashes the row — and the item's
+  // input lands beside the row it names. The query stays in the Search tab (YAZ-2638 D2).
   const viaTree =
     <A extends unknown[]>(run: (...args: A) => void) =>
     (...args: A): void => {
@@ -824,7 +835,7 @@ export function Sidebar({
           <SidebarPanelIcon />
         </button>
       </div>
-      {/* The Inbox (YAZ-2322), with upkeep on: above the lens tabs, so it shows in every lens and during a search.
+      {/* The Inbox (YAZ-2322), with upkeep on: above the tabs, so it shows on every tab — the Search tab too.
           One row per vault that has upkeep on (YAZ-2602 R5), in vault order; two or more say whose each is. */}
       {inboxes.map((vault) => {
         const label = inboxes.length > 1 ? `Inbox · ${vault.name}` : 'Inbox'
@@ -842,13 +853,12 @@ export function Sidebar({
           </button>
         )
       })}
-      {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Files (the file
-          explorer), Focus, Favorites. The row stays VISIBLE and clickable during a search,
-          and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`
-          only — no `aria-controls`/`tabpanel`, because the body below is shared with the search
-          tree and belongs to neither lens while a query is typed. */}
+      {/* The tabs (🔒 D4, YAZ-847; YAZ-2638 D2) — chrome v2 ROW 1: Files (the file explorer), Search,
+          Focus, Favorites. Search is a tab of its own, and switching tabs never touches its query.
+          `role="tab"` + `aria-selected` only — no `aria-controls`/`tabpanel`: the one body below is
+          every tab's. */}
       <div className="sidebar__lenses" role="tablist" aria-label="Sidebar lens">
-        {SIDEBAR_LENSES.map((id) => (
+        {SIDEBAR_TABS.map((id) => (
           <button
             key={id}
             type="button"
@@ -856,17 +866,17 @@ export function Sidebar({
             aria-selected={lens === id}
             className={`sidebar__lens${id !== 'files' ? ' sidebar__lens--glyph' : ''}${lens === id ? ' sidebar__lens--active' : ''}`}
             onClick={() => onLensChange(id)}
-            // Favorites and Focus are glyphs, not words (YAZ-1766 D1, YAZ-2619 D4): the label lives in `title` + `aria-label`.
+            // Search, Focus and Favorites are glyphs, not words (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1): the label lives in `title` + `aria-label`.
             title={id !== 'files' ? LENS_LABEL[id] : undefined}
             aria-label={id !== 'files' ? LENS_LABEL[id] : undefined}
           >
-            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : LENS_LABEL[id]}
+            {id === 'favorites' ? <HeartIcon /> : id === 'focus' ? <EyeIcon /> : id === 'search' ? <SearchIcon /> : LENS_LABEL[id]}
           </button>
         ))}
         {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
             collapses everything, and only a fully closed tree expands it. It acts on whichever
-            lens is ACTIVE. Gone — not disabled — while a query is
-            typed (the tree is not the body then) and whenever the active reading has nothing to
+            lens is ACTIVE. Gone — not disabled — on the Search tab (YAZ-2638 D2: its folds are
+            the search's own) and whenever the active reading has nothing to
             unfold: no folder, and no vault row. */}
         {!searching && (bodyDirs.length > 0 || foldVaults) && (
           <button
@@ -884,45 +894,34 @@ export function Sidebar({
           </button>
         )}
       </div>
-      {/* Persistent search bar (YAZ-739 A-, chrome v2 row 2 — 🔒 YAZ-797): always visible, never a
-          tab or a view — on BOTH lenses (YAZ-847 keeps that rule). YAZ-750's filter affordance
-          sits beside it; YAZ-803 swaps the body to results while `query` is non-empty. */}
-      <div className="sidebar__search">
-        <SearchIcon />
-        <input
-          ref={searchInput}
-          className="sidebar__search-input"
-          type="text"
-          placeholder="Search"
-          title="Search (⌘K)"
-          aria-label="Search notes"
-          value={query}
-          onChange={changeQuery}
-          onKeyDown={searchKeyDown}
-        />
-        {/* The way out, in sight (D8, YAZ-2630): Esc clears a typed query, and while there is one
-            this keycap says so — and does it on a click, the caret landing in the bar. No Tab stop:
-            the key it names is the keyboard's way. */}
-        {query !== '' && (
-          <button
-            type="button"
-            className="sidebar__search-clear"
-            title="Clear search (Esc)"
-            aria-label="Clear search"
-            tabIndex={-1}
-            onClick={() => {
-              setQuery('')
-              searchInput.current?.focus()
-            }}
-          >
+      {/* The search bar (YAZ-739 A-, chrome v2 row 2), on the Search tab only (YAZ-2638 D2): the
+          tab carries the magnifier, so the bar has none. With text typed the body below is the
+          results (YAZ-803); the text stays while a different tab shows. */}
+      {searching && (
+        <div className="sidebar__search">
+          <input
+            ref={searchInput}
+            className="sidebar__search-input"
+            type="text"
+            placeholder="Search"
+            title="Search (⌘K)"
+            aria-label="Search notes"
+            value={query}
+            onChange={changeQuery}
+            onKeyDown={searchKeyDown}
+          />
+          {/* The way out, in sight (YAZ-2638 D2): Esc goes back to the lens the window last showed
+              and keeps the text, and this keycap — always in the bar — says so and does it on a
+              click. No Tab stop: the key it names is the keyboard's way. */}
+          <button type="button" className="sidebar__search-clear" title="Back (Esc)" aria-label="Leave search" tabIndex={-1} onClick={leaveSearch}>
             esc
           </button>
-        )}
-      </div>
+        </div>
+      )}
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
-          search results have no such target, so right-clicking beside them offers nothing (YAZ-803)
-          — not even Electron's text menu, which leaked through until YAZ-2050. Their ROWS get the
-          full menu. Blank space means the same thing in either lens: the vault ROOT. */}
+          Search tab has no such target, so right-clicking its blank space offers nothing (YAZ-803)
+          — not even Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the
+          full menu. Blank space means the same thing in every lens: the vault ROOT. */}
       <div
         ref={bodyRef}
         className="sidebar__body"
@@ -950,9 +949,12 @@ export function Sidebar({
           dispatchSelection({ type: 'clear' })
         }}
       >
-        {searching ? (
-          // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5), with the
-          // Files tree cut down to the matches and their parents (YAZ-2620 🔒 D1): full tree rows,
+        {searching && !typed ? (
+          // The Search tab with an empty bar (YAZ-2638 D2): one line, and no tree.
+          <p className="sidebar__msg">Type to search every note and folder.</p>
+        ) : searching ? (
+          // The Search tab with text typed (YAZ-2638 D2): its body is the Files tree cut down to
+          // the matches and their parents (YAZ-2620 🔒 D1): full tree rows,
           // each with its own menu. The folds and the highlight are the search's own; nothing here
           // creates, renames or drags, and a note shows once, where it lives (S7). Only this tree
           // gets `marks` (🔒 D5): the typed text bold in a match, every other row dim. With two or
@@ -969,7 +971,7 @@ export function Sidebar({
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
-          // every row carries the same menu. A top row drags to reorder the list, and a file inside a
+          // every row carries the same menu plus "Show in sidebar" first (YAZ-2638 D3). A top row drags to reorder the list, and a file inside a
           // favorited folder drags to move on disk (YAZ-2631 D3). With two or more vaults the favorites
           // of every vault stand in the one list, and each top row names its vault (YAZ-2631 D1, D4).
           <>
@@ -980,7 +982,7 @@ export function Sidebar({
           </>
         ) : lens === 'focus' ? (
           // The Focus tab (YAZ-2619 D2, D4): the window's focus list in its own order, each a full
-          // tree row with the same menu, under a line that counts the top rows (R11) and clears the
+          // tree row with the same menu plus "Show in sidebar" first (YAZ-2638 D3), under a line that counts the top rows (R11) and clears the
           // list. A top row drags to reorder the list, and a file inside a focused folder drags to move
           // on disk (YAZ-2631 D3). With two or more vaults the items of every vault stand in the one
           // list, and each top row names its vault (YAZ-2602 A4).
@@ -1026,15 +1028,16 @@ export function Sidebar({
             {
               onOpen: onOpenFile,
               onOpenInNewTabs: openFilesInTabs,
+              onShowInSidebar: onRevealInFiles,
               onOpenNewWindow: openFileNewWindow,
               onOpenVsCode: openVsCode,
               onOpenDefault: openDefault,
               onReveal: reveal,
-              // An add shows the Focus tab (YAZ-2619 D3); a remove keeps the tab (R5). From a search
-              // row the query stays (S11), so this is not a `viaTree` item.
+              // An add shows the Focus tab (YAZ-2619 D3) — not from the Search tab, which stays
+              // (YAZ-2638 D2); a remove keeps the tab (R5). This is not a `viaTree` item.
               onToggleFocus: (paths, isOn) => {
                 toggleFocus(paths, isOn)
-                if (!isOn && lens !== 'focus') onLensChange('focus')
+                if (!isOn && lens !== 'focus' && lens !== 'search') onLensChange('focus')
               },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),

@@ -38,7 +38,7 @@
  * Open folder…. ↑/↓ clamp at both ends (the `[[` picker's no-wrap rule), hover moves it too, ⏎
  * activates it — ⇧⏎ / ⇧-click open it IN this window instead, the menu's verb (YAZ-1974 D8), and
  * while ⇧ is held the highlighted row says so: "Open here" in its time slot (D9) — Esc
- * closes (the menu convention — not the search bar's two-press rule). Typing never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
+ * closes (the menu convention). Typing never leaves the input: rows swallow their own mousedown. "Open folder…" is not a candidate, so
  * it is visible whatever the query; a query with no vault match shows "No matching vaults" above it.
  *
  * ⌘O (D8): App bumps `openRequest`; each new value toggles the panel — opens it with the filter focused, or closes it.

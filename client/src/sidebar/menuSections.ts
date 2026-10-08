@@ -22,7 +22,8 @@ import type { MenuTargets } from './Sidebar'
  * D7 amended (YAZ-1674): the OS verbs collapse into ONE "Open in ▸" parent whose flyout is itself
  * groups of leaves — the same renderer, the same separator rule, one level deep — and that parent
  * is its OWN group between the this-row group and Delete. The Open group keeps only a folder's
- * Open, the plural open and the focus toggle — its one item on a single file row (YAZ-2619 R6).
+ * Open, the plural open and the focus toggle — its one item on a single file row of the Files tab
+ * (YAZ-2619 R6). On a row of Search, Focus or Favorites "Show in sidebar" leads it (YAZ-2638 D1, D3).
  */
 interface MenuItemBase {
   id: string
@@ -66,6 +67,8 @@ export interface MenuHandlers {
   onOpen: (path: string) => void
   /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
   onOpenInNewTabs: (paths: string[]) => void
+  /** "Show in sidebar" on a row of Search, Focus or Favorites (YAZ-2638 D1, D3): the caller shows the row in Files. */
+  onShowInSidebar: (path: string) => void
   onOpenNewWindow: (path: string) => void
   onOpenVsCode: (path: string) => void
   onOpenDefault: (path: string) => void
@@ -117,7 +120,7 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 /** "1 item" / "3 items" — the one spelling the menu's labels and the Sidebar's notices share. */
 export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 
-// ---- (1) Open / View: a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
+// ---- (1) Open / View: "Show in sidebar", a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
 
 /**
  * "Open" — a FOLDER row (YAZ-2290 D3): the folder itself is a tab, and a click on its row only
@@ -139,6 +142,17 @@ const openInNewTabs: Leaf = (t, h) => {
   const paths = t.openTabPaths
   if (paths === null) return null
   return { id: 'open-tabs', label: `Open ${paths.length} in new tabs`, onSelect: () => h.onOpenInNewTabs(paths) }
+}
+
+/**
+ * "Show in sidebar" (YAZ-2638 D1, D3): a row of Search, Focus or Favorites — file, folder or vault
+ * row — outside a plural selection. It shows the row in Files, as the tab's item does, and it LEADS
+ * the menu: the row is the reason for the right-click. A VIEW verb: it opens no tab and writes nothing.
+ */
+const showInSidebar: Leaf = (t, h) => {
+  const path = t.showPath
+  if (path === null) return null
+  return { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => h.onShowInSidebar(path) }
 }
 
 /**
@@ -405,7 +419,7 @@ const addVault: Item = (t, h) => {
   }
 }
 
-const OPEN_GROUP: readonly Item[] = [open, openInNewTabs, focus]
+const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]

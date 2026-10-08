@@ -39,6 +39,8 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   removeVault: null,
   lens: 'files',
   leaveSearchTo: null,
+  // "Show in sidebar" (YAZ-2638): null is a row of the Files tab, and blank space.
+  showPath: null,
   clip: null,
   ...over,
 })
@@ -46,6 +48,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
 const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onOpen: vi.fn(),
   onOpenInNewTabs: vi.fn(),
+  onShowInSidebar: vi.fn(),
   onOpenNewWindow: vi.fn(),
   onOpenVsCode: vi.fn(),
   onOpenDefault: vi.fn(),
@@ -272,6 +275,45 @@ describe('Open item (YAZ-2290 D3)', () => {
     expect(sections[0].map((i) => i.label)).toEqual(['Open', 'Add to focus'])
     select(sections, 'Open')
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects')
+  })
+})
+
+/**
+ * "Show in sidebar" (YAZ-2638 D1, D3): on a row of Search, Focus or Favorites — the caller hands
+ * the row as `showPath` — and never on a row of the Files tab, on blank space or inside a selection
+ * of two or more, where the caller hands null. It is the FIRST item of the menu. The S-numbers are
+ * the case record on YAZ-2638.
+ */
+describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
+  it('S28, S38: is absent without a target — a row of the Files tab, blank space', () => {
+    expect(itemOf(build(FILE_ROW), 'Show in sidebar')).toBeUndefined()
+    expect(itemOf(build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'] }), 'Show in sidebar')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Show in sidebar')).toBeUndefined()
+  })
+
+  it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Add to focus" on a file row, before "Open" on a folder row — and the rest of the menu is as it was', () => {
+    const file = build({ ...FILE_ROW, showPath: '/v/Note.md' })
+    expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Add to focus'])
+    expect(labelsOf(file)).toEqual(['Show in sidebar', ...labelsOf(build(FILE_ROW))])
+    const folder = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'], showPath: '/v/Projects' })
+    expect(folder[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open', 'Add to focus'])
+    // A vault row of a search (S26) has no Open and no focus item: the item is the Open group's one item.
+    const vault = build({ removeVault: '/v', showPath: '/v' })
+    expect(vault[0].map((i) => i.label)).toEqual(['Show in sidebar'])
+    expect(itemOf(file, 'Show in sidebar')).toMatchObject({ id: 'show-in-sidebar' })
+  })
+
+  it('S29, S30, S36: a select hands the caller the row, and no other handler runs', () => {
+    const h = handlers()
+    select(buildMenuSections(targets({ ...FILE_ROW, showPath: '/v/Note.md' }), h), 'Show in sidebar')
+    expect(h.onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
+    const others = Object.entries(h).filter(([name]) => name !== 'onShowInSidebar')
+    for (const [name, fn] of others) expect(fn, name).not.toHaveBeenCalled()
+  })
+
+  it('S35: inside a selection of two or more the caller hands no target — "Open N in new tabs" still leads', () => {
+    const sections = build({ ...FILE_ROW, focusPaths: ['/v/a.md', '/v/b.md'], openTabPaths: ['/v/a.md', '/v/b.md'], showPath: null })
+    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Add 2 to focus'])
   })
 })
 

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown } from '@shared/fileKind'
-import type { FileClipState, SidebarLens, TreeNode } from '@shared/types'
+import type { FileClipState, SidebarLens, SidebarTab, TreeNode } from '@shared/types'
 import { api } from '../../api'
 import type { NoticeKind } from '../../lib/notice'
 import { pageName, pathTitles } from '../../lib/pageLabel'
@@ -22,7 +22,7 @@ import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 /** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
-export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
+export function useSelection(lens: SidebarTab, searching: boolean, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
   // and nowhere else on purpose: the Sidebar (which calls this hook) is mounted on one vault of the window and
@@ -39,7 +39,7 @@ export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeNo
   }, [roots])
 
   // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
-  // other lens is a different reading of the vault, and a typed query swaps the body for the
+  // other lens is a different reading of the vault, and the Search tab (YAZ-2638 D2) draws the
   // search tree (YAZ-2620), which has a highlight of its own and no multi-select. `clear` on an
   // empty selection returns the same set, so the mount pass and every ordinary render below cost nothing.
   useEffect(() => {
