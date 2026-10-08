@@ -845,10 +845,10 @@ export function App() {
    * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its
    * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
    * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
-   * Nothing on disk changes. The vaults that stay keep their slots, so nothing of theirs loads
-   * again, and the next vault is the root when the first one left (S52). Its focus items leave
-   * with it, in the write that drops it (A5, `storage.setRoots`). The only vault of a window does
-   * not leave it this way (S51).
+   * Nothing on disk changes. The vaults that stay keep their slots, so no scope of theirs loads
+   * again, and the next vault is the root when the first one left (S52): the sidebar, keyed on the
+   * first vault, then mounts again. Its focus items leave with it, in the write that drops it (A5,
+   * `storage.setRoots`). The only vault of a window does not leave it this way (S51).
    */
   const removeVault = useCallback((gone: string) => {
     const now = live.current.roots
