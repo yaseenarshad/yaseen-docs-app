@@ -865,7 +865,7 @@ export function App() {
 
   /**
    * A vault's folder is gone on disk (YAZ-2602 S53, R6). The only vault of the window: the Welcome
-   * screen, as before. One of several: it leaves as a removed one does, the notice names it, and
+   * screen. One of several: it leaves as a removed one does, the notice names it, and
    * the folder leaves the recents.
    */
   const dropVault = useCallback((gone: string) => {

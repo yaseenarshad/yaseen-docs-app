@@ -2590,9 +2590,8 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4)', () 
 })
 
 /**
- * A window with one vault asks main for exactly what it asked before it could hold several
- * (YAZ-2602 S79): a slot with no vault makes no bridge call. The numbers were measured on the
- * commit before the scopes; StrictMode runs each mount effect twice.
+ * A window with one vault asks main for one vault's worth of each read and each subscription
+ * (YAZ-2602 S79): a slot with no vault makes no bridge call. StrictMode runs each mount effect twice.
  */
 describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79)', () => {
   it('at boot: one vault\'s worth of each read and each subscription, and a tab switch adds none', async () => {
@@ -2627,8 +2626,8 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
 /**
  * One scope per vault (YAZ-2602 D1): a window that shows two vaults keeps the watcher, the index,
  * the properties, the sync, the review and the IDs answer of EACH, all loaded, and a page reads
- * the ones of the vault that holds it. Until the sidebar shows every vault (2C) the identity
- * fixture gives the window its second vault, and the sidebar stub stands on the first.
+ * the ones of the vault that holds it. The identity fixture gives the window its vaults, and the
+ * sidebar is a stub that reports the first.
  */
 describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   type Bridge = ReturnType<typeof installBridge>

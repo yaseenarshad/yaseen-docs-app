@@ -109,7 +109,7 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string):
   // One list over every vault. Each vault's folder rows, note rows and other-file rows are rebuilt
   // only when what they were built from changed — its `dirs` or folder records, its records, its
   // `files` — so a snapshot or a tree of one vault rebuilds no row of another. One vault → its own
-  // list, as before: folders, notes, other files (a tie in a rank reads in that order, YAZ-2620 S19).
+  // list: folders, notes, other files (a tie in a rank reads in that order, YAZ-2620 S19).
   const built = useRef(new Map<string, Rows>())
   const candidates = useMemo(() => {
     const next = new Map<string, Rows>()
