@@ -219,7 +219,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const [shiftHeld, setShiftHeld] = useState(false)
   // The trigger's text, live: a change made in ANY window lands through `storage.subscribe`. The saved workspace that is
   // exactly this window's vaults (YAZ-2602 S15) — the first that matches — else each vault's display name (YAZ-1974 D4).
-  const name = useSyncExternalStore(storage.subscribe, () => storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name ?? vaultsLabel(roots.map(storage.vaultName)))
+  // One vault is never a workspace (S70), so its header asks the saved ones nothing.
+  const name = useSyncExternalStore(storage.subscribe, () => (several ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name : undefined) ?? vaultsLabel(roots.map(storage.vaultName)))
   const open = panel !== null
 
   const openPanel = useCallback(() => {
