@@ -277,6 +277,17 @@ export function useVaultTree(
     [onNotice],
   )
 
+  /** A drag on the Favorites tab (YAZ-2631 D3): each vault's file gets its own part of the new order, and only when that part changed (R3). */
+  const saveFavoriteOrder = useCallback(
+    (next: string[]) => {
+      for (const vault of live.current.roots) {
+        const own = next.filter((p) => rootOf(p) === vault)
+        if (!sameList(own, favoritesRef.current[vault] ?? [])) saveFavorites(vault, own)
+      }
+    },
+    [rootOf, saveFavorites],
+  )
+
   // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
   // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
   // Its FOLDERS, in the vault that holds it: a vault row the user closed stays closed (YAZ-2602 R9).
@@ -422,5 +433,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  return { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus: setFocusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }

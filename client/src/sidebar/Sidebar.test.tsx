@@ -624,11 +624,13 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(el.querySelector('.create-inline__input')).toBeNull()
   })
 
-  it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered', async () => {
+  it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered; no top row of Files reorders (YAZ-2631 S38)', async () => {
     const { props, el } = await mount()
+    expect([dirRow(el)?.draggable, fileRow(el)?.draggable]).toEqual([false, true])
     fire(fileRow(el), 'dragstart')
     fire(dirRow(el), 'dragover')
     expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
+    expect(el.querySelector('.tree__row--drop-before, .tree__row--drop-after')).toBeNull()
     fire(dirRow(el), 'drop')
     expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md', '/v/sub/a.md', 'file')
     expect(el.querySelector('.tree__row--drop')).toBeNull() // drag state cleared
@@ -1543,13 +1545,17 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(keycap()).not.toBeNull()
   })
 
-  it('S32: a drag does nothing — no row is a drop target and nothing moves on disk', async () => {
-    const { el, v, props } = await search('plan')
-    act(() => void row(el, `${v}/plan.md`)?.dispatchEvent(new Event('dragstart', { bubbles: true })))
-    act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new Event('dragover', { bubbles: true })))
-    expect(el.querySelector('.tree__row--drop')).toBeNull()
-    act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new Event('drop', { bubbles: true })))
+  // The Favorites tab's own tree reorders its top rows and moves a deeper file on disk; the search over it does neither.
+  it.each(['files', 'favorites'] as const)('S32, YAZ-2631 S37: over the %s tab a drag does nothing — no row is a drop target, no row takes a line, nothing moves on disk and no order is written', async (lens) => {
+    const { el, v, bridge, props } = await search('plan', { lens }, { tweak: (b) => b.favorites.get.mockImplementation(async (root) => [`${root}/Plans`, `${root}/plan.md`]) })
+    for (const dragged of [`${v}/plan.md`, `${v}/Plans/Plan A.md`]) {
+      act(() => void row(el, dragged)?.dispatchEvent(new Event('dragstart', { bubbles: true })))
+      act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new Event('dragover', { bubbles: true })))
+      expect(el.querySelector('.tree__row--drop, .tree__row--drop-before, .tree__row--drop-after')).toBeNull()
+      act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new Event('drop', { bubbles: true })))
+    }
     expect(props.onRenameFile).not.toHaveBeenCalled()
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
   it('S9, S10: a note is ONE row under its title, whatever of it matched — an alias alone, its title and an alias, or its id', async () => {
@@ -2231,8 +2237,10 @@ describe('focus tab (YAZ-2619)', () => {
     rightClick(rowByPath(el, path))
     await act(async () => itemByLabel(el, label)?.click())
   }
-  /** jsdom has no DragEvent, so a bare cancelable Event stands in (the E1b idiom). */
-  const fire = (target: Element | null, type: string) => act(() => void target?.dispatchEvent(new Event(type, { bubbles: true, cancelable: true })))
+  /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
+  const drag = (target: Element | null | undefined, type: string, clientY = 0) => act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
+  const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
   /** The watcher-driven refresh idiom: a new tree answers the next `bridge.tree`, an event triggers it. */
   const withWatcher = () => {
     let emit: ((ev: WatchEvent) => void) | undefined
@@ -2453,13 +2461,8 @@ describe('focus tab (YAZ-2619)', () => {
     }
   })
 
-  it('S37, S38: on the Focus tab a file drag moves the file on disk, and a row carries the row menu of Files — Rename edits in place, Cut reaches the file clipboard', async () => {
+  it('S38: on the Focus tab a row carries the row menu of Files — Rename edits in place, Cut reaches the file clipboard', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md'] })
-    fire(rowByPath(el, `${v}/top.md`), 'dragstart')
-    fire(rowByPath(el, `${v}/Projects`), 'dragover')
-    expect(rowByPath(el, `${v}/Projects`)?.classList.contains('tree__row--drop')).toBe(true)
-    fire(rowByPath(el, `${v}/Projects`), 'drop')
-    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith(`${v}/top.md`, `${v}/Projects/top.md`, 'file')
     rightClick(rowByPath(el, `${v}/top.md`))
     for (const label of ['Remove from focus', 'Cut', 'Copy', 'Paste', 'Copy path', 'New note', 'Rename', 'Add to favorites', 'Open in', 'Delete']) expect(itemByLabel(el, label), label).toBeDefined()
     await act(async () => itemByLabel(el, 'Cut')?.click())
@@ -2467,6 +2470,91 @@ describe('focus tab (YAZ-2619)', () => {
     await pick(el, `${v}/top.md`, 'Rename')
     expect(props.onLensChange).not.toHaveBeenCalled()
     expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('top')
+  })
+
+  it('YAZ-2631 S26, S27, S29, S35, S40: a top row, a file or a folder, drags to a new place — a line on the hovered edge, never the fill of a drop folder; the new order is the window\'s, and nothing moves on disk; a drop on itself and a drag that ends elsewhere change nothing', async () => {
+    const { el, v, bridge, props, rerender } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md', '/Notes'] })
+    const [projects, top, notes] = [`${v}/Projects`, `${v}/top.md`, `${v}/Notes`]
+    expect([projects, top].map((path) => rowByPath(el, path)?.draggable)).toEqual([true, true])
+    // A top FILE row over the top half of a top FOLDER row (S29): it lands before it, and is not moved into it.
+    drag(rowByPath(el, top), 'dragstart')
+    drag(rowByPath(el, projects), 'dragover', -1)
+    expect(rowByPath(el, projects)?.classList.contains('tree__row--drop-before')).toBe(true)
+    expect(el.querySelector('.tree__row--drop')).toBeNull()
+    drag(rowByPath(el, projects), 'drop')
+    expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [top, projects, notes] })
+    expect(marker(el)).toBeNull()
+    // A FOLDER row over the bottom half of a FILE row.
+    drag(rowByPath(el, notes), 'dragstart')
+    drag(rowByPath(el, top), 'dragover', 1)
+    expect(rowByPath(el, top)?.classList.contains('tree__row--drop-after')).toBe(true)
+    drag(rowByPath(el, top), 'drop')
+    expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [top, projects, notes] }], [{ focusList: [top, notes, projects] }]])
+    // S27: the order is the list's own, so another tab and back shows it as it was left.
+    await rerender({ lens: 'files' })
+    await rerender({ lens: 'focus' })
+    expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
+    // S35: a drop on itself; then a drag that ends with no drop takes its line with it.
+    drag(rowByPath(el, notes), 'dragstart')
+    drag(rowByPath(el, notes), 'dragover', -1)
+    drag(rowByPath(el, notes), 'drop')
+    drag(rowByPath(el, notes), 'dragstart')
+    drag(rowByPath(el, projects), 'dragover', 1)
+    expect(marker(el)).toBe(rowByPath(el, projects))
+    drag(rowByPath(el, notes), 'dragend')
+    expect(marker(el)).toBeNull()
+    drag(rowByPath(el, projects), 'drop')
+    expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-2631 S30, S32, S33, S34, S39: below the top rows nothing reorders — a file inside a focused folder drags into a folder and moves on disk, and finds no place on a top file row; a folder there does not drag; a reorder drag finds no place on a deeper row; an item that shows on both levels does each', async () => {
+    const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/Projects/p.md', '/Notes', '/top.md'] })
+    const [projects, p, notes, top, alpha] = [`${v}/Projects`, `${v}/Projects/p.md`, `${v}/Notes`, `${v}/top.md`, `${v}/Projects/Alpha`]
+    act(() => rowByPath(el, projects)?.click())
+    // S39: the item stands inside its focused folder, and again as a top row.
+    const twice = () => rowsByPath(el, p)
+    expect(twice().map((row) => row.closest('ul')?.getAttribute('role'))).toEqual(['group', 'tree'])
+    expect([...twice(), rowByPath(el, alpha)].map((row) => row?.draggable)).toEqual([true, true, false]) // S32
+    // S30: from inside the folder it moves on disk, into a top folder or a deeper one — the fill, and no line.
+    drag(twice()[0], 'dragstart')
+    drag(rowByPath(el, notes), 'dragover', -1)
+    expect(marker(el)).toBe(rowByPath(el, notes))
+    expect(rowByPath(el, notes)?.classList.contains('tree__row--drop')).toBe(true)
+    drag(rowByPath(el, notes), 'drop')
+    expect(props.onRenameFile).toHaveBeenLastCalledWith(p, `${v}/Notes/p.md`, 'file')
+    drag(twice()[0], 'dragstart')
+    drag(rowByPath(el, alpha), 'drop')
+    expect(props.onRenameFile).toHaveBeenLastCalledWith(p, `${v}/Projects/Alpha/p.md`, 'file')
+    // S33: a top FILE row is no folder to move into, and no place in the list for a row from inside a folder.
+    drag(twice()[0], 'dragstart')
+    drag(rowByPath(el, top), 'dragover', -1)
+    expect(marker(el)).toBeNull()
+    drag(rowByPath(el, top), 'drop')
+    drag(twice()[0], 'dragend')
+    expect(props.onRenameFile).toHaveBeenCalledTimes(2)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    // S39: its top row takes a new place in the list.
+    drag(twice()[1], 'dragstart')
+    drag(rowByPath(el, notes), 'dragover', 1)
+    expect(rowByPath(el, notes)?.classList.contains('tree__row--drop-after')).toBe(true)
+    drag(rowByPath(el, notes), 'drop')
+    expect(topLabels(el)).toEqual(['Projects', 'Notes', 'p', 'top'])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [projects, notes, p, top] }]])
+    // S34: a reorder drag over a deeper row, a folder or a file: no line, no fill, and a drop there changes nothing.
+    for (const deeper of [() => rowByPath(el, alpha), () => twice()[0]]) {
+      drag(rowByPath(el, top), 'dragstart')
+      drag(deeper(), 'dragover', -1)
+      expect(marker(el)).toBeNull()
+      drag(deeper(), 'drop')
+      drag(rowByPath(el, top), 'dragend')
+    }
+    expect(topLabels(el)).toEqual(['Projects', 'Notes', 'p', 'top'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    expect(props.onRenameFile).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -2523,6 +2611,8 @@ describe('favorites (YAZ-1766)', () => {
   /** jsdom has no DragEvent: a MouseEvent with the row's edge in `clientY` (the zero rect reads `< 0` as "before"). */
   const drag = (target: Element | null | undefined, type: string, clientY = 0) =>
     act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
+  const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
 
   it('the tab is the third, right of Focus (YAZ-2619), and starts on the empty hint', async () => {
     const { el } = await mountVault({ lens: 'favorites' })
@@ -2674,13 +2764,13 @@ describe('favorites (YAZ-1766)', () => {
     expect(rowByPath(el, `${v}/Projects/Alpha`)?.querySelector('.tree__mark')).not.toBeNull()
   })
 
-  it('root rows drag to reorder: a drop indicator on the hovered edge, the new order persisted; nested rows do not drag; Files is untouched', async () => {
+  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder does not drag (YAZ-2631 S29, S32)', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     expect(rowByPath(el, `${v}/Notes`)?.getAttribute('draggable')).toBe('true')
     expect(rowByPath(el, `${v}/top.md`)?.getAttribute('draggable')).toBe('true')
     act(() => rowByPath(el, `${v}/Projects`)?.click())
     expect(rowByPath(el, `${v}/Projects/Alpha`)?.getAttribute('draggable')).toBe('false')
-    expect(rowByPath(el, `${v}/Projects/p.md`)?.getAttribute('draggable')).toBe('false')
+    expect(rowByPath(el, `${v}/Projects/p.md`)?.getAttribute('draggable')).toBe('true') // it moves on disk
     drag(rowByPath(el, `${v}/top.md`), 'dragstart')
     drag(rowByPath(el, `${v}/Notes`), 'dragover', -1)
     expect(rowByPath(el, `${v}/Notes`)?.classList.contains('tree__row--drop-before')).toBe(true)
@@ -2697,19 +2787,45 @@ describe('favorites (YAZ-1766)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
-  it('dragging a favorites row onto a nested folder moves nothing on disk, and dragend abandons cleanly', async () => {
-    const { el, v, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
+  it('YAZ-2631 S30, S33, S34, S35, S40: a file inside a favorited folder drags into a folder and moves on disk, and finds no place on a top file row; a reorder drag over a deeper row shows no line and no fill, a drop there or on itself changes nothing, and dragend takes the line with it', async () => {
+    const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
+    const [notes, top, alpha, inner] = [`${v}/Notes`, `${v}/top.md`, `${v}/Projects/Alpha`, `${v}/Projects/p.md`]
     act(() => rowByPath(el, `${v}/Projects`)?.click())
-    drag(rowByPath(el, `${v}/top.md`), 'dragstart')
-    drag(rowByPath(el, `${v}/Projects/Alpha`), 'dragover')
-    expect(rowByPath(el, `${v}/Projects/Alpha`)?.classList.contains('tree__row--drop')).toBe(false)
-    drag(rowByPath(el, `${v}/Projects/Alpha`), 'drop')
-    expect(props.onRenameFile).not.toHaveBeenCalled()
+    // S30: the fill of a drop folder, no line; the drop is the rename flow of the Files tab.
+    drag(rowByPath(el, inner), 'dragstart')
+    drag(rowByPath(el, notes), 'dragover', -1)
+    expect(marker(el)).toBe(rowByPath(el, notes))
+    expect(rowByPath(el, notes)?.classList.contains('tree__row--drop')).toBe(true)
+    drag(rowByPath(el, notes), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith(inner, `${v}/Notes/p.md`, 'file')
+    // S33: a top FILE row is no folder to move into, and no place in the list for a row from inside a folder.
+    drag(rowByPath(el, inner), 'dragstart')
+    drag(rowByPath(el, top), 'dragover', -1)
+    expect(marker(el)).toBeNull()
+    drag(rowByPath(el, top), 'drop')
+    drag(rowByPath(el, inner), 'dragend')
+    // S34, S40: a reorder drag over a deeper row, a folder or a file.
+    for (const deeper of [alpha, inner]) {
+      drag(rowByPath(el, top), 'dragstart')
+      drag(rowByPath(el, deeper), 'dragover', -1)
+      expect(marker(el)).toBeNull()
+      drag(rowByPath(el, deeper), 'drop')
+      drag(rowByPath(el, top), 'dragend')
+    }
+    // S35: a drop on itself; then a drag that ends with no drop.
+    drag(rowByPath(el, top), 'dragstart')
+    drag(rowByPath(el, top), 'dragover', -1)
+    drag(rowByPath(el, top), 'drop')
+    drag(rowByPath(el, top), 'dragstart')
+    drag(rowByPath(el, notes), 'dragover', -1)
+    expect(rowByPath(el, notes)?.classList.contains('tree__row--drop-before')).toBe(true)
+    expect(el.querySelector('.tree__row--drop')).toBeNull()
+    drag(rowByPath(el, top), 'dragend')
+    expect(marker(el)).toBeNull()
+    drag(rowByPath(el, notes), 'drop')
     expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
-    drag(rowByPath(el, `${v}/top.md`), 'dragstart')
-    drag(rowByPath(el, `${v}/top.md`), 'dragend')
-    drag(rowByPath(el, `${v}/Notes`), 'dragover', -1)
-    expect(el.querySelector('.tree__row--drop-before')).toBeNull()
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(props.onRenameFile).toHaveBeenCalledTimes(1)
   })
 
   it('reorder is always on: a focus list in this window neither narrows the tab nor stops the drag (YAZ-2619 S39)', async () => {
@@ -4137,13 +4253,24 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(labels()).toEqual(['Projects', 'Alpha'])
     })
 
-    it('is not draggable — a drag would move the note out of the folder it lives in — while its real row still is', async () => {
+    it('is not draggable — a drag would move the note out of the folder it lives in — while its real row still is; so too on a tab that reorders, where the file rows beside it move on disk (YAZ-2631 S36)', async () => {
       const { el, props } = await mountLinked([PROJECTS_ID])
       expect(shortcutRow(el)?.draggable).toBe(false)
       expect(row(el, HEALTH)?.draggable).toBe(true)
       act(() => void shortcutRow(el)?.dispatchEvent(new Event('dragstart', { bubbles: true })))
       act(() => void row(el, '/v/Projects')?.dispatchEvent(new Event('drop', { bubbles: true })))
       expect(props.onRenameFile).not.toHaveBeenCalled()
+      act(() => root?.unmount())
+      container?.remove()
+
+      const favorites = await mountLinked([PROJECTS_ID], { lens: 'favorites' }, (bridge) => bridge.favorites.get.mockResolvedValue(['/v/Areas', '/v/Projects']))
+      expect([shortcutRow(favorites.el)?.draggable, row(favorites.el, '/v/Projects/Alpha.md')?.draggable]).toEqual([false, true])
+      act(() => void shortcutRow(favorites.el)?.dispatchEvent(new Event('dragstart', { bubbles: true })))
+      act(() => void row(favorites.el, '/v/Areas')?.dispatchEvent(new Event('dragover', { bubbles: true })))
+      expect(favorites.el.querySelector('.tree__row--drop, .tree__row--drop-before, .tree__row--drop-after')).toBeNull()
+      act(() => void row(favorites.el, '/v/Areas')?.dispatchEvent(new Event('drop', { bubbles: true })))
+      expect(favorites.props.onRenameFile).not.toHaveBeenCalled()
+      expect(favorites.bridge.favorites.set).not.toHaveBeenCalled()
     })
 
     it('is the same note as its real row: the open file and the selection light BOTH (🔒 D3)', async () => {
@@ -5336,28 +5463,14 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from favorites', 'favorite')
   })
 
-  it('a drag reorders a favorite inside its own vault; over a row of a different vault\'s group, or that vault\'s row, there is no marker and a drop changes nothing; a vault row does not drag (S26)', async () => {
+  it('a drag reorders a favorite inside its own vault and writes that vault\'s file alone; a vault row does not drag (S26, YAZ-2631 R3)', async () => {
     const { el, a, b, bridge, props } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`, `${at.a}/sub`], [at.b]: [`${at.b}/docs`, `${at.b}/b.md`] }))
-    const shown = [a, `${a}/a.md`, `${a}/sub`, b, `${b}/docs`, `${b}/b.md`]
-    expect(allRows(el)).toEqual(shown)
+    expect(allRows(el)).toEqual([a, `${a}/a.md`, `${a}/sub`, b, `${b}/docs`, `${b}/b.md`])
     expect([a, b, `${a}/sub`, `${a}/a.md`].map((path) => rowByPath(el, path)?.draggable)).toEqual([false, false, true, true])
 
     drag(rowByPath(el, `${a}/sub`), 'dragstart')
     drag(rowByPath(el, `${a}/a.md`), 'dragover', -1)
     expect(rowByPath(el, `${a}/a.md`)?.classList.contains('tree__row--drop-before')).toBe(true)
-    // On to the other vault's group: the marker goes, and none takes its place.
-    drag(rowByPath(el, `${b}/docs`), 'dragover', -1)
-    expect(marker(el)).toBeNull()
-    drag(rowByPath(el, `${b}/docs`), 'drop')
-    drag(rowByPath(el, `${a}/sub`), 'dragstart')
-    drag(rowByPath(el, b), 'dragover', -1)
-    expect(marker(el)).toBeNull()
-    drag(rowByPath(el, b), 'drop')
-    expect(bridge.favorites.set).not.toHaveBeenCalled()
-    expect(allRows(el)).toEqual(shown)
-
-    drag(rowByPath(el, `${a}/sub`), 'dragstart')
-    drag(rowByPath(el, `${a}/a.md`), 'dragover', -1)
     drag(rowByPath(el, `${a}/a.md`), 'drop')
     expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/sub`, `${a}/a.md`]]])
     expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/docs`, `${b}/b.md`])
@@ -5367,9 +5480,45 @@ describe('several vaults in one window (YAZ-2602)', () => {
     drag(rowByPath(el, `${b}/b.md`), 'dragover', 1)
     expect(rowByPath(el, `${b}/b.md`)?.classList.contains('tree__row--drop-after')).toBe(true)
     drag(rowByPath(el, `${b}/b.md`), 'drop')
-    expect(bridge.favorites.set).toHaveBeenLastCalledWith(b, [`${b}/b.md`, `${b}/docs`])
+    expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/sub`, `${a}/a.md`]], [b, [`${b}/b.md`, `${b}/docs`]]])
     expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/b.md`, `${b}/docs`])
     expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-2631 S28, S31: with two vaults a top row of the Focus tab drags to any place, between the rows of either vault; a file inside a folder, dropped on a folder of a different vault, is refused with the notice — on Focus as on Favorites', async () => {
+    const at = pair()
+    const [sub, a, docs, b] = [`${at.a}/sub`, `${at.a}/a.md`, `${at.b}/docs`, `${at.b}/b.md`]
+    const { el, bridge, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens: 'focus' }, withFocus(sub, a, docs, b))
+    drag(rowByPath(el, b), 'dragstart')
+    drag(rowByPath(el, a), 'dragover', -1)
+    expect(rowByPath(el, a)?.classList.contains('tree__row--drop-before')).toBe(true)
+    drag(rowByPath(el, a), 'drop')
+    expect(allRows(el)).toEqual([sub, b, a, docs])
+    drag(rowByPath(el, sub), 'dragstart')
+    drag(rowByPath(el, docs), 'dragover', 1)
+    expect(rowByPath(el, docs)?.classList.contains('tree__row--drop-after')).toBe(true)
+    drag(rowByPath(el, docs), 'drop')
+    expect(allRows(el)).toEqual([b, a, docs, sub])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [sub, b, a, docs] }], [{ focusList: [b, a, docs, sub] }]])
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    container?.remove()
+
+    for (const lens of ['focus', 'favorites'] as const) {
+      const other = pair()
+      const inner = `${other.a}/sub/in.md`
+      const mounted = await mountVaults([vault(other.a, 'Notes'), vault(other.b, 'Work')], { lens }, async (bridge) => {
+        await withFocus(`${other.a}/sub`, `${other.b}/docs`)(bridge)
+        favoritesOf(bridge, { [other.a]: [`${other.a}/sub`], [other.b]: [`${other.b}/docs`] })
+      })
+      act(() => rowByPath(mounted.el, `${other.a}/sub`)?.click())
+      drag(rowByPath(mounted.el, inner), 'dragstart')
+      drag(rowByPath(mounted.el, `${other.b}/docs`), 'drop')
+      expect(mounted.props.onNotice, lens).toHaveBeenCalledExactlyOnceWith('To move between vaults, use cut and paste')
+      expect(mounted.props.onRenameFile, lens).not.toHaveBeenCalled()
+      act(() => root?.unmount())
+      container?.remove()
+    }
   })
 
   it('favorites:changed for any vault of the window re-reads that vault alone and refreshes its group; another vault\'s change is not this window\'s (S27)', async () => {
