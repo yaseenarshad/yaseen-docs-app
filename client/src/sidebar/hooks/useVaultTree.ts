@@ -23,6 +23,20 @@ export function useSameList<T>(list: readonly T[]): readonly T[] {
   return held.current
 }
 
+/**
+ * One landed tree's folders, outer before inner (`allDirs`), and its files that are no notes
+ * (`otherFiles`): walked once per tree, so a tree of one vault walks no other vault again and the
+ * lists of a vault that did not change keep their identity (YAZ-2602 R2).
+ */
+const walks = new WeakMap<TreeResponse, { dirs: string[]; files: string[] }>()
+const NO_WALK: { dirs: string[]; files: string[] } = { dirs: [], files: [] }
+function walkOf(landed: TreeResponse | undefined): { dirs: string[]; files: string[] } {
+  if (landed === undefined) return NO_WALK
+  let walk = walks.get(landed)
+  if (walk === undefined) walks.set(landed, (walk = { dirs: allDirs(landed.tree), files: otherFiles(landed.tree) }))
+  return walk
+}
+
 export function useVaultTree(
   vaults: readonly SidebarVault[],
   closedVaults: readonly string[],
@@ -105,12 +119,12 @@ export function useVaultTree(
   // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
   // memo, no second feed. The REAL folders only: a vault row is not one, so "Collapse all" leaves
   // the vault rows open (YAZ-2602 S16).
-  const dirsByVault = useMemo(() => roots.map((vault) => allDirs(trees.get(vault)?.tree ?? [])), [trees, roots])
+  const dirsByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).dirs), [trees, roots])
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
   // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
-  const filesByVault = useMemo(() => roots.map((vault) => otherFiles(trees.get(vault)?.tree ?? [])), [trees, roots])
+  const filesByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).files), [trees, roots])
   // The Focus tab's rows (YAZ-2619 D2): the list in the order ADDED, off the live trees, by the
   // Favorites rule (`favoriteRoots`) — a vanished path yields no row, and the prune below drops it.
   // It resolves over the forest, so the items of every vault stand in the one list (YAZ-2602 A1, A4).

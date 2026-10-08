@@ -31,6 +31,24 @@ vi.mock('../lib/pageLabel', async (importOriginal) => {
   return { ...real, pageLabel }
 })
 
+/**
+ * Search-row build counter (YAZ-2602 R2): the REAL builders behind recording wrappers, so a test
+ * can say which vault's folder rows and file rows a landed tree made the search build again.
+ */
+const rowBuilds = vi.hoisted(() => ({ folders: [] as string[], files: [] as string[] }))
+vi.mock('../search/searchCandidates', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../search/searchCandidates')>()
+  const folderCandidates: typeof real.folderCandidates = (root, dirs, folders) => {
+    rowBuilds.folders.push(root)
+    return real.folderCandidates(root, dirs, folders)
+  }
+  const fileCandidates: typeof real.fileCandidates = (root, files) => {
+    rowBuilds.files.push(root)
+    return real.fileCandidates(root, files)
+  }
+  return { ...real, folderCandidates, fileCandidates }
+})
+
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -5527,6 +5545,23 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await afterQuiet()
     expect(new Set(bridge.index.mock.calls.map(([root]) => root))).toEqual(new Set([b]))
     expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py', '  planet'])
+  })
+
+  it('a tree of one vault is that vault\'s alone: the search builds the folder rows and the file rows of the vault whose tree landed, and no row of the other vault (R2)', async () => {
+    const work = watcher()
+    const { el, a, b, input, bridge, trees } = await searchTwo({}, { work })
+    await type(input, 'plan')
+    expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py'])
+    rowBuilds.folders.length = 0
+    rowBuilds.files.length = 0
+    const treesOfA = bridge.tree.mock.calls.filter(([root]) => root === a).length
+
+    trees[b] = [...trees[b], { type: 'dir', name: 'plans', path: `${b}/plans`, children: [] }]
+    await act(async () => work.fire({ type: 'ready' } as WatchEvent))
+    expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py', '  plans'])
+    expect(bridge.tree.mock.calls.filter(([root]) => root === a)).toHaveLength(treesOfA)
+    expect(new Set(rowBuilds.folders)).toEqual(new Set([b]))
+    expect(new Set(rowBuilds.files)).toEqual(new Set([b]))
   })
 
   it('the limit of 50 counts the matches of every vault together: 30 and 30 show the best 50 and the limit line; fewer than 50 in all show no line (A9; YAZ-2620 S11)', async () => {
