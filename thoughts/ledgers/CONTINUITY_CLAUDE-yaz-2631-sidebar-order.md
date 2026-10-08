@@ -38,22 +38,23 @@ The record is two comments there: "Locked decisions and scope (D1 to D6)" and "T
   - [x] 4- Vault rows reorder, "Collapse all" closes them (YAZ-2635), commit `0694578`; Amendment 2 (R19 to R22) on the parent
   - [x] 5- Polish and anti-slop (YAZ-2636): the audit A1 to A9 on the issue; A1 to A5, A7, A8 applied, A6 and A9 declined; R26 fixed by the lead; commits `f62f867`, `5846199`; Amendments 3 and 4 (R23 to R26) on the parent
   - [x] 6- the gates, the case list, the `mainBundleBytes` ceiling to 526,429 (D8), commit `5057c30`; pull request #99 open
-- Now: [→] 6- Verify and deliver (YAZ-2637): the pull request waits for Yaseen's hand walk and for a green CI
-- Next: merge #99 after Yaseen says the walk passed; move YAZ-2632 to YAZ-2637 and YAZ-2631 to Done; post the handoff comment; remove the worktree and the branch
-- Remaining: nothing else. No release unless Yaseen asks.
+  - [x] 6- Verify and deliver (YAZ-2637): pull request #99 merged on 2026-10-08 (merge commit `0bef116`), after CI was green and after Yaseen said the hand walk passed ("passed, merge it").
+- Now: CLOSED 2026-10-08. Merged. YAZ-2631 and YAZ-2632 to YAZ-2637 are Done. The Linear record on YAZ-2631 is the source of truth; its comment "Handoff: YAZ-2631 is closed" is the handoff.
+- Remaining: nothing for an agent in this issue. Yaseen asked for a release in the same chat (0.9.37); the handoff's later comment gives its state.
 
 ## Open Questions
 
 - CONFIRMED by Yaseen in chat (2026-10-08, "yes that delivery path is good"): the delivery path above.
 
 - KNOWN: the size gate passes at `5057c30`. `rendererEagerJsBytes` is 1,978,070 against a ceiling of 1,976,633: it passes inside the 0.1% tolerance with about 540 bytes left. The next renderer change can need a new ceiling.
-- KNOWN: the Playwright specs in `desktop/e2e` are edited and typechecked. Nobody has run them.
+- UNCONFIRMED: `desktop/e2e/sidebarOrder.spec.ts` (new), `multiVault.spec.ts` and `favorites.spec.ts` are written for the new flow and typecheck, but nobody has run them.
+- CONFIRMED by Yaseen's hand walk (11 steps, three small test vaults): no numbers, the drag line on the three tabs, the small vault name at a narrow width, "Collapse all" with vault rows, a favorite removed and added again, and each order after a restart.
 
 ## Working Set
 
 - Tests at `5057c30`: 296 files, 5662 passed, 2 skipped. Baseline at `4990442`: 296 files, 5646 passed, 2 skipped.
 
-- Worktree: `.claude/worktrees/yaz-2631-sidebar-order`, branch `yaz-2631-sidebar-order`, from `main` at `4990442` (0.9.36).
+- The work is on `main` (`0bef116`). It was built in the worktree `.claude/worktrees/yaz-2631-sidebar-order`, branch `yaz-2631-sidebar-order`, from `main` at `4990442` (0.9.36).
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skills at `~/Documents/GitHub/skills-growprofit-eng/yaseen-skills-and-prompts/2-yaseen-linear-master-skill`.
 - The hand-walk setup of this work: three small vaults and a seeded `yaseendocs.json` under the session scratch folder (`scratchpad/walk`); it is rebuilt by hand if the folder is gone. Start: `cd desktop && YASEEN_DOCS_USER_DATA_DIR=<walk>/userdata npx electron-vite dev`.
