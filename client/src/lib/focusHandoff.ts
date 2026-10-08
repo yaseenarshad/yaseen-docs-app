@@ -25,17 +25,16 @@ export function focusOpenDocument(): boolean {
 }
 
 /**
- * Focus whichever sidebar the walk lives in. On the Search tab (YAZ-2638 D2) a standing query owns
- * it — the bar drives the search tree, so the input is the walk (YAZ-803); on every other tab there
- * is no bar and the tree's active row wins. Declines when neither is on screen (collapsed sidebar,
- * or the Search tab with an empty bar).
+ * Focus whichever sidebar the walk lives in. The search bar has it whenever the bar is on the page
+ * — the Search tab (YAZ-2638 D2), with text or with none: the bar drives the search tree, so the
+ * input is the walk (YAZ-803). On every other tab there is no bar and the tree's active row wins.
+ * Declines when neither is on screen (collapsed sidebar).
  */
 export function focusSidebar(): boolean {
-  const search = document.querySelector<HTMLInputElement>('.sidebar__search-input')
   const target =
-    search !== null && search.value.trim() !== ''
-      ? search
-      : (document.querySelector<HTMLElement>('.tree__row--active') ?? document.querySelector<HTMLElement>('.tree__row'))
+    document.querySelector<HTMLElement>('.sidebar__search-input') ??
+    document.querySelector<HTMLElement>('.tree__row--active') ??
+    document.querySelector<HTMLElement>('.tree__row')
   if (target === null) return false
   target.focus()
   return true

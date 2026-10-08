@@ -51,7 +51,7 @@ export function useSidebarSearch(
   vaults: readonly SearchVault[],
   /** What the Files tab draws: one vault's tree, or the forest — one row per vault (YAZ-2602 D3). */
   tree: readonly TreeNode[],
-  /** The Search tab shows (YAZ-2638 D2). */
+  /** The Search tab shows (YAZ-2638 D2): the query is ranked only then. */
   active: boolean,
   /** Esc: back to the lens the window last showed. The query stays. */
   onLeave: () => void,
@@ -65,7 +65,10 @@ export function useSidebarSearch(
   // without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const results = useSearchResults(vaults, query)
+  // A search that is not on screen ranks nothing (YAZ-2638 D2): with no results it has no highlight,
+  // so it scrolls no row of the tab that shows. The ranking is synchronous, so the results are back
+  // in the render that shows the Search tab again.
+  const results = useSearchResults(vaults, active ? query : '')
   // The results as a tree (YAZ-2620 🔒 D1): the Files tree — the WHOLE vault's, whichever tab or
   // focus is showing (S33) — cut down to the matches and their parents. A vault's row is a parent
   // like any folder (YAZ-2602 A9): no row of the ranking is a vault, so it is never a match, and it
@@ -125,21 +128,17 @@ export function useSidebarSearch(
   }, [])
   const searchCursor: TreeSelection = useMemo(() => ({ paths: cursorPaths, toggle: noToggle, set: moveCursor }), [cursorPaths, moveCursor])
 
-  // ⌘K's focus handshake (YAZ-801): the caret in the bar, the text that is there selected (YAZ-2638
-  // D2). Firing on MOUNT is deliberate, not a side effect to guard against: ⌘K with the sidebar
-  // collapsed un-collapses it, so the sidebar mounts with the flag already true (0- re-scope on YAZ-800).
+  // The focus handshake (YAZ-801), the ONE path of the caret to the bar: ⌘K or a click on the
+  // Search tab raises the flag, and the caret lands in the bar, the text that is there selected
+  // (YAZ-2638 D2). Firing on MOUNT is deliberate, not a side effect to guard against: ⌘K with the
+  // sidebar collapsed un-collapses it, so the sidebar mounts with the flag already true (0- re-scope
+  // on YAZ-800). A mount on the Search tab with the flag false moves no caret.
   useEffect(() => {
     if (!pendingSearchFocus) return
     searchInput.current?.focus()
     searchInput.current?.select()
     onSearchFocusHandled()
   }, [pendingSearchFocus, onSearchFocusHandled])
-  // The tab was shown by a click: the caret lands in the bar, the old text selected.
-  useEffect(() => {
-    if (!active) return
-    searchInput.current?.focus()
-    searchInput.current?.select()
-  }, [active])
 
   const changeQuery = (e: ChangeEvent<HTMLInputElement>) => {
     setQuery(e.target.value)

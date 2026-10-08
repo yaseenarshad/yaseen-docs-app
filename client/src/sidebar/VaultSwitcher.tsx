@@ -267,7 +267,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   }, [open, closePanel])
 
   // ⌘O (D8) TOGGLES: each new request value opens the panel with a fresh query, or closes it when
-  // it is already up — so ⌘O ⌘O is a no-op round trip, the way ⌘K's search bar answers a second press.
+  // it is already up — so ⌘O ⌘O is a no-op round trip.
   // `openRef` mirrors `open` so this effect runs on the REQUEST alone, never on the open/close itself.
   const openRef = useRef(open)
   openRef.current = open

@@ -140,9 +140,10 @@ interface SidebarProps {
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind) => void
   /**
-   * ⌘K asked for the search bar (YAZ-801): App shows the Search tab with it (YAZ-2638 D2), and the bar
-   * focuses its input and selects its text. True at MOUNT is the ⌘K-while-collapsed path (App
-   * un-collapses, so the sidebar mounts with it already set), not an edge case.
+   * ⌘K or a click on the Search tab asked for the search bar (YAZ-801, YAZ-2638 D2): App shows the
+   * Search tab with it, and the bar focuses its input and selects its text. True at MOUNT is the
+   * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
+   * edge case. With it false the caret stays where it is, also at a mount on the Search tab.
    */
   pendingSearchFocus: boolean
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
@@ -505,7 +506,7 @@ export function Sidebar({
   const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
-  const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, searching, loaded ? forest : null, roots, selectionRef, bodyRef)
+  const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
 
   // A Files reveal targets a file — or, from a folder search row's menu (YAZ-2050), a DIR of the
   // tree. Both questions are asked once here and read by the two steps below — of the tree of the
@@ -567,7 +568,7 @@ export function Sidebar({
       // App's answer for the row (YAZ-2322), asked ONCE here like every other target this menu pins.
       const inReview = filePath === null ? null : reviewState(filePath)
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
-      const menuLens: SidebarLens = lens === 'search' ? 'files' : lens
+      const menuLens: SidebarLens = searching ? 'files' : lens
       // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       setMenu({
@@ -913,7 +914,7 @@ export function Sidebar({
           {/* The way out, in sight (YAZ-2638 D2): Esc goes back to the lens the window last showed
               and keeps the text, and this keycap — always in the bar — says so and does it on a
               click. No Tab stop: the key it names is the keyboard's way. */}
-          <button type="button" className="sidebar__search-clear" title="Back (Esc)" aria-label="Leave search" tabIndex={-1} onClick={leaveSearch}>
+          <button type="button" className="sidebar__search-back" title="Back (Esc)" aria-label="Leave search" tabIndex={-1} onClick={leaveSearch}>
             esc
           </button>
         </div>
@@ -1037,7 +1038,7 @@ export function Sidebar({
               // (YAZ-2638 D2); a remove keeps the tab (R5). This is not a `viaTree` item.
               onToggleFocus: (paths, isOn) => {
                 toggleFocus(paths, isOn)
-                if (!isOn && lens !== 'focus' && lens !== 'search') onLensChange('focus')
+                if (!isOn && !searching && lens !== 'focus') onLensChange('focus')
               },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
