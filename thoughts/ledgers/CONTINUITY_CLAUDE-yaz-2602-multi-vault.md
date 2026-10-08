@@ -38,18 +38,14 @@
 
 ## State
 
+- Now: CLOSED 2026-10-07. Merged by pull request #98 as `0a2326d`, after Yaseen's hand walk ("all steps pass, go ahead and merge"). Released in 0.9.36. The Linear record on YAZ-2602 is the source of truth; its last comment is the handoff.
 - Done:
   - [x] 1- Scope (YAZ-2603), 1A the map of `App.tsx` (YAZ-2604)
-  - [x] 2- Build (YAZ-2605): 2A (YAZ-2606), 2B (YAZ-2607), 2C (YAZ-2608), 2D (YAZ-2609), 2E (YAZ-2610). The branch holds `main` at `7c77c93` (YAZ-2589, YAZ-2619, YAZ-2620) by Amendments A1 to A10. Green at `0ac69de`: 5638 tests.
-  - [x] 3A the audit (YAZ-2612): 24 findings, a comment on the issue
-  - [x] 4B the hand walk (YAZ-2616): Yaseen walked steps 1 to 18 in the dev app on scratch vaults: "all steps pass, go ahead and merge"
-  - [x] 4C the docs (YAZ-2617), and the e2e spec and the perf scenario of 4A, written and not run: `b7f7df8`, `5c8c733`, `b7ce406`
-- Now: [→] 3B apply the audit (YAZ-2613): an agent on `yaz-2602-m`; no change that a user can notice, except bug fixes
-- Next: 4A (YAZ-2615): merge `yaz-2602-m`, run the four gates, set the size ceilings to the measured values (Yaseen's OK), post the case table
-- Remaining:
-  - [ ] 4D (YAZ-2618): push, open the pull request, merge when CI is green, the handoff
-  - [ ] Closeout: the handoff comments, each open issue closed (also the other sessions' issues), each pull request attached to its Linear issue, every worktree removed
-  - [ ] The release: the smallest version step, notes with one section per major part (no check in chat needed), the Mac and Windows installers, the app on this computer replaced
+  - [x] 2- Build (YAZ-2605): 2A (YAZ-2606), 2B (YAZ-2607), 2C (YAZ-2608), 2D (YAZ-2609), 2E (YAZ-2610). The branch took `main` three times (YAZ-2589, YAZ-2619, YAZ-2620) by Amendments A1 to A10.
+  - [x] 3- Polish and anti-slop (YAZ-2611): 3A the audit, 24 findings (YAZ-2612); 3B applied (YAZ-2613)
+  - [x] 4- Verify and deliver (YAZ-2614): 4A the case table and the gates (YAZ-2615), 4B the hand walk (YAZ-2616), 4C the docs (YAZ-2617), 4D the pull request and the merge (YAZ-2618)
+- Checks at the pull request's head `829fdd9`: `npm test` 5646 pass, 0 fail; both size gates PASS (five ceilings raised, with Yaseen's OK).
+- Written and not run: `desktop/e2e/multiVault.spec.ts`, `tools/perf/scenarios/multi-vault.mjs`.
 
 ## Open Questions
 
@@ -57,7 +53,4 @@
 
 ## Working Set
 
-- Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2602`, branch `yaz-2602-multi-vault`, from `main` at `4e0d302`.
-- Agent worktrees: `…-yaz-2602-m` (branch `yaz-2602-m`), `…-yaz-2602-r` (branch `yaz-2602-r`), both from `ed7fb64`. Merge them into the main worktree and run the checks again there.
-- Baseline: `npm test` 5421 passed, 2 skipped; a known flake is an unhandled `ENOTEMPTY … mdapp-…` temp-folder cleanup error.
-- Checks: `npm run typecheck` · `npm test` · `npm run build` · `npm run perf:budget:ci`.
+- Closed. The worktrees `…-yaz-2602`, `-m` and `-r` and their branches are removed.
