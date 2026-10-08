@@ -49,6 +49,17 @@ vi.mock('../search/searchCandidates', async (importOriginal) => {
   return { ...real, folderCandidates, fileCandidates }
 })
 
+/** Folder-count build counter (YAZ-2602 S30): the REAL `folderCounts` behind a recording wrapper, so a test can say which vault an index snapshot counted again. */
+const countBuilds = vi.hoisted(() => ({ roots: [] as string[] }))
+vi.mock('./folderCounts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./folderCounts')>()
+  const folderCounts: typeof real.folderCounts = (root, records, folders) => {
+    countBuilds.roots.push(root)
+    return real.folderCounts(root, records, folders)
+  }
+  return { ...real, folderCounts }
+})
+
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -5006,6 +5017,21 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await act(async () => itemByLabel(el, 'Delete')?.click())
     expect(el.querySelector('.confirm')).not.toBeNull()
     expect(bridge.index.mock.calls).toEqual([[at.b]])
+  })
+
+  it('an index snapshot of one vault counts the folders of that vault alone, and the rows of both vaults show their counts (S30)', async () => {
+    const at = pair()
+    const [notes, work] = [createWikilinkResolveSource(), createWikilinkResolveSource()]
+    notes.update(() => null, [{ ...indexRecord(`${at.a}/sub/in.md`), folder: 'sub' }])
+    work.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }])
+    const { el } = await mountVaults([vault(at.a, 'Notes', { index: notes }), vault(at.b, 'Work', { index: work })])
+    const count = (path: string) => rowByPath(el, path)?.querySelector('.tree__count')?.textContent ?? null
+    expect([count(`${at.a}/sub`), count(`${at.b}/docs`)]).toEqual(['1', '1'])
+    countBuilds.roots.length = 0
+    // A save in "Work": its index hands a new snapshot, and "Notes" still holds the one it had.
+    act(() => work.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }, { ...indexRecord(`${at.b}/docs/e.md`), folder: 'docs' }]))
+    expect([count(`${at.a}/sub`), count(`${at.b}/docs`)]).toEqual(['1', '2'])
+    expect(new Set(countBuilds.roots)).toEqual(new Set([at.b]))
   })
 
   it('a vault that joins does not remount the panel or read the first vault again, and its first tree is the walk App just made; a vault that leaves ends its watcher subscription', async () => {
