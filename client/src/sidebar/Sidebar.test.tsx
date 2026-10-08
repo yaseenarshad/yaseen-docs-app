@@ -166,6 +166,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onAddVault: vi.fn(async () => true),
     onPickVault: vi.fn(),
     onRemoveVault: vi.fn(),
+    onReorderVaults: vi.fn(),
     width: 260,
     activeFile: null,
     onOpenFile: vi.fn(),
@@ -2144,8 +2145,8 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     expect(allButton(el)?.title).toBe('Collapse all')
   })
 
-  it('an open tree — fully or PARTLY — offers "Collapse all", and one click closes the lot', async () => {
-    const { el } = await mountVault()
+  it('an open tree — fully or PARTLY — offers "Collapse all", and one click closes the lot; with one vault the button asks nothing of a vault row (YAZ-2631 S61)', async () => {
+    const { el, props } = await mountVault()
     act(() => allButton(el)?.click())
     act(() => allButton(el)?.click())
     expect(dirLabels(el)).toEqual(['docs', 'notes'])
@@ -2156,6 +2157,7 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     act(() => allButton(el)?.click())
     expect(dirLabels(el)).toEqual(['docs', 'notes'])
     expect(label(el)).toBe('Expand all')
+    expect(props.onSetVaultOpen).not.toHaveBeenCalled()
   })
 
   it('there is no button while a query is typed, or in a vault with no folders', async () => {
@@ -4909,7 +4911,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(bridge.state.setFolder).not.toHaveBeenCalled()
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
-    expect(rowByPath(el, b)?.draggable).toBe(false)
+    expect(rowByPath(el, b)?.draggable).toBe(true) // to reorder the vaults (YAZ-2631 D5)
   })
 
   it('the vault row\'s menu: Paste, Copy path · the two create pairs · Open in (VS Code, Reveal in Finder) · Remove from this window — and nothing else: a vault is no item of the focus list (S13, A2)', async () => {
@@ -4966,13 +4968,14 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.file.paste).toHaveBeenCalledExactlyOnceWith({ targetDir: b })
   })
 
-  it('a file dropped on its own vault\'s row moves to that vault\'s root; a drop on a folder or the row of a different vault is refused with a notice; the header is no drop target (S14, S45, R11)', async () => {
+  it('a file dropped on its own vault\'s row moves to that vault\'s root — the row shows the fill of a drop folder, never the line of a reorder; a drop on a folder or the row of a different vault is refused with a notice; no drop of a file reorders the vaults; the header is no drop target (S14, S45, R11; YAZ-2631 S50)', async () => {
     const { el, a, b, props } = await two()
     act(() => rowByPath(el, `${a}/sub`)?.click())
     const inner = `${a}/sub/in.md`
     fire(rowByPath(el, inner), 'dragstart')
     fire(rowByPath(el, a), 'dragover')
     expect(rowByPath(el, a)?.classList.contains('tree__row--drop')).toBe(true)
+    expect(el.querySelector('.tree__row--drop-before, .tree__row--drop-after')).toBeNull()
     fire(rowByPath(el, a), 'drop')
     expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith(inner, `${a}/in.md`, 'file')
 
@@ -4983,6 +4986,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     }
     expect(props.onNotice).toHaveBeenCalledTimes(2)
     expect(props.onRenameFile).toHaveBeenCalledTimes(1)
+    expect(props.onReorderVaults).not.toHaveBeenCalled()
 
     const header = el.querySelector<HTMLElement>('.sidebar__header')
     fire(rowByPath(el, inner), 'dragstart')
@@ -5028,20 +5032,166 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
-  it('"Collapse all" closes the folders of every vault and leaves the vault rows open; each vault\'s open folders are stored under that vault (S16)', async () => {
-    const { el, a, b, props, bridge } = await two()
+  /** App's list of closed vault rows, as it follows `onSetVaultOpen` (R9): a test hands `closed()` back down, as App does. */
+  const vaultDoors = () => {
+    let closed: string[] = []
+    const onSetVaultOpen = vi.fn((root: string, open: boolean) => void (closed = open ? closed.filter((v) => v !== root) : closed.includes(root) ? closed : [...closed, root]))
+    return { onSetVaultOpen, closed: () => closed }
+  }
+  const allButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__expand-all')
+  const allLabel = (el: HTMLElement) => allButton(el)?.getAttribute('aria-label') ?? null
+
+  it('YAZ-2631 S56, S57, S58, S62: on Files with two vaults "Collapse all" closes each folder and each vault row, and "Expand all" opens them all; one open vault row is enough for "Collapse all"; each vault\'s open folders are stored under that vault, and a vault row is never stored as an open folder', async () => {
+    const doors = vaultDoors()
+    const { el, a, b, bridge, rerender } = await two({ onSetVaultOpen: doors.onSetVaultOpen })
+    const press = async () => {
+      act(() => allButton(el)?.click())
+      await rerender({ closedVaults: doors.closed() })
+    }
+    // S56: the vault rows are open, with no folder open below them.
+    expect(allLabel(el)).toBe('Collapse all')
     act(() => rowByPath(el, `${a}/sub`)?.click())
     act(() => rowByPath(el, `${b}/docs`)?.click())
-    expect(setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
-    const button = () => el.querySelector<HTMLButtonElement>('.sidebar__expand-all')
-    expect(button()?.getAttribute('aria-label')).toBe('Collapse all')
-    act(() => button()?.click())
-    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`)]).toEqual(['false', 'false'])
-    expect([isOpen(el, a), isOpen(el, b)]).toEqual(['true', 'true'])
-    expect(button()?.getAttribute('aria-label')).toBe('Expand all')
-    act(() => button()?.click())
-    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`)]).toEqual(['true', 'true'])
-    expect(props.onSetVaultOpen).not.toHaveBeenCalled()
+    await press()
+    expect(doors.onSetVaultOpen.mock.calls).toEqual([[a, false], [b, false]])
+    expect([isOpen(el, a), isOpen(el, b)]).toEqual(['false', 'false'])
+    expect(allRows(el)).toEqual([a, b])
+    expect(allLabel(el)).toBe('Expand all')
+
+    // S58: one vault row opened by a click. Its folders stay closed, and the button closes again.
+    act(() => rowByPath(el, a)?.click())
+    await rerender({ closedVaults: doors.closed() })
+    expect([isOpen(el, a), isOpen(el, `${a}/sub`), isOpen(el, b)]).toEqual(['true', 'false', 'false'])
+    expect(allLabel(el)).toBe('Collapse all')
+    await press()
+    expect(doors.closed()).toEqual([b, a])
+    expect(allLabel(el)).toBe('Expand all')
+
+    // S57: all closed. One click opens each vault row and each folder.
+    await press()
+    expect(doors.closed()).toEqual([])
+    expect([a, `${a}/sub`, b, `${b}/docs`].map((row) => isOpen(el, row))).toEqual(['true', 'true', 'true', 'true'])
+    expect(allLabel(el)).toBe('Collapse all')
+
+    // S62: the store holds folders only, each under its own vault.
+    const stored = setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)
+    expect(stored).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }], [a, { expanded: [] }], [b, { expanded: [] }], [a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
+  })
+
+  it('YAZ-2631 S59, S60: two vaults with no folder in either still show the button on Files, for the vault rows alone, and not on Focus or Favorites; on those tabs the button moves that tab\'s folders and leaves the vault rows as they were', async () => {
+    const doors = vaultDoors()
+    const flat = pair()
+    const bare = await mountVaults([vault(flat.a, 'Notes'), vault(flat.b, 'Work')], { onSetVaultOpen: doors.onSetVaultOpen }, (bridge) => void bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [file(`${root}/x.md`)], generatedAt: 1 })))
+    expect(allLabel(bare.el)).toBe('Collapse all')
+    act(() => allButton(bare.el)?.click())
+    expect(doors.closed()).toEqual([flat.a, flat.b])
+    await bare.rerender({ closedVaults: doors.closed() })
+    expect(allRows(bare.el)).toEqual([flat.a, flat.b])
+    expect(allLabel(bare.el)).toBe('Expand all')
+    for (const lens of ['focus', 'favorites'] as const) {
+      await bare.rerender({ closedVaults: doors.closed(), lens })
+      expect(allButton(bare.el), lens).toBeNull()
+    }
+    act(() => root?.unmount())
+    container?.remove()
+
+    for (const lens of ['focus', 'favorites'] as const) {
+      const at = pair()
+      const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens, closedVaults: [at.b] }, async (bridge) => {
+        await withFocus(`${at.a}/sub`, `${at.b}/docs`)(bridge)
+        favoritesOf(bridge, { [at.a]: [`${at.a}/sub`], [at.b]: [`${at.b}/docs`] })
+      })
+      // A vault row closed on Files does not count here: the tab's own folders are closed.
+      expect(allLabel(el), lens).toBe('Expand all')
+      act(() => allButton(el)?.click())
+      expect(allRows(el), lens).toEqual([`${at.a}/sub`, `${at.a}/sub/in.md`, `${at.b}/docs`, `${at.b}/docs/d.md`])
+      expect(allLabel(el), lens).toBe('Collapse all')
+      act(() => allButton(el)?.click())
+      expect(allRows(el), lens).toEqual([`${at.a}/sub`, `${at.b}/docs`])
+      expect(props.onSetVaultOpen, lens).not.toHaveBeenCalled()
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('YAZ-2631 S45, S51, S52: on Files with two or more vaults a vault row drags over the top half or the bottom half of a different vault row — a line on that edge — and the drop hands App the vaults in the new order; a drop where the row stands asks nothing; no row below a vault row reorders, and a vault row finds no place on one; the vault rows of the search tree do not reorder', async () => {
+    const at = pair()
+    const plain = at.b.replace('/work', '/plain')
+    const { el, props } = await mountVaults([vault(at.a, 'Notes'), vault(plain, 'Plain'), vault(at.b, 'Work')])
+    expect([at.a, plain, at.b, `${at.a}/sub`].map((row) => rowByPath(el, row)?.draggable)).toEqual([true, true, true, false])
+    const dragTo = (from: string, to: string, edge: 'before' | 'after') => {
+      drag(rowByPath(el, from), 'dragstart')
+      drag(rowByPath(el, to), 'dragover', edge === 'before' ? -1 : 1)
+      expect(marker(el)).toBe(rowByPath(el, to))
+      expect(rowByPath(el, to)?.classList.contains(`tree__row--drop-${edge}`)).toBe(true)
+      drag(rowByPath(el, to), 'drop')
+      expect(marker(el)).toBeNull()
+    }
+    dragTo(at.b, at.a, 'before')
+    expect(props.onReorderVaults).toHaveBeenLastCalledWith([at.b, at.a, plain])
+    dragTo(at.a, plain, 'after')
+    expect(props.onReorderVaults).toHaveBeenLastCalledWith([plain, at.a, at.b])
+    // The row already stands there: the order is the same, so App is asked nothing.
+    dragTo(plain, at.a, 'after')
+    dragTo(plain, at.b, 'before')
+    expect(props.onReorderVaults).toHaveBeenCalledTimes(2)
+
+    // S51: a folder and a file inside a vault are no place for a vault row.
+    drag(rowByPath(el, at.b), 'dragstart')
+    for (const deeper of [`${at.a}/sub`, `${at.a}/a.md`]) {
+      drag(rowByPath(el, deeper), 'dragover', -1)
+      expect(marker(el), deeper).toBeNull()
+      drag(rowByPath(el, deeper), 'drop')
+    }
+    drag(rowByPath(el, at.b), 'dragend')
+    expect(props.onReorderVaults).toHaveBeenCalledTimes(2)
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+    expect(props.onNotice).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    container?.remove()
+
+    // S52: the cut tree of a search draws the vault rows, and none of them drags.
+    const found = await searchTwo()
+    await type(found.input, 'plan')
+    expect([found.a, found.b].map((row) => rowByPath(found.el, row)?.draggable)).toEqual([false, false])
+    drag(rowByPath(found.el, found.b), 'dragstart')
+    drag(rowByPath(found.el, found.a), 'dragover', -1)
+    expect(marker(found.el)).toBeNull()
+    drag(rowByPath(found.el, found.a), 'drop')
+    expect(found.props.onReorderVaults).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-2631 S47, S53, S55: the vaults in a new order, as App hands them after a drag — the vault rows and the header follow, and the panel reads nothing again: no tree, no favorites file, no watcher, no write; its open folders and its selection stay; with no stored order the Favorites tab follows the vault order, and the Focus tab keeps its own', async () => {
+    const at = pair()
+    const [first, second] = [watcher(), watcher()]
+    const [notes, work] = [vault(at.a, 'Notes', { watch: first.watch }), vault(at.b, 'Work', { watch: second.watch })]
+    const [sub, aMd, bMd] = [`${at.a}/sub`, `${at.a}/a.md`, `${at.b}/b.md`]
+    const { el, bridge, rerender } = await mountVaults([notes, work], { lens: 'favorites' }, async (bridge) => {
+      await withFocus(bMd, sub)(bridge)
+      favoritesOf(bridge, { [at.a]: [aMd], [at.b]: [bMd] })
+    })
+    expect(topLabels(el)).toEqual(['a', 'b'])
+    await rerender({ lens: 'focus' })
+    expect(topLabels(el)).toEqual(['b', 'sub'])
+    await rerender({ lens: 'files' })
+    act(() => rowByPath(el, sub)?.click())
+    shiftClick(rowByPath(el, bMd))
+    const header = () => el.querySelector('.sidebar__root-name')?.textContent
+    const selected = () => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((row) => row.dataset.path)
+    expect([vaultRowLabels(el), header(), selected()]).toEqual([['Notes', 'Work'], 'notes + work', [sub, bMd]])
+    const quiet = [bridge.tree, bridge.index, bridge.favorites.get, bridge.favorites.set, bridge.state.setFavoritesOrder, bridge.state.setFolder, bridge.window.setIdentity]
+    for (const spy of quiet) spy.mockClear()
+    const watched = JSON.stringify([first.counts, second.counts])
+
+    await rerender({ lens: 'files', vaults: [work, notes] })
+    expect([vaultRowLabels(el), header(), selected()]).toEqual([['Work', 'Notes'], 'work + notes', [bMd, sub]])
+    expect(isOpen(el, sub)).toBe('true')
+    await rerender({ lens: 'favorites', vaults: [work, notes] })
+    expect(topLabels(el)).toEqual(['b', 'a'])
+    await rerender({ lens: 'focus', vaults: [work, notes] })
+    expect(topLabels(el)).toEqual(['b', 'sub'])
+    for (const spy of quiet) expect(spy).not.toHaveBeenCalled()
+    expect(JSON.stringify([first.counts, second.counts])).toBe(watched)
   })
 
   it('"Show in sidebar" for a file of a vault whose row is closed opens the row, then that vault\'s folders, and flashes the row (S17)', async () => {
@@ -5534,6 +5684,21 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.favorites.set).toHaveBeenCalledTimes(1)
     expect(bridge.state.setFavoritesOrder).toHaveBeenCalledTimes(4)
     expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-2631 S35: with two vaults a favorite dropped on the edge where it already stands changes no order — no vault file is written, and no order across vaults', async () => {
+    const { el, a, b, bridge } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`, `${at.a}/sub`], [at.b]: [`${at.b}/docs`] }))
+    const [aMd, sub, docs] = [`${a}/a.md`, `${a}/sub`, `${b}/docs`]
+    for (const [to, half] of [[aMd, 1], [docs, -1]] as const) {
+      drag(rowByPath(el, sub), 'dragstart')
+      drag(rowByPath(el, to), 'dragover', half)
+      expect(marker(el)).toBe(rowByPath(el, to))
+      drag(rowByPath(el, to), 'drop')
+      expect(marker(el)).toBeNull()
+    }
+    expect(allRows(el)).toEqual([aMd, sub, docs])
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
   })
 
   it('YAZ-2631 S6, S7: "Add to favorites" puts the row at the end of the flat list, after the rows of every vault; "Remove from favorites" takes the row and the others keep their order; neither writes the order across vaults', async () => {

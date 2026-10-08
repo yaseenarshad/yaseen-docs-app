@@ -324,6 +324,19 @@ describe('registerWindowIpc', () => {
       expect(store.get()).toBe(before)
     })
 
+    it('a drag of a vault row is `window:set-identity` and then `window:save-set`, sent with no wait between them: main holds the new order before it saves, so the workspace takes it, keeps its name and its id, and moves to the front (YAZ-2631 S48)', async () => {
+      showTwo()
+      const pair = store.saveVaultSet('Pair', TWO, 1)
+      store.saveVaultSet('Other', ['/x', '/y'], 2)
+      expect(store.get().vaultSets.map((set) => set.name)).toEqual(['Other', 'Pair'])
+      // As the renderer sends them: neither answer is awaited before the next call.
+      const answers = [registered(CONTRACT.window.setIdentity.channel)({ sender }, { roots: ['/w', '/v'] }), registered(CONTRACT.window.saveSet.channel)({ sender }, 'Pair')]
+      expect(await Promise.all(answers)).toEqual([ok(undefined), ok(true)])
+      expect(store.get().windows[0]).toMatchObject({ root: '/w', roots: ['/w', '/v'] })
+      expect(store.get().vaultSets).toEqual([{ id: pair?.id, name: 'Pair', roots: ['/w', '/v'], lastUsed: expect.any(Number) }, { id: expect.any(String), name: 'Other', roots: ['/x', '/y'], lastUsed: 2 }])
+      expect(store.get().vaultSets[0].lastUsed).toBeGreaterThan(2)
+    })
+
     it('window:rename-set and window:remove-set act on the set by id: a refused rename is false, a remove forgets the entry alone (S67)', async () => {
       const a = store.saveVaultSet('A', TWO, 1)
       const b = store.saveVaultSet('B', ['/x', '/y'], 2)

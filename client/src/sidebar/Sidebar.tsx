@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import { SIDEBAR_LENSES, type IndexRecord, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { SIDEBAR_LENSES, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -52,7 +52,7 @@ export interface SidebarVault {
 }
 
 interface SidebarProps {
-  /** The window's vaults, in the order they were added (YAZ-2602 D1); never empty. App keys this panel on the first. */
+  /** The window's vaults, in the window's order (YAZ-2602 D1); never empty. App keys this panel on one of them (YAZ-2631 D5). */
   vaults: readonly SidebarVault[]
   /** The vault rows the user closed (YAZ-2602 R9): App's, so they stay closed while this panel is unmounted. */
   closedVaults: readonly string[]
@@ -63,6 +63,8 @@ interface SidebarProps {
   onPickVault: () => void
   /** "Remove from this window" (YAZ-2602 D7): App closes the vault's pages and drops it from the window. */
   onRemoveVault: (root: string) => void
+  /** A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order, for App to store. */
+  onReorderVaults: (next: string[]) => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
@@ -84,8 +86,8 @@ interface SidebarProps {
   /**
    * ⌘O (YAZ-1767 D8): App's request counter for the vault switcher, threaded straight to the
    * header's `VaultSwitcher`, which opens its panel and focuses the filter on every new value.
-   * 0 = nothing requested (App pins a request to the root it was made on, so a remount on
-   * another vault never replays it).
+   * 0 = nothing requested (App pins a request to the sidebar it was made on, so a new mount
+   * never replays it).
    */
   switcherOpenRequest: number
   /** The vault menu's "Open in this window" (YAZ-1798 D8): App's in-place switch, threaded to the `VaultSwitcher`. */
@@ -95,7 +97,7 @@ interface SidebarProps {
   /**
    * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity
    * (`WindowEntry.sidebarLens`, per window since YAZ-1628), never Sidebar-local: this component
-   * is mounted on its first vault and only while the sidebar is open, so local state would forget the
+   * is mounted on one vault of the window and only while the sidebar is open, so local state would forget the
    * choice on every collapse/reopen and every root switch.
    */
   lens: SidebarLens
@@ -336,7 +338,7 @@ const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => u
 const NO_NODES: readonly TreeNode[] = []
 const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
 
-/** Mounted with `key={its first vault}` by App, so all state below lives while that vault leads the window. */
+/** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
   vaults,
   closedVaults,
@@ -344,6 +346,7 @@ export function Sidebar({
   onAddVault,
   onPickVault,
   onRemoveVault,
+  onReorderVaults,
   activeFile,
   onOpenFile,
   onOpenFileBackground,
@@ -488,7 +491,9 @@ export function Sidebar({
   // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is
   // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
   // persisted list, which would leave the button offering to collapse nothing.
-  const anyExpanded = bodyDirs.some((d) => expanded.includes(d))
+  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
+  const foldVaults = multi && lens === 'files'
+  const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, searching, loaded ? forest : null, roots, selectionRef, bodyRef)
@@ -728,10 +733,10 @@ export function Sidebar({
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
-  // window in the tab's order (D1), or the focus list. The Files tab reorders nothing.
+  // window in the tab's order (D1), the focus list, or the vault rows of Files (D5).
   const orderRef = useRef<readonly string[]>([])
-  orderRef.current = lens === 'favorites' ? favoritePaths : focusList
-  const saveOrder = lens === 'favorites' ? saveFavoriteOrder : reorderFocus
+  orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
+  const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
   const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
 
   /**
@@ -862,17 +867,18 @@ export function Sidebar({
             collapses everything, and only a fully closed tree expands it. It acts on whichever
             lens is ACTIVE. Gone — not disabled — while a query is
             typed (the tree is not the body then) and whenever the active reading has nothing to
-            unfold: a vault with no folders. */}
-        {!searching && bodyDirs.length > 0 && (
+            unfold: no folder, and no vault row. */}
+        {!searching && (bodyDirs.length > 0 || foldVaults) && (
           <button
             type="button"
             className="sidebar__expand-all"
             aria-label={allLabel}
             title={allLabel}
-            onClick={() =>
+            onClick={() => {
+              if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
               // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
               dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
-            }
+            }}
           >
             <ChevronsIcon />
           </button>
@@ -1001,8 +1007,8 @@ export function Sidebar({
             {forest !== null && forest.length === 0 && pending === null && (
               <p className="sidebar__msg">No notes here.</p>
             )}
-            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3). */}
-            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} />}
+            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
+            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} />}
           </>
         )}
       </div>
