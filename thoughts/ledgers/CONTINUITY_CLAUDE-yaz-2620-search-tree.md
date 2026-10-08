@@ -17,6 +17,7 @@
 - Audit (YAZ-2628): the highlight is held by its PATH, not its position; a row whose menu is open wears the selected style; `useResultKeys` keeps its first signature and shares `resultKeys`.
 
 ## State
+- Now: CLOSED 2026-10-07. Merged by pull request #96 as `7c77c93`. Released in 0.9.36. The Linear record on YAZ-2620 is the source of truth; its last comment says who merged it.
 - Done:
   - [x] 1- YAZ-2625 the cut tree, the folds, the keys, the limit line
   - [x] 2- YAZ-2626 files that are no notes are found
@@ -24,7 +25,7 @@
   - [x] 3A- YAZ-2630 the `esc` keycap in the search bar (D8, from Yasin's walk)
   - [x] 4- YAZ-2628 audit (9 items) and its corrections, docs
   - [x] 5- YAZ-2629 checks, e2e spec, PR #96; main `66bda8f` (the Focus tab, YAZ-2619) merged into the branch
-- Now: [→] PR #96 is open and waits. Yasin: the merge waits for the multi-vault work (YAZ-2602).
+- PR #96 waited for the merge order against the multi-vault work (YAZ-2602). Yasin chose the search first; the agent of YAZ-2602 merged it.
 - Remaining:
   - [x] Yasin: OK for the bundle ceilings (2026-10-07, two times)
   - [x] Yasin: walked the dev app on a scratch vault ("ok this is fine"); asked for the yellow wash and the `esc` keycap, both done
