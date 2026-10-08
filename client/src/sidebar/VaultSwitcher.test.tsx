@@ -1517,6 +1517,16 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
+  it('a window with one vault reads no saved workspace for its header, on a render or on a change of the cache: one vault is never a workspace (S70)', () => {
+    const { el, rerender } = render()
+    const read = vi.spyOn(storage, 'getVaultSets')
+    seedSets(WORK, READING)
+    rerender({})
+    expect(headerName(el)).toBe('Notes')
+    expect(read).not.toHaveBeenCalled()
+    read.mockRestore()
+  })
+
   it('the header shows the workspace\'s name while the window\'s vaults are exactly a saved workspace — the first one that matches — and follows a save, a rename and a remove in the cache, and a vault added or removed (S15)', async () => {
     const { el, rerender } = render({ roots: [ROOT, ARCHIVE] })
     expect(headerName(el)).toBe('Notes + Archive')
