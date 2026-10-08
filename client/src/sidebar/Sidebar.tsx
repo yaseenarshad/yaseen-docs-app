@@ -377,7 +377,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
+  const { roots, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -757,6 +757,13 @@ export function Sidebar({
     titles,
   }
 
+  // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
+  const errorLines = errors.map((message) => (
+    <p key={message} className="sidebar__msg sidebar__msg--error">
+      {message}
+    </p>
+  ))
+
   // A search row's tree-drawing items leave the search first (🔒 D2, YAZ-2050) through
   // `onRevealInFiles`: App flips to Files; the reveal clears the query, expands and flashes the
   // row — and the item's input lands beside the row it names.
@@ -954,8 +961,8 @@ export function Sidebar({
           // drag to reorder the list (D4). With two or more vaults the favorites stand under their
           // vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
           <>
-            {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
-            {!loaded && favoriteNodes.length === 0 && error === null && <p className="sidebar__msg">Loading…</p>}
+            {errorLines}
+            {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
             {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={INERT_MOVE} reorder={favoriteReorder} />}
           </>
@@ -965,8 +972,8 @@ export function Sidebar({
           // list. A file drag moves the file on disk, as on Files. With two or more vaults the items
           // of every vault stand in the one list, and each top row names its vault (YAZ-2602 A4).
           <>
-            {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
-            {!loaded && focusNodes.length === 0 && error === null && <p className="sidebar__msg">Loading…</p>}
+            {errorLines}
+            {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && focusNodes.length === 0 && <p className="sidebar__msg">Nothing in focus. Right-click a file or folder → Add to focus.</p>}
             {focusNodes.length > 0 && (
               <>
@@ -982,8 +989,8 @@ export function Sidebar({
           </>
         ) : (
           <>
-            {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
-            {forest === null && error === null && <p className="sidebar__msg">Loading…</p>}
+            {errorLines}
+            {forest === null && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {forest !== null && forest.length === 0 && pending === null && (
               <p className="sidebar__msg">No notes here.</p>
             )}

@@ -46,8 +46,17 @@ export function useVaultTree(
 
   // Each vault's tree, by its root, once it has landed.
   const [trees, setTrees] = useState<ReadonlyMap<string, TreeResponse>>(() => new Map())
-  const [failure, setFailure] = useState<{ root: string; message: string } | null>(null)
-  const error = failure?.message ?? null
+  // Each vault's load error, by its root: its own tree clears it, and it leaves with its vault.
+  const [failures, setFailures] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const setFailure = useCallback((vault: string, message: string | null) => {
+    setFailures((prev) => {
+      if (prev.get(vault) === (message ?? undefined)) return prev
+      const next = new Map(prev)
+      if (message === null) next.delete(vault)
+      else next.set(vault, message)
+      return next
+    })
+  }, [])
   /** Every vault has its tree: only then can a path that no tree holds be called gone. */
   const loaded = roots.every((vault) => trees.has(vault))
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
@@ -82,6 +91,15 @@ export function useVaultTree(
   const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.map((vault, i) => [stripSlash(vault), names[i]])), [roots, names])
   const vaultRowsRef = useRef(vaultRows)
   vaultRowsRef.current = vaultRows
+  /** The load errors to draw, in vault order; with two or more vaults each names its vault. */
+  const errors = useMemo(
+    () =>
+      roots.flatMap((vault, i) => {
+        const message = failures.get(vault)
+        return message === undefined ? [] : [roots.length === 1 ? message : `${names[i]}: ${message}`]
+      }),
+    [failures, roots, names],
+  )
 
   // Every directory of the CURRENT trees, outer before inner (`allDirs`), vault by vault: the
   // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
@@ -119,9 +137,9 @@ export function useVaultTree(
   const refresh = useCallback((vault: string) => {
     fetchTree(vault).catch((err: unknown) => {
       if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) live.current.onRootMissing(vault)
-      else setFailure({ root: vault, message: err instanceof BridgeRequestError ? err.message : 'Failed to load folder' })
+      else if (live.current.roots.includes(vault)) setFailure(vault, err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
     })
-  }, [])
+  }, [setFailure])
 
   // PER VAULT, for as long as the vault is in the window (YAZ-2602 D3): its tree feed, its first
   // read, its watcher refresh and the first read of its favorites (D5). A vault that joins starts
@@ -148,19 +166,20 @@ export function useVaultTree(
       if (at !== -1) continue
       setTrees((prev) => new Map([...prev].filter(([key]) => key !== vault)))
       setFavoritesByRoot(({ [vault]: _left, ...rest }) => rest)
+      setFailure(vault, null)
     }
     roots.forEach((vault, at) => {
       if (held.has(vault)) return
       const land = (landed: TreeResponse): void => {
         setTrees((prev) => new Map(prev).set(vault, landed))
-        setFailure((prev) => (prev?.root === vault ? null : prev))
+        setFailure(vault, null)
       }
       const offTree = onTree(vault, (outcome) => {
         if (outcome.status === 'fulfilled') land(outcome.value)
       })
       const burst = leadingTrailing(() => refresh(vault), WATCH_BURST_QUIET_MS)
       const offWatch = watches[at].subscribe((ev) => {
-        if (ev.type === 'error') return setFailure({ root: vault, message: ev.message })
+        if (ev.type === 'error') return setFailure(vault, ev.message)
         if (ev.type === 'change') return
         if (ev.type === 'ready') return burst.flush()
         burst.call()
@@ -179,7 +198,7 @@ export function useVaultTree(
       loadFavorites(vault)
     })
     started.current = true
-  }, [roots, watches, refresh, loadFavorites])
+  }, [roots, watches, refresh, loadFavorites, setFailure])
   useEffect(
     () => () => {
       for (const feed of feeds.current.values()) feed.end()
@@ -389,5 +408,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  return { roots, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }
