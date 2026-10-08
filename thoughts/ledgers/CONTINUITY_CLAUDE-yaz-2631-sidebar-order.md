@@ -32,19 +32,25 @@ The record is two comments there: "Locked decisions and scope (D1 to D6)" and "T
 - Done:
   - [x] Scope: D1 to D6, S1 to S62, R1 to R12 (in the parent's comments)
   - [x] The issue tree: YAZ-2632 to YAZ-2637
-- Now: [→] 1- Remove the folder counts and make the vault name small (YAZ-2632)
-- Next: 2- One drag rule: the top rows reorder (YAZ-2633)
+  - [x] 1- No folder counts, small vault name (YAZ-2632), commit `008c69a`
+  - [x] 2- One drag rule, the Focus tab reorders (YAZ-2633), commit `6084c31`
+  - [x] 3- Flat Favorites with an order across vaults (YAZ-2634), commit `d5dd697`; Amendment 1 (R13 to R18) on the parent
+  - [x] 4- Vault rows reorder, "Collapse all" closes them (YAZ-2635), commit `0694578`; Amendment 2 (R19 to R22) on the parent
+- Now: [→] 5- Polish and anti-slop (YAZ-2636): the audit (an agent, read-only) and the docs (a second agent, `docs/` and `desktop/e2e/` only)
+- Next: apply the audit; then 6- Verify and deliver (YAZ-2637)
 - Remaining:
-  - [ ] 3- Flat Favorites with an order across vaults (YAZ-2634)
-  - [ ] 4- Vault rows: drag to reorder, and "Collapse all" closes them (YAZ-2635)
-  - [ ] 5- Polish and anti-slop (YAZ-2636)
-  - [ ] 6- Verify and deliver (YAZ-2637)
+  - [ ] 6- the size ceiling `mainBundleBytes` (D8), the case list, the pull request, the guided hand walk
 
 ## Open Questions
 
 - CONFIRMED by Yaseen in chat (2026-10-08, "yes that delivery path is good"): the delivery path above.
 
+- KNOWN: at `0694578` the size gate fails on `mainBundleBytes` alone: 526,412 against 524,920 (+1,492). `rendererEagerJsBytes` is 1,977,702 and passes inside the 0.1% tolerance with 907 bytes left.
+- KNOWN: the Playwright specs in `desktop/e2e` are edited and typechecked. Nobody has run them.
+
 ## Working Set
+
+- Tests at `0694578`: 296 files, 5659 passed, 2 skipped. Baseline at `4990442`: 296 files, 5646 passed, 2 skipped.
 
 - Worktree: `.claude/worktrees/yaz-2631-sidebar-order`, branch `yaz-2631-sidebar-order`, from `main` at `4990442` (0.9.36).
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`. Local Node is v26.5.0; CI uses Node 22.

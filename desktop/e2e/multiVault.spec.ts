@@ -3,11 +3,12 @@
  * the user flow of the hand walk, in its order. A window on vault Alpha, with Beta a recent vault:
  * add Beta from the blank-space menu → two vault rows and the header's two names → a tab of each
  * vault, and the window title follows the vault of the tab in front → a folder of each vault on the
- * Focus tab, each with its vault's name → a favorite in each vault, under its vault's row on the ♥
- * tab → a search that finds a note of the same name in both, each under its vault's row → "Save as
- * workspace…" from the header → "Remove from this window" on Beta's row → the workspace opened
- * from the ⌘O list, in a NEW window with both vaults → `yaseendocs.json` holds `roots` of two
- * vaults and one `vaultSets` entry.
+ * Focus tab, each with its vault's name → a favorite in each vault, both in the one flat list of the
+ * ♥ tab, each with its vault's name (YAZ-2631 D1) → a search that finds a note of the same name in
+ * both, each under its vault's row → "Save as workspace…" from the header → "Remove from this
+ * window" on Beta's row → the workspace opened from the ⌘O list, in a NEW window with both vaults →
+ * `yaseendocs.json` holds `roots` of two vaults and one `vaultSets` entry. The drag of a favorite
+ * across vaults and the drag of a vault row are `sidebarOrder.spec.ts`.
  *
  * What only the real app can prove: that the list of vaults is WINDOW identity written through main
  * (`WindowEntry.roots`), that each vault's favorites land in ITS `.yaseendocs/favorites.json`, and
@@ -64,7 +65,7 @@ const dirAt = (w: Page, dir: string) => w.locator(`.sidebar__body .tree__row--di
 /** The vault rows (D3): one folder row per vault, only while the window has two or more. */
 const vaultRows = (w: Page) => w.locator('.sidebar__body .tree__row--vault')
 const vaultRowLabels = (w: Page) => vaultRows(w).locator('.tree__label')
-/** The vault name a top row of the Focus tab shows in muted text (A4). */
+/** The vault name a top row of the Focus tab and of the ♥ tab shows, small and light (A4; YAZ-2631 D4). */
 const vaultTags = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__vault')
 const focusTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Focus"]')
 const heartTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Favorites"]')
@@ -235,24 +236,27 @@ test('step 3 — "Add to focus" on a folder of each vault: the Focus tab lists b
 
 // ---------------------------------------------------------------- favorites across vaults
 
-test('step 4 — a favorite in each vault is written to THAT vault\'s favorites.json, and the ♥ tab shows each under its vault\'s row', async () => {
+test('step 4 — a favorite in each vault is written to THAT vault\'s favorites.json, and the ♥ tab shows both in ONE flat list, each with its vault\'s name (YAZ-2631 S2, S3, S41)', async () => {
   const ideasA = path.join(vaultA, 'Ideas.md')
   const welcomeB = path.join(vaultB, SEED_FILE)
   await lensTab(win, 'Files').click()
   await pickFromRowMenu(fileAt(win, ideasA), 'Add to favorites')
   await expect(toast(win)).toHaveText('Added to favorites')
   await pickFromRowMenu(fileAt(win, welcomeB), 'Add to favorites')
-  // Each vault keeps its own list (D5, S25): one file per vault, vault-relative paths.
+  // Each vault keeps its own list (S25; YAZ-2631 D1): one file per vault, vault-relative paths.
   await expect.poll(() => favoritesOf(vaultA)).toEqual(['Ideas.md'])
   await expect.poll(() => favoritesOf(vaultB)).toEqual([SEED_FILE])
 
   await heartTab(win).click()
   await expect(heartTab(win)).toHaveAttribute('aria-selected', 'true')
-  // One row per vault that has a favorite, its favorites below it (S24).
-  await expect(vaultRowLabels(win)).toHaveText([ALPHA, BETA])
+  // ONE flat list across the vaults, and no vault row (S2): with no stored order, in vault order (S3).
+  await expect(vaultRows(win)).toHaveCount(0)
+  await expect(win.locator('.sidebar__body .tree__row--file')).toHaveCount(2)
+  await expect(topLabels(win)).toHaveText(['Ideas', 'Welcome note'])
   await expect(fileAt(win, ideasA)).toBeVisible()
   await expect(fileAt(win, welcomeB)).toBeVisible()
-  await expect(win.locator('.sidebar__body .tree__row--file')).toHaveCount(2)
+  // Two notes of two vaults: each top row says whose it is (S41).
+  await expect(vaultTags(win)).toHaveText([ALPHA, BETA])
   await shoot(win, 'multi-vault-05-favorites-two-vaults')
 })
 
