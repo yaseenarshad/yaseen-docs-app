@@ -12,7 +12,7 @@
 - Never open or test on a real vault. Use fixtures and temp folders.
 - Write the test first, see it fail, then write the code.
 - A size ceiling that trips goes to Yasin. `mainBundleBytes` must not grow: the main process does not change.
-- Delivery: open the pull request and stop. Yasin does the hand walk. Merge after he says it passed. No release.
+- Delivery: open the pull request and stop. Yasin does the hand walk. Merge after he says it passed. The release 0.9.38 came after, when Yasin asked for it.
 - Commits go through the `/commit` skill.
 
 ## Key Decisions
@@ -32,8 +32,10 @@
   - [x] YAZ-2640: 2- "Show in sidebar" on a row of Search, Focus and Favorites (`33060e1`)
   - [x] YAZ-2641: 3- Polish and anti-slop: 11 findings, each applied (`bc31efa`)
   - [x] YAZ-2642: the e2e specs and the two docs (`37a7bcc`), written and typechecked, not run
-- Now: [→] YAZ-2642: the pull request is open; Yasin's hand walk is next (`docs/REGRESSION.md`, "S23 The Search tab")
-- Next: merge after Yasin says the walk passed. No release.
+  - [x] Yasin's hand walk passed; merged by #100 as `1cbacc2`; CI on the pull request was green, the size gate too
+  - [x] Closeout: the handoff is on YAZ-2638 and on each subissue; the five issues are Done; the pull request is attached to YAZ-2638
+- Now: closed. The release 0.9.38 holds this work.
+- Next: nothing.
 
 ## Decisions made during the build
 
@@ -45,7 +47,7 @@
 ## Open Questions
 
 - The size gate passes inside the 0.1% tolerance: `rendererEagerJsBytes` 1,978,420 against a pass limit of 1,978,609 (189 bytes left). `main` at `d12fa17` was 1,978,070. `mainBundleBytes` is 526,429, not changed.
-- UNCONFIRMED: the size gate on CI (Node 22). A ceiling that trips goes to Yasin.
+- The size gate passed on CI (Node 22) for the pull request.
 - UNCONFIRMED: the end-to-end specs have never run.
 
 ## Working Set
