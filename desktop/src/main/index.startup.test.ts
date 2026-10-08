@@ -15,6 +15,8 @@ const h = vi.hoisted(() => {
     on: new Map<string, (...args: unknown[]) => void>(),
     ready: (): void => undefined,
     windows: [] as Array<{ isDestroyed: () => boolean; isMinimized: () => boolean; restore: () => void; focus: () => void }>,
+    /** The store's windows, as far as this file reads them: each one's id and its vaults. */
+    stored: [] as Array<{ id: string; roots: string[] }>,
   }
   const log = (entry: string) => () => void s.order.push(entry)
   const app = {
@@ -42,7 +44,7 @@ const h = vi.hoisted(() => {
     flushAllForQuit: vi.fn(async (): Promise<void> => void s.order.push('flushAllForQuit')),
   }
   const store = {
-    get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: [], recents: [] }),
+    get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [] }),
     flush: vi.fn(async () => void s.order.push('store.flush')),
   }
   const gitSync = { notifyFocus: vi.fn(), notifyWake: vi.fn(), flushForQuit: vi.fn(async (): Promise<void> => void s.order.push('gitSync.flushForQuit')) }
@@ -99,7 +101,7 @@ function gate(): { promise: Promise<void>; open: () => void } {
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  Object.assign(h.s, { order: [], on: new Map(), windows: [] })
+  Object.assign(h.s, { order: [], on: new Map(), windows: [], stored: [] })
   vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', '/tmp/isolated-profile')
   vi.stubEnv('YASEEN_DOCS_E2E', '')
   vi.resetModules()
@@ -192,6 +194,26 @@ describe('main startup order (YAZ-2172)', () => {
     expect(win.focus).not.toHaveBeenCalled()
     h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', '--flag'])
     expect([win.restore, win.focus].map((f) => f.mock.calls.length)).toEqual([1, 1])
+  })
+})
+
+describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
+  it('asks the sync manager to pull EVERY vault the focused window shows, and no vault of another window; a Welcome window or an unknown one asks for none (YAZ-2602 S43)', async () => {
+    h.s.ready()
+    await settle() // `whenReady` ran: registerIpc handed back the sync manager
+    h.s.stored = [{ id: 'w1', roots: ['/notes', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
+    const focus = (id: string | undefined) => {
+      const webContents = { id: 7 }
+      h.manager.idFor.mockReturnValue(id)
+      h.gitSync.notifyFocus.mockClear()
+      h.s.on.get('browser-window-focus')!(event(), { webContents })
+      expect(h.manager.idFor).toHaveBeenLastCalledWith(webContents)
+      return h.gitSync.notifyFocus.mock.calls
+    }
+    expect(focus('w1')).toEqual([['/notes'], ['/work']])
+    expect(focus('w2')).toEqual([['/other']])
+    expect(focus('w3')).toEqual([])
+    expect(focus(undefined)).toEqual([])
   })
 })
 
