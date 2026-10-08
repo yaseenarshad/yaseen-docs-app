@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { SIDEBAR_LENSES, type IndexRecord, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -405,15 +405,21 @@ export function Sidebar({
   // The folder rows' counts (🔒 E6) and shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot.
   // A snapshot that moved no count keeps the Map it had, and one that moved no shortcut keeps that
   // Map, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
-  // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the maps add up.
+  // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the
+  // maps add up. A vault is counted again only when ITS snapshot changed — the identity of its two
+  // arrays — so a save in one vault scans no record of another.
   const indexes = useSameList(vaults.map((vault) => vault.index))
+  const counted = useRef(new Map<string, { records: readonly IndexRecord[]; folders: readonly IndexRecord[]; built: ReturnType<typeof folderCounts> }>())
   const countFolders = useCallback(() => {
-    const [first, ...rest] = roots.map((vault, i) => folderCounts(vault, indexes[i].records, indexes[i].folders))
-    for (const more of rest) {
-      for (const [dir, n] of more.counts) first.counts.set(dir, n)
-      for (const [dir, rows] of more.shortcuts) first.shortcuts.set(dir, rows)
-    }
-    return first
+    const next: typeof counted.current = new Map()
+    roots.forEach((vault, i) => {
+      const { records, folders } = indexes[i]
+      const last = counted.current.get(vault)
+      next.set(vault, last !== undefined && last.records === records && last.folders === folders ? last : { records, folders, built: folderCounts(vault, records, folders) })
+    })
+    counted.current = next
+    const all = [...next.values()].map((one) => one.built)
+    return all.length === 1 ? all[0] : { counts: new Map(all.flatMap((one) => [...one.counts])), shortcuts: new Map(all.flatMap((one) => [...one.shortcuts])) }
   }, [roots, indexes])
   const [{ counts, shortcuts }, setShown] = useState(countFolders)
   useEffect(() => {
