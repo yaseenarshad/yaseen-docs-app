@@ -48,6 +48,8 @@ interface SidebarStubProps {
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
   pendingSearchFocus: boolean
+  /** The sidebar put the caret in the bar (YAZ-801): App lowers the flag. */
+  onSearchFocusHandled: () => void
   /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
   switcherOpenRequest: number
   /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
@@ -999,8 +1001,24 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     act(() => captured.sidebar?.onLensChange('search'))
     expect(captured.sidebar?.lens).toBe('search')
     expect(storage.getSidebarLens()).toBe('files')
-    expect(setLens.mock.calls).toEqual([['favorites'], ['files']])
+    expect(setLens.mock.calls).toEqual([['files']]) // the Esc asked for the lens that is stored: nothing to write
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ sidebarLens: 'search' }))
+  })
+
+  it('S4, S5 (YAZ-2638): a click on the Search tab asks for the caret as ⌘K does — `onLensChange(\'search\')` raises the focus flag, also while the Search tab shows', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['favorites', false])
+    act(() => captured.sidebar?.onLensChange('search'))
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    act(() => captured.sidebar?.onSearchFocusHandled()) // the bar took the caret
+    expect(captured.sidebar?.pendingSearchFocus).toBe(false)
+    // The Search tab shows already: the click asks again.
+    act(() => captured.sidebar?.onLensChange('search'))
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    // A lens asks for no caret.
+    act(() => captured.sidebar?.onLensChange('files'))
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['files', false])
   })
 
   it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {

@@ -167,9 +167,10 @@ export function App() {
     const { root: vault, wikilinks } = scopeOf(path)
     return pageName(vault, path, pathTitles(wikilinks.records, wikilinks.folders))
   }, [scopeOf])
-  // ⌘K's half of the search-bar focus handshake (YAZ-801, wired in YAZ-804): `openSearch` sets it
-  // (including the collapsed case, which un-collapses and mounts the sidebar with the flag already
-  // true); the sidebar focuses its input and clears it through the callback.
+  // App's half of the search-bar focus handshake (YAZ-801, wired in YAZ-804): `changeLens` sets it
+  // whenever the Search tab is asked for — ⌘K, or a click on the tab (YAZ-2638 D2) — including the
+  // collapsed case, which un-collapses and mounts the sidebar with the flag already true; the
+  // sidebar focuses its input and clears it through the callback.
   const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
   const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
 
@@ -266,8 +267,11 @@ export function App() {
 
   /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */
   const changeLens = useCallback((next: SidebarTab) => {
-    // Search is never stored (YAZ-2638 D2): a window opens again on its last lens.
-    if (next !== 'search') storage.setSidebarLens(next)
+    // Search is never stored (YAZ-2638 D2): a window opens again on its last lens. Showing it — ⌘K
+    // or a click on the tab, also while it shows — asks for the caret in its bar. A lens that is
+    // the stored one already (Esc in the bar goes back to it) is not written again.
+    if (next === 'search') setPendingSearchFocus(true)
+    else if (next !== storage.getSidebarLens()) storage.setSidebarLens(next)
     setSidebarLens(next)
   }, [])
 
@@ -429,12 +433,11 @@ export function App() {
     if (!closeActive()) void api.window.closeSelf()
   }, [closeActive])
 
-  // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, show the
-  // Search tab (YAZ-2638 D2), then ask the sidebar to focus its search bar (it mounts with the flag already true).
+  // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, then show the
+  // Search tab (YAZ-2638 D2), which asks the sidebar to focus its search bar (it mounts with the flag already true).
   const openSearch = useCallback(() => {
     if (sidebarCollapsed) toggleSidebar()
     changeLens('search')
-    setPendingSearchFocus(true)
   }, [sidebarCollapsed, toggleSidebar, changeLens])
 
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a

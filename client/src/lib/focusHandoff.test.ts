@@ -62,7 +62,7 @@ describe('focusOpenDocument: into the text', () => {
 })
 
 describe('focusSidebar: back out of the text', () => {
-  it('lands on the ACTIVE tree row, falling back to the first row', () => {
+  it('with no bar on the page — Files, Focus, Favorites — lands on the ACTIVE tree row, falling back to the first row', () => {
     treeRow(false)
     const active = treeRow(true)
     expect(focusSidebar()).toBe(true)
@@ -75,18 +75,23 @@ describe('focusSidebar: back out of the text', () => {
     expect(document.activeElement).toBe(first)
   })
 
-  it('returns to the SEARCH BAR while a query stands — the list is driven from it (YAZ-803)', () => {
-    // Search replaces the tree's body, so its rows are gone; the query is where the walk lives.
+  it('returns to the SEARCH BAR whenever the bar is on the page — the Search tab (YAZ-2638 D2), whose tree is driven from it (YAZ-803)', () => {
+    // The bar is drawn on the Search tab only; its rows are the search's, and the bar is where the walk lives.
     const input = searchInput('cac')
+    treeRow(true)
     expect(focusSidebar()).toBe(true)
     expect(document.activeElement).toBe(input)
   })
 
-  it('prefers the tree when the search bar stands EMPTY — an idle bar owns no walk', () => {
-    searchInput('')
-    const active = treeRow(true)
+  it('returns to the search bar when it stands EMPTY too — the Search tab then draws no row', () => {
+    const input = searchInput('')
     expect(focusSidebar()).toBe(true)
-    expect(document.activeElement).toBe(active)
+    expect(document.activeElement).toBe(input)
+    // A row beside an empty bar changes nothing: the bar is on the page, so the bar has it.
+    treeRow(true)
+    input.blur()
+    expect(focusSidebar()).toBe(true)
+    expect(document.activeElement).toBe(input)
   })
 
   it('declines with no sidebar on screen — Esc stays free everywhere else', () => {

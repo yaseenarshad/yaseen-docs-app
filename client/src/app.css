@@ -1329,7 +1329,7 @@ button {
 
 /* The way out of the Search tab (YAZ-2638 D2): a keycap that names the key, and is the key on a
    click — back to the lens the window last showed. Always in the bar. */
-.sidebar__search-clear {
+.sidebar__search-back {
   flex: none;
   padding: 0 5px;
   border: 1px solid var(--border);
@@ -1340,7 +1340,7 @@ button {
   color: var(--fg-muted);
 }
 
-.sidebar__search-clear:hover {
+.sidebar__search-back:hover {
   border-color: var(--fg-muted);
   color: var(--fg);
 }

@@ -36,9 +36,14 @@ vi.mock('../lib/pageLabel', async (importOriginal) => {
  * Search-row build counter (YAZ-2602 R2): the REAL builders behind recording wrappers, so a test
  * can say which vault's folder rows and file rows a landed tree made the search build again.
  */
-const rowBuilds = vi.hoisted(() => ({ folders: [] as string[], files: [] as string[] }))
+const rowBuilds = vi.hoisted(() => ({ folders: [] as string[], files: [] as string[], ranked: [] as string[] }))
 vi.mock('../search/searchCandidates', async (importOriginal) => {
   const real = await importOriginal<typeof import('../search/searchCandidates')>()
+  /** One entry per ranking (YAZ-2638 D2): the query it ranked. */
+  const searchRows: typeof real.searchRows = (candidates, query) => {
+    rowBuilds.ranked.push(query)
+    return real.searchRows(candidates, query)
+  }
   const folderCandidates: typeof real.folderCandidates = (root, dirs, folders) => {
     rowBuilds.folders.push(root)
     return real.folderCandidates(root, dirs, folders)
@@ -47,7 +52,7 @@ vi.mock('../search/searchCandidates', async (importOriginal) => {
     rowBuilds.files.push(root)
     return real.fileCandidates(root, files)
   }
-  return { ...real, folderCandidates, fileCandidates }
+  return { ...real, folderCandidates, fileCandidates, searchRows }
 })
 
 /** Shortcut-row build counter (YAZ-2602 S30): the REAL `folderShortcuts` behind a recording wrapper, so a test can say which vault an index snapshot read again. */
@@ -1191,13 +1196,11 @@ describe('reveal in Finder (GRO-2274)', () => {
  * Rename, which is the misclick pair that matters most.
  */
 /**
- * The persistent search bar (YAZ-801): row 2 of the sidebar chrome, ALWAYS present — loading,
- * error and empty vault included, since a bar that comes and goes with the tree would be a view,
- * which is exactly what the rescinded design was. Typing changes nothing below on purpose;
- * YAZ-803 swaps the body to results. The ⌘K focus handshake has no key binding yet (YAZ-804),
- * so it is driven here through the prop — including at MOUNT, which is the ⌘K-while-collapsed path.
+ * The search bar (YAZ-801), on the Search tab only (YAZ-2638 D2) — `searchInput` shows that tab —
+ * loading, error and empty vault included. The caret goes to the bar on a request alone: ⌘K or a
+ * click on the tab, which App hands down as `pendingSearchFocus` — including at MOUNT, which is the
+ * ⌘K-while-collapsed path. Esc and the keycap: the Search tab describe below.
  */
-/** The search bar (YAZ-801), on the Search tab only since YAZ-2638 D2 — `searchInput` shows that tab. Esc and the keycap: the Search tab describe below. */
 describe('search bar (YAZ-801)', () => {
   it('renders while the tree is still loading', async () => {
     let answer!: () => void
@@ -1245,6 +1248,16 @@ describe('search bar (YAZ-801)', () => {
   it('a plain mount steals no focus: Files has no bar (YAZ-2638 S6)', async () => {
     const { el, props } = await mount()
     expect(searchBar(el)).toBeNull()
+    expect(document.activeElement).toBe(document.body)
+    expect(props.onSearchFocusHandled).not.toHaveBeenCalled()
+  })
+
+  it('a mount on the Search tab with no request steals no focus either — the sidebar hidden, then shown again — and neither does a tab handed down with none', async () => {
+    const { el, props, rerender } = await mount({ lens: 'search' })
+    expect(searchBar(el)).not.toBeNull()
+    expect(document.activeElement).toBe(document.body)
+    await rerender({ lens: 'files' })
+    await rerender({ lens: 'search' })
     expect(document.activeElement).toBe(document.body)
     expect(props.onSearchFocusHandled).not.toHaveBeenCalled()
   })
@@ -1697,6 +1710,37 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     }
   })
 
+  it('YAZ-2638 D2: while a different tab shows, the search that is not on screen scrolls no tree and ranks nothing; back on the Search tab it ranks again and its highlighted row is scrolled into view', async () => {
+    const scrolled: (string | undefined)[] = []
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value(this: HTMLElement) { scrolled.push(this.dataset.path) } })
+    try {
+      const { el, v, nodes, records, bridge, rerender, emit } = await search('anchor')
+      expect(cursor(el)).toEqual(['Anchor'])
+      await rerender({ lens: 'files' })
+      // Files draws the rows the search matched: their folders are open there.
+      click(row(el, `${v}/Docs`))
+      click(row(el, `${v}/Docs/Guides`))
+      expect(row(el, `${v}/Docs/Guides/Anchor guide.md`)).not.toBeNull()
+      scrolled.length = 0
+      rowBuilds.ranked.length = 0
+      // The highlighted match leaves the vault. A search on screen moves its highlight to the match that is left.
+      const without = (list: readonly TreeNode[]): TreeNode[] => list.flatMap((n): TreeNode[] => (n.path === `${v}/Docs/Anchor.md` ? [] : n.type === 'dir' ? [{ ...n, children: without(n.children) }] : [n]))
+      bridge.tree.mockResolvedValue({ root: v, tree: without(nodes), generatedAt: 2 })
+      bridge.index.mockResolvedValue({ root: v, records: records.filter((r) => r.path !== `${v}/Docs/Anchor.md`), folders: [], generatedAt: 2, ids: true } as never)
+      await emit({ type: 'unlink', path: `${v}/Docs/Anchor.md` })
+      await afterQuiet()
+      expect(row(el, `${v}/Docs/Anchor.md`)).toBeNull() // Files followed the disk
+      expect(scrolled).toEqual([])
+      expect(rowBuilds.ranked).toEqual([])
+      await rerender({ lens: 'search' })
+      expect([...new Set(rowBuilds.ranked)]).toEqual(['anchor'])
+      expect([searchBar(el)?.value, shape(el), cursor(el)]).toEqual(['anchor', ['Docs', '  Guides', '    Anchor guide'], ['Anchor guide']])
+      expect(scrolled.at(-1)).toBe(`${v}/Docs/Guides/Anchor guide.md`)
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
+    }
+  })
+
   it('the search tree is memoised per level like every tree (YAZ-2194): a render that changes nothing for it re-renders no row', async () => {
     const { rerender } = await search('readme')
     labelRenders.names = []
@@ -1761,7 +1805,7 @@ describe('the Search tab (YAZ-2638 D2)', () => {
   const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
   const tabName = (b: HTMLButtonElement) => b.textContent || b.getAttribute('aria-label')
   const bar = (el: HTMLElement) => el.querySelector('.sidebar__search')
-  const keycap = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__search .sidebar__search-clear')
+  const keycap = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__search .sidebar__search-back')
   const bodyMsg = (el: HTMLElement) => el.querySelector('.sidebar__body .sidebar__msg')?.textContent ?? null
   const labels = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__body .tree__row .tree__label')].map((n) => n.textContent)
   const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${path}"]`)
@@ -1787,16 +1831,26 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(tabs(el).map((b) => b.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false', 'false'])
   })
 
-  it('S2, S5: the Search tab shown — at mount, or by a switch from a different tab — puts the caret in the bar and selects the text that is there; a click on the tab asks App for it', async () => {
+  it('S2, S5: a request for the Search tab — ⌘K, or a click on the tab, which App hands down with the tab — puts the caret in the bar and selects the text that is there; the tab alone, with no request, does not', async () => {
     const { el, props, rerender } = await open({ lens: 'search' })
-    expect(selected(el)).toBe('') // at mount (⌘K with the sidebar hidden, S3): the caret is in the empty bar
+    expect(selected(el)).toBeNull() // a mount with no request: the caret stays where it was
     await type(searchBar(el)!, 'anchor')
     await rerender({ lens: 'files' })
     expect(selected(el)).toBeNull()
-    // S5: the click reports up, and App hands the tab back down.
+    // S5: the click reports up, and App hands the tab back down with the request for the caret.
     click(tabs(el)[1])
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('search')
-    await rerender({ lens: 'search' })
+    await rerender({ lens: 'search', pendingSearchFocus: true })
+    expect(selected(el)).toBe('anchor')
+    expect(props.onSearchFocusHandled).toHaveBeenCalled()
+    // S5 while the Search tab shows: the click reports up again, and the request alone brings the caret back.
+    await rerender({ pendingSearchFocus: false })
+    act(() => searchBar(el)!.blur())
+    click(tabs(el)[1])
+    expect(props.onLensChange).toHaveBeenCalledTimes(2)
+    expect(props.onLensChange).toHaveBeenLastCalledWith('search')
+    expect(selected(el)).toBeNull()
+    await rerender({ pendingSearchFocus: true })
     expect(selected(el)).toBe('anchor')
   })
 
@@ -1844,10 +1898,21 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     const [folded, moved] = [labels(el), cursor(el)]
     expect(folded).toEqual(['Anchors', 'Misc', 'Docs', 'Guides', 'Anchor guide', 'Anchor'])
     expect(moved).not.toEqual(best) // the highlight is off the best match
+    // Every line the body draws on the way back: no frame may say "No matches" or the line of an empty bar.
+    const lines: (string | null)[] = []
+    const collect = (changes: MutationRecord[]) => {
+      for (const change of changes) for (const added of change.addedNodes) if (added instanceof Element) for (const msg of [added, ...added.querySelectorAll('*')]) if (msg.classList.contains('sidebar__msg')) lines.push(msg.textContent)
+    }
+    const watcher = new MutationObserver(collect)
     for (const lens of ['files', 'focus', 'favorites'] as const) {
       await rerender({ lens })
       expect(searchBar(el)).toBeNull()
+      lines.length = 0
+      watcher.observe(el.querySelector('.sidebar__body')!, { childList: true, subtree: true })
       await rerender({ lens: 'search' })
+      collect(watcher.takeRecords())
+      watcher.disconnect()
+      expect([lens, lines]).toEqual([lens, []])
       expect([lens, searchBar(el)?.value, labels(el), cursor(el)]).toEqual([lens, 'anchor', folded, moved])
     }
     // S11: the same matches under new text — the highlight is on the best match again, and the folds are the search's own again.
@@ -6478,10 +6543,12 @@ describe('several vaults in one window (YAZ-2602)', () => {
     act(() => itemByLabel(el, 'New note')?.click())
     expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(b)
     await rerender({ lens: 'files', revealRequest: { id: 1, path: b } })
-    expect(searchBar(el)).toBeNull() // Files shows; the text stays in the Search tab (YAZ-2638 S22)
-    expect(input.value).toBe('plan')
+    expect(searchBar(el)).toBeNull() // Files shows
     expect(props.onNotice).not.toHaveBeenCalled()
     expect(el.querySelector('.create-inline__input')?.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, b))
+    // The text stays in the Search tab (YAZ-2638 S22).
+    await rerender({ lens: 'search' })
+    expect(searchBar(el)?.value).toBe('plan')
   })
 
   it('the Inbox: one row per vault that has upkeep on, in vault order, named for its vault when there are two or more; each shows its own count and state and opens its own vault\'s review (R5, S41)', async () => {

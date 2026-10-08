@@ -22,7 +22,7 @@ import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
 
 /** `tree` is every row the panel can hold — the forest (YAZ-2602 D3) — or null until every vault's tree has landed. */
-export function useSelection(lens: SidebarTab, searching: boolean, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
+export function useSelection(lens: SidebarTab, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
   // and nowhere else on purpose: the Sidebar (which calls this hook) is mounted on one vault of the window and
@@ -44,7 +44,7 @@ export function useSelection(lens: SidebarTab, searching: boolean, tree: TreeNod
   // empty selection returns the same set, so the mount pass and every ordinary render below cost nothing.
   useEffect(() => {
     dispatchSelection({ type: 'clear' })
-  }, [lens, searching])
+  }, [lens])
 
   // The loaded tree is the canonical disk truth for BOTH lenses,
   // so a path it no longer has cannot stay selected. A selected path is a file OR a folder

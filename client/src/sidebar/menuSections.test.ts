@@ -281,8 +281,8 @@ describe('Open item (YAZ-2290 D3)', () => {
 /**
  * "Show in sidebar" (YAZ-2638 D1, D3): on a row of Search, Focus or Favorites — the caller hands
  * the row as `showPath` — and never on a row of the Files tab, on blank space or inside a selection
- * of two or more, where the caller hands null. It is the FIRST item of the menu. The S-numbers are
- * the case record on YAZ-2638.
+ * of two or more, where the caller hands null (S35 is the caller's rule: `Sidebar.test.tsx`). It is
+ * the FIRST item of the menu. The S-numbers are the case record on YAZ-2638.
  */
 describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
   it('S28, S38: is absent without a target — a row of the Files tab, blank space', () => {
@@ -309,11 +309,6 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
     expect(h.onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
     const others = Object.entries(h).filter(([name]) => name !== 'onShowInSidebar')
     for (const [name, fn] of others) expect(fn, name).not.toHaveBeenCalled()
-  })
-
-  it('S35: inside a selection of two or more the caller hands no target — "Open N in new tabs" still leads', () => {
-    const sections = build({ ...FILE_ROW, focusPaths: ['/v/a.md', '/v/b.md'], openTabPaths: ['/v/a.md', '/v/b.md'], showPath: null })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Add 2 to focus'])
   })
 })
 
