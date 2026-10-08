@@ -10,10 +10,9 @@
  * duplicate window is a real ⌘⇧N, and quit → relaunch reads the file cold with the ♥ lens restored
  * from `WindowEntry.sidebarLens`.
  *
- * THE DRAG: press on the row, carry the pointer to the target's TOP HALF
- * (the `before` edge, Tree.tsx `edgeOf`), rest there — re-issuing the move — until the target
- * wears `tree__row--drop-before`, release. A synthetic HTML5 drag over CDP delivers only a fraction
- * of its `dragover`s, so the rest is what makes the drop land where a real held pointer would.
+ * THE DRAG is `dragAbove` (helpers.ts): press on the row, carry the pointer to the target's TOP HALF
+ * (the `before` edge, Tree.tsx `edgeOf`), rest there until the target wears `tree__row--drop-before`,
+ * release.
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a COPY of the generated fixture,
  * `favorites-` step screenshots, serial.
@@ -22,7 +21,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, beforeEdge, buildFixtureVault, centre, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, launchApp, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, dragAbove, extraWindow, fileRow, launchApp, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -54,26 +53,6 @@ async function pickFromRowMenu(row: Locator, label: string): Promise<void> {
   await row.click({ button: 'right' })
   await expect(menuItem(win, label)).toBeVisible()
   await menuItem(win, label).click()
-}
-
-/**
- * ROOT ROW ABOVE ROOT ROW (YAZ-1766 D4): press on `source`, carry the pointer into `target`'s top
- * half, REST there until the target says the drop lands before it, release. The wait is an
- * assertion: the highlight IS the `dragover` handler the drop needs (see the module doc).
- */
-async function dragAbove(source: Locator, target: Locator): Promise<void> {
-  const from = await centre(source)
-  const to = await beforeEdge(target)
-  await win.mouse.move(from.x, from.y)
-  await win.mouse.down()
-  await win.mouse.move(to.x, to.y, { steps: 10 })
-  await expect
-    .poll(async () => {
-      await win.mouse.move(to.x, to.y)
-      return target.getAttribute('class')
-    })
-    .toContain('tree__row--drop-before')
-  await win.mouse.up()
 }
 
 // ---------- lifecycle ----------
@@ -124,7 +103,7 @@ test('step 1 — "Add to favorites" on a file and on a folder writes `.yaseendoc
 // ---------------------------------------------------------------- reorder
 
 test('step 2 — dragging the folder row above the file row rewrites the stored order, on screen and on disk', async () => {
-  await dragAbove(dirRow(win, 'Projects'), fileRow(win, 'Ideas'))
+  await dragAbove(win, dirRow(win, 'Projects'), fileRow(win, 'Ideas'))
   await expect(topLabels(win)).toHaveText(['Projects', 'Ideas'])
   await expect.poll(favoritesOnDisk).toEqual(['Projects', 'Ideas.md'])
   await expect(win.locator('.tree__row--drop-before, .tree__row--drop-after')).toHaveCount(0) // the edge goes with the drag

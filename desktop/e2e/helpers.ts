@@ -83,8 +83,8 @@ export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selec
 export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /**
  * A folder row of the sidebar tree by its exact label. Matched on the LABEL span, never on the
- * row's whole text: a top row of the Focus tab also carries its vault's name (`.tree__vault`,
- * YAZ-2602 A4), so `Projects` of the vault `Work` reads `ProjectsWork`.
+ * row's whole text: a top row of the Focus tab or of the Favorites tab also carries its vault's name
+ * (`.tree__vault`, YAZ-2631 D4), so `Projects` of the vault `Work` reads `ProjectsWork`.
  */
 export const dirRow = (w: Page, label: string) =>
   w.locator('.tree__row--dir').filter({ has: w.locator('.tree__label').filter({ hasText: new RegExp(`^${label}$`) }) })
@@ -99,17 +99,40 @@ export const sheet = (w: Page) => w.locator('[role="dialog"]')
 export const confirmSheet = (w: Page) => w.locator('.confirm[role="dialog"]')
 
 /** The middle of a row, in window coordinates: where a pointer has to be to be ON it. */
-export async function centre(row: Locator): Promise<{ x: number; y: number }> {
+async function centre(row: Locator): Promise<{ x: number; y: number }> {
   const box = await row.boundingBox()
   if (box === null) throw new Error('a row with no box cannot be dragged')
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
 /** A point in the TOP quarter of `row`, squarely inside its `before` drop edge (Tree.tsx `edgeOf`). */
-export async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
+async function beforeEdge(row: Locator): Promise<{ x: number; y: number }> {
   const box = await row.boundingBox()
   if (box === null) throw new Error('a row with no box cannot be a drop target')
   return { x: box.x + box.width / 2, y: box.y + box.height / 4 }
+}
+
+/**
+ * TOP ROW ABOVE TOP ROW — the reorder drag of a favorite (YAZ-1766 D4) and of a vault row
+ * (YAZ-2631 D5): press on `source`, carry the pointer into `target`'s top half, REST there —
+ * re-issuing the move — until the target says the drop lands before it, release. A synthetic HTML5
+ * drag over CDP delivers only a fraction of its `dragover`s, so the rest is what makes the drop land
+ * where a real held pointer would. The wait is an assertion: the edge IS the `dragover` handler the
+ * drop needs.
+ */
+export async function dragAbove(w: Page, source: Locator, target: Locator): Promise<void> {
+  const from = await centre(source)
+  const to = await beforeEdge(target)
+  await w.mouse.move(from.x, from.y)
+  await w.mouse.down()
+  await w.mouse.move(to.x, to.y, { steps: 10 })
+  await expect
+    .poll(async () => {
+      await w.mouse.move(to.x, to.y)
+      return target.getAttribute('class')
+    })
+    .toContain('tree__row--drop-before')
+  await w.mouse.up()
 }
 
 /** One frame and one task in the page: a pending `selectionchange` has reached ProseMirror after it. */
