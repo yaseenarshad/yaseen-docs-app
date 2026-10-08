@@ -563,13 +563,12 @@ export function basename(p: string): string {
 /**
  * The open vaults (YAZ-2555 D1): every vault of every window (YAZ-2602 D6), once per vault, Welcome
  * windows (no vault) left out. `listVaults` reads it for the vault switcher's list; main's door (`openRecentBeside`) has its own filter
- * over the live windows, and both compare roots through `stripSlash`. A window read straight off an
- * old state file has no `roots`: its `root` answers.
+ * over the live windows, and both compare roots through `stripSlash`.
  */
-export function openVaultRoots(windows: readonly { root: string | null; roots?: readonly string[] }[]): string[] {
+export function openVaultRoots(windows: readonly { roots: readonly string[] }[]): string[] {
   const roots: string[] = []
   for (const w of windows) {
-    for (const vault of w.roots ?? (w.root === null ? [] : [w.root])) {
+    for (const vault of w.roots) {
       const root = stripSlash(vault)
       if (!roots.includes(root)) roots.push(root)
     }
@@ -910,7 +909,7 @@ export interface VaultEntry {
  * used first, then the open vaults and the numbered ones (in number order) that are not among them.
  * ONE list for the ⌘O panel and for `yaseendocs vaults`, so the two cannot disagree.
  */
-export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { root: string | null; roots?: readonly string[] }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
+export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { roots: readonly string[] }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
   const open = openVaultRoots(state.windows)
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
   return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
