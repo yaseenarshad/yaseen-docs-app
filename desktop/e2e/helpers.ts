@@ -83,13 +83,11 @@ export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selec
 export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /**
  * A folder row of the sidebar tree by its exact label. Matched on the LABEL span, never on the
- * row's whole text: a folder row also carries the count of the notes in it (`.tree__count`,
- * YAZ-2290 E6), so `Projects` with one note reads `Projects1`.
+ * row's whole text: a top row of the Focus tab also carries its vault's name (`.tree__vault`,
+ * YAZ-2602 A4), so `Projects` of the vault `Work` reads `ProjectsWork`.
  */
 export const dirRow = (w: Page, label: string) =>
   w.locator('.tree__row--dir').filter({ has: w.locator('.tree__label').filter({ hasText: new RegExp(`^${label}$`) }) })
-/** The note count a folder row shows; no element at all for a folder holding none. */
-export const dirCount = (w: Page, label: string) => dirRow(w, label).locator('.tree__count')
 /** The DEPTH-0 row labels of whichever tree the sidebar body draws. */
 export const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
 export const lensTab = (w: Page, label: 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })

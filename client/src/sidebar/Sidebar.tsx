@@ -15,7 +15,7 @@ import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
-import { folderCounts } from './folderCounts'
+import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { buildMenuSections } from './menuSections'
@@ -35,9 +35,9 @@ export interface SidebarVault {
   name: string
   watch: WatchSource
   /**
-   * The vault's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME object
-   * its `WikilinkIndexBridge` already feeds — read, never written, and no second feed. `records`
-   * is `[]` until the first index lands, so no row shows a number before then.
+   * The vault's index snapshot, for the folders' shortcut rows (YAZ-2290 D2) and the rows' titles:
+   * the SAME object its `WikilinkIndexBridge` already feeds — read, never written, and no second
+   * feed. `records` is `[]` until the first index lands.
    */
   index: WikilinkResolveSource
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
@@ -402,38 +402,35 @@ export function Sidebar({
   const handledFilesRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  // The folder rows' counts (🔒 E6) and shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot.
-  // A snapshot that moved no count keeps the Map it had, and one that moved no shortcut keeps that
-  // Map, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
+  // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
+  // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the
-  // maps add up. A vault is counted again only when ITS snapshot changed — the identity of its two
+  // maps add up. A vault is read again only when ITS snapshot changed — the identity of its two
   // arrays — so a save in one vault scans no record of another.
   const indexes = useSameList(vaults.map((vault) => vault.index))
-  const counted = useRef(new Map<string, { records: readonly IndexRecord[]; folders: readonly IndexRecord[]; built: ReturnType<typeof folderCounts> }>())
-  const countFolders = useCallback(() => {
-    const next: typeof counted.current = new Map()
+  const built = useRef(new Map<string, { records: readonly IndexRecord[]; folders: readonly IndexRecord[]; shortcuts: ReturnType<typeof folderShortcuts> }>())
+  const readShortcuts = useCallback(() => {
+    const next: typeof built.current = new Map()
     roots.forEach((vault, i) => {
       const { records, folders } = indexes[i]
-      const last = counted.current.get(vault)
-      next.set(vault, last !== undefined && last.records === records && last.folders === folders ? last : { records, folders, built: folderCounts(vault, records, folders) })
+      const last = built.current.get(vault)
+      next.set(vault, last !== undefined && last.records === records && last.folders === folders ? last : { records, folders, shortcuts: folderShortcuts(vault, records, folders) })
     })
-    counted.current = next
-    const all = [...next.values()].map((one) => one.built)
-    return all.length === 1 ? all[0] : { counts: new Map(all.flatMap((one) => [...one.counts])), shortcuts: new Map(all.flatMap((one) => [...one.shortcuts])) }
+    built.current = next
+    const all = [...next.values()].map((one) => one.shortcuts)
+    return all.length === 1 ? all[0] : new Map(all.flatMap((one) => [...one]))
   }, [roots, indexes])
-  const [{ counts, shortcuts }, setShown] = useState(countFolders)
+  const [shortcuts, setShown] = useState(readShortcuts)
   useEffect(() => {
     const read = () =>
       setShown((prev) => {
-        const next = countFolders()
-        const sameCounts = next.counts.size === prev.counts.size && [...next.counts].every(([dir, n]) => prev.counts.get(dir) === n)
-        const sameShortcuts = shortcutStamp(next.shortcuts) === shortcutStamp(prev.shortcuts)
-        return sameCounts && sameShortcuts ? prev : { counts: sameCounts ? prev.counts : next.counts, shortcuts: sameShortcuts ? prev.shortcuts : next.shortcuts }
+        const next = readShortcuts()
+        return shortcutStamp(next) === shortcutStamp(prev) ? prev : next
       })
     read()
     const offs = indexes.map((index) => index.subscribe(read))
     return () => offs.forEach((off) => off())
-  }, [countFolders, indexes])
+  }, [readShortcuts, indexes])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
@@ -757,7 +754,6 @@ export function Sidebar({
     pending,
     renaming,
     selection,
-    counts,
     shortcuts,
     titles,
   }
@@ -1077,7 +1073,7 @@ export function Sidebar({
           source={vaultOf(pickingShortcut).index}
           onPick={(path) => {
             setPickingShortcut(null)
-            // The row and the count follow the index, as every other write's do; only a refusal is said.
+            // The row follows the index, as every other write's do; only a refusal is said.
             addShortcut(pickingShortcut, path).catch((err: unknown) => onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
           }}
           onClose={() => setPickingShortcut(null)}
