@@ -4,8 +4,8 @@
  * add Beta from the blank-space menu → two vault rows and the header's two names → a tab of each
  * vault, and the window title follows the vault of the tab in front → a folder of each vault on the
  * Focus tab, each with its vault's name → a favorite in each vault, both in the one flat list of the
- * ♥ tab, each with its vault's name (YAZ-2631 D1) → a search that finds a note of the same name in
- * both, each under its vault's row → "Save as workspace…" from the header → "Remove from this
+ * ♥ tab, each with its vault's name (YAZ-2631 D1) → a search, on the Search tab (YAZ-2638 D2), that
+ * finds a note of the same name in both, each under its vault's row → "Save as workspace…" from the header → "Remove from this
  * window" on Beta's row → the workspace opened from the ⌘O list, in a NEW window with both vaults →
  * `yaseendocs.json` holds `roots` of two vaults and one `vaultSets` entry. The drag of a favorite
  * across vaults and the drag of a vault row are `sidebarOrder.spec.ts`.
@@ -33,7 +33,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState } from '../../shared/types'
-import { activeTab, appWindow, buildFixtureVault, clickMenuItem, editorOf, extraWindow, launchApp, lensTab, menuItem, quitApp, readState, SEED_BODY, SEED_FILE, seededState, shoot, tabsOf, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, clickMenuItem, editorOf, extraWindow, launchApp, lensTab, menuItem, quitApp, readState, searchBar, SEED_BODY, SEED_FILE, seededState, shoot, showSearchTab, tabsOf, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -70,7 +70,6 @@ const vaultTags = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > 
 const focusTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Focus"]')
 const heartTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Favorites"]')
 const countLine = (w: Page) => w.locator('.sidebar__body .sidebar__focus-bar span')
-const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
 /** A search result is a tree row (YAZ-2620): a MATCH, or — dim — a row that only gives a match its place. */
 const matchRows = (w: Page) => w.locator('.sidebar__body .tree__row:not(.tree__row--context)')
 /** App's one passive toast (`.link-notice`) — its text. */
@@ -262,8 +261,10 @@ test('step 4 — a favorite in each vault is written to THAT vault\'s favorites.
 
 // ---------------------------------------------------------------- search across vaults
 
-test('step 5 — a search finds the note of the same name in both vaults, each match under its vault\'s row', async () => {
+test('step 5 — a search finds the note of the same name in both vaults, each match under its vault\'s row; Esc goes back to Files', async () => {
   await lensTab(win, 'Files').click()
+  // The bar is on the Search tab only (YAZ-2638 D2): show the tab, then type.
+  await showSearchTab(win)
   // The fill lives INSIDE the retry (search.spec.ts): each vault's index is read on the first query, and lands when it lands.
   await expect(async () => {
     await searchBar(win).fill('Roadmap')
@@ -272,8 +273,13 @@ test('step 5 — a search finds the note of the same name in both vaults, each m
   // The tree that is cut is the forest (A9): a vault's row is a parent row, never a match.
   await expect(win.locator('.sidebar__body .tree__row--vault.tree__row--context .tree__label')).toHaveText([ALPHA, BETA])
   await shoot(win, 'multi-vault-06-search-two-vaults')
-  await searchBar(win).fill('')
+  // Esc goes back to the lens the window last showed, Files, and keeps the text in the Search tab
+  // (YAZ-2638 S12; before, the query was emptied to bring the Files tree back).
+  await searchBar(win).press('Escape')
+  await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
+  await expect(searchBar(win)).toHaveCount(0)
   await expect(win.locator('.sidebar__body .tree__row--context')).toHaveCount(0)
+  await expect(vaultRowLabels(win)).toHaveText([ALPHA, BETA])
 })
 
 // ---------------------------------------------------------------- save the workspace

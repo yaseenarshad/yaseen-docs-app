@@ -1,6 +1,7 @@
 /**
- * The persistent search bar (YAZ-739 A-, YAZ-801/803): its query, the ranked results, and ⌘K's
- * focus handshake. Since YAZ-2620 the sidebar draws the results as a TREE — the Files tree cut down
+ * The Search tab's bar (YAZ-739 A-, YAZ-801/803; a tab of its own since YAZ-2638 D2): its query, the
+ * ranked results, and ⌘K's focus handshake. The query lives while the panel is mounted, so it stays
+ * while a different tab shows. Since YAZ-2620 the sidebar draws the results as a TREE — the Files tree cut down
  * to the matches (`searchTree`) — so this also holds that tree, its folds and the keyboard's
  * highlighted match. With two or more vaults the tree that is cut is the forest (YAZ-2602 A9): each
  * match stands under its vault's row. The shortcut picker keeps the flat list and shares `useResultKeys`.
@@ -50,16 +51,24 @@ export function useSidebarSearch(
   vaults: readonly SearchVault[],
   /** What the Files tab draws: one vault's tree, or the forest — one row per vault (YAZ-2602 D3). */
   tree: readonly TreeNode[],
+  /** The Search tab shows (YAZ-2638 D2): the query is ranked only then. */
+  active: boolean,
+  /** Esc: back to the lens the window last showed. The query stays. */
+  onLeave: () => void,
   pendingSearchFocus: boolean,
   onSearchFocusHandled: () => void,
   activate: (hit: SearchCandidate, background: boolean) => void,
 ) {
-  // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
-  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted on one vault of the window, so it resets
-  // on unmount and on a root switch without any clearing code.
+  // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
+  // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
+  // Sidebar is mounted on one vault of the window, so it resets on unmount and on a root switch
+  // without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const results = useSearchResults(vaults, query)
+  // A search that is not on screen ranks nothing (YAZ-2638 D2): with no results it has no highlight,
+  // so it scrolls no row of the tab that shows. The ranking is synchronous, so the results are back
+  // in the render that shows the Search tab again.
+  const results = useSearchResults(vaults, active ? query : '')
   // The results as a tree (YAZ-2620 🔒 D1): the Files tree — the WHOLE vault's, whichever tab or
   // focus is showing (S33) — cut down to the matches and their parents. A vault's row is a parent
   // like any folder (YAZ-2602 A9): no row of the ranking is a vault, so it is never a match, and it
@@ -101,11 +110,11 @@ export function useSidebarSearch(
   }, [rows, picked, results, found])
   // The bar keeps focus while the tree is driven from it (YAZ-803). Opening leaves the results up.
   const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (hit, e) => activate(hit, e.metaKey))
-  // While a query is typed the body shows the search tree instead of the active tab's (YAZ-2620).
-  // A conditional render, not a teardown — every bit of that tab's tree state (data, expansion,
-  // pending create/rename, drag) lives in the Sidebar's other hooks (useVaultTree, rowGestures)
-  // and is waiting untouched when it clears.
-  const searching = query.trim() !== ''
+  // With text typed the Search tab's body is the search tree (YAZ-2620); with none it is one line
+  // of help (YAZ-2638 D2). A conditional render, not a teardown — every bit of the other tabs' tree
+  // state (data, expansion, pending create/rename, drag) lives in the Sidebar's other hooks
+  // (useVaultTree, rowGestures) and is waiting untouched when one of them shows again.
+  const typed = query.trim() !== ''
 
   // The highlight as the tree takes a selection (S39): the one match the keys are on. A click moves
   // it to the clicked row when that row is a match (S26, S27) and leaves it be otherwise (S28).
@@ -119,12 +128,15 @@ export function useSidebarSearch(
   }, [])
   const searchCursor: TreeSelection = useMemo(() => ({ paths: cursorPaths, toggle: noToggle, set: moveCursor }), [cursorPaths, moveCursor])
 
-  // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
-  // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
-  // already true (0- re-scope on YAZ-800). A plain remount with the flag false focuses nothing.
+  // The focus handshake (YAZ-801), the ONE path of the caret to the bar: ⌘K or a click on the
+  // Search tab raises the flag, and the caret lands in the bar, the text that is there selected
+  // (YAZ-2638 D2). Firing on MOUNT is deliberate, not a side effect to guard against: ⌘K with the
+  // sidebar collapsed un-collapses it, so the sidebar mounts with the flag already true (0- re-scope
+  // on YAZ-800). A mount on the Search tab with the flag false moves no caret.
   useEffect(() => {
     if (!pendingSearchFocus) return
     searchInput.current?.focus()
+    searchInput.current?.select()
     onSearchFocusHandled()
   }, [pendingSearchFocus, onSearchFocusHandled])
 
@@ -138,11 +150,9 @@ export function useSidebarSearch(
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      // Esc empties a typed query first and only gives up focus on the second press.
-      if (query !== '') setQuery('')
-      else e.currentTarget.blur()
+      onLeave()
     } else onKeys(e)
   }
 
-  return { query, setQuery, searchInput, results, searching, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown }
+  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown }
 }

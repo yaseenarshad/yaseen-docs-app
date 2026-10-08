@@ -268,10 +268,11 @@ function buildToolbar(builder: ToolbarBuilder): void {
 }
 
 /**
- * Escape steps OUT of the text and back to the sidebar's active row (YAZ-936), so the keyboard
- * walk resumes exactly where the page was picked. Priority 10 — anything that means something by
- * Esc (the `[[` picker's dismiss at 100, menus) wins first; and it DECLINES when no tree row is
- * on screen (collapsed sidebar), so Esc stays free everywhere else.
+ * Escape steps OUT of the text and back to the sidebar (YAZ-936), so the keyboard walk resumes
+ * exactly where the page was picked: on the Search tab the search bar gets the caret, empty or not
+ * (YAZ-2638 D2); on Files, Focus and Favorites the tree's active row gets it. Priority 10 —
+ * anything that means something by Esc (the `[[` picker's dismiss at 100, menus) wins first; and
+ * it DECLINES when neither is on screen (collapsed sidebar), so Esc stays free everywhere else.
  */
 const escapeToSidebar = $shortcut(() => ({
   EscapeToSidebar: {

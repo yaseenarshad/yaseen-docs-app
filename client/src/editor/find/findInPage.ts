@@ -267,7 +267,7 @@ const findPlugin = (channel: FindChannel) =>
 /**
  * Escape closes an OPEN find and declines otherwise, so the key falls through untouched.
  * Priority 20: above escape-to-sidebar's 10 (Esc lands the search before it hands focus back to
- * the tree, YAZ-936), below the `[[` picker's 100.
+ * the sidebar, YAZ-936), below the `[[` picker's 100.
  */
 const findEscapeKeymap = (channel: FindChannel) =>
   $shortcut(() => ({

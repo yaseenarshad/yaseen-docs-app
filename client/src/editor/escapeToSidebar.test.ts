@@ -1,8 +1,9 @@
 /**
- * Escape steps OUT of the text, back to the sidebar's active row (YAZ-947, `createCrepe.ts`
- * `escapeToSidebar`) — the walk resumes where the page was picked. Pinned through a REAL Crepe
+ * Escape steps OUT of the text, back to the sidebar (YAZ-947, `createCrepe.ts`
+ * `escapeToSidebar`) — the walk resumes where the page was picked: the search bar when it is on the
+ * page (the Search tab, YAZ-2638 D2), else the tree's active row. Pinned through a REAL Crepe
  * (the wikilinkPicker.test.ts idiom): priority 10, so the `[[` picker's dismiss (100) wins while
- * it is open, and the command DECLINES when no tree row is on screen — Esc stays free elsewhere.
+ * it is open, and the command DECLINES when neither is on screen — Esc stays free elsewhere.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -69,9 +70,9 @@ describe('Escape returns to the sidebar (YAZ-947)', () => {
     expect(document.activeElement).toBe(first)
   })
 
-  it('returns to the SEARCH BAR while a query stands — the list is driven from it (YAZ-961)', async () => {
-    // Search REPLACES the tree's body (🔒 D5), so there are no rows to land on: the walk lives
-    // in the input, and the selection it drives is waiting there untouched.
+  it('returns to the SEARCH BAR when the bar is on the page — the Search tab, whose tree is driven from it (YAZ-961, YAZ-2638 D2)', async () => {
+    // The bar is drawn on the Search tab only, with text or with none (`focusHandoff.test.ts`): the
+    // walk lives in the input, and the selection it drives is waiting there untouched.
     const input = document.createElement('input')
     input.className = 'sidebar__search-input'
     input.value = 'cac'
@@ -82,7 +83,7 @@ describe('Escape returns to the sidebar (YAZ-947)', () => {
     input.remove()
   })
 
-  it('DECLINES with no tree on screen — Esc falls through untouched', async () => {
+  it('DECLINES with no bar and no tree on screen — Esc falls through untouched', async () => {
     const { view } = await mount('words\n')
     expect(press(view, 'Escape')).toBe(false)
   })

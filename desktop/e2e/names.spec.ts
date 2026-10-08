@@ -12,7 +12,7 @@
  *   6 a `title:` edited by hand shows at once and renames nothing
  *   7 a folder is its title in kebab-case, with its title in `.folder.md`
  *   8 a copy is its own note: a fresh id, `<title> copy`, its own name
- *   9 the search box finds a note by its id, and by an old path that holds it
+ *   9 the search box — on the Search tab (YAZ-2638) — finds a note by its id, and by an old path that holds it
  *  10 a row's menu has one copy item
  *  11 a table's Name cell is text: a click selects, a double-click edits the title
  *
@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { NOTE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, launchApp, layer, menuItem, only, openFolder, quitApp, seededState, shoot, tabsOf, titleOf } from './helpers'
+import { NOTE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, launchApp, layer, lensTab, menuItem, only, openFolder, quitApp, searchBar, seededState, shoot, showSearchTab, tabsOf, titleOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -34,7 +34,6 @@ let win: Page
 const title = (w: Page) => layer(w).locator('.page-title__text')
 const titleInput = (w: Page) => layer(w).locator('.page-title__input')
 const inline = (w: Page) => w.locator('.create-inline__input')
-const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
 /** A search result is a row of the search tree (YAZ-2620); a note found by its id stands alone in it. */
 const results = (w: Page) => w.locator('.sidebar__body .tree__row--file')
 
@@ -185,6 +184,8 @@ test('step 8 — a copy is its own note: a fresh id, its title with copy, its ow
 })
 
 test('step 9 — the search box finds a note by its id, and by an old path that holds it', async () => {
+  // The bar is on the Search tab only (YAZ-2638 D2): show the tab, then type.
+  await showSearchTab(win)
   await searchBar(win).fill(guideId)
   await expect(results(win)).toHaveText(['Hand Edited'])
   // A path copied before the retitles: the file name is stale, the id in it is not.
@@ -193,7 +194,12 @@ test('step 9 — the search box finds a note by its id, and by an old path that 
   await searchBar(win).fill(guideId.slice(0, 5))
   await expect(results(win)).toHaveCount(0)
   await shoot(win, 'names-09-search-by-id')
+  // Esc goes back to the lens the window last showed, Files — where step 10 right-clicks a row.
+  // The text would stay in the Search tab (S12), so it is emptied first.
   await searchBar(win).fill('')
+  await searchBar(win).press('Escape')
+  await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
+  await expect(searchBar(win)).toHaveCount(0)
 })
 
 test('step 10 — a row menu has one copy item', async () => {
