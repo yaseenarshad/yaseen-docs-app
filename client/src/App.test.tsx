@@ -3214,6 +3214,18 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(askedOf(bridge, '/w')).toEqual(before)
   })
 
+  it('removing the first vault with no tab left keeps that vault\'s remembered file; the empty window is the next vault\'s, the root now, as an empty window is its one vault\'s (S52)', async () => {
+    const state: AppState = { ...defaultAppState(), folders: { '/v': { ...defaultFolderState(), lastFile: '/v/a.md' }, '/w': { ...defaultFolderState(), lastFile: '/w/b.md' } } }
+    const { bridge, el } = await mount(state, { ...TWO, file: '/v/a.md', tabs: ['/v/a.md'] })
+    bridge.state.setFolder.mockClear()
+    act(() => captured.sidebar?.onRemoveVault('/v'))
+    await act(async () => {})
+    expect(stripLabels(el)).toEqual([])
+    expect(storage.getRoots()).toEqual(['/w'])
+    expect(storage.getLastFile('/v')).toBe('/v/a.md')
+    expect(bridge.state.setFolder.mock.calls).toEqual([['/w', { lastFile: null }]])
+  })
+
   it('the only vault cannot be removed: the window keeps it (S51)', async () => {
     const { bridge } = await mount(defaultAppState(), ONE)
     bridge.window.setIdentity.mockClear()
