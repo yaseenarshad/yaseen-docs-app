@@ -855,7 +855,9 @@ export function App() {
     const rest = now.filter((vault) => vault !== gone)
     if (rest.length === 0 || rest.length === now.length) return
     setSidebarRevealRequest(null)
-    deleteWorkspaceDir(stripSlash(gone))
+    // The pages close against the vaults that stay: with none left open, the empty window is the
+    // new first vault's to remember, and the vault that left keeps its last file (S52).
+    deleteWorkspaceDir(stripSlash(gone), rest[0])
     storage.setRoots(rest)
     setRoots(storage.getRoots())
     setVaultOpen(gone, true) // a vault that comes back starts open (R9)
