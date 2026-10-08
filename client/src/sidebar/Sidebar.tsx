@@ -200,7 +200,7 @@ export interface MenuTargets {
   targetDir: string | null
   /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
   rowKind: 'file' | 'dir' | null
-  /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
+  /** "Copy path" — the right-clicked row (file or folder), or for blank space the vault ROOT of a window with one vault (GRO-2273); null there with two or more (YAZ-2602 S10). */
   copyPath: string | null
   /**
    * "Open" — a FOLDER row outside a plural selection (YAZ-2290 D3): the folder opens as the current
@@ -242,7 +242,7 @@ export interface MenuTargets {
   renamePath: string | null
   /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
   deletePath: string | null
-  /** "Reveal in Finder" — the row, or the vault ROOT for blank space (GRO-2274); same target as `copyPath`. */
+  /** "Reveal in Finder" — the row, or the one vault's ROOT for blank space (GRO-2274); same target as `copyPath`. */
   revealPath: string | null
   /** "Open in VS Code" — the same target rule again (YAZ-963); its OWN field, per this split's whole point. */
   openVsCodePath: string | null

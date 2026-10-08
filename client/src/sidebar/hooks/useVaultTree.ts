@@ -1,7 +1,7 @@
 /**
- * The window's vaults as this panel holds them (YAZ-2202, moved out of `Sidebar.tsx` as-is; one
- * tree per vault since YAZ-2602): each tree and its watcher refresh, the expansion, the focus
- * list, each vault's Favorites list, and the checks that close a tab whose file is gone.
+ * The window's vaults as this panel holds them (YAZ-2202; one tree per vault, YAZ-2602 D3): each
+ * tree and its watcher refresh, each load error, the expansion, the focus list, each vault's
+ * Favorites list, and the checks that close a tab whose file is gone.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { MAX_FOCUS, rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
@@ -90,7 +90,7 @@ export function useVaultTree(
   const favoritesRef = useRef(favoritesByRoot)
   favoritesRef.current = favoritesByRoot
 
-  // What the Files tab draws (YAZ-2602 D3). One vault → its tree, as before. Two or more → one
+  // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the order added, named as the app names the vault, its tree below it;
   // a vault whose tree has not landed has no row yet. Null until there is a tree to draw.
   const forest = useMemo<TreeNode[] | null>(() => {

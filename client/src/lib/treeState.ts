@@ -88,7 +88,7 @@ export function favoriteRoots(tree: readonly TreeNode[], favorites: readonly str
 }
 
 /**
- * The Favorites tab (YAZ-2602 D5). One vault → its flat list, as before. Two or more → one row per
+ * The Favorites tab (YAZ-2602 D5). One vault → its flat list. Two or more → one row per
  * vault that HAS a favorite the tree holds, in vault order, holding them in that vault's stored
  * order; the row is the Files tab's vault row, so it opens and closes with it.
  */

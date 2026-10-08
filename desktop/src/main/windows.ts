@@ -89,7 +89,7 @@ export interface WindowManager extends WindowLookup {
   rootFor(path: string, rootOverride?: string | null): string | null
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
-  /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
+  /** D6 plumbing: every vault + the file of `from` (YAZ-2602 S34), cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
@@ -196,7 +196,7 @@ const rootContains = (root: string, path: string): boolean => {
  * it (YAZ-2602 D6) — most specific vault wins, ties keep the first in `windows[]`, Welcome windows never match;
  * (2) a new window on the most recent `recents` folder containing it (the list is already
  * most-recent-first); (3) a new window on the file's parent folder. A containing `rootOverride`
- * pins the effective root instead: the open window on exactly that root, else a new window there.
+ * pins the effective root instead: the open window that shows that vault, else a new window there.
  * Both kinds say the `root`: the vault the path belongs to (`rootFor`, YAZ-2589 D1).
  */
 export function resolveLinkTarget(
