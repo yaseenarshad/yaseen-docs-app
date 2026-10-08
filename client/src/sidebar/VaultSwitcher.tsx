@@ -176,7 +176,7 @@ export function rankVaultRows(rows: readonly VaultRow[], query: string): VaultRo
  * match at all it lands on the Open folder… row (= `matches.length`). `roots` are the vaults of
  * this window (YAZ-2602): an empty query starts on the first row that is none of them.
  */
-export function defaultHighlight(matches: readonly { path: string }[], query: string, ...roots: string[]): number {
+export function defaultHighlight(matches: readonly { path: string }[], query: string, roots: readonly string[]): number {
   if (query.trim() !== '') return 0
   const other = matches.findIndex((m) => !roots.includes(m.path))
   return other === -1 ? 0 : other
@@ -188,7 +188,7 @@ export const vaultsLabel = (names: readonly string[]): string => (names.length <
 export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onReveal, onOpenVsCode, onNotice }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
-  const several = roots.length > 1
+  const multi = roots.length > 1
   const inputRef = useRef<HTMLInputElement>(null)
   /** The header's name slot — the trigger, or its rename field (YAZ-1974 D5) — so the panel finds its anchor either way. */
   const slotRef = useRef<HTMLElement | null>(null)
@@ -220,7 +220,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   // The trigger's text, live: a change made in ANY window lands through `storage.subscribe`. The saved workspace that is
   // exactly this window's vaults (YAZ-2602 S15) — the first that matches — else each vault's display name (YAZ-1974 D4).
   // One vault is never a workspace (S70), so its header asks the saved ones nothing.
-  const name = useSyncExternalStore(storage.subscribe, () => (several ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name : undefined) ?? vaultsLabel(roots.map(storage.vaultName)))
+  const name = useSyncExternalStore(storage.subscribe, () => (multi ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name : undefined) ?? vaultsLabel(roots.map(storage.vaultName)))
   const open = panel !== null
 
   const openPanel = useCallback(() => {
@@ -294,12 +294,11 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const openFolderIndex = first + matches.length
 
   // The highlight re-seeds exactly when `matches` does — on open and on every keystroke (D7).
-  const inWindow = roots.join('\n')
   useEffect(() => {
     // A typed query starts on the top row, a workspace's or a vault's. An empty one starts below the workspace
     // rows, on a vault row (YAZ-2602 S64): ⌘O ⏎ stays "the vault you used last" (YAZ-2555), never a workspace.
-    setActive(query.trim() === '' ? sets.length + defaultHighlight(matches, query, ...inWindow.split('\n')) : 0)
-  }, [sets, matches, query, inWindow])
+    setActive(query.trim() === '' ? sets.length + defaultHighlight(matches, query, roots) : 0)
+  }, [sets, matches, query, roots])
 
   /** A door that failed is logged, and reads as its "no". */
   const failed = (what: string) => (err: unknown): false => {
@@ -526,7 +525,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => (open ? closePanel() : openPanel())}
           // The vault menu is ONE vault's: with several the trigger offers "Save as workspace…" instead (YAZ-2602 S15, S63).
-          onContextMenu={(e) => (several ? openVaultSetMenu(null, e) : openVaultMenu(root, 'header', e))}
+          onContextMenu={(e) => (multi ? openVaultSetMenu(null, e) : openVaultMenu(root, 'header', e))}
         >
           <span className="sidebar__root-name">{name}</span>
           <span className="sidebar__root-hint" aria-hidden="true"><TriangleIcon up={open} /></span>
