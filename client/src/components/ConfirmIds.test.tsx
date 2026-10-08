@@ -35,6 +35,11 @@ describe('the box’s words (V2, V11)', () => {
     expect(idsAskMessage({ notes: 0, folders: 0, foreign: 0 })).toBe(`${EMPTY_START}${EMPTY_END}`)
   })
 
+  it('a window with two or more vaults: the question names the vault it asks about, and the rest reads as it does for one (YAZ-2602 S40)', () => {
+    expect(idsAskMessage({ notes: 854, folders: 0, foreign: 0 }, 'Work')).toBe(`Give the notes in Work IDs? The app would write an ID into 854 notes.${WITH}`)
+    expect(idsAskMessage({ notes: 0, folders: 0, foreign: 0 }, 'Work')).toBe(`Should the notes in Work have IDs?${EMPTY_START.slice("Should this vault's notes have IDs?".length)}${EMPTY_END}`)
+  })
+
   it('no notes to write, folders that would be: the folders are counted, one in the singular', () => {
     expect(idsAskMessage({ notes: 0, folders: 4, foreign: 0 })).toBe(`${EMPTY_START} Saying yes adds a hidden settings file to 4 folders.${EMPTY_END}`)
     expect(idsAskMessage({ notes: 0, folders: 1, foreign: 0 })).toBe(`${EMPTY_START} Saying yes adds a hidden settings file to 1 folder.${EMPTY_END}`)
@@ -68,6 +73,14 @@ describe('ConfirmIds', () => {
     const el = mount()
     expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage({ notes: 3, folders: 1, foreign: 0 }))
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Not for this vault', 'Give IDs'])
+  })
+
+  it('handed a vault\'s name, the box asks about that vault', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<ConfirmIds ask={{ notes: 3, folders: 1, foreign: 0 }} vault="Work" onAnswer={onAnswer} onDismiss={onDismiss} />))
+    expect(container.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage({ notes: 3, folders: 1, foreign: 0 }, 'Work'))
   })
 
   it('"Give IDs" answers yes, "Not for this vault" answers no', () => {

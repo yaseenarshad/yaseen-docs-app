@@ -409,7 +409,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', roots: ['/vaults/notes'], file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {

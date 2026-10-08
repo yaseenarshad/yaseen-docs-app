@@ -74,6 +74,10 @@ window.identity/0: invoke window:identity []; => "answer"; !> {"code":"NOT_FOUND
 window.onFlush/1: (no IPC)
 window.open/1: invoke window:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.openSet/1: invoke window:open-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.removeSet/1: invoke window:remove-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.renameSet/2: invoke window:rename-set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.saveSet/1: invoke window:save-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.setIdentity/1: invoke window:set-identity ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.zoom/1: invoke window:zoom ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 writeAsset/1: invoke fs:write-asset ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

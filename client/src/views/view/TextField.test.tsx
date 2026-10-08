@@ -8,13 +8,13 @@ import { TextField } from './TextField'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(normalize: (draft: string) => string | null) {
+function mount(normalize: (draft: string) => string | null, commitOnEnter = false) {
   const onCommit = vi.fn()
   const onDone = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<TextField aria-label="Value" value="280" normalize={normalize} onCommit={onCommit} onDone={onDone} />))
+  act(() => root?.render(<TextField aria-label="Value" value="280" normalize={normalize} commitOnEnter={commitOnEnter} onCommit={onCommit} onDone={onDone} />))
   const input = container.querySelector<HTMLInputElement>('[aria-label="Value"]')
   if (input === null) throw new Error('missing input')
   return { input, onCommit, onDone }
@@ -39,12 +39,14 @@ function blur(input: HTMLInputElement): void {
   })
 }
 
-afterEach(() => {
+function unmount(): void {
   act(() => root?.unmount())
   root = null
   container?.remove()
   container = null
-})
+}
+
+afterEach(unmount)
 
 describe('TextField normalization', () => {
   it('normalizes before comparison and visibly keeps a valid normalized draft even when unchanged', () => {
@@ -89,5 +91,36 @@ describe('TextField normalization', () => {
     blur(input)
     expect(onCommit).toHaveBeenCalledExactlyOnceWith('400')
     expect(onDone).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TextField commitOnEnter (YAZ-2602 S63)', () => {
+  it('Enter commits the text also when it is still the value; blur and Escape do not', () => {
+    const entered = mount((draft) => draft.trim(), true)
+    press(entered.input, 'Enter')
+    expect(entered.onCommit).toHaveBeenCalledExactlyOnceWith('280')
+    expect(entered.onDone).toHaveBeenCalledTimes(1)
+    unmount()
+
+    const blurred = mount((draft) => draft.trim(), true)
+    blur(blurred.input)
+    expect(blurred.onCommit).not.toHaveBeenCalled()
+    expect(blurred.onDone).toHaveBeenCalledTimes(1)
+    unmount()
+
+    const escaped = mount((draft) => draft.trim(), true)
+    press(escaped.input, 'Escape')
+    expect(escaped.onCommit).not.toHaveBeenCalled()
+  })
+
+  it('a draft that normalize rejects is still no commit, and an edit commits on blur as before', () => {
+    const { input, onCommit } = mount((draft) => (draft.trim() === '' ? null : draft.trim()), true)
+    setValue(input, '   ')
+    press(input, 'Enter')
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(input.value).toBe('280')
+    setValue(input, ' 400 ')
+    blur(input)
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith('400')
   })
 })

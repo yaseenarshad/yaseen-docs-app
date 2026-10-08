@@ -1740,6 +1740,12 @@ button {
   color: var(--fg-dir);
 }
 
+/* A vault row (YAZ-2602 D3): a folder row that is a whole vault, so its name reads as the parent
+   of the tree below it — the weight the header's vault name has. */
+.tree__row--vault .tree__label {
+  font-weight: 600;
+}
+
 /* A file with no in-app viewer (YAZ-1577 D2): listed, but a click leaves the app — quieter, so the
    difference is visible before the click. */
 .tree__row--external {
@@ -1856,11 +1862,22 @@ button {
 }
 
 /* The folder's note count, pushed to the right edge of the row. */
-.tree__count {
+.tree__count,
+.tree__vault {
   margin-left: auto;
   padding-left: 6px;
   font-size: 11px;
   color: var(--fg-muted);
+}
+
+/* The vault of a top row of the Focus tab (YAZ-2602 A4), where the window has two or more: the count's
+   quiet text, to the left of the count. On one line, so a long name gives way to it. */
+.tree__vault {
+  white-space: nowrap;
+}
+
+.tree__vault + .tree__count {
+  margin-left: 0;
 }
 
 /* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the

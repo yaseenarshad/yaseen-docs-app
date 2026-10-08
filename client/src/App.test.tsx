@@ -21,11 +21,24 @@ import { flushWindow } from './lib/windowFlush'
 import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
 interface SidebarStubProps {
+  /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
+  /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
+  vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean }[]
+  /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
+  closedVaults: readonly string[]
+  onSetVaultOpen: (root: string, open: boolean) => void
+  /** "Add vault to this window" (YAZ-2602 D2): resolves whether the vault was added. */
+  onAddVault: (path: string) => Promise<boolean>
+  /** Its "Open folder…": the system picker, and the picked folder is added. */
+  onPickVault: () => void
+  /** "Remove from this window" (YAZ-2602 D7). */
+  onRemoveVault: (root: string) => void
   activeFile: string | null
   onOpenFile: (path: string) => void
   onOpenFileBackground: (path: string) => void
-  onRootMissing: () => void
+  /** The vault whose folder could not be read. */
+  onRootMissing: (root: string) => void
   onFileMissing: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
@@ -63,11 +76,15 @@ interface SidebarStubProps {
   dueCount: number
   reviewing: boolean
   onOpenInbox: () => void
+  /** An Inbox row's click (YAZ-2602 R5): the vault whose row it is. */
+  onInbox: (root: string) => void
   /** "Review this folder" (YAZ-2322): the sidebar hands the folder's ABSOLUTE path. */
   onReviewFolder: (dirPath: string) => void
   /** The row menu's review toggle (YAZ-2322): the hook's lookup and its write, straight through. */
   reviewState: (path: string) => boolean | null
   onSetReview: (path: string, on: boolean) => void
+  /** The vault menu's "Open in this window" (YAZ-1798 D11): the one in-place switch. */
+  onOpenVaultHere: (path: string) => Promise<boolean>
 }
 
 const captured = vi.hoisted(() => ({
@@ -78,10 +95,13 @@ const captured = vi.hoisted(() => ({
   /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
+  /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder. */
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -94,10 +114,12 @@ vi.mock('./editor/Editor', () => ({
   },
 }))
 vi.mock('./sidebar/Sidebar', () => ({
-  Sidebar: (props: SidebarStubProps) => {
-    captured.sidebar = props
+  Sidebar: (props: Omit<SidebarStubProps, 'root' | 'upkeep' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
+    // The first vault's own, as a window with one vault reads them: its folder and its Inbox row (YAZ-2602 R5).
+    const { root, upkeep, dueCount, reviewing } = props.vaults[0]
+    captured.sidebar = { ...props, root, upkeep, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
     captured.sidebarRenders++
-    return <aside ref={props.asideRef} data-sidebar data-root={props.root} />
+    return <aside ref={props.asideRef} data-sidebar data-root={root} />
   },
 }))
 
@@ -106,7 +128,7 @@ import { App } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'>>
+type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
@@ -134,7 +156,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string): Promise<IndexResponse> => ({ root, records: [], folders: [], generatedAt: 1, ids: true })),
     // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
-    coldDiff: vi.fn(async () => null),
+    coldDiff: vi.fn(async (_root?: string): Promise<unknown> => null),
     readFile: vi.fn(async (path: string) => {
       const f = files[path]
       if (f === undefined) return Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist', path })
@@ -152,7 +174,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return { path, mtime: 1, size: (content ?? '').length }
     }),
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
-    watch: vi.fn(() => () => undefined),
+    watch: vi.fn((_root?: string, _listener?: unknown): (() => void) => () => undefined),
     state: {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
@@ -170,6 +192,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     window: {
       identity: vi.fn(async (): Promise<WindowIdentity> => ({
         ...identity,
+        roots: identity.roots ?? (identity.root === null ? [] : [identity.root]),
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
         sidebarLens: identity.sidebarLens ?? 'favorites',
@@ -242,7 +265,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onStatus: vi.fn(() => () => undefined),
     },
     // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
-    vaultConfig: { read: vi.fn(async (): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
@@ -300,6 +323,7 @@ afterEach(() => {
   captured.sidebar = null
   captured.editorOpeners = []
   captured.viewOnlyLinks = []
+  captured.editors = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -2053,7 +2077,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
     expect(el.querySelector('.welcome')).toBeNull()
-    act(() => captured.sidebar?.onRootMissing())
+    act(() => captured.sidebar?.onRootMissing('/v'))
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
@@ -2487,7 +2511,7 @@ describe('App asks before a vault\u2019s notes are given IDs (YAZ-2523 V2)', () 
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
 
-    act(() => captured.sidebar?.onRootMissing())
+    act(() => captured.sidebar?.onRootMissing('/v'))
     expect(el.querySelector('.confirm')).toBeNull()
     await act(async () => emitOpenRoot('/v'))
     expect(sheetText(el)).toBe(TEXT)
@@ -2562,5 +2586,707 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4)', () 
     act(() => emitSettings())
     await act(async () => idsButtons(el)[1].click())
     expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false })
+  })
+})
+
+/**
+ * A window with one vault asks main for one vault's worth of each read and each subscription
+ * (YAZ-2602 S79): a slot with no vault makes no bridge call. StrictMode runs each mount effect twice.
+ */
+describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79)', () => {
+  it('at boot: one vault\'s worth of each read and each subscription, and a tab switch adds none', async () => {
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const asked = () => ({
+      index: bridge.index.mock.calls,
+      tree: bridge.tree.mock.calls,
+      watch: bridge.watch.mock.calls.map(([vault]) => vault),
+      properties: bridge.properties.get.mock.calls,
+      sync: bridge.github.status.mock.calls,
+      config: bridge.vaultConfig.read.mock.calls,
+      coldDiff: bridge.coldDiff.mock.calls,
+      subscriptions: [bridge.properties.onChange, bridge.github.onStatus, bridge.vaultConfig.onChange].map((spy) => spy.mock.calls.length),
+    })
+    const boot = {
+      index: [['/v'], ['/v']],
+      tree: [['/v']],
+      watch: ['/v', '/v'],
+      properties: [['/v'], ['/v']],
+      sync: [['/v'], ['/v']],
+      config: [['/v', 'review.json'], ['/v', 'review.json']],
+      coldDiff: [['/v']],
+      subscriptions: [2, 2, 4],
+    }
+    expect(asked()).toEqual(boot)
+    act(() => captured.sidebar?.onOpenFile('/v/b.md'))
+    await act(async () => {})
+    expect(asked()).toEqual(boot)
+  })
+})
+
+/**
+ * One scope per vault (YAZ-2602 D1): a window that shows two vaults keeps the watcher, the index,
+ * the properties, the sync, the review and the IDs answer of EACH, all loaded, and a page reads
+ * the ones of the vault that holds it. The identity fixture gives the window its vaults, and the
+ * sidebar is a stub that reports the first.
+ */
+describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
+  type Bridge = ReturnType<typeof installBridge>
+  const note = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+  }
+  /** A note last changed in 1970: in review by default, and long overdue. */
+  const due = (path: string, folder = ''): IndexRecord => note(path, { folder, text: 'x' })
+  /** Vault `/v` first, `/w` second, one tab in each; the `/v` tab is the active one. */
+  const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/v/a.md', tabs: ['/v/a.md', '/w/b.md'] }
+  /** Each vault's own index answer. */
+  const feed = (byRoot: Record<string, Partial<IndexResponse>>) => (b: Bridge) =>
+    void b.bridge.index.mockImplementation(async (vault) => ({ root: vault, records: [], folders: [], generatedAt: 1, ids: true, ...byRoot[vault] }))
+  /** Each vault's own `review.json`: upkeep on, or no file. */
+  const upkeep = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault) => (vault !== undefined && on[vault] ? { enabled: true } : null))
+  const NOTES = feed({ '/v': { records: [note('/v/a.md', { title: 'Ay' })] }, '/w': { records: [note('/w/b.md', { title: 'Bee' })] } })
+  const callsFor = (spy: { mock: { calls: unknown[][] } }, vault: string) => spy.mock.calls.filter(([first]) => first === vault).length
+  const editor = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)
+  const renders = (path: string) => captured.editors.filter((e) => e.path === path).length
+  const records = (source: unknown) => (source as { records: IndexRecord[] }).records.map((r) => r.path)
+  /** Go to a tab. A visited tab keeps its editor, so after `show('/w/b.md')` both editors are mounted. */
+  const show = (path: string) => act(() => captured.sidebar?.onOpenFile(path))
+  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+  const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+  const button = (el: HTMLElement, name: string) => [...el.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)
+  const shownEditor = (el: HTMLElement) => el.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) [data-editor]')
+  /** Main says a vault's file changed, to every listener of the push. */
+  const push = <T,>(spy: { mock: { calls: unknown[][] } }, payload: T) => (spy.mock.calls as [(p: T) => void][]).forEach(([listener]) => listener(payload))
+
+  it('each mounted editor gets the root and the index source of ITS vault, and each vault has its own watcher and index (S30)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    show('/w/b.md')
+    expect(editor('/v/a.md')?.root).toBe('/v')
+    expect(editor('/w/b.md')?.root).toBe('/w')
+    expect(editor('/v/a.md')?.wikilinks).not.toBe(editor('/w/b.md')?.wikilinks)
+    expect(records(editor('/v/a.md')?.wikilinks)).toEqual(['/v/a.md'])
+    expect(records(editor('/w/b.md')?.wikilinks)).toEqual(['/w/b.md'])
+    // One index bridge and one of each subscription per vault: each vault is asked as a window with that vault alone asks (S79).
+    for (const vault of ['/v', '/w']) {
+      expect(callsFor(bridge.index, vault)).toBe(2)
+      expect(callsFor(bridge.watch, vault)).toBe(2)
+      expect(callsFor(bridge.tree, vault)).toBe(1)
+      expect(callsFor(bridge.properties.get, vault)).toBe(2)
+      expect(callsFor(bridge.github.status, vault)).toBe(2)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(2)
+      expect(callsFor(bridge.coldDiff, vault)).toBe(1)
+    }
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
+  })
+
+  it('a switch between the tabs of two vaults asks main for nothing: both scopes are loaded (S29, S80)', async () => {
+    const { bridge } = await mount(defaultAppState(), TWO, {}, NOTES)
+    const asked = () => [bridge.index, bridge.tree, bridge.watch, bridge.properties.get, bridge.github.status, bridge.vaultConfig.read, bridge.coldDiff].map((spy) => spy.mock.calls.length)
+    const before = asked()
+    show('/w/b.md')
+    show('/v/a.md')
+    show('/w/b.md')
+    await act(async () => {})
+    expect(asked()).toEqual(before)
+  })
+
+  it('a change in vault /w does not render the mounted editor of /v', async () => {
+    const { bridge } = await mount(defaultAppState(), TWO, {}, NOTES)
+    show('/w/b.md')
+    const before = { v: renders('/v/a.md'), w: renders('/w/b.md') }
+    act(() => push(bridge.github.onStatus, { root: '/w', state: 'syncing' }))
+    expect(renders('/w/b.md')).toBeGreaterThan(before.w)
+    expect(renders('/v/a.md')).toBe(before.v)
+    expect([editor('/v/a.md')?.sync?.state, editor('/w/b.md')?.sync?.state]).toEqual(['off', 'syncing']) // each page shows its own vault's sync (S43)
+    feed({ '/v': { records: [note('/v/a.md')] }, '/w': { records: [note('/w/b.md'), note('/w/c.md')] } })({ bridge } as Bridge)
+    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: IDS_FILE }))
+    expect(records(editor('/w/b.md')?.wikilinks)).toEqual(['/w/b.md', '/w/c.md'])
+    expect(records(editor('/v/a.md')?.wikilinks)).toEqual(['/v/a.md'])
+    expect(renders('/v/a.md')).toBe(before.v)
+  })
+
+  it('the window title names the vault of the active tab, and the strip names each tab by its own vault\'s index (S36)', async () => {
+    const state = { ...defaultAppState(), folders: { '/w': { ...defaultFolderState(), name: 'Work' } } }
+    const { el } = await mount(state, TWO, {}, NOTES)
+    expect(document.title).toBe('v — Ay')
+    expect(stripLabels(el)).toEqual(['Ay', 'Bee'])
+    show('/w/b.md')
+    expect(document.title).toBe('Work — Bee')
+  })
+
+  it('with no tab open the window is the first vault\'s: its name in the title, its scope under the empty page', async () => {
+    const { el } = await mount(defaultAppState(), { ...TWO, file: null, tabs: [] })
+    expect(document.title).toBe('v')
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-root')).toBe('/v')
+  })
+
+  it('a new note made from a page goes to the folder of that page, in that page\'s vault (S37)', async () => {
+    await mount(defaultAppState(), TWO)
+    show('/w/b.md')
+    const folderFor = editor('/w/b.md')?.newNoteFolderFor
+    expect(folderFor).toBe(editor('/v/a.md')?.newNoteFolderFor) // the window's one getter, stable under every editor
+    expect(folderFor?.('/w/sub/x.md')).toBe('sub')
+    expect(folderFor?.('/v/deep/er/y.md')).toBe('deep/er')
+  })
+
+  it('a tab and a right-panel page are a folder by their own vault\'s tree, and each page gets its own vault (S31, S32)', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    const { el } = await mount(
+      defaultAppState(),
+      { ...TWO, tabs: ['/v/a.md', '/w/Notes.md'], rightPanel: { open: true, width: 440, items: ['/w/Plans.md', '/w/r.md'], expanded: '/w/r.md' } },
+      {},
+      (b) =>
+        void b.bridge.tree.mockImplementation(async (vault) => ({
+          root: vault,
+          tree: vault === '/w' ? ['Notes.md', 'Plans.md'].map((name): TreeNode => ({ type: 'dir', name, path: `/w/${name}`, children: [] })) : [],
+          generatedAt: 1,
+        })),
+    )
+    expect(stripLabels(el)).toEqual(['a', 'Notes.md'])
+    expect([...el.querySelectorAll('.right-panel__header')].map((h) => h.textContent)).toEqual(['Plans.md', 'r'])
+    expect(el.querySelector('[data-testid="right-layer-/w/r.md"] [data-editor]')?.getAttribute('data-root')).toBe('/w')
+  })
+
+  it('a file in no vault of the window uses the first vault\'s scope (S35)', async () => {
+    await mount(defaultAppState(), { ...TWO, file: '/elsewhere/x.md', tabs: ['/v/a.md', '/elsewhere/x.md'] })
+    show('/v/a.md')
+    expect(editor('/elsewhere/x.md')?.root).toBe('/v')
+    expect(editor('/elsewhere/x.md')?.wikilinks).toBe(editor('/v/a.md')?.wikilinks)
+  })
+
+  it('a rename in /w reads /w\'s index, and counts and rewrites the links of /w\'s notes alone (S30)', async () => {
+    const files = {
+      '/v/A.md': { content: 'See [[B]].\n', mtime: 1 },
+      '/w/C.md': { content: 'See [[B]].\n', mtime: 1 },
+      '/w/D.md': { content: 'And [[B]].\n', mtime: 1 },
+    }
+    const index = feed({
+      '/v': { records: [note('/v/A.md', { links: ['B'] }), note('/v/B.md')] },
+      '/w': { records: [note('/w/C.md', { links: ['B'] }), note('/w/D.md', { links: ['B'] }), note('/w/B.md')] },
+    })
+    const { bridge, el } = await mount(defaultAppState(), TWO, files, index)
+    bridge.index.mockClear()
+    await act(async () => void captured.sidebar?.onRenameFile('/w/B.md', '/w/B2.md', 'file'))
+    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 2 notes will be updated.")
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/w/B.md', newPath: '/w/B2.md' })
+    expect(bridge.index.mock.calls).toEqual([['/w']])
+    expect(files['/w/C.md'].content).toBe('See [[B2]].\n')
+    expect(files['/w/D.md'].content).toBe('And [[B2]].\n')
+    expect(files['/v/A.md'].content).toBe('See [[B]].\n')
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 2 notes')
+  })
+
+  it('a rename that waits for its answer is dropped when the list of vaults changes', async () => {
+    const index = feed({ '/v': { records: [note('/v/A.md', { links: ['B'] }), note('/v/B.md')] } })
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, index)
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 note will be updated.")
+    await act(async () => emitFileRenamed('/w', '/w2', 'dir'))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+  })
+
+  it('the Sync, Reviews and IDs settings are the ones of the active tab\'s vault, and a change is saved in that vault (S39)', async () => {
+    const index = feed({ '/v': { ids: true, records: [note('/v/a.md', { id: 'k3m9x2pq7abc' })] }, '/w': { ids: false, records: [note('/w/b.md')] } })
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
+      index(b)
+      upkeep({ '/v': true })(b)
+      b.bridge.github.status.mockImplementation(async (vault) => ({ root: vault, state: 'off' as const, enabled: vault === '/v' }))
+    })
+    const pressed = (setting: string) => [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
+    const turnOn = (setting: string) => el.querySelector<HTMLButtonElement>(`[data-setting="${setting}"] button`)?.click()
+    act(() => emitSettings())
+    expect({ ids: pressed('ids'), review: pressed('enabled'), sync: pressed('githubSync') }).toEqual({ ids: ['true', 'false'], review: ['true', 'false'], sync: ['true', 'false'] })
+    act(() => button(el, 'Close settings')?.click())
+
+    show('/w/b.md')
+    act(() => emitSettings())
+    expect({ ids: pressed('ids'), review: pressed('enabled'), sync: pressed('githubSync') }).toEqual({ ids: ['false', 'true'], review: ['false', 'true'], sync: ['false', 'true'] })
+    await act(async () => turnOn('ids'))
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/w', IDS_FILE, { enabled: true })
+    await act(async () => turnOn('enabled'))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
+    await act(async () => turnOn('githubSync'))
+    expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
+  })
+
+  it('with two or more vaults the Sync, Review and IDs settings say which vault they act on: the active tab\'s (R10, S39)', async () => {
+    const { el, emitSettings } = await mount(defaultAppState(), TWO, {}, (b) => {
+      feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
+      upkeep({ '/v': true, '/w': true })(b)
+    })
+    const named = () => [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: '))
+    act(() => emitSettings())
+    expect(named()).toEqual(['Vault: v', 'Vault: v', 'Vault: v'])
+    act(() => button(el, 'Close settings')?.click())
+    show('/w/b.md')
+    act(() => emitSettings())
+    expect(named()).toEqual(['Vault: w', 'Vault: w', 'Vault: w'])
+  })
+
+  it('the ask names its vault, and the first vault\'s ask shares no key with the sidebar (S40)', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const ask = { notes: 3, folders: 0, foreign: 0 }
+    const { el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: false, ask }, '/w': { ids: true } }))
+    expect(sheetText(el)).toContain('Give the notes in v IDs? The app would write an ID into 3 notes.')
+    expect(errors.mock.calls.filter(([message]) => String(message).includes('same key'))).toEqual([])
+  })
+
+  it('a vault that has not answered on IDs shows its own ask, and the answer is saved in that vault (S40)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: true }, '/w': { ids: false, ask: { notes: 3, folders: 0, foreign: 0 } } }))
+    expect(sheetText(el)).toContain('The app would write an ID into 3 notes.')
+    await act(async () => sheetBtn(el, 'Give IDs')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/w', IDS_FILE, { enabled: true })
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('two vaults to ask: one ask shows at a time, the first vault\'s and then the next one\'s (S40)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, feed({ '/v': { ids: false, ask: { notes: 3, folders: 0, foreign: 0 } }, '/w': { ids: false, ask: { notes: 5, folders: 0, foreign: 0 } } }))
+    expect(el.querySelectorAll('.confirm').length).toBe(1)
+    expect(sheetText(el)).toContain('into 3 notes.')
+    await act(async () => sheetBtn(el, 'Not for this vault')?.click())
+    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false })
+    expect(sheetText(el)).toContain('into 5 notes.')
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.vaultConfig.write).toHaveBeenCalledTimes(1)
+  })
+
+  it('a review of a folder of /w runs with /w\'s settings and /w\'s notes while the active tab is in /v (S42)', async () => {
+    const files = { '/w/Work/p.md': { content: 'Body.\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), TWO, files, (b) => {
+      upkeep({ '/w': true })(b)
+      feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/q.md'), due('/w/Work/p.md', 'Work')] } })(b)
+    })
+    act(() => captured.sidebar?.onReviewFolder('/w/Work'))
+    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
+    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 1')
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/w/Work/p.md')
+    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
+    expect(shownEditor(el)?.getAttribute('data-review-settings')).toBe('given')
+    expect(el.querySelector('[data-editor][data-path="/v/a.md"]')?.getAttribute('data-review-settings')).toBe('none')
+    await act(async () => button(el, 'Still relevant⌘⇧⏎')?.click())
+    expect(bridge.writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: '/w/Work/p.md' }))
+    act(() => button(el, 'Close review')?.click())
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(activeLabel(el)).toBe('a')
+    expect(captured.sidebar?.reviewState('/w/q.md')).toBe(true) // by path, to the vault that holds it
+    expect(captured.sidebar?.reviewState('/v/x.md')).toBeNull() // upkeep is off in /v
+  })
+
+  it('one review per window: a start in /v closes the review of /w (S41, S42)', async () => {
+    const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
+      upkeep({ '/v': true, '/w': true })(b)
+      feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/Work/p.md', 'Work')] } })(b)
+    })
+    act(() => captured.sidebar?.onReviewFolder('/w/Work'))
+    expect(el.querySelector('.review-bar__label')?.textContent).toBe('Work')
+    expect(captured.sidebar?.reviewing).toBe(false) // the sidebar's Inbox row is the first vault's
+    act(() => captured.sidebar?.onOpenInbox())
+    expect([...el.querySelectorAll('.review-bar__label')].map((l) => l.textContent)).toEqual(['Inbox'])
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
+    expect(captured.sidebar?.reviewing).toBe(true)
+    act(() => button(el, 'Close review')?.click())
+    expect(el.querySelector('.review-bar')).toBeNull() // the review of /w is not waiting under it
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
+  })
+
+  it('the sidebar is handed each vault\'s own Inbox — upkeep, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
+    const { el } = await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
+      upkeep({ '/v': true, '/w': true })(b)
+      feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/p.md'), due('/w/q.md')] }, '/x': { records: [due('/x/z.md')] } })(b)
+    })
+    const rows = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.upkeep, vault.dueCount, vault.reviewing])
+    expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, false], ['/x', false, 0, false]])
+    act(() => captured.sidebar?.onInbox('/w'))
+    expect(rows()).toEqual([['/v', true, 1, false], ['/w', true, 2, true], ['/x', false, 0, false]])
+    expect(el.querySelector('.review-bar__count')?.textContent).toBe('1 of 2')
+    expect(shownEditor(el)?.getAttribute('data-root')).toBe('/w')
+    act(() => captured.sidebar?.onInbox('/v'))
+    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
+    expect(el.querySelectorAll('.review-bar')).toHaveLength(1)
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/x.md')
+    act(() => captured.sidebar?.onInbox('/v'))
+    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([false, false, false])
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(shownEditor(el)?.getAttribute('data-path')).toBe('/v/a.md')
+  })
+
+  it('each vault syncs as in its own window: the attention banner is the vault\'s that has a problem, and its prompt names that vault (S43)', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    expect(el.querySelector('.sync-banner')).toBeNull()
+    act(() => push(bridge.github.onStatus, { root: '/w', state: 'attention', attention: 'auth' }))
+    expect(el.querySelector('.sync-banner strong')?.textContent).toBe("GitHub didn't accept this computer's credentials.")
+    act(() => button(el, 'Copy setup prompt')?.click())
+    expect(writeText.mock.calls[0][0]).toContain('/w')
+    expect(writeText.mock.calls[0][0]).not.toContain('/v')
+    act(() => button(el, 'Dismiss')?.click())
+    expect(el.querySelector('.sync-banner')).toBeNull()
+  })
+
+  it('the "renamed outside the app" banner of /w names its paths inside /w, and Update repairs /w\'s links (S44)', async () => {
+    const files = { '/w/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), TWO, files, (b) => {
+      feed({ '/w': { records: [note('/w/A.md', { links: ['B'], size: 20, mtime: 5 }), note('/w/B2.md', { mtime: 100 })] } })(b)
+      b.bridge.coldDiff.mockImplementation(async (vault) =>
+        vault === '/w' ? { root: '/w', scannedAt: 1, cacheStatus: 'hit', added: [{ path: '/w/B2.md', size: 7, mtime: 100 }], removed: [{ path: '/w/B.md', size: 7, mtime: 100 }], changed: [] } : null,
+      )
+    })
+    expect(el.querySelector('.rename-banner')?.textContent).toContain('Looks like B.md became B2.md — update 1 link?')
+    bridge.index.mockClear()
+    await act(async () => el.querySelectorAll<HTMLButtonElement>('.rename-banner button')[0]?.click())
+    expect(bridge.file.repairRename).toHaveBeenCalledWith({ oldPath: '/w/B.md', newPath: '/w/B2.md' })
+    expect(bridge.index.mock.calls).toEqual([['/w']])
+    expect(files['/w/A.md'].content).toBe('See [[B2]].\n')
+    expect(el.querySelector('.rename-banner')).toBeNull()
+  })
+
+  it('vault /w\'s folder is renamed in another window: the vaults of this window follow, with no identity write, and /v is not touched (S48)', async () => {
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, NOTES)
+    show('/w/b.md')
+    const before = { source: editor('/w/b.md')?.wikilinks, index: callsFor(bridge.index, '/v'), watch: callsFor(bridge.watch, '/v'), renders: renders('/v/a.md') }
+    bridge.window.setIdentity.mockClear()
+    await act(async () => emitFileRenamed('/w', '/w2', 'dir'))
+    expect(storage.getRoots()).toEqual(['/v', '/w2'])
+    expect(storage.getRoot()).toBe('/v')
+    expect(el.querySelector('[data-editor][data-path="/w2/b.md"]')?.getAttribute('data-root')).toBe('/w2')
+    expect(editor('/w2/b.md')?.wikilinks).toBe(before.source) // the vault kept its slot
+    expect(callsFor(bridge.index, '/w2')).toBeGreaterThan(0)
+    expect(callsFor(bridge.watch, '/w2')).toBeGreaterThan(0)
+    // Main's store moved the entry already: the mirror of the tabs is the only write.
+    expect((bridge.window.setIdentity.mock.calls as unknown[][]).map(([patch]) => Object.keys(patch as object).sort())).toEqual([['file', 'rightPanel', 'tabs']])
+    expect({ index: callsFor(bridge.index, '/v'), watch: callsFor(bridge.watch, '/v'), renders: renders('/v/a.md') }).toEqual({ index: before.index, watch: before.watch, renders: before.renders })
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
+  })
+
+  it('the FIRST vault\'s folder is renamed: the window\'s root and its sidebar follow, and /w is not touched', async () => {
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), TWO, {}, NOTES)
+    show('/w/b.md')
+    const before = { index: callsFor(bridge.index, '/w'), watch: callsFor(bridge.watch, '/w'), renders: renders('/w/b.md') }
+    await act(async () => emitFileRenamed('/v', '/v2', 'dir'))
+    expect(storage.getRoots()).toEqual(['/v2', '/w'])
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v2')
+    expect(el.querySelector('[data-editor][data-path="/v2/a.md"]')?.getAttribute('data-root')).toBe('/v2')
+    expect({ index: callsFor(bridge.index, '/w'), watch: callsFor(bridge.watch, '/w'), renders: renders('/w/b.md') }).toEqual(before)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ roots: expect.anything() }))
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ root: expect.anything() }))
+  })
+
+  it('"Open in this window" on a third vault leaves the window on that one vault, with the tabs reset and the two scopes unloaded (S61)', async () => {
+    const offs: Record<string, ReturnType<typeof vi.fn>[]> = {}
+    const { bridge, el } = await mount(withFolder(defaultAppState(), '/z', '/z/last.md'), TWO, {}, (b) => {
+      NOTES(b)
+      b.bridge.watch.mockImplementation((vault) => {
+        const off = vi.fn()
+        ;(offs[vault ?? ''] ??= []).push(off)
+        return off
+      })
+    })
+    show('/w/b.md')
+    const left = [editor('/v/a.md')?.wikilinks, editor('/w/b.md')?.wikilinks]
+    expect(left.map(records)).toEqual([['/v/a.md'], ['/w/b.md']])
+    bridge.window.setIdentity.mockClear()
+    await act(async () => void (await captured.sidebar?.onOpenVaultHere('/z')))
+    expect(storage.getRoots()).toEqual(['/z'])
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/z')
+    expect(stripLabels(el)).toEqual(['last'])
+    expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/z', '/z/last.md']])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([
+      [{ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }],
+      [{ tabs: ['/z/last.md'], file: '/z/last.md', rightPanel: defaultRightPanelIdentity() }],
+    ])
+    // A vault that leaves the window unloads its scope: each of its watcher subscriptions ended.
+    for (const vault of ['/v', '/w']) expect(offs[vault].map((off) => off.mock.calls.length)).toEqual(offs[vault].map(() => 1))
+    // …and its index left the window's memory: the slot's sources are empty until a vault takes it.
+    expect(left.map(records).filter((paths) => paths.some((path) => !path.startsWith('/z/')))).toEqual([])
+    expect(offs['/z'].some((off) => off.mock.calls.length === 0)).toBe(true)
+    expect(callsFor(bridge.index, '/z')).toBeGreaterThan(0)
+    expect(document.title).toBe('z — last')
+  })
+
+  it('the first vault\'s folder is gone: that vault leaves the window with its tabs, and /w stays loaded as it was (S53)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO, {}, NOTES)
+    show('/w/b.md')
+    const before = { source: editor('/w/b.md')?.wikilinks, index: callsFor(bridge.index, '/w'), watch: callsFor(bridge.watch, '/w') }
+    act(() => captured.sidebar?.onRootMissing('/v'))
+    await act(async () => {})
+    expect(el.querySelector('.welcome')).toBeNull()
+    expect(storage.getRoots()).toEqual(['/w'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/w'] })
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(stripLabels(el)).toEqual(['Bee'])
+    expect(editor('/w/b.md')?.wikilinks).toBe(before.source)
+    expect({ index: callsFor(bridge.index, '/w'), watch: callsFor(bridge.watch, '/w') }).toEqual({ index: before.index, watch: before.watch })
+  })
+})
+
+/**
+ * A vault is added to the window and removed from it (YAZ-2602 D2, D7). The sidebar asks — its
+ * blank-space menu, a `⌘O` row's menu, a vault row's menu — and App owns the list: the checks and
+ * their notices, the identity write, and the pages of a vault that leaves. A vault that is not the
+ * first comes and goes with no remount of the sidebar and no reload of a vault that stays.
+ */
+describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
+  const ONE: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'files', focusList: ['/v/sub'] }
+  const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/w/b.md', tabs: ['/v/a.md', '/w/b.md', '/w/c.md'] }
+  const named = (names: Record<string, string>): AppState => ({ ...defaultAppState(), folders: Object.fromEntries(Object.entries(names).map(([path, name]) => [path, { ...defaultFolderState(), name }])) })
+  const add = async (path: string): Promise<boolean | undefined> => {
+    let added: boolean | undefined
+    await act(async () => void (added = await captured.sidebar?.onAddVault(path)))
+    return added
+  }
+  const noticeText = (el: HTMLElement) => el.querySelector('.link-notice')?.textContent
+  const vaultRoots = () => captured.sidebar?.vaults.map((vault) => vault.root)
+  const callsFor = (spy: { mock: { calls: unknown[][] } }, vault: string) => spy.mock.calls.filter(([first]) => first === vault).length
+  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+  /** What main was asked for one vault: a vault that stays is asked nothing more. */
+  const askedOf = (bridge: ReturnType<typeof installBridge>['bridge'], vault: string) =>
+    [bridge.index, bridge.tree, bridge.watch, bridge.properties.get, bridge.github.status, bridge.vaultConfig.read, bridge.coldDiff].map((spy) => callsFor(spy, vault))
+  /** Each `watch` subscription's unsubscribe, by vault. */
+  const watchOffs = (b: ReturnType<typeof installBridge>) => {
+    const offs: Record<string, ReturnType<typeof vi.fn>[]> = {}
+    b.bridge.watch.mockImplementation((vault) => {
+      const off = vi.fn()
+      ;(offs[vault ?? ''] ??= []).push(off)
+      return off
+    })
+    return offs
+  }
+
+  it('a known vault becomes the last vault: one identity write, the top of the recents, the sidebar not remounted and the first vault not reloaded (S2, S9)', async () => {
+    // The vault is open in a second window too (S9): the add does not ask.
+    const other = { id: 'w2', root: '/w', roots: ['/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/v', 3), recent('/x', 2), recent('/w', 1)], windows: [other] as AppState['windows'] }, ONE)
+    const aside = el.querySelector('[data-sidebar]')
+    const before = askedOf(bridge, '/v')
+    bridge.window.setIdentity.mockClear()
+
+    expect(await add('/w')).toBe(true)
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+    expect(storage.getRoot()).toBe('/v')
+    // The tabs, the lens and the focus lists stay: the list of vaults is the only write.
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ roots: ['/v', '/w'] }]])
+    expect(stripLabels(el)).toEqual(['a'])
+    expect(bridge.state.pushRecent).toHaveBeenCalledExactlyOnceWith('/w')
+    expect(storage.getRecentRoots().map((r) => r.path)).toEqual(['/w', '/v', '/x'])
+    expect(vaultRoots()).toEqual(['/v', '/w'])
+    expect(captured.sidebar?.vaults.map((vault) => vault.name)).toEqual(['v', 'w'])
+    expect(captured.sidebar?.closedVaults).toEqual([]) // the new row is open
+    expect(el.querySelector('[data-sidebar]')).toBe(aside)
+    expect(askedOf(bridge, '/v')).toEqual(before)
+    // The new vault has its own scope: its watcher and its index.
+    expect(callsFor(bridge.watch, '/w')).toBeGreaterThan(0)
+    expect(callsFor(bridge.index, '/w')).toBeGreaterThan(0)
+    expect(el.querySelector('.link-notice')).toBeNull()
+  })
+
+  it('"Open folder…" adds the folder the system picker answers, and a cancel changes nothing; File › Open Folder… and Open Recent still open beside (S3, S62)', async () => {
+    const { bridge, el, emitOpenFolder, emitOpenRoot } = await mount(defaultAppState(), ONE)
+    bridge.window.setIdentity.mockClear()
+    await act(async () => captured.sidebar?.onPickVault())
+    expect(bridge.pickFolder).toHaveBeenCalledTimes(1)
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+
+    bridge.pickFolder.mockResolvedValue({ path: '/picked' } as never)
+    await act(async () => captured.sidebar?.onPickVault())
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/v', '/picked'])
+    expect(bridge.window.openRecent).not.toHaveBeenCalled()
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
+
+    // The app menu's two doors are not the sidebar's: the folder opens beside, and the window keeps its vaults.
+    bridge.pickFolder.mockResolvedValue({ path: '/beside' } as never)
+    await act(async () => emitOpenFolder())
+    act(() => emitOpenRoot('/recent'))
+    expect(bridge.window.openRecent.mock.calls).toEqual([['/beside'], ['/recent']])
+    expect(storage.getRoots()).toEqual(['/v', '/picked'])
+  })
+
+  it('refuses a folder that is in the window, inside one of its vaults, or around one, each with its notice and with nothing asked or written (S4, S5, R8)', async () => {
+    const { bridge, el } = await mount(named({ '/data/v': 'Notes' }), { id: 'w1', root: '/data/v', file: null, tabs: [] })
+    const quiet = () => [bridge.window.setIdentity, bridge.state.pushRecent, bridge.state.removeRecent].map((spy) => spy.mock.calls.length)
+    const trees = bridge.tree.mock.calls.length
+    const before = quiet()
+
+    expect(await add('/data/v')).toBe(false)
+    expect(noticeText(el)).toBe('Notes is already in this window')
+    expect(await add('/data/v/')).toBe(false)
+    expect(noticeText(el)).toBe('Notes is already in this window')
+    expect(await add('/data/v/sub')).toBe(false)
+    expect(noticeText(el)).toBe("Can't add sub: it is inside Notes")
+    expect(await add('/data')).toBe(false)
+    expect(noticeText(el)).toBe("Can't add data: it contains Notes")
+    expect(storage.getRoots()).toEqual(['/data/v'])
+    expect(quiet()).toEqual(before)
+    expect(bridge.tree.mock.calls.length).toBe(trees)
+
+    // By path segment: a folder whose name only starts like a vault's is not inside it.
+    expect(await add('/data/vault')).toBe(true)
+    expect(storage.getRoots()).toEqual(['/data/v', '/data/vault'])
+  })
+
+  it('a folder that is gone on disk is not added: the notice says so and it leaves the recents (S6)', async () => {
+    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/v', 2), recent('/gone', 1)] }, ONE, {}, (b) =>
+      void b.bridge.tree.mockImplementation((vault) => (vault === '/gone' ? Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist' }) : Promise.resolve({ root: vault, tree: [], generatedAt: 1 }))),
+    )
+    bridge.window.setIdentity.mockClear()
+    expect(await add('/gone')).toBe(false)
+    expect(noticeText(el)).toBe("Can't add gone: folder not found")
+    expect(bridge.state.removeRecent).toHaveBeenCalledExactlyOnceWith('/gone')
+    expect(storage.getRecentRoots().map((r) => r.path)).toEqual(['/v'])
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(bridge.state.pushRecent).not.toHaveBeenCalled()
+  })
+
+  it('the ninth vault is refused: a window holds 8 (S7, R7)', async () => {
+    const eight = ['/v', '/v2', '/v3', '/v4', '/v5', '/v6', '/v7', '/v8']
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', roots: eight, file: null, tabs: [] })
+    bridge.window.setIdentity.mockClear()
+    expect(await add('/v9')).toBe(false)
+    expect(noticeText(el)).toBe('A window holds 8 vaults at most')
+    expect(storage.getRoots()).toEqual(eight)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(bridge.state.pushRecent).not.toHaveBeenCalled()
+  })
+
+  it('"Remove from this window" closes that vault\'s tabs and right-panel pages by the close path, and nothing on disk changes (S50, S54)', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    const retired = [vi.spyOn(continuity, 'retireDeletedDir'), vi.spyOn(continuity, 'retireDeletedPath')]
+    let offs: Record<string, ReturnType<typeof vi.fn>[]> = {}
+    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/w', 2), recent('/v', 1)] }, { ...TWO, rightPanel: { open: true, width: 440, items: ['/w/r.md', '/v/r.md'], expanded: '/w/r.md' } }, {}, (b) => void (offs = watchOffs(b)))
+    const aside = el.querySelector('[data-sidebar]')
+    const before = askedOf(bridge, '/v')
+    expect(activeLabel(el)).toBe('b')
+    expect(el.querySelector('[data-editor][data-path="/w/b.md"]')).not.toBeNull()
+    bridge.window.setIdentity.mockClear()
+
+    act(() => captured.sidebar?.onRemoveVault('/w'))
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v'] })
+    expect(vaultRoots()).toEqual(['/v'])
+    // The pages of /w are closed, and the tab beside the active one took over (S54).
+    expect(stripLabels(el)).toEqual(['a'])
+    expect(activeLabel(el)).toBe('a')
+    expect([...el.querySelectorAll('.right-panel__header')].map((h) => h.textContent)).toEqual(['r'])
+    expect([...el.querySelectorAll('[data-editor]')].map((e) => e.getAttribute('data-path'))).toEqual(['/v/a.md'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/a.md'], file: '/v/a.md', rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' } })
+    // Each editor of /w went by its unmount, which saves its buffer: none was retired, as a deleted file's is.
+    for (const spy of retired) expect(spy).not.toHaveBeenCalled()
+    expect(bridge.file.delete).not.toHaveBeenCalled()
+    expect(bridge.writeFile).not.toHaveBeenCalled()
+    expect(bridge.state.removeRecent).not.toHaveBeenCalled()
+    // The vault unloads, the vault that stays is asked nothing, and the sidebar is the one that was there.
+    expect(offs['/w'].map((off) => off.mock.calls.length)).toEqual(offs['/w'].map(() => 1))
+    expect(askedOf(bridge, '/v')).toEqual(before)
+    expect(el.querySelector('[data-sidebar]')).toBe(aside)
+    expect(el.querySelector('.link-notice')).toBeNull()
+  })
+
+  it('with no tab left after a remove the window shows the empty page (S54)', async () => {
+    const { el } = await mount(defaultAppState(), { ...TWO, tabs: ['/w/b.md'] })
+    act(() => captured.sidebar?.onRemoveVault('/w'))
+    expect(stripLabels(el)).toEqual([])
+    expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/v', '']])
+  })
+
+  it('removing the first vault makes the next one the window\'s root, and that vault is not reloaded (S52)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), TWO)
+    const before = askedOf(bridge, '/w')
+    bridge.window.setIdentity.mockClear()
+    act(() => captured.sidebar?.onRemoveVault('/v'))
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/w'])
+    expect(storage.getRoot()).toBe('/w')
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/w'] })
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ root: expect.anything() }))
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(stripLabels(el)).toEqual(['b', 'c'])
+    expect(askedOf(bridge, '/w')).toEqual(before)
+  })
+
+  it('removing the first vault with no tab left keeps that vault\'s remembered file; the empty window is the next vault\'s, the root now, as an empty window is its one vault\'s (S52)', async () => {
+    const state: AppState = { ...defaultAppState(), folders: { '/v': { ...defaultFolderState(), lastFile: '/v/a.md' }, '/w': { ...defaultFolderState(), lastFile: '/w/b.md' } } }
+    const { bridge, el } = await mount(state, { ...TWO, file: '/v/a.md', tabs: ['/v/a.md'] })
+    bridge.state.setFolder.mockClear()
+    act(() => captured.sidebar?.onRemoveVault('/v'))
+    await act(async () => {})
+    expect(stripLabels(el)).toEqual([])
+    expect(storage.getRoots()).toEqual(['/w'])
+    expect(storage.getLastFile('/v')).toBe('/v/a.md')
+    expect(bridge.state.setFolder.mock.calls).toEqual([['/w', { lastFile: null }]])
+  })
+
+  it('the only vault cannot be removed: the window keeps it (S51)', async () => {
+    const { bridge } = await mount(defaultAppState(), ONE)
+    bridge.window.setIdentity.mockClear()
+    act(() => captured.sidebar?.onRemoveVault('/v'))
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+
+  it('a vault whose folder is gone drops out as a removed one does, with a notice that names it, and leaves the recents (S53, R6)', async () => {
+    const { bridge, el } = await mount({ ...named({ '/w': 'Work' }), recents: [recent('/v', 2), recent('/w', 1)] }, TWO)
+    const before = askedOf(bridge, '/v')
+    act(() => captured.sidebar?.onRootMissing('/w'))
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v'] })
+    expect(stripLabels(el)).toEqual(['a'])
+    expect(noticeText(el)).toBe('Work is gone: its folder was not found')
+    expect(bridge.state.removeRecent).toHaveBeenCalledExactlyOnceWith('/w')
+    expect(storage.getRecentRoots().map((r) => r.path)).toEqual(['/v'])
+    expect(el.querySelector('.welcome')).toBeNull()
+    expect(askedOf(bridge, '/v')).toEqual(before)
+
+    // A late report for a vault that already left the window changes nothing and says nothing more.
+    bridge.state.removeRecent.mockClear()
+    act(() => captured.sidebar?.onRootMissing('/w'))
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(bridge.state.removeRecent).not.toHaveBeenCalled()
+    expect(el.querySelector('.welcome')).toBeNull()
+  })
+
+  it.each([
+    ['"Remove from this window"', (root: string) => captured.sidebar?.onRemoveVault(root)],
+    ['a folder that is gone (S53)', (root: string) => captured.sidebar?.onRootMissing(root)],
+  ])('a vault that leaves by %s takes its focus items in the write that drops it — with the sidebar hidden too, where no panel prunes its own copy (A5)', async (_how, leave) => {
+    const { bridge, emitToggleSidebar } = await mount(defaultAppState(), { ...TWO, focusList: ['/w/docs', '/v/sub', '/w/b.md'] })
+    act(() => emitToggleSidebar())
+    bridge.window.setIdentity.mockClear()
+    act(() => void leave('/w'))
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(storage.getFocusList()).toEqual(['/v/sub'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v'], focusList: ['/v/sub'] })
+  })
+
+  it('a vault row the user closed stays closed while the sidebar is hidden and shown again, and a vault that is added again starts open (R9)', async () => {
+    const { bridge, emitToggleSidebar } = await mount(defaultAppState(), TWO)
+    bridge.window.setIdentity.mockClear()
+    bridge.state.setFolder.mockClear()
+    act(() => captured.sidebar?.onSetVaultOpen('/w', false))
+    expect(captured.sidebar?.closedVaults).toEqual(['/w'])
+    // Window-local, for the session: nothing goes to the store.
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+    act(() => emitToggleSidebar())
+    act(() => emitToggleSidebar())
+    expect(captured.sidebar?.closedVaults).toEqual(['/w'])
+    act(() => captured.sidebar?.onSetVaultOpen('/w', true))
+    expect(captured.sidebar?.closedVaults).toEqual([])
+
+    act(() => captured.sidebar?.onSetVaultOpen('/w', false))
+    act(() => captured.sidebar?.onRemoveVault('/w'))
+    expect(await add('/w')).toBe(true)
+    expect(captured.sidebar?.closedVaults).toEqual([])
   })
 })

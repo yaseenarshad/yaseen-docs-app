@@ -36,6 +36,7 @@ The big notes copy the shapes the YAZ-2132 scope measured (`genVault.mjs`), so t
 | `typing` | keydown → next frame per key (40 keys) at the end of a 5k and a 20k-line bullet note; null when the note is not painted within 90 s |
 | `sidebar-resize` | per mouse move while dragging the sidebar edge with 3 mounted tabs, move → next frame |
 | `tab-switch` | click a tab → painted: first visit (mounts an editor) and revisits |
+| `multi-vault` | one window on two 2k-note vaults, two tabs of each (YAZ-2602): spawn → the restored note painted; click a tab → painted, for a switch inside one vault and for a switch between the two, which must measure the same (S80). Written, not yet run |
 | `storm` | 230 adds, then 230 renames, outside the app in a 2k-note vault: main CPU s, main peak RSS, longest IPC round trip seen by the renderer, settle time |
 | `watcher` | main's open fds at 2k and 10k notes; on 2k, an outside add → tree row and an outside edit → editor |
 | `idle` | 60 s alone: CPU % and RSS per process kind (main, renderer, gpu, utility) |

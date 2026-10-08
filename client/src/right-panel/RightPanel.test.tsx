@@ -18,7 +18,7 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 
 const base = (): RightPanelProps => ({
-  root: '/v',
+  roots: ['/v'],
   titles: new Map(),
   items: ['/v/Alpha.md', '/v/Beta.md'],
   expanded: '/v/Alpha.md',
@@ -73,7 +73,7 @@ describe('RightPanel', () => {
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
-    const el = mount({ ...base(), root: '/named', items: ['/named/Notes.md', '/named/Plan.md'], expanded: null })
+    const el = mount({ ...base(), roots: ['/named'], items: ['/named/Notes.md', '/named/Plan.md'], expanded: null })
     const labels = () => [...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)
     expect(labels()).toEqual(['Notes', 'Plan'])
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
