@@ -987,7 +987,7 @@ export function App() {
         <Sidebar
           // Keyed on the FIRST vault alone (YAZ-2602): a vault that joins or leaves behind it does not remount the panel.
           key={root}
-          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of each vault
+          // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
           vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null }))}
           closedVaults={closedVaults}

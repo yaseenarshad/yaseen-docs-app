@@ -11,6 +11,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_SETTINGS, MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
+import appCss from '../app.css?inline'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { EMPTY_SELECTION } from '../lib/selection'
 // The focus list's persistence is the REAL storage module (no mock in this file): `storage.init()`
@@ -49,15 +50,15 @@ vi.mock('../search/searchCandidates', async (importOriginal) => {
   return { ...real, folderCandidates, fileCandidates }
 })
 
-/** Folder-count build counter (YAZ-2602 S30): the REAL `folderCounts` behind a recording wrapper, so a test can say which vault an index snapshot counted again. */
-const countBuilds = vi.hoisted(() => ({ roots: [] as string[] }))
-vi.mock('./folderCounts', async (importOriginal) => {
-  const real = await importOriginal<typeof import('./folderCounts')>()
-  const folderCounts: typeof real.folderCounts = (root, records, folders) => {
-    countBuilds.roots.push(root)
-    return real.folderCounts(root, records, folders)
+/** Shortcut-row build counter (YAZ-2602 S30): the REAL `folderShortcuts` behind a recording wrapper, so a test can say which vault an index snapshot read again. */
+const shortcutBuilds = vi.hoisted(() => ({ roots: [] as string[] }))
+vi.mock('./folderShortcuts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./folderShortcuts')>()
+  const folderShortcuts: typeof real.folderShortcuts = (root, records, folders) => {
+    shortcutBuilds.roots.push(root)
+    return real.folderShortcuts(root, records, folders)
   }
-  return { ...real, folderCounts }
+  return { ...real, folderShortcuts }
 })
 
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
@@ -200,7 +201,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     selectionRef: { current: EMPTY_SELECTION },
     // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App's listener asks it; the chord tests hold their own box.
     clipboardRef: { current: null },
-    // The folder rows' counts (🔒 E6, YAZ-2290) read the vault's index source (`oneVault`): empty unless a test
+    // The shortcut rows and the titles read the vault's index source (`oneVault`): empty unless a test
     // feeds it, and of a vault that uses IDs unless a test says otherwise (YAZ-2523).
     onReviewFolder: vi.fn(),
     // No row is a note the index knows unless a test says so: null hides the review toggle.
@@ -226,7 +227,7 @@ const indexFor = (ids: boolean) => {
   source.update(() => null, undefined, undefined, ids)
   return source
 }
-/** An index record for a note of the `/v` vault — only `folder` matters to the folder rows' counts (YAZ-2290 E6). */
+/** An index record for a note of the `/v` vault. */
 const indexRecord = (path: string): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
   return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: path.slice('/v/'.length, Math.max('/v/'.length, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
@@ -4006,71 +4007,13 @@ describe('the tree re-renders only the rows a change touches (YAZ-2194)', () => 
     expect(rendered()).toEqual([])
   })
 
-  it('an index snapshot that moves no folder count — a save — re-renders no row at all (YAZ-2290 E6)', async () => {
+  it('an index snapshot that moves no shortcut — a save — re-renders no row at all (YAZ-2290 D2)', async () => {
     const indexSource = createWikilinkResolveSource()
     const records = NESTED.flatMap((node) => (node.type === 'dir' ? node.children.map((child) => indexRecord(child.path)) : []))
     act(() => indexSource.update(() => null, records))
     await mountNested({ indexSource })
     act(() => indexSource.update(() => null, records.map((r) => ({ ...r, mtime: 2 }))))
     expect(rendered()).toEqual([])
-  })
-})
-
-/**
- * Every folder row shows how many notes it holds (🔒 E6, YAZ-2290): the index records that live
- * directly in it, off the window's one index source, live.
- */
-describe('folder row note counts (🔒 E6, YAZ-2290)', () => {
-  const COUNTED: TreeNode[] = [
-    { type: 'dir', name: 'Empty', path: '/v/Empty', children: [] },
-    {
-      type: 'dir', name: 'Projects', path: '/v/Projects',
-      children: [
-        { type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [{ type: 'file', name: 'a.md', path: '/v/Projects/Alpha/a.md', size: 1, mtime: 1, kind: 'markdown' }] },
-        { type: 'file', name: 'p.md', path: '/v/Projects/p.md', size: 1, mtime: 1, kind: 'markdown' },
-        { type: 'file', name: 'q.md', path: '/v/Projects/q.md', size: 1, mtime: 1, kind: 'markdown' },
-        { type: 'file', name: 'scan.pdf', path: '/v/Projects/scan.pdf', size: 1, mtime: 1, kind: 'pdf' },
-      ],
-    },
-    { type: 'file', name: 'top.md', path: '/v/top.md', size: 1, mtime: 1, kind: 'markdown' },
-  ]
-  const RECORDS = ['/v/Projects/Alpha/a.md', '/v/Projects/p.md', '/v/Projects/q.md', '/v/top.md'].map(indexRecord)
-  const countOf = (el: HTMLElement, path: string) => el.querySelector(`.tree__row[data-path="${path}"] .tree__count`)?.textContent ?? null
-  const mountCounted = async (over: Partial<SidebarProps> = {}, tweak?: (bridge: ReturnType<typeof installBridge>) => unknown) => {
-    vi.spyOn(storage, 'getExpanded').mockReturnValue(['/v/Projects'])
-    const indexSource = createWikilinkResolveSource()
-    act(() => indexSource.update(() => null, RECORDS))
-    const mounted = await mount({ indexSource, ...over }, (bridge) => {
-      bridge.tree.mockResolvedValue({ root: '/v', tree: COUNTED, generatedAt: 1 })
-      return tweak?.(bridge)
-    })
-    return { ...mounted, indexSource }
-  }
-
-  it('the count beside a folder is every note under it — its subfolder\'s too, not other files — and a folder holding none shows no number', async () => {
-    const { el } = await mountCounted()
-    expect(countOf(el, '/v/Projects')).toBe('3')
-    expect(countOf(el, '/v/Projects/Alpha')).toBe('1')
-    expect(countOf(el, '/v/Empty')).toBeNull()
-    expect(el.querySelectorAll('.tree__row--file .tree__count')).toHaveLength(0)
-  })
-
-  it('follows the live index: a note born in a folder moves that row\'s number', async () => {
-    const { el, indexSource } = await mountCounted()
-    act(() => indexSource.update(() => null, [...RECORDS, indexRecord('/v/Empty/new.md')]))
-    expect(countOf(el, '/v/Empty')).toBe('1')
-    expect(countOf(el, '/v/Projects')).toBe('3')
-  })
-
-  it('shows nothing before the first index lands', async () => {
-    const { el } = await mountCounted({ indexSource: createWikilinkResolveSource() })
-    expect(el.querySelectorAll('.tree__count')).toHaveLength(0)
-  })
-
-  it('the Favorites tab\'s folder rows show the count too', async () => {
-    const { el } = await mountCounted({ lens: 'favorites' }, (bridge) => bridge.favorites.get.mockResolvedValue(['/v/Projects']))
-    expect(countOf(el, '/v/Projects')).toBe('3')
-    expect(countOf(el, '/v/Projects/Alpha')).toBe('1')
   })
 })
 
@@ -4163,13 +4106,12 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
   const shortcutRow = (el: HTMLElement) => row(el, '/v/Projects')?.closest('li')?.querySelector<HTMLButtonElement>(`.tree__row[data-path="${HEALTH}"]`) ?? null
 
   describe('the shortcut row', () => {
-    it('stands under the folder among its files, in name order, wearing the mark — and counts with them (E6)', async () => {
+    it('stands under the folder among its files, in name order, wearing the mark (YAZ-2631 S24)', async () => {
       const { el } = await mountLinked([PROJECTS_ID])
       const rows = [...(row(el, '/v/Projects')?.closest('li')?.querySelectorAll('.tree__row--file') ?? [])]
       expect(rows.map((r) => r.textContent)).toEqual(['Alpha', 'Health', 'Zeta'])
       expect(rows.map((r) => r.querySelector('.shortcut-mark') !== null)).toEqual([false, true, false])
       expect(row(el, HEALTH)?.querySelector('.shortcut-mark')).toBeNull() // where it lives, it is a plain file row
-      expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('3')
     })
 
     it('E: shows the note\'s title, as its real row does, and still stands in file-name order (YAZ-2420 D15)', async () => {
@@ -4185,7 +4127,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(HEALTH)
     })
 
-    it('S7, S14 (YAZ-2620): a search draws the note ONCE, in the folder it lives in — no shortcut row — and a folder row keeps its full count', async () => {
+    it('S7, S14 (YAZ-2620): a search draws the note ONCE, in the folder it lives in — no shortcut row', async () => {
       const { el } = await mountLinked([PROJECTS_ID], {}, (bridge) => bridge.index.mockResolvedValue({ root: '/v', records: records([PROJECTS_ID]), folders: FOLDERS, generatedAt: 1, ids: true } as never))
       const labels = () => [...el.querySelectorAll('.sidebar__body .tree__row .tree__label')].map((label) => label.textContent)
       await type(searchInput(el)!, 'health')
@@ -4193,7 +4135,6 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       expect(el.querySelector('.sidebar__body .shortcut-mark')).toBeNull()
       await type(searchInput(el)!, 'alpha')
       expect(labels()).toEqual(['Projects', 'Alpha'])
-      expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('3') // Alpha, Zeta and the shortcut: the folder's, not the matches'
     })
 
     it('is not draggable — a drag would move the note out of the folder it lives in — while its real row still is', async () => {
@@ -4289,7 +4230,6 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       act(() => indexSource.update(() => null, records(), FOLDERS, true))
       expect(shortcutRow(el)).toBeNull()
       expect(row(el, HEALTH)).not.toBeNull() // the note is where it lives
-      expect(row(el, '/v/Projects')?.querySelector('.tree__count')?.textContent).toBe('2')
     })
 
     it('"Remove shortcut" also removes, in that one write, the values of the folders that no longer show the note (D20)', async () => {
@@ -5001,13 +4941,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(topItems(el)).toEqual(expect.arrayContaining(['Open 2 in new tabs', 'Add 2 to focus', 'Cut 2 items', 'Copy 2 items', 'Copy 2 paths', 'Add 2 to favorites']))
   })
 
-  it('a row is its own vault\'s: "Open in ▸ New window" opens that vault alone, the folder counts and the delete count come from that vault\'s index (S33)', async () => {
-    const at = pair()
-    const index = createWikilinkResolveSource()
-    index.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }])
-    const { el, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { index })])
-    expect(rowByPath(el, `${at.b}/docs`)?.querySelector('.tree__count')?.textContent).toBe('1')
-    expect(rowByPath(el, `${at.a}/sub`)?.querySelector('.tree__count')).toBeNull()
+  it('a row is its own vault\'s: "Open in ▸ New window" opens that vault alone, and the delete count comes from that vault\'s index (S33)', async () => {
+    const { el, bridge, ...at } = await two()
     rightClick(rowByPath(el, `${at.b}/b.md`))
     const newWindow = flyout(el, 'Open in').find((item) => item.textContent === 'New window')
     act(() => newWindow?.click())
@@ -5019,19 +4954,49 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.index.mock.calls).toEqual([[at.b]])
   })
 
-  it('an index snapshot of one vault counts the folders of that vault alone, and the rows of both vaults show their counts (S30)', async () => {
+  it('an index snapshot of one vault reads the shortcuts of that vault alone (S30)', async () => {
     const at = pair()
     const [notes, work] = [createWikilinkResolveSource(), createWikilinkResolveSource()]
     notes.update(() => null, [{ ...indexRecord(`${at.a}/sub/in.md`), folder: 'sub' }])
     work.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }])
-    const { el } = await mountVaults([vault(at.a, 'Notes', { index: notes }), vault(at.b, 'Work', { index: work })])
-    const count = (path: string) => rowByPath(el, path)?.querySelector('.tree__count')?.textContent ?? null
-    expect([count(`${at.a}/sub`), count(`${at.b}/docs`)]).toEqual(['1', '1'])
-    countBuilds.roots.length = 0
+    await mountVaults([vault(at.a, 'Notes', { index: notes }), vault(at.b, 'Work', { index: work })])
+    shortcutBuilds.roots.length = 0
     // A save in "Work": its index hands a new snapshot, and "Notes" still holds the one it had.
     act(() => work.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }, { ...indexRecord(`${at.b}/docs/e.md`), folder: 'docs' }]))
-    expect([count(`${at.a}/sub`), count(`${at.b}/docs`)]).toEqual(['1', '2'])
-    expect(new Set(countBuilds.roots)).toEqual(new Set([at.b]))
+    expect(new Set(shortcutBuilds.roots)).toEqual(new Set([at.b]))
+  })
+
+  it('no folder row shows a number, on Files, Focus, Favorites and in the search tree, with one vault and with two; the Inbox row keeps its due number and the Focus tab its "N in focus" line (YAZ-2631 S21 to S23)', async () => {
+    for (const size of [1, 2]) {
+      const at = pair()
+      const roots = [at.a, at.b].slice(0, size)
+      const dirs = [`${at.a}/sub`, `${at.b}/docs`].slice(0, size)
+      // Each folder holds a note that its vault's index knows.
+      const records = [{ ...indexRecord(`${at.a}/sub/in.md`), folder: 'sub' }, { ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }]
+      const vaults = roots.map((root, i) => {
+        const index = createWikilinkResolveSource()
+        index.update(() => null, [records[i]])
+        return vault(root, i === 0 ? 'Notes' : 'Work', { index })
+      })
+      const { el, rerender } = await mountVaults(vaults, { upkeep: true, dueCount: 3 }, async (bridge) => {
+        favoritesOf(bridge, Object.fromEntries(roots.map((root, i) => [root, [dirs[i]]])))
+        bridge.index.mockImplementation(async (root: string) => ({ root, records: [records[roots.indexOf(root)]], folders: [], generatedAt: 1, ids: true }))
+        await withFocus(...dirs)(bridge)
+      })
+      /** Every number at a row's right edge: the row it stands on, and what it reads. */
+      const numbers = () => [...el.querySelectorAll('.tree__count')].map((number) => [number.parentElement?.className, number.textContent])
+      const inboxOnly = roots.map(() => ['sidebar__inbox', '3'])
+      for (const lens of ['files', 'focus', 'favorites'] as const) {
+        await rerender({ lens })
+        for (const dir of dirs) expect(rowByPath(el, dir), `${lens}: ${dir}`).not.toBeNull()
+        expect(numbers(), lens).toEqual(inboxOnly)
+      }
+      await rerender({ lens: 'focus' })
+      expect(countLine(el)).toBe(`${size} in focus`)
+      await type(searchInput(el)!, 's')
+      for (const dir of dirs) expect(el.querySelector(`.sidebar__body .tree__row--dir[data-path="${dir}"]`), `search: ${dir}`).not.toBeNull()
+      expect(numbers(), 'search').toEqual(inboxOnly)
+    }
   })
 
   it('a vault that joins does not remount the panel or read the first vault again, and its first tree is the walk App just made; a vault that leaves ends its watcher subscription', async () => {
@@ -5138,7 +5103,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(errors(el)).toEqual(['watcher stopped'])
   })
 
-  it('"Add to focus" on a file of the second vault, then on a folder of the first: the one list holds both in the order added, each add asks for the Focus tab, and each top row there, file or folder, names its vault; Files and Favorites name none and Files is not narrowed (A1, A4, A7)', async () => {
+  it('"Add to focus" on a file of the second vault, then on a folder of the first: the one list holds both in the order added, each add asks for the Focus tab, and each top row there, file or folder, names its vault; Files and Favorites name none and Files is not narrowed (A1, A4, A7; YAZ-2631 S41, S43)', async () => {
     const { el, a, b, bridge, props, rerender } = await two({}, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/sub`] }))
     rightClick(rowByPath(el, `${b}/b.md`))
     await choose(el, 'Add to focus')
@@ -5162,7 +5127,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(allRows(el)).toEqual([`${b}/b.md`, `${a}/sub`, `${a}/sub/in.md`])
     expect(setFolderCalls(bridge)).toContainEqual([a, { expanded: [`${a}/sub`] }])
     expect(el.querySelectorAll('.tree__vault')).toHaveLength(2)
-    // The tag is the count's quiet text, after the label, on a file row as on a folder row.
+    // The tag stands after the label, on a file row as on a folder row.
     for (const row of [`${b}/b.md`, `${a}/sub`]) expect(rowByPath(el, row)?.querySelector('.tree__vault')?.previousElementSibling?.className).toBe('tree__label')
 
     await rerender({ lens: 'favorites' })
@@ -5170,13 +5135,21 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.tree__vault')).toBeNull()
   })
 
-  it('one vault: no top row of the Focus tab names a vault, file or folder (S11, A4)', async () => {
+  it('one vault: no top row of the Focus tab names a vault, file or folder (S11, A4; YAZ-2631 S42)', async () => {
     const { el } = await mount({ lens: 'focus' }, async (bridge) => {
       await withFocus('/v/a.md', '/v/sub')(bridge)
       await storage.init()
     })
     expect(topLabels(el)).toEqual(['a', 'sub'])
     expect(el.querySelector('.tree__vault')).toBeNull()
+  })
+
+  it('the vault name\'s rule is its own: 10px, the muted colour at 60%, at the right edge, 40% of the row at most with an ellipsis; the Inbox number keeps its rule (YAZ-2631 S41, S44, R10)', () => {
+    const rule = (selector: string) => appCss.match(new RegExp(`\\n\\${selector} \\{([^}]*)\\}`))?.[1].trim().split(/\s*\n\s*/)
+    expect(rule('.tree__vault')).toEqual(['flex: none;', 'max-width: 40%;', 'margin-left: auto;', 'padding-left: 6px;', 'overflow: hidden;', 'text-overflow: ellipsis;', 'white-space: nowrap;', 'font-size: 10px;', 'color: color-mix(in srgb, var(--fg-muted) 60%, transparent);'])
+    expect(rule('.tree__count')).toEqual(['margin-left: auto;', 'padding-left: 6px;', 'font-size: 11px;', 'color: var(--fg-muted);'])
+    // No other rule names the vault name: none shares the number's, none follows a count.
+    expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {'])
   })
 
   it('a selection across two vaults goes in, in panel order; a remove on a row of the second vault keeps the tab; a mixed selection reads Add and puts in the missing row; all in reads "Remove 2 from focus" (A7)', async () => {

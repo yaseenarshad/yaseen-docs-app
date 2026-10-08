@@ -1861,23 +1861,26 @@ button {
   top: 1px;
 }
 
-/* The folder's note count, pushed to the right edge of the row. */
-.tree__count,
-.tree__vault {
+/* The Inbox row's due number, pushed to the right edge of the row. */
+.tree__count {
   margin-left: auto;
   padding-left: 6px;
   font-size: 11px;
   color: var(--fg-muted);
 }
 
-/* The vault of a top row of the Focus tab (YAZ-2602 A4), where the window has two or more: the count's
-   quiet text, to the left of the count. On one line, so a long name gives way to it. */
+/* The vault of a top row of the Focus and Favorites tabs (YAZ-2631 D4), where the window has two or
+   more: very small and light, at the right edge, and never more than 40% of the row. */
 .tree__vault {
+  flex: none;
+  max-width: 40%;
+  margin-left: auto;
+  padding-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tree__vault + .tree__count {
-  margin-left: 0;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
 }
 
 /* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the

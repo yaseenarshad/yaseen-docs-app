@@ -135,8 +135,6 @@ interface TreeProps {
   move: TreeFileMove
   /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Favorites tab. The search tree hands in its one highlighted match in this shape instead (YAZ-2620). */
   selection: TreeSelection
-  /** Notes each folder shows, by its path (🔒 E6, YAZ-2290) — the ones under it and its shortcuts: a folder row shows its number, one showing none shows nothing. */
-  counts: ReadonlyMap<string, number>
   /**
    * Each folder's SHORTCUTS, by its path (YAZ-2290 D2): notes that live elsewhere, drawn as
    * file rows among the folder's own files, marked. The row IS the note — it opens it, and
@@ -173,14 +171,13 @@ function TreeLevel({
   renaming,
   move,
   selection,
-  counts,
   shortcuts,
   titles,
   reorder,
   marks,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder, marks }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, reorder, marks }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
@@ -284,7 +281,6 @@ function TreeLevel({
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
                 <span className="tree__label">{vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}</span>
                 {vaultTag(node.path)}
-                {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}
             {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} {...recurse} />}
