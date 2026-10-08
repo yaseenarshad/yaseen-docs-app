@@ -1,7 +1,7 @@
 /**
  * THE FOCUS TAB, END TO END (S12 of YAZ-2171 — YAZ-2619, which replaces the Focus Mode of
  * YAZ-1605 / 1628): right-click a folder or a file → "Add to focus" puts it in the window's focus
- * list and shows the Focus tab (the eye, between Files and the heart), where each item is a top
+ * list and shows the Focus tab (the eye, between the Search tab and the heart), where each item is a top
  * row in the order added. The Files tab is never narrowed. "Remove from focus" takes one item
  * out, and "Clear" — on the line above the list — empties it.
  *
@@ -73,8 +73,8 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
   await expect(dirRow(win, 'Projects')).toBeVisible()
-  // The tab row reads Files, eye, heart (S18) — and no eye button stands at its far end.
-  await expect(win.locator('.sidebar__lenses [role="tab"]')).toHaveCount(3)
+  // The tab row reads Files, magnifier, eye, heart (S18; the Search tab since YAZ-2638 D2) — and no eye button stands at its far end.
+  await expect(win.locator('.sidebar__lenses [role="tab"]')).toHaveCount(4)
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'false')
 
   await pickFromRowMenu(dirRow(win, 'Projects'), 'Add to focus')
