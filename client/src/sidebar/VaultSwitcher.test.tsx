@@ -18,7 +18,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MAX_VAULT_SETS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type RecentRoots, type VaultSet } from '@shared/types'
 import { storage } from '../lib/storage'
-import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_WORKSPACES_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SAVE_SET_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
+import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_SETS_TEXT, MISSING_TEXT, NO_MATCH_TEXT, OPEN_FOLDER_TEXT, OPEN_HERE_TEXT, SAVE_SET_TEXT, SETS_MISSING_TEXT, VaultSwitcher, defaultHighlight, rankVaultRows } from './VaultSwitcher'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1211,7 +1211,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     openPanel(el)
     seedSets(WORK, READING)
     openPanel(el)
-    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults', ...VAULTS])
+    expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults', ...VAULTS])
     expect(el.querySelector('.vault-switcher__label')?.getAttribute('role')).toBeNull()
     // A workspace row is a name and its count: no ⌘ number, no ⓘ — it is not one folder.
     expect([...rows(el)[0].children].map((part) => `${part.tagName}.${part.className}`)).toEqual(['SPAN.vault-switcher__name', 'SPAN.vault-switcher__when'])
@@ -1242,11 +1242,11 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     const { el } = render()
     openPanel(el)
     await type(el, 'work') // exact, then substring — whatever was used last
-    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Homework · 3 vaults'])
+    expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Homework · 3 vaults'])
     expect(el.querySelector('.vault-switcher__empty')).toBeNull()
     expect(activeRow(el)).toBe(rows(el)[0])
     await type(el, 'notes') // a workspace and vaults: the workspaces still stand first
-    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Notes plan · 3 vaults', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Notes plan · 3 vaults', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
     expect(activeRow(el)).toBe(rows(el)[0])
     await type(el, 'arch') // vaults only
     expect(listing(el)).toEqual([`# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday', 'Notes Archive · 3 days ago'])
@@ -1264,7 +1264,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     seedSets(WORK, READING)
     const { el, rerender } = render()
     rerender({ openRequest: 1 })
-    expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults'])
+    expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults'])
     key(el, 'Enter')
     await settle()
     expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
@@ -1379,7 +1379,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     fieldKey(el, 'Enter')
     await settle()
     expect(renameSet).toHaveBeenCalledExactlyOnceWith('set-reading', 'Books')
-    expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', 'Books · 3 vaults'])
+    expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Books · 3 vaults'])
     expect(panel(el)).not.toBeNull()
     expect(document.activeElement).toBe(filter(el))
 
@@ -1417,7 +1417,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     rightClick(rows(el)[1])
     pick('Remove from workspaces')
     expect(removeSet).toHaveBeenCalledExactlyOnceWith('set-reading')
-    expect(listing(el)).toEqual([`# ${GROUP_WORKSPACES_TEXT}`, 'Work · 2 vaults', ...VAULTS])
+    expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', ...VAULTS])
     expect(panel(el)).not.toBeNull()
     expect(document.activeElement).toBe(filter(el))
     rightClick(rows(el)[0])
