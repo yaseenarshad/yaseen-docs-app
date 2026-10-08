@@ -1,6 +1,6 @@
 /**
- * The main-thread side of the worker (YAZ-2643, S59 and S60): ONE worker per window, started on the
- * first request. jsdom has no `Worker`, so a stand-in records what the module does with one; the
+ * The main-thread side of the worker (YAZ-2643, S59, S60 and S65): ONE worker per window, started on
+ * the first request; one that fails rejects what waits on it and is replaced by the next request. jsdom has no `Worker`, so a stand-in records what the module does with one; the
  * worker's own code is held by `tools/lineNumbersWorker.test.mjs`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,8 @@ import type { BlockLines } from './blockLines'
 class FakeWorker {
   static made: FakeWorker[] = []
   onmessage: ((event: { data: BlockLines & { id: number } }) => void) | null = null
+  onerror: (() => void) | null = null
+  onmessageerror: (() => void) | null = null
   posted: Array<{ id: number; text: string }> = []
   terminate = vi.fn()
   constructor(readonly url: URL, readonly options?: WorkerOptions) {
@@ -54,5 +56,36 @@ describe('requestBlockLines', () => {
     worker.onmessage!({ data: { id: a.id, lines: [1], kinds: 'p' } })
     expect(await first).toMatchObject({ lines: [1], kinds: 'p' })
     expect(await second).toMatchObject({ lines: [2], kinds: 'h' })
+  })
+
+  it.each(['onerror', 'onmessageerror'] as const)('a worker that fails (%s) rejects every waiting request and is terminated; the next request starts a new worker (S65)', async (failure) => {
+    const first = requestBlockLines('one')
+    const second = requestBlockLines('two')
+    const [failed] = FakeWorker.made
+    failed[failure]!()
+    await expect(first).rejects.toThrow('line-number worker')
+    await expect(second).rejects.toThrow('line-number worker')
+    expect(failed.terminate).toHaveBeenCalledTimes(1)
+    const third = requestBlockLines('three')
+    expect(FakeWorker.made).toHaveLength(2)
+    const [, fresh] = FakeWorker.made
+    expect(fresh.posted.map(({ text }) => text)).toEqual(['three'])
+    fresh.onmessage!({ data: { id: fresh.posted[0].id, lines: [3], kinds: 'p' } })
+    expect(await third).toMatchObject({ lines: [3], kinds: 'p' })
+    expect(fresh.terminate).not.toHaveBeenCalled()
+  })
+
+  it('a second failure rejects only what waits then: the first failure left nothing behind (S65)', async () => {
+    const first = requestBlockLines('one')
+    const settled = vi.fn()
+    void first.catch(settled)
+    FakeWorker.made[0].onerror!()
+    await expect(first).rejects.toThrow()
+    expect(settled).toHaveBeenCalledTimes(1)
+    const second = requestBlockLines('two')
+    FakeWorker.made[1].onerror!()
+    await expect(second).rejects.toThrow()
+    expect(FakeWorker.made[0].terminate).toHaveBeenCalledTimes(1)
+    expect(FakeWorker.made[1].terminate).toHaveBeenCalledTimes(1)
   })
 })

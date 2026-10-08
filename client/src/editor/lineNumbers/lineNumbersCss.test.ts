@@ -28,9 +28,17 @@ describe('line numbers CSS contract', () => {
   it('draws the number from the attribute, small, grey and monospace, in ONE column (S49, S50)', () => {
     const number = bodyOf(`${ON} [data-line]::after`)
     expect(number).toMatch(/content:\s*attr\(data-line\);/)
-    expect(number).toMatch(/right:\s*calc\(100cqw \+ 22px\);/)
+    expect(number).toMatch(/right:\s*calc\(100cqw \+ 22px \/ var\(--document-zoom, 1\)\);/)
     expect(number).toMatch(/color:\s*var\(--fg-muted\);/)
-    expect(number).toMatch(/font:\s*11px \/ var\(--line-box\) var\(--crepe-font-code\);/)
+    expect(number).toMatch(/font:\s*calc\(11px \/ var\(--document-zoom, 1\)\) \/ var\(--line-box\) var\(--crepe-font-code\);/)
+  })
+
+  it('divides the number’s size and its gap by the document zoom, and nothing else: 11px and 22px on screen at every zoom (S53)', () => {
+    const zoomed = rules.filter(({ body }) => body.includes('--document-zoom'))
+    expect(zoomed.map(({ selectors }) => selectors)).toEqual([[`${ON} [data-line]::after`, `${ON} .milkdown-table-block[data-line]::before`]])
+    expect(zoomed[0].body.match(/\/ var\(--document-zoom, 1\)/g)).toHaveLength(2)
+    // The zoom the two lengths undo is the one on the note body itself.
+    expect(appCss).toMatch(/\.editor-instance \.milkdown > \.ProseMirror\s*\{\s*zoom:\s*var\(--document-zoom, 1\);\s*\}/)
   })
 
   it('takes the number out of the flow, out of selection and out of the pointer’s way (S51, S54)', () => {
@@ -52,11 +60,13 @@ describe('line numbers CSS contract', () => {
 })
 
 describe('page settings CSS contract', () => {
-  it('the menu, its rows, its divider and the cog’s focus ring are the zoom menu’s own rules, shared (D3)', () => {
+  it('the menu, its rows, its divider and the cog’s hover and focus ring are the zoom menu’s own rules, shared (D3)', () => {
     expect(appCss).toMatch(/\.document-zoom__menu,\s*\.page-settings__menu\s*\{/)
     expect(appCss).toMatch(/\.document-zoom__divider,\s*\.page-settings__divider\s*\{/)
     expect(appCss).toMatch(/\.document-zoom__presets button,\s*\.page-settings__menu button\s*\{/)
-    expect(appCss).toMatch(/\.document-zoom__presets button\[aria-pressed="true"\],\s*\.page-settings__menu button\[aria-checked="true"\]\s*\{/)
+    expect(appCss).toMatch(/\.document-zoom__presets button\[aria-pressed="true"\],\s*\.page-settings__menu button\[aria-pressed="true"\]\s*\{/)
+    expect(appCss).toMatch(/\.document-zoom__step:hover:enabled,\s*\.page-settings__trigger:hover,\s*\.page-settings__trigger\[aria-expanded="true"\]\s*\{/)
+    expect(appCss.match(/\.page-settings__trigger:hover/g)).toHaveLength(1)
     expect(appCss).toMatch(/\.document-zoom__step:focus-visible,\s*\.page-settings__trigger:focus-visible\s*\{/)
   })
 })

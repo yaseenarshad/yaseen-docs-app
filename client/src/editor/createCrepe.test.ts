@@ -70,7 +70,7 @@ describe('getPlainText: what the page settings menu counts (YAZ-2643)', () => {
     expect(await text('')).toBe('')
   })
 
-  it('a note that ends in a bullet: the empty paragraph Crepe keeps under it adds one break, once the editor has run a transaction', async () => {
+  it('a note that ends in a bullet: the empty paragraph Crepe keeps under it counts as nothing, before and after the editor’s first transaction (S18)', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     const crepe = createCrepe({ root, defaultValue: '* one\n* two\n' })
@@ -79,6 +79,7 @@ describe('getPlainText: what the page settings menu counts (YAZ-2643)', () => {
     expect(getPlainText(crepe)).toBe('one\ntwo')
     const view = crepe.editor.ctx.get(editorViewCtx)
     view.dispatch(view.state.tr)
-    expect(getPlainText(crepe)).toBe('one\ntwo\n')
+    expect(view.state.doc.lastChild?.type.name).toBe('paragraph')
+    expect(getPlainText(crepe)).toBe('one\ntwo')
   })
 })

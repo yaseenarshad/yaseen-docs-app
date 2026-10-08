@@ -1965,7 +1965,9 @@ button {
 
 .document-zoom__trigger:hover,
 .document-zoom__trigger[aria-expanded="true"],
-.document-zoom__step:hover:enabled {
+.document-zoom__step:hover:enabled,
+.page-settings__trigger:hover,
+.page-settings__trigger[aria-expanded="true"] {
   background: var(--bg-hover);
   color: var(--fg);
 }
@@ -2060,7 +2062,7 @@ button {
 }
 
 .document-zoom__presets button[aria-pressed="true"],
-.page-settings__menu button[aria-checked="true"] {
+.page-settings__menu button[aria-pressed="true"] {
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -2092,12 +2094,6 @@ button {
   cursor: pointer;
 }
 
-.page-settings__trigger:hover,
-.page-settings__trigger[aria-expanded="true"] {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
 .page-settings__menu {
   width: 172px;
   font-size: 12px;
@@ -2112,7 +2108,10 @@ button {
 /* Line numbers (YAZ-2643). A numbered block carries `data-line`; the number is that block's own
    pseudo-element, parked in the left margin. A block's RIGHT edge is the column's right edge at
    every bullet depth, and 100cqw is the column's width, so one rule puts all numbers in one column.
-   `--line-box` takes the block's line height to the number, so it sits on the first line of text. */
+   `--line-box` takes the block's line height to the number, so it sits on the first line of text.
+   The margin is 48px at every document zoom, and the number is inside the zoomed body. So its size
+   and its gap are divided by the zoom: the number is 11px on screen and 22px left of the column at
+   every zoom, and it stays in the margin. */
 @property --line-box {
   syntax: '<length>';
   inherits: true;
@@ -2133,10 +2132,10 @@ button {
   content: attr(data-line);
   position: absolute;
   top: 0;
-  right: calc(100cqw + 22px);
+  right: calc(100cqw + 22px / var(--document-zoom, 1));
   padding-top: inherit;
   color: var(--fg-muted);
-  font: 11px / var(--line-box) var(--crepe-font-code);
+  font: calc(11px / var(--document-zoom, 1)) / var(--line-box) var(--crepe-font-code);
   white-space: nowrap;
   user-select: none;
   pointer-events: none;

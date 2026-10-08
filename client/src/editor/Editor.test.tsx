@@ -136,14 +136,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onNotice?: (message: string) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onNotice={extra.onNotice} />))
   await settle()
   await settle()
   return container
@@ -957,7 +957,7 @@ const clickCog = (host: ParentNode): void => act(() => host.querySelector<HTMLBu
 /** The menu's one switch, through the real cog: opens the menu, clicks "Line numbers", closes the menu. */
 function switchLineNumbers(host: ParentNode): void {
   clickCog(host)
-  act(() => host.querySelector<HTMLButtonElement>('.page-settings__menu [role="menuitemcheckbox"]')!.click())
+  act(() => host.querySelector<HTMLButtonElement>('.page-settings__menu button[aria-pressed]')!.click())
   clickCog(host)
 }
 
@@ -1255,6 +1255,37 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await act(async () => answer({ lines: [1, 3], kinds: 'hp' }))
     await settle()
     expect(showLineNumbersMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a worker that fails: one passive notice, nothing sent to the editor, no retry; the next settled save asks again (S65)', async () => {
+    const onNotice = vi.fn()
+    requestBlockLinesMock.mockRejectedValueOnce(new Error('the line-number worker failed'))
+    const el = await mount(FM + BODY, 1, { onNotice })
+    switchLineNumbers(el)
+    await settle()
+    await pastDebounce()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Line numbers could not load.')
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(1)
+    expect(showLineNumbersMock).not.toHaveBeenCalled()
+    expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
+    type('# Hello\n\nsome text\n\nnew block\n')
+    await pastDebounce()
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
+    expect(sent()).toEqual({ lines: [4, 6, 8], kinds: 'hpp' })
+    expect(onNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failure that comes back after the numbers went off says nothing (S31, S65)', async () => {
+    const onNotice = vi.fn()
+    let fail!: (reason: Error) => void
+    requestBlockLinesMock.mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)))
+    const el = await mount(BODY, 1, { onNotice })
+    switchLineNumbers(el)
+    switchLineNumbers(el)
+    await act(async () => fail(new Error('the line-number worker failed')))
+    await settle()
+    expect(onNotice).not.toHaveBeenCalled()
   })
 
   it('turned on before the editor is created: nothing is sent to it until it is, then the numbers are built', async () => {

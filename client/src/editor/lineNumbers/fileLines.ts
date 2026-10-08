@@ -1,5 +1,8 @@
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 
+/** A line ending as the parse counts it: a lone CR is one too. */
+const LINE_END = /\r\n|\r|\n/
+
 /**
  * The text the editor parses, and the way back from one of ITS lines to a line of the file. Two
  * things move a line: the frontmatter block above the body, and the blank lines the load-time
@@ -8,10 +11,10 @@ import { normalizeEmptyItems } from '../listItemRoundTrip'
  */
 export function fileLines(frontmatter: string, body: string): { text: string; toFileLine: (line: number) => number } {
   const text = normalizeEmptyItems(body)
-  const disk = body.split('\n')
+  const disk = body.split(LINE_END)
   const added = [0]
   let at = 0
-  for (const line of text.split('\n')) {
+  for (const line of text.split(LINE_END)) {
     const own = line.trim() === '' && (disk[at] ?? '').trim() !== ''
     added.push(added[added.length - 1] + (own ? 1 : 0))
     if (!own) at++

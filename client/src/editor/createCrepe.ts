@@ -429,11 +429,15 @@ export function focusEditor(crepe: Crepe): void {
   crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus())
 }
 
-/** The document's plain text, one block per line: what the page settings menu counts (YAZ-2643). */
+/**
+ * The document's plain text, one block per line: what the page settings menu counts (YAZ-2643).
+ * No break at the end: the empty paragraph Crepe keeps under a last bullet, heading, code block or
+ * table is no text, and the count must not move when it appears.
+ */
 export function getPlainText(crepe: Crepe): string {
   return crepe.editor.action((ctx) => {
     const { doc } = ctx.get(editorViewCtx).state
-    return doc.textBetween(0, doc.content.size, '\n')
+    return doc.textBetween(0, doc.content.size, '\n').replace(/\n+$/, '')
   })
 }
 

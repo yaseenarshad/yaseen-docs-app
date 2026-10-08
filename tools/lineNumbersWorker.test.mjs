@@ -1,15 +1,18 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
- * THE LINE-NUMBER WORKER RUNS WHERE THERE IS NO DOM (YAZ-2643). It is the app's first web worker,
- * and jsdom has none, so no client suite ever loads it. This bundles the worker the way the
- * renderer build does (a browser bundle: `micromark` resolves to its browser entry, which wants a
+ * THE LINE-NUMBER WORKER RUNS WHERE THERE IS NO DOM (YAZ-2643). The worker has no DOM, and jsdom
+ * has no `Worker`, so no client suite loads it. This bundles the worker the way the renderer build
+ * does (a browser bundle: `micromark` resolves to its browser entry, which wants a
  * `document`) and runs the result in a context that has `self` and nothing else.
  */
-const ENTRY = fileURLToPath(new URL('../client/src/editor/lineNumbers/lineNumbers.worker.ts', import.meta.url))
+const SOURCES = fileURLToPath(new URL('../client/src', import.meta.url))
+const ENTRY = join(SOURCES, 'editor/lineNumbers/lineNumbers.worker.ts')
 
 let code
 beforeAll(async () => {
@@ -34,5 +37,14 @@ describe('the line-number worker bundle', () => {
 
   it('holds the parser only: no editor, no React', () => {
     expect(code).not.toMatch(/prosemirror|milkdown|codemirror|react/i)
+  })
+
+  // The parse runs in the worker only (S62). The size gate cannot see a break of this: `micromark`
+  // is in the main chunk already, for the editor's own parser.
+  it('is the only source module that imports the parse: every other one takes the `BlockLines` type, which the build erases', () => {
+    const importers = readdirSync(SOURCES, { recursive: true })
+      .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+      .filter((file) => /^(?!import type\b).*['"][^'"\n]*\/blockLines['"]/m.test(readFileSync(join(SOURCES, file), 'utf8')))
+    expect(importers).toEqual([join('editor', 'lineNumbers', 'lineNumbers.worker.ts')])
   })
 })
