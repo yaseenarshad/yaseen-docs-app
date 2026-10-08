@@ -329,7 +329,7 @@ const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', focus: 'Focus'
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
-/** The Favorites tree's file move (YAZ-1766 D4), and the search tree's (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
+/** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
 const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
@@ -377,7 +377,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
+  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -727,7 +727,12 @@ export function Sidebar({
   const removeShortcutRow = (path: string, dir: string): void =>
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
-  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, rootOf, onNotice)
+  // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): the favorites of every
+  // vault of the window, in vault order, or the focus list. The Files tab reorders nothing.
+  const orderRef = useRef<readonly string[]>([])
+  orderRef.current = lens === 'favorites' ? roots.flatMap((vault) => favoritesByRoot[vault] ?? []) : focusList
+  const saveOrder = lens === 'favorites' ? saveFavoriteOrder : reorderFocus
+  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
 
   /**
    * The Files, Focus and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
@@ -958,20 +963,21 @@ export function Sidebar({
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
-          // every row carries the same menu. Nothing here drags to disk (an inert move); root rows
-          // drag to reorder the list (D4). With two or more vaults the favorites stand under their
-          // vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
+          // every row carries the same menu. A top row drags to reorder the list, and a file inside a
+          // favorited folder drags to move on disk (YAZ-2631 D3). With two or more vaults the favorites
+          // stand under their vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
           <>
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={INERT_MOVE} reorder={favoriteReorder} />}
+            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} />}
           </>
         ) : lens === 'focus' ? (
           // The Focus tab (YAZ-2619 D2, D4): the window's focus list in the order added, each a full
           // tree row with the same menu, under a line that counts the top rows (R11) and clears the
-          // list. A file drag moves the file on disk, as on Files. With two or more vaults the items
-          // of every vault stand in the one list, and each top row names its vault (YAZ-2602 A4).
+          // list. A top row drags to reorder the list, and a file inside a focused folder drags to move
+          // on disk (YAZ-2631 D3). With two or more vaults the items of every vault stand in the one
+          // list, and each top row names its vault (YAZ-2602 A4).
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
@@ -984,7 +990,7 @@ export function Sidebar({
                     Clear
                   </button>
                 </div>
-                <Tree {...treeProps} nodes={focusNodes} move={fileMove} />
+                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={reorder} />
               </>
             )}
           </>

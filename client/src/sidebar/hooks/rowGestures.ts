@@ -1,7 +1,7 @@
 /**
  * What the rows do (YAZ-2202, moved out of `Sidebar.tsx` as-is): the multi-select both trees share,
  * the file clipboard, the inline create and rename inputs, and the two drags — a file onto a folder
- * (a move on disk) and a favorite along its list.
+ * (a move on disk) and a top row along its tab's list.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { isMarkdown } from '@shared/fileKind'
@@ -85,16 +85,16 @@ export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeNo
 
 export function useTreeDrag(
   onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>,
-  /** Each vault's favorites, by its root (YAZ-2602 D5), and the writer of one vault's list. */
-  favoritesRef: RefObject<Readonly<Record<string, readonly string[]>>>,
-  saveFavorites: (vault: string, next: readonly string[]) => void,
+  /** The list the shown tab's top rows reorder, and its writer (YAZ-2631 D3). */
+  orderRef: RefObject<readonly string[]>,
+  saveOrder: (next: string[]) => void,
   rootOf: (path: string) => string,
   onNotice: (message: string, kind?: NoticeKind) => void,
 ) {
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
-  // Favorites drag-to-reorder (D4): the dragged root row + the hovered row and edge.
+  // Drag-to-reorder (YAZ-2631 D3), ONE state for the tab that is shown: the dragged top row + the hovered row and edge.
   const [reorderDragging, setReorderDragging] = useState<string | null>(null)
   const [reorderOver, setReorderOver] = useState<{ path: string; edge: 'before' | 'after' } | null>(null)
 
@@ -136,32 +136,29 @@ export function useTreeDrag(
     setReorderDragging(null)
     setReorderOver(null)
     if (from === null || over === null || over.path === from) return
-    // The order is its own vault's (YAZ-2602 S26): the list of the vault that holds the dragged row.
-    const vault = rootOf(from)
-    const without = (favoritesRef.current[vault] ?? []).filter((p) => p !== from)
+    const without = orderRef.current.filter((p) => p !== from)
     const i = without.indexOf(over.path)
     if (i < 0) return
     const at = over.edge === 'before' ? i : i + 1
-    saveFavorites(vault, [...without.slice(0, at), from, ...without.slice(at)])
-  }, [reorderDragging, reorderOver, rootOf, saveFavorites])
+    saveOrder([...without.slice(0, at), from, ...without.slice(at)])
+  }, [reorderDragging, reorderOver, orderRef, saveOrder])
 
-  const favoriteReorder: TreeReorder = useMemo(
+  const reorder: TreeReorder = useMemo(
     () => ({
       dragging: reorderDragging,
       over: reorderOver,
       start: setReorderDragging,
-      // A row of a different vault's group is no place for it (S26): no marker there, so a drop changes nothing.
-      hover: (path, edge) => setReorderOver((prev) => (reorderDragging === null || rootOf(path) !== rootOf(reorderDragging) ? null : prev?.path === path && prev.edge === edge ? prev : { path, edge })),
+      hover: (path, edge) => setReorderOver((prev) => (prev?.path === path && prev.edge === edge ? prev : { path, edge })),
       drop: dropReorder,
       end: () => {
         setReorderDragging(null)
         setReorderOver(null)
       },
     }),
-    [reorderDragging, reorderOver, dropReorder, rootOf],
+    [reorderDragging, reorderOver, dropReorder],
   )
 
-  return { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder }
+  return { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder }
 }
 
 export function useFileClipboard(
