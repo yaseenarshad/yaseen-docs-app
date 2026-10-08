@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, favoriteForest, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, favoriteOrder, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -169,31 +169,32 @@ describe('favoriteRoots (YAZ-1766 D4)', () => {
   })
 })
 
-describe('favoriteForest (YAZ-2602 D5)', () => {
-  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
-  const notes = { root: '/a/notes', name: 'Notes', tree: [{ type: 'dir', name: 'sub', path: '/a/notes/sub', children: [file('/a/notes/sub/in.md')] }, file('/a/notes/a.md')] satisfies TreeNode[] }
-  // A root as the store may hold it, with its slash: the row's path is the one the Files tab's vault row has.
-  const work = { root: '/a/work/', name: 'Work', tree: [{ type: 'dir', name: 'docs', path: '/a/work/docs', children: [] }, file('/a/work/b.md')] satisfies TreeNode[] }
-  const empty = { root: '/a/empty', name: 'Empty', tree: [file('/a/empty/e.md')] satisfies TreeNode[] }
+describe('favoriteOrder (YAZ-2631 D1)', () => {
+  const [a1, a2, a3, b1, b2, c1] = ['/v/a/1.md', '/v/a/2.md', '/v/a/3.md', '/v/b/1.md', '/v/b/2.md', '/v/c/1.md']
+  const roots = ['/v/a', '/v/b']
 
-  it('one vault: its flat list in the stored order, as `favoriteRoots` gives it (S28)', () => {
-    const favorites = { '/a/notes': ['/a/notes/a.md', '/a/notes/sub', '/a/notes/gone.md'] }
-    expect(favoriteForest([notes], favorites)).toEqual(favoriteRoots(notes.tree, favorites['/a/notes']))
-    expect(favoriteForest([notes], favorites).map((n) => n.path)).toEqual(['/a/notes/a.md', '/a/notes/sub'])
-    expect(favoriteForest([notes], {})).toEqual([])
+  it('one vault: its file\'s order, whatever the stored order says (S1); two or more and no stored order: vault order, then each file\'s order (S3)', () => {
+    expect(favoriteOrder(['/v/a'], { '/v/a': [a2, a1] }, [a1, b1, a2])).toEqual([a2, a1])
+    expect(favoriteOrder(['/v/a'], {}, [a1])).toEqual([])
+    expect(favoriteOrder(roots, { '/v/a': [a2, a1], '/v/b': [b1, b2] }, [])).toEqual([a2, a1, b1, b2])
+    expect(favoriteOrder(['/v/b', '/v/a'], { '/v/a': [a2, a1], '/v/b': [b1, b2] }, [])).toEqual([b1, b2, a2, a1])
+    expect(favoriteOrder(roots, {}, [a1, b1])).toEqual([])
   })
 
-  it('two or more vaults: one row per vault that has a favorite the tree holds, in vault order, its favorites below it in that vault\'s stored order (S24)', () => {
-    const rows = favoriteForest([notes, empty, work], { '/a/notes': ['/a/notes/a.md', '/a/notes/sub'], '/a/empty': ['/a/empty/gone.md'], '/a/work/': ['/a/work/b.md', '/a/work/docs'] })
-    expect(rows.map((n) => [n.type, n.name, n.path])).toEqual([['dir', 'Notes', '/a/notes'], ['dir', 'Work', '/a/work']])
-    expect(rows.map((n) => (n.type === 'dir' ? n.children.map((child) => child.path) : []))).toEqual([['/a/notes/a.md', '/a/notes/sub'], ['/a/work/b.md', '/a/work/docs']])
-    // A favorited folder is the tree's own node: it unfolds in place.
-    expect(rows[0].type === 'dir' && rows[0].children[1]).toBe(notes.tree[0])
+  it('the stored order says which VAULT has each place, and each vault fills its places in its own file\'s order (R2, S8)', () => {
+    expect(favoriteOrder(roots, { '/v/a': [a1, a2], '/v/b': [b1] }, [a1, b1, a2])).toEqual([a1, b1, a2])
+    // A synced file changed the order inside vault A: A keeps its two places, filled in the file's new order.
+    expect(favoriteOrder(roots, { '/v/a': [a2, a1], '/v/b': [b1] }, [a1, b1, a2])).toEqual([a2, b1, a1])
+    // The order of the vaults does not move a place that is stored.
+    expect(favoriteOrder(['/v/b', '/v/a'], { '/v/a': [a2, a1], '/v/b': [b1] }, [a1, b1, a2])).toEqual([a2, b1, a1])
   })
 
-  it('two or more vaults and no favorite that exists: nothing, so the tab shows its empty text (S24)', () => {
-    expect(favoriteForest([notes, work], {})).toEqual([])
-    expect(favoriteForest([notes, work], { '/a/notes': ['/a/notes/gone.md'], '/a/work/': [] })).toEqual([])
+  it('a favorite with no place goes last, in vault order (S6); a removed one leaves and the others keep their order (S7); a vault that is not in the window has no row (S14)', () => {
+    expect(favoriteOrder(roots, { '/v/a': [a1, a2, a3], '/v/b': [b1, b2] }, [b1, a1, a2])).toEqual([b1, a1, a2, a3, b2])
+    expect(favoriteOrder(roots, { '/v/a': [a2], '/v/b': [b1, b2] }, [b1, a1, b2, a2])).toEqual([b1, b2, a2])
+    expect(favoriteOrder(roots, { '/v/a': [a1], '/v/b': [b1] }, [c1, b1, c1, a1])).toEqual([b1, a1])
+    // A path the order holds twice has one place: no entry is made up.
+    expect(favoriteOrder(roots, { '/v/a': [a1], '/v/b': [b1] }, [a1, a1, b1])).toEqual([a1, b1])
   })
 })
 

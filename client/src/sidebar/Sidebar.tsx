@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import { SIDEBAR_LENSES, type IndexRecord, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { SIDEBAR_LENSES, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -15,7 +15,7 @@ import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
-import { folderCounts } from './folderCounts'
+import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { buildMenuSections } from './menuSections'
@@ -35,9 +35,9 @@ export interface SidebarVault {
   name: string
   watch: WatchSource
   /**
-   * The vault's index snapshot, for the folder rows' note counts (🔒 E6, YAZ-2290): the SAME object
-   * its `WikilinkIndexBridge` already feeds — read, never written, and no second feed. `records`
-   * is `[]` until the first index lands, so no row shows a number before then.
+   * The vault's index snapshot, for the folders' shortcut rows (YAZ-2290 D2) and the rows' titles:
+   * the SAME object its `WikilinkIndexBridge` already feeds — read, never written, and no second
+   * feed. `records` is `[]` until the first index lands.
    */
   index: WikilinkResolveSource
   /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
@@ -52,7 +52,7 @@ export interface SidebarVault {
 }
 
 interface SidebarProps {
-  /** The window's vaults, in the order they were added (YAZ-2602 D1); never empty. App keys this panel on the first. */
+  /** The window's vaults, in the window's order (YAZ-2602 D1); never empty. App keys this panel on one of them (YAZ-2631 D5). */
   vaults: readonly SidebarVault[]
   /** The vault rows the user closed (YAZ-2602 R9): App's, so they stay closed while this panel is unmounted. */
   closedVaults: readonly string[]
@@ -63,6 +63,8 @@ interface SidebarProps {
   onPickVault: () => void
   /** "Remove from this window" (YAZ-2602 D7): App closes the vault's pages and drops it from the window. */
   onRemoveVault: (root: string) => void
+  /** A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order, for App to store. */
+  onReorderVaults: (next: string[]) => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
@@ -84,8 +86,8 @@ interface SidebarProps {
   /**
    * ⌘O (YAZ-1767 D8): App's request counter for the vault switcher, threaded straight to the
    * header's `VaultSwitcher`, which opens its panel and focuses the filter on every new value.
-   * 0 = nothing requested (App pins a request to the root it was made on, so a remount on
-   * another vault never replays it).
+   * 0 = nothing requested (App pins a request to the sidebar it was made on, so a new mount
+   * never replays it).
    */
   switcherOpenRequest: number
   /** The vault menu's "Open in this window" (YAZ-1798 D8): App's in-place switch, threaded to the `VaultSwitcher`. */
@@ -95,7 +97,7 @@ interface SidebarProps {
   /**
    * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity
    * (`WindowEntry.sidebarLens`, per window since YAZ-1628), never Sidebar-local: this component
-   * is mounted on its first vault and only while the sidebar is open, so local state would forget the
+   * is mounted on one vault of the window and only while the sidebar is open, so local state would forget the
    * choice on every collapse/reopen and every root switch.
    */
   lens: SidebarLens
@@ -329,14 +331,14 @@ const LENS_LABEL: Record<SidebarLens, string> = { files: 'Files', focus: 'Focus'
 /** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
-/** The Favorites tree's file move (YAZ-1766 D4), and the search tree's (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
+/** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op. */
 const INERT_MOVE: TreeFileMove = { dragging: null, dropDir: null, start: () => undefined, end: () => undefined, hover: () => undefined, drop: () => undefined }
 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
 const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
 
-/** Mounted with `key={its first vault}` by App, so all state below lives while that vault leads the window. */
+/** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
   vaults,
   closedVaults,
@@ -344,6 +346,7 @@ export function Sidebar({
   onAddVault,
   onPickVault,
   onRemoveVault,
+  onReorderVaults,
   activeFile,
   onOpenFile,
   onOpenFileBackground,
@@ -377,7 +380,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
+  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -402,38 +405,35 @@ export function Sidebar({
   const handledFilesRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  // The folder rows' counts (🔒 E6) and shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot.
-  // A snapshot that moved no count keeps the Map it had, and one that moved no shortcut keeps that
-  // Map, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
+  // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
+  // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the
-  // maps add up. A vault is counted again only when ITS snapshot changed — the identity of its two
+  // maps add up. A vault is read again only when ITS snapshot changed — the identity of its two
   // arrays — so a save in one vault scans no record of another.
   const indexes = useSameList(vaults.map((vault) => vault.index))
-  const counted = useRef(new Map<string, { records: readonly IndexRecord[]; folders: readonly IndexRecord[]; built: ReturnType<typeof folderCounts> }>())
-  const countFolders = useCallback(() => {
-    const next: typeof counted.current = new Map()
+  const built = useRef(new Map<string, { records: readonly IndexRecord[]; folders: readonly IndexRecord[]; shortcuts: ReturnType<typeof folderShortcuts> }>())
+  const readShortcuts = useCallback(() => {
+    const next: typeof built.current = new Map()
     roots.forEach((vault, i) => {
       const { records, folders } = indexes[i]
-      const last = counted.current.get(vault)
-      next.set(vault, last !== undefined && last.records === records && last.folders === folders ? last : { records, folders, built: folderCounts(vault, records, folders) })
+      const last = built.current.get(vault)
+      next.set(vault, last !== undefined && last.records === records && last.folders === folders ? last : { records, folders, shortcuts: folderShortcuts(vault, records, folders) })
     })
-    counted.current = next
-    const all = [...next.values()].map((one) => one.built)
-    return all.length === 1 ? all[0] : { counts: new Map(all.flatMap((one) => [...one.counts])), shortcuts: new Map(all.flatMap((one) => [...one.shortcuts])) }
+    built.current = next
+    const all = [...next.values()].map((one) => one.shortcuts)
+    return all.length === 1 ? all[0] : new Map(all.flatMap((one) => [...one]))
   }, [roots, indexes])
-  const [{ counts, shortcuts }, setShown] = useState(countFolders)
+  const [shortcuts, setShown] = useState(readShortcuts)
   useEffect(() => {
     const read = () =>
       setShown((prev) => {
-        const next = countFolders()
-        const sameCounts = next.counts.size === prev.counts.size && [...next.counts].every(([dir, n]) => prev.counts.get(dir) === n)
-        const sameShortcuts = shortcutStamp(next.shortcuts) === shortcutStamp(prev.shortcuts)
-        return sameCounts && sameShortcuts ? prev : { counts: sameCounts ? prev.counts : next.counts, shortcuts: sameShortcuts ? prev.shortcuts : next.shortcuts }
+        const next = readShortcuts()
+        return shortcutStamp(next) === shortcutStamp(prev) ? prev : next
       })
     read()
     const offs = indexes.map((index) => index.subscribe(read))
     return () => offs.forEach((off) => off())
-  }, [countFolders, indexes])
+  }, [readShortcuts, indexes])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
@@ -491,7 +491,9 @@ export function Sidebar({
   // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is
   // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
   // persisted list, which would leave the button offering to collapse nothing.
-  const anyExpanded = bodyDirs.some((d) => expanded.includes(d))
+  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
+  const foldVaults = multi && lens === 'files'
+  const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, searching, loaded ? forest : null, roots, selectionRef, bodyRef)
@@ -593,7 +595,7 @@ export function Sidebar({
         focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p)),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        // Each row by the list of the vault that holds it (YAZ-2602 D5).
+        // Each row by the list of the vault that holds it (YAZ-2631 D1).
         favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true),
         // By the upkeep of the vault that holds the folder (R5).
         reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
@@ -730,7 +732,12 @@ export function Sidebar({
   const removeShortcutRow = (path: string, dir: string): void =>
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
-  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, favoriteReorder } = useTreeDrag(onRenameFile, favoritesRef, saveFavorites, rootOf, onNotice)
+  // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
+  // window in the tab's order (D1), the focus list, or the vault rows of Files (D5).
+  const orderRef = useRef<readonly string[]>([])
+  orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
+  const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
+  const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
 
   /**
    * The Files, Focus and Favorites trees are memoised per level (YAZ-2194), so what they get must keep
@@ -757,7 +764,6 @@ export function Sidebar({
     pending,
     renaming,
     selection,
-    counts,
     shortcuts,
     titles,
   }
@@ -861,17 +867,18 @@ export function Sidebar({
             collapses everything, and only a fully closed tree expands it. It acts on whichever
             lens is ACTIVE. Gone — not disabled — while a query is
             typed (the tree is not the body then) and whenever the active reading has nothing to
-            unfold: a vault with no folders. */}
-        {!searching && bodyDirs.length > 0 && (
+            unfold: no folder, and no vault row. */}
+        {!searching && (bodyDirs.length > 0 || foldVaults) && (
           <button
             type="button"
             className="sidebar__expand-all"
             aria-label={allLabel}
             title={allLabel}
-            onClick={() =>
+            onClick={() => {
+              if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
               // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
               dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
-            }
+            }}
           >
             <ChevronsIcon />
           </button>
@@ -962,20 +969,21 @@ export function Sidebar({
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
-          // every row carries the same menu. Nothing here drags to disk (an inert move); root rows
-          // drag to reorder the list (D4). With two or more vaults the favorites stand under their
-          // vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
+          // every row carries the same menu. A top row drags to reorder the list, and a file inside a
+          // favorited folder drags to move on disk (YAZ-2631 D3). With two or more vaults the favorites
+          // of every vault stand in the one list, and each top row names its vault (YAZ-2631 D1, D4).
           <>
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={INERT_MOVE} reorder={favoriteReorder} />}
+            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} />}
           </>
         ) : lens === 'focus' ? (
-          // The Focus tab (YAZ-2619 D2, D4): the window's focus list in the order added, each a full
+          // The Focus tab (YAZ-2619 D2, D4): the window's focus list in its own order, each a full
           // tree row with the same menu, under a line that counts the top rows (R11) and clears the
-          // list. A file drag moves the file on disk, as on Files. With two or more vaults the items
-          // of every vault stand in the one list, and each top row names its vault (YAZ-2602 A4).
+          // list. A top row drags to reorder the list, and a file inside a focused folder drags to move
+          // on disk (YAZ-2631 D3). With two or more vaults the items of every vault stand in the one
+          // list, and each top row names its vault (YAZ-2602 A4).
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
@@ -988,7 +996,7 @@ export function Sidebar({
                     Clear
                   </button>
                 </div>
-                <Tree {...treeProps} nodes={focusNodes} move={fileMove} />
+                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={reorder} />
               </>
             )}
           </>
@@ -999,8 +1007,8 @@ export function Sidebar({
             {forest !== null && forest.length === 0 && pending === null && (
               <p className="sidebar__msg">No notes here.</p>
             )}
-            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3). */}
-            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} />}
+            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
+            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} />}
           </>
         )}
       </div>
@@ -1077,7 +1085,7 @@ export function Sidebar({
           source={vaultOf(pickingShortcut).index}
           onPick={(path) => {
             setPickingShortcut(null)
-            // The row and the count follow the index, as every other write's do; only a refusal is said.
+            // The row follows the index, as every other write's do; only a refusal is said.
             addShortcut(pickingShortcut, path).catch((err: unknown) => onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
           }}
           onClose={() => setPickingShortcut(null)}

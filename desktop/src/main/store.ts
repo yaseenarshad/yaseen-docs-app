@@ -7,6 +7,7 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
+  MAX_FAVORITES_ORDER,
   MAX_FOCUS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
@@ -30,6 +31,7 @@ import {
   freeVaultKey,
   isSidebarLens,
   isValidNewNoteFolder,
+  mergeFavoritesOrder,
   normalizeRoots,
   stripSlash,
   type AppState,
@@ -62,6 +64,8 @@ export interface Store {
   get(): AppState
   setSettings(settings: SettingsState): void
   setSidebarWidth(width: number): void
+  /** What a window hands in for the vaults `roots` (YAZ-2631 R5): after a drag on its Favorites tab, its favorites in the new order; after a remove, the stored order without the removed paths (R23). Merged into the one order across vaults (`mergeFavoritesOrder`). The same order is no commit. */
+  setFavoritesOrder(roots: readonly string[], paths: readonly string[]): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
@@ -76,7 +80,8 @@ export interface Store {
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its focus
    * list `focusList` (YAZ-1628, YAZ-2619), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
-   * baseGroups keys (`<basePath>::<view>`), and the vaults of each saved set (YAZ-2602 S71).
+   * baseGroups keys (`<basePath>::<view>`), the vaults of each saved set (YAZ-2602 S71), and the
+   * Favorites order across vaults (YAZ-2631 R6).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
    * references it.
@@ -91,7 +96,7 @@ export interface Store {
    * (YAZ-1628, YAZ-2619), `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
    * (`<basePath>::<view>`) go too. A saved set loses the vault, and a set with fewer than two
-   * vaults left is removed (YAZ-2602 S71).
+   * vaults left is removed (YAZ-2602 S71). The Favorites order across vaults loses the entry (YAZ-2631 R6).
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
    * race it. One commit; a no-op when nothing references the path.
@@ -314,6 +319,7 @@ function sanitizeState(raw: unknown): AppState | null {
     windows: sanitizeWindows(raw.windows, legacySidebarCollapsed, legacySidebarLens),
     folders: sanitizeFolders(raw.folders),
     vaultSets: sanitizeVaultSets(raw.vaultSets),
+    favoritesOrder: isStringArray(raw.favoritesOrder) ? raw.favoritesOrder.filter(isAbsolute).slice(0, MAX_FAVORITES_ORDER) : [],
   }
 }
 
@@ -406,6 +412,11 @@ export function createStore(filePath: string): Store {
 
     setSidebarWidth(width) {
       commit({ ...state, sidebarWidth: clampSidebarWidth(width) })
+    },
+
+    setFavoritesOrder(roots, paths) {
+      const favoritesOrder = mergeFavoritesOrder(state.favoritesOrder, roots, paths)
+      if (favoritesOrder !== state.favoritesOrder) commit({ ...state, favoritesOrder })
     },
 
     pushRecent(path, now = Date.now()) {
@@ -517,8 +528,10 @@ export function createStore(filePath: string): Store {
       )
       // A saved set follows its vault's folder (YAZ-2602 S71), and stays a set: each vault once, two at least.
       const vaultSets = state.vaultSets.map((s) => ({ ...s, roots: cleanSetRoots(s.roots.map(remap)) })).filter((s) => s.roots.length >= 2)
+      // A renamed favorite keeps its place in the order across vaults (YAZ-2631 R6).
+      const favoritesOrder = state.favoritesOrder.map(remap)
       if (!changed) return
-      commit({ ...state, windows, recents, folders, vaultSets })
+      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder })
     },
 
     removePath(deleted) {
@@ -596,8 +609,10 @@ export function createStore(filePath: string): Store {
       )
       // A deleted folder leaves each saved set (YAZ-2602 S71); a set with fewer than two vaults left is no set.
       const vaultSets = state.vaultSets.map((s) => ({ ...s, roots: drop(s.roots) })).filter((s) => s.roots.length >= 2)
+      // A deleted favorite leaves the order across vaults (YAZ-2631 R6).
+      const favoritesOrder = drop(state.favoritesOrder)
       if (!changed) return
-      commit({ ...state, windows, recents, folders, vaultSets })
+      commit({ ...state, windows, recents, folders, vaultSets, favoritesOrder })
     },
 
     saveVaultSet(rawName, rawRoots, now = Date.now()) {

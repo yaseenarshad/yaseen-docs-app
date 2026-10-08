@@ -55,7 +55,7 @@ export function useSidebarSearch(
   activate: (hit: SearchCandidate, background: boolean) => void,
 ) {
   // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
-  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted on its first vault, so it resets
+  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted on one vault of the window, so it resets
   // on unmount and on a root switch without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)

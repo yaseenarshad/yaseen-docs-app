@@ -40,6 +40,9 @@ export function registerStateIpc(store: Store): void {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
     store.setSidebarWidth(width)
   })
+  handle(CONTRACT.state.setFavoritesOrder, async (roots: unknown, paths: unknown) => {
+    store.setFavoritesOrder(requireStringArray(roots, 'roots').map((root) => requireAbsPath(root, 'root')), requireStringArray(paths, 'paths').map((path) => requireAbsPath(path, 'path')))
+  })
   handle(CONTRACT.state.pushRecent, async (path: unknown) => {
     store.pushRecent(requireAbsPath(path, 'path'))
   })

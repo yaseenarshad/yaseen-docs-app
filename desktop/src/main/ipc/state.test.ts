@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setBaseGroups.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setBaseGroups.channel].sort(),
     )
   })
 
@@ -78,6 +78,19 @@ describe('registerStateIpc', () => {
     expect(await registered(CONTRACT.state.setSidebarWidth.channel)({ sender }, Number.NaN)).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSidebarWidth.channel)({ sender }, '300')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
+  })
+
+  it('state:set-favorites-order takes two lists of absolute paths and merges them into the one order (YAZ-2631 D1)', async () => {
+    const set = registered(CONTRACT.state.setFavoritesOrder.channel)
+    expect(await set({ sender }, ['/v/a', '/v/b'], ['/v/b/1.md', '/v/a/1.md'])).toEqual(ok(undefined))
+    expect(store.get().favoritesOrder).toEqual(['/v/b/1.md', '/v/a/1.md'])
+    expect(await set({ sender }, ['/v/a'], ['/v/a/1.md', 'a/2.md'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await set({ sender }, ['v/a'], ['/v/a/1.md'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await set({ sender }, ['/v/a'], '/v/a/1.md')).toEqual(bad('BAD_REQUEST'))
+    expect(await set({ sender }, '/v/a', ['/v/a/1.md'])).toEqual(bad('BAD_REQUEST'))
+    expect(await set({ sender }, ['/v/a'], ['/v/a/1.md', 5])).toEqual(bad('BAD_REQUEST'))
+    expect(await set({ sender }, ['/v/a'], ['/v/a/1.md', ''])).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().favoritesOrder).toEqual(['/v/b/1.md', '/v/a/1.md'])
   })
 
   it('state:push-recent needs an absolute path', async () => {

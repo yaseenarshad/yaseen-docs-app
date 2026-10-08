@@ -15,8 +15,8 @@
  * that a rename leaves both the graph and the folders standing.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1  the vault is sound: zero `page_type` keys, zero broken links, and every folder row shows the
- *      count of the notes that live in it — the same numbers read off the disk
+ *   1  the vault is sound: zero `page_type` keys, zero broken links, and the tree shows its six
+ *      folders — each holding the notes the map says, read off the disk
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
  *   4  the backlinks panel finds every note that names a KPI, and the ones that live in `Problems`
  *      are exactly the two problems whose relations point at it
@@ -41,7 +41,6 @@ import {
   builtNote,
   contents,
   copyVault,
-  dirCount,
   dirRow,
   editorOf,
   expandDirs,
@@ -185,8 +184,7 @@ async function brokenLinks(root: string): Promise<string[]> {
 }
 
 /**
- * How many notes live DIRECTLY in each of `folders` — the number its row shows (🔒 E6), read
- * straight off the disk so the claim does not lean on the surface that carries it. Markdown files
+ * How many notes live DIRECTLY in each of `folders`, read straight off the disk. Markdown files
  * only, and never the folder's own settings file.
  */
 async function notesIn(root: string, folders: readonly string[]): Promise<string[]> {
@@ -221,7 +219,7 @@ test.afterAll(async () => {
 
 // ---------- the scenario ----------
 
-test('step 1 — the encyclopedia is sound, and every folder row counts exactly the notes that live in it', async () => {
+test('step 1 — the encyclopedia is sound, and every folder holds exactly the notes the map says', async () => {
   // The fixture itself is sound before anything runs: not one `page_type` key, and not one
   // dangling wiki link — the column targets inside the folders' settings files included.
   expect(await withPageType(vault)).toEqual([])
@@ -232,13 +230,10 @@ test('step 1 — the encyclopedia is sound, and every folder row counts exactly 
 
   // The map of an encyclopedia that maintains no list: six folders, and nothing else at the root.
   await expect(topLabels(win)).toHaveText(FOLDERS)
-  // THE WHOLE MAP, on one line — the notes directly in each folder, shown on its row (🔒 E6)
-  // once the index has landed. 17 notes, five folders, and the two loose ones in `inbox`.
-  for (const [i, topic] of TOPICS.entries()) await expect(dirCount(win, topic)).toHaveText(TOPIC_COUNTS[i])
-  await expect(dirCount(win, 'inbox')).toHaveText('2')
-  // …and the same numbers asked of the vault itself: a row counts what LIVES in the folder.
+  // THE WHOLE MAP, asked of the vault itself: the notes that LIVE in each folder — 17 notes in
+  // the five folders. The tree shows no number of them (YAZ-2631 D2).
   expect(await notesIn(vault, TOPICS)).toEqual(TOPIC_COUNTS)
-  await shoot(win, 'bible-01-folders-and-counts')
+  await shoot(win, 'bible-01-folders')
 
   // A launch is collapsed since YAZ-1642: open the six folders once for every step that clicks a
   // note's row.
@@ -327,7 +322,6 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await openFolder(win, path.join(vault, KPIS))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', RENAMED])
-  await expect(dirCount(win, KPIS)).toHaveText('5')
 
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
@@ -338,7 +332,7 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
 test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follow (YAZ-864)', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
-  await expect(dirCount(win, ROLES)).toHaveText('3')
+  await expect(dirRow(win, ROLES)).toBeVisible()
 
   await dirRow(win, ROLES).click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
@@ -371,7 +365,6 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follo
   await openFolder(win, path.join(vault, ROLES_RENAMED_DIR))
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
   await expect(rowNames(contents(win))).toHaveText(ROLE_MEMBERS)
-  await expect(dirCount(win, ROLES_RENAMED)).toHaveText('3')
   expect(await notesIn(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
 
   // The durable result again, with the settings targets inside the audit's reach.
