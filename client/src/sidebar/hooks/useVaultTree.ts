@@ -1,7 +1,7 @@
 /**
- * The window's vaults as this panel holds them (YAZ-2202, moved out of `Sidebar.tsx` as-is; one
- * tree per vault since YAZ-2602): each tree and its watcher refresh, the expansion, the focus
- * list, each vault's Favorites list, and the checks that close a tab whose file is gone.
+ * The window's vaults as this panel holds them (YAZ-2202; one tree per vault, YAZ-2602 D3): each
+ * tree and its watcher refresh, each load error, the expansion, the focus list, each vault's
+ * Favorites list, and the checks that close a tab whose file is gone.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { MAX_FOCUS, rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
@@ -21,6 +21,20 @@ export function useSameList<T>(list: readonly T[]): readonly T[] {
   const held = useRef(list)
   if (held.current.length !== list.length || held.current.some((item, i) => item !== list[i])) held.current = list
   return held.current
+}
+
+/**
+ * One landed tree's folders, outer before inner (`allDirs`), and its files that are no notes
+ * (`otherFiles`): walked once per tree, so a tree of one vault walks no other vault again and the
+ * lists of a vault that did not change keep their identity (YAZ-2602 R2).
+ */
+const walks = new WeakMap<TreeResponse, { dirs: string[]; files: string[] }>()
+const NO_WALK: { dirs: string[]; files: string[] } = { dirs: [], files: [] }
+function walkOf(landed: TreeResponse | undefined): { dirs: string[]; files: string[] } {
+  if (landed === undefined) return NO_WALK
+  let walk = walks.get(landed)
+  if (walk === undefined) walks.set(landed, (walk = { dirs: allDirs(landed.tree), files: otherFiles(landed.tree) }))
+  return walk
 }
 
 export function useVaultTree(
@@ -46,8 +60,17 @@ export function useVaultTree(
 
   // Each vault's tree, by its root, once it has landed.
   const [trees, setTrees] = useState<ReadonlyMap<string, TreeResponse>>(() => new Map())
-  const [failure, setFailure] = useState<{ root: string; message: string } | null>(null)
-  const error = failure?.message ?? null
+  // Each vault's load error, by its root: its own tree clears it, and it leaves with its vault.
+  const [failures, setFailures] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const setFailure = useCallback((vault: string, message: string | null) => {
+    setFailures((prev) => {
+      if (prev.get(vault) === (message ?? undefined)) return prev
+      const next = new Map(prev)
+      if (message === null) next.delete(vault)
+      else next.set(vault, message)
+      return next
+    })
+  }, [])
   /** Every vault has its tree: only then can a path that no tree holds be called gone. */
   const loaded = roots.every((vault) => trees.has(vault))
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
@@ -67,7 +90,7 @@ export function useVaultTree(
   const favoritesRef = useRef(favoritesByRoot)
   favoritesRef.current = favoritesByRoot
 
-  // What the Files tab draws (YAZ-2602 D3). One vault → its tree, as before. Two or more → one
+  // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the order added, named as the app names the vault, its tree below it;
   // a vault whose tree has not landed has no row yet. Null until there is a tree to draw.
   const forest = useMemo<TreeNode[] | null>(() => {
@@ -82,17 +105,26 @@ export function useVaultTree(
   const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.map((vault, i) => [stripSlash(vault), names[i]])), [roots, names])
   const vaultRowsRef = useRef(vaultRows)
   vaultRowsRef.current = vaultRows
+  /** The load errors to draw, in vault order; with two or more vaults each names its vault. */
+  const errors = useMemo(
+    () =>
+      roots.flatMap((vault, i) => {
+        const message = failures.get(vault)
+        return message === undefined ? [] : [roots.length === 1 ? message : `${names[i]}: ${message}`]
+      }),
+    [failures, roots, names],
+  )
 
   // Every directory of the CURRENT trees, outer before inner (`allDirs`), vault by vault: the
   // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
   // memo, no second feed. The REAL folders only: a vault row is not one, so "Collapse all" leaves
   // the vault rows open (YAZ-2602 S16).
-  const dirsByVault = useMemo(() => roots.map((vault) => allDirs(trees.get(vault)?.tree ?? [])), [trees, roots])
+  const dirsByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).dirs), [trees, roots])
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
   // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
-  const filesByVault = useMemo(() => roots.map((vault) => otherFiles(trees.get(vault)?.tree ?? [])), [trees, roots])
+  const filesByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).files), [trees, roots])
   // The Focus tab's rows (YAZ-2619 D2): the list in the order ADDED, off the live trees, by the
   // Favorites rule (`favoriteRoots`) — a vanished path yields no row, and the prune below drops it.
   // It resolves over the forest, so the items of every vault stand in the one list (YAZ-2602 A1, A4).
@@ -119,9 +151,9 @@ export function useVaultTree(
   const refresh = useCallback((vault: string) => {
     fetchTree(vault).catch((err: unknown) => {
       if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) live.current.onRootMissing(vault)
-      else setFailure({ root: vault, message: err instanceof BridgeRequestError ? err.message : 'Failed to load folder' })
+      else if (live.current.roots.includes(vault)) setFailure(vault, err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
     })
-  }, [])
+  }, [setFailure])
 
   // PER VAULT, for as long as the vault is in the window (YAZ-2602 D3): its tree feed, its first
   // read, its watcher refresh and the first read of its favorites (D5). A vault that joins starts
@@ -148,19 +180,20 @@ export function useVaultTree(
       if (at !== -1) continue
       setTrees((prev) => new Map([...prev].filter(([key]) => key !== vault)))
       setFavoritesByRoot(({ [vault]: _left, ...rest }) => rest)
+      setFailure(vault, null)
     }
     roots.forEach((vault, at) => {
       if (held.has(vault)) return
       const land = (landed: TreeResponse): void => {
         setTrees((prev) => new Map(prev).set(vault, landed))
-        setFailure((prev) => (prev?.root === vault ? null : prev))
+        setFailure(vault, null)
       }
       const offTree = onTree(vault, (outcome) => {
         if (outcome.status === 'fulfilled') land(outcome.value)
       })
       const burst = leadingTrailing(() => refresh(vault), WATCH_BURST_QUIET_MS)
       const offWatch = watches[at].subscribe((ev) => {
-        if (ev.type === 'error') return setFailure({ root: vault, message: ev.message })
+        if (ev.type === 'error') return setFailure(vault, ev.message)
         if (ev.type === 'change') return
         if (ev.type === 'ready') return burst.flush()
         burst.call()
@@ -179,7 +212,7 @@ export function useVaultTree(
       loadFavorites(vault)
     })
     started.current = true
-  }, [roots, watches, refresh, loadFavorites])
+  }, [roots, watches, refresh, loadFavorites, setFailure])
   useEffect(
     () => () => {
       for (const feed of feeds.current.values()) feed.end()
@@ -389,5 +422,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, rootOf, trees, forest, loaded, vaultRows, error, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  return { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritesRef, saveFavorites, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }

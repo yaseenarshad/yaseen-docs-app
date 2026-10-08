@@ -201,7 +201,7 @@ describe('registerWindowIpc', () => {
       expect(commits).toBe(1)
     })
 
-    it('window:set-identity with `root` alone (the old patch): the SAME root keeps the list, a DIFFERENT root is the whole list, and null is no vault', async () => {
+    it('window:set-identity with `root` alone (the old patch): the SAME root keeps the list, a DIFFERENT root is the whole list, and null is no vault (S76 as amended, A10)', async () => {
       await set({ roots: ['/v', '/w'] })
       expect(await set({ root: '/v' })).toEqual(ok(undefined))
       expect(stored()).toMatchObject({ root: '/v', roots: ['/v', '/w'] })

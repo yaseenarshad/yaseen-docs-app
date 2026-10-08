@@ -31,6 +31,35 @@ vi.mock('../lib/pageLabel', async (importOriginal) => {
   return { ...real, pageLabel }
 })
 
+/**
+ * Search-row build counter (YAZ-2602 R2): the REAL builders behind recording wrappers, so a test
+ * can say which vault's folder rows and file rows a landed tree made the search build again.
+ */
+const rowBuilds = vi.hoisted(() => ({ folders: [] as string[], files: [] as string[] }))
+vi.mock('../search/searchCandidates', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../search/searchCandidates')>()
+  const folderCandidates: typeof real.folderCandidates = (root, dirs, folders) => {
+    rowBuilds.folders.push(root)
+    return real.folderCandidates(root, dirs, folders)
+  }
+  const fileCandidates: typeof real.fileCandidates = (root, files) => {
+    rowBuilds.files.push(root)
+    return real.fileCandidates(root, files)
+  }
+  return { ...real, folderCandidates, fileCandidates }
+})
+
+/** Folder-count build counter (YAZ-2602 S30): the REAL `folderCounts` behind a recording wrapper, so a test can say which vault an index snapshot counted again. */
+const countBuilds = vi.hoisted(() => ({ roots: [] as string[] }))
+vi.mock('./folderCounts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./folderCounts')>()
+  const folderCounts: typeof real.folderCounts = (root, records, folders) => {
+    countBuilds.roots.push(root)
+    return real.folderCounts(root, records, folders)
+  }
+  return { ...real, folderCounts }
+})
+
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -4990,6 +5019,21 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.index.mock.calls).toEqual([[at.b]])
   })
 
+  it('an index snapshot of one vault counts the folders of that vault alone, and the rows of both vaults show their counts (S30)', async () => {
+    const at = pair()
+    const [notes, work] = [createWikilinkResolveSource(), createWikilinkResolveSource()]
+    notes.update(() => null, [{ ...indexRecord(`${at.a}/sub/in.md`), folder: 'sub' }])
+    work.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }])
+    const { el } = await mountVaults([vault(at.a, 'Notes', { index: notes }), vault(at.b, 'Work', { index: work })])
+    const count = (path: string) => rowByPath(el, path)?.querySelector('.tree__count')?.textContent ?? null
+    expect([count(`${at.a}/sub`), count(`${at.b}/docs`)]).toEqual(['1', '1'])
+    countBuilds.roots.length = 0
+    // A save in "Work": its index hands a new snapshot, and "Notes" still holds the one it had.
+    act(() => work.update(() => null, [{ ...indexRecord(`${at.b}/docs/d.md`), folder: 'docs' }, { ...indexRecord(`${at.b}/docs/e.md`), folder: 'docs' }]))
+    expect([count(`${at.a}/sub`), count(`${at.b}/docs`)]).toEqual(['1', '2'])
+    expect(new Set(countBuilds.roots)).toEqual(new Set([at.b]))
+  })
+
   it('a vault that joins does not remount the panel or read the first vault again, and its first tree is the walk App just made; a vault that leaves ends its watcher subscription', async () => {
     const at = pair()
     const first = watcher()
@@ -5062,6 +5106,36 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onRootMissing).toHaveBeenCalledWith(at.b)
     expect(props.onRootMissing).not.toHaveBeenCalledWith(at.a)
     expect(topLabels(el)).toEqual(['Notes'])
+  })
+
+  it('a load error is its own vault\'s: two vaults that fail show a line each, under the vault\'s name; a vault that loads clears its own line alone; a vault that leaves takes its line, and a late failure of it draws none; one vault names no vault', async () => {
+    const at = pair()
+    const first = watcher()
+    const second = watcher()
+    const both = [vault(at.a, 'Notes', { watch: first.watch }), vault(at.b, 'Work', { watch: second.watch })]
+    const errors = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__msg--error')].map((line) => line.textContent)
+    let failB: (() => void) | undefined
+    const { el, bridge, rerender } = await mountVaults(both, {}, (bridge) => bridge.tree.mockImplementation((root: string) => Promise.reject({ code: 'IO_ERROR', message: root === at.a ? 'notes unreadable' : 'work unreadable' })))
+    expect(errors(el)).toEqual(['Notes: notes unreadable', 'Work: work unreadable'])
+    expect(bodyMsg(el)).toBe('Notes: notes unreadable') // no "Loading…" beside an error
+
+    // Vault `a` loads: its line goes, and the line of `b` — the older or the newer — stays.
+    bridge.tree.mockImplementation((root: string) => (root === at.a ? Promise.resolve({ root, tree: treeOf(root), generatedAt: 2 }) : new Promise((_resolve, reject) => (failB = () => reject({ code: 'IO_ERROR', message: 'work unreadable, late' })))))
+    await act(async () => first.fire({ type: 'ready' } as WatchEvent))
+    expect(errors(el)).toEqual(['Work: work unreadable'])
+    expect(topLabels(el)).toEqual(['Notes'])
+
+    // Vault `b` leaves with a read of it still on the wire: its line leaves, and the late failure draws none.
+    await act(async () => second.fire({ type: 'ready' } as WatchEvent))
+    await rerender({ vaults: [both[0]] })
+    expect(errors(el)).toEqual([])
+    await act(async () => failB?.())
+    expect(errors(el)).toEqual([])
+    expect(topLabels(el)).toEqual(['sub', 'a'])
+
+    // One vault: the message alone, as a window with one vault always showed it.
+    await act(async () => first.fire({ type: 'error', message: 'watcher stopped' } as WatchEvent))
+    expect(errors(el)).toEqual(['watcher stopped'])
   })
 
   it('"Add to focus" on a file of the second vault, then on a folder of the first: the one list holds both in the order added, each add asks for the Focus tab, and each top row there, file or folder, names its vault; Files and Favorites name none and Files is not narrowed (A1, A4, A7)', async () => {
@@ -5346,7 +5420,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
-  it('a vault that joins brings its favorites without a second read of the vault that stays, and one that leaves takes its group', async () => {
+  it('a vault that joins brings its favorites without a second read of the vault that stays, and one that leaves takes its group and writes no favorites file (S28, S50)', async () => {
     const at = pair()
     const { fetchTree } = await import('../lib/treeFeed')
     const both = [vault(at.a, 'Notes'), vault(at.b, 'Work')]
@@ -5360,6 +5434,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await rerender({ vaults: [both[0]] })
     expect(allRows(el)).toEqual([`${at.a}/a.md`])
     expect(bridge.favorites.get).toHaveBeenCalledTimes(1)
+    // A vault that leaves the window leaves its `favorites.json` as it is (S50): nothing is written, for it or for the one that stays.
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
     // It took its list with it: back in the window, its group waits for its own read.
     let answer: ((paths: string[]) => void) | undefined
     bridge.favorites.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([`${at.a}/a.md`])))
@@ -5497,6 +5573,23 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await afterQuiet()
     expect(new Set(bridge.index.mock.calls.map(([root]) => root))).toEqual(new Set([b]))
     expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py', '  planet'])
+  })
+
+  it('a tree of one vault is that vault\'s alone: the search builds the folder rows and the file rows of the vault whose tree landed, and no row of the other vault (R2)', async () => {
+    const work = watcher()
+    const { el, a, b, input, bridge, trees } = await searchTwo({}, { work })
+    await type(input, 'plan')
+    expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py'])
+    rowBuilds.folders.length = 0
+    rowBuilds.files.length = 0
+    const treesOfA = bridge.tree.mock.calls.filter(([root]) => root === a).length
+
+    trees[b] = [...trees[b], { type: 'dir', name: 'plans', path: `${b}/plans`, children: [] }]
+    await act(async () => work.fire({ type: 'ready' } as WatchEvent))
+    expect(shape(el)).toEqual(['Notes', '  sub', '    plan notes', '  old plan', 'Work', '  docs', '    plan d', '  plan', '  plan.py', '  plans'])
+    expect(bridge.tree.mock.calls.filter(([root]) => root === a)).toHaveLength(treesOfA)
+    expect(new Set(rowBuilds.folders)).toEqual(new Set([b]))
+    expect(new Set(rowBuilds.files)).toEqual(new Set([b]))
   })
 
   it('the limit of 50 counts the matches of every vault together: 30 and 30 show the best 50 and the limit line; fewer than 50 in all show no line (A9; YAZ-2620 S11)', async () => {
