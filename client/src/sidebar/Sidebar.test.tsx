@@ -5420,7 +5420,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
-  it('a vault that joins brings its favorites without a second read of the vault that stays, and one that leaves takes its group', async () => {
+  it('a vault that joins brings its favorites without a second read of the vault that stays, and one that leaves takes its group and writes no favorites file (S28, S50)', async () => {
     const at = pair()
     const { fetchTree } = await import('../lib/treeFeed')
     const both = [vault(at.a, 'Notes'), vault(at.b, 'Work')]
@@ -5434,6 +5434,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await rerender({ vaults: [both[0]] })
     expect(allRows(el)).toEqual([`${at.a}/a.md`])
     expect(bridge.favorites.get).toHaveBeenCalledTimes(1)
+    // A vault that leaves the window leaves its `favorites.json` as it is (S50): nothing is written, for it or for the one that stays.
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
     // It took its list with it: back in the window, its group waits for its own read.
     let answer: ((paths: string[]) => void) | undefined
     bridge.favorites.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([`${at.a}/a.md`])))
