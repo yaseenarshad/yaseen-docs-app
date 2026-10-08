@@ -528,12 +528,12 @@ describe('VaultSwitcher: pure helpers', () => {
 
   it('defaultHighlight: skips the current root on an empty query, 0 otherwise (which is Open folder… when nothing matches)', () => {
     const list = rowsOf('/v/cur', '/v/a', '/v/b')
-    expect(defaultHighlight(list, '', '/v/cur')).toBe(1)
-    expect(defaultHighlight(list, '', '/v/none')).toBe(0)
-    expect(defaultHighlight(rowsOf('/v/cur'), '', '/v/cur')).toBe(0)
-    expect(defaultHighlight([], '', '/v/cur')).toBe(0)
-    expect(defaultHighlight(list, 'a', '/v/cur')).toBe(0)
-    expect(defaultHighlight([], 'zzz', '/v/cur')).toBe(0)
+    expect(defaultHighlight(list, '', ['/v/cur'])).toBe(1)
+    expect(defaultHighlight(list, '', ['/v/none'])).toBe(0)
+    expect(defaultHighlight(rowsOf('/v/cur'), '', ['/v/cur'])).toBe(0)
+    expect(defaultHighlight([], '', ['/v/cur'])).toBe(0)
+    expect(defaultHighlight(list, 'a', ['/v/cur'])).toBe(0)
+    expect(defaultHighlight([], 'zzz', ['/v/cur'])).toBe(0)
   })
 })
 

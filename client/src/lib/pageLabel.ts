@@ -105,14 +105,12 @@ const useTreeLanded = (root: string) => useCallback((poke: () => void) => onTree
  * component re-renders when a tree for any of `roots` lands, so its labels follow the trees.
  */
 export function useFolderPaths(roots: readonly string[]): (path: string) => boolean {
-  const key = roots.join('\n')
-  // Keyed by the vaults themselves: a caller may hand a new array of the same roots on each render.
   const subscribe = useCallback(
     (poke: () => void) => {
-      const offs = (key === '' ? [] : key.split('\n')).map((root) => onTree(root, poke))
+      const offs = roots.map((root) => onTree(root, poke))
       return () => offs.forEach((off) => off())
     },
-    [key],
+    [roots],
   )
   const held = useRef<readonly (TreeResponse | null)[]>([])
   useSyncExternalStore(subscribe, () => {
