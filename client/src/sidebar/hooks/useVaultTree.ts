@@ -46,8 +46,7 @@ export function useVaultTree(
   onFileMissing: () => void,
   onNotice: (message: string, kind?: NoticeKind) => void,
 ) {
-  // The window's vaults (YAZ-2602 D1), in the order they were added. `root` is the FIRST: App keys
-  // this panel on it.
+  // The window's vaults (YAZ-2602 D1), in the window's order. `root` is the FIRST.
   const roots = useSameList(vaults.map((vault) => vault.root))
   const watches = useSameList(vaults.map((vault) => vault.watch))
   const names = useSameList(vaults.map((vault) => vault.name))
@@ -91,7 +90,7 @@ export function useVaultTree(
   favoritesRef.current = favoritesByRoot
 
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
-  // folder row per vault, in the order added, named as the app names the vault, its tree below it;
+  // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
   // a vault whose tree has not landed has no row yet. Null until there is a tree to draw.
   const forest = useMemo<TreeNode[] | null>(() => {
     if (roots.length === 1) return trees.get(roots[0])?.tree ?? null
@@ -117,8 +116,8 @@ export function useVaultTree(
 
   // Every directory of the CURRENT trees, outer before inner (`allDirs`), vault by vault: the
   // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
-  // memo, no second feed. The REAL folders only: a vault row is not one, so "Collapse all" leaves
-  // the vault rows open (YAZ-2602 S16).
+  // memo, no second feed. The REAL folders only: a vault row is not one, and "Collapse all" closes
+  // it through App's list (YAZ-2631 D6).
   const dirsByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).dirs), [trees, roots])
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */

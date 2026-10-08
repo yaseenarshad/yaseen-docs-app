@@ -181,7 +181,7 @@ function TreeLevel({
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
-  // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item.
+  // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item, a vault row of Files.
   const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
   /** The vault a top row of the Focus tab or of the Favorites tab is in, file or folder (YAZ-2631 D4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files has no other top row. */
   const vaultTag = (path: string) => {

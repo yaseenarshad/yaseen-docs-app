@@ -25,7 +25,7 @@ import type { PendingCreate, PendingRename, TreeFileMove, TreeReorder, TreeSelec
 export function useSelection(lens: SidebarLens, searching: boolean, tree: TreeNode[] | null, roots: readonly string[], selectionRef: { current: ReadonlySet<string> }, bodyRef: RefObject<HTMLDivElement | null>) {
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
-  // and nowhere else on purpose: the Sidebar (which calls this hook) is mounted on its first vault and
+  // and nowhere else on purpose: the Sidebar (which calls this hook) is mounted on one vault of the window and
   // only while the sidebar is open, so a selection is honestly about rows currently on screen and
   // cannot outlive them (a collapse ends it). It may hold rows of two vaults (YAZ-2602 S18).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
@@ -140,6 +140,7 @@ export function useTreeDrag(
     const i = without.indexOf(over.path)
     if (i < 0) return
     const at = over.edge === 'before' ? i : i + 1
+    if (orderRef.current[at] === from) return // the row already stands there: nothing is written
     saveOrder([...without.slice(0, at), from, ...without.slice(at)])
   }, [reorderDragging, reorderOver, orderRef, saveOrder])
 
