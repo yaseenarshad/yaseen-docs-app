@@ -76,11 +76,9 @@ describe("a window's vault list (YAZ-2602 D1)", () => {
     expect(rootOfPath([], '/a/x.md')).toBeNull()
   })
 
-  it('openVaultRoots / listVaults: a vault that is only the SECOND vault of a window is open; a window object with no `roots` answers with its `root` (S59)', () => {
-    expect(openVaultRoots([{ root: '/a', roots: ['/a', '/b/'] }, { root: null, roots: [] }, { root: '/b', roots: ['/b', '/c'] }])).toEqual(['/a', '/b', '/c'])
-    // An old state file read raw: the entry has no `roots`.
-    expect(openVaultRoots([{ root: '/old' }, { root: null }, { root: '/a', roots: ['/a', '/b'] }])).toEqual(['/old', '/a', '/b'])
-    const vaults = listVaults({ recents: [{ path: '/b', lastOpened: 9 }, { path: '/closed', lastOpened: 3 }], windows: [{ root: '/a', roots: ['/a', '/b'] }, { root: '/old' }], folders: {} })
+  it('openVaultRoots / listVaults: a vault that is only the SECOND vault of a window is open (S59)', () => {
+    expect(openVaultRoots([{ roots: ['/a', '/b/'] }, { roots: [] }, { roots: ['/b', '/c'] }])).toEqual(['/a', '/b', '/c'])
+    const vaults = listVaults({ recents: [{ path: '/b', lastOpened: 9 }, { path: '/closed', lastOpened: 3 }], windows: [{ roots: ['/a', '/b'] }, { roots: ['/old'] }], folders: {} })
     expect(vaults.map((v) => [v.path, v.open])).toEqual([['/b', true], ['/closed', false], ['/a', true], ['/old', true]])
   })
 
