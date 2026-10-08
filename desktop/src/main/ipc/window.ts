@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { isSidebarLens, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_WINDOW_ROOTS, isSidebarLens, type OpenSetResult, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -21,6 +21,14 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
   if (v === undefined) return undefined
   if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'tabs' must be an array of absolute paths`)
   return v.map((t, i) => requireAbsPath(t, `tabs[${i}]`))
+}
+
+/** `roots` in the patch (YAZ-2602 D1): `tabs`' rule — absent (untouched), or absolute paths only, MAX_WINDOW_ROOTS at most. */
+function optionalRoots(raw: Record<string, unknown>): string[] | undefined {
+  const v = raw.roots
+  if (v === undefined) return undefined
+  if (!Array.isArray(v) || v.length > MAX_WINDOW_ROOTS) throw new BridgeFailure('BAD_REQUEST', `'roots' must be an array of at most ${MAX_WINDOW_ROOTS} absolute paths`)
+  return v.map((r, i) => requireAbsPath(r, `roots[${i}]`))
 }
 
 /** `focusList` in the patch (YAZ-1628, YAZ-2619): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
@@ -64,6 +72,12 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
   return v
 }
 
+/** A saved set's `id` or `name` (YAZ-2602 D8): a string; the store decides what it names. */
+function requireString(v: unknown, param: 'id' | 'name'): string {
+  if (typeof v !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${param}' must be a string`)
+  return v
+}
+
 /**
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
@@ -81,13 +95,15 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusList } = entryFor(e)
-    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusList: [...focusList] }
+    const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusList } = entryFor(e)
+    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusList: [...focusList] }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
     if (!isRecord(patch)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
-    const root = optionalPath(patch, 'root')
+    const patchRoots = optionalRoots(patch)
+    // The vault list leads (YAZ-2602 S76): with `roots` in the patch, `root` is its first entry.
+    const root = patchRoots !== undefined ? (patchRoots[0] ?? null) : optionalPath(patch, 'root')
     const file = optionalPath(patch, 'file')
     const tabs = optionalTabs(patch)
     const rightPanel = optionalRightPanel(patch)
@@ -99,9 +115,12 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     // applied to whichever of `file` / `tabs` the patch left untouched.
     const nextFile = file !== undefined ? file : entry.file
     const nextTabs = normalizeTabs(tabs ?? entry.tabs, nextFile)
+    // `root` alone keeps the list when it names the vault the window is already on, and is the whole list otherwise (YAZ-2602 A10).
+    const roots = patchRoots ?? (root === undefined || root === entry.root ? entry.roots : [])
     store.upsertWindow({
       ...entry,
       ...(root !== undefined ? { root } : {}),
+      roots,
       ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       ...(sidebarLens !== undefined ? { sidebarLens } : {}),
       ...(focusList !== undefined ? { focusList } : {}),
@@ -142,6 +161,17 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
   // window may ask; the caller is not consulted.
   handle(CONTRACT.window.openRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+
+  // Saved sets of vaults (YAZ-2602 D8; the user reads "workspace"). `window:open-set` is the
+  // manager's door: what opened, and the folders that are gone. Any window may ask it, and may
+  // rename or remove a set. `window:save-set` saves the CALLER's own vaults, so the renderer never
+  // sends a list; false = the store refused (fewer than two vaults, an empty name, or R12).
+  handle(CONTRACT.window.openSet, async (id: unknown): Promise<OpenSetResult> => windows.openVaultSet(requireString(id, 'id')))
+  handleWithEvent(CONTRACT.window.saveSet, async (e, name: unknown): Promise<boolean> => store.saveVaultSet(requireString(name, 'name'), entryFor(e).roots) !== null)
+  handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))
+  handle(CONTRACT.window.removeSet, async (id: unknown) => {
+    store.removeVaultSet(requireString(id, 'id'))
+  })
 
   // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.
   handleWithEvent(SPECIAL.menuPasteTextFallback, async (e, text: unknown) => {

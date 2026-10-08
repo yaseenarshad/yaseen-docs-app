@@ -546,8 +546,12 @@ export interface UseWorkspace extends WorkspaceState {
   renameDirPath: (oldPath: string, newPath: string, nextRoot?: string) => void
   /** A delete landed (`file:deleted`, GRO-2272): drop the tab; the active one closes to its heir. */
   deletePath: (path: string) => void
-  /** A FOLDER delete landed (`file:deleted` kind `dir`): drop every tab under the prefix. */
-  deleteDirPath: (path: string) => void
+  /**
+   * A FOLDER delete landed (`file:deleted` kind `dir`): drop every tab under the prefix. `nextRoot`,
+   * as above: the folder was this window's first vault, which left the window, and the mirror's
+   * lastFile write lands under the vault that is first now (YAZ-2602 S52).
+   */
+  deleteDirPath: (path: string, nextRoot?: string) => void
   openRight: (path: string, at?: number) => void
   openRightBackground: (path: string, at?: number) => void
   navigateRight: (from: string, to: string) => void
@@ -620,7 +624,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
   )
 
   const deletePath = useCallback((path: string) => dispatch({ type: 'delete', path }), [dispatch])
-  const deleteDirPath = useCallback((path: string) => dispatch({ type: 'delete-dir', path }), [dispatch])
+  const deleteDirPath = useCallback(
+    (path: string, nextRoot?: string) => dispatch({ type: 'delete-dir', path }, nextRoot !== undefined ? { root: nextRoot } : undefined),
+    [dispatch],
+  )
   const openRightCallback = useCallback((path: string, at?: number) => dispatch({ type: 'open-right', path, at }), [dispatch])
   const openRightBackground = useCallback((path: string, at?: number) => dispatch({ type: 'open-right-background', path, at }), [dispatch])
   const navigateRightCallback = useCallback((from: string, to: string) => dispatch({ type: 'navigate-right', from, to }), [dispatch])

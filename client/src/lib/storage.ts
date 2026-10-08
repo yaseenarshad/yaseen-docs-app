@@ -10,6 +10,8 @@ import {
   freeVaultKey,
   keyedVaults,
   listVaults,
+  normalizeRoots,
+  rootOfPath,
   type AppState,
   type FolderState,
   type KeyedVault,
@@ -18,6 +20,7 @@ import {
   type SettingsState,
   type SidebarLens,
   type VaultEntry,
+  type VaultSet,
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
@@ -32,7 +35,7 @@ import { basename } from './paths'
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] }
+let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -89,13 +92,39 @@ export const storage = {
     const patch = root === identity.root
       ? { root }
       : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] as string[] }
-    identity = { ...identity, ...patch }
+    // The window is on that ONE vault (YAZ-2602 S61). The patch names `root` alone: main makes the list from it (S76).
+    identity = { ...identity, ...patch, ...(root === identity.root ? {} : { roots: normalizeRoots([], root) }) }
     send('window.setIdentity', () => api.window.setIdentity(patch))
+  },
+
+  /** Every vault this window shows, `root` first (YAZ-2602 D1). */
+  getRoots: (): string[] => identity.roots,
+  /**
+   * Add or remove a vault (YAZ-2602 D2, D7). Unlike `setRoot`, this keeps the tabs, the lens and
+   * the focus list: the caller closes a removed vault's tabs first. `root` follows `roots[0]`.
+   * A vault that leaves takes its focus items with it, in the same write (A5).
+   */
+  setRoots(roots: readonly string[]): void {
+    const next = normalizeRoots(roots, roots[0] ?? null)
+    const focusList = identity.focusList.filter((path) => rootOfPath(next, path) !== null)
+    const patch = focusList.length === identity.focusList.length ? { roots: next } : { roots: next, focusList }
+    identity = { ...identity, ...patch, root: next[0] ?? null }
+    send('window.setIdentity', () => api.window.setIdentity(patch))
+  },
+  /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. */
+  mirrorRoots(roots: readonly string[]): void {
+    identity = { ...identity, root: roots[0] ?? null, roots: [...roots] }
   },
 
   getRecentRoots: (): RecentRoots => state.recents,
   /** Every vault the app knows, as the ⌘O panel lists it (YAZ-2556 D2): the shared `listVaults` over the cache — what `yaseendocs vaults` prints from the state file. */
   listVaults: (): VaultEntry[] => listVaults(state),
+  /**
+   * The saved sets of vaults (YAZ-2602 D8; the user reads "workspaces"), last used first. Read-only
+   * here: main saves, renames and removes one through its own doors (`api.window.saveSet` and its
+   * neighbours), and the cache follows the broadcast.
+   */
+  getVaultSets: (): VaultSet[] => state.vaultSets,
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
@@ -142,7 +171,8 @@ export const storage = {
   /**
    * The focus list (YAZ-2619): files and folders in the order added, empty when there is none.
    * Window identity since YAZ-1628, like `sidebarCollapsed` below — no root argument, and a global
-   * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`).
+   * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`),
+   * and a vault that leaves the window takes its items (`setRoots`).
    */
   getFocusList: (): string[] => identity.focusList,
   setFocusList(paths: readonly string[]): void {
@@ -167,9 +197,11 @@ export const storage = {
     const fileChanged = file !== identity.file
     const nextRight = { ...rightPanel, items: [...rightPanel.items] }
     identity = { ...identity, file, tabs: [...tabs], rightPanel: nextRight }
-    if (root !== null && fileChanged) {
-      patchFolder(root, { lastFile: file })
-      send('state.setFolder', () => api.state.setFolder(root, { lastFile: file }))
+    // The file is the last one of the vault that HOLDS it (YAZ-2602): `root`, unless another vault of the window does.
+    const home = file === null ? root : (rootOfPath(identity.roots, file) ?? root)
+    if (home !== null && fileChanged) {
+      patchFolder(home, { lastFile: file })
+      send('state.setFolder', () => api.state.setFolder(home, { lastFile: file }))
     }
     send('window.setIdentity', () => api.window.setIdentity({
       tabs: [...tabs],

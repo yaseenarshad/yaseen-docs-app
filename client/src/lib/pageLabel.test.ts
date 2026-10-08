@@ -3,8 +3,11 @@
  * label is its whole name. `api.tree` is mocked; each case stands in its own root, with its own feed.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import type { IndexRecord, TreeNode } from '@shared/types'
-import { isFolderPath, pageLabel, pathTitles } from './pageLabel'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { isFolderPath, pageLabel, pathTitles, useAllPathTitles, useFolderPaths, type PathTitles } from './pageLabel'
 import { fetchTree } from './treeFeed'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -45,6 +48,19 @@ describe('pathTitles', () => {
     expect(pathTitles([titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')])).toBe(first)
     expect(pathTitles([titled('/v/a.md', 'A2')], [titled('/v/dir/.folder.md', 'Dir')]).get('/v/a.md')).toBe('A2')
   })
+
+  it('two vaults: each keeps its own Map while its titles stand, whichever vault\'s snapshot was read between (YAZ-2602)', () => {
+    const a = pathTitles([titled('/pa/a.md', 'A')], [])
+    const b = pathTitles([titled('/pb/b.md', 'B')], [])
+    // A save in /pa that changes no title, read after /pb's snapshot: the Map /pa's name holders already have.
+    expect(pathTitles([titled('/pa/a.md', 'A')], [])).toBe(a)
+    expect(pathTitles([titled('/pb/b.md', 'B')], [])).toBe(b)
+    // A changed title is a new Map for its own vault, and the other vault's stands.
+    const a2 = pathTitles([titled('/pa/a.md', 'A2')], [])
+    expect(a2).not.toBe(a)
+    expect(pathTitles([titled('/pb/b.md', 'B')], [])).toBe(b)
+    expect(pathTitles([titled('/pa/a.md', 'A2')], [])).toBe(a2)
+  })
 })
 
 describe('isFolderPath', () => {
@@ -56,5 +72,82 @@ describe('isFolderPath', () => {
     expect(isFolderPath('/labels', '/labels/Notes.md')).toBe(true)
     expect(isFolderPath('/labels', '/labels/Plan.md')).toBe(false)
     expect(isFolderPath('/labels', '/labels/Gone')).toBe(false)
+  })
+})
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** Renders `hook` in a component and hands back what its newest render returned, and how often it rendered. */
+function probe<T>(hook: () => T) {
+  const seen = { value: undefined as T, renders: 0 }
+  const Probe = (): null => {
+    seen.value = hook()
+    seen.renders++
+    return null
+  }
+  const root = createRoot(document.createElement('div'))
+  act(() => root.render(createElement(Probe)))
+  return { seen, unmount: () => act(() => root.unmount()) }
+}
+
+describe('useAllPathTitles (YAZ-2602 D1)', () => {
+  it('one vault: that vault\'s own Map, as `usePathTitles` gives it', () => {
+    const source = createWikilinkResolveSource()
+    const records = [titled('/one/a.md', 'A')]
+    source.update(() => null, records, [])
+    const sources = [source]
+    const { seen, unmount } = probe(() => useAllPathTitles(sources))
+    expect(seen.value).toBe(pathTitles(records, []))
+    unmount()
+  })
+
+  it('two vaults: one Map over both, kept while no title changed, whichever vault\'s snapshot landed', () => {
+    const v = createWikilinkResolveSource()
+    const w = createWikilinkResolveSource()
+    v.update(() => null, [titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')])
+    w.update(() => null, [titled('/w/b.md', 'B')], [])
+    const sources = [v, w]
+    const { seen, unmount } = probe<PathTitles>(() => useAllPathTitles(sources))
+    const first = seen.value
+    expect([...first]).toEqual([['/v/a.md', 'A'], ['/v/dir', 'Dir'], ['/w/b.md', 'B']])
+
+    // A save in /w, then one in /v, that change no title: the same Map, so nothing that shows a name renders.
+    const renders = seen.renders
+    act(() => w.update(() => null, [titled('/w/b.md', 'B')], []))
+    act(() => v.update(() => null, [titled('/v/a.md', 'A')], [titled('/v/dir/.folder.md', 'Dir')]))
+    expect(seen.value).toBe(first)
+    expect(seen.renders).toBe(renders)
+
+    act(() => w.update(() => null, [titled('/w/b.md', 'B2'), titled('/w/c.md', 'C')], []))
+    expect(seen.value).not.toBe(first)
+    expect([...seen.value]).toEqual([['/v/a.md', 'A'], ['/v/dir', 'Dir'], ['/w/b.md', 'B2'], ['/w/c.md', 'C']])
+    unmount()
+  })
+
+  it('no vault: an empty Map, the same one on each render', () => {
+    const sources: never[] = []
+    const { seen, unmount } = probe(() => useAllPathTitles(sources))
+    expect(seen.value.size).toBe(0)
+    unmount()
+  })
+})
+
+describe('useFolderPaths (YAZ-2602 S31)', () => {
+  it('asks the tree of the vault that holds each path, the most specific one, and follows each vault\'s tree as it lands', async () => {
+    const dir = (path: string): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children: [] })
+    vi.mocked(api.tree).mockImplementation(async (root) => ({ root, tree: root === '/fp/a' ? [dir('/fp/a/Notes.md')] : [dir('/fp/b/Plans.md')], generatedAt: 1 }))
+    const roots = ['/fp/a', '/fp/b']
+    const { seen, unmount } = probe(() => useFolderPaths(roots))
+    expect(seen.value('/fp/a/Notes.md')).toBe(false) // no tree yet
+    await act(async () => void (await fetchTree('/fp/a')))
+    expect(seen.value('/fp/a/Notes.md')).toBe(true)
+    expect(seen.value('/fp/b/Plans.md')).toBe(false)
+    const renders = seen.renders
+    await act(async () => void (await fetchTree('/fp/b')))
+    expect(seen.renders).toBeGreaterThan(renders)
+    expect(seen.value('/fp/b/Plans.md')).toBe(true)
+    expect(seen.value('/fp/b/Notes.md')).toBe(false) // a folder of /fp/a says nothing about /fp/b
+    expect(seen.value('/elsewhere/Notes.md')).toBe(false) // in no vault: the first vault's tree is asked
+    unmount()
   })
 })

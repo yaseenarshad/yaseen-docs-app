@@ -2,15 +2,15 @@
  * The persistent search bar (YAZ-739 A-, YAZ-801/803): its query, the ranked results, and ⌘K's
  * focus handshake. Since YAZ-2620 the sidebar draws the results as a TREE — the Files tree cut down
  * to the matches (`searchTree`) — so this also holds that tree, its folds and the keyboard's
- * highlighted match. The shortcut picker keeps the flat list and shares `useResultKeys`.
+ * highlighted match. With two or more vaults the tree that is cut is the forest (YAZ-2602 A9): each
+ * match stands under its vault's row. The shortcut picker keeps the flat list and shares `useResultKeys`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
-import type { TreeNode } from '@shared/types'
-import type { WatchSource } from '../../hooks/useWatch'
+import { rootOfPath, stripSlash, type TreeNode } from '@shared/types'
 import { ancestorDirs } from '../../lib/treeState'
 import type { SearchCandidate } from '../../search/searchCandidates'
 import { searchTree } from '../../search/searchTree'
-import { useSearchResults } from '../../search/useSearchResults'
+import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
 import type { TreeMarks, TreeSelection } from '../Tree'
 
 /**
@@ -46,23 +46,24 @@ const NO_CURSOR: ReadonlySet<string> = new Set()
 const noToggle = (): void => undefined
 
 export function useSidebarSearch(
-  root: string,
-  watch: WatchSource,
+  /** Every vault of the window (YAZ-2602 R2), in vault order; the list is the caller's to keep while nothing in it changed. */
+  vaults: readonly SearchVault[],
+  /** What the Files tab draws: one vault's tree, or the forest — one row per vault (YAZ-2602 D3). */
   tree: readonly TreeNode[],
-  dirs: string[],
-  files: string[],
   pendingSearchFocus: boolean,
   onSearchFocusHandled: () => void,
   activate: (hit: SearchCandidate, background: boolean) => void,
 ) {
   // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
-  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted `key={root}`, so it resets
+  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted on its first vault, so it resets
   // on unmount and on a root switch without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const results = useSearchResults(root, watch, query, dirs, files)
+  const results = useSearchResults(vaults, query)
   // The results as a tree (YAZ-2620 🔒 D1): the Files tree — the WHOLE vault's, whichever tab or
-  // focus is showing (S33) — cut down to the matches and their parents.
+  // focus is showing (S33) — cut down to the matches and their parents. A vault's row is a parent
+  // like any folder (YAZ-2602 A9): no row of the ranking is a vault, so it is never a match, and it
+  // stands open over its matches whatever its fold on the Files tab.
   const hits = useMemo(() => new Set(results.map((r) => r.path)), [results])
   const found = useMemo(() => searchTree(tree, hits), [tree, hits])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
@@ -75,10 +76,15 @@ export function useSidebarSearch(
   // ↑/↓ walk the MATCHES in the order the tree draws them (🔒 D4); a note and its alias rows are one
   // row (S9), and a match below a folder the user closed is not on screen, so it is no stop (S21).
   const byPath = useMemo(() => new Map([...results].reverse().map((r) => [r.path, r])), [results])
-  const rows = useMemo(
-    () => found.order.filter((path) => ancestorDirs(root, path).every((dir) => searchOpen.has(dir))).flatMap((path) => byPath.get(path) ?? []),
-    [root, found, searchOpen, byPath],
-  )
+  const rows = useMemo(() => {
+    const roots = vaults.map((vault) => vault.root)
+    /** The rows above a match: its folders in the vault that holds it and, with two or more vaults, that vault's row. */
+    const above = (path: string): string[] => {
+      const vault = rootOfPath(roots, path) ?? roots[0]
+      return roots.length > 1 ? [stripSlash(vault), ...ancestorDirs(vault, path)] : ancestorDirs(vault, path)
+    }
+    return found.order.filter((path) => above(path).every((dir) => searchOpen.has(dir))).flatMap((path) => byPath.get(path) ?? [])
+  }, [vaults, found, searchOpen, byPath])
   // The highlight is held by its PATH (`null`: nobody moved it yet), so a fold that moves rows in or
   // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first —
   // wherever the tree draws it (S19); once its match has left the screen, it is on the next match

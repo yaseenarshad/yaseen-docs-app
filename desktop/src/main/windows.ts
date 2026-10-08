@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, stripSlash, type OpenWindowOptions, type RecentRoots, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type RecentRoots, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -89,7 +89,7 @@ export interface WindowManager extends WindowLookup {
   rootFor(path: string, rootOverride?: string | null): string | null
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
-  /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
+  /** D6 plumbing: every vault + the file of `from` (YAZ-2602 S34), cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
@@ -101,6 +101,16 @@ export interface WindowManager extends WindowLookup {
    * open, a new window opens on the vault's remembered `folders[root].lastFile` (D2). → `true`.
    */
   openRecentBeside(path: string): boolean
+  /**
+   * The door for a saved set of vaults (YAZ-2602 D8, `window:open-set`). Probes each folder: the
+   * vaults that are left, in the saved order, are what opens, and the ones that are gone come back
+   * in `missing` — the saved set itself keeps them, a folder can come back (S66). Every live window
+   * whose vaults are EXACTLY the ones left (`sameVaults`: the order does not count) is raised, as
+   * `openRecentBeside` raises; with none, ONE new window opens on them, on the first vault's
+   * remembered last file (S65). Either way the set becomes the last used. No folder left, or an
+   * unknown `id`, opens nothing and changes nothing → `opened: false`.
+   */
+  openVaultSet(id: string): OpenSetResult
   /**
    * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
    * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
@@ -125,7 +135,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -182,11 +192,11 @@ const rootContains = (root: string, path: string): boolean => {
 }
 
 /**
- * Where a `yaseendocs://` link to `path` should land: (1) the open window whose root contains
- * it — most specific root wins, ties keep the first in `windows[]`, Welcome windows never match;
+ * Where a `yaseendocs://` link to `path` should land: (1) the open window one of whose vaults contains
+ * it (YAZ-2602 D6) — most specific vault wins, ties keep the first in `windows[]`, Welcome windows never match;
  * (2) a new window on the most recent `recents` folder containing it (the list is already
  * most-recent-first); (3) a new window on the file's parent folder. A containing `rootOverride`
- * pins the effective root instead: the open window on exactly that root, else a new window there.
+ * pins the effective root instead: the open window that shows that vault, else a new window there.
  * Both kinds say the `root`: the vault the path belongs to (`rootFor`, YAZ-2589 D1).
  */
 export function resolveLinkTarget(
@@ -196,13 +206,18 @@ export function resolveLinkTarget(
   rootOverride?: string | null,
 ): LinkTarget {
   if (rootOverride != null && rootContains(rootOverride, path)) {
-    for (const w of windows) if (w.root !== null && stripSlash(w.root) === stripSlash(rootOverride)) return { kind: 'existing', id: w.id, root: w.root }
+    for (const w of windows) {
+      const vault = w.roots.find((root) => stripSlash(root) === stripSlash(rootOverride))
+      if (vault !== undefined) return { kind: 'existing', id: w.id, root: vault }
+    }
     return { kind: 'new', root: rootOverride, file: path }
   }
   let best: { id: string; root: string } | undefined
   for (const w of windows) {
-    if (w.root === null || !rootContains(w.root, path)) continue
-    if (best === undefined || w.root.length > best.root.length) best = { id: w.id, root: w.root }
+    for (const root of w.roots) {
+      if (!rootContains(root, path)) continue
+      if (best === undefined || root.length > best.root.length) best = { id: w.id, root }
+    }
   }
   if (best !== undefined) return { kind: 'existing', ...best }
   const recent = recents.find((r) => rootContains(r.path, path))
@@ -237,13 +252,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // A vault is "last used" when a window on it takes focus (YAZ-2555 D5), not only when ⌘O opens it.
       // Not on a window's FIRST focus: a relaunch focuses every restored window in turn, and that
       // must not reorder the list. Not during a quit either (S36): each window destroyed hands focus to the next.
-      if (!quitting) noteUsed(entryOf(id)?.root ?? null)
+      if (!quitting) noteUsed(activeVault(entryOf(id)))
       focusOrder.splice(at, 1)
     }
     focusOrder.unshift(id)
   }
 
   const entryOf = (id: string): WindowEntry | undefined => store.get().windows.find((w) => w.id === id)
+
+  /** The vault a window is working in (YAZ-2602 S60): the one that holds its active file, else its first. */
+  const activeVault = (entry: WindowEntry | undefined): string | null =>
+    entry === undefined ? null : ((entry.file === null ? null : rootOfPath(entry.roots, entry.file)) ?? entry.root)
 
   /**
    * Bump a window's vault to the top of the MRU (YAZ-2555 D5). Already on top → no write; a Welcome
@@ -334,9 +353,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (at !== -1) focusOrder.splice(at, 1)
       if (quitting) return
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
-      // a quit too: its entry stays, and its vault is the "last vault" (YAZ-2589 A1).
+      // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
       if (live.size > 0) store.removeWindow(id)
-      else noteUsed(entryOf(id)?.root ?? null)
+      else noteUsed(activeVault(entryOf(id)))
     })
   }
 
@@ -348,7 +367,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const openWindow = (opts: OpenWindowOptions): void => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
     noteUsed(opts.root)
-    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -388,6 +407,25 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    */
   const cannotOpen = (path: string): string | null => (fileKind(path) === null ? 'unsupported file type' : host.exists(path) ? null : 'file not found')
 
+  /**
+   * Raise every live window whose entry matches (YAZ-1767 🔒 D9) — LEAST recently focused first, so
+   * the most recently focused one ends on top (a window never focused ranks last). False = none is
+   * live: the caller opens one.
+   */
+  const raiseWindows = (matches: (entry: WindowEntry) => boolean): boolean => {
+    const wins = store
+      .get()
+      .windows.filter(matches)
+      .map((w) => ({ id: w.id, win: live.get(w.id) }))
+      .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
+    const rank = (id: string): number => {
+      const at = focusOrder.indexOf(id)
+      return at === -1 ? Number.POSITIVE_INFINITY : at
+    }
+    for (const { win } of wins.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
+    return wins.length > 0
+  }
+
   /** The one open-recent door (see `WindowManager.openRecentBeside`). A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1). */
   const openRecentBeside = (path: string): boolean => {
     // Beside never passes through the renderer's validating openRoot, so probe here: a dead
@@ -399,25 +437,26 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // Opening beside never lands in the renderer that bumps the MRU on an in-place open, so bump here
     // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
     noteUsed(path)
-    // Already open (YAZ-1767 🔒 D9): raise that vault's live windows instead of opening a third
-    // copy — LEAST recently focused first, so the most recently focused one ends on top (a
-    // window never focused ranks last). Roots compare like `resolveLinkTarget`: trailing slash off.
+    // Already open (YAZ-1767 🔒 D9) — in a window that shows it, alone or beside others (YAZ-2602 D6): raise that vault's live windows instead of opening a third
+    // copy. Roots compare like `resolveLinkTarget`: trailing slash off.
     const wanted = stripSlash(path)
-    const alreadyOpen = store
-      .get()
-      .windows.filter((w) => w.root !== null && stripSlash(w.root) === wanted)
-      .map((w) => ({ id: w.id, win: live.get(w.id) }))
-      .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
-    if (alreadyOpen.length > 0) {
-      const rank = (id: string): number => {
-        const at = focusOrder.indexOf(id)
-        return at === -1 ? Number.POSITIVE_INFINITY : at
-      }
-      for (const { win } of alreadyOpen.sort((a, b) => rank(b.id) - rank(a.id))) focusWindow(win)
-      return true
-    }
+    if (raiseWindows((w) => w.roots.some((root) => stripSlash(root) === wanted))) return true
     openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
     return true
+  }
+
+  /** The door for a saved set of vaults (see `WindowManager.openVaultSet`). */
+  const openVaultSet = (id: string): OpenSetResult => {
+    const set = store.get().vaultSets.find((s) => s.id === id)
+    if (set === undefined) return { opened: false, missing: [] }
+    const missing = set.roots.filter((root) => !host.dirExists(root))
+    const found = set.roots.filter((root) => !missing.includes(root))
+    if (found.length === 0) return { opened: false, missing }
+    // The set's window is the one that shows exactly the vaults that are left (S66): a window opened
+    // earlier without the missing folder is raised, not doubled.
+    if (!raiseWindows((w) => sameVaults(w.roots, found))) openWindow({ root: found[0], roots: found, file: store.get().folders[found[0]]?.lastFile ?? null })
+    store.touchVaultSet(id)
+    return { opened: true, missing }
   }
 
   return {
@@ -434,7 +473,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const state = store.get()
       // The vaults whose windows come back: the ones asked for (D1), or for "last" the vault used last (D2; the quit recorded it, A1).
       const roots = (typeof which !== 'string' ? which : which === 'last' ? state.recents.slice(0, 1).map((r) => r.path) : []).map(stripSlash)
-      const keep = (w: WindowEntry): boolean => which === 'all' || (w.root !== null && roots.includes(stripSlash(w.root)))
+      // A window is on each vault it shows (YAZ-2602 D6, A8): one of them asked for brings it back, with all of them.
+      const keep = (w: WindowEntry): boolean => which === 'all' || w.roots.some((root) => roots.includes(stripSlash(root)))
       // A window that does not come back is forgotten, as a close forgets it (D3): its entry goes, in one commit.
       store.removeWindow(...state.windows.filter((w) => !keep(w)).map((w) => w.id))
       const entries = state.windows.filter(keep)
@@ -460,6 +500,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         open({
           id: randomUUID(),
           root: from.root,
+          roots: [...from.roots],
           file: from.file,
           tabs: [...from.tabs],
           rightPanel: { ...from.rightPanel, items: [...from.rightPanel.items] },
@@ -471,6 +512,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     openRecentBeside,
+
+    openVaultSet,
 
     closeWindow(id) {
       const win = live.get(id)
@@ -522,8 +565,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     async flushAllForQuit() {
       // "Last vault" is the vault you were in (YAZ-2589 A1): `recents[0]` can be behind the window in front,
       // because a window's first focus does not bump it (YAZ-2555 D5). So record it here, before `quitting`
-      // stops the bumps and the windows go; `runQuitSequence` flushes the store after this.
-      noteUsed(entryOf(focusOrder[0])?.root ?? null)
+      // stops the bumps and the windows go; `runQuitSequence` flushes the store after this. Of a window that
+      // shows several vaults it is the active one (YAZ-2602 A8).
+      noteUsed(activeVault(entryOf(focusOrder[0])))
       quitting = true
       // Every renderer at once (YAZ-2198): quit waits one FLUSH_TIMEOUT_MS cap in total, not one per
       // window, and still resolves only once every window has flushed (`runQuitSequence`'s order).

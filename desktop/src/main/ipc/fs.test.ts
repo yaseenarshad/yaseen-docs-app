@@ -8,6 +8,7 @@ import { CONTRACT, type Envelope } from '@shared/ipc'
 import { makeFixture, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
+import { giveId } from '../vaultIndex/idSweep'
 import { fileClip } from '../fileClip'
 import * as favorites from '../favorites'
 import { registerFsIpc } from './fs'
@@ -411,6 +412,41 @@ describe('registerFsIpc', () => {
       }
     })
 
+    it.each([
+      ['first', (yes: string, no: string) => [yes, no]],
+      ['second', (yes: string, no: string) => [no, yes]],
+    ])('a window that shows two vaults asks the one that HOLDS the path — the vault that said yes is its %s (YAZ-2602 S78)', async (_, order) => {
+      const yes = await open(true)
+      const no = await open(false)
+      const roots = order(yes, no)
+      store.upsertWindow({ id: 'w-kind', root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      // The id a vault gives the note at `Plans/Name.md` with these bytes: the same in every vault and on every device.
+      const twin = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-twin-'))
+      await mkdir(path.join(twin, 'Plans'))
+      await writeFile(path.join(twin, 'Plans', 'Name.md'), NOTE)
+      const given = await giveId(twin, path.join(twin, 'Plans', 'Name.md'), undefined)
+      try {
+        const inYes = (...p: string[]) => path.join(yes, ...p)
+        const inNo = (...p: string[]) => path.join(no, ...p)
+        // In the vault that said yes: born with their ids, and a title edit goes through by that vault's rules.
+        expect(await call(CONTRACT.createFile, { path: inYes(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: true, value: { id: ID } })
+        expect(await call(CONTRACT.createDir, { path: inYes('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
+        expect(await paste(inNo('Plans', 'Name.md'), inYes('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-[0-9a-z]{12}\.md$/) }] } })
+        // The title edit gives the note the id its OWN vault gives it, and refuses that vault's folder, wherever the vault sits in the window's list (S47).
+        expect(await call(CONTRACT.file.retitle, { path: inYes('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: inYes('Plans', `big-plan-${given}.md`) } })
+        expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: yes } })
+        // In the vault that said no, from the SAME window: what Finder would make, and no title edit.
+        expect(await call(CONTRACT.createFile, { path: inNo(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createDir, { path: inNo('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createFile, { path: inNo('Meeting notes.md'), content: NOTE })).toMatchObject({ ok: true })
+        expect(await paste(inNo('Plans', 'Name.md'), inNo('Plans'))).toEqual({ ok: true, value: { pasted: [{ from: inNo('Plans', 'Name.md'), to: inNo('Plans', 'Name copy.md'), kind: 'file' }], failed: [] } })
+        expect(await call(CONTRACT.file.retitle, { path: inNo('Plans', 'Name.md'), title: 'Big Plan' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'this vault does not use IDs' } })
+        expect(await vaultFiles(no)).toEqual({ '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}', 'Meeting notes.md': NOTE, 'Plans/': '', 'Plans/Name.md': NOTE, 'Plans/Name copy.md': NOTE })
+      } finally {
+        await close(yes, no, twin)
+      }
+    })
+
     it('a path outside the calling window\u2019s vault, and a window with no vault, get no id: whatever a vault that said yes would give', async () => {
       const vault = await open(true)
       const other = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-other-'))
@@ -479,6 +515,46 @@ describe('registerFsIpc', () => {
       const res = await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: dot })
       expect(res).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'hidden entries cannot be deleted', path: dot } })
       expect(w.webContents.send).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('a window that shows several vaults (YAZ-2602 D1)', () => {
+    it('fs:rename and fs:delete refuse EACH vault of the calling window; from a window that shows the folder as a subfolder they go through, and the store moves that entry of `roots` and leaves it on a delete (S47, S48, S49)', async () => {
+      const base = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-vaults-'))
+      const first = path.join(base, 'First')
+      const parent = path.join(base, 'Parent')
+      const second = path.join(parent, 'Second')
+      const moved = path.join(parent, 'Moved')
+      await mkdir(first)
+      await mkdir(second, { recursive: true })
+      const entry = { file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+      store.upsertWindow({ ...entry, id: 'w-two', root: first, roots: [first, second] })
+      store.upsertWindow({ ...entry, id: 'w-parent', root: parent })
+      const rootsOfTwo = () => store.get().windows.find((win) => win.id === 'w-two')?.roots
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      try {
+        senderWinId = 'w-two'
+        for (const vault of [first, second]) {
+          expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: vault, newPath: `${vault}2` })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: vault } })
+          expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: vault })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be deleted', path: vault } })
+        }
+        expect(w.webContents.send).not.toHaveBeenCalled()
+        expect([await readdir(base), await readdir(parent)]).toEqual([['First', 'Parent'], ['Second']]) // nothing moved
+        expect(rootsOfTwo()).toEqual([first, second])
+        // The window that shows `Parent` holds the folder as a subfolder: it may rename it, and the other window's list follows.
+        senderWinId = 'w-parent'
+        expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: second, newPath: moved })).toEqual({ ok: true, value: { oldPath: second, newPath: moved, kind: 'dir' } })
+        expect(rootsOfTwo()).toEqual([first, moved])
+        // It may delete it too. The store leaves the list alone: the window that shows it sees the folder gone.
+        expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: moved })).toEqual({ ok: true, value: { path: moved, kind: 'dir' } })
+        expect(rootsOfTwo()).toEqual([first, moved])
+      } finally {
+        senderWinId = undefined
+        store.removeWindow('w-two')
+        store.removeWindow('w-parent')
+        await rm(base, { recursive: true, force: true })
+      }
     })
   })
 

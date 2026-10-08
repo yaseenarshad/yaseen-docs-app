@@ -200,7 +200,7 @@ const SEEDED_LENS = 'files' as const
 export function seededState(vault: string, file: string | null): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusList: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusList: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, name: null, key: null } }
   return state
 }
@@ -267,6 +267,7 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
   state.windows = wins.map((w, i) => ({
     id: w.id,
     root: w.root,
+    roots: [w.root],
     file: w.file,
     tabs: w.file === null ? [] : [w.file],
     rightPanel: defaultRightPanelIdentity(),

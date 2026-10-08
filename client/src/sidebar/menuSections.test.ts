@@ -34,6 +34,9 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   reviewIsOn: false,
   shortcutDir: null,
   removeShortcut: null,
+  // The window's vaults (YAZ-2602): no flyout to add one and no vault row, as on every row of a window with one vault.
+  addVaults: null,
+  removeVault: null,
   lens: 'files',
   leaveSearchTo: null,
   clip: null,
@@ -63,6 +66,9 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onRemoveShortcut: vi.fn(),
   onRename: vi.fn(),
   onDelete: vi.fn(),
+  onAddVault: vi.fn(),
+  onPickVault: vi.fn(),
+  onRemoveVault: vi.fn(),
   ...over,
 })
 
@@ -549,5 +555,75 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
   it('is absent on every other row', () => {
     expect(itemOf(build(FILE_ROW), 'Remove shortcut')).toBeUndefined()
     expect(itemOf(build(BLANK), 'Remove shortcut')).toBeUndefined()
+  })
+})
+
+/**
+ * The window's vaults in the menu (YAZ-2602 D2, D3, D7). Blank space offers "Add vault to this
+ * window ▸" — the last item of its menu, under the root's "Open in ▸" — and with two or more vaults
+ * nothing else: the root items are the vault row's then. A vault row is a folder that is a vault:
+ * it creates, pastes and focuses like a folder, and leaves the window instead of being deleted.
+ */
+describe('the vault items (YAZ-2602)', () => {
+  const KNOWN = [{ path: '/w/Work', name: 'Work' }, { path: '/x/Archive', name: 'Old notes' }]
+  const flyoutOf = (sections: MenuSection[], label: string) => (itemOf(sections, label) as MenuParent | undefined)?.children
+  /** A vault row: no target for Open, Cut, Copy, Rename, Delete, the favorite, the shortcut or a review — and none for "Default app". */
+  // A vault row names no focus paths (A2): the Sidebar hands null, and the toggle is not built.
+  const VAULT_ROW: Partial<MenuSectionTargets> = { targetDir: '/w', rowKind: 'dir', copyPath: '/w', revealPath: '/w', openVsCodePath: '/w', focusPaths: null, removeVault: '/w' }
+
+  it('blank space with one vault: today\'s menu, and "Add vault to this window" closes it, in the root\'s last group (S1)', () => {
+    const sections = build({ ...BLANK, addVaults: KNOWN })
+    expect(sections).toHaveLength(7)
+    expect(groupsOf(sections)).toEqual([
+      ['Paste', 'Copy path'],
+      ['New note', 'New folder'],
+      ['New dated note', 'New dated folder'],
+      ['Open in', 'Add vault to this window'],
+    ])
+  })
+
+  it('its flyout lists the known vaults in the order given, then "Open folder…" under a separator; each adds its vault, the last one runs the picker (S1 to S3)', () => {
+    const h = handlers()
+    const flyout = flyoutOf(buildMenuSections(targets({ ...BLANK, addVaults: KNOWN }), h), 'Add vault to this window')
+    expect(flyout?.map((section) => section.map((i) => i.label))).toEqual([['Work', 'Old notes'], ['Open folder…']])
+    flyout?.[0][1].onSelect()
+    expect(h.onAddVault).toHaveBeenCalledExactlyOnceWith('/x/Archive')
+    flyout?.[1][0].onSelect()
+    expect(h.onPickVault).toHaveBeenCalledTimes(1)
+  })
+
+  it('with no known vault to add the flyout still offers "Open folder…"', () => {
+    expect(flyoutOf(build({ ...BLANK, addVaults: [] }), 'Add vault to this window')?.map((section) => section.map((i) => i.label))).toEqual([[], ['Open folder…']])
+  })
+
+  it('blank space with two or more vaults has nowhere to create or paste: the add item is the whole menu (S10)', () => {
+    expect(groupsOf(build({ targetDir: null, addVaults: KNOWN }))).toEqual([['Add vault to this window']])
+  })
+
+  it('a row never offers it, and a row that is no vault row never offers "Remove from this window" (S51)', () => {
+    for (const row of [FILE_ROW, BLANK]) {
+      expect(itemOf(build(row), 'Add vault to this window')).toBeUndefined()
+      expect(itemOf(build(row), 'Remove from this window')).toBeUndefined()
+    }
+  })
+
+  it('a vault row: Paste, Copy path · the create pair · the dated pair · Open in · Remove from this window — and no focus item (S13, A2)', () => {
+    const sections = build(VAULT_ROW)
+    expect(groupsOf(sections)).toEqual([
+      ['Paste', 'Copy path'],
+      ['New note', 'New folder'],
+      ['New dated note', 'New dated folder'],
+      ['Open in'],
+      ['Remove from this window'],
+    ])
+    expect(openInLabels(sections)).toEqual([['VS Code'], ['Reveal in Finder']])
+  })
+
+  it('"Remove from this window" hands the vault to its handler and is not a danger item: nothing is deleted (D7)', () => {
+    const h = handlers()
+    const sections = buildMenuSections(targets(VAULT_ROW), h)
+    expect(leafOf(sections, 'Remove from this window')?.danger).toBeUndefined()
+    select(sections, 'Remove from this window')
+    expect(h.onRemoveVault).toHaveBeenCalledExactlyOnceWith('/w')
   })
 })

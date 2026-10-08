@@ -106,8 +106,15 @@ export interface TreeMarks {
 
 interface TreeProps {
   nodes: TreeNode[]
-  /** Absolute path of the directory these nodes are children of (the root at depth 0). */
+  /** Absolute path of the directory these nodes are children of (the root at depth 0; '' above the vault rows, which no one directory holds). */
   dirPath: string
+  /**
+   * The paths that are VAULT rows (YAZ-2602 D3), each with its vault's name: with two or more vaults
+   * each vault is one folder row, labelled as the app names the vault. It opens, closes, selects and
+   * takes a drop like a folder, and is no page: it does not open as a tab. Empty with one vault.
+   * A top row that is NOT one — a file or a folder of the Focus tab (A4) — shows the name of the vault that holds it.
+   */
+  vaultRows: ReadonlyMap<string, string>
   expanded: ReadonlySet<string>
   activeFile: string | null
   onToggle: (dir: string) => void
@@ -154,6 +161,7 @@ interface TreeProps {
 function TreeLevel({
   nodes,
   dirPath,
+  vaultRows,
   expanded,
   activeFile,
   onToggle,
@@ -172,13 +180,19 @@ function TreeLevel({
   marks,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder, marks }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, counts, shortcuts, titles, reorder, marks }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
-  // The reorder gesture lives on depth-0 rows alone; deeper rows of a reorderable tree drag nothing.
-  const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
+  // The reorder gesture lives on the favorites' own rows alone — the top rows, or the rows under each
+  // vault's row where the window has two or more (YAZ-2602 D5); a vault row and every deeper row drag nothing.
+  const rowReorder = reorder !== undefined && (vaultRows.size === 0 ? depth === 0 : vaultRows.has(dirPath)) ? reorder : null
+  /** The vault a top row of the Focus tab is in, file or folder (YAZ-2602 A4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files and Favorites have no other top row. */
+  const vaultTag = (path: string) => {
+    const name = depth > 0 ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
+    return name !== undefined && <span className="tree__vault">{name}</span>
+  }
   // What a FILE row's drag does: move on disk (E1b) on an ordinary tree, reorder at depth 0 of a reorderable one, nothing below that.
   const fileDrag: Pick<TreeFileMove, 'start' | 'end'> | null = reorder === undefined ? move : rowReorder
   const dropEdge = (path: string) => (rowReorder?.over?.path === path ? ` tree__row--drop-${rowReorder.over.edge}` : '')
@@ -209,7 +223,7 @@ function TreeLevel({
               <button
                 type="button"
                 // The folder itself is a tab (YAZ-2290 D3), so its row is the active one while that tab is.
-                className={`tree__row tree__row--dir${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}${context(node.path)}`}
+                className={`tree__row tree__row--dir${vaultRows.has(node.path) ? ' tree__row--vault' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}${dropEdge(node.path)}${context(node.path)}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
                 // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
                 // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
@@ -228,13 +242,14 @@ function TreeLevel({
                 }}
                 // The folder itself is the tab (YAZ-2290 D3, overturning YAZ-1578 D3): a double
                 // click opens it. Its two clicks have selected and folded as ever; shift never opens.
+                // A vault row is no page (YAZ-2602 D3): neither gesture opens one, and Enter folds it.
                 onDoubleClick={(e) => {
-                  if (!e.shiftKey) onOpenFile(node.path)
+                  if (!e.shiftKey && !vaultRows.has(node.path)) onOpenFile(node.path)
                 }}
                 // Enter opens it too, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold.
                 onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || e.shiftKey) return
+                  if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()
                   selection.set(node.path)
                   onOpenFile(node.path)
@@ -267,7 +282,8 @@ function TreeLevel({
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
-                <span className="tree__label">{marked(pageLabel(node.path, true, titles), needleFor(node.path))}</span>
+                <span className="tree__label">{vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}</span>
+                {vaultTag(node.path)}
                 {counts.has(node.path) && <span className="tree__count">{counts.get(node.path)}</span>}
               </button>
             )}
@@ -338,6 +354,7 @@ function TreeLevel({
             >
               <span className="tree__label">{marked(pageLabel(node.path, false, titles), needleFor(node.path))}</span>
               {isShortcutRow(node) && <ShortcutIcon />}
+              {vaultTag(node.path)}
             </button>
           </li>
         ),

@@ -14,9 +14,9 @@ export function broadcastAll(channel: string, ...args: unknown[]): void {
   }
 }
 
-/** The open-vault roots of `AppState.windows` (null = Welcome), unique. */
+/** Every vault of every window in `AppState.windows` (Welcome has none), unique (YAZ-2602 D6). */
 export function rootsOf(state: AppState): string[] {
-  return [...new Set(state.windows.map((w) => w.root).filter((r): r is string => r !== null))]
+  return [...new Set(state.windows.flatMap((w) => w.roots))]
 }
 
 /**

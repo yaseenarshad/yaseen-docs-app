@@ -25,7 +25,7 @@ beforeEach(() => {
   scrollIntoView.mockClear()
 })
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean | undefined; held: boolean }) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean | undefined; held: boolean }, vaultName?: string) {
   const onChange = vi.fn()
   const onClose = vi.fn()
   const setEnabled = vi.fn()
@@ -41,7 +41,8 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids }} onClose={onClose} />))
+  // The active vault's name (YAZ-2602 R10): App hands it only with two or more vaults in the window.
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
   return { onChange, onClose, setEnabled, save, setIds, rerender, el: container }
@@ -180,6 +181,18 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
     const notes = [...el.querySelectorAll('.settings-section__note')]
     expect(notes.map((n) => n.textContent)).toEqual(["These settings are saved in this vault's .yaseendocs folder and sync with it.", "These settings are saved in this vault's .yaseendocs folder, not app-wide."])
     expect(notes.map((n) => n.closest('[data-section]')?.id)).toEqual(['settings-review', 'settings-sync'])
+  })
+
+  it('two or more vaults in the window: Review, Sync and the "This vault" group each say which vault they act on, first thing under the title; one vault: no such line (YAZ-2602 R10, S39)', () => {
+    const lines = (el: HTMLElement) => [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: '))
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false }, 'Work')
+    expect(lines(el).map((n) => n.textContent)).toEqual(['Vault: Work', 'Vault: Work', 'Vault: Work'])
+    expect(lines(el).map((n) => n.previousElementSibling?.textContent)).toEqual(['This vault', 'Review', 'Sync'])
+    // The same muted lines the dialog already has: a group's hint, a section's note.
+    expect(lines(el).map((n) => n.className)).toEqual(['settings-group__hint', 'settings-section__note', 'settings-section__note'])
+    expect(lines(el)[1].nextElementSibling?.textContent).toBe("These settings are saved in this vault's .yaseendocs folder and sync with it.")
+    unmount()
+    expect(lines(mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false }).el)).toEqual([])
   })
 
   it('Hotkeys is its own page: clicking it swaps the pane for its four tables and takes aria-current; no anchor is current meanwhile', () => {

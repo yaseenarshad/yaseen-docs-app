@@ -148,8 +148,8 @@ app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
-  const root = store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.root ?? null
-  if (root !== null) gitSync?.notifyFocus(root)
+  // Every vault the window shows (YAZ-2602 S43).
+  for (const root of store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? []) gitSync?.notifyFocus(root)
 })
 
 app.whenReady().then(() => {

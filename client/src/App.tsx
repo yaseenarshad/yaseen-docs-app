@@ -1,27 +1,19 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { IDS_FILE } from '@shared/noteId'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type IndexRecord, type IndexResponse, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, stripSlash, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
 import { newNoteBase } from './editor/wikilink/createFromLink'
-import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
-import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
-import { createViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
-import { useProperties } from './views/useProperties'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
-import { useGithubSync } from './hooks/useGithubSync'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { requestZoom } from './editor/zoomRequest'
 import { usePickFolder } from './hooks/usePickFolder'
-import { useWatch } from './hooks/useWatch'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
 import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind } from './links/shortcuts'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
-import { useExternalRenames } from './links/useExternalRenames'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
@@ -32,25 +24,24 @@ import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, 
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { ownsSidebarHotkey } from './lib/sidebarHotkey'
-import { attentionCopy, buildSetupPrompt } from './lib/syncAttention'
+import { buildSetupPrompt } from './lib/syncAttention'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
-import { useVaultName } from './lib/useVaultName'
 import { windowTitle } from './lib/windowTitle'
-import { isFolderPath, pageName, pathTitles, usePathTitles } from './lib/pageLabel'
-import { onTree } from './lib/treeFeed'
+import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
+import { fetchTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
-import { useReview } from './review/useReview'
-import { useReviewSettings } from './review/useReviewSettings'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { RightPanel } from './right-panel/RightPanel'
+import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
+import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
 import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
@@ -80,7 +71,14 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 }
 
 export function App() {
-  const [root, setRoot] = useState<string | null>(storage.getRoot)
+  // The vaults this window shows (YAZ-2602 D1), in the order they were added. `root` is the FIRST:
+  // null is the Welcome window, and the sidebar is keyed on it.
+  const [roots, setRoots] = useState<string[]>(storage.getRoots)
+  const root = roots[0] ?? null
+  // The vault rows the user closed (YAZ-2602 R9): for the session and for this window, so never in
+  // the store — and App's, like the lens below: the sidebar unmounts while it is hidden.
+  const [closedVaults, setClosedVaults] = useState<readonly string[]>([])
+  const setVaultOpen = useCallback((vault: string, open: boolean) => setClosedVaults((closed) => (closed.includes(vault) === !open ? closed : open ? closed.filter((v) => v !== vault) : [...closed, vault])), [])
   // Workspace (Tabs I2 + YAZ-966): one renderer-owned model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
@@ -115,42 +113,56 @@ export function App() {
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
-  const watch = useWatch(root)
+  // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
+  // it activates the file's tab when already open, else opens it in the CURRENT tab;
+  // a link that could not open shows a transient notice — unobtrusive, never a dialog.
+  const [notice, setNotice] = useState<Notice | null>(null)
+  // The one door every surface uses (D10 amended, YAZ-1674): text plus an optional glyph kind,
+  // `'info'` unless the caller names one — so nothing that already said `onNotice(text)` changed.
+  const notify = useCallback((text: string, icon: NoticeKind = 'info') => setNotice({ text, icon }), [])
+  useEffect(() => {
+    if (notice === null) return
+    const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
+  // One scope per vault (YAZ-2602 D1): the watcher, the link sources, the properties, the sync,
+  // the review and the IDs answer of EACH vault, all loaded at once. They live in slots, a fixed
+  // number of hook calls on every render, because a scope must exist in the first render: an
+  // editor that waited one frame for its vault would change the launch paint. A vault keeps its
+  // slot while it is in the window (`vault/slots.ts`), and a slot with no vault is idle.
+  const slots = useRef(EMPTY_SLOTS)
+  slots.current = assignSlots(slots.current, roots)
+  const scopes: VaultScope[] = []
+  for (const slotRoot of slots.current) scopes.push(useVaultScope(slotRoot, notify))
+  /** The scopes of the window's vaults, in the order of `roots`. */
+  const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
+  /** The first vault's scope; on the Welcome window an idle one, so every reader below has a scope. */
+  const first = vaults[0] ?? scopes[0]
+  const live = useRef({ roots, vaults, first })
+  live.current = { roots, vaults, first }
+  /**
+   * The scope of the vault that holds `path`, the most specific one; a path in no vault of the
+   * window (a pasted `#/abs/path` URL, S35) gets the first vault's. Ref-backed, so the callbacks
+   * that ask it keep their identity under the mounted editors.
+   */
+  const scopeOf = useCallback((path: string): VaultScope => {
+    const now = live.current
+    const home = rootOfPath(now.roots, path)
+    return home === null ? now.first : now.vaults[now.roots.indexOf(home)]
+  }, [])
+  /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
+  const active = file === null ? first : scopeOf(file)
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the note editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
-  // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
-  // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
-  // vault index, so index changes restyle links live without any editor remounting. The stable
-  // navigation-only source beside it is tree-derived; only the picker's rows compose both feeds.
-  const [wikilinks] = useState(createWikilinkResolveSource)
-  const titles = usePathTitles(wikilinks)
-  /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off the index snapshot as it stands. */
-  const nameOf = useCallback((path: string) => pageName(root, path, pathTitles(wikilinks.records, wikilinks.folders)), [root, wikilinks])
-  const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
-  const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
-  // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
-  // ONE per window, threaded down rather than re-fetched per surface. It is the editor ladder's
-  // rung 2 inside a folder's views (YAZ-846) — Editor → FolderView.
-  const { properties: propertyDecls } = useProperties(root)
-  // GitHub sync (YAZ-1081 3A/3B), owned here for the same reason: ONE per window. Two surfaces
-  // read it — the editor's chip (every mounted tab) and the settings cog's section — and they
-  // must never disagree, which two hooks watching the same root eventually would.
-  const githubSync = useGithubSync(root)
-  // The attention banner (3B): passive, exactly like the external-rename one — `role="status"`,
-  // explicit buttons, never a modal. Sync failing is not worth stealing focus over; the vault
-  // still works, and the note in front of the user is untouched.
-  //
-  // Dismissal is per-PROBLEM, not per-session: it resets on ANY transition of state or reason,
-  // so a retry that fails again — or a different failure — says so rather than staying silent
-  // because the user waved off an earlier one.
-  const [syncDismissed, setSyncDismissed] = useState(false)
-  const syncState = githubSync.status?.state ?? null
-  const syncReason = githubSync.status?.attention ?? null
-  useEffect(() => {
-    setSyncDismissed(false)
-  }, [syncState, syncReason])
-  const syncCopy = githubSync.status === null ? null : attentionCopy(githubSync.status)
+  // Every page of the window by its title (YAZ-2420 🔒 D14), off the index of each vault.
+  const titleSources = useMemo(() => roots.map((vault) => scopes[slots.current.indexOf(vault)].wikilinks), [roots])
+  const titles = useAllPathTitles(titleSources)
+  /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off its vault's index snapshot as it stands. */
+  const nameOf = useCallback((path: string) => {
+    const { root: vault, wikilinks } = scopeOf(path)
+    return pageName(vault, path, pathTitles(wikilinks.records, wikilinks.folders))
+  }, [scopeOf])
   // ⌘K's half of the search-bar focus handshake (YAZ-801, wired in YAZ-804): `openSearch` sets it
   // (including the collapsed case, which un-collapses and mounts the sidebar with the flag already
   // true); the sidebar focuses its input and clears it through the callback.
@@ -255,19 +267,19 @@ export function App() {
   }, [])
 
   // Files & Links (C2-, GRO-2240; YAZ-1643): where a bare unresolved [[link]] creates its page —
-  // the "default location for new notes" setting resolved against this window's root + the
-  // CALLING editor's own path (`sourcePath`: the page the link was clicked or typed in, so a
+  // the "default location for new notes" setting resolved against the CALLING editor's own path
+  // and the vault that holds it (YAZ-2602 S37) (`sourcePath`: the page the link was clicked or typed in, so a
   // right-panel editor or a folder's outline creates beside itself, never beside the main tab).
   // A ref-backed getter: the value recomputes at CLICK time from whatever settings are current
   // (settings changes broadcast via storage.subscribe land in `settings` above), while the
   // callback identity stays stable — it sits in CrepeHost's effect deps, and a new identity
   // would remount every open editor.
-  const newNoteFolderInputs = useRef({ settings, root })
-  newNoteFolderInputs.current = { settings, root }
+  const newNoteFolderInputs = useRef({ settings })
+  newNoteFolderInputs.current = { settings }
   const newNoteFolderFor = useCallback((sourcePath: string) => {
-    const { settings: s, root: r } = newNoteFolderInputs.current
-    return r === null ? '' : newNoteBase(s, r, sourcePath)
-  }, [])
+    const vault = scopeOf(sourcePath).root
+    return vault === null ? '' : newNoteBase(newNoteFolderInputs.current.settings, vault, sourcePath)
+  }, [scopeOf])
   // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
@@ -298,22 +310,22 @@ export function App() {
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
   useEffect(() => syncHash(file), [file])
 
-  // The OS window title mirrors what is open (C3, GRO-2165) under the vault's display name (YAZ-1974 D4); Electron follows document.title.
-  const vaultName = useVaultName(root)
+  // The OS window title mirrors what is open (C3, GRO-2165) under the display name (YAZ-1974 D4) of the ACTIVE tab's vault (YAZ-2602 S36); Electron follows document.title.
+  const { name: activeName, root: activeRoot, wikilinks: activeLinks } = active
   // Whether the active tab is a FOLDER is the Files tree's to say (YAZ-2290), and the page's title
   // the index's (YAZ-2420 🔒 D14), so the title follows both.
   useEffect(() => {
     const sync = (): void => {
-      document.title = windowTitle(vaultName, file, pathTitles(wikilinks.records, wikilinks.folders), file !== null && isFolderPath(root, file))
+      document.title = windowTitle(activeName, file, pathTitles(activeLinks.records, activeLinks.folders), file !== null && isFolderPath(activeRoot, file))
     }
     sync()
-    const offIndex = wikilinks.subscribe(sync)
-    const offTree = root === null ? undefined : onTree(root, sync)
+    const offIndex = activeLinks.subscribe(sync)
+    const offTree = activeRoot === null ? undefined : onTree(activeRoot, sync)
     return () => {
       offIndex()
       offTree?.()
     }
-  }, [vaultName, file, root, wikilinks])
+  }, [activeName, file, activeRoot, activeLinks])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -335,7 +347,7 @@ export function App() {
     storage.pushRecentRoot(path)
     setSidebarLens(storage.getSidebarLens()) // the vault lands on Files (🔒 D2, YAZ-1846)
     setSidebarRevealRequest(null)
-    setRoot(path)
+    setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
     // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down.
     resetTabs(path, storage.getLastFile(path))
     return true
@@ -357,6 +369,54 @@ export function App() {
   }, [root, openRoot])
 
   const { pick, picking } = usePickFolder({ onPicked: openVault })
+
+  /**
+   * "Add vault to this window" (YAZ-2602 D2): `path` becomes the window's last vault, with its row
+   * open, and goes to the top of the recents (S2). The tabs, the lens and the focus list stay: the
+   * list of vaults is the only identity write. A folder the window cannot take is refused with a
+   * notice and nothing changes — one that is in the window (S4), one inside a vault of the window
+   * or around one (R8, by path segment), one that is gone on disk, which also leaves the recents
+   * (S6), and the ninth (R7). The probe is the tree feed's read, so the sidebar's first tree of the
+   * vault is that walk's. Resolves whether the vault was added.
+   */
+  const addVault = useCallback(async (folder: string): Promise<boolean> => {
+    const path = stripSlash(folder)
+    const name = storage.vaultName(path)
+    /** Why the window as it stands cannot take the folder; asked again after the probe, which waits. */
+    const refusal = (): string | null => {
+      const now = live.current.roots
+      if (now.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
+      const holder = rootOfPath(now, path)
+      if (holder !== null) return `Can't add ${name}: it is inside ${storage.vaultName(holder)}`
+      const held = now.find((vault) => rootOfPath([path], stripSlash(vault)) !== null)
+      return held === undefined ? null : `Can't add ${name}: it contains ${storage.vaultName(held)}`
+    }
+    let refused = refusal()
+    if (refused === null) {
+      try {
+        await fetchTree(path)
+      } catch (err) {
+        // Any other probe failure still adds, and the sidebar shows the error (`openRoot`'s rule).
+        if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
+          storage.removeRecentRoot(path)
+          refused = `Can't add ${name}: folder not found`
+        }
+      }
+      refused ??= refusal() ?? (live.current.roots.length >= MAX_WINDOW_ROOTS ? `A window holds ${MAX_WINDOW_ROOTS} vaults at most` : null)
+    }
+    if (refused !== null) {
+      notify(refused)
+      return false
+    }
+    storage.setRoots([...live.current.roots, path])
+    storage.pushRecentRoot(path)
+    setRoots(storage.getRoots())
+    setVaultOpen(path, true)
+    return true
+  }, [notify, setVaultOpen])
+  // The flyout's "Open folder…" (S3): the system picker, and the picked folder is added. File ›
+  // Open Folder… stays the picker above: its folder opens beside (S62).
+  const { pick: pickVault } = usePickFolder({ onPicked: addVault })
 
   // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
   // the WINDOW through the real close path so the close/flush handshake runs.
@@ -409,37 +469,38 @@ export function App() {
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
-  // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
-  // it activates the file's tab when already open, else opens it in the CURRENT tab;
-  // a link that could not open shows a transient notice — unobtrusive, never a dialog.
-  const [notice, setNotice] = useState<Notice | null>(null)
-  // The one door every surface uses (D10 amended, YAZ-1674): text plus an optional glyph kind,
-  // `'info'` unless the caller names one — so nothing that already said `onNotice(text)` changed.
-  const notify = useCallback((text: string, icon: NoticeKind = 'info') => setNotice({ text, icon }), [])
-  useEffect(() => {
-    if (notice === null) return
-    const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
-    return () => clearTimeout(timer)
-  }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: notify })
-  const reviewSettings = useReviewSettings(root, notify)
-  // Upkeep review (YAZ-2322): the Inbox count and the window's one session, read off the SAME index
-  // source the wikilinks use. App's, because the sidebar that shows the count unmounts while collapsed.
-  const review = useReview(root, wikilinks, reviewSettings.settings, notify)
+  // Upkeep review (YAZ-2322): each vault counts what is due and can hold a session, and the window
+  // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
+  // because the sidebar that shows the count unmounts while collapsed.
+  const reviewer = vaults.find((vault) => vault.review.session !== null) ?? null
+  const review = (reviewer ?? first).review
+  const startReview = useCallback((scope: VaultScope, folder?: string) => {
+    for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
+    scope.review.start(folder)
+  }, [])
+  const toggleInbox = useCallback((vault: string) => {
+    const scope = live.current.vaults[live.current.roots.indexOf(vault)]
+    if (scope.review.session === null) startReview(scope)
+    else scope.review.close()
+  }, [startReview])
+  // The row menus ask and write by path: a note is in review by its own vault's settings (S42).
+  const reviewState = useCallback((path: string) => scopeOf(path).review.inReview(path), [scopeOf])
+  const setReview = useCallback((path: string, on: boolean) => scopeOf(path).review.setInReview(path, on), [scopeOf])
   // A link clicked in a tab's page opens in that tab. While a review is open it opens in a
   // background tab instead: the review stays in front and the active tab under it does not move.
   // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
   const reviewing = useRef(false)
-  reviewing.current = review.session !== null
+  reviewing.current = reviewer !== null
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : openCurrent)(path), [openBackground, openCurrent])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
-  const closeReview = review.close
+  const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
   useEffect(() => closeReview(), [file, closeReview])
 
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
   // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322).
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: review.session === null ? closeTabOrWindow : closeReview, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
@@ -500,37 +561,19 @@ export function App() {
   }, [])
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
-  // automatic, never a dialog): ONE detector fed by the cold-start reconcile diff and by
-  // consecutive index snapshots (WikilinkIndexBridge's onSnapshot below), surfacing ONE
-  // passive app-level banner at a time. Update → repair the app (file:repair-rename, whose
-  // file:renamed push drives the SAME tab/editor downstream as an in-app rename) + rewrite
+  // automatic, never a dialog): ONE detector per vault (`useVaultScope`), fed by the cold-start
+  // reconcile diff and by consecutive index snapshots, and ONE passive app-level banner at a time:
+  // the first vault's that has one (YAZ-2602 S44). Update → repair the app (file:repair-rename,
+  // whose file:renamed push drives the SAME tab/editor downstream as an in-app rename) + rewrite
   // the referencing notes; Dismiss → drop for this session. In-app renames are suppressed
   // through the file:renamed effect below, so their watcher echo never banners.
-  const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, notify)
-  const relLabel = useCallback((p: string) => (root === null ? p : relTo(root, p)), [root])
-
-  // The vault's answer on IDs as the last snapshot said it (YAZ-2523 🔒 V5), with the root it is of:
-  // one of another vault says nothing here, so the Settings switch never shows an answer this vault
-  // did not give. `enabled` is undefined while the vault has not answered, and `ask` is then what a
-  // yes would write: the box that asks (🔒 V2). `held` says a note holds an ID, which is true only
-  // while the vault uses IDs (a plain vault's records carry none). An answer, or Esc, closes the box
-  // for that root: later snapshots still carry `ask` and must not reopen it. Leaving the vault forgets that.
-  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean | undefined; held: boolean; ask: IndexResponse['ask'] } | null>(null)
-  const [idsAskClosed, setIdsAskClosed] = useState<string | null>(null)
-  if (idsAskClosed !== null && idsAskClosed !== root) setIdsAskClosed(null)
-  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
-  const onSnapshot = useCallback(
-    (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => {
-      onIndexSnapshot(records, folders, ids)
-      setIdsSnapshot({ root, enabled: ask === undefined ? ids : undefined, held: records.some((record) => record.id !== undefined), ask })
-    },
-    [root, onIndexSnapshot],
-  )
-  /** Save the vault's answer in its `ids.json` (🔒 V1), from the box or from Settings; the index refetches off the write. */
-  const saveIds = (enabled: boolean): void => {
-    if (root === null) return
-    api.vaultConfig.write(root, IDS_FILE, { enabled }).then(() => setIdsAskClosed(root), (err: unknown) => notify(`Couldn't save this vault's answer: ${err instanceof Error ? err.message : String(err)}`, 'error'))
-  }
+  const renamer = vaults.find((vault) => vault.renames.banner !== null)?.renames
+  const renameBanner = renamer?.banner ?? null
+  /** A path as a banner and a review name it: inside the vault that holds it. */
+  const relLabel = useCallback((p: string) => {
+    const vault = scopeOf(p).root
+    return vault === null ? p : relTo(vault, p)
+  }, [scopeOf])
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
   // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
@@ -538,26 +581,34 @@ export function App() {
   // the old path — see lib/renameContinuity.ts); then its main/right owner follows in place,
   // and title/URL-hash track the active main tab through the existing effects above. A `dir`
   // event is a PREFIX remap: every open editor and workspace path under the folder follows, and a window
-  // ROOTED at (or under) the folder — a subfolder opened as a vault — follows too (main's
-  // store repair already moved its WindowEntry.root; setRoot only mirrors it locally, so
-  // no identity write that could clobber the repaired file/tabs).
+  // with a vault AT (or under) the folder — a subfolder opened as a vault — follows too, for every
+  // such vault it shows (YAZ-2602 S48). Main's store repair already moved the WindowEntry's
+  // `root` and `roots`; the state and the cache only mirror it, so no identity write that could
+  // clobber the repaired file/tabs. A vault that moved keeps its slot, and its scope with it.
   useEffect(
     () =>
       api.file.onRenamed(({ oldPath, newPath, kind }) => {
+        const now = live.current
         // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
-        // be re-offered as an "external rename" hypothesis.
-        suppressRenameHypothesis(oldPath, newPath, kind)
+        // be re-offered as an "external rename" hypothesis, by any vault's detector.
+        for (const vault of now.vaults) vault.renames.suppress(oldPath, newPath, kind)
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
-          const movedRoot = root !== null && (root === oldPath || root.startsWith(`${oldPath}/`)) ? newPath + root.slice(oldPath.length) : undefined
-          renameWorkspaceDir(oldPath, newPath, movedRoot)
-          if (movedRoot !== undefined) setRoot(movedRoot)
+          const moved = now.roots.map((vault) => movedRoot(vault, oldPath, newPath))
+          const vaultMoved = moved.some((vault, i) => vault !== now.roots[i])
+          if (vaultMoved) {
+            // The cache first: the workspace mirror below writes `lastFile` to the vault that holds the file.
+            storage.mirrorRoots(moved)
+            slots.current = renameSlots(slots.current, oldPath, newPath)
+          }
+          renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
+          if (vaultMoved) setRoots(moved)
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
         renameWorkspacePath(oldPath, newPath)
       }),
-    [renameWorkspacePath, renameWorkspaceDir, root, suppressRenameHypothesis],
+    [renameWorkspacePath, renameWorkspaceDir],
   )
 
   /**
@@ -573,7 +624,8 @@ export function App() {
    */
   const renameFile = useCallback(
     async (oldPath: string, to: RenameTo, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
-      const r = root
+      // The index, the folders and the links are the ones of the vault that holds the path (YAZ-2602 S30).
+      const r = scopeOf(oldPath).root
       if (r === null) return
       // (a) our own unsaved buffers travel WITH the file(s). The kind is unknown until the
       // rename answers, so both run — each is a no-op for the other kind.
@@ -618,7 +670,7 @@ export function App() {
       })
       if (summary.updated > 0 || summary.skipped > 0) notify(renameNotice(summary))
     },
-    [root, nameOf],
+    [scopeOf, nameOf, notify],
   )
 
   /**
@@ -635,18 +687,20 @@ export function App() {
    *
    * Markdown-only renames still count synchronously. A ready lightweight catalog may prove a
    * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
-   * The chosen snapshot is pinned through confirmation, and a root change cancels the request.
+   * The chosen snapshot is pinned through confirmation, and a change to the window's vaults
+   * cancels the request.
    */
   const [pendingRename, setPendingRename] = useState<({ root: string; oldPath: string; kind: 'file' | 'dir'; viewOnlyCatalog: ViewOnlyCatalog | null } & ({ to: RenameTo; count: number } | { to: { newPath: string }; lost: LeftBehind })) | null>(null)
   const renameRootGeneration = useRef(0)
+  const vaultList = roots.join('\n')
   useLayoutEffect(() => {
     renameRootGeneration.current++
     setPendingRename(null)
-  }, [root])
+  }, [vaultList])
 
   const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
-    if (root === null || (kind === 'file' && !isViewOnly(oldPath))) return null
-    const requestedRoot = root
+    const { root: requestedRoot, viewOnlyLinks } = scopeOf(oldPath)
+    if (requestedRoot === null || (kind === 'file' && !isViewOnly(oldPath))) return null
     const generation = renameRootGeneration.current
     const current = viewOnlyLinks.catalog
     if (kind === 'file' && current?.root === requestedRoot && current.entries.some((entry) => entry.path === oldPath)) return current
@@ -668,10 +722,11 @@ export function App() {
       notify("Can't rename: couldn't load the current file list")
       return undefined
     }
-  }, [root, viewOnlyLinks, nameOf])
+  }, [scopeOf, nameOf, notify])
 
   const requestRename = useCallback(
     async (oldPath: string, to: RenameTo, kind: TreeNode['type']): Promise<void> => {
+      const { root, wikilinks } = scopeOf(oldPath)
       if (root === null) return
       const catalog = await catalogForRename(oldPath, kind)
       if (catalog === undefined) return
@@ -697,7 +752,7 @@ export function App() {
         viewOnlyCatalog: catalog,
       })
     },
-    [root, catalogForRename, renameFile, wikilinks, settings.confirmRename],
+    [scopeOf, catalogForRename, renameFile, settings.confirmRename],
   )
   // The door's two spellings, as the surfaces hold them: a path the gesture built, or a title typed.
   const requestPathRename = useCallback((oldPath: string, newPath: string, kind: TreeNode['type']) => requestRename(oldPath, { newPath }, kind), [requestRename])
@@ -705,6 +760,7 @@ export function App() {
   const requestRetitle = useCallback(
     async (path: string, title: string, kind: TreeNode['type']): Promise<void> => {
       // Until the index lands the vault's kind is not known (🔒 V5), and it decides which rename this is.
+      const { wikilinks } = scopeOf(path)
       if (wikilinks.resolve === null) return notify("Can't rename: couldn't load the current file list")
       if (wikilinks.ids) return requestRename(path, { title }, kind)
       let name: string
@@ -716,19 +772,19 @@ export function App() {
       const newPath = `${dirname(path)}/${name}`
       if (newPath !== path) return requestRename(path, { newPath }, kind)
     },
-    [requestRename, wikilinks, notify],
+    [requestRename, scopeOf, notify],
   )
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return
-    if (pendingRename.root !== root) {
+    if (pendingRename.root !== scopeOf(pendingRename.oldPath).root) {
       setPendingRename(null)
       return
     }
     const { oldPath, to, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
     void renameFile(oldPath, to, viewOnlyCatalog)
-  }, [root, pendingRename, renameFile])
+  }, [scopeOf, pendingRename, renameFile])
 
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
@@ -738,7 +794,7 @@ export function App() {
    * recreate the file that was just trashed. Retiring first makes that flush a no-op. Reverse
    * these two lines and the delete silently fails a second later.
    *
-   * A window ROOTED at (or under) a deleted folder is deliberately not repaired here: the
+   * A window with a vault AT (or under) a deleted folder is deliberately not repaired here: the
    * sidebar's existing `onRootMissing` probe owns that, and it also drops the dead MRU entry.
    */
   useEffect(
@@ -785,38 +841,86 @@ export function App() {
     }
   }, [nameOf])
 
-  const onRootMissing = useCallback(() => {
-    storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
+  /**
+   * "Remove from this window" (YAZ-2602 D7): the vault leaves the window with its tabs and its
+   * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
+   * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
+   * Nothing on disk changes. The vaults that stay keep their slots, so no scope of theirs loads
+   * again, and the next vault is the root when the first one left (S52): the sidebar, keyed on the
+   * first vault, then mounts again. Its focus items leave with it, in the write that drops it (A5,
+   * `storage.setRoots`). The only vault of a window does not leave it this way (S51).
+   */
+  const removeVault = useCallback((gone: string) => {
+    const now = live.current.roots
+    const rest = now.filter((vault) => vault !== gone)
+    if (rest.length === 0 || rest.length === now.length) return
     setSidebarRevealRequest(null)
-    setRoot(null)
-    resetTabs(null, null)
-  }, [resetTabs])
+    // The pages close against the vaults that stay: with none left open, the empty window is the
+    // new first vault's to remember, and the vault that left keeps its last file (S52).
+    deleteWorkspaceDir(stripSlash(gone), rest[0])
+    storage.setRoots(rest)
+    setRoots(storage.getRoots())
+    setVaultOpen(gone, true) // a vault that comes back starts open (R9)
+  }, [deleteWorkspaceDir, setVaultOpen])
+
+  /**
+   * A vault's folder is gone on disk (YAZ-2602 S53, R6). The only vault of the window: the Welcome
+   * screen. One of several: it leaves as a removed one does, the notice names it, and
+   * the folder leaves the recents.
+   */
+  const dropVault = useCallback((gone: string) => {
+    // A read that failed after its vault left the window has nothing to drop, and nothing to say.
+    if (!live.current.roots.includes(gone)) return
+    if (live.current.roots.length === 1) {
+      setSidebarRevealRequest(null)
+      storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
+      setRoots([])
+      resetTabs(null, null)
+      return
+    }
+    removeVault(gone)
+    storage.removeRecentRoot(gone)
+    notify(`${storage.vaultName(gone)} is gone: its folder was not found`)
+  }, [resetTabs, removeVault, notify])
   // The ACTIVE file vanished on disk: close its tab, ⌘W-style (a neighbour takes over).
   const onFileMissing = useCallback(() => void closeActive(), [closeActive])
 
-  const editorCommon = root === null ? null : {
-    root,
-    watch,
-    onNotice: notify,
-    newNoteFolderFor,
-    wikilinks,
-    wikilinkCandidates,
-    viewOnlyLinks,
-    properties: propertyDecls,
-    onOpenFileRight: openRight,
-    onRetitle: requestRetitle,
-    sync: githubSync.status,
-    onSyncNow: githubSync.syncNow,
-    // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
-    commentsOrder: settings.commentsOrder,
-    onChangeCommentsOrder: changeCommentsOrder,
-    // Upkeep off (🔒 D7): no settings, so no Reviews section.
-    reviewSettings: reviewSettings.settings.enabled ? reviewSettings.settings : undefined,
+  /**
+   * What every editor of the window is handed, from the scope of the vault that holds its page
+   * (YAZ-2602 S30); the empty page (`null`) stands on the active vault. Each value is the scope's
+   * own stable one, so a change in one vault renders no editor of another: `RetainedEditor` is memo.
+   */
+  const editorPropsFor = (path: string | null) => {
+    const scope = path === null ? active : scopeOf(path)
+    return {
+      root: scope.root ?? '',
+      watch: scope.watch,
+      onNotice: notify,
+      newNoteFolderFor,
+      wikilinks: scope.wikilinks,
+      wikilinkCandidates: scope.wikilinkCandidates,
+      viewOnlyLinks: scope.viewOnlyLinks,
+      properties: scope.properties,
+      onOpenFileRight: openRight,
+      onRetitle: requestRetitle,
+      sync: scope.sync.status,
+      onSyncNow: scope.sync.syncNow,
+      // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
+      commentsOrder: settings.commentsOrder,
+      onChangeCommentsOrder: changeCommentsOrder,
+      // Upkeep off (🔒 D7): no settings, so no Reviews section.
+      reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
+    }
   }
 
   // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
   // The tabs, their history and the right panel are not touched: closing the review uncovers them.
   const session = review.session
+  /** The vault whose IDs question is on show (YAZ-2602 S40): one box at a time, the first vault's that must answer. */
+  const asking = vaults.find((vault) => vault.idsAsk !== null)
+  /** The first vault whose sync needs attention: one banner at a time. */
+  const unsynced = vaults.find((vault) => vault.syncBanner !== null)
+  const syncCopy = unsynced?.syncBanner ?? null
   const shown = session === null ? file : session.path
 
   const dropOnMain = (page: PageDrag, at: number): void => {
@@ -841,22 +945,22 @@ export function App() {
           <span className="link-notice__text">{notice.text}</span>
         </div>
       )}
-      {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
+      {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
-          disagree about what this vault is doing. */}
-      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled }, review: root === null ? undefined : reviewSettings, ids: vaultIds === null ? undefined : { ...vaultIds, set: saveIds } }} onClose={closeSettings} />}
+          disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
-      {renameBanner !== null && (
+      {renamer !== undefined && renameBanner !== null && (
         <div className="rename-banner" role="status">
           <span className="rename-banner__text">
             Looks like <code>{relLabel(renameBanner.oldPath)}</code> became <code>{relLabel(renameBanner.newPath)}</code> — update {renameBanner.count} link{renameBanner.count === 1 ? '' : 's'}?
           </span>
-          <button type="button" onClick={updateRenameBanner}>
+          <button type="button" onClick={renamer.update}>
             Update
           </button>
-          <button type="button" onClick={dismissRenameBanner}>
+          <button type="button" onClick={renamer.dismiss}>
             Dismiss
           </button>
         </div>
@@ -864,27 +968,34 @@ export function App() {
       {/* 3B: sync needs attention. Two of the five reasons are things this app cannot fix from
           inside itself (git missing, credentials rejected), so the offer is a prompt to paste
           into any LLM — an assistant that CAN drive the terminal — rather than a wizard. */}
-      {syncCopy !== null && !syncDismissed && root !== null && githubSync.status !== null && (
+      {unsynced !== undefined && syncCopy !== null && unsynced.root !== null && (
         <div className="sync-banner" role="status">
           <span className="sync-banner__text">
             <strong>{syncCopy.title}</strong> {syncCopy.body}
           </span>
           {syncCopy.showSetupPrompt && (
-            <button type="button" onClick={() => void navigator.clipboard.writeText(buildSetupPrompt(root, githubSync.status?.attention ?? 'error'))}>
+            <button type="button" onClick={() => void navigator.clipboard.writeText(buildSetupPrompt(unsynced.root ?? '', unsynced.sync.status?.attention ?? 'error'))}>
               Copy setup prompt
             </button>
           )}
-          <button type="button" onClick={() => setSyncDismissed(true)}>
+          <button type="button" onClick={unsynced.dismissSync}>
             Dismiss
           </button>
         </div>
       )}
       {root !== null && !sidebarCollapsed && (
         <Sidebar
+          // Keyed on the FIRST vault alone (YAZ-2602): a vault that joins or leaves behind it does not remount the panel.
           key={root}
-          root={root}
+          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of each vault
+          // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
+          vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null }))}
+          closedVaults={closedVaults}
+          onSetVaultOpen={setVaultOpen}
+          onAddVault={addVault}
+          onPickVault={pickVault}
+          onRemoveVault={removeVault}
           activeFile={file}
-          watch={watch}
           onOpenFile={openCurrent}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
@@ -899,7 +1010,7 @@ export function App() {
           settings={settings}
           onChangeSettings={changeSettings}
           onOpenSettings={openSettings}
-          onRootMissing={onRootMissing}
+          onRootMissing={dropVault}
           onFileMissing={onFileMissing}
           onRenameFile={requestPathRename}
           onRetitle={requestRetitle}
@@ -909,9 +1020,6 @@ export function App() {
           selectionRef={sidebarSelection}
           // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
           clipboardRef={sidebarClipboard}
-          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME per-window index source
-          // WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          indexSource={wikilinks}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
           // ⌘O (YAZ-1767 D8): only a request made on THIS root counts; any other reads as none.
@@ -922,15 +1030,12 @@ export function App() {
           // move restyled the whole window, every mounted tab included.
           width={sidebarWidth}
           asideRef={sidebarRef}
-          // The Inbox row (YAZ-2322), there with upkeep on: it opens the review, and closes the one that is open.
-          upkeep={reviewSettings.settings.enabled}
-          dueCount={review.dueCount}
-          reviewing={review.session !== null}
-          onOpenInbox={() => (review.session === null ? review.start() : review.close())}
-          // The menu names the folder by its absolute path; a session takes it relative to the vault.
-          onReviewFolder={(dir) => review.start(relLabel(dir))}
-          reviewState={review.inReview}
-          onSetReview={review.setInReview}
+          // The menu names the folder by its absolute path; a session takes it relative to the vault that holds it.
+          onReviewFolder={(dir) => startReview(scopeOf(dir), relLabel(dir))}
+          reviewState={reviewState}
+          onSetReview={setReview}
+          // An Inbox row (YAZ-2322), one per vault with upkeep on (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
+          onInbox={toggleInbox}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -941,14 +1046,15 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onSnapshot} />
+          {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index. */}
+          {vaults.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs.
               A review (YAZ-2322) is not a tab: its bar stands in the strip's place until it closes. */}
           {session !== null ? (
             <ReviewBar session={session} onKeep={review.keep} onSkip={review.skip} onUndo={review.undo} onClose={review.close} />
           ) : (
             <TabBar
-              root={root}
+              roots={roots}
               tabs={tabs}
               active={file}
               onActivate={activate}
@@ -964,19 +1070,19 @@ export function App() {
               onShowInSidebar={showInSidebar}
               onNotice={notify}
               titles={titles}
-              reviewState={review.inReview}
-              onSetReview={review.setInReview}
+              reviewState={reviewState}
+              onSetReview={setReview}
             />
           )}
           <div className="tabstack">
-            {mounted.length === 0 && session === null && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+            {mounted.length === 0 && session === null && <RetainedEditor {...editorPropsFor(null)} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === shown ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. */}
-                {editorCommon !== null && <RetainedEditor {...editorCommon} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} />}
+                <RetainedEditor {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} />
               </div>
             ))}
             {/* A review's note (YAZ-2322) shows through its own tab's layer, above, when it has
@@ -987,10 +1093,9 @@ export function App() {
               (session.path === null || (rightPanel.open && rightPanel.items.includes(session.path)) ? (
                 <ReviewMessage session={session} onClose={review.close} />
               ) : (
-                !mounted.includes(session.path) &&
-                editorCommon !== null && (
+                !mounted.includes(session.path) && (
                   <div key={session.path} className="tabstack__layer">
-                    <RetainedEditor {...editorCommon} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} />
+                    <RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} />
                   </div>
                 )
               ))}
@@ -1000,7 +1105,7 @@ export function App() {
       )}
       {root !== null && rightPanel.open && (
         <RightPanel
-          root={root}
+          roots={roots}
           titles={titles}
           items={rightPanel.items}
           expanded={rightPanel.expanded}
@@ -1017,24 +1122,22 @@ export function App() {
           onDropPage={dropOnRight}
           onMoveToMain={(path) => transferRightToMain(path, tabs.length)}
         >
-          {editorCommon !== null && (
-            <div className="right-panel__editor-stack">
-              {rightMounted.map((path) => (
-                <div
-                  key={path}
-                  data-testid={`right-layer-${path}`}
-                  className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
-                >
-                  <RightWorkspaceEditor
-                    {...editorCommon}
-                    path={path}
-                    navigate={navigateRight}
-                    onOpenFileBackground={openRightBackground}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="right-panel__editor-stack">
+            {rightMounted.map((path) => (
+              <div
+                key={path}
+                data-testid={`right-layer-${path}`}
+                className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
+              >
+                <RightWorkspaceEditor
+                  {...editorPropsFor(path)}
+                  path={path}
+                  navigate={navigateRight}
+                  onOpenFileBackground={openRightBackground}
+                />
+              </div>
+            ))}
+          </div>
         </RightPanel>
       )}
       {root !== null && !rightPanel.open && (
@@ -1059,8 +1162,9 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
-      {/* The box that asks whether this vault's notes get IDs (YAZ-2523 🔒 V2). */}
-      {vaultIds?.ask !== undefined && idsAskClosed !== root && <ConfirmIds ask={vaultIds.ask} onAnswer={saveIds} onDismiss={() => setIdsAskClosed(root)} />}
+      {/* The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). Keyed apart from the sidebar, which the
+          first vault keys too; with two or more vaults it names the one it asks about (YAZ-2602 S40). */}
+      {asking !== undefined && asking.idsAsk !== null && <ConfirmIds key={`ids:${asking.root}`} ask={asking.idsAsk} vault={roots.length > 1 ? (asking.name ?? undefined) : undefined} onAnswer={asking.saveIds} onDismiss={asking.closeIdsAsk} />}
     </div>
   )
 }
