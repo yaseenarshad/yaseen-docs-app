@@ -495,19 +495,25 @@ function CrepeHost({
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
+  // A worker that fails shows one passive notice and is not asked again until the next of those three.
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null || autosave.status !== 'saved') return
     let cancelled = false
     const { frontmatter, body } = diskParts()
     const { text, toFileLine } = fileLines(frontmatter, body)
-    void requestBlockLines(text).then(({ lines, kinds }) => {
-      if (!cancelled && crepeRef.current === crepe) showLineNumbers(crepe, { lines: lines.map(toFileLine), kinds })
-    })
+    void requestBlockLines(text).then(
+      ({ lines, kinds }) => {
+        if (!cancelled && crepeRef.current === crepe) showLineNumbers(crepe, { lines: lines.map(toFileLine), kinds })
+      },
+      () => {
+        if (!cancelled) onNotice?.('Line numbers could not load.')
+      },
+    )
     return () => {
       cancelled = true
     }
-  }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts])
+  }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return

@@ -22,6 +22,13 @@ describe('blockLines: one entry per leaf block, in order', () => {
     expect(index('Title', '=====', 'text', '## Two', 'more')).toEqual({ lines: [1, 3, 4, 5], kinds: 'hphp' })
   })
 
+  it('gives a setext heading the line of its own text, not of a link reference definition above it', () => {
+    expect(index('Intro.', '', '[a]: http://x', '[b]: http://y', 'Title', '-----', '', 'After.')).toEqual({ lines: [1, 5, 8], kinds: 'php' })
+    expect(index('[a]: http://x', 'Title', '=====')).toEqual({ lines: [2], kinds: 'h' })
+    expect(index('[a]: http://x', 'text')).toEqual({ lines: [2], kinds: 'p' })
+    expect(index('Two', 'lines', '---', '', '* In a bullet', '  ===')).toEqual({ lines: [1, 5], kinds: 'hh' })
+  })
+
   it('gives a fenced code block its opening fence line, whatever is inside (S36)', () => {
     expect(index('```md', '# not a heading', '', '* not a bullet', '```', 'after')).toEqual({ lines: [1, 6], kinds: 'cp' })
     expect(index('~~~', 'never closed', '', 'still code')).toEqual({ lines: [1], kinds: 'c' })
@@ -108,6 +115,13 @@ describe('fileLines: the frontmatter above, and the blank lines the load adds', 
     expect(added).toBe(2)
     const kept = text.split('\n').map((line, at) => ({ line, at: at + 1 })).filter(({ line }) => line.trim() !== '')
     expect(kept.map(({ at }) => toFileLine(at))).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('counts a lone CR as a line ending, as the parse does, alone and beside CRLF and LF', () => {
+    const lone = fileLines('', 'a\r\rb\r\rc')
+    expect(blockLines(lone.text).lines.map(lone.toFileLine)).toEqual([1, 3, 5])
+    const mixed = fileLines('', 'a\r\n\r\nb\r\rc\n\nd\n')
+    expect(blockLines(mixed.text).lines.map(mixed.toFileLine)).toEqual([1, 3, 5, 7])
   })
 
   it('leaves a blank line the file already has where it is', () => {

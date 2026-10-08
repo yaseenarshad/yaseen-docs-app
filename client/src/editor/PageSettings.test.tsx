@@ -34,8 +34,8 @@ afterEach(() => {
 })
 
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
-const menu = () => container.querySelector<HTMLElement>('.page-settings__menu')
-const toggle = () => menu()!.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!
+const menu = () => container.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
+const toggle = () => menu()!.querySelector<HTMLButtonElement>('button[aria-pressed]')!
 const click = (element: Element) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
 describe('PageSettings', () => {
@@ -77,13 +77,13 @@ describe('PageSettings', () => {
     click(cog())
     expect(menu()!.querySelectorAll('button')).toHaveLength(1)
     expect(toggle().textContent).toContain('Line numbers')
-    expect(toggle().getAttribute('aria-checked')).toBe('false')
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
     click(toggle())
     expect(menu()).not.toBeNull()
-    expect(toggle().getAttribute('aria-checked')).toBe('true')
+    expect(toggle().getAttribute('aria-pressed')).toBe('true')
     expect(toggle().textContent).toContain('✓')
     click(toggle())
-    expect(toggle().getAttribute('aria-checked')).toBe('false')
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
   })
 
   it('shows the words and the characters of the text (S13, S17, S18)', () => {

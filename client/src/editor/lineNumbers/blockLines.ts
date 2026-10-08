@@ -8,7 +8,7 @@ export interface BlockLines {
 }
 
 const KIND: Record<string, string> = {
-  paragraph: 'p', htmlFlow: 'p', atxHeading: 'h', setextHeading: 'h',
+  paragraph: 'p', htmlFlow: 'p', atxHeading: 'h', setextHeadingText: 'h',
   codeFenced: 'c', codeIndented: 'c', thematicBreak: 'r', table: 't',
 }
 const LISTS = new Set(['listOrdered', 'listUnordered'])
@@ -18,7 +18,6 @@ export function blockLines(text: string): BlockLines {
   const events = postprocess(parse({ extensions: [gfm()] }).document().write(preprocess()(text, undefined, true)))
   const lines: number[] = []
   let kinds = ''
-  let tables = 0
   // A list item's line, held until its first block shows up: a bare marker is an empty paragraph in the editor.
   let emptyItem: number | null = null
   // Per open quote, the count of blocks when it opened: the editor fills a quote that holds none with an empty paragraph.
@@ -33,8 +32,7 @@ export function blockLines(text: string): BlockLines {
     emptyItem = null
   }
   for (const [phase, token] of events) {
-    // A plain string: `table` is the GFM extension's token, and micromark's own type map does not list it.
-    const type: string = token.type
+    const { type } = token
     if (LISTS.has(type)) {
       // A nested list on the item's OWN line (`* - nested`) is the item's first block: the editor adds
       // a paragraph only when the list starts on a later line (listItemRoundTrip rule 2).
@@ -47,14 +45,13 @@ export function blockLines(text: string): BlockLines {
         quotes.push(lines.length)
       } else if (quotes.pop() === lines.length) add(token.start.line, 'p')
     }
-    if (type === 'table') tables += phase === 'enter' ? 1 : -1
     if (phase === 'exit') continue
     if (type === 'listItemPrefix') {
       flush()
       emptyItem = token.start.line
     }
     const kind = KIND[type]
-    if (kind === undefined || (tables > 0 && type !== 'table')) continue
+    if (kind === undefined) continue
     emptyItem = null
     add(token.start.line, kind)
   }

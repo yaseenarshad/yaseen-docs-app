@@ -41,8 +41,8 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, readText }: {
         aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => setOpen(!open)}>
         <CogIcon size={13} />
       </button>
-      {text !== null && <div id={menuId} className="page-settings__menu" role="menu" aria-label="Page settings">
-        <button type="button" role="menuitemcheckbox" aria-checked={lineNumbers} onClick={onToggleLineNumbers}>
+      {text !== null && <div id={menuId} className="page-settings__menu" role="group" aria-label="Page settings">
+        <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
         </button>
         <div className="page-settings__divider" aria-hidden="true" />
