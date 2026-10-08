@@ -35,9 +35,11 @@ import {
   outlineEditor,
   outlineLines,
   quitApp,
+  searchBar,
   SEED_FILE,
   seededState,
   shoot,
+  showSearchTab,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -177,9 +179,12 @@ test.describe('folder tab: CMD+F belongs to the outline, the only editor it has'
   test('focus outside the editor: the outline still answers — a folder’s tab HAS no note editor', async () => {
     // A folder's tab mounts no note editor at all (YAZ-2290 D9): the views stand where a note's
     // body would be. So there is no note bar to claim the key, and the visibility amendment
-    // routes CMD+F to the outline even from the sidebar.
+    // routes CMD+F to the outline even from the sidebar. The sidebar's search bar is on the
+    // Search tab only (YAZ-2638 D2), so the tab is shown first.
     await expect(win.locator('.editor-mount')).toHaveCount(0)
-    await win.getByRole('textbox', { name: 'Search notes' }).click()
+    await showSearchTab(win)
+    await searchBar(win).click()
+    await expect(searchBar(win)).toBeFocused()
     await win.keyboard.press('Meta+f')
     await expect(bar(win)).toHaveCount(1)
     await expect(win.locator('.view-outline-editor .find-bar')).toBeVisible()

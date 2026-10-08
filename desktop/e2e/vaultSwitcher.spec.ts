@@ -143,7 +143,7 @@ test('step 1 — the header button drops the panel: filter focused, both recents
   await expect(highlighted(win)).toContainText(BETA)
   await shoot(win, 'vault-switcher-01-panel')
 
-  // Esc closes on the FIRST press (the menu convention, not the search bar's two-press rule).
+  // Esc closes on the FIRST press (the menu convention).
   await win.keyboard.press('Escape')
   await expect(panel(win)).toHaveCount(0)
   await expect(trigger(win)).toHaveAttribute('aria-expanded', 'false')
