@@ -763,8 +763,8 @@ export function Sidebar({
   }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
-  const errorLines = errors.map((message) => (
-    <p key={message} className="sidebar__msg sidebar__msg--error">
+  const errorLines = errors.map((message, at) => (
+    <p key={at} className="sidebar__msg sidebar__msg--error">
       {message}
     </p>
   ))
