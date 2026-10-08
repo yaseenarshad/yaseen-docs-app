@@ -1971,7 +1971,8 @@ button {
 }
 
 .document-zoom__trigger:focus-visible,
-.document-zoom__step:focus-visible {
+.document-zoom__step:focus-visible,
+.page-settings__trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -1981,7 +1982,8 @@ button {
   cursor: default;
 }
 
-.document-zoom__menu {
+.document-zoom__menu,
+.page-settings__menu {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
@@ -2027,13 +2029,15 @@ button {
   border-color: var(--danger);
 }
 
-.document-zoom__divider {
+.document-zoom__divider,
+.page-settings__divider {
   height: 1px;
   margin: 6px 0 4px;
   background: var(--border);
 }
 
-.document-zoom__presets button {
+.document-zoom__presets button,
+.page-settings__menu button {
   display: flex;
   width: 100%;
   justify-content: space-between;
@@ -2048,12 +2052,15 @@ button {
 }
 
 .document-zoom__presets button:hover,
-.document-zoom__presets button:focus-visible {
+.document-zoom__presets button:focus-visible,
+.page-settings__menu button:hover,
+.page-settings__menu button:focus-visible {
   background: var(--bg-hover);
   outline: none;
 }
 
-.document-zoom__presets button[aria-pressed="true"] {
+.document-zoom__presets button[aria-pressed="true"],
+.page-settings__menu button[aria-checked="true"] {
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -2063,4 +2070,105 @@ button {
   color: var(--danger);
   font-size: 11px;
   line-height: 1.3;
+}
+
+/* Page settings (YAZ-2643): the cog left of the zoom pill. Its menu shares the zoom menu's rules above. */
+.page-settings {
+  position: relative;
+  display: inline-flex;
+}
+
+.page-settings__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.page-settings__trigger:hover,
+.page-settings__trigger[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.page-settings__menu {
+  width: 172px;
+  font-size: 12px;
+}
+
+.page-settings__menu p {
+  margin: 0;
+  padding: 3px 7px;
+  color: var(--fg-muted);
+}
+
+/* Line numbers (YAZ-2643). A numbered block carries `data-line`; the number is that block's own
+   pseudo-element, parked in the left margin. A block's RIGHT edge is the column's right edge at
+   every bullet depth, and 100cqw is the column's width, so one rule puts all numbers in one column.
+   `--line-box` takes the block's line height to the number, so it sits on the first line of text. */
+@property --line-box {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 24px;
+}
+
+.editor-host[data-line-numbers] .editor-instance .milkdown > .ProseMirror {
+  container-type: inline-size;
+}
+
+.editor-host[data-line-numbers] .ProseMirror [data-line] {
+  position: relative;
+  --line-box: 1lh;
+}
+
+.editor-host[data-line-numbers] .ProseMirror [data-line]::after,
+.editor-host[data-line-numbers] .ProseMirror .milkdown-table-block[data-line]::before {
+  content: attr(data-line);
+  position: absolute;
+  top: 0;
+  right: calc(100cqw + 22px);
+  padding-top: inherit;
+  color: var(--fg-muted);
+  font: 11px / var(--line-box) var(--crepe-font-code);
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Three blocks clip what leaves their box, and the margin is outside it. A rule (the browser's own
+   `overflow: hidden`) and a code block give the clip up while the numbers show: a rule holds
+   nothing, and code wraps (YAZ-2270). The rule's number sits on the line itself. */
+.editor-host[data-line-numbers] .ProseMirror hr[data-line],
+.editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line] {
+  overflow: visible;
+}
+
+.editor-host[data-line-numbers] .ProseMirror hr[data-line]::after {
+  top: 50%;
+  padding-top: 0;
+  transform: translateY(-50%);
+}
+
+/* A table keeps its clip: that is how a wide table scrolls inside the column. So the table is NOT
+   positioned, and its number stays at its static place, the block's top: the number's containing
+   block is then an ancestor, which the table does not clip. `::before`, because the static place
+   of `::after` is under the table. 5px is the header cell's own border and padding (Crepe's table.css). */
+.editor-host[data-line-numbers] .ProseMirror .milkdown-table-block[data-line] {
+  position: static;
+}
+
+.editor-host[data-line-numbers] .ProseMirror .milkdown-table-block[data-line]::after {
+  content: none;
+}
+
+.editor-host[data-line-numbers] .ProseMirror .milkdown-table-block[data-line]::before {
+  top: auto;
+  padding-top: 5px;
 }

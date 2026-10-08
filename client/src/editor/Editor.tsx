@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
 import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
@@ -10,7 +10,7 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
-import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
@@ -29,7 +29,10 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
+import { PageSettings } from './PageSettings'
 import { ZOOM_EVENT } from './zoomRequest'
+import { fileLines } from './lineNumbers/fileLines'
+import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import type { ZoomStep } from '@shared/types'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
@@ -227,6 +230,8 @@ function CrepeHost({
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
   const documentZoomRef = useRef(100)
   documentZoomRef.current = documentZoom
+  // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
+  const [lineNumbersOn, setLineNumbersOn] = useState(false)
   const hostRef = useRef<HTMLDivElement>(null)
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
@@ -304,11 +309,18 @@ function CrepeHost({
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
   // so the caret lands where a click would put it.
   const crepeRef = useRef<ReturnType<typeof createCrepe> | null>(null)
+  /**
+   * The same instance, from the moment it can take an action (YAZ-2643): `crepeRef` is set BEFORE
+   * `create()` settles, and an action on an editor that is not created yet throws. State, not a
+   * ref, so the line-number effects run again when a recreated editor is ready. It is not cleared
+   * when that editor goes: `crepeRef.current === readyCrepe` says whether it is still the live one.
+   */
+  const [readyCrepe, setReadyCrepe] = useState<ReturnType<typeof createCrepe> | null>(null)
   // The zoom breadcrumb's first crumb (YAZ-2420 🔒 D14), read as it draws: the Crepe below is made once.
   const titleRef = useRef('')
   titleRef.current = pageLabel(file.path, false, titles)
   const autosave = useAutosave(file.path)
-  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
+  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts } = autosave
   const reloadRef = useRef<() => void>(() => {})
   /**
    * The whole-file bytes last seen on disk (YAZ-1356). `file.content` is frozen at mount — a fresh
@@ -318,6 +330,12 @@ function CrepeHost({
   const [disk, setDisk] = useState(file.content)
   /** The disk-truth file both panels read: one identity per `disk`, so the memoised panels skip a save. */
   const diskFile = useMemo(() => ({ ...file, content: disk }), [file, disk])
+  /**
+   * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
+   * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
+   * to the bytes `disk` still holds is no change to it.
+   */
+  const [diskLandings, diskLanded] = useReducer((count: number) => count + 1, 0)
   /**
    * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
    * modal's save pokes it, so a scene written back re-renders every preview of it in this editor
@@ -411,6 +429,7 @@ function CrepeHost({
     const ready = crepe.create().then(() => {
       if (cancelled) return
       controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
+      setReadyCrepe(crepe)
       // An in-app rename carried another window's (or this window's) DIRTY buffer into this
       // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved
       // change, so autosave writes it to the NEW path — the buffer survives the rename.
@@ -436,6 +455,7 @@ function CrepeHost({
       applyExternalMarkdown(crepe, split.body)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
       setDisk(fresh.content)
+      diskLanded()
     }
     reloadRef.current = () => void reload()
 
@@ -454,6 +474,7 @@ function CrepeHost({
         if (cancelled) return
         if (absorbFrontmatterOnly(fresh.content, fresh.mtime)) {
           setDisk(fresh.content) // the body is untouched; the panel still has to see the new properties
+          diskLanded()
           return
         }
         // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
@@ -472,10 +493,34 @@ function CrepeHost({
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel])
 
+  // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
+  // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (!lineNumbersOn || crepe === null || autosave.status !== 'saved') return
+    let cancelled = false
+    const { frontmatter, body } = diskParts()
+    const { text, toFileLine } = fileLines(frontmatter, body)
+    void requestBlockLines(text).then(({ lines, kinds }) => {
+      if (!cancelled && crepeRef.current === crepe) showLineNumbers(crepe, { lines: lines.map(toFileLine), kinds })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts])
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (!lineNumbersOn || crepe === null) return
+    return () => {
+      if (crepeRef.current === crepe) showLineNumbers(crepe, null)
+    }
+  }, [lineNumbersOn, readyCrepe])
+
   return (
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
+        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
@@ -498,7 +543,7 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">
