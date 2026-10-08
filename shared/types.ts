@@ -657,6 +657,10 @@ export const SIDEBAR_LENSES: readonly SidebarLens[] = ['files', 'focus', 'favori
 /** The lens a brand-new window, and a switch to a different vault, opens on (🔒 D1/D2, YAZ-1846). */
 export const DEFAULT_SIDEBAR_LENS: SidebarLens = 'files'
 export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
+/** The tabs of the sidebar's row 1 (YAZ-2638 D2): the lenses, and Search — a tab that is never stored. */
+export type SidebarTab = SidebarLens | 'search'
+/** The order the tabs are drawn in: Search stands right after Files. */
+export const SIDEBAR_TABS: readonly SidebarTab[] = ['files', 'search', 'focus', 'favorites']
 
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180

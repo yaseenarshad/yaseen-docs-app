@@ -91,6 +91,21 @@ export const dirRow = (w: Page, label: string) =>
 /** The DEPTH-0 row labels of whichever tree the sidebar body draws. */
 export const topLabels = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__label')
 export const lensTab = (w: Page, label: 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+/** The Search tab (YAZ-2638 D2): the second tab of the row, a magnifier, so its name lives in `aria-label`. */
+export const searchTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Search"]')
+/** The search bar. It is on the Search tab only (YAZ-2638 S6): on Files, Focus and Favorites this finds nothing. */
+export const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
+/**
+ * Shows the Search tab by the click a user makes on it (YAZ-2638 S5) and waits for its bar. Every
+ * spec calls this before it types a query: no other tab has the bar. Safe on the tab that already
+ * shows: a click there puts the caret back in the bar and changes nothing else. The other way in
+ * is ⌘K: `clickMenuItem(app, 'menu.file.search', winId)`.
+ */
+export async function showSearchTab(w: Page): Promise<void> {
+  await searchTab(w).click()
+  await expect(searchTab(w)).toHaveAttribute('aria-selected', 'true')
+  await expect(searchBar(w)).toBeVisible()
+}
 /** An item of the sidebar's own row menu (overlay + menu) by its exact label. */
 export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 export const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
