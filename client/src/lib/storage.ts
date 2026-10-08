@@ -10,6 +10,7 @@ import {
   freeVaultKey,
   keyedVaults,
   listVaults,
+  mergeFavoritesOrder,
   normalizeRoots,
   rootOfPath,
   type AppState,
@@ -69,12 +70,15 @@ export const storage = {
     identity = id
     unsubscribe?.()
     unsubscribe = api.state.onChange((next) => {
-      state = next
+      // Each broadcast is a new copy. The Favorites order keeps its identity while it holds the same
+      // paths (YAZ-2631 D1), so what reads it draws again only when the order changed.
+      const held = state.favoritesOrder
+      state = held.length === next.favoritesOrder.length && held.every((path, at) => path === next.favoritesOrder[at]) ? { ...next, favoritesOrder: held } : next
       listeners.forEach((l) => l())
     })
   },
 
-  /** Called after a change made in ANY window landed in the cache (never for this window's own optimistic writes). */
+  /** Called after a change made in ANY window landed in the cache — never for this window's own optimistic writes, but the one of the Favorites order (`setFavoritesOrder`). */
   subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => {
@@ -169,7 +173,8 @@ export const storage = {
   },
 
   /**
-   * The focus list (YAZ-2619): files and folders in the order added, empty when there is none.
+   * The focus list (YAZ-2619): files and folders in the order added, or the order a drag gave
+   * them (YAZ-2631 D3); empty when there is none.
    * Window identity since YAZ-1628, like `sidebarCollapsed` below — no root argument, and a global
    * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`),
    * and a vault that leaves the window takes its items (`setRoots`).
@@ -229,6 +234,25 @@ export const storage = {
   setSidebarWidth(width: number): void {
     state = { ...state, sidebarWidth: width }
     send('state.setSidebarWidth', () => api.state.setSidebarWidth(width))
+  },
+
+  /**
+   * The Favorites order across vaults (YAZ-2631 D1): app-wide, so every window follows it. The list
+   * is the cache's own, the same one until the order changes: a `useSyncExternalStore` snapshot.
+   */
+  getFavoritesOrder: (): string[] => state.favoritesOrder,
+  /**
+   * What this window hands in for the vaults `roots`: after a drag, its favorites in the new order;
+   * after a remove, the stored order without the removed paths (YAZ-2631 R23). The cache
+   * merges it as main does (`mergeFavoritesOrder`, R5) and wakes `subscribe` at once, so the list
+   * never shows the old order while main answers; main's broadcast of the same order then changes nothing.
+   */
+  setFavoritesOrder(roots: readonly string[], paths: readonly string[]): void {
+    const favoritesOrder = mergeFavoritesOrder(state.favoritesOrder, roots, paths)
+    const moved = favoritesOrder !== state.favoritesOrder
+    state = { ...state, favoritesOrder }
+    send('state.setFavoritesOrder', () => api.state.setFavoritesOrder(roots, paths))
+    if (moved) listeners.forEach((l) => l())
   },
 
   /**

@@ -34,6 +34,8 @@ interface SidebarStubProps {
   onPickVault: () => void
   /** "Remove from this window" (YAZ-2602 D7). */
   onRemoveVault: (root: string) => void
+  /** A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order. */
+  onReorderVaults: (next: string[]) => void
   activeFile: string | null
   onOpenFile: (path: string) => void
   onOpenFileBackground: (path: string) => void
@@ -204,6 +206,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       closeSelf: vi.fn(async () => undefined),
       // Main's one open-recent door (YAZ-1767 D1): a vault window's picks and Open Recent land here (YAZ-1914 D1).
       openRecent: vi.fn(async (_path: string) => true),
+      // Main saves the CALLING window's vaults under the name (YAZ-2602 D8): a reorder asks it for the workspace that matches (YAZ-2631 D5).
+      saveSet: vi.fn(async (_name: string) => true),
       onFlush: vi.fn(() => () => undefined),
     },
     menu: {
@@ -1008,6 +1012,18 @@ describe('App ⌘O vault switcher (YAZ-1767 D8)', () => {
     expect(captured.sidebar?.root).toBe('/w')
     expect(captured.sidebar?.switcherOpenRequest).toBe(0)
     // A fresh request on the new root counts again.
+    act(() => emitSwitchVault())
+    expect(captured.sidebar?.switcherOpenRequest).toBe(2)
+  })
+
+  it('a reorder of the vaults mounts no sidebar again, so it changes no request: the panel that was asked is not toggled (YAZ-2631 D5)', async () => {
+    const { emitSwitchVault } = await mount(defaultAppState(), { id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [] })
+    act(() => emitSwitchVault())
+    expect(captured.sidebar?.switcherOpenRequest).toBe(1)
+    for (const order of [['/w', '/v'], ['/v', '/w']]) {
+      act(() => captured.sidebar?.onReorderVaults(order))
+      expect(captured.sidebar?.switcherOpenRequest).toBe(1)
+    }
     act(() => emitSwitchVault())
     expect(captured.sidebar?.switcherOpenRequest).toBe(2)
   })
@@ -3267,6 +3283,70 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(storage.getRoots()).toEqual(['/v'])
     expect(storage.getFocusList()).toEqual(['/v/sub'])
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v'], focusList: ['/v/sub'] })
+  })
+
+  it('YAZ-2631 S46, S47, S49, S53: a drag of a vault row is ONE identity write, the vaults in the new order, and the sidebar is handed them so; the sidebar is not mounted again, no vault is read again and the tabs stay; a saved workspace of other vaults is not written', async () => {
+    const { bridge, el } = await mount({ ...defaultAppState(), vaultSets: [{ id: 's1', name: 'Three', roots: ['/v', '/w', '/x'], lastUsed: 1 }] }, TWO)
+    const aside = el.querySelector('[data-sidebar]')
+    const before = ['/v', '/w'].map((vault) => askedOf(bridge, vault))
+    bridge.window.setIdentity.mockClear()
+    bridge.state.setFolder.mockClear()
+
+    act(() => captured.sidebar?.onReorderVaults(['/w', '/v']))
+    await act(async () => {})
+    expect(storage.getRoots()).toEqual(['/w', '/v'])
+    expect(storage.getRoot()).toBe('/w')
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ roots: ['/w', '/v'] }]])
+    expect(bridge.state.setFolder).not.toHaveBeenCalled()
+    expect(bridge.window.saveSet).not.toHaveBeenCalled()
+    // The header's label is the names in this order (S53).
+    expect(captured.sidebar?.vaults.map((vault) => [vault.root, vault.name])).toEqual([['/w', 'w'], ['/v', 'v']])
+    // S47: the panel that was there, and each vault as it was loaded — its tree, its index, its watcher.
+    expect(el.querySelector('[data-sidebar]')).toBe(aside)
+    expect(['/v', '/w'].map((vault) => askedOf(bridge, vault))).toEqual(before)
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('b')
+    expect(el.querySelector('.link-notice')).toBeNull()
+  })
+
+  it('YAZ-2631 S48: the window\'s vaults are exactly a saved workspace, in any order: after the identity write main is asked once to save this window\'s vaults under that workspace\'s name; a save that fails is logged, and the window keeps its order', async () => {
+    const vaultSets = [{ id: 's0', name: 'Other', roots: ['/x', '/y'], lastUsed: 2 }, { id: 's1', name: 'Pair', roots: ['/v', '/w'], lastUsed: 1 }]
+    const { bridge } = await mount({ ...defaultAppState(), vaultSets }, TWO)
+    bridge.window.setIdentity.mockClear()
+    act(() => captured.sidebar?.onReorderVaults(['/w', '/v']))
+    await act(async () => {})
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ roots: ['/w', '/v'] }]])
+    expect(bridge.window.saveSet.mock.calls).toEqual([['Pair']])
+    expect(bridge.window.setIdentity.mock.invocationCallOrder[0]).toBeLessThan(bridge.window.saveSet.mock.invocationCallOrder[0])
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    bridge.window.saveSet.mockRejectedValueOnce(new Error('ipc down'))
+    act(() => captured.sidebar?.onReorderVaults(['/v', '/w']))
+    await act(async () => {})
+    expect(error).toHaveBeenCalledWith('[reorder-vaults] saveSet failed:', expect.any(Error))
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+    error.mockRestore()
+  })
+
+  it('YAZ-2631 R12: the sidebar is keyed on the vault that was first when it mounted, while that vault is in the window — a different vault at the top mounts nothing again, and nor does the removal of that top vault; the removal of the key\'s vault mounts the sidebar again, and so does "Open in this window" on a different vault', async () => {
+    const { el } = await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] })
+    const aside = () => el.querySelector('[data-sidebar]')
+    const first = aside()
+    act(() => captured.sidebar?.onReorderVaults(['/x', '/w', '/v']))
+    expect(aside()).toBe(first)
+    // `/x` is the first vault now, and not the key: it leaves as a vault behind the key does.
+    act(() => captured.sidebar?.onRemoveVault('/x'))
+    await act(async () => {})
+    expect(vaultRoots()).toEqual(['/w', '/v'])
+    expect(aside()).toBe(first)
+    // `/v` is the key: when it leaves, the first vault is the key and the sidebar mounts again.
+    act(() => captured.sidebar?.onRemoveVault('/v'))
+    await act(async () => {})
+    expect(aside()).not.toBe(first)
+    expect(aside()?.getAttribute('data-root')).toBe('/w')
+    const second = aside()
+    await act(async () => void (await captured.sidebar?.onOpenVaultHere('/z')))
+    expect(aside()).not.toBe(second)
+    expect(aside()?.getAttribute('data-root')).toBe('/z')
   })
 
   it('a vault row the user closed stays closed while the sidebar is hidden and shown again, and a vault that is added again starts open (R9)', async () => {

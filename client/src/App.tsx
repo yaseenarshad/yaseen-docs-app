@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, stripSlash, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -71,10 +71,14 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 }
 
 export function App() {
-  // The vaults this window shows (YAZ-2602 D1), in the order they were added. `root` is the FIRST:
-  // null is the Welcome window, and the sidebar is keyed on it.
+  // The vaults this window shows (YAZ-2602 D1), in the order they were added, or the order a drag
+  // of a vault row gave them (YAZ-2631 D5). `root` is the FIRST: null is the Welcome window.
   const [roots, setRoots] = useState<string[]>(storage.getRoots)
   const root = roots[0] ?? null
+  // The sidebar's key (YAZ-2631 R12): the vault that was first when it mounted, while that vault is
+  // in the window — a vault that joins, leaves behind it or moves does not mount the panel again.
+  const sidebarKey = useRef(root)
+  if (sidebarKey.current === null || !roots.includes(sidebarKey.current)) sidebarKey.current = root
   // The vault rows the user closed (YAZ-2602 R9): for the session and for this window, so never in
   // the store — and App's, like the lens below: the sidebar unmounts while it is hidden.
   const [closedVaults, setClosedVaults] = useState<readonly string[]>([])
@@ -96,7 +100,7 @@ export function App() {
   /** The sidebar's aside: a resize drag writes its live width here, not to state (YAZ-2239). */
   const sidebarRef = useRef<HTMLElement>(null)
   // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and persisted because the Sidebar is
-  // mounted `key={root}` and only while open; sidebar-local view state would reset on every
+  // mounted on one vault (`sidebarKey`) and only while open; sidebar-local view state would reset on every
   // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
   // `WindowEntry.sidebarLens`; never a second flag.
   const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
@@ -432,15 +436,15 @@ export function App() {
   }, [sidebarCollapsed, toggleSidebar])
 
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
-  // request counter the sidebar header's panel consumes. The request is pinned to the root it was
-  // made on: the Sidebar remounts `key={root}`, and a stale counter must not reopen the panel on
-  // the root after an in-place change (the vault folder moved, YAZ-1914; the vault menu's Open in this
+  // request counter the sidebar header's panel consumes. The request is pinned to the sidebar it was
+  // made on, by its key: the Sidebar mounts again on a new key, and a stale counter must not reopen
+  // the panel after an in-place change (the vault folder moved, YAZ-1914; the vault menu's Open in this
   // window, YAZ-1798). Welcome (root null) has no switcher.
-  const [switcherRequest, setSwitcherRequest] = useState<{ seq: number; root: string | null }>({ seq: 0, root: null })
+  const [switcherRequest, setSwitcherRequest] = useState<{ seq: number; key: string | null }>({ seq: 0, key: null })
   const openVaultSwitcher = useCallback(() => {
     if (root === null) return
     if (sidebarCollapsed) toggleSidebar()
-    setSwitcherRequest((prev) => ({ seq: prev.seq + 1, root }))
+    setSwitcherRequest((prev) => ({ seq: prev.seq + 1, key: sidebarKey.current }))
   }, [root, sidebarCollapsed, toggleSidebar])
 
   const showInSidebar = useCallback((path: string) => {
@@ -846,9 +850,10 @@ export function App() {
    * right-panel pages, each closed as its ✕ closes it — the editor unmounts, and its autosave saves
    * the buffer on the way out. Never the `retire…` helpers of a delete: they drop the buffer.
    * Nothing on disk changes. The vaults that stay keep their slots, so no scope of theirs loads
-   * again, and the next vault is the root when the first one left (S52): the sidebar, keyed on the
-   * first vault, then mounts again. Its focus items leave with it, in the write that drops it (A5,
-   * `storage.setRoots`). The only vault of a window does not leave it this way (S51).
+   * again, and the next vault is the root when the first one left (S52). The sidebar mounts again
+   * only when the vault it is keyed on left (YAZ-2631 R12). Its focus items leave with it, in the
+   * write that drops it (A5, `storage.setRoots`). The only vault of a window does not leave it this
+   * way (S51).
    */
   const removeVault = useCallback((gone: string) => {
     const now = live.current.roots
@@ -862,6 +867,18 @@ export function App() {
     setRoots(storage.getRoots())
     setVaultOpen(gone, true) // a vault that comes back starts open (R9)
   }, [deleteWorkspaceDir, setVaultOpen])
+
+  /**
+   * A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order. Each vault keeps
+   * its slot, so nothing loads again. A saved workspace of exactly these vaults takes the order too:
+   * main saves this window's vaults under its name, after the identity write that holds them.
+   */
+  const reorderVaults = useCallback((next: string[]) => {
+    storage.setRoots(next)
+    setRoots(storage.getRoots())
+    const set = storage.getVaultSets().find((one) => sameVaults(one.roots, next))
+    if (set !== undefined) void api.window.saveSet(set.name).catch((err: unknown) => console.error('[reorder-vaults] saveSet failed:', err))
+  }, [])
 
   /**
    * A vault's folder is gone on disk (YAZ-2602 S53, R6). The only vault of the window: the Welcome
@@ -985,9 +1002,9 @@ export function App() {
       )}
       {root !== null && !sidebarCollapsed && (
         <Sidebar
-          // Keyed on the FIRST vault alone (YAZ-2602): a vault that joins or leaves behind it does not remount the panel.
-          key={root}
-          // The folder rows' note counts (🔒 E6, YAZ-2290) read the SAME index source of each vault
+          // Keyed on one vault of the window (YAZ-2631 D5): a vault that joins, leaves behind it or moves does not remount the panel.
+          key={sidebarKey.current}
+          // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
           vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null }))}
           closedVaults={closedVaults}
@@ -995,6 +1012,7 @@ export function App() {
           onAddVault={addVault}
           onPickVault={pickVault}
           onRemoveVault={removeVault}
+          onReorderVaults={reorderVaults}
           activeFile={file}
           onOpenFile={openCurrent}
           onOpenFileBackground={openBackground}
@@ -1022,8 +1040,8 @@ export function App() {
           clipboardRef={sidebarClipboard}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
-          // ⌘O (YAZ-1767 D8): only a request made on THIS root counts; any other reads as none.
-          switcherOpenRequest={switcherRequest.root === root ? switcherRequest.seq : 0}
+          // ⌘O (YAZ-1767 D8): only a request made on THIS sidebar counts; any other reads as none.
+          switcherOpenRequest={switcherRequest.key === sidebarKey.current ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
           onOpenVaultHere={openRoot}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize
@@ -1046,8 +1064,9 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index. */}
-          {vaults.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
+          {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index.
+              In SLOT order: a new order of the vaults moves none, so none reads its index again (YAZ-2631 D5). */}
+          {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs.
               A review (YAZ-2322) is not a tab: its bar stands in the strip's place until it closes. */}
           {session !== null ? (

@@ -619,6 +619,26 @@ export function keyedVaults(folders: Readonly<Record<string, FolderState>>): Key
 export const MAX_FAVORITES = 500
 /** A window's focus list (YAZ-2619) holds at most this many paths. */
 export const MAX_FOCUS = 500
+/** The Favorites order across vaults (YAZ-2631 D1) holds at most this many paths: MAX_FAVORITES for each of MAX_WINDOW_ROOTS vaults. */
+export const MAX_FAVORITES_ORDER = 4000
+
+/**
+ * The Favorites order across vaults once a window hands in `paths` for the vaults `roots` (YAZ-2631
+ * R5): after a drag, its favorites in their new order, for the vaults whose list it has read (R25);
+ * after a remove, the stored order without the removed paths (R23). The paths take the places the
+ * entries of `roots` held, a path with no place goes last, and an entry of a vault that is not in
+ * `roots` keeps its place. Main merges with it and the renderer's cache does too, so both hold one
+ * answer. `stored` itself when nothing changes.
+ */
+export function mergeFavoritesOrder(stored: string[], roots: readonly string[], paths: readonly string[]): string[] {
+  const mine = new Set(paths)
+  const fresh = [...mine]
+  let taken = 0
+  // One path for each place a window's entry held; a place with no path left for it closes.
+  const placed = stored.flatMap((path) => (mine.has(path) ? (taken < fresh.length ? [fresh[taken++]] : []) : rootOfPath(roots, path) === null ? [path] : []))
+  const next = [...placed, ...fresh.slice(taken)].slice(0, MAX_FAVORITES_ORDER)
+  return next.length === stored.length && next.every((path, at) => path === stored[at]) ? stored : next
+}
 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
@@ -779,7 +799,8 @@ export interface WindowEntry {
   id: string
   root: string | null
   /**
-   * Every vault this window shows, in the order they were added (YAZ-2602 D1). `root` is the FIRST.
+   * Every vault this window shows (YAZ-2602 D1), in the order they were added, or the order a drag
+   * of a vault row gave them (YAZ-2631 D5). `root` is the FIRST.
    * Invariants, like `tabs` / `file` (`normalizeRoots`): `roots[0] === root`, and `roots: []` ⇔
    * `root: null`. Additive within version 1: a file without it repairs from `root`, and an old build
    * drops the key and opens `root` alone.
@@ -799,7 +820,8 @@ export interface WindowEntry {
   sidebarLens: SidebarLens
   /**
    * The focus list (YAZ-2619 D1): the files AND folders THIS window's Focus tab shows, in the
-   * order added, `MAX_FOCUS` at most — or empty; of every vault of the window (YAZ-2602 A1).
+   * order added, or the order a drag gave them (YAZ-2631 D3), `MAX_FOCUS` at most — or empty; of
+   * every vault of the window (YAZ-2602 A1).
    * Window identity like `sidebarCollapsed`, so a second window on the same vault keeps a list of
    * its own: a duplicate (⌘⇧N) inherits the list by value and then diverges, a root change clears
    * it, and a vault that leaves the window takes its items (A5). A flat list of absolute paths, so
@@ -880,11 +902,13 @@ export interface AppState {
    * within version 1, like `WindowEntry.roots`: a file without it loads as `[]`, and an old build drops the key.
    */
   vaultSets: VaultSet[]
+  /** The Favorites tab's order ACROSS vaults (YAZ-2631 D1): absolute paths, MAX_FAVORITES_ORDER at most. Per machine. A file without it loads as `[]`. */
+  favoritesOrder: string[]
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [] }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [] }
 }
 
 export function defaultFolderState(): FolderState {
