@@ -877,7 +877,7 @@ export function App() {
     storage.setRoots(next)
     setRoots(storage.getRoots())
     const set = storage.getVaultSets().find((one) => sameVaults(one.roots, next))
-    if (set !== undefined) void api.window.saveSet(set.name).catch(() => undefined)
+    if (set !== undefined) void api.window.saveSet(set.name).catch((err: unknown) => console.error('[reorder-vaults] saveSet failed:', err))
   }, [])
 
   /**

@@ -136,6 +136,7 @@ export function useTreeDrag(
     setReorderDragging(null)
     setReorderOver(null)
     if (from === null || over === null || over.path === from) return
+    if (!orderRef.current.includes(from)) return // not a row of the shown tab's list (YAZ-2631 R24): nothing is written
     const without = orderRef.current.filter((p) => p !== from)
     const i = without.indexOf(over.path)
     if (i < 0) return

@@ -64,7 +64,7 @@ export interface Store {
   get(): AppState
   setSettings(settings: SettingsState): void
   setSidebarWidth(width: number): void
-  /** A drag on the Favorites tab of a window that shows `roots` (YAZ-2631 R5): `paths` is its favorites in the new order, merged into the one order across vaults (`mergeFavoritesOrder`). The same order is no commit. */
+  /** What a window hands in for the vaults `roots` (YAZ-2631 R5): after a drag on its Favorites tab, its favorites in the new order; after a remove, the stored order without the removed paths (R23). Merged into the one order across vaults (`mergeFavoritesOrder`). The same order is no commit. */
   setFavoritesOrder(roots: readonly string[], paths: readonly string[]): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void

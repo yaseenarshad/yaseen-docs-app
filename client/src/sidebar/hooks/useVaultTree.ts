@@ -75,11 +75,12 @@ export function useVaultTree(
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
   // each folder is its own vault's, and the write-back below splits them again.
   const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => all.flatMap(storage.getExpanded))
-  // The focus list (YAZ-2619 D1): the files and folders the Focus tab shows, in the order added —
-  // of every vault of the window (YAZ-2602 A1). Per WINDOW since YAZ-1628 (`sidebarCollapsed`'s
-  // rule), unlike the per-vault expansion above: restored from this window's identity and written
-  // back the same way, so it survives a lens switch and a restart and follows its own rename, ⌘⇧N
-  // inherits it, and another window on the same vault is never affected.
+  // The focus list (YAZ-2619 D1): the files and folders the Focus tab shows, in the order added
+  // until a drag gives a new one (YAZ-2631 D3) — of every vault of the window (YAZ-2602 A1). Per
+  // WINDOW since YAZ-1628 (`sidebarCollapsed`'s rule), unlike the per-vault expansion above:
+  // restored from this window's identity and written back the same way, so it survives a lens
+  // switch and a restart and follows its own rename, ⌘⇧N inherits it, and another window on the
+  // same vault is never affected.
   const [focusList, setFocusList] = useState<readonly string[]>(storage.getFocusList)
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): each vault's pinned files and folders in the
   // user's order, read from ITS `.yaseendocs/favorites.json` through main (absolute paths) and kept
@@ -124,8 +125,8 @@ export function useVaultTree(
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
   // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
   const filesByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).files), [trees, roots])
-  // The Focus tab's rows (YAZ-2619 D2): the list in the order ADDED, off the live trees, by the
-  // Favorites rule (`favoriteRoots`) — a vanished path yields no row, and the prune below drops it.
+  // The Focus tab's rows (YAZ-2619 D2): the list in ITS order, never the tree's, off the live trees,
+  // by the Favorites rule (`favoriteRoots`) — a vanished path yields no row, and the prune below drops it.
   // It resolves over the forest, so the items of every vault stand in the one list (YAZ-2602 A1, A4).
   const focusNodes = useMemo(() => (forest === null ? [] : favoriteRoots(forest, focusList)), [forest, focusList])
   const focusDirs = useMemo(() => allDirs(focusNodes), [focusNodes])
@@ -138,10 +139,13 @@ export function useVaultTree(
   const favoriteNodes = useMemo(() => (forest === null ? [] : favoriteRoots(forest, favoritePaths)), [forest, favoritePaths])
   const favoriteDirs = useMemo(() => allDirs(favoriteNodes), [favoriteNodes])
 
-  /** Read one vault's favorites; the answer for a vault that left the window meanwhile is dropped. */
+  /**
+   * Read one vault's favorites; the answer for a vault that left the window meanwhile is dropped.
+   * A first answer is kept even when it is empty: a vault has a list here once this window has read it (YAZ-2631 R25).
+   */
   const loadFavorites = useCallback((vault: string) => {
     void api.favorites.get(vault).then((next) => {
-      if (live.current.roots.includes(vault)) setFavoritesByRoot((prev) => (sameList(prev[vault] ?? [], next) ? prev : { ...prev, [vault]: next }))
+      if (live.current.roots.includes(vault)) setFavoritesByRoot((prev) => (prev[vault] !== undefined && sameList(prev[vault], next) ? prev : { ...prev, [vault]: next }))
     })
   }, [])
 
@@ -154,8 +158,8 @@ export function useVaultTree(
   }, [setFailure])
 
   // PER VAULT, for as long as the vault is in the window (YAZ-2602 D3): its tree feed, its first
-  // read, its watcher refresh and the first read of its favorites (D5). A vault that joins starts
-  // its own and a vault that leaves ends its own, so a vault that stays is never read again for any.
+  // read, its watcher refresh and the first read of its favorites (YAZ-2631 D1). A vault that joins
+  // starts its own and a vault that leaves ends its own, so a vault that stays is never read again for any.
   //
   // The feed (YAZ-2191): every answer for the vault lands here, whoever asked — this panel, its
   // active-file probe, the view-only catalog. A failure is only this panel's to report when it
@@ -278,7 +282,9 @@ export function useVaultTree(
   /**
    * A drag on the Favorites tab (YAZ-2631 D1): `next` is every favorite of the window in the new
    * order. Each vault's file gets its own part, and only when that part changed (R3); the store
-   * gets the order across the vaults, where the window has two or more (R4). Each write is whole alone.
+   * gets the order across the vaults, where the window has two or more (R4), for the vaults whose
+   * list this window has read: one whose list is still on its way keeps its places (R25). Each
+   * write is whole alone.
    */
   const saveFavoriteOrder = useCallback(
     (next: string[]) => {
@@ -286,7 +292,7 @@ export function useVaultTree(
         const own = next.filter((p) => rootOf(p) === vault)
         if (!sameList(own, favoritesRef.current[vault] ?? [])) saveFavorites(vault, own)
       }
-      if (live.current.roots.length > 1) storage.setFavoritesOrder(live.current.roots, next)
+      if (live.current.roots.length > 1) storage.setFavoritesOrder(live.current.roots.filter((vault) => favoritesRef.current[vault] !== undefined), next)
     },
     [rootOf, saveFavorites],
   )
@@ -408,10 +414,14 @@ export function useVaultTree(
    * The favorite toggle (YAZ-1766 D3/D6): remove every path, or append the ones not yet pinned —
    * insertion order, no duplicates. `isOn` arrives with the paths. Each path goes to the list of
    * the vault that holds it, so a selection across two vaults writes one file per vault (YAZ-2602
-   * S25). The toast confirms with its own glyph and counts every row; `saveFavorites` persists.
+   * S25). A remove also takes its paths out of the store's order across vaults, where that order
+   * holds one (YAZ-2631 R23): the same path, a favorite again, then goes last (S6). An add writes no
+   * order (R13). The toast confirms with its own glyph and counts every row; `saveFavorites` persists.
    */
   const toggleFavorite = useCallback(
     (paths: string[], isOn: boolean) => {
+      // A vault whose list this window has not read takes no write (YAZ-2631 R26): it would replace the list on disk.
+      if (paths.some((p) => favoritesRef.current[rootOf(p)] === undefined)) return onNotice('Favorites are still loading. Try again.', 'error')
       const n = paths.length > 1 ? `${paths.length} ` : ''
       for (const vault of live.current.roots) {
         const own = paths.filter((p) => rootOf(p) === vault)
@@ -419,6 +429,8 @@ export function useVaultTree(
         const prev = favoritesRef.current[vault] ?? []
         saveFavorites(vault, isOn ? prev.filter((p) => !own.includes(p)) : [...prev, ...own.filter((p) => !prev.includes(p))])
       }
+      const order = storage.getFavoritesOrder()
+      if (isOn && order.some((p) => paths.includes(p))) storage.setFavoritesOrder(live.current.roots, order.filter((p) => !paths.includes(p)))
       onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite')
     },
     [rootOf, onNotice, saveFavorites],
