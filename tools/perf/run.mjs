@@ -27,12 +27,13 @@ import * as openBig from './scenarios/open-big.mjs'
 import * as typing from './scenarios/typing.mjs'
 import * as sidebarResize from './scenarios/sidebar-resize.mjs'
 import * as tabSwitch from './scenarios/tab-switch.mjs'
+import * as multiVault from './scenarios/multi-vault.mjs'
 import * as storm from './scenarios/storm.mjs'
 import * as watcher from './scenarios/watcher.mjs'
 import * as idle from './scenarios/idle.mjs'
 import * as quit from './scenarios/quit.mjs'
 
-const SCENARIOS = { launch, 'open-big': openBig, typing, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, storm, watcher, idle, quit }
+const SCENARIOS = { launch, 'open-big': openBig, typing, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)

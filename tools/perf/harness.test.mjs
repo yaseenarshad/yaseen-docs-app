@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { sentinel, writeNote } from './genVault.mjs'
 import { abba, loadSensitive, summarizeRuns } from './lib/stats.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
+import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
 
 const made = []
 const tmp = () => {
@@ -70,5 +71,22 @@ describe('fixtures', () => {
     const s = JSON.parse(fs.readFileSync(path.join(profile, 'yaseendocs.json'), 'utf8'))
     expect(s.windows.map((w) => [w.id, w.file, w.sidebarLens])).toEqual([['w1', '/v/a.md', 'files'], ['w2', null, 'files']])
     expect(s.recents).toHaveLength(1)
+  })
+
+  it('multi-vault seeds ONE window on two vaults: `roots` holds both, `root` is the first, and the tabs are of both (YAZ-2602)', () => {
+    const profile = tmp()
+    seedVaults(profile, ['/a', '/b'], ['/a/1.md', '/a/2.md', '/b/1.md', '/b/2.md'])
+    const s = JSON.parse(fs.readFileSync(path.join(profile, 'yaseendocs.json'), 'utf8'))
+    expect(s.windows.map((w) => [w.id, w.root, w.roots, w.file])).toEqual([['w1', '/a', ['/a', '/b'], '/a/1.md']])
+    expect(s.windows[0].tabs).toEqual(['/a/1.md', '/a/2.md', '/b/1.md', '/b/2.md'])
+  })
+
+  it('multi-vault takes its tab switches in a ring, so every other one stays inside a vault and every other one crosses to the other', () => {
+    expect(RING.map((to, i) => [RING.at(i - 1), to, crosses(i)])).toEqual([
+      ['Beta 2', 'Alpha 1', true],
+      ['Alpha 1', 'Alpha 2', false],
+      ['Alpha 2', 'Beta 1', true],
+      ['Beta 1', 'Beta 2', false],
+    ])
   })
 })
