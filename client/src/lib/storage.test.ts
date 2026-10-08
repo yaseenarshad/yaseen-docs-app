@@ -13,6 +13,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
+      setFavoritesOrder: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -119,6 +120,41 @@ describe('storage.getVaultSets (YAZ-2602 D8)', () => {
     b.emit({ ...defaultAppState(), vaultSets: [reading] })
     expect(storage.getVaultSets()).toEqual([reading])
     expect(woke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('storage.getFavoritesOrder / setFavoritesOrder (YAZ-2631 D1)', () => {
+  const [a1, a2, b1, c1] = ['/v/a/1.md', '/v/a/2.md', '/v/b/1.md', '/v/c/1.md']
+
+  it('a drag is in the cache at once, merged as main merges it (R5), and wakes the readers; the broadcast of the same order changes nothing, and a different one — another window\'s drag — replaces it (S12)', async () => {
+    expect(storage.getFavoritesOrder()).toEqual([])
+    b = installBridge({ ...defaultAppState(), favoritesOrder: [a1, c1, b1, a2] }, { id: 'w1', root: '/v/a', roots: ['/v/a', '/v/b'], file: null, tabs: [] })
+    await storage.init()
+    const woke = vi.fn()
+    storage.subscribe(woke)
+    const loaded = storage.getFavoritesOrder()
+    expect(loaded).toEqual([a1, c1, b1, a2])
+    expect(storage.getFavoritesOrder()).toBe(loaded)
+
+    storage.setFavoritesOrder(['/v/a', '/v/b'], [b1, a2, a1])
+    // The entry of a vault this window does not show keeps its place.
+    const dragged = storage.getFavoritesOrder()
+    expect(dragged).toEqual([b1, c1, a2, a1])
+    expect(b.bridge.state.setFavoritesOrder.mock.calls).toEqual([[['/v/a', '/v/b'], [b1, a2, a1]]])
+    expect(woke).toHaveBeenCalledTimes(1)
+
+    // Main's echo is a new copy of the same paths: the list keeps its identity, so nothing that reads it draws again.
+    b.emit({ ...defaultAppState(), favoritesOrder: [b1, c1, a2, a1], sidebarWidth: 300 })
+    expect(storage.getFavoritesOrder()).toBe(dragged)
+    expect(storage.getSidebarWidth()).toBe(300)
+    b.emit({ ...defaultAppState(), favoritesOrder: [a1, a2, b1] })
+    expect(storage.getFavoritesOrder()).toEqual([a1, a2, b1])
+
+    // The order that is held already: still sent — main decides — and no reader wakes.
+    woke.mockClear()
+    storage.setFavoritesOrder(['/v/a', '/v/b'], [a1, a2, b1])
+    expect(b.bridge.state.setFavoritesOrder).toHaveBeenCalledTimes(2)
+    expect(woke).not.toHaveBeenCalled()
   })
 })
 

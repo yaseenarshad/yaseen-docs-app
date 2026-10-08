@@ -377,7 +377,7 @@ export function Sidebar({
   width,
   asideRef,
 }: SidebarProps) {
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
+  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, onNotice)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
@@ -727,10 +727,10 @@ export function Sidebar({
   const removeShortcutRow = (path: string, dir: string): void =>
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
-  // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): the favorites of every
-  // vault of the window, in vault order, or the focus list. The Files tab reorders nothing.
+  // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
+  // window in the tab's order (D1), or the focus list. The Files tab reorders nothing.
   const orderRef = useRef<readonly string[]>([])
-  orderRef.current = lens === 'favorites' ? roots.flatMap((vault) => favoritesByRoot[vault] ?? []) : focusList
+  orderRef.current = lens === 'favorites' ? favoritePaths : focusList
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : reorderFocus
   const { dragging, dropDir, setDropDir, dropOnDir, fileMove, reorder } = useTreeDrag(onRenameFile, orderRef, saveOrder, rootOf, onNotice)
 
@@ -965,7 +965,7 @@ export function Sidebar({
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
           // every row carries the same menu. A top row drags to reorder the list, and a file inside a
           // favorited folder drags to move on disk (YAZ-2631 D3). With two or more vaults the favorites
-          // stand under their vault's row, the one Files has, and reorder inside it (YAZ-2602 D5).
+          // of every vault stand in the one list, and each top row names its vault (YAZ-2631 D1, D4).
           <>
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}

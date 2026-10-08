@@ -619,6 +619,25 @@ export function keyedVaults(folders: Readonly<Record<string, FolderState>>): Key
 export const MAX_FAVORITES = 500
 /** A window's focus list (YAZ-2619) holds at most this many paths. */
 export const MAX_FOCUS = 500
+/** The Favorites order across vaults (YAZ-2631 D1) holds at most this many paths: MAX_FAVORITES for each of MAX_WINDOW_ROOTS vaults. */
+export const MAX_FAVORITES_ORDER = 4000
+
+/**
+ * The Favorites order across vaults after a drag in a window that shows `roots` (YAZ-2631 R5).
+ * `paths` is that window's favorites in their new order: they take the places the window's entries
+ * held, a path with no place goes last, and an entry of a vault the window does not show keeps its
+ * place. Main merges with it and the renderer's cache does too, so both hold one answer. `stored`
+ * itself when nothing changes.
+ */
+export function mergeFavoritesOrder(stored: string[], roots: readonly string[], paths: readonly string[]): string[] {
+  const mine = new Set(paths)
+  const fresh = [...mine]
+  let taken = 0
+  // One path for each place a window's entry held; a place with no path left for it closes.
+  const placed = stored.flatMap((path) => (mine.has(path) ? fresh.slice(taken, ++taken) : rootOfPath(roots, path) === null ? [path] : []))
+  const next = [...placed, ...fresh.slice(taken)].slice(0, MAX_FAVORITES_ORDER)
+  return next.length === stored.length && next.every((path, at) => path === stored[at]) ? stored : next
+}
 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
@@ -880,11 +899,13 @@ export interface AppState {
    * within version 1, like `WindowEntry.roots`: a file without it loads as `[]`, and an old build drops the key.
    */
   vaultSets: VaultSet[]
+  /** The Favorites tab's order ACROSS vaults (YAZ-2631 D1): absolute paths, MAX_FAVORITES_ORDER at most. Per machine. A file without it loads as `[]`. */
+  favoritesOrder: string[]
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [] }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [] }
 }
 
 export function defaultFolderState(): FolderState {
