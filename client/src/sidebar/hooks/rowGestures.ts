@@ -372,7 +372,7 @@ export function useInlineEdits(
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` above has already opened that dir.
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
-      // vaults a vault's root is held only as its row (YAZ-2602): Favorites has it, Focus never does.
+      // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
       if (shown !== null && (menu.targetDir === root ? shown.length === 0 : findDirNode(shown, menu.targetDir) === null)) onLensChange('files')
       setCreating({ kind, seed, parentDir: menu.targetDir })

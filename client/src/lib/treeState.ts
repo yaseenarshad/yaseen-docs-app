@@ -1,4 +1,4 @@
-import { stripSlash, type TreeNode } from '@shared/types'
+import type { TreeNode } from '@shared/types'
 
 /** Expanded-directory set for the sidebar tree (persisted per root; see storage.ts). */
 export type TreeAction =
@@ -88,14 +88,18 @@ export function favoriteRoots(tree: readonly TreeNode[], favorites: readonly str
 }
 
 /**
- * The Favorites tab (YAZ-2602 D5). One vault → its flat list. Two or more → one row per
- * vault that HAS a favorite the tree holds, in vault order, holding them in that vault's stored
- * order; the row is the Files tab's vault row, so it opens and closes with it.
+ * The Favorites tab's paths (YAZ-2631 D1): ONE flat list across the vaults of the window. `order`
+ * (the store's) says which VAULT has each place; each vault fills its places in its own file's
+ * order, so a synced file still wins inside its vault. A favorite with no place goes last, in vault order.
  */
-export function favoriteForest(trees: readonly { root: string; name: string; tree: readonly TreeNode[] }[], favorites: Readonly<Record<string, readonly string[]>>): TreeNode[] {
-  if (trees.length === 1) return favoriteRoots(trees[0].tree, favorites[trees[0].root] ?? [])
-  return trees.flatMap((t) => {
-    const children = favoriteRoots(t.tree, favorites[t.root] ?? [])
-    return children.length === 0 ? [] : [{ type: 'dir' as const, name: t.name, path: stripSlash(t.root), children }]
+export function favoriteOrder(roots: readonly string[], favorites: Readonly<Record<string, readonly string[]>>, order: readonly string[]): string[] {
+  const own = roots.map((root) => favorites[root] ?? [])
+  if (roots.length === 1) return [...own[0]]
+  const home = new Map(own.flatMap((list, at) => list.map((path) => [path, at] as const)))
+  const next = own.map(() => 0)
+  const placed = order.flatMap((path) => {
+    const at = home.get(path)
+    return at === undefined || next[at] === own[at].length ? [] : [own[at][next[at]++]]
   })
+  return [...placed, ...own.flatMap((list, at) => list.slice(next[at]))]
 }

@@ -58,6 +58,8 @@ export const CONTRACT = {
     setSettings: invoke<[settings: SettingsState], void>('state:set-settings', 1),
     /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
+    /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
+    setFavoritesOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-favorites-order', 2),
     /** Prepend to recents (de-duplicated, capped). */
     pushRecent: invoke<[path: string], void>('state:push-recent', 1),
     /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */

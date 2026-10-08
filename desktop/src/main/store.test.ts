@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOCUS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openVaultRoots, rootOfPath, sameVaults, type AppState, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOCUS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openVaultRoots, rootOfPath, sameVaults, type AppState, type VaultSet, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -133,6 +133,7 @@ describe('createStore: loading', () => {
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites' })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null, key: null } },
       vaultSets: [],
+      favoritesOrder: ['/v/a.md', '/w/b.md'],
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
@@ -1405,5 +1406,84 @@ describe('vaultSets (YAZ-2602 D8)', () => {
     store.saveVaultSet('Two', ['/x/a', '/x/gone'], 6)
     store.renamePath('/x/a', '/x/gone')
     expect(sets()).toEqual({ Gone: ['/x/gone', '/x/b'] })
+  })
+})
+
+describe('favoritesOrder (YAZ-2631 D1)', () => {
+  /** A store that counts its commits: each one is a `state:changed`. */
+  const counted = () => {
+    const store = createStore(file)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    return { store, seen }
+  }
+  const [a1, a2, b1, b2, c1, c2] = ['/v/a/1.md', '/v/a/2.md', '/v/b/1.md', '/v/b/2.md', '/v/c/1.md', '/v/c/2.md']
+
+  it('loads with the focus list\'s rule: a file without the key, or a junk list, is []; a relative element drops; a long list is cut to the first MAX_FAVORITES_ORDER (R7)', async () => {
+    const { favoritesOrder: _omitted, ...before } = valid({ recents: [{ path: '/v', lastOpened: 5 }] })
+    await seed(before)
+    expect(createStore(file).get()).toEqual({ ...defaultAppState(), recents: [{ path: '/v', lastOpened: 5 }] })
+    for (const junk of ['nope', { a: 1 }, 5, null, [a1, 5]]) {
+      await seed(valid({ favoritesOrder: junk }))
+      expect(createStore(file).get().favoritesOrder).toEqual([])
+    }
+    await seed(valid({ favoritesOrder: [a1, 'rel/x.md', b1, ''] }))
+    expect(createStore(file).get().favoritesOrder).toEqual([a1, b1])
+    const long = Array.from({ length: MAX_FAVORITES_ORDER + 5 }, (_, i) => `/v/a/n${i}.md`)
+    await seed(valid({ favoritesOrder: long }))
+    expect(createStore(file).get().favoritesOrder).toEqual(long.slice(0, MAX_FAVORITES_ORDER))
+  })
+
+  it('setFavoritesOrder merges: the entries of the window\'s vaults take the new order in the places they held, an entry of a vault the window does not show keeps its place, and a path with no place goes last; the same order is no commit; the list is cut at MAX_FAVORITES_ORDER, and it is there after a relaunch (R1, R5, R7, S13)', async () => {
+    const { store, seen } = counted()
+    store.setFavoritesOrder(['/v/a', '/v/b'], [a1, b1, a2])
+    expect(store.get().favoritesOrder).toEqual([a1, b1, a2])
+    expect(seen).toHaveLength(1)
+    // A window on A and C: C's favorites are new, so they go last. B's entry keeps its place.
+    store.setFavoritesOrder(['/v/a', '/v/c/'], [c1, a2, a1, c2])
+    expect(store.get().favoritesOrder).toEqual([c1, b1, a2, a1, c2])
+    // The window on A and B again: its three entries take their new order in the three places they held (S13).
+    store.setFavoritesOrder(['/v/a', '/v/b'], [b1, a1, a2])
+    expect(store.get().favoritesOrder).toEqual([c1, b1, a1, a2, c2])
+    // A favorite the window no longer has leaves; one it gained goes last.
+    store.setFavoritesOrder(['/v/a', '/v/b'], [b2, a2, b1])
+    expect(store.get().favoritesOrder).toEqual([c1, b2, a2, c2, b1])
+    expect(seen).toHaveLength(4)
+    // What is stored already: no commit, so no broadcast and no write.
+    store.setFavoritesOrder(['/v/a', '/v/b'], [b2, a2, b1])
+    store.setFavoritesOrder(['/v/x'], [])
+    expect(seen).toHaveLength(4)
+    // A path given twice has one place.
+    store.setFavoritesOrder(['/v/a', '/v/b'], [a2, b2, a2, b1])
+    expect(store.get().favoritesOrder).toEqual([c1, a2, b2, c2, b1])
+
+    await store.flush()
+    expect((await onDisk()).favoritesOrder).toEqual([c1, a2, b2, c2, b1])
+    expect(createStore(file).get().favoritesOrder).toEqual([c1, a2, b2, c2, b1])
+
+    const long = Array.from({ length: MAX_FAVORITES_ORDER + 5 }, (_, i) => `/v/a/n${i}.md`)
+    store.setFavoritesOrder(['/v/a'], long)
+    expect(store.get().favoritesOrder).toEqual([c1, b2, c2, b1, ...long].slice(0, MAX_FAVORITES_ORDER))
+  })
+
+  it('renamePath moves a renamed favorite in its place, a file as a folder with what is under it; removePath drops a deleted one; each is ONE commit also when the order alone holds the path, and none when it does not (R6, S10, S11)', () => {
+    const { store, seen } = counted()
+    store.setFavoritesOrder(['/v/a', '/v/b'], [a1, '/v/b/docs', a2, '/v/b/docs/d.md', '/v/b/docs2'])
+    seen.length = 0
+    store.renamePath(a1, '/v/a/sub/one.md')
+    expect(store.get().favoritesOrder).toEqual(['/v/a/sub/one.md', '/v/b/docs', a2, '/v/b/docs/d.md', '/v/b/docs2'])
+    store.renamePath('/v/b/docs', '/v/b/papers')
+    expect(store.get().favoritesOrder).toEqual(['/v/a/sub/one.md', '/v/b/papers', a2, '/v/b/papers/d.md', '/v/b/docs2'])
+    expect(seen).toHaveLength(2)
+    store.renamePath('/v/a/other.md', '/v/a/else.md')
+    expect(seen).toHaveLength(2)
+
+    store.removePath(a2)
+    expect(store.get().favoritesOrder).toEqual(['/v/a/sub/one.md', '/v/b/papers', '/v/b/papers/d.md', '/v/b/docs2'])
+    store.removePath('/v/b/papers')
+    expect(store.get().favoritesOrder).toEqual(['/v/a/sub/one.md', '/v/b/docs2'])
+    expect(seen).toHaveLength(4)
+    store.removePath('/v/a/other.md')
+    expect(seen).toHaveLength(4)
   })
 })

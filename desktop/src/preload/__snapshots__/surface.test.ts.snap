@@ -59,6 +59,7 @@ state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","roo
 state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.removeRecent/1: invoke state:remove-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setBaseGroups/3: invoke state:set-base-groups ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setFavoritesOrder/2: invoke state:set-favorites-order ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFolder/2: invoke state:set-folder ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFolds/3: invoke state:set-folds ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

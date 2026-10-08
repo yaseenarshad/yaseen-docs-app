@@ -84,7 +84,7 @@ function installBridge() {
     // A note is born from its folder's hidden `.template.md` (YAZ-2290 E3): no folder has one by default.
     readFile: vi.fn((path: string): Promise<{ path: string; content: string; mtime: number; size: number }> => Promise.reject({ code: 'NOT_FOUND', message: `no such file: ${path}` })),
     createDir: vi.fn(async (req: { path: string; title?: string }) => ({ path: req.path })),
-    state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
+    state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
       // The focus list is window identity (YAZ-1628): `storage.init()` boots from `identity`, writes go to `setIdentity`.
@@ -2764,18 +2764,25 @@ describe('favorites (YAZ-1766)', () => {
     expect(rowByPath(el, `${v}/Projects/Alpha`)?.querySelector('.tree__mark')).not.toBeNull()
   })
 
-  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder does not drag (YAZ-2631 S29, S32)', async () => {
+  it('top rows drag to reorder: a line on the hovered edge, the new order written to the vault\'s file, and nothing moved on disk — a top file over a top folder too; below them a folder does not drag; the drag draws the top rows alone; one vault writes no order across vaults and names no vault (YAZ-2631 S1, S29, S32, R4)', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     expect(rowByPath(el, `${v}/Notes`)?.getAttribute('draggable')).toBe('true')
     expect(rowByPath(el, `${v}/top.md`)?.getAttribute('draggable')).toBe('true')
     act(() => rowByPath(el, `${v}/Projects`)?.click())
     expect(rowByPath(el, `${v}/Projects/Alpha`)?.getAttribute('draggable')).toBe('false')
     expect(rowByPath(el, `${v}/Projects/p.md`)?.getAttribute('draggable')).toBe('true') // it moves on disk
+    labelRenders.names = []
     drag(rowByPath(el, `${v}/top.md`), 'dragstart')
     drag(rowByPath(el, `${v}/Notes`), 'dragover', -1)
     expect(rowByPath(el, `${v}/Notes`)?.classList.contains('tree__row--drop-before')).toBe(true)
+    drag(rowByPath(el, `${v}/Notes`), 'dragover', 1)
+    expect(rowByPath(el, `${v}/Notes`)?.classList.contains('tree__row--drop-after')).toBe(true)
+    drag(rowByPath(el, `${v}/Notes`), 'dragover', -1)
+    // The line is the top level's own: the rows of an open folder below it are not drawn again.
+    expect([...new Set(labelRenders.names)]).toEqual(['top.md'])
     drag(rowByPath(el, `${v}/Notes`), 'drop')
     expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
+    expect([...new Set(labelRenders.names)]).toEqual(['top.md'])
     expect(el.querySelector('.tree__row--drop-before, .tree__row--drop-after')).toBeNull()
     expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/top.md`, `${v}/Notes`, `${v}/Projects`])
     // Below the midpoint lands AFTER; nothing moved on disk at any point.
@@ -2785,6 +2792,8 @@ describe('favorites (YAZ-1766)', () => {
     drag(rowByPath(el, `${v}/Projects`), 'drop')
     expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top'])
     expect(props.onRenameFile).not.toHaveBeenCalled()
+    expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
+    expect(el.querySelector('.tree__vault')).toBeNull()
   })
 
   it('YAZ-2631 S30, S33, S34, S35, S40: a file inside a favorited folder drags into a folder and moves on disk, and finds no place on a top file row; a reorder drag over a deeper row shows no line and no fill, a drop there or on itself changes nothing, and dragend takes the line with it', async () => {
@@ -5230,7 +5239,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(errors(el)).toEqual(['watcher stopped'])
   })
 
-  it('"Add to focus" on a file of the second vault, then on a folder of the first: the one list holds both in the order added, each add asks for the Focus tab, and each top row there, file or folder, names its vault; Files and Favorites name none and Files is not narrowed (A1, A4, A7; YAZ-2631 S41, S43)', async () => {
+  it('"Add to focus" on a file of the second vault, then on a folder of the first: the one list holds both in the order added, each add asks for the Focus tab, and each top row there, file or folder, names its vault, as each top row of the Favorites tab does; Files names none and is not narrowed (A1, A4, A7; YAZ-2631 S41, S43)', async () => {
     const { el, a, b, bridge, props, rerender } = await two({}, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/sub`] }))
     rightClick(rowByPath(el, `${b}/b.md`))
     await choose(el, 'Add to focus')
@@ -5258,8 +5267,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     for (const row of [`${b}/b.md`, `${a}/sub`]) expect(rowByPath(el, row)?.querySelector('.tree__vault')?.previousElementSibling?.className).toBe('tree__label')
 
     await rerender({ lens: 'favorites' })
-    expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/sub/in.md`])
-    expect(el.querySelector('.tree__vault')).toBeNull()
+    expect(allRows(el)).toEqual([`${a}/sub`, `${a}/sub/in.md`])
+    expect([tag(el, `${a}/sub`), tag(el, `${a}/sub/in.md`)]).toEqual(['Notes', null])
   })
 
   it('one vault: no top row of the Focus tab names a vault, file or folder (S11, A4; YAZ-2631 S42)', async () => {
@@ -5361,19 +5370,24 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect([tag(el, `${at.a}/sub`), tag(el, `${at.b}/b.md`)]).toEqual(['Notes', 'Work'])
   })
 
-  it('"New note" on a top file row of the Focus tab, with two vaults: its folder is a vault\'s root, which that tab does not hold, so the create moves to Files and stands under the vault\'s row — for the first vault as for the second (YAZ-2619 S36)', async () => {
-    for (const pick of ['a', 'b'] as const) {
-      const at = pair()
-      const top = pick === 'a' ? `${at.a}/a.md` : `${at.b}/b.md`
-      const { el, props, rerender } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens: 'focus' }, withFocus(top))
-      rightClick(rowByPath(el, top))
-      act(() => itemByLabel(el, 'New note')?.click())
-      expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
-      await rerender({ lens: 'files' })
-      const field = el.querySelector<HTMLInputElement>('.create-inline__input')
-      expect(field?.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, at[pick]))
-      act(() => root?.unmount())
-      container?.remove()
+  it('"New note" on a top file row of the Focus tab, with two vaults: its folder is a vault\'s root, which that tab does not hold, so the create moves to Files and stands under the vault\'s row — for the first vault as for the second (YAZ-2619 S36), and on the Favorites tab as on Focus (YAZ-2631 D1)', async () => {
+    for (const lens of ['focus', 'favorites'] as const) {
+      for (const pick of ['a', 'b'] as const) {
+        const at = pair()
+        const top = pick === 'a' ? `${at.a}/a.md` : `${at.b}/b.md`
+        const { el, props, rerender } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens }, async (bridge) => {
+          await withFocus(top)(bridge)
+          favoritesOf(bridge, { [at[pick]]: [top] })
+        })
+        rightClick(rowByPath(el, top))
+        act(() => itemByLabel(el, 'New note')?.click())
+        expect(props.onLensChange, lens).toHaveBeenCalledExactlyOnceWith('files')
+        await rerender({ lens: 'files' })
+        const field = el.querySelector<HTMLInputElement>('.create-inline__input')
+        expect(field?.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row'), lens).toBe(rowByPath(el, at[pick]))
+        act(() => root?.unmount())
+        container?.remove()
+      }
     }
   })
 
@@ -5386,55 +5400,59 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.create-inline__input')?.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${at.b}/docs`))
   })
 
-  it('"Expand all" on the Favorites tab opens the favorited folders of every vault; a vault row is not one of them, so none is stored as an open folder (S16)', async () => {
+  it('YAZ-2631 S18: "Expand all" and "Collapse all" on the Favorites tab act on the favorited folders of every vault, each stored under its own vault; no vault row is on the tab, and none is opened, closed or stored', async () => {
     const { el, a, b, bridge, props } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/sub`], [at.b]: [`${at.b}/docs`] }))
     const button = () => el.querySelector<HTMLButtonElement>('.sidebar__expand-all')
     expect(button()?.getAttribute('aria-label')).toBe('Expand all')
     act(() => button()?.click())
-    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`)]).toEqual(['true', 'true'])
+    expect(allRows(el)).toEqual([`${a}/sub`, `${a}/sub/in.md`, `${b}/docs`, `${b}/docs/d.md`])
     expect(setFolderCalls(bridge).filter(([, patch]) => patch.expanded !== undefined)).toEqual([[a, { expanded: [`${a}/sub`] }], [b, { expanded: [`${b}/docs`] }]])
+    expect(button()?.getAttribute('aria-label')).toBe('Collapse all')
     act(() => button()?.click())
-    expect([isOpen(el, `${a}/sub`), isOpen(el, `${b}/docs`), isOpen(el, a), isOpen(el, b)]).toEqual(['false', 'false', 'true', 'true'])
+    expect(allRows(el)).toEqual([`${a}/sub`, `${b}/docs`])
+    expect(el.querySelector('.tree__row--vault')).toBeNull()
     expect(props.onSetVaultOpen).not.toHaveBeenCalled()
   })
 
-  it('the Favorites tab with two or more vaults: one row per vault that has a favorite that exists, its favorites below it in that vault\'s stored order; the row is the Files tab\'s vault row, closed and open with it (D5, S24)', async () => {
+  it('YAZ-2631 S2, S3, S9, S16, S19, S41: with two or more vaults the Favorites tab is one flat list, in vault order and then each file\'s order while no order is stored; no vault row, each top row names its vault, and a favorite whose file is not here draws no row; a favorite inside a favorited folder stands at the top and inside it; a top row has its row menu of Files; a vault row closed on Files hides nothing here', async () => {
     const at = pair()
     const plain = at.b.replace('/work', '/plain')
-    const lists = { [at.a]: [`${at.a}/a.md`, `${at.a}/sub`], [plain]: [`${plain}/gone.md`], [at.b]: [`${at.b}/docs`, `${at.b}/gone.md`] }
+    const lists = { [at.a]: [`${at.a}/a.md`, `${at.a}/sub/in.md`, `${at.a}/sub`], [plain]: [`${plain}/gone.md`], [at.b]: [`${at.b}/docs`, `${at.b}/gone.md`, `${at.b}/b.md`] }
     const { el, props, bridge, rerender } = await mountVaults([vault(at.a, 'Notes'), vault(plain, 'Plain'), vault(at.b, 'Work')], { lens: 'favorites' }, (bridge) => void favoritesOf(bridge, lists))
-    expect(topLabels(el)).toEqual(['Notes', 'Work'])
-    expect(vaultRowLabels(el)).toEqual(['Notes', 'Work'])
-    expect(allRows(el)).toEqual([at.a, `${at.a}/a.md`, `${at.a}/sub`, at.b, `${at.b}/docs`])
-    expect(rowByPath(el, `${at.a}/a.md`)?.style.paddingLeft).toBe('36px')
+    const top = [`${at.a}/a.md`, `${at.a}/sub/in.md`, `${at.a}/sub`, `${at.b}/docs`, `${at.b}/b.md`]
+    expect(allRows(el)).toEqual(top)
+    expect(topLabels(el)).toEqual(['a', 'in', 'sub', 'docs', 'b'])
+    expect(el.querySelector('.tree__row--vault')).toBeNull()
+    expect(top.map((path) => tag(el, path))).toEqual(['Notes', 'Notes', 'Notes', 'Work', 'Work'])
+    expect([rowByPath(el, `${at.a}/a.md`)?.style.paddingLeft, rowByPath(el, `${at.a}/sub`)?.style.paddingLeft]).toEqual(['22px', '8px'])
     expect(bodyMsg(el)).toBeNull()
     expect([...new Set(bridge.favorites.get.mock.calls.map(([root]) => root))].sort()).toEqual([at.a, plain, at.b].sort())
-    // A favorited folder unfolds in place, under its vault's row.
+    // S16: a favorited folder unfolds in place, and the favorite inside it stands there too, with no vault name.
     act(() => rowByPath(el, `${at.a}/sub`)?.click())
-    expect(rowByPath(el, `${at.a}/sub/in.md`)).not.toBeNull()
-    // The row has the vault row's menu: no favorite item (S13).
-    rightClick(rowByPath(el, at.b))
-    expect(topItems(el)).toEqual(expect.arrayContaining(['Paste', 'Remove from this window']))
-    expect(focusItems(el)).toEqual([])
-    expect(topItems(el).some((label) => label?.includes('favorites'))).toBe(false)
-    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    // One window state for the vault row on both tabs (R9).
-    act(() => rowByPath(el, at.b)?.click())
-    expect(props.onSetVaultOpen).toHaveBeenCalledExactlyOnceWith(at.b, false)
+    const twice = [...el.querySelectorAll<HTMLElement>(`.tree__row[data-path="${at.a}/sub/in.md"]`)]
+    expect(twice.map((row) => row.querySelector('.tree__vault')?.textContent ?? null)).toEqual(['Notes', null])
+    // S19: the row's own menu, as on Files — of a file and of a folder, of either vault.
+    for (const path of [`${at.b}/b.md`, `${at.a}/sub`]) {
+      rightClick(rowByPath(el, path))
+      expect(topItems(el), path).toEqual(expect.arrayContaining(['Add to focus', 'Cut', 'Copy', 'Copy path', 'Rename', 'Remove from favorites', 'Delete']))
+      expect(topItems(el), path).not.toContain('Remove from this window')
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    }
+    // The vault row is the Files tab's alone: closed there, its favorites still stand here.
     await rerender({ closedVaults: [at.b] })
-    expect(isOpen(el, at.b)).toBe('false')
-    expect(rowByPath(el, `${at.b}/docs`)).toBeNull()
-    await rerender({ closedVaults: [at.b], lens: 'files' })
-    expect([isOpen(el, at.a), isOpen(el, plain), isOpen(el, at.b)]).toEqual(['true', 'true', 'false'])
+    expect(topLabels(el)).toEqual(['a', 'in', 'sub', 'docs', 'b'])
+    expect(props.onSetVaultOpen).not.toHaveBeenCalled()
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
   })
 
-  it('two or more vaults and no favorite at all: the "No favorites yet" text, and no row (S24)', async () => {
+  it('two or more vaults and no favorite that exists: the "No favorites yet" text, and no row (YAZ-2631 S20)', async () => {
     const { el } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.b]: [`${at.b}/gone.md`] }))
     expect(bodyMsg(el)).toBe('No favorites yet. Right-click a file or folder → Add to favorites.')
     expect(el.querySelector('.tree')).toBeNull()
   })
 
-  it('"Add to favorites" writes the file of the vault that holds the row; a selection across two vaults writes one file per vault, and the notice counts every row (S25)', async () => {
+  it('"Add to favorites" writes the file of the vault that holds the row; a selection across two vaults writes one file per vault, and the notice counts every row (S25; YAZ-2631 S17)', async () => {
     const { el, a, b, bridge, props } = await two({}, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`] }))
     rightClick(rowByPath(el, `${b}/b.md`))
     await choose(el, 'Add to favorites')
@@ -5463,26 +5481,76 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from favorites', 'favorite')
   })
 
-  it('a drag reorders a favorite inside its own vault and writes that vault\'s file alone; a vault row does not drag (S26, YAZ-2631 R3)', async () => {
-    const { el, a, b, bridge, props } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`, `${at.a}/sub`], [at.b]: [`${at.b}/docs`, `${at.b}/b.md`] }))
-    expect(allRows(el)).toEqual([a, `${a}/a.md`, `${a}/sub`, b, `${b}/docs`, `${b}/b.md`])
-    expect([a, b, `${a}/sub`, `${a}/a.md`].map((path) => rowByPath(el, path)?.draggable)).toEqual([false, false, true, true])
+  it('YAZ-2631 S4, S5, S9, S12, S15, R3, R4: a favorite drags to any place of the flat list, between the rows of either vault; a drag that keeps each vault\'s own order writes the order across vaults alone, and one that changes a vault\'s own order writes that vault\'s file too — with the favorite that draws no row still in it; a refused file write puts that vault\'s list back; another window\'s drag lands here', async () => {
+    let broadcast: ((state: AppState) => void) | undefined
+    const { el, a, b, bridge, props } = await two({ lens: 'favorites' }, (bridge, at) => {
+      favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`, `${at.a}/gone.md`, `${at.a}/sub`], [at.b]: [`${at.b}/docs`, `${at.b}/b.md`] })
+      bridge.state.onChange.mockImplementation((listener) => {
+        broadcast = listener
+        return () => undefined
+      })
+    })
+    const [aMd, gone, sub, docs, bMd] = [`${a}/a.md`, `${a}/gone.md`, `${a}/sub`, `${b}/docs`, `${b}/b.md`]
+    const dragTo = (from: string, to: string, edge: 'before' | 'after') => {
+      drag(rowByPath(el, from), 'dragstart')
+      drag(rowByPath(el, to), 'dragover', edge === 'before' ? -1 : 1)
+      expect(marker(el)).toBe(rowByPath(el, to))
+      expect(rowByPath(el, to)?.classList.contains(`tree__row--drop-${edge}`)).toBe(true)
+      drag(rowByPath(el, to), 'drop')
+      expect(marker(el)).toBeNull()
+    }
+    expect(allRows(el)).toEqual([aMd, sub, docs, bMd])
+    expect([aMd, sub, docs, bMd].map((path) => rowByPath(el, path)?.draggable)).toEqual([true, true, true, true])
 
-    drag(rowByPath(el, `${a}/sub`), 'dragstart')
-    drag(rowByPath(el, `${a}/a.md`), 'dragover', -1)
-    expect(rowByPath(el, `${a}/a.md`)?.classList.contains('tree__row--drop-before')).toBe(true)
-    drag(rowByPath(el, `${a}/a.md`), 'drop')
-    expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/sub`, `${a}/a.md`]]])
-    expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/docs`, `${b}/b.md`])
-    expect(marker(el)).toBeNull()
-    // The second vault's order is its own file's.
-    drag(rowByPath(el, `${b}/docs`), 'dragstart')
-    drag(rowByPath(el, `${b}/b.md`), 'dragover', 1)
-    expect(rowByPath(el, `${b}/b.md`)?.classList.contains('tree__row--drop-after')).toBe(true)
-    drag(rowByPath(el, `${b}/b.md`), 'drop')
-    expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/sub`, `${a}/a.md`]], [b, [`${b}/b.md`, `${b}/docs`]]])
-    expect(allRows(el)).toEqual([a, `${a}/sub`, `${a}/a.md`, b, `${b}/b.md`, `${b}/docs`])
+    // S4: a favorite of Work lands between two of Notes. Each vault's own order is the same: no file is written.
+    dragTo(docs, sub, 'before')
+    expect(allRows(el)).toEqual([aMd, docs, sub, bMd])
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(bridge.state.setFavoritesOrder.mock.calls).toEqual([[[a, b], [aMd, gone, docs, sub, bMd]]])
+
+    // S5: two favorites of Work change places: Work's file gets its order, and Notes' is not written.
+    dragTo(bMd, docs, 'before')
+    expect(allRows(el)).toEqual([aMd, bMd, docs, sub])
+    expect(bridge.favorites.set.mock.calls).toEqual([[b, [bMd, docs]]])
+    expect(bridge.state.setFavoritesOrder).toHaveBeenLastCalledWith([a, b], [aMd, gone, bMd, docs, sub])
+
+    // S12: a drag in another window on the same vaults lands as the state broadcast.
+    await act(async () => broadcast?.({ ...defaultAppState(), favoritesOrder: [bMd, docs, sub, aMd, gone] }))
+    expect(allRows(el)).toEqual([bMd, docs, aMd, sub])
+
+    // S15, S9: Notes' file is malformed. A drag inside Notes sends its whole list, the hidden favorite in it;
+    // the refusal is said, and Notes' list is back as its file has it.
+    bridge.favorites.set.mockClear()
+    bridge.favorites.set.mockRejectedValueOnce({ code: 'INVALID_CONFIG', message: 'favorites.json is malformed; fix or delete it' })
+    dragTo(sub, aMd, 'before')
+    expect(allRows(el)).toEqual([bMd, docs, sub, aMd])
+    await act(async () => undefined)
+    expect(bridge.favorites.set.mock.calls).toEqual([[a, [sub, aMd, gone]]])
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith("Can't save favorites: favorites.json is malformed; fix or delete it", 'error')
+    expect(allRows(el)).toEqual([bMd, docs, aMd, sub])
+    // A drag that keeps Notes' own order writes nothing to Notes.
+    dragTo(docs, sub, 'after')
+    expect(allRows(el)).toEqual([bMd, aMd, sub, docs])
+    expect(bridge.favorites.set).toHaveBeenCalledTimes(1)
+    expect(bridge.state.setFavoritesOrder).toHaveBeenCalledTimes(4)
     expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-2631 S6, S7: "Add to favorites" puts the row at the end of the flat list, after the rows of every vault; "Remove from favorites" takes the row and the others keep their order; neither writes the order across vaults', async () => {
+    const { el, a, b, bridge, rerender } = await two({}, (bridge, at) => {
+      favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`], [at.b]: [`${at.b}/docs`, `${at.b}/b.md`] })
+      bridge.state.get.mockResolvedValue({ ...defaultAppState(), favoritesOrder: [`${at.b}/docs`, `${at.a}/a.md`, `${at.b}/b.md`] })
+    })
+    rightClick(rowByPath(el, `${a}/sub`))
+    await choose(el, 'Add to favorites')
+    expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/a.md`, `${a}/sub`]]])
+    await rerender({ lens: 'favorites' })
+    expect(allRows(el)).toEqual([`${b}/docs`, `${a}/a.md`, `${b}/b.md`, `${a}/sub`])
+    rightClick(rowByPath(el, `${b}/docs`))
+    await choose(el, 'Remove from favorites')
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(b, [`${b}/b.md`])
+    expect(allRows(el)).toEqual([`${a}/a.md`, `${b}/b.md`, `${a}/sub`])
+    expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
   })
 
   it('YAZ-2631 S28, S31: with two vaults a top row of the Focus tab drags to any place, between the rows of either vault; a file inside a folder, dropped on a folder of a different vault, is refused with the notice — on Focus as on Favorites', async () => {
@@ -5521,50 +5589,54 @@ describe('several vaults in one window (YAZ-2602)', () => {
     }
   })
 
-  it('favorites:changed for any vault of the window re-reads that vault alone and refreshes its group; another vault\'s change is not this window\'s (S27)', async () => {
+  it('favorites:changed for any vault of the window re-reads that vault alone and refreshes its rows; another vault\'s change is not this window\'s (S27)', async () => {
     const lists: Record<string, string[]> = {}
     let pushes: ReturnType<typeof favoritesOf> | undefined
     const { el, a, b, bridge } = await two({ lens: 'favorites' }, (bridge, at) => {
       lists[at.a] = [`${at.a}/a.md`]
       pushes = favoritesOf(bridge, lists)
     })
-    expect(allRows(el)).toEqual([a, `${a}/a.md`])
+    expect(allRows(el)).toEqual([`${a}/a.md`])
     bridge.favorites.get.mockClear()
     lists[b] = [`${b}/b.md`]
     await act(async () => pushes?.emit?.({ root: b }))
     expect(bridge.favorites.get.mock.calls).toEqual([[b]])
-    expect(allRows(el)).toEqual([a, `${a}/a.md`, b, `${b}/b.md`])
+    expect(allRows(el)).toEqual([`${a}/a.md`, `${b}/b.md`])
     lists[a] = []
     await act(async () => pushes?.emit?.({ root: a }))
-    expect(allRows(el)).toEqual([b, `${b}/b.md`])
+    expect(allRows(el)).toEqual([`${b}/b.md`])
     await act(async () => pushes?.emit?.({ root: '/some-other-vault' }))
     expect(bridge.favorites.get).toHaveBeenCalledTimes(2)
     expect(bridge.favorites.set).not.toHaveBeenCalled()
   })
 
-  it('a vault that joins brings its favorites without a second read of the vault that stays, and one that leaves takes its group and writes no favorites file (S28, S50)', async () => {
+  it('a vault that joins brings its favorites without a second read of the vault that stays, into the places the stored order keeps for it; one that leaves takes its rows, and writes no favorites file and no order (S28, S50; YAZ-2631 S14)', async () => {
     const at = pair()
     const { fetchTree } = await import('../lib/treeFeed')
     const both = [vault(at.a, 'Notes'), vault(at.b, 'Work')]
-    const { el, bridge, rerender } = await mountVaults([both[0]], { lens: 'favorites' }, (bridge) => void favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`], [at.b]: [`${at.b}/b.md`] }))
-    expect(allRows(el)).toEqual([`${at.a}/a.md`]) // one vault: the flat list (S28)
+    const { el, bridge, rerender } = await mountVaults([both[0]], { lens: 'favorites' }, (bridge) => {
+      favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`], [at.b]: [`${at.b}/b.md`] })
+      bridge.state.get.mockResolvedValue({ ...defaultAppState(), favoritesOrder: [`${at.b}/b.md`, `${at.a}/a.md`] })
+    })
+    expect(allRows(el)).toEqual([`${at.a}/a.md`]) // one vault: its own list (S28)
     bridge.favorites.get.mockClear()
     await act(async () => void (await fetchTree(at.b)))
     await rerender({ vaults: both })
     expect(bridge.favorites.get.mock.calls).toEqual([[at.b]])
-    expect(allRows(el)).toEqual([at.a, `${at.a}/a.md`, at.b, `${at.b}/b.md`])
+    expect(allRows(el)).toEqual([`${at.b}/b.md`, `${at.a}/a.md`])
     await rerender({ vaults: [both[0]] })
     expect(allRows(el)).toEqual([`${at.a}/a.md`])
     expect(bridge.favorites.get).toHaveBeenCalledTimes(1)
-    // A vault that leaves the window leaves its `favorites.json` as it is (S50): nothing is written, for it or for the one that stays.
+    // A vault that leaves the window leaves its `favorites.json` as it is (S50), and its places in the store (S14).
     expect(bridge.favorites.set).not.toHaveBeenCalled()
-    // It took its list with it: back in the window, its group waits for its own read.
+    expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
+    // It took its list with it: back in the window, its rows wait for its own read, and stand in its place.
     let answer: ((paths: string[]) => void) | undefined
     bridge.favorites.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([`${at.a}/a.md`])))
     await rerender({ vaults: both })
-    expect(allRows(el)).toEqual([at.a, `${at.a}/a.md`])
-    await act(async () => answer?.([`${at.b}/docs`]))
-    expect(allRows(el)).toEqual([at.a, `${at.a}/a.md`, at.b, `${at.b}/docs`])
+    expect(allRows(el)).toEqual([`${at.a}/a.md`])
+    await act(async () => answer?.([`${at.b}/docs`, `${at.b}/b.md`]))
+    expect(allRows(el)).toEqual([`${at.b}/docs`, `${at.a}/a.md`, `${at.b}/b.md`])
   })
 
   /** Two vaults for the search: "Notes" holds `sub/plan notes.md`, `a.md`, `old plan.md`; "Work" holds `docs/d.md`, `docs/plan d.md`, `b.md`, `plan.md` and a script. Each index holds its vault's notes, titled as the files are named. */

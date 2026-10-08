@@ -111,7 +111,7 @@ interface TreeProps {
    * The paths that are VAULT rows (YAZ-2602 D3), each with its vault's name: with two or more vaults
    * each vault is one folder row, labelled as the app names the vault. It opens, closes, selects and
    * takes a drop like a folder, and is no page: it does not open as a tab. Empty with one vault.
-   * A top row that is NOT one — a file or a folder of the Focus tab (A4) — shows the name of the vault that holds it.
+   * A top row that is NOT one — a file or a folder of the Focus tab or of the Favorites tab (YAZ-2631 D4) — shows the name of the vault that holds it.
    */
   vaultRows: ReadonlyMap<string, string>
   expanded: ReadonlySet<string>
@@ -144,7 +144,7 @@ interface TreeProps {
   shortcuts: ReadonlyMap<string, readonly TreeNode[]>
   /** What each row is labelled with (YAZ-2420 🔒 D15): its title; a row the index does not hold shows its file name. The ORDER stays by file name. */
   titles: PathTitles
-  /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. */
+  /** A tab whose top rows reorder (YAZ-2631 D3): they drag along the list instead of moving on disk. Without it no row reorders. The top level alone gets it, so a drag's line draws no level below again. */
   reorder?: TreeReorder
   /**
    * Search only (🔒 D5, YAZ-2620): the matched rows and the typed text, lowercased. A row in `hits`
@@ -176,16 +176,14 @@ function TreeLevel({
   marks,
   depth = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, reorder, marks }
+  const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks }
   // This folder's shortcuts stand among its FILES in the tree's own name order; dirs still lead, as main sorts a level.
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
-  // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item. Where the
-  // window has two or more vaults the favorites still stand under their vault's row (YAZ-2602 D5), which
-  // reorders nothing: YAZ-2634 makes that list flat, and this `depth === 0` alone.
-  const rowReorder = reorder !== undefined && (vaultRows.has(dirPath) || (depth === 0 && !nodes.some((n) => vaultRows.has(n.path)))) ? reorder : null
-  /** The vault a top row of the Focus tab is in, file or folder (YAZ-2602 A4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files and Favorites have no other top row. */
+  // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item.
+  const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
+  /** The vault a top row of the Focus tab or of the Favorites tab is in, file or folder (YAZ-2631 D4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files has no other top row. */
   const vaultTag = (path: string) => {
     const name = depth > 0 ? undefined : [...vaultRows].find(([row]) => path.startsWith(`${row}/`))?.[1]
     return name !== undefined && <span className="tree__vault">{name}</span>
