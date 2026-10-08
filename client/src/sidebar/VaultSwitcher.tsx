@@ -106,7 +106,7 @@ import { ContextMenu } from './ContextMenu'
 import { buildVaultMenuSections, buildVaultSetMenuSections } from './vaultMenuSections'
 
 export interface VaultSwitcherProps {
-  /** The vaults of this window, in the order they were added (YAZ-2602 D1); never empty. */
+  /** The vaults of this window, in the window's order (YAZ-2602 D1; a drag of a vault row changes it, YAZ-2631 D5); never empty. */
   roots: readonly string[]
   /** "Open folder…" (D4): App's folder picker — the picked vault opens beside, never in place (YAZ-1914). */
   onPickFolder: () => void

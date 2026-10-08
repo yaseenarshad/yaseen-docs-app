@@ -173,7 +173,8 @@ export const storage = {
   },
 
   /**
-   * The focus list (YAZ-2619): files and folders in the order added, empty when there is none.
+   * The focus list (YAZ-2619): files and folders in the order added, or the order a drag gave
+   * them (YAZ-2631 D3); empty when there is none.
    * Window identity since YAZ-1628, like `sidebarCollapsed` below — no root argument, and a global
    * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`),
    * and a vault that leaves the window takes its items (`setRoots`).
@@ -241,7 +242,8 @@ export const storage = {
    */
   getFavoritesOrder: (): string[] => state.favoritesOrder,
   /**
-   * A drag in a window that shows `roots`: `paths` is its favorites in the new order. The cache
+   * What this window hands in for the vaults `roots`: after a drag, its favorites in the new order;
+   * after a remove, the stored order without the removed paths (YAZ-2631 R23). The cache
    * merges it as main does (`mergeFavoritesOrder`, R5) and wakes `subscribe` at once, so the list
    * never shows the old order while main answers; main's broadcast of the same order then changes nothing.
    */

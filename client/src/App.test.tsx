@@ -3309,7 +3309,7 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(el.querySelector('.link-notice')).toBeNull()
   })
 
-  it('YAZ-2631 S48: the window\'s vaults are exactly a saved workspace, in any order: after the identity write main is asked once to save this window\'s vaults under that workspace\'s name', async () => {
+  it('YAZ-2631 S48: the window\'s vaults are exactly a saved workspace, in any order: after the identity write main is asked once to save this window\'s vaults under that workspace\'s name; a save that fails is logged, and the window keeps its order', async () => {
     const vaultSets = [{ id: 's0', name: 'Other', roots: ['/x', '/y'], lastUsed: 2 }, { id: 's1', name: 'Pair', roots: ['/v', '/w'], lastUsed: 1 }]
     const { bridge } = await mount({ ...defaultAppState(), vaultSets }, TWO)
     bridge.window.setIdentity.mockClear()
@@ -3318,6 +3318,13 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     expect(bridge.window.setIdentity.mock.calls).toEqual([[{ roots: ['/w', '/v'] }]])
     expect(bridge.window.saveSet.mock.calls).toEqual([['Pair']])
     expect(bridge.window.setIdentity.mock.invocationCallOrder[0]).toBeLessThan(bridge.window.saveSet.mock.invocationCallOrder[0])
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    bridge.window.saveSet.mockRejectedValueOnce(new Error('ipc down'))
+    act(() => captured.sidebar?.onReorderVaults(['/v', '/w']))
+    await act(async () => {})
+    expect(error).toHaveBeenCalledWith('[reorder-vaults] saveSet failed:', expect.any(Error))
+    expect(storage.getRoots()).toEqual(['/v', '/w'])
+    error.mockRestore()
   })
 
   it('YAZ-2631 R12: the sidebar is keyed on the vault that was first when it mounted, while that vault is in the window — a different vault at the top mounts nothing again, and nor does the removal of that top vault; the removal of the key\'s vault mounts the sidebar again, and so does "Open in this window" on a different vault', async () => {

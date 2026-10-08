@@ -595,7 +595,7 @@ export function Sidebar({
         focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p)),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        // Each row by the list of the vault that holds it (YAZ-2602 D5).
+        // Each row by the list of the vault that holds it (YAZ-2631 D1).
         favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true),
         // By the upkeep of the vault that holds the folder (R5).
         reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
@@ -979,7 +979,7 @@ export function Sidebar({
             {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} />}
           </>
         ) : lens === 'focus' ? (
-          // The Focus tab (YAZ-2619 D2, D4): the window's focus list in the order added, each a full
+          // The Focus tab (YAZ-2619 D2, D4): the window's focus list in its own order, each a full
           // tree row with the same menu, under a line that counts the top rows (R11) and clears the
           // list. A top row drags to reorder the list, and a file inside a focused folder drags to move
           // on disk (YAZ-2631 D3). With two or more vaults the items of every vault stand in the one

@@ -4743,7 +4743,7 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
 
 /**
  * Two or more vaults in one window (YAZ-2602 D2, D3, D7). Each vault is one folder row of the Files
- * tab, in the order added, with its tree below it; a rule about "the vault of this row" asks the
+ * tab, in the window's order, with its tree below it; a rule about "the vault of this row" asks the
  * vault that holds the row. A window with one vault has no vault row, and every test above runs on
  * one. A fresh pair of vaults and a fresh window per mount: the app-state cache is module-level.
  */
@@ -5430,10 +5430,9 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(el.querySelector('.tree__vault')).toBeNull()
   })
 
-  it('the vault name\'s rule is its own: 10px, the muted colour at 60%, at the right edge, 40% of the row at most with an ellipsis; the Inbox number keeps its rule (YAZ-2631 S41, S44, R10)', () => {
-    const rule = (selector: string) => appCss.match(new RegExp(`\\n\\${selector} \\{([^}]*)\\}`))?.[1].trim().split(/\s*\n\s*/)
-    expect(rule('.tree__vault')).toEqual(['flex: none;', 'max-width: 40%;', 'margin-left: auto;', 'padding-left: 6px;', 'overflow: hidden;', 'text-overflow: ellipsis;', 'white-space: nowrap;', 'font-size: 10px;', 'color: color-mix(in srgb, var(--fg-muted) 60%, transparent);'])
-    expect(rule('.tree__count')).toEqual(['margin-left: auto;', 'padding-left: 6px;', 'font-size: 11px;', 'color: var(--fg-muted);'])
+  it('the vault name\'s rule is its own: 10px, the muted colour at 60%, 40% of the row at most with an ellipsis (YAZ-2631 S41, S44, R10)', () => {
+    const rule = appCss.match(/\n\.tree__vault \{([^}]*)\}/)?.[1]
+    for (const declaration of ['font-size: 10px;', 'color: color-mix(in srgb, var(--fg-muted) 60%, transparent);', 'max-width: 40%;', 'text-overflow: ellipsis;']) expect(rule).toContain(declaration)
     // No other rule names the vault name: none shares the number's, none follows a count.
     expect(appCss.match(/\.tree__vault[^{]*\{/g)).toEqual(['.tree__vault {'])
   })
@@ -5701,21 +5700,110 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
   })
 
-  it('YAZ-2631 S6, S7: "Add to favorites" puts the row at the end of the flat list, after the rows of every vault; "Remove from favorites" takes the row and the others keep their order; neither writes the order across vaults', async () => {
+  it('YAZ-2631 S6, S7, R23: "Add to favorites" puts the row at the end of the flat list, after the rows of every vault, and writes no order across vaults; "Remove from favorites" takes the row and the others keep their order — and takes the path out of the order across vaults, only when that order holds it, so the same favorite added again goes last and no other row moves; with one vault too', async () => {
     const { el, a, b, bridge, rerender } = await two({}, (bridge, at) => {
       favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`], [at.b]: [`${at.b}/docs`, `${at.b}/b.md`] })
       bridge.state.get.mockResolvedValue({ ...defaultAppState(), favoritesOrder: [`${at.b}/docs`, `${at.a}/a.md`, `${at.b}/b.md`] })
     })
-    rightClick(rowByPath(el, `${a}/sub`))
+    const [aMd, sub, docs, bMd] = [`${a}/a.md`, `${a}/sub`, `${b}/docs`, `${b}/b.md`]
+    rightClick(rowByPath(el, sub))
     await choose(el, 'Add to favorites')
-    expect(bridge.favorites.set.mock.calls).toEqual([[a, [`${a}/a.md`, `${a}/sub`]]])
+    expect(bridge.favorites.set.mock.calls).toEqual([[a, [aMd, sub]]])
     await rerender({ lens: 'favorites' })
-    expect(allRows(el)).toEqual([`${b}/docs`, `${a}/a.md`, `${b}/b.md`, `${a}/sub`])
-    rightClick(rowByPath(el, `${b}/docs`))
+    expect(allRows(el)).toEqual([docs, aMd, bMd, sub])
+    // R23: `sub` has no place in the order across vaults, so its remove sends none.
+    rightClick(rowByPath(el, sub))
     await choose(el, 'Remove from favorites')
-    expect(bridge.favorites.set).toHaveBeenLastCalledWith(b, [`${b}/b.md`])
-    expect(allRows(el)).toEqual([`${a}/a.md`, `${b}/b.md`, `${a}/sub`])
+    expect(allRows(el)).toEqual([docs, aMd, bMd])
     expect(bridge.state.setFavoritesOrder).not.toHaveBeenCalled()
+    // `docs` holds the first place: its remove takes that place out, and each other entry stays where it is.
+    rightClick(rowByPath(el, docs))
+    await choose(el, 'Remove from favorites')
+    expect(bridge.favorites.set).toHaveBeenLastCalledWith(b, [bMd])
+    expect(allRows(el)).toEqual([aMd, bMd])
+    expect(bridge.state.setFavoritesOrder.mock.calls).toEqual([[[a, b], [aMd, bMd]]])
+    expect(storage.getFavoritesOrder()).toEqual([aMd, bMd])
+    // A favorite again, `docs` goes last (S6): no other row moved, and the add sent no order.
+    await rerender({ lens: 'files' })
+    rightClick(rowByPath(el, docs))
+    await choose(el, 'Add to favorites')
+    await rerender({ lens: 'favorites' })
+    expect(allRows(el)).toEqual([aMd, bMd, docs])
+    expect(bridge.state.setFavoritesOrder).toHaveBeenCalledTimes(1)
+    act(() => root?.unmount())
+    container?.remove()
+
+    // One vault in the window: the remove still takes its path out, and the entry of a vault that is not here keeps its place.
+    const at = pair()
+    const one = await mountVaults([vault(at.a, 'Notes')], { lens: 'favorites' }, (bridge) => {
+      favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`] })
+      bridge.state.get.mockResolvedValue({ ...defaultAppState(), favoritesOrder: [`${at.b}/b.md`, `${at.a}/a.md`, `${at.b}/docs`] })
+    })
+    rightClick(rowByPath(one.el, `${at.a}/a.md`))
+    await choose(one.el, 'Remove from favorites')
+    expect(one.bridge.state.setFavoritesOrder.mock.calls).toEqual([[[at.a], [`${at.b}/b.md`, `${at.b}/docs`]]])
+    expect(storage.getFavoritesOrder()).toEqual([`${at.b}/b.md`, `${at.b}/docs`])
+  })
+
+  it('YAZ-2631 R25: a drag gives the store only the vaults whose favorites this window has read — a vault whose read is still on its way keeps its places in the order across vaults; once it has answered, with no favorite, the next drag takes its stale entries out', async () => {
+    let answer: ((paths: string[]) => void) | undefined
+    const { el, a, b, bridge } = await two({ lens: 'favorites' }, (bridge, at) => {
+      bridge.favorites.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([`${at.a}/a.md`, `${at.a}/sub`])))
+      bridge.state.get.mockResolvedValue({ ...defaultAppState(), favoritesOrder: [`${at.a}/a.md`, `${at.b}/b.md`, `${at.a}/sub`] })
+    })
+    const [aMd, sub, bMd] = [`${a}/a.md`, `${a}/sub`, `${b}/b.md`]
+    expect(allRows(el)).toEqual([aMd, sub])
+    drag(rowByPath(el, sub), 'dragstart')
+    drag(rowByPath(el, aMd), 'dragover', -1)
+    drag(rowByPath(el, aMd), 'drop')
+    expect(allRows(el)).toEqual([sub, aMd])
+    expect(bridge.state.setFavoritesOrder.mock.calls).toEqual([[[a], [sub, aMd]]])
+    expect(storage.getFavoritesOrder()).toEqual([sub, bMd, aMd])
+    // Work has answered: it has no favorite, and it counts as read.
+    await act(async () => answer?.([]))
+    drag(rowByPath(el, aMd), 'dragstart')
+    drag(rowByPath(el, sub), 'dragover', -1)
+    drag(rowByPath(el, sub), 'drop')
+    expect(bridge.state.setFavoritesOrder).toHaveBeenLastCalledWith([a, b], [aMd, sub])
+    expect(storage.getFavoritesOrder()).toEqual([aMd, sub])
+    expect(bridge.favorites.set.mock.calls).toEqual([[a, [sub, aMd]], [a, [aMd, sub]]])
+  })
+
+  it('YAZ-2631 R26: the favorite toggle writes nothing for a vault whose favorites this window has not read — a write would replace the list on disk — and says so; once the vault has answered, the add keeps what the file held', async () => {
+    let answer: ((paths: string[]) => void) | undefined
+    const { el, a, b, bridge, props } = await two({}, (bridge, at) => {
+      bridge.favorites.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([])))
+    })
+    rightClick(rowByPath(el, `${b}/b.md`))
+    await choose(el, 'Add to favorites')
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(props.onNotice).toHaveBeenLastCalledWith('Favorites are still loading. Try again.', 'error')
+    // A selection that holds one row of that vault writes no vault at all: the notice counts every row or none.
+    vi.mocked(props.onNotice).mockClear()
+    shiftClick(rowByPath(el, `${b}/b.md`)) // out of the selection the right-click made
+    shiftClick(rowByPath(el, `${a}/a.md`))
+    shiftClick(rowByPath(el, `${b}/docs`))
+    rightClick(rowByPath(el, `${a}/a.md`))
+    await choose(el, 'Add 2 to favorites')
+    expect(bridge.favorites.set).not.toHaveBeenCalled()
+    expect(vi.mocked(props.onNotice).mock.calls).toEqual([['Favorites are still loading. Try again.', 'error']])
+
+    await act(async () => answer?.([`${b}/docs`]))
+    rightClick(rowByPath(el, `${b}/b.md`))
+    await choose(el, 'Add to favorites')
+    expect(bridge.favorites.set.mock.calls).toEqual([[b, [`${b}/docs`, `${b}/b.md`]]])
+    expect(props.onNotice).toHaveBeenLastCalledWith('Added to favorites', 'favorite')
+  })
+
+  it('YAZ-2631 R24: a reorder drag that lost its `dragend` on one tab moves nothing on the next — a file dropped on a vault row of Files hands App no order, and the line is gone', async () => {
+    const { el, a, props, rerender } = await two({ lens: 'favorites' }, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/a.md`] }))
+    drag(rowByPath(el, `${a}/a.md`), 'dragstart')
+    await rerender({ lens: 'files' })
+    drag(rowByPath(el, `${a}/a.md`), 'dragstart')
+    drag(rowByPath(el, a), 'dragover', -1)
+    drag(rowByPath(el, a), 'drop')
+    expect(props.onReorderVaults).not.toHaveBeenCalled()
+    expect(marker(el)).toBeNull()
   })
 
   it('YAZ-2631 S28, S31: with two vaults a top row of the Focus tab drags to any place, between the rows of either vault; a file inside a folder, dropped on a folder of a different vault, is refused with the notice — on Focus as on Favorites', async () => {

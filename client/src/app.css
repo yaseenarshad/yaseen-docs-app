@@ -1810,8 +1810,9 @@ button {
   border-radius: 4px;
 }
 
-/* Favorites drag-to-reorder (YAZ-1766 D4): a 2px accent line on the edge of the hovered root row
-   where the dragged favorite will land — above or below, never a fill (nothing moves on disk). */
+/* Drag-to-reorder (YAZ-2631 D3, D5): a 2px accent line on the edge of the hovered top row where
+   the dragged row will land — above or below, never a fill (nothing moves on disk). For the top
+   rows of Focus and of Favorites, and for the vault rows of Files. */
 .tree__row--drop-before {
   box-shadow: inset 0 2px 0 var(--accent);
 }
