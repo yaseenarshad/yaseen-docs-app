@@ -23,20 +23,30 @@ and `npm run perf:budget:ci` pass, the hand walk passed, and the branch is merge
 - Done:
   - [x] Scoping; decisions, rules, scenarios and the before state locked on YAZ-2677
   - [x] Sub-issues YAZ-2678..YAZ-2687 created
-- Now: [→] Phase A (issues 1+2, this worktree) and Phase B (issues 3+4, worktree `-yaz-2677-b`) in parallel
-- Next: merge B into this worktree
+  - [x] Issues 1+2 (pop-up gone, the Settings box) `129d888`
+  - [x] Issues 3+4 (shape, search, count files, the door) `ce05fa8`, merged `2795f72`
+  - [x] Issues 5+6 (duplicates, outside files; one sweep pass at a time) `53e98e0`
+  - [x] Issues 7+8 (change letters, backfill, S70) `8858555`
+  - [x] Issue 9: audit A1–A24 posted and applied `ed4b467`
+  - [x] Issue 10, the agent's part: docs, `desktop/e2e/ids.spec.ts` (typechecked, never run), case list, gates, ceilings `ccb4d8c`, pull request open
+- Now: [→] WAITING for Yaseen: the hand walk on the pull request, and his answers below
+- Next: merge after he says the walk passed; then move YAZ-2678..YAZ-2687 and YAZ-2677 to Done; closeout
 - Remaining:
-  - [ ] Phase C: issues 5+6 (duplicates, outside files)
-  - [ ] Phase D: issues 7+8 (change letters, backfill)
-  - [ ] Issue 9: polish and anti-slop
-  - [ ] Issue 10: gates, case list, e2e spec (typecheck only), docs, pull request, hand-walk setup
+  - [ ] Hand walk (demo setup: `node node_modules/.verify/yaz-2677-demo.mjs`, needs his OK; it writes `~/Desktop/yaz-2677-demo`)
+  - [ ] Merge to `main` (reconcile `client/src/search/` and `client/src/sidebar/` with YAZ-2662 / YAZ-2663 if they land first)
+  - [ ] A separate issue for audit finding A6 (a folder copied in Finder can lose `.folder.md` under load; on `main` too)
 
 ## Open Questions
-- UNCONFIRMED: the picker's "Create" row must wait for the number (S35, S36) — what the editor does on typing in the wait.
-- UNCONFIRMED: whether the link rewrite of `client/src/links/renameLinks.ts` can be shared with the main process.
+- UNCONFIRMED (Yaseen): a vault that uses IDs and has no count file has no first Mac, so each Mac waits 10 minutes for an outside file (`sweepWaits`, one line). Recorded on YAZ-2683.
+- UNCONFIRMED (Yaseen): a Mac that is gone stays the first Mac for all time (audit A5). No age limit is built.
+- UNCONFIRMED (Yaseen): default letters come from the folder name on each Mac (A8). Set the letters on one Mac and sync before the other Mac makes a note. His main vault's default is `YAS`.
+- UNCONFIRMED (Yaseen): choosing letters that a name link already uses (`GPT` with `[[GPT-4]]`) makes that link read as note 4. The box does not warn.
+- UNCONFIRMED: a link by file name does not follow a file that the clash fix renamed (A7). Out of the record.
+- NOT MEASURED: the packaged size ceilings (asar, app, dmg); the time of a backfill of 745 notes.
+- Agent-set details Yaseen has not seen as decisions: R11 default letters, the "Finish" button (S83), the backfill as a Settings row by file creation time, the plan file `.yaseendocs/ids-backfill.json`.
 
 ## Working Set
 - Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2677`, branch `yaz-2677-id-numbers`, from `main` at `dd8d89b`
-- Second worktree for Phase B: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2677-b`, branch `yaz-2677-b`
 - Gates at the start commit: typecheck green; 306 files / 5952 tests green; budget PASS (eager JS 2.01 MB, CSS 0.15 MB, total 13.15 MB, main 0.53 MB — each equal to its ceiling)
 - Linear helper: scratchpad `lin.py` (get / comment / create / move), key in `~/Desktop/growprofit-ai.env`
+- Gates at the end: typecheck green; 312 files / 6228 tests green; build green; budget PASS after four ceilings were raised to the measured numbers
