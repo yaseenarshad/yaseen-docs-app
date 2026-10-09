@@ -43,8 +43,11 @@ export function kebabTitle(title: string): string {
   return lead + kebab.slice(0, end === -1 ? MAX_KEBAB : end)
 }
 
-/** The file name of the note titled `title` whose id is `id`; the id alone when the title has no letter or digit. */
+/**
+ * The file name of the note titled `title` whose id is `id`; the id alone when the title has no
+ * letter or digit. The id is in lowercase, as the whole name is (YAZ-2677 R8): `my-note-yaz-12.md`.
+ */
 export function noteFileName(title: string, id: string): string {
   const kebab = kebabTitle(title)
-  return `${kebab === '' ? '' : `${kebab}-`}${id}.md`
+  return `${kebab === '' ? '' : `${kebab}-`}${id.toLowerCase()}.md`
 }

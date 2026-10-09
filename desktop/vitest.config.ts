@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     name: 'desktop',
     environment: 'node',
+    // This Mac's ID for the tests (YAZ-2677 R13): a temp app data folder, never the real one.
+    setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.test.ts', '*.test.ts'],
     // Real git and file-watcher suites: the CI macOS runner is ~5x slower than a dev Mac, and a
     // cold git spawn there overran the 5s default, as client/tools already allow for.

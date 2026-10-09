@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import type { IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure } from './fsUtils'
 
 /** Creates a temp vault that gives its notes IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
@@ -75,5 +76,23 @@ export async function settled(count: () => number, quietMs: number): Promise<voi
   while (seen !== count()) {
     seen = count()
     await sleep(quietMs)
+  }
+}
+
+/**
+ * A vault's door for a test of what is done WITH an ID (YAZ-2677 D4): the numbers 1, 2, 3 and on
+ * with `letters`, and `given`, each ID in the order it was handed out. The door itself, with its
+ * count files, is `vaultIndex/mint.test.ts`'s.
+ */
+export function testDoor(letters = 'YAZ'): IdDoor & { given: string[] } {
+  const given: string[] = []
+  return {
+    letters: [letters],
+    given,
+    mint: async (count) => {
+      const ids = Array.from({ length: count }, (_, i) => `${letters}-${given.length + i + 1}`)
+      given.push(...ids)
+      return ids
+    },
   }
 }

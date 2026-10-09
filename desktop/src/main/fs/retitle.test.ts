@@ -19,10 +19,15 @@ vi.mock('../vaultIndex/idSweep', async (importOriginal) => {
 let root: string
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'mdapp-retitle-'))
+  // A vault that gives IDs, with its letters (YAZ-2677 R9): only such a vault has titles.
+  await mkdir(path.join(root, '.yaseendocs'))
+  await writeFile(path.join(root, '.yaseendocs', 'ids.json'), '{ "enabled": true, "letters": "YAZ" }')
 })
 afterEach(() => rm(root, { recursive: true, force: true }))
 
 const at = (...p: string[]) => path.join(root, ...p)
+/** What the vault holds at `dir`, without its config folder. */
+const listed = async (dir: string) => (await readdir(dir)).filter((name) => name !== '.yaseendocs')
 const read = (...p: string[]) => readFile(at(...p), 'utf8')
 const note = async (rel: string, content: string): Promise<string> => {
   await mkdir(path.dirname(at(rel)), { recursive: true })
@@ -52,14 +57,31 @@ describe('retitle: a note (table B)', () => {
     const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
     const id = /^id: (.+)$/m.exec(await readFile(newPath, 'utf8'))?.[1]
     expect(isNoteId(id)).toBe(true)
-    expect(newPath).toBe(at(`big-plan-${id}.md`))
+    // The vault's next number, from the door (YAZ-2677 R32), and in lowercase in the file name (R8).
+    expect(id).toBe('YAZ-1')
+    expect(newPath).toBe(at('big-plan-yaz-1.md'))
     expect(await readFile(newPath, 'utf8')).toContain('title: Big Plan\n')
+  })
+
+  it('an `id` with letters that are not this vault\'s is another tool\'s: the note is given the next number first (YAZ-2677 R7, S23)', async () => {
+    const old = await note('Plan.md', '---\nid: BUS-12\n---\nbody\n')
+    const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
+    expect(newPath).toBe(at('big-plan-yaz-1.md'))
+    expect(await readFile(newPath, 'utf8')).toBe('---\nid: YAZ-1\ntitle: Big Plan\n---\nbody\n')
+  })
+
+  it('a note with a number ID keeps it, as an old ID is kept: written in any case, the file is not rewritten for the case (YAZ-2677 S18)', async () => {
+    const old = await note('Plan.md', '---\nid: yaz-12\n---\nbody\n')
+    const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
+    expect(newPath).toBe(at('big-plan-yaz-12.md'))
+    expect(await readFile(newPath, 'utf8')).toBe('---\nid: yaz-12\ntitle: Big Plan\n---\nbody\n')
+    await expect(readdir(path.join(root, '.yaseendocs', 'ids'))).rejects.toThrow() // no number was taken
   })
 
   it('a note with no frontmatter block gets one', async () => {
     const old = await note('Plan.md', 'just a body\n')
     const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
-    expect(await readFile(newPath, 'utf8')).toMatch(/^---\nid: [0-9a-z]{12}\ntitle: Big Plan\n---\njust a body\n$/)
+    expect(await readFile(newPath, 'utf8')).toMatch(/^---\nid: YAZ-1\ntitle: Big Plan\n---\njust a body\n$/)
   })
 
   it('a properties block that does not parse: refused, saying so, and nothing is written or renamed (D24)', async () => {
@@ -68,7 +90,7 @@ describe('retitle: a note (table B)', () => {
     const err = await failure(retitle(root, { path: old, title: 'Big Plan' }))
     expect(err.message).toBe("this note's properties do not parse")
     expect(await read('Plan.md')).toBe(broken)
-    expect(await readdir(root)).toEqual(['Plan.md'])
+    expect(await listed(root)).toEqual(['Plan.md'])
   })
 
   it('a note that changes on disk as it is given its id: refused, and nothing is written or renamed', async () => {
@@ -82,7 +104,7 @@ describe('retitle: a note (table B)', () => {
     const err = await failure(retitle(root, { path: old, title: 'Big Plan' }))
     expect(err.code).toBe('CONFLICT')
     expect(await read('Plan.md')).toBe(swept)
-    expect(await readdir(root)).toEqual(['Plan.md'])
+    expect(await listed(root)).toEqual(['Plan.md'])
   })
 
   it('a title edit that gives the same kebab-case (a capital letter, a comma): only the `title:` line changes, the file is not renamed', async () => {
@@ -120,7 +142,7 @@ describe('retitle: a note (table B)', () => {
   it.each(['report.pdf', 'photo.png', 'notes.txt'])('%s is not retitled: it has no title, and it is left as it is', async (name) => {
     const old = await note(name, 'bytes')
     expect((await failure(retitle(root, { path: old, title: 'Big Plan' }))).code).toBe('UNSUPPORTED_EXTENSION')
-    expect(await readdir(root)).toEqual([name])
+    expect(await listed(root)).toEqual([name])
     expect(await read(name)).toBe('bytes')
   })
 })
@@ -134,7 +156,7 @@ describe('retitle: a folder (table C)', () => {
     expect(await retitle(root, { path: at('upwork'), title: 'Upwork 2026' })).toEqual({ oldPath: at('upwork'), newPath: at('upwork-2026'), kind: 'dir' })
     expect(await read('upwork-2026', FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${FOLDER_ID}\ntitle: Upwork 2026\n---\n`)
     expect((await readdir(at('upwork-2026'))).sort()).toEqual([FOLDER_SETTINGS_FILE, `abdul-${ID}.md`])
-    expect(await readdir(root)).toEqual(['upwork-2026'])
+    expect(await listed(root)).toEqual(['upwork-2026'])
   })
 
   it('a folder whose `.folder.md` is missing: the retitle creates it', async () => {
@@ -173,11 +195,11 @@ describe('retitle: a folder (table C)', () => {
     await note(`upwork/${FOLDER_SETTINGS_FILE}`, '---\nid: [unclosed\n---\n')
     expect((await failure(retitle(root, { path: at('upwork'), title: 'Upwork 2026' }))).message).toBe("this folder's settings do not parse")
     expect(await read('upwork', FOLDER_SETTINGS_FILE)).toBe('---\nid: [unclosed\n---\n')
-    expect(await readdir(root)).toEqual(['upwork'])
+    expect(await listed(root)).toEqual(['upwork'])
   })
 
   it("the vault's top-level folder is untouched: retitling the root is refused", async () => {
     expect((await failure(retitle(root, { path: root, title: 'Vault' }))).code).toBe('BAD_REQUEST')
-    expect(await readdir(root)).toEqual([])
+    expect(await listed(root)).toEqual([])
   })
 })

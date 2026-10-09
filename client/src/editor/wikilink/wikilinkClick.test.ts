@@ -34,11 +34,14 @@ vi.mock('../../api', async (importOriginal) => ({
     createFile: vi.fn(),
     index: vi.fn(),
     readFile: vi.fn(),
+    // The door in the main process (YAZ-2677 D4): the vault's next number.
+    mintNoteId: (await import('../../testNoteIds')).testDoor(),
   },
 }))
 
 const createDir = vi.mocked(api.createDir)
 const createFile = vi.mocked(api.createFile)
+const mintNoteId = vi.mocked(api.mintNoteId)
 
 interface NavMocks {
   root: string
@@ -53,10 +56,10 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 /** Resolver used across the suite: only 'Known' exists, at /vault/Known.md. */
 const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md' : null)
 
-/** `ids`: whether the snapshot's vault uses IDs (YAZ-2523): it does unless a test says otherwise. */
-async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource, ids = true) {
+/** `ids`: whether the snapshot's vault uses IDs (YAZ-2523): it does unless a test says otherwise. `letters`: its ID letters (YAZ-2677 R9). */
+async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource, ids = true, letters: readonly string[] = []) {
   const source = createWikilinkResolveSource()
-  if (resolve !== undefined) source.update(resolve, undefined, undefined, ids)
+  if (resolve !== undefined) source.update(resolve, undefined, undefined, ids, letters)
   const nav: NavMocks = { root: '/vault', createFolder, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -238,8 +241,8 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     expect(mousedown(linkSpan(root, 'Missing'))).toBe(false) // default prevented
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
-    expect(born().path).toMatch(/^\/vault\/missing-[0-9a-z]{12}\.md$/)
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${born().id}.md`, content: '---\ntitle: Missing\n---\n', id: born().id })
+    expect(born().path).toMatch(/^\/vault\/missing-yaz-\d+\.md$/)
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${born().id.toLowerCase()}.md`, content: '---\ntitle: Missing\n---\n', id: born().id })
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
     expect(nav.onNotice).not.toHaveBeenCalled()
   })
@@ -264,7 +267,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     mousedown(linkSpan(root, 'Sub Folder/Page'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
     expect(createDir).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub-folder', title: 'Sub Folder' })
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/sub-folder/page-${born().id}.md`, content: '---\ntitle: Page\n---\n', id: born().id })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/sub-folder/page-${born().id.toLowerCase()}.md`, content: '---\ntitle: Page\n---\n', id: born().id })
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
   })
 
@@ -272,18 +275,18 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     let base = 'Notes/Inbox'
     const { root, nav } = await mount('pad [[Missing]] and [[Other]] tail\n', resolveKnown, () => base)
     mousedown(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/Notes/Inbox/missing-${born().id}.md`))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/Notes/Inbox/missing-${born().id.toLowerCase()}.md`))
     expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/Notes' }, { path: '/vault/Notes/Inbox' }])
     // The getter is live: a settings change lands on the NEXT click without any remount.
     base = ''
     mousedown(linkSpan(root, 'Other'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/other-${born(1).id}.md`))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/other-${born(1).id.toLowerCase()}.md`))
   })
 
   it('a PATHED target stays root-relative whatever the base — an explicit path is an explicit aim (Obsidian)', async () => {
     const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null, () => 'Notes')
     mousedown(linkSpan(root, 'Sub/Page'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/sub/page-${born().id}.md`))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/sub/page-${born().id.toLowerCase()}.md`))
     expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/sub', title: 'Sub' }])
     expect(api.index).not.toHaveBeenCalled() // the folders are the ones the editor's index source holds
   })
@@ -304,7 +307,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
     await vi.advanceTimersByTimeAsync(0)
     expect(createFile).toHaveBeenCalledTimes(1)
-    expect(born().path).toBe(`/vault/sub/page-${born().id}.md`)
+    expect(born().path).toBe(`/vault/sub/page-${born().id.toLowerCase()}.md`)
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
     // The index echo: the note, titled Page, and the folder it was put in, titled Sub.
     const record = (path: string, title: string, folder: string): IndexRecord => ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: '', title, folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
@@ -424,6 +427,85 @@ describe('wikilink click: id links (YAZ-2293)', () => {
   })
 })
 
+// Number IDs (YAZ-2677 D3): scenario record section B, through THE resolver the bridge feeds.
+describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 R5, R6)', () => {
+  const note = (path: string, title: string, id?: string): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/, ''), title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, ...(id !== undefined && { id }), properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  }
+  const LETTERS = ['YAZ', 'OLD']
+  // The vault `YAZ`, which was `OLD` before: note 12, and a note that is only NAMED like an ID.
+  const records = [note('/vault/plan-yaz-12.md', 'Plan', 'YAZ-12'), note('/vault/YAZ-7.md', 'YAZ-7', 'YAZ-30')]
+  const resolve = linkResolver(records, '/vault', [], [], LETTERS)
+  /** The editor on the vault's whole snapshot, as the bridge feeds it: the resolver, its records, the vault's kind and letters. */
+  const mounted = async (markdown: string) => {
+    const m = await mount(markdown, resolve, undefined, undefined, true, LETTERS)
+    m.source.update(resolve, records, [], true, LETTERS)
+    return m
+  }
+
+  it('S16, S17: `[[YAZ-12]]` and `[[yaz-12]]`, typed by hand or by an agent, show the title and open the note: an ID is read in any case', async () => {
+    for (const typed of ['YAZ-12', 'yaz-12', 'Yaz-12']) {
+      const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
+      mousedown(linkSpan(root, 'Plan'))
+      expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/plan-yaz-12.md')
+      expect(createFile).not.toHaveBeenCalled()
+    }
+  })
+
+  it('S82: a link with letters the vault had before, `[[OLD-12]]`, opens note 12', async () => {
+    const { root, nav } = await mounted('pad [[OLD-12]] and [[old-12#Heading]] tail\n')
+    for (const span of Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).filter((el) => el.textContent === 'Plan')) mousedown(span)
+    expect(nav.openCurrent.mock.calls).toEqual([['/vault/plan-yaz-12.md'], ['/vault/plan-yaz-12.md']])
+  })
+
+  it.each([
+    ['S21: `[[GPT-4]]`, where no note has that ID', 'GPT-4', 'gpt-4'],
+    ['S22: `[[BUS-12]]`, pasted from the vault `BUS`', 'BUS-12', 'bus-12'],
+  ])('%s, is a NAME link: it does not open note 12, and a click creates the note titled by it', async (_name, typed, kebab) => {
+    const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
+    expect(linkSpan(root, typed).classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
+    mousedown(linkSpan(root, typed))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    const { id } = createFile.mock.calls[0][0] as { id: string }
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/${kebab}-${id.toLowerCase()}.md`, content: `---\ntitle: ${typed}\n---\n`, id })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(`/vault/${kebab}-${id.toLowerCase()}.md`)
+    expect(nav.onNotice).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['with the vault\'s letters', 'YAZ-99'],
+    ['in another case', 'yaz-99'],
+    ['with letters the vault had before', 'OLD-99'],
+  ])('S25: a link to a deleted note %s is shown as missing, with the raw ID, and a click does not offer to create it', async (_name, typed) => {
+    const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
+    expect(linkSpan(root, typed).classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
+    expect(mousedown(linkSpan(root, typed))).toBe(false)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+    expect(mintNoteId).not.toHaveBeenCalled()
+  })
+
+  it('S26: a note named "YAZ-7", and no note has the ID `YAZ-7`: `[[YAZ-7]]` falls back to the name and opens that note', async () => {
+    const { root, nav } = await mounted('pad [[YAZ-7]] tail\n')
+    expect(linkSpan(root, 'YAZ-7').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
+    mousedown(linkSpan(root, 'YAZ-7'))
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/YAZ-7.md')
+    expect(createFile).not.toHaveBeenCalled()
+    expect(nav.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('in a vault that does not use IDs, text like `[[COVID-19]]` is a name as any other: a click creates it the plain way (YAZ-2523 V3)', async () => {
+    const { root, nav } = await mount('pad [[COVID-19]] tail\n', () => null, undefined, undefined, false)
+    mousedown(linkSpan(root, 'COVID-19'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/COVID-19.md', content: '' })
+    expect(nav.onNotice).not.toHaveBeenCalled()
+  })
+})
+
 describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
   const FOLDER_ID = 'f7n2w8rt4xyz'
   const settings: IndexRecord = {
@@ -459,8 +541,8 @@ describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
     mousedown(linkSpan(root, 'Missing'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
     const { id } = createFile.mock.calls[0][0] as { id: string }
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${id}.md`, content: '---\ntitle: Missing\n---\n', id })
-    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(`/vault/missing-${id}.md`)
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/missing-${id.toLowerCase()}.md`, content: '---\ntitle: Missing\n---\n', id })
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(`/vault/missing-${id.toLowerCase()}.md`)
   })
 })
 

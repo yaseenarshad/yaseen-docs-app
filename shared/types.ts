@@ -147,7 +147,7 @@ export interface TreeResponse {
 export interface IndexRecord {
   /** Absolute path. */
   path: string
-  /** Frontmatter `id` when it is a note id (`shared/noteId.ts`, YAZ-2293): the note's permanent identity. Absent when it has none. */
+  /** Frontmatter `id` when it is a note id (`shared/noteId.ts`, YAZ-2293): the note's permanent identity, as the app writes it (YAZ-2677 R2: `YAZ-12`, or an old 12-character ID). Absent when it has none. */
   id?: string
   /** File name with extension. */
   name: string
@@ -198,6 +198,12 @@ export interface IndexResponse {
    * When false no record carries an `id`, and each one's `title` is its file name (🔒 V12).
    */
   ids: boolean
+  /**
+   * Only when `ids`: the vault's ID letters (YAZ-2677 R9), the current ones first and then each it
+   * had before (`was`). Every record's `id` is an ID of THIS vault and, when it is a number ID,
+   * carries the current letters (R5); `vaultNoteId` reads a typed or linked ID with this list.
+   */
+  letters?: string[]
   /**
    * Only while the vault has NOT answered: what a yes would write (🔒 V2). `notes` would be given an
    * id, `foreign` of them over another tool's `id`; `folders` would be given a `.folder.md`, or an

@@ -72,6 +72,11 @@ export interface WikilinkResolveSource {
   readonly folders: readonly IndexRecord[]
   /** Does the snapshot's vault give its notes IDs (YAZ-2523 🔒 V5)? false until the first index lands. */
   readonly ids: boolean
+  /**
+   * The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5), the current ones first; none where
+   * it does not use IDs. `vaultNoteId` reads a link target with them: other `LETTERS-NUMBER` text is a name (R6).
+   */
+  readonly letters: readonly string[]
   /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped. */
   subscribe(listener: () => void): () => void
 }
@@ -83,16 +88,18 @@ export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
    * to list, which is exactly right — the resolver alone cannot say who links where.
    * `null` forgets the vault (a change of root): no index has landed for the new one yet.
    */
-  update(resolve: ResolveLink | null, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean): void
+  update(resolve: ResolveLink | null, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean, letters?: readonly string[]): void
 }
 
 const NO_RECORDS: readonly IndexRecord[] = []
+const NO_LETTERS: readonly string[] = []
 
 export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   let current: ResolveLink | null = null
   let snapshot: readonly IndexRecord[] = NO_RECORDS
   let settings: readonly IndexRecord[] = NO_RECORDS
   let usesIds = false
+  let idLetters = NO_LETTERS
   const listeners = new Set<() => void>()
   return {
     get resolve() {
@@ -107,17 +114,21 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
     get ids() {
       return usesIds
     },
+    get letters() {
+      return idLetters
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
       }
     },
-    update(resolve, records = NO_RECORDS, folders = NO_RECORDS, ids = false) {
+    update(resolve, records = NO_RECORDS, folders = NO_RECORDS, ids = false, letters = NO_LETTERS) {
       current = resolve
       snapshot = records
       settings = folders
       usesIds = ids
+      idLetters = letters
       listeners.forEach((l) => l())
     },
   }
@@ -140,6 +151,9 @@ export function linkPageName(inner: string): string {
  * its title, by `titles` (YAZ-2420 🔒 D14). undefined for a name, for an id no note has, and before
  * the index has loaded — all of which show the target as written. The ONE answer shared by the
  * decorations, the backlinks snippets and the right-click menu (`wikilinkMenu.ts`).
+ *
+ * The target is tested by its SHAPE, old or number (YAZ-2677): the vault is not known here. So a
+ * name that reads like a number ID and finds a note by that name (R6, S26) shows that note's title.
  */
 export function idLinkTitle(target: string, resolve: ResolveLink | null, titles: PathTitles): string | undefined {
   const path = resolve !== null && isNoteId(target) ? resolve(target) : null

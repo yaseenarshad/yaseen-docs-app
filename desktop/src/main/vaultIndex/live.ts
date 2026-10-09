@@ -1,11 +1,12 @@
 import path from 'node:path'
-import { IDS_FILE, NOTE_ID_KEY } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { fsCall, isMarkdown } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
-import { idsOf, restoreFolderId, sweepIds } from './idSweep'
+import { restoreFolderId, sweepIds } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
+import { countNotesWith, highestNumber, vaultIds } from './mint'
 import { reconcile, type ColdStartDiff } from './reconcile'
 import { fileTitle, scanFile, walk } from './scan'
 
@@ -86,13 +87,14 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
 
 /**
  * What a yes would write (`IndexResponse.ask`, YAZ-2523 🔒 V2): a note with no id that can take
- * one, and a folder with no settings file or no id in the one it has.
+ * one, and a folder with no settings file or no id in the one it has. An id is one of the vault
+ * with `letters` (YAZ-2677 R5): any other is another tool's, and a yes writes over it (R7).
  */
-function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly string[]): NonNullable<IndexResponse['ask']> {
-  const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && r.id === undefined && r.frontmatterError === undefined)
+function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly string[], letters: readonly string[]): NonNullable<IndexResponse['ask']> {
+  const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) === undefined && r.frontmatterError === undefined)
   return {
     notes: notes.length,
-    folders: dirs.filter((dir) => records.get(path.join(dir, FOLDER_SETTINGS_FILE))?.id === undefined).length,
+    folders: dirs.filter((dir) => vaultNoteId(records.get(path.join(dir, FOLDER_SETTINGS_FILE))?.id, letters) === undefined).length,
     foreign: notes.filter((r) => r.properties[NOTE_ID_KEY] !== undefined).length,
   }
 }
@@ -117,12 +119,14 @@ async function build(root: string): Promise<Entry> {
     const { records, diff } = await reconcile(root, files, cached)
     entry.records = records
     entry.coldDiff = diff
-    let answer = await idsOf(root)
+    const { letters, config, ...held } = await vaultIds(root)
+    let answer = held.answer
     // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
-    // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays unanswered.
-    const ask = wouldWrite(records, dirs)
-    if (answer === undefined && ask.notes === 0 && ask.folders === 0 && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && r.id !== undefined)) {
-      answer = await writeConfig(root, IDS_FILE, { enabled: true }).then(
+    // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays
+    // unanswered. Each other key of the file stays (YAZ-2677 R10): its letters most of all.
+    const ask = wouldWrite(records, dirs, letters)
+    if (answer === undefined && ask.notes === 0 && ask.folders === 0 && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) !== undefined)) {
+      answer = await writeConfig(root, IDS_FILE, { ...config, enabled: true }).then(
         () => true,
         () => undefined,
       )
@@ -161,6 +165,25 @@ function touch(root: string, entry: Entry): void {
  * fresh `generatedAt`. Transport-agnostic: no HTTP here — the Desktop bridge calls this directly.
  */
 export async function getIndex(root: string): Promise<IndexResponse> {
+  const entry = await liveEntry(root)
+  // The vault's kind is applied HERE, where the index is handed out (YAZ-2523 🔒 V5): the live
+  // records hold what is in the files, whatever the answer was when they were read. So are its
+  // letters (YAZ-2677 R5): they, too, can change after a record was read.
+  const { answer, letters } = await vaultIds(root)
+  const ids = answer === true
+  if (ids && !entry.ids) sweepIndexed(root)
+  entry.ids = ids
+  const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  // One map holds notes and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
+  const records: IndexRecord[] = []
+  const folders: IndexRecord[] = []
+  const current = `${letters[0]}-`
+  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? owned(r, letters, current) : plain(r))
+  return { root, records, folders, generatedAt: Date.now(), ids, ...(ids && { letters }), ...(answer === undefined && { ask: wouldWrite(entry.records, entry.dirs, letters) }) }
+}
+
+/** The live index of `root`: built on the first call, with each scan the watcher has started already in it. */
+async function liveEntry(root: string): Promise<Entry> {
   let entry = entries.get(root)
   if (entry === undefined) {
     let scan = pending.get(root)
@@ -174,24 +197,31 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   // Drain scans the watcher has already started: a create that beat this call is in this snapshot,
   // never invisible until the next fs event (YAZ-986) — the live twin of awaiting the first build.
   if (entry.inFlight.size > 0) await Promise.all([...entry.inFlight])
-  // The vault's kind is applied HERE, where the index is handed out (YAZ-2523 🔒 V5): the live
-  // records hold what is in the files, whatever the answer was when they were read.
-  const answer = await idsOf(root)
-  const ids = answer === true
-  if (ids && !entry.ids) sweepIndexed(root)
-  entry.ids = ids
-  const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  // One map holds notes and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
-  const records: IndexRecord[] = []
-  const folders: IndexRecord[] = []
-  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? r : plain(r))
-  return { root, records, folders, generatedAt: Date.now(), ids, ...(answer === undefined && { ask: wouldWrite(entry.records, entry.dirs) }) }
+  return entry
 }
+
+// The door's answer to "what is the highest number in this vault?" (YAZ-2677 R16) comes from the
+// live records, in memory: a new note reads no file for it. Also a number a note held by hand (S37).
+countNotesWith(async (root, letters) => highestNumber((await liveEntry(root)).records.values(), letters))
 
 /** A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties. */
 function plain({ id: _id, ...r }: IndexRecord): IndexRecord {
   r.title = fileTitle(r)
   return r
+}
+
+/**
+ * A record as the vault with `letters` hands it out (YAZ-2677 R5): its id as an ID of THIS vault.
+ * One with the letters the vault had before goes out with the `current` ones, so every link and
+ * lookup finds it by one spelling; one with any other letters is another tool's `id` and goes out
+ * as none (R7). The record itself, untouched, in every other case — almost all of them.
+ */
+function owned(r: IndexRecord, letters: readonly string[], current: string): IndexRecord {
+  if (r.id === undefined || r.id.startsWith(current)) return r
+  const id = vaultNoteId(r.id, letters)
+  if (id === r.id) return r
+  const { id: _id, ...rest } = r
+  return id === undefined ? rest : { ...rest, id }
 }
 
 /** Sweeps every note the live index holds for `root`, and every folder there now — for a vault that said yes after its index was built (YAZ-2523 🔒 V4). */
