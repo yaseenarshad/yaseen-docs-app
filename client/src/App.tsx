@@ -474,9 +474,11 @@ export function App() {
   // A search row's menu item that draws into the tree (🔒 D2, YAZ-2050), and "Show in sidebar" on a
   // row of Search, Focus or Favorites (YAZ-2638 D1, D3): always the FILES lens, whichever tab was
   // showing. The sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
-  const revealInFiles = useCallback((path: string) => {
+  // Enter on a folder of the search tree, and Shift+Enter on a row, ask with `focus` (YAZ-2662 D1, D8):
+  // the row gets the keyboard focus too.
+  const revealInFiles = useCallback((path: string, focus?: boolean) => {
     changeLens('files')
-    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, focus })
   }, [changeLens])
 
   const consumeSidebarReveal = useCallback((id: number) => {

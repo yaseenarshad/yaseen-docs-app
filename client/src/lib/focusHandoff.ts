@@ -1,9 +1,9 @@
 /**
  * THE FOCUS HANDOFF (YAZ-961) — the keyboard loop's two half-steps, in ONE place because two
  * surfaces perform them: the Files rows and the search list both hand focus INTO
- * the open document (a second Enter, the "take me in"), and `createCrepe`'s Escape hands it back
- * OUT to whichever sidebar the walk came from. Both answer a boolean so a caller that is a
- * ProseMirror command can decline honestly and let the key fall through.
+ * the open document (a second Enter, the "take me in"; Esc in the search bar, YAZ-2662 D9), and
+ * `createCrepe`'s Escape hands it back OUT to whichever sidebar the walk came from. Both answer a
+ * boolean so a caller that is a ProseMirror command can decline honestly and let the key fall through.
  *
  * They read the DOM rather than taking a ref: the two ends live in different React trees (the
  * sidebar's and the editor's), and the alternative — threading a focus handle from App through

@@ -22,7 +22,7 @@ import { foldersByDir } from '../links/shortcuts'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {
-  /** What the row is: a note or another file (`file`), or a folder (`dir`). Activating a note or a folder OPENS its page. */
+  /** What the row is: a note or another file (`file`), or a folder (`dir`). Enter OPENS a file's page and shows a folder in Files (YAZ-2662 D1). */
   kind: 'file' | 'dir'
   /** The text the query matches: the note's title, one of its aliases, the folder's title, or another file's name. */
   name: string
