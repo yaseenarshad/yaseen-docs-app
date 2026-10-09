@@ -45,6 +45,7 @@ import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
+import { StartPage } from './workspace/StartPage'
 import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
@@ -480,6 +481,14 @@ export function App() {
     changeLens('files')
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, focus })
   }, [changeLens])
+
+  // A folder row of the new tab page (YAZ-2663 S22): the folder shows in Files, open, with the
+  // keyboard focus on its row, as Enter on a folder of the search tree does (YAZ-2662 D1). The page
+  // shows with the sidebar hidden too, so the sidebar shows first.
+  const showFolderInFiles = useCallback((path: string) => {
+    if (sidebarCollapsed) toggleSidebar()
+    revealInFiles(path, true)
+  }, [sidebarCollapsed, toggleSidebar, revealInFiles])
 
   const consumeSidebarReveal = useCallback((id: number) => {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
@@ -1038,11 +1047,11 @@ export function App() {
 
   /**
    * What every editor of the window is handed, from the scope of the vault that holds its page
-   * (YAZ-2602 S30); the empty page (`null`) stands on the active vault. Each value is the scope's
-   * own stable one, so a change in one vault renders no editor of another: `RetainedEditor` is memo.
+   * (YAZ-2602 S30). Each value is the scope's own stable one, so a change in one vault renders no
+   * editor of another: `RetainedEditor` is memo.
    */
-  const editorPropsFor = (path: string | null) => {
-    const scope = path === null ? active : scopeOf(path)
+  const editorPropsFor = (path: string) => {
+    const scope = scopeOf(path)
     return {
       root: scope.root ?? '',
       watch: scope.watch,
@@ -1243,8 +1252,8 @@ export function App() {
             />
           )}
           <div className="tabstack">
-            {/* The empty page: of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. */}
-            {(mounted.length === 0 || blank) && session === null && <RetainedEditor {...editorPropsFor(null)} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+            {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowFolder={showFolderInFiles} onNotice={notify} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css

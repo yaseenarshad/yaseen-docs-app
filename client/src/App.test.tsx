@@ -101,6 +101,8 @@ const captured = vi.hoisted(() => ({
   /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
+  /** The new tab page (YAZ-2663 D3), as App last handed it its doors; null while it does not show. */
+  startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowFolder: (path: string) => void } | null,
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder. */
   editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void }[],
 }))
@@ -119,6 +121,20 @@ vi.mock('./editor/Editor', () => ({
     )
   },
 }))
+// The new tab page reads the favorites and the trees itself (StartPage.test.tsx): here it is a stub that shows whether App mounts it.
+vi.mock('./workspace/StartPage', async () => {
+  const { useEffect } = await import('react')
+  return {
+    StartPage: (props: NonNullable<typeof captured.startPage>) => {
+      // In an effect, each render: StrictMode runs the clean-up of a mount one time before the page stays.
+      useEffect(() => {
+        captured.startPage = props
+        return () => void (captured.startPage = null)
+      })
+      return <div data-start-page data-roots={props.roots.join(' ')} />
+    },
+  }
+})
 vi.mock('./sidebar/Sidebar', () => ({
   Sidebar: (props: Omit<SidebarStubProps, 'root' | 'upkeep' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
     // The first vault's own, as a window with one vault reads them: its folder and its Inbox row (YAZ-2602 R5).
@@ -337,6 +353,7 @@ afterEach(() => {
   container?.remove()
   container = null
   captured.sidebar = null
+  captured.startPage = null
   captured.editorOpeners = []
   captured.viewOnlyLinks = []
   captured.editors = []
@@ -600,7 +617,8 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
   it('switching to a folder with no remembered last file leaves no file open', async () => {
     const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/w')
     expect(location.hash).toBe('')
     expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }]])
   })
@@ -1178,7 +1196,8 @@ describe('App tabs (I2, GRO-2234)', () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('.tabbar')).not.toBeNull()
     expect(stripLabels(el)).toEqual([])
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
   })
 
   it('the sidebar ⌘-click path (I3, GRO-2235) opens a BACKGROUND tab: appended, not activated, not mounted', async () => {
@@ -1243,8 +1262,8 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitNewTab())
     expect(stripLabels(el)).toEqual(['a', 'b', 'New tab'])
     expect(activeLabel(el)).toBe('New tab')
-    // The empty page a window with no tabs has; a's editor stays mounted, hidden behind it.
-    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    // The new tab page a window with no tabs has (YAZ-2663 S11); a's editor stays mounted, hidden behind it.
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
     expect(layers(el)).toEqual([['/v/a.md', true]])
     // D11: the Search tab, with its bar asked to take the caret. The sidebar highlights no row: every row opens.
     expect(captured.sidebar?.lens).toBe('search')
@@ -1270,7 +1289,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
     expect(activeLabel(el)).toBe('c')
     expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
-    expect(el.querySelector('.tabstack > [data-editor]')).toBeNull()
+    expect(el.querySelector('.tabstack > [data-start-page]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], file: '/v/c.md', rightPanel: defaultRightPanelIdentity() })
     expect(document.title).toBe('v — c')
@@ -1324,6 +1343,48 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
     act(() => emitCloseTab())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
+  })
+
+  it('the new tab page (YAZ-2663 D3) shows under the blank tab and in a window with no tabs, and only then (S11, R1); a click on a file row fills the blank tab as a KEPT tab, and ⌘-click opens a background tab and the page stays (S21)', async () => {
+    const { el, emitNewTab, emitCloseTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    // A tab shows: the page is not mounted.
+    expect(captured.startPage).toBeNull()
+    act(() => emitNewTab())
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+    act(() => captured.startPage?.onOpenBackground('/v/c.md'))
+    expect(stripLabels(el)).toEqual(['a', 'c', 'New tab'])
+    expect(activeLabel(el)).toBe('New tab')
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+    act(() => captured.startPage?.onOpen('/v/b.md'))
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b'])
+    expect(activeLabel(el)).toBe('b')
+    expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
+    expect(el.querySelector('[data-start-page]')).toBeNull()
+    expect(captured.startPage).toBeNull()
+    // The last tab closes: the window with no tabs shows the same page.
+    for (let left = 3; left > 0; left--) act(() => emitCloseTab())
+    expect(stripLabels(el)).toEqual([])
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+  })
+
+  it('a folder row of the new tab page shows the folder in Files, open, with the keyboard focus on its row — the sidebar shows first when it is hidden — and opens no tab (YAZ-2663 S22)', async () => {
+    const { el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' })
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => captured.startPage?.onShowFolder('/v/Projects'))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toMatchObject({ path: '/v/Projects', focus: true })
+    expect(stripLabels(el)).toEqual([])
+    // From the blank tab, where ⌘T put the Search tab on show: Files again, a new request, and the blank tab stays.
+    const first = captured.sidebar?.revealRequest?.id
+    act(() => emitNewTab())
+    expect(captured.sidebar?.lens).toBe('search')
+    act(() => captured.startPage?.onShowFolder('/v/Projects/Alpha'))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toMatchObject({ path: '/v/Projects/Alpha', focus: true })
+    expect(captured.sidebar?.revealRequest?.id).not.toBe(first)
+    expect(stripLabels(el)).toEqual(['New tab'])
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
   })
 
   it('the strip\'s slide (YAZ-2656 S88) is the strip\'s own: a closed tab slides shut as a ghost and no editor renders for it; with the right panel closed the row keeps its end free (S93)', async () => {
@@ -1442,7 +1503,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.taboverview__page .taboverview__close')?.click())
     expect(board()).toBeNull()
     expect(stripLabels(el)).toEqual([])
-    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
   })
 
   it('S11: a link in a page opens in THAT tab — a kept tab too — and makes no tab; Back returns (the page\'s door is `navigate`, not the sidebar\'s)', async () => {
@@ -1542,7 +1603,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('a') // c had nothing to its right: left neighbour
     act(() => emitCloseTab())
     expect(stripLabels(el)).toEqual([])
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('') // empty state renders
+    expect(el.querySelector('[data-start-page]')).not.toBeNull() // the new tab page shows
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.closeSelf).not.toHaveBeenCalled() // the window stays alive
     act(() => emitCloseTab())
@@ -2160,7 +2221,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {
-      const { bridge, el } = await mount(askOff(), identity(), {}, feedPlain)
+      // A tab is open: the editor of a page hands in the title typed on it (the new tab page has no title to edit).
+      const { bridge, el } = await mount(askOff(), { ...identity(), file: '/v/B.md', tabs: ['/v/B.md'] }, {}, feedPlain)
       await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'B.md', 'file'))
       expect(el.querySelector('.link-notice')).toBeNull()
       await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'a/b', 'file'))
@@ -2618,6 +2680,17 @@ describe('App upkeep review (YAZ-2322)', () => {
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
     expect(el.querySelector('.taboverview')).toBeNull()
     expect(el.querySelector('.review-bar')).not.toBeNull()
+  })
+
+  it('the new tab page does not show while a review is open, and shows again when it closes (YAZ-2663 S25)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, upkeepOn(due('x')))
+    expect(el.querySelector('[data-start-page]')).not.toBeNull()
+    openInbox()
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    expect(el.querySelector('[data-start-page]')).toBeNull()
+    act(() => button(el, 'Close review')?.click())
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(el.querySelector('[data-start-page]')).not.toBeNull()
   })
 
   it('⌘T during a review does nothing (YAZ-2655 S82)', async () => {
@@ -3114,10 +3187,10 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(document.title).toBe('Work — Bee')
   })
 
-  it('with no tab open the window is the first vault\'s: its name in the title, its scope under the empty page', async () => {
+  it('with no tab open the window is the first vault\'s by its name in the title, and the new tab page is handed every vault (YAZ-2663 S12)', async () => {
     const { el } = await mount(defaultAppState(), { ...TWO, file: null, tabs: [] })
     expect(document.title).toBe('v')
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-root')).toBe('/v')
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/v /w')
   })
 
   it('a new note made from a page goes to the folder of that page, in that page\'s vault (S37)', async () => {
@@ -3593,7 +3666,8 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     const { el } = await mount(defaultAppState(), { ...TWO, tabs: ['/w/b.md'] })
     act(() => captured.sidebar?.onRemoveVault('/w'))
     expect(stripLabels(el)).toEqual([])
-    expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/v', '']])
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/v')
   })
 
   it('removing the first vault makes the next one the window\'s root, and that vault is not reloaded (S52)', async () => {

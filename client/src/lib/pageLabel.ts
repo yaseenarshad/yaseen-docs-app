@@ -100,11 +100,11 @@ export function useAllPathTitles(sources: readonly WikilinkResolveSource[]): Pat
 const useTreeLanded = (root: string) => useCallback((poke: () => void) => onTree(root, poke), [root])
 
 /**
- * `isFolderPath` for a component that shows pages of every vault of the window (YAZ-2602 S31): each
- * path is asked of the tree of the vault that holds it, and one in no vault of the first. The
- * component re-renders when a tree for any of `roots` lands, so its labels follow the trees.
+ * The newest Files tree of each of `roots`, off the window's one feed; null until a vault's first
+ * tree answers. Live: the component re-renders when a tree for any of `roots` lands, and the list is
+ * the same one until then.
  */
-export function useFolderPaths(roots: readonly string[]): (path: string) => boolean {
+export function useLatestTrees(roots: readonly string[]): readonly (TreeResponse | null)[] {
   const subscribe = useCallback(
     (poke: () => void) => {
       const offs = roots.map((root) => onTree(root, poke))
@@ -113,11 +113,20 @@ export function useFolderPaths(roots: readonly string[]): (path: string) => bool
     [roots],
   )
   const held = useRef<readonly (TreeResponse | null)[]>([])
-  useSyncExternalStore(subscribe, () => {
+  return useSyncExternalStore(subscribe, () => {
     const trees = roots.map(latestTree)
     if (trees.length !== held.current.length || trees.some((tree, i) => tree !== held.current[i])) held.current = trees
     return held.current
   })
+}
+
+/**
+ * `isFolderPath` for a component that shows pages of every vault of the window (YAZ-2602 S31): each
+ * path is asked of the tree of the vault that holds it, and one in no vault of the first. The
+ * component re-renders when a tree for any of `roots` lands, so its labels follow the trees.
+ */
+export function useFolderPaths(roots: readonly string[]): (path: string) => boolean {
+  useLatestTrees(roots)
   return (path) => isFolderPath(rootOfPath(roots, path) ?? roots[0] ?? null, path)
 }
 
@@ -128,10 +137,10 @@ export function useFolderPaths(roots: readonly string[]): (path: string) => bool
  * the tab before the tree that shows the new name lands, and a folder may be named `Notes.md`. So
  * nothing is said until a tree asked for NOW answers — the stale-tab probe's rule (`useVaultTree.ts`).
  */
-export function useTreeKind(root: string, path: string | null): 'dir' | 'file' | 'none' | null {
+export function useTreeKind(root: string, path: string): 'dir' | 'file' | 'none' | null {
   const held = useSyncExternalStore(useTreeLanded(root), () => {
     const tree = latestTree(root)
-    if (tree === null || path === null) return null
+    if (tree === null) return null
     return findDirNode(tree.tree, path) !== null ? 'dir' : treeHasFile(tree.tree, path) ? 'file' : 'none'
   })
   const listed = held === 'dir' || held === 'file'

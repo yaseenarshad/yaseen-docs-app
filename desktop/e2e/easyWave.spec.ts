@@ -101,7 +101,7 @@ async function closeAllTabs(w: Page): Promise<void> {
     await w.locator('.tabbar__close').first().click()
     await expect(tabsOf(w)).toHaveCount(n - 1)
   }
-  await expect(w.locator('.editor-msg')).toHaveText('Select a file from the sidebar.')
+  await expect(w.locator('.start')).toBeVisible() // the new tab page (YAZ-2663 D3)
 }
 
 /** Opens `label` from the sidebar into a clean, single-entry history (call after `closeAllTabs`). */
