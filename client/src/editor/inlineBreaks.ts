@@ -9,6 +9,9 @@
  *     `<br>` into an mdast `break`. In a prose paragraph a `<br>` with nothing after it is
  *     meaningless (CommonMark has no trailing hard break; remark would write a stray `\`), so those
  *     are dropped — which also keeps Milkdown's lone `<br />` blank-line marker round-tripping.
+ *     A `<br>` at a line end, or on a line of its own, is ONE break with the line ending beside
+ *     it: Milkdown has already made that line ending a soft break, and the `<br>` takes the one
+ *     before it and the one after it.
  *     Its stringify handler writes a break inside a table cell back as `<br>` (remark's default
  *     writes a space there).
  *  2. `cellSchemas` ($nodeSchema extensions): a table cell serialises its paragraph content
@@ -34,6 +37,9 @@ import { visit } from 'unist-util-visit'
 
 const BR = /^<br\s*\/?>$/i
 const isBr = (node: RootContent): boolean => node.type === 'html' && BR.test(node.value.trim())
+/** The line ending inside a paragraph, which Milkdown has already made a break of its own (`isInline`). */
+const isSoftBreak = (node: RootContent | undefined): boolean =>
+  node?.type === 'break' && (node.data as { isInline?: boolean } | undefined)?.isInline === true
 
 const toMarkdownExtension: ToMarkdownOptions = {
   handlers: {
@@ -51,7 +57,12 @@ export const inlineBreaksRemark = $remark('mdapp-inline-breaks', () => function 
       const trailingInProse = parent.type === 'paragraph' && !parent.children.slice(index + 1).some((n) => !isBr(n))
       if (!trailingInProse) {
         parent.children[index] = { type: 'break' }
-        return
+        // A `<br>` at a line end, or on a line of its own, is ONE break with the line ending beside
+        // it. Two breaks would save as `\` + a blank line, which ends the paragraph.
+        if (isSoftBreak(parent.children[index + 1])) parent.children.splice(index + 1, 1)
+        if (!isSoftBreak(parent.children[index - 1])) return
+        parent.children.splice(index - 1, 1)
+        return index
       }
       parent.children.splice(index, 1)
       return index
