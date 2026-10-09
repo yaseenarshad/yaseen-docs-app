@@ -1,0 +1,77 @@
+/* The preview panel of the search (YAZ-2662 D5): the surface of the tab board's peek
+   (`.taboverview__peek`) as a panel of its own — centred over the page area, at a width to read.
+   Centred by its margins, not by a transform: it does not move, and a transform can land its text
+   on half a pixel. No backdrop: the page stays in sight around it. Above what a page layers over
+   its own text, below a menu. */
+.quicklook {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100% - 64px));
+  height: min(760px, calc(100% - 40px));
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.quicklook__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.quicklook__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The ✕ of a tab (`.tabbar__close`), at the size of a header. */
+.quicklook__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 50%;
+}
+
+.quicklook__close:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+}
+
+/* The one scroller of a note; a viewer fills the box and scrolls inside itself. */
+.quicklook__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* `.editor-instance` has no lead-in of its own: the page's title row gives it one, and here the header does not. */
+.quicklook__note {
+  padding-top: 20px;
+}
+
+/* The header names the file already. */
+.quicklook .text-viewer__header,
+.quicklook .image-viewer__header {
+  display: none;
+}

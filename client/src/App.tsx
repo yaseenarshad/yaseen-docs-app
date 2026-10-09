@@ -35,6 +35,7 @@ import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
+import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
@@ -125,6 +126,10 @@ export function App() {
   const sidebarClipboard = useRef<SidebarClipboard | null>(null)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
+  // The preview panel of the search (YAZ-2662 D5): the file that it draws over the page area, or
+  // null with no panel on show. It is no tab — the preview TAB is the workspace's `preview` — and
+  // nothing of it is stored. The sidebar names the file and reads it back; the panel's ✕ clears it.
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
@@ -1155,6 +1160,8 @@ export function App() {
           onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
+          previewPath={previewPath}
+          onPreview={setPreviewPath}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
@@ -1304,6 +1311,8 @@ export function App() {
                 onSetReview={setReview}
               />
             )}
+            {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
+            {previewPath !== null && <QuickLook path={previewPath} title={nameOf(previewPath)} watch={scopeOf(previewPath).watch} wikilinks={scopeOf(previewPath).wikilinks} onClose={() => setPreviewPath(null)} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>

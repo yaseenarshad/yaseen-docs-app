@@ -84,6 +84,13 @@ interface SidebarProps {
    * with `focus` (YAZ-2662 D1, D8): the row gets the keyboard focus too.
    */
   onRevealInFiles: (path: string, focus?: boolean) => void
+  /**
+   * The preview panel of the search (YAZ-2662 D5) is App's, over the page area: `previewPath` is the
+   * file that it draws, or `null` with no panel on show, and `onPreview` is its one door — a file to
+   * draw, or `null` for no panel. Space in the search bar asks, and the panel then follows the highlight.
+   */
+  previewPath: string | null
+  onPreview: (path: string | null) => void
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
   onPickFolder: () => void
   /** True while the native folder dialog is open; the switcher's "Open folder…" row is disabled meanwhile. */
@@ -374,6 +381,8 @@ export function Sidebar({
   onKeepFile,
   onOpenFileBackground,
   onRevealInFiles,
+  previewPath,
+  onPreview,
   onPickFolder,
   pickDisabled,
   switcherOpenRequest,
@@ -498,7 +507,7 @@ export function Sidebar({
   }, [onLensChange])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
-  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate)
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview)
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null

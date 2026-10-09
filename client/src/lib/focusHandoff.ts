@@ -13,11 +13,13 @@
 /**
  * Focus the document on screen. The VISIBLE one, never the first in the DOM: every visited tab
  * keeps its editor mounted and hidden, and a folder's outline is an editor too. `offsetParent` is
- * the cheap "actually rendered" question — null for a `display: none` subtree.
+ * the cheap "actually rendered" question — null for a `display: none` subtree. The note in the
+ * preview panel of the search is no page (YAZ-2662 R4): it wears the editor's class for its
+ * stylesheets, and the caret never goes into it.
  */
 export function focusOpenDocument(): boolean {
   const doc = Array.from(document.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).find(
-    (el) => el.offsetParent !== null,
+    (el) => el.offsetParent !== null && el.closest('.quicklook') === null,
   )
   if (doc === undefined) return false
   doc.focus()
