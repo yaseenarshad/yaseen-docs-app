@@ -199,9 +199,9 @@ export interface IndexResponse {
    */
   ids: boolean
   /**
-   * Only while the vault has NOT answered: what a yes would write (🔒 V2). `notes` would be given an
-   * id, `foreign` of them over another tool's `id`; `folders` would be given a `.folder.md`, or an
-   * `id` in the one they have.
+   * Only while the vault's answer is not yes, so for one that said no too (YAZ-2677 🔒 D2): what a
+   * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
+   * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
    */
   ask?: { notes: number; folders: number; foreign: number }
 }

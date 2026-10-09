@@ -101,6 +101,18 @@ describe('the one gate: an id is written only where the vault said yes', () => {
     await until(async () => isNoteId((await indexed('a.md'))?.id) && isNoteId(await idIn('Projects', 'b.md')) && isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
   })
 
+  it('a vault that said no also gets `ask`, the counts of what a yes would write; a vault that said yes gets none (YAZ-2677 S12)', async () => {
+    await vault({ 'a.md': 'body\n', 'held.md': '---\nid: k3m9x2pq7abc\n---\n', 'other.md': '---\nid: from-another-tool\n---\n', 'Projects/b.md': 'body\n' })
+    await answers(false)
+    const index = await getIndex(root)
+    expect(index.ids).toBe(false)
+    expect(index.ask).toEqual({ notes: 3, folders: 1, foreign: 1 })
+    await quiet()
+    expect(await read('a.md')).toBe('body\n')
+    await answers(true)
+    expect(await getIndex(root)).not.toHaveProperty('ask')
+  })
+
   it('a no written after a yes: the next `getIndex` answers plain, a note arriving afterwards is given no id, and nothing is removed', async () => {
     await vault({ 'a.md': 'body\n' })
     await answers(true)
@@ -111,7 +123,6 @@ describe('the one gate: an id is written only where the vault said yes', () => {
     const index = await getIndex(root)
     expect(index).toMatchObject({ ids: false, records: [{ name: 'a.md', title: 'a' }] })
     expect(index.records[0]).not.toHaveProperty('id')
-    expect(index).not.toHaveProperty('ask')
     await writeFile(at('late.md'), 'late\n')
     await until(async () => (await indexed('late.md')) !== undefined)
     await quiet()

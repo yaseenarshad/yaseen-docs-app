@@ -38,3 +38,12 @@ export function idsAnswer(config: unknown): boolean | undefined {
   const enabled = (config as { enabled?: unknown } | null | undefined)?.enabled
   return typeof enabled === 'boolean' ? enabled : undefined
 }
+
+/** A vault's ID letters (YAZ-2677): 2 to 5 of A to Z, in any case. */
+export const isIdLetters = (value: string): boolean => /^[A-Z]{2,5}$/i.test(value)
+
+/** The ID letters in a parsed `IDS_FILE` (YAZ-2677 R9), in capitals. Anything else, a missing file too, is none. */
+export function idsLetters(config: unknown): string | undefined {
+  const letters = (config as { letters?: unknown } | null | undefined)?.letters
+  return typeof letters === 'string' && isIdLetters(letters) ? letters.toUpperCase() : undefined
+}

@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, type GithubSyncStatus, type SettingsState } from '@shared/types'
+import { DEFAULT_SETTINGS, type GithubSyncStatus, type IndexResponse, type SettingsState } from '@shared/types'
+import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -25,7 +26,7 @@ beforeEach(() => {
   scrollIntoView.mockClear()
 })
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean | undefined; held: boolean }, vaultName?: string) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string }, vaultName?: string) {
   const onChange = vi.fn()
   const onClose = vi.fn()
   const setEnabled = vi.fn()
@@ -37,7 +38,9 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   // The same for Review: no settings handed over is no vault open, so no section.
   const review = reviewSettings === undefined ? undefined : { settings: reviewSettings, save }
   // And for the vault's IDs switch (YAZ-2523): no answer handed over is no vault open, so no row.
-  const ids = vaultIds === undefined ? undefined : { ...vaultIds, set: setIds }
+  // `letters` reads the vault's ID letters out of its `ids.json` (YAZ-2677 S9): asked at the click on On.
+  const readLetters = vi.fn(async () => vaultIds?.letters)
+  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: setIds }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -45,7 +48,7 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, readLetters, rerender, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -559,7 +562,7 @@ describe('SettingsDialog search (D6)', () => {
 
 describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () => {
   const OFF_TEXT = "This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
-  const withIds = (enabled: boolean | undefined, held = false) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
+  const withIds = (enabled: boolean, held = false) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
   const pressed = (el: HTMLElement) => rowButtons(el, 'ids').map((b) => b.getAttribute('aria-pressed'))
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
@@ -580,17 +583,10 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(rowButtons(el, 'ids').map((b) => b.textContent)).toEqual(['On', 'Off'])
   })
 
-  it("shows the vault's answer: On where it said yes, Off where it said no or has not answered", () => {
+  it("shows the vault's answer: On where it said yes, Off where it said no or has no answer", () => {
     expect(pressed(withIds(true, true).el)).toEqual(['true', 'false'])
     unmount()
     expect(pressed(withIds(false).el)).toEqual(['false', 'true'])
-  })
-
-  it('On writes yes at once', () => {
-    const { el, setIds } = withIds(false)
-    act(() => rowButtons(el, 'ids')[0].click())
-    expect(setIds).toHaveBeenCalledExactlyOnceWith(true)
-    expect(el.querySelector('.confirm')).toBeNull()
   })
 
   it('Off in a vault whose notes hold IDs asks first, in the locked words; Cancel and Esc leave it on and the dialog open', () => {
@@ -628,17 +624,132 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(off.el.querySelector('.confirm')).toBeNull()
   })
 
-  it('a vault that has not answered reads Off, and a click on Off saves no: the box does not have to come back for it', () => {
-    const { el, setIds } = withIds(undefined)
-    expect(pressed(el)).toEqual(['false', 'true'])
-    act(() => rowButtons(el, 'ids')[1].click())
-    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
-  })
-
   it('Off in a vault that holds no IDs writes no at once', () => {
     const { el, setIds } = withIds(true)
     act(() => rowButtons(el, 'ids')[1].click())
     expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
     expect(el.querySelector('.confirm')).toBeNull()
+  })
+})
+
+/**
+ * On asks first (YAZ-2677 🔒 D2): a box with what an ID is, the counts, how to undo, and a text field
+ * for the vault's ID letters. Nothing is written until the letters are valid and "Give IDs" is chosen.
+ */
+describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D2)', () => {
+  const ASK = { notes: 3, folders: 1, foreign: 0 }
+  const open = async (vaultIds: { ask?: IndexResponse['ask']; letters?: string } = { ask: ASK }, vaultName?: string) => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ...vaultIds }, vaultName)
+    await act(async () => rowButtons(mounted.el, 'ids')[0].click())
+    return mounted
+  }
+  /** On and Off: the row's first two buttons. An open box's buttons come after them. */
+  const pressed = (el: HTMLElement) => rowButtons(el, 'ids').slice(0, 2).map((b) => b.getAttribute('aria-pressed'))
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+
+  it('a click on On opens the box and writes nothing: what an ID is, the counts, how to undo, and a text field (S5, S12)', async () => {
+    const { el, setIds, readLetters } = await open()
+    expect(readLetters).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage(ASK))
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk(undefined))
+    expect(field(el).value).toBe('')
+    expect(document.activeElement).toBe(field(el))
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Give IDs'])
+    expect(sheetBtn(el, 'Give IDs').disabled).toBe(true)
+    expect(setIds).not.toHaveBeenCalled()
+    expect(pressed(el)).toEqual(['false', 'true'])
+  })
+
+  it.each(['', 'Y', 'ABCDEF', 'YA1', '7', 'YA Z', ' YAZ', 'YAZ '])('with %j in the field, "Give IDs" and Enter do nothing (S6)', async (typed) => {
+    const { el, setIds } = await open()
+    type(field(el), typed)
+    expect(sheetBtn(el, 'Give IDs').disabled).toBe(true)
+    act(() => sheetBtn(el, 'Give IDs').click())
+    pressEnter(field(el))
+    expect(setIds).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).not.toBeNull()
+  })
+
+  it.each(['ya', 'yaz', 'Docs', 'ABCDE'])('%j, then "Give IDs", saves yes and the letters in capitals, and the box closes (S7)', async (typed) => {
+    const { el, setIds } = await open()
+    type(field(el), typed)
+    expect(sheetBtn(el, 'Give IDs').disabled).toBe(false)
+    act(() => sheetBtn(el, 'Give IDs').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, typed.toUpperCase())
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('Enter in the field with valid letters is "Give IDs", and the dialog under the box stays open (S7)', async () => {
+    const { el, setIds, onClose } = await open()
+    type(field(el), 'yaz')
+    pressEnter(field(el))
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAZ')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Cancel, Esc and a click outside close the box: nothing is written, the switch stays Off, and the dialog stays open (S8)', async () => {
+    const { el, setIds, onClose } = await open()
+    type(field(el), 'yaz')
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    await act(async () => rowButtons(el, 'ids')[0].click())
+    expect(field(el).value).toBe('')
+    type(field(el), 'yaz')
+    pressEscape(field(el))
+    expect(el.querySelector('.confirm')).toBeNull()
+    await act(async () => rowButtons(el, 'ids')[0].click())
+    type(field(el), 'yaz')
+    act(() => void el.querySelector('.confirm-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(pressed(el)).toEqual(['false', 'true'])
+  })
+
+  it('a vault that already has letters asks for those letters, and only those start "Give IDs" (S9)', async () => {
+    const { el, setIds } = await open({ ask: ASK, letters: 'YAZ' })
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk('YAZ'))
+    for (const typed of ['DOC', 'YA', 'YAZZ']) {
+      type(field(el), typed)
+      expect(sheetBtn(el, 'Give IDs').disabled).toBe(true)
+      pressEnter(field(el))
+    }
+    expect(setIds).not.toHaveBeenCalled()
+    type(field(el), 'yaz')
+    act(() => sheetBtn(el, 'Give IDs').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAZ')
+  })
+
+  it('a yes that would write nothing still opens the box, and it sets the letters (S10)', async () => {
+    const { el, setIds } = await open({ ask: { notes: 0, folders: 0, foreign: 0 } })
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage({ notes: 0, folders: 0, foreign: 0 }))
+    type(field(el), 'bus')
+    act(() => sheetBtn(el, 'Give IDs').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'BUS')
+  })
+
+  it('with two or more vaults in the window the box names the vault that it acts on (S13)', async () => {
+    const { el } = await open({ ask: ASK }, 'Work')
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage(ASK, 'Work'))
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('Give the notes in Work IDs?')
+  })
+
+  it('the letters cannot be read (`ids.json` is not valid JSON): no box opens and nothing is written', async () => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ask: ASK })
+    mounted.readLetters.mockRejectedValueOnce(new Error('ids.json is not valid JSON'))
+    await act(async () => rowButtons(mounted.el, 'ids')[0].click())
+    expect(mounted.el.querySelector('.confirm')).toBeNull()
+    expect(mounted.setIds).not.toHaveBeenCalled()
+  })
+
+  it('Off in a vault whose notes hold IDs still asks first, and "Turn off" saves no with no letters handed over (S11)', async () => {
+    const { el, setIds } = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true })
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(el.querySelector('.confirm__input')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
+    act(() => sheetBtn(el, 'Turn off').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
   })
 })

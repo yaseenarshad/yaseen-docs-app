@@ -17,8 +17,8 @@
  *
  * Both vaults are copies of the generated fixture under FIXED folder names, so each row is found by
  * its `data-path` — the two trees hold the same names — and the titles read as sentences. Each
- * vault has answered "Not for this vault" on IDs before the launch (`.yaseendocs/ids.json`), so the
- * box that asks never stands over the window and a row reads its file name.
+ * vault has said no to IDs before the launch (`.yaseendocs/ids.json`), so a row reads its file
+ * name. No box asks about IDs when a vault opens (YAZ-2677 D1).
  *
  * Never the system folder picker: Beta is a KNOWN vault, added by its row in the flyout. ⌘O is a
  * native accelerator Playwright cannot press, so step 8 drives its menu item by id
@@ -136,7 +136,7 @@ test.beforeAll(async () => {
   vaultB = path.join(vaultsDir, BETA)
   await Promise.all([cp(vaultSrc, vaultA, { recursive: true }), cp(vaultSrc, vaultB, { recursive: true })])
   await writeFile(path.join(vaultB, 'Ideas.md'), `# Ideas\n\n${BETA_IDEAS_BODY}\n`)
-  // Each vault has said no to IDs ("Two kinds of vault"): no box asks, and nothing is written into a note.
+  // Each vault has said no to IDs ("Two kinds of vault"): the app writes nothing into a note. No vault is asked when it opens (YAZ-2677 D1).
   for (const vault of [vaultA, vaultB]) {
     await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: false }))

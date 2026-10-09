@@ -15,7 +15,7 @@ export interface IndexState {
   folders: IndexRecord[]
   /** Does this vault give its notes IDs (YAZ-2523 🔒 V5)? false until the first fetch resolves. */
   ids: boolean
-  /** What a yes would write, while the vault has not answered (`IndexResponse.ask`). */
+  /** What a yes would write, while the vault's answer is not yes (`IndexResponse.ask`). */
   ask: IndexResponse['ask']
   /** Fetch failure message; null unless `status` is 'error'. */
   error: string | null

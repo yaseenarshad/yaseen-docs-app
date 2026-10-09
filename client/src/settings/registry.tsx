@@ -17,15 +17,17 @@
  * its rows call `review.save` — never `onChange`. Its switch is the one row while upkeep is off.
  *
  * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
- * row is `available` only with a vault open and calls `ids.set`.
+ * row is `available` only with a vault open and calls `ids.set`. On asks first (YAZ-2677 🔒 D2).
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
-import type { GithubSyncStatus, SettingsState } from '@shared/types'
+import type { GithubSyncStatus, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
+import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, STARTUP_WINDOWS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
@@ -36,8 +38,14 @@ export interface SettingsCtx {
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
   /** This vault's review settings (YAZ-2322); absent with no vault open. */
   review?: ReviewSettingsState
-  /** This vault's answer on IDs (YAZ-2523 🔒 V4; undefined: it has not answered), whether any note holds one, and the switch; absent until a vault's index has loaded. */
-  ids?: { enabled: boolean | undefined; held: boolean; set: (enabled: boolean) => void }
+  /**
+   * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
+   * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
+   * while the answer is not yes. `letters` reads the vault's ID letters out of its `ids.json` (none:
+   * it has none yet), and rejects where they cannot be read. `set` saves the answer, and with a yes
+   * the ID letters (YAZ-2677 🔒 D2).
+   */
+  ids?: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
    * over only where the window has two or more vaults, and each per-vault page then says which one
@@ -115,36 +123,75 @@ const reviewNumber = (field: ReviewNumberField, label: string, unit: string): Se
   render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} />,
 })
 
+/** The counts of a vault whose snapshot carries none: a yes there writes into no note and no folder. */
+const NOTHING_TO_WRITE = { notes: 0, folders: 0, foreign: 0 }
+
 /**
- * The vault's IDs switch. Only a CHANGE writes: a click on the answer the vault gave is nothing. A
- * vault that has not answered reads Off, and either click is its answer. Off in a vault whose notes
- * hold IDs asks first (🔒 V13); the sheet's keys stay inside it, so the dialog under it does not close.
+ * The box that On opens before anything is written (YAZ-2677 🔒 D2): what an ID is, what a yes would
+ * write, how to undo it, and a text field. The user types the vault's ID letters: any 2 to 5 letters
+ * for a vault that has none, and exactly its own letters, in any case, for one that has them (S9).
+ * "Give IDs" and Enter do nothing until then. The field holds the focus: Enter in it is safe.
  */
-function IdsControl({ ids }: { ids: NonNullable<SettingsCtx['ids']> }) {
-  const [asking, setAsking] = useState(false)
+function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const [typed, setTyped] = useState('')
+  const field = useRef<HTMLInputElement>(null)
+  // After the sheet's own effect, which puts the focus on Cancel.
+  useEffect(() => field.current?.focus(), [])
+  const valid = letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters
+  return (
+    <ConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault)} confirmLabel="Give IDs" confirmDisabled={!valid} keys="contained" onConfirm={() => onConfirm(typed.toUpperCase())} onCancel={onCancel}>
+      <label className="confirm__letters">
+        {idsLettersAsk(letters)}
+        <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
+      </label>
+    </ConfirmSheet>
+  )
+}
+
+/**
+ * The vault's IDs switch. Only a CHANGE writes: a click on the answer the row shows is nothing, and a
+ * vault with no answer reads Off. On opens the box with the typed ID letters and writes nothing
+ * before it is confirmed (YAZ-2677 🔒 D2); the vault's letters are read at the click. Off in a vault
+ * whose notes hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
+ */
+function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
+  const [asking, setAsking] = useState<'off' | { letters: string | undefined } | null>(null)
   return (
     <>
       <Segmented
         options={ON_OFF_OPTIONS}
-        value={ids.enabled === true}
+        value={ids.enabled}
         onChange={(on) => {
           if (on === ids.enabled) return
-          if (!on && ids.held) setAsking(true)
-          else ids.set(on)
+          if (on) ids.letters().then((letters) => setAsking({ letters }), () => undefined)
+          else if (ids.held) setAsking('off')
+          else ids.set(false)
         }}
         ariaLabel="Give this vault's notes IDs"
       />
-      {asking && (
+      {asking === 'off' && (
         <ConfirmSheet
           labelId="confirm-ids-off-text"
           text="This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
           confirmLabel="Turn off"
           keys="contained"
           onConfirm={() => {
-            setAsking(false)
+            setAsking(null)
             ids.set(false)
           }}
-          onCancel={() => setAsking(false)}
+          onCancel={() => setAsking(null)}
+        />
+      )}
+      {asking !== null && asking !== 'off' && (
+        <GiveIdsSheet
+          ask={ids.ask ?? NOTHING_TO_WRITE}
+          vault={vault}
+          letters={asking.letters}
+          onConfirm={(letters) => {
+            setAsking(null)
+            ids.set(true, letters)
+          }}
+          onCancel={() => setAsking(null)}
         />
       )}
     </>
@@ -323,7 +370,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: "Give this vault's notes IDs",
             hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
-            render: ({ ids }) => ids && <IdsControl ids={ids} />,
+            render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
           },
         ],
       },
