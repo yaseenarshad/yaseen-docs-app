@@ -8,9 +8,13 @@
  *  - list_item schema widened from `paragraph block*` to `block+` so that
  *    Logseq/Obsidian-style outlines (`* # Heading` / `* - nested`) do not get
  *    an empty `<br />` paragraph injected on round-trip.
- *  - Markdown out goes through `postProcessMarkdown()` which un-escapes
+ *  - Markdown out goes through `postProcessMarkdown()`: ONE walk over the lines outside fenced
+ *    code (`mapOutsideFences`, `listItemRoundTrip.ts`). On each of them it un-escapes
  *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes, and the `\=` the
- *    highlight mark's escape rule (rule 31) would put inside a `[[target]]`.
+ *    highlight mark's escape rule (rule 31) would put inside a `[[target]]` — never inside a code
+ *    span on that line — and then restores the item line (`restoreItemLine`).
+ *    🔒 EVERY text rule, on load (`normalizeEmptyItems`) and on save, goes through that one walk,
+ *    so the text of code keeps its bytes. A new text rule must use it too.
  *  - Outline folding plugin (GRO-2011) registered via `$prose`; fold toggles are
  *    metadata-only transactions and never reach `markdownUpdated` / autosave.
  *  - Outliner keymap (GRO-2012, `outline/listCommands.ts`) patches the gaps in Crepe's
@@ -29,7 +33,8 @@
  *    Four toolbar swatches after Strikethrough; one click applies, re-clicking the lit one removes.
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
- *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one.
+ *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one. A `<br>` at a
+ *    line end, or on a line of its own, is ONE break with the line ending beside it.
  *  - Marks on line breaks (YAZ-2280, `breakMarks.ts`): replaces Milkdown's `hardbreakClearMarkPlugin`;
  *    a mark runs through a soft break, never starts or ends on one, and never sits on a hard break.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
@@ -144,9 +149,9 @@ import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
 import {
   listItemRoundTrip,
+  mapOutsideFences,
   normalizeEmptyItems,
-  restoreSameLineOrderedMarkers,
-  stripEmptyTaskBreaks,
+  restoreItemLine,
 } from './listItemRoundTrip'
 import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
@@ -447,17 +452,44 @@ export function getPlainText(crepe: Crepe): string {
   })
 }
 
+/**
+ * A code span on one line: a run of backticks up to the next run of the same length. A backtick
+ * that the user typed as text is not one: remark writes it with a backslash, so the opening run
+ * has an even count of backslashes before it.
+ */
+const CODE_SPAN = /(?<=(?:^|[^\\])(?:\\\\)*)(`+)(?!`).*?(?<!`)\1(?!`)/g
+
+/**
+ * remark's escapes come off a wikilink, so the link keeps its bytes: `\[\[` is `[[` again, and the
+ * `\=` that rule 31's escape puts inside a target is `=` again (a target is plain text to remark,
+ * so `[[A == B]]` would be `[[A \=\= B]]` and break the link).
+ */
+const restoreWikilinkText = (text: string): string =>
+  text.replace(/(!?)\\\[\\\[/g, '$1[[').replace(/\[\[[^\]]*\]\]/g, (link) => link.replace(/\\=/g, '='))
+
+/**
+ * One line outside a fence, on its way to the file. The wikilink rule never works inside a code
+ * span: remark escapes nothing there, so a backslash in code is the user's own. Most lines have no
+ * work: every save rule needs a backslash, or the `<br />` that ends an empty task.
+ */
+const restoreLine = (line: string): string => {
+  const escaped = line.includes('\\')
+  if (!escaped && !line.endsWith('<br />')) return line
+  if (!escaped || !line.includes('`')) return restoreItemLine(restoreWikilinkText(line))
+  let out = ''
+  let from = 0
+  for (const span of line.matchAll(CODE_SPAN)) {
+    out += restoreWikilinkText(line.slice(from, span.index)) + span[0]
+    from = span.index + span[0].length
+  }
+  return restoreItemLine(out + restoreWikilinkText(line.slice(from)))
+}
+
 export function postProcessMarkdown(md: string): string {
-  return restoreSameLineOrderedMarkers(
-    stripEmptyTaskBreaks(
-      md
-        .replace(/(!?)\\\[\\\[/g, '$1[[')
-        // A wikilink target is plain text to remark, so rule 31's escape would turn
-        // `[[A == B]]` into `[[A \=\= B]]` and break the link; the target keeps its bytes.
-        .replace(/\[\[[^\]]*\]\]/g, (link) => link.replace(/\\=/g, '='))
-        // Crepe's trailing plugin keeps an empty paragraph after a final heading/list/code
-        // block; remark would serialise it as an extra blank line. Contract: single final \n.
-        .replace(/\n{2,}$/, '\n'),
-    ),
+  return (
+    mapOutsideFences(md, restoreLine)
+      // Crepe's trailing plugin keeps an empty paragraph after a final heading/list/code
+      // block; remark would serialise it as an extra blank line. Contract: single final \n.
+      .replace(/\n{2,}$/, '\n')
   )
 }
