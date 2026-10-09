@@ -1295,6 +1295,21 @@ button {
   color: var(--fg);
 }
 
+/* The labels of the search's two groups (YAZ-2662 D2): quiet, in the family of the Focus tab's line.
+   The line above "Everything else" is the hairline of a label that follows a tree. */
+.sidebar__group {
+  margin: 0;
+  padding: 4px 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.tree + .sidebar__group {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
 /* The search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
    tabs above it. It is on the Search tab only (YAZ-2638 D2); the shortcut picker draws the same row. */
 .sidebar__search {

@@ -22,6 +22,12 @@
 - D11 (the arrows on a sidebar tree) was decided by the agent while Yasin slept. He can decline it in the hand walk.
 - No demo: Yasin dropped it and approved the build directly.
 
+## Coordination with YAZ-2663 (the new tab page)
+
+- The branch `yaz-2663-new-tab-page` is stacked on this branch from `8425e13` and merges it each hour. Do NOT rebase or force-push this branch. Plain commits only.
+- YAZ-2663 does not change the Search tab. It replaces the empty page of a new tab with a `StartPage`, still under the preview panel in `.tabstack`.
+- Three doors that YAZ-2663 calls. Keep each stable: `onRevealInFiles(path, true)`; the App state or callback of the preview panel that takes a path or `null`; and `useSidebarSearch` must leave → and ↓ unhandled when the text is empty.
+
 ## State
 
 - Done:

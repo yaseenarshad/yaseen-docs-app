@@ -40,9 +40,9 @@ const rowBuilds = vi.hoisted(() => ({ folders: [] as string[], files: [] as stri
 vi.mock('../search/searchCandidates', async (importOriginal) => {
   const real = await importOriginal<typeof import('../search/searchCandidates')>()
   /** One entry per ranking (YAZ-2638 D2): the query it ranked. */
-  const searchRows: typeof real.searchRows = (candidates, query) => {
+  const searchRows: typeof real.searchRows = (candidates, query, first) => {
     rowBuilds.ranked.push(query)
-    return real.searchRows(candidates, query)
+    return real.searchRows(candidates, query, first)
   }
   const folderCandidates: typeof real.folderCandidates = (root, dirs, folders) => {
     rowBuilds.folders.push(root)
@@ -2740,6 +2740,214 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     act(() => row(el, `${v}/Projects`)?.focus())
     expect(['ArrowDown', 'ArrowRight', 'ArrowLeft'].map((name) => key(document.activeElement, name).defaultPrevented)).toEqual([false, false, false])
     expect([focused(), labels(el)]).toEqual(['Projects', ['Projects', 'Alpha']])
+  })
+})
+
+/**
+ * The two groups of the search tree (YAZ-2662 D2, D3, D4). A pinned item is a file or a folder of
+ * the focus list or of the favorites. The matches that are a pinned item or are inside one are
+ * drawn first, under "Favorites and focus": the pinned items are its top rows, the focus items
+ * before the favorites. A line and "Everything else" come next, over the Files tree cut to the
+ * other matches. The ranking puts each pinned match first, so the limit never cuts one and the
+ * highlight starts in the top group. The S-numbers are the case record on YAZ-2662.
+ */
+describe('the matches of the pinned items show first (YAZ-2662 D2, D3, D4)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  /** Archive/ with two notes; Clients/ holding Acme/ and a note; Plans/ holding Deep/ and a note; two notes at the top. */
+  const VAULT = (v: string): TreeNode[] => [
+    folder(`${v}/Archive`, [note(`${v}/Archive/Old.md`), note(`${v}/Archive/Plan old.md`)]),
+    folder(`${v}/Clients`, [folder(`${v}/Clients/Acme`, [note(`${v}/Clients/Acme/Client brief.md`), note(`${v}/Clients/Acme/Plan A.md`)]), note(`${v}/Clients/Plan index.md`)]),
+    folder(`${v}/Plans`, [folder(`${v}/Plans/Deep`, [note(`${v}/Plans/Deep/Plan deep.md`)]), note(`${v}/Plans/Old ideas.md`)]),
+    note(`${v}/Plan.md`),
+    note(`${v}/zeta.md`),
+  ]
+  /** The focus list: `Plan` is in both lists, and leads this one. */
+  const FOCUS = ['/Plan.md', '/Plans']
+  /** The favorites: `Acme`, `Plan` again, and `Deep`, which is inside the focus item `Plans`. */
+  const FAVORITES = ['/Clients/Acme', '/Plan.md', '/Plans/Deep']
+  const notePaths = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.type === 'dir' ? notePaths(n.children) : [n.path]))
+  const record = (v: string, path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: path.slice(v.length + 1, Math.max(v.length + 1, path.lastIndexOf('/'))), ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+  }
+
+  let vaults = 0
+  /** A fresh vault and a fresh window per mount, over an index of each note of its tree; the lists are paths below the vault. Then `query` typed into the bar of the Search tab. */
+  const search = async (query: string, opts: { focus?: string[]; favorites?: string[]; nodes?: (v: string) => TreeNode[]; records?: (v: string) => IndexRecord[] } = {}) => {
+    const v = `/v-pinned-${++vaults}`
+    const nodes = (opts.nodes ?? VAULT)(v)
+    const m = await mount({ root: v, lens: 'search' }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: nodes, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: v, records: opts.records?.(v) ?? notePaths(nodes).map((path) => record(v, path)), folders: [], generatedAt: 1, ids: true } as never)
+      b.favorites.get.mockResolvedValue((opts.favorites ?? FAVORITES).map((rel) => `${v}${rel}`))
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: (opts.focus ?? FOCUS).map((rel) => `${v}${rel}`) })
+      await storage.init()
+    })
+    const input = searchBar(m.el)!
+    await type(input, query)
+    return { ...m, v, input }
+  }
+  /** The body's rows as the eye reads them: top to bottom, two spaces per depth inside their own tree. */
+  const shape = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row')].map((row) => {
+      let depth = -1
+      for (let list = row.closest('ul.tree'); list !== null; list = list.parentElement?.closest('ul.tree') ?? null) depth++
+      return `${'  '.repeat(depth)}${row.querySelector('.tree__label')?.textContent}`
+    })
+  /** What the body holds, top to bottom: a label or a line by its text, a tree as `tree`. */
+  const parts = (el: HTMLElement) => [...el.querySelector('.sidebar__body')!.children].map((child) => (child.matches('ul.tree') ? 'tree' : child.textContent))
+  const TOP = 'Favorites and focus'
+  const REST = 'Everything else'
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${path}"]`)
+  const isOpen = (el: HTMLElement, path: string) => row(el, path)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  const cursor = (el: HTMLElement) => [...el.querySelectorAll('.sidebar__body .tree__row--selected .tree__label')].map((n) => n.textContent)
+  const press = (input: HTMLInputElement, key: string) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+  const click = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  const pick = async (el: HTMLElement, path: string, label: string) => {
+    act(() => void row(el, path)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    await act(async () => itemByLabel(el, label)?.click())
+  }
+
+  it('S14 to S19: the top group is first, under its label — the pinned items are its top rows, the focus items before the favorites, an item of both lists one time at its focus place, an item inside a pinned folder inside that folder; a line and "Everything else" come next, with no pinned item and no row of one', async () => {
+    const { el, v } = await search('plan')
+    expect(parts(el)).toEqual([TOP, 'tree', REST, 'tree'])
+    expect(shape(el)).toEqual(['Plan', 'Plans', '  Deep', '    Plan deep', 'Acme', '  Plan A', 'Archive', '  Plan old', 'Clients', '  Plan index'])
+    // The two trees: no folder above a pinned item is drawn in the first (S14), and no pinned item in the second (S19).
+    const trees = [...el.querySelectorAll('.sidebar__body > ul.tree')].map((tree) => [...tree.querySelectorAll('.tree__row')].map((r) => r.getAttribute('data-path')?.slice(v.length)))
+    expect(trees).toEqual([['/Plan.md', '/Plans', '/Plans/Deep', '/Plans/Deep/Plan deep.md', '/Clients/Acme', '/Clients/Acme/Plan A.md'], ['/Archive', '/Archive/Plan old.md', '/Clients', '/Clients/Plan index.md']])
+    // S14: a pinned folder that only leads to a match is open and dim, with no text marked; one that matches is marked (S13).
+    expect([isOpen(el, `${v}/Clients/Acme`), row(el, `${v}/Clients/Acme`)?.classList.contains('tree__row--context'), row(el, `${v}/Clients/Acme`)?.querySelector('.tree__mark')]).toEqual(['true', true, null])
+    expect([isOpen(el, `${v}/Plans`), row(el, `${v}/Plans`)?.classList.contains('tree__row--context'), row(el, `${v}/Plans`)?.querySelector('.tree__mark')?.textContent]).toEqual(['true', false, 'Plan'])
+    // The labels are quiet lines of their own, and the line is the hairline above the second.
+    expect([...el.querySelectorAll('.sidebar__body > .sidebar__group')].map((label) => label.textContent)).toEqual([TOP, REST])
+    expect(appCss.match(/\n\.tree \+ \.sidebar__group \{([^}]*)\}/)?.[1]).toContain('border-top: 1px solid var(--border)')
+  })
+
+  it('S13, S20: a pinned folder whose name matches, with no match inside, is a top row — closed, and a click opens it to all that it holds; with each match pinned there is the top group and its label, no line and no "Everything else"', async () => {
+    const { el, v, input } = await search('acme')
+    expect([parts(el), shape(el), isOpen(el, `${v}/Clients/Acme`)]).toEqual([[TOP, 'tree'], ['Acme'], 'false'])
+    click(row(el, `${v}/Clients/Acme`))
+    expect(shape(el)).toEqual(['Acme', '  Client brief', '  Plan A'])
+    // S14, S20: a match inside a pinned folder — the folder above the pinned folder is not drawn at all.
+    await type(input, 'brief')
+    expect([parts(el), shape(el)]).toEqual([[TOP, 'tree'], ['Acme', '  Client brief']])
+  })
+
+  it('S21: with no pinned match there is no label and no line — the one tree, as before this work: a matched folder opens to all that it holds, a pinned folder too', async () => {
+    const { el, v, input } = await search('zeta')
+    expect([parts(el), shape(el)]).toEqual([['tree'], ['zeta']])
+    expect(el.querySelector('.sidebar__group')).toBeNull()
+    await type(input, 'clients')
+    expect([parts(el), shape(el)]).toEqual([['tree'], ['Clients']])
+    click(row(el, `${v}/Clients`))
+    expect(shape(el)).toEqual(['Clients', '  Acme', '  Plan index'])
+  })
+
+  it('S21: with no pinned item at all the search draws the one tree, and the best match of all is the highlight', async () => {
+    const { el } = await search('plan', { focus: [], favorites: [] })
+    expect([parts(el), shape(el)]).toEqual([['tree'], ['Archive', '  Plan old', 'Clients', '  Acme', '    Plan A', '  Plan index', 'Plans', '  Deep', '    Plan deep', 'Plan']])
+    expect(cursor(el)).toEqual(['Plan'])
+  })
+
+  it('S19: a matched folder of "Everything else" that holds a pinned item opens to all that it holds but the pinned item, which the top group draws', async () => {
+    const { el, v } = await search('client')
+    expect([parts(el), shape(el)]).toEqual([[TOP, 'tree', REST, 'tree'], ['Acme', '  Client brief', 'Clients']])
+    expect(cursor(el)).toEqual(['Client brief']) // the pinned match, though the folder `Clients` leads its rank
+    click(row(el, `${v}/Clients`))
+    expect(shape(el)).toEqual(['Acme', '  Client brief', 'Clients', '  Plan index'])
+    expect(el.querySelectorAll(`.sidebar__body .tree__row[data-path="${v}/Clients/Acme"]`)).toHaveLength(1)
+  })
+
+  it('S19: a pinned item with no match, which the top group does not draw, stays in its folder of "Everything else"', async () => {
+    const { el, v } = await search('client', { favorites: ['/Clients/Acme', '/Clients/Plan index.md'] })
+    expect(shape(el)).toEqual(['Acme', '  Client brief', 'Clients'])
+    click(row(el, `${v}/Clients`))
+    expect(shape(el)).toEqual(['Acme', '  Client brief', 'Clients', '  Plan index'])
+  })
+
+  it('S22, S23: the highlight starts on the best pinned match, where the top group draws it; ↑ and ↓ walk the top group from top to bottom, then "Everything else", and stop at both ends; a match below a folder that was closed is no stop, in either group', async () => {
+    const { el, v, input, props } = await search('old')
+    // S23: `Old` is the exact name and is not pinned; `Old ideas` only starts with the text and is inside a pinned folder.
+    expect(shape(el)).toEqual(['Plans', '  Old ideas', 'Archive', '  Old', '  Plan old'])
+    expect(cursor(el)).toEqual(['Old ideas'])
+    await type(input, 'plan')
+    expect(cursor(el)).toEqual(['Plan'])
+    await press(input, 'ArrowUp')
+    expect(cursor(el)).toEqual(['Plan']) // the first row of the top group: no wrap
+    const walked: (string | null)[][] = []
+    for (let i = 0; i < 6; i++) {
+      await press(input, 'ArrowDown')
+      walked.push(cursor(el))
+    }
+    expect(walked).toEqual([['Plans'], ['Plan deep'], ['Plan A'], ['Plan old'], ['Plan index'], ['Plan index']])
+    // A folder of the top group that is closed: the rows above a match there start at its pinned item, not at the vault.
+    click(row(el, `${v}/Plans/Deep`))
+    click(row(el, `${v}/Archive`))
+    for (const expected of ['Plan A', 'Plans', 'Plan', 'Plan']) {
+      await press(input, 'ArrowUp')
+      expect(cursor(el)).toEqual([expected])
+    }
+    // A match inside a pinned folder, whose own parent folder the search does not draw, is a stop: Enter opens it.
+    await type(input, 'brief')
+    expect(cursor(el)).toEqual(['Client brief'])
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Clients/Acme/Client brief.md`)
+  })
+
+  it('S24: 60 matches outside the pinned items and 3 inside one show the 3 and the best 47 of the others, and the limit line', async () => {
+    const many = (v: string): TreeNode[] => [folder(`${v}/Pinned`, Array.from({ length: 3 }, (_, i) => note(`${v}/Pinned/a note ${i}.md`))), ...Array.from({ length: 60 }, (_, i) => note(`${v}/note ${String(i).padStart(2, '0')}.md`))]
+    // The index holds the 60 first, as their paths sort: with no pinned item the limit would cut the 3.
+    const { el } = await search('note', { nodes: many, focus: ['/Pinned'], favorites: [], records: (v) => [...notePaths(many(v)).slice(3), ...notePaths(many(v)).slice(0, 3)].map((path) => record(v, path)) })
+    expect(parts(el)).toEqual([TOP, 'tree', REST, 'tree', 'Showing 50 matches. Type more to narrow.'])
+    expect(shape(el)).toEqual(['Pinned', '  a note 0', '  a note 1', '  a note 2', ...Array.from({ length: 47 }, (_, i) => `note ${String(i).padStart(2, '0')}`)])
+    expect(cursor(el)).toEqual(['a note 0'])
+  })
+
+  it('S25: the rows that an id finds are drawn in the two groups too, the highlight on the pinned one', async () => {
+    const ids: Record<string, string> = { '/Archive/Old.md': '7tq2m8vd4xhn', '/Plans/Old ideas.md': 'k3m9x2pq7abc' }
+    const { el } = await search('[[7tq2m8vd4xhn]] and [[k3m9x2pq7abc]]', { records: (v) => notePaths(VAULT(v)).map((path) => record(v, path, ids[path.slice(v.length)] === undefined ? {} : { id: ids[path.slice(v.length)] })) })
+    expect([parts(el), shape(el), cursor(el)]).toEqual([[TOP, 'tree', REST, 'tree'], ['Plans', '  Old ideas', 'Archive', '  Old'], ['Old ideas']])
+  })
+
+  it('S27: "Add to focus" and "Add to favorites" on a search row keep the Search tab and move the row to the top group at once — a focus item before the favorites; "Remove" moves it back', async () => {
+    const { el, v, props } = await search('plan')
+    const path = `${v}/Archive/Plan old.md`
+    const TOP_ROWS = ['Plan', 'Plans', '  Deep', '    Plan deep', 'Acme', '  Plan A']
+    await pick(el, path, 'Add to focus')
+    expect(shape(el)).toEqual(['Plan', 'Plans', '  Deep', '    Plan deep', 'Plan old', 'Acme', '  Plan A', 'Clients', '  Plan index'])
+    expect(cursor(el)).toEqual(['Plan old']) // the highlight is held by its path: it moved with its row
+    await pick(el, path, 'Remove from focus')
+    expect(shape(el)).toEqual([...TOP_ROWS, 'Archive', '  Plan old', 'Clients', '  Plan index'])
+    await pick(el, path, 'Add to favorites')
+    expect(shape(el)).toEqual([...TOP_ROWS, 'Plan old', 'Clients', '  Plan index'])
+    await pick(el, path, 'Remove from favorites')
+    expect(shape(el)).toEqual([...TOP_ROWS, 'Archive', '  Plan old', 'Clients', '  Plan index'])
+    expect(props.onLensChange).not.toHaveBeenCalled()
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
+    expect([searchBar(el)?.value, parts(el)]).toEqual(['plan', [TOP, 'tree', REST, 'tree']])
+  })
+
+  it('S28: a fold in either group lasts as long as its text — a different tab and back keeps it, and new text forgets it', async () => {
+    const { el, v, rerender } = await search('plan')
+    click(row(el, `${v}/Clients/Acme`))
+    click(row(el, `${v}/Archive`))
+    const folded = ['Plan', 'Plans', '  Deep', '    Plan deep', 'Acme', 'Archive', 'Clients', '  Plan index']
+    expect(shape(el)).toEqual(folded)
+    await rerender({ lens: 'files' })
+    await rerender({ lens: 'search' })
+    expect(shape(el)).toEqual(folded)
+    await type(searchBar(el)!, 'pla')
+    expect(shape(el)).toEqual(['Plan', 'Plans', '  Deep', '    Plan deep', 'Acme', '  Plan A', 'Archive', '  Plan old', 'Clients', '  Plan index'])
+  })
+
+  it('S29: a pinned path that is gone from the disk gives no row and no error', async () => {
+    const { el, input, props } = await search('plan', { focus: ['/Gone', '/Plans'], favorites: ['/Gone.md', '/Clients/Acme'] })
+    expect(shape(el)).toEqual(['Plans', '  Deep', '    Plan deep', 'Acme', '  Plan A', 'Archive', '  Plan old', 'Clients', '  Plan index', 'Plan'])
+    await type(input, 'gone')
+    expect(parts(el)).toEqual(['No matches'])
+    expect(el.querySelector('.sidebar__msg--error')).toBeNull()
+    expect(vi.mocked(props.onNotice).mock.calls.filter(([, kind]) => kind === 'error')).toEqual([])
   })
 })
 
@@ -6685,13 +6893,14 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const notesOf = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.type === 'dir' ? notesOf(n.children) : n.kind === 'markdown' ? [n.path] : []))
   const titled = (path: string): IndexRecord => ({ ...indexRecord(path), title: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '') })
   /** Mount two vaults over `trees`, each with an index of its own notes; the search bar is ready to type in. */
-  const searchTwo = async (over: Partial<SidebarProps> = {}, opts: { trees?: (at: { a: string; b: string }) => Record<string, TreeNode[]>; work?: ReturnType<typeof watcher> } = {}) => {
+  const searchTwo = async (over: Partial<SidebarProps> = {}, opts: { trees?: (at: { a: string; b: string }) => Record<string, TreeNode[]>; work?: ReturnType<typeof watcher>; tweak?: (bridge: Bridge, at: { a: string; b: string }) => unknown } = {}) => {
     const at = pair()
     const trees = (opts.trees ?? searchTrees)(at)
     const byRoot: Record<string, IndexRecord[]> = Object.fromEntries(Object.entries(trees).map(([root, nodes]) => [root, notesOf(nodes).map(titled)]))
     const mounted = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', opts.work === undefined ? {} : { watch: opts.work.watch })], over, (bridge) => {
       bridge.tree.mockImplementation(async (root: string) => ({ root, tree: trees[root], generatedAt: 1 }))
       bridge.index.mockImplementation(async (root: string) => ({ root, records: byRoot[root] ?? [], folders: [], generatedAt: 1, ids: true }))
+      return opts.tweak?.(bridge, at)
     })
     return { ...mounted, ...at, byRoot, trees, input: searchInput(mounted.el)! }
   }
@@ -6839,6 +7048,28 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await type(input, 'note 2')
     expect(matches(el)).toHaveLength(20) // 20 to 29, of each vault
     expect(lines()).toEqual([])
+  })
+
+  it('YAZ-2662 S26: with two or more vaults a top row of the top group names its vault, as on the Favorites tab — the focus items of each vault before the favorites; "Everything else" keeps its vault rows, and a vault with pinned matches only has no row there', async () => {
+    const { el, a, b, input } = await searchTwo({}, {
+      tweak: async (bridge, at) => {
+        favoritesOf(bridge, { [at.a]: [`${at.a}/old plan.md`] })
+        await withFocus(`${at.b}/docs`)(bridge)
+      },
+    })
+    await type(input, 'plan')
+    expect([...el.querySelector('.sidebar__body')!.children].map((child) => (child.matches('ul.tree') ? 'tree' : child.textContent))).toEqual(['Favorites and focus', 'tree', 'Everything else', 'tree'])
+    expect(shape(el)).toEqual(['docs', '  plan d', 'old plan', 'Notes', '  sub', '    plan notes', 'Work', '  plan', '  plan.py'])
+    expect([tag(el, `${b}/docs`), tag(el, `${a}/old plan.md`), tag(el, `${b}/docs/plan d.md`)]).toEqual(['Work', 'Notes', null])
+    expect(vaultRowLabels(el)).toEqual(['Notes', 'Work'])
+    // One ranking over both vaults: the best pinned match leads, and the keys walk the top group first.
+    expect(cursor(el)).toEqual(['plan d'])
+    await press(input, 'ArrowDown')
+    await press(input, 'ArrowDown')
+    expect(cursor(el)).toEqual(['plan notes'])
+    await type(input, 'plan d')
+    expect(shape(el)).toEqual(['docs', '  plan d'])
+    expect(vaultRowLabels(el)).toEqual([])
   })
 
   it('one vault: the cut tree has no vault row, and a match stands at its own depth, as before (S11, A9)', async () => {

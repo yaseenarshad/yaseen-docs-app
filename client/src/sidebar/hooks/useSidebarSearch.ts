@@ -4,11 +4,13 @@
  * while a different tab shows. Since YAZ-2620 the sidebar draws the results as a TREE — the Files tree cut down
  * to the matches (`searchTree`) — so this also holds that tree, its folds and the keyboard's
  * highlighted match. With two or more vaults the tree that is cut is the forest (YAZ-2602 A9): each
- * match stands under its vault's row. The shortcut picker keeps the flat list and shares `useResultKeys`.
+ * match stands under its vault's row. Since YAZ-2662 the matches of the pinned items — the focus
+ * list and the favorites — are a group of their own, drawn first (D2). The shortcut picker keeps
+ * the flat list and shares `useResultKeys`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
-import { rootOfPath, stripSlash, type TreeNode } from '@shared/types'
-import { ancestorDirs } from '../../lib/treeState'
+import type { TreeNode } from '@shared/types'
+import { withoutPaths } from '../../lib/treeState'
 import type { SearchCandidate } from '../../search/searchCandidates'
 import { searchTree } from '../../search/searchTree'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
@@ -51,6 +53,8 @@ export function useSidebarSearch(
   vaults: readonly SearchVault[],
   /** What the Files tab draws: one vault's tree, or the forest — one row per vault (YAZ-2602 D3). */
   tree: readonly TreeNode[],
+  /** The pinned items (YAZ-2662 D3), as nodes of that tree: the top rows of the top group, in its order (`pinnedRoots`). */
+  pinned: readonly TreeNode[],
   /** The Search tab shows (YAZ-2638 D2): the query is ranked only then. */
   active: boolean,
   /** Esc: back to the lens the window last showed, the caret into the open page (YAZ-2662 D9). The query stays. */
@@ -66,16 +70,26 @@ export function useSidebarSearch(
   // without any clearing code.
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
+  const pinnedPaths = useMemo(() => new Set(pinned.map((node) => node.path)), [pinned])
   // A search that is not on screen ranks nothing (YAZ-2638 D2): with no results it has no highlight,
   // so it scrolls no row of the tab that shows. The ranking is synchronous, so the results are back
-  // in the render that shows the Search tab again.
-  const results = useSearchResults(vaults, active ? query : '')
+  // in the render that shows the Search tab again. A match of a pinned item ranks first (YAZ-2662 D4).
+  const results = useSearchResults(vaults, active ? query : '', pinnedPaths)
   // The results as a tree (YAZ-2620 🔒 D1): the Files tree — the WHOLE vault's, whichever tab or
   // focus is showing (S33) — cut down to the matches and their parents. A vault's row is a parent
   // like any folder (YAZ-2602 A9): no row of the ranking is a vault, so it is never a match, and it
   // stands open over its matches whatever its fold on the Files tab.
   const hits = useMemo(() => new Set(results.map((r) => r.path)), [results])
-  const found = useMemo(() => searchTree(tree, hits), [tree, hits])
+  // The two groups (YAZ-2662 D2): `top` is the pinned items cut to their matches — a pinned item is
+  // a top row, so no folder above it is drawn (S14) — and `rest` is every other match, cut from the
+  // tree without the pinned items that `top` draws (S19). A pinned item that `top` does not draw
+  // stays in its folder, and no pinned match is the one tree of before (S21). A row is in one group
+  // only, so the two share one set of open folders and one order.
+  const found = useMemo(() => {
+    const top = searchTree(pinned, hits)
+    const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits)
+    return { top: top.nodes, rest: rest.nodes, open: new Set([...top.open, ...rest.open]), order: [...top.order, ...rest.order] }
+  }, [tree, pinned, hits])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
   const marks: TreeMarks = useMemo(() => ({ hits, needle: query.trim().toLowerCase() }), [hits, query])
   // A fold clicked during a search lasts as long as its query (S15, S16) and lives here alone (R4):
@@ -83,22 +97,28 @@ export function useSidebarSearch(
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(NO_FOLDS)
   const searchOpen = useMemo(() => new Set([...found.open, ...flipped].filter((dir) => found.open.has(dir) !== flipped.has(dir))), [found, flipped])
   const toggleSearchDir = useCallback((dir: string) => setFlipped((prev) => new Set(prev.has(dir) ? [...prev].filter((d) => d !== dir) : [...prev, dir])), [])
-  // ↑/↓ walk the MATCHES in the order the tree draws them (🔒 D4); a note and its alias rows are one
-  // row (S9), and a match below a folder the user closed is not on screen, so it is no stop (S21).
+  // ↑/↓ walk the MATCHES in the order the tree draws them (🔒 D4) — the top group, then the rest
+  // (YAZ-2662 S22); a note and its alias rows are one row (S9), and a match below a folder the user
+  // closed is not on screen, so it is no stop (S21). Read off the two trees as drawn: the rows above
+  // a match of the top group start at its pinned item, not at its vault.
   const byPath = useMemo(() => new Map([...results].reverse().map((r) => [r.path, r])), [results])
   const rows = useMemo(() => {
-    const roots = vaults.map((vault) => vault.root)
-    /** The rows above a match: its folders in the vault that holds it and, with two or more vaults, that vault's row. */
-    const above = (path: string): string[] => {
-      const vault = rootOfPath(roots, path) ?? roots[0]
-      return roots.length > 1 ? [stripSlash(vault), ...ancestorDirs(vault, path)] : ancestorDirs(vault, path)
+    const shown: SearchCandidate[] = []
+    const walk = (nodes: readonly TreeNode[]): void => {
+      for (const node of nodes) {
+        const hit = byPath.get(node.path)
+        if (hit !== undefined) shown.push(hit)
+        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children)
+      }
     }
-    return found.order.filter((path) => above(path).every((dir) => searchOpen.has(dir))).flatMap((path) => byPath.get(path) ?? [])
-  }, [vaults, found, searchOpen, byPath])
+    walk(found.top)
+    walk(found.rest)
+    return shown
+  }, [found, searchOpen, byPath])
   // The highlight is held by its PATH (`null`: nobody moved it yet), so a fold that moves rows in or
-  // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first —
-  // wherever the tree draws it (S19); once its match has left the screen, it is on the next match
-  // the tree still draws, else the last (S21).
+  // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first, a
+  // pinned match when there is one (YAZ-2662 S23) — wherever the tree draws it (S19); once its match
+  // has left the screen, it is on the next match the tree still draws, else the last (S21).
   const [picked, setPicked] = useState<string | null>(null)
   const sel = useMemo(() => {
     const at = (path: string | undefined) => rows.findIndex((r) => r.path === path)
