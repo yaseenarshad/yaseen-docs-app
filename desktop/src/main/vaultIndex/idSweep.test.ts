@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } fr
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { IDS_FILE, NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, isNoteId, isNumberId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { copyEntry } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
@@ -14,6 +14,7 @@ import { writeConfig } from '../vaultConfig'
 import { _resetIndexCache } from './cache'
 import { carryFolderValues, sweepIds } from './idSweep'
 import { _evictAll, flushIndexCache, getColdStartDiff, getIndex, initIndexCache } from './index'
+import { COUNT_DIR, doorOf, macId } from './mint'
 import { scanFile, walk } from './scan'
 
 // Passthrough, with one seam: what ANOTHER WRITER does between the sweep's read of a file — found
@@ -43,8 +44,8 @@ const writesAfterTheRead = (content: string): void => {
 // The sweep (YAZ-2293 D3, D4): a note with no id is given one, and of the notes sharing an id
 // only its keeper keeps it. Scenario record sections A and B on YAZ-2293.
 
-/** The vault at `dir` says yes to IDs (YAZ-2523 V1): its `.yaseendocs/ids.json`. */
-const saysYes = (dir: string) => writeConfig(dir, IDS_FILE, { enabled: true })
+/** The vault at `dir` says yes to IDs (YAZ-2523 V1): its `.yaseendocs/ids.json`, with its letters (YAZ-2677 R9). */
+const saysYes = (dir: string) => writeConfig(dir, IDS_FILE, { enabled: true, letters: 'YAZ' })
 
 let root: string
 beforeEach(async () => {
@@ -60,6 +61,12 @@ afterEach(async () => {
 const at = (...p: string[]) => path.join(root, ...p)
 const read = (...p: string[]) => readFile(at(...p), 'utf8')
 const idIn = async (...p: string[]) => /^id: (.+)$/m.exec(await read(...p))?.[1]
+/** This Mac's count file in the vault (YAZ-2677 R14); undefined when no number was given yet. */
+const countOf = async (): Promise<{ last: number; made: { from: number; to: number }[] } | undefined> =>
+  readFile(at(VAULT_CONFIG_DIR, COUNT_DIR, `${await macId()}.json`), 'utf8').then(
+    (raw) => JSON.parse(raw) as { last: number; made: { from: number; to: number }[] },
+    () => undefined,
+  )
 
 /** Writes the files, scans them, and returns the map the live index would hold. */
 async function vault(files: Record<string, string>): Promise<Map<string, IndexRecord>> {
@@ -113,6 +120,60 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(await read('b.md')).toBe(`---\nid: ${b}\n---\n# just a body\n`)
   })
 
+  it("the id is the vault's letters and its next number, and one pass takes all its numbers with one write of the count file (YAZ-2677 S14, S15, R19)", async () => {
+    await sweep(await vault({ 'a.md': 'a\n', 'b.md': 'b\n', 'c.md': 'c\n' }))
+    expect([await idIn('a.md'), await idIn('b.md'), await idIn('c.md')]).toEqual(['YAZ-1', 'YAZ-2', 'YAZ-3'])
+    expect(await countOf()).toMatchObject({ last: 3, made: [{ from: 1, to: 3 }] })
+  })
+
+  it('S20, S37: the next number is 1 more than the highest number ID in the vault, written by hand too; an old ID does not count', async () => {
+    await sweep(await vault({ 'hand.md': '---\nid: YAZ-900\n---\n', 'old.md': '---\nid: k3m9x2pq7abc\n---\n', 'new.md': 'body\n' }))
+    expect(await idIn('new.md')).toBe('YAZ-901')
+    expect(await idIn('hand.md')).toBe('YAZ-900')
+    expect(await idIn('old.md')).toBe('k3m9x2pq7abc')
+  })
+
+  it('S18: a number ID written in another case is this note\'s id: the file is not rewritten for the case alone', async () => {
+    const records = await vault({ 'a.md': '---\nid: yaz-12\n---\nbody\n' })
+    expect(records.get(at('a.md'))?.id).toBe('YAZ-12')
+    await sweep(records)
+    expect(await read('a.md')).toBe('---\nid: yaz-12\n---\nbody\n')
+    expect(await countOf()).toBeUndefined()
+  })
+
+  it("S23: a file moved in from another vault holds that vault's letters: its `id` is another tool's, and a fresh number of this vault is written over it (R7)", async () => {
+    await sweep(await vault({ 'moved-in.md': '---\nid: BUS-12\ntitle: From BUS\n---\n', 'ours.md': '---\nid: YAZ-40\n---\n' }))
+    expect(await read('moved-in.md')).toBe('---\nid: YAZ-41\ntitle: From BUS\n---\n')
+    expect(await idIn('ours.md')).toBe('YAZ-40')
+  })
+
+  it('S24: `id: YAZ-012` and `id: YAZ-0` are no ID: each is given a fresh number', async () => {
+    await sweep(await vault({ 'a.md': '---\nid: YAZ-012\n---\n', 'b.md': '---\nid: YAZ-0\n---\n' }))
+    expect([await idIn('a.md'), await idIn('b.md')].sort()).toEqual(['YAZ-1', 'YAZ-2'])
+  })
+
+  it('an id with letters the vault had before is this vault\'s (R5): it is kept as it is, and its number counts (R4)', async () => {
+    await writeConfig(root, IDS_FILE, { enabled: true, letters: 'YAZ', was: ['OLD'] })
+    await sweep(await vault({ 'before.md': '---\nid: OLD-12\n---\n', 'new.md': 'body\n' }))
+    expect(await read('before.md')).toBe('---\nid: OLD-12\n---\n')
+    expect(await idIn('new.md')).toBe('YAZ-13')
+  })
+
+  it('two notes that hold one number under the letters of now and of before share an id: the second in path order is given the next number (R4)', async () => {
+    await writeConfig(root, IDS_FILE, { enabled: true, letters: 'YAZ', was: ['OLD'] })
+    await sweep(await vault({ 'a.md': '---\nid: OLD-12\n---\n', 'b.md': '---\nid: YAZ-12\n---\n' }))
+    expect(await idIn('a.md')).toBe('OLD-12')
+    expect(await idIn('b.md')).toBe('YAZ-13')
+  })
+
+  it('a note that can never take an id costs no number: a pass over it, any number of times, leaves the count as it is', async () => {
+    const records = await vault({ 'broken.md': '---\nstatus: [unclosed\n---\n', 'big.md': 'x'.repeat(MAX_FILE_BYTES + 1), 'fine.md': 'body\n' })
+    await sweep(records)
+    expect(await idIn('fine.md')).toBe('YAZ-1')
+    for (let pass = 0; pass < 3; pass++) await sweep(new Map([...records.keys()].map((file) => [file, records.get(file)!]).filter(([file]) => file !== at('fine.md')) as [string, IndexRecord][]))
+    expect(await countOf()).toMatchObject({ last: 1, made: [{ from: 1, to: 1 }] })
+  })
+
   it('gives an existing `.folder.md` an id like any note (D7)', async () => {
     await sweep(await vault({ [`Projects/${FOLDER_SETTINGS_FILE}`]: '---\nlabel: P\n---\n' }))
     expect(isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE))).toBe(true)
@@ -122,9 +183,10 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     const records = await vault({ 'a.md': 'a\n', 'b.md': 'b\n', 'c.md': 'c\n' })
     await mkdir(at('Projects'))
     // The other writer here is the user, saying no in Settings just as the first note is read.
-    race.afterRead = async () => {
+    race.afterRead = async (file) => {
+      if (file !== at('a.md')) return
       race.afterRead = undefined
-      await writeConfig(root, IDS_FILE, { enabled: false })
+      await writeConfig(root, IDS_FILE, { enabled: false, letters: 'YAZ' })
     }
     await sweepIds(root, records, [...records.values()], () => undefined, [at('Projects')])
     expect(isNoteId(await idIn('a.md'))).toBe(true)
@@ -178,24 +240,6 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(await read('a.md')).toBe(foreign)
   })
 
-  it('two devices that meet the same note holding another tool’s `id` write the same id over it (D30)', async () => {
-    const foreign = '---\nid: 42\n---\nfrom another tool\n'
-    await sweep(await vault({ 'Inbox/a.md': foreign }))
-    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
-    try {
-      await saysYes(other)
-      await mkdir(path.join(other, 'Inbox'))
-      const file = path.join(other, 'Inbox', 'a.md')
-      await writeFile(file, foreign)
-      const record = await scanFile(other, file)
-      await sweepIds(other, new Map([[file, record]]), [record], () => undefined)
-      expect(isNoteId(await idIn('Inbox', 'a.md'))).toBe(true)
-      expect(await readFile(file, 'utf8')).toBe(await read('Inbox', 'a.md'))
-    } finally {
-      await rm(other, { recursive: true, force: true })
-    }
-  })
-
   it('is a compare-and-set: a file that gained an id since it was scanned keeps it', async () => {
     const records = await vault({ 'a.md': 'body\n' })
     await writeFile(at('a.md'), '---\nid: k3m9x2pq7abc\n---\nbody\n')
@@ -214,55 +258,11 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(await read('a.md')).toBe(`---\nid: ${id}\n---\nbody, edited elsewhere\n`)
   })
 
-  it('derives the id from the note itself, so two devices sweeping the same note write the same bytes', async () => {
-    // The built-in sync stops on a conflict (git/sync.ts): two devices each stamping a DIFFERENT
-    // id into the same note would park the vault there. The same id is the same edit, which merges.
-    const here = await vault({ 'Inbox/a.md': 'from an agent\n', 'Inbox/b.md': 'from an agent\n' })
-    await sweep(here)
-    const [a, b] = [await read('Inbox', 'a.md'), await read('Inbox', 'b.md')]
-    expect(await idIn('Inbox', 'a.md')).not.toBe(await idIn('Inbox', 'b.md')) // same bytes, another path
+  // TOMBSTONE (YAZ-2677 D3, D4): two tests stood here for an id DERIVED from a note's place and
+  // bytes, the same on every device. An id is now the vault's next number, from the door; which
+  // Mac gives a number to a file that arrives with none is D8's rule (YAZ-2677 issue 6).
 
-    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
-    try {
-      await saysYes(other)
-      await mkdir(path.join(other, 'Inbox'))
-      const file = path.join(other, 'Inbox', 'a.md')
-      await writeFile(file, 'from an agent\n')
-      const record = await scanFile(other, file)
-      await sweepIds(other, new Map([[file, record]]), [record], () => undefined)
-      expect(await readFile(file, 'utf8')).toBe(a)
-    } finally {
-      await rm(other, { recursive: true, force: true })
-    }
-    expect(a).not.toBe(b)
-  })
-
-  it('two notes at different places, or with different contents, are given different ids; the same note (same place, same bytes) is given the same id on every device', async () => {
-    /** The id a device that holds only this note, at `rel` with these bytes, gives it. */
-    const givenOn = async (rel: string, content: string): Promise<string> => {
-      const device = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-device-'))
-      try {
-        const file = path.join(device, rel)
-        await saysYes(device)
-        await mkdir(path.dirname(file), { recursive: true })
-        await writeFile(file, content)
-        const record = await scanFile(device, file)
-        await sweepIds(device, new Map([[file, record]]), [record], () => undefined)
-        const id = /^id: (.+)$/m.exec(await readFile(file, 'utf8'))?.[1]
-        expect(isNoteId(id)).toBe(true)
-        return id!
-      } finally {
-        await rm(device, { recursive: true, force: true })
-      }
-    }
-    const id = await givenOn('Inbox/idea.md', 'an idea\n')
-    expect(await givenOn('Inbox/idea.md', 'an idea\n')).toBe(id) // another device: same place, same bytes
-    expect(await givenOn('Inbox/idea.md', 'another idea\n')).not.toBe(id) // same place, different contents
-    expect(await givenOn('Archive/idea.md', 'an idea\n')).not.toBe(id) // same contents, another folder
-    expect(await givenOn('Inbox/idea 2.md', 'an idea\n')).not.toBe(id) // same contents, another name
-  })
-
-  it('never writes an id another note holds: a note dropped where one stood, with the same bytes, is given the next id — the same one on every device (YAZ-2378)', async () => {
+  it('never writes an id another note holds: a note dropped where one stood, with the same bytes, is given the next number (YAZ-2378)', async () => {
     await sweep(await vault({ 'Inbox/idea.md': 'an idea\n' }))
     const held = (await idIn('Inbox', 'idea.md'))!
     // The same vault on two devices: the first note has moved on, and its twin lands where it stood.
@@ -284,13 +284,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
     expect(isNoteId(here.given)).toBe(true)
     expect(here.given).not.toBe(held) // ONE sweep: the taken id was never on disk twice
     expect(here.moved).toBe(`---\nid: ${held}\n---\nan idea\n`)
-
-    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
-    try {
-      expect((await dropOn(other)).given).toBe(here.given)
-    } finally {
-      await rm(other, { recursive: true, force: true })
-    }
+    expect([held, here.given]).toEqual(['YAZ-1', 'YAZ-2'])
   })
 
   it('writes nothing the second time', async () => {
@@ -315,14 +309,6 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
   const settingsOf = (...dir: string[]) => read(...dir, FOLDER_SETTINGS_FILE)
   const folderIdOf = (...dir: string[]) => idIn(...dir, FOLDER_SETTINGS_FILE)
   const names = (...dir: string[]) => readdir(at(...dir)).then((all) => all.sort())
-  /** Another device's copy of the vault: it says yes too, and holds `dirs`. */
-  const otherDevice = async (dirs: readonly string[]): Promise<string> => {
-    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-idsweep-other-'))
-    await saysYes(other)
-    for (const dir of dirs) await mkdir(path.join(other, dir), { recursive: true })
-    return other
-  }
-
   it('a folder made in Finder, by an agent, or arriving by sync is given a `.folder.md` holding only its `id`: no `folder_settings`, no body, ended as the frontmatter writer ends a new file', async () => {
     await mkdir(at('Projects', 'Alpha'), { recursive: true })
     await sweepFolders()
@@ -335,14 +321,15 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     expect(await settingsOf('Projects', 'Alpha')).toBe(setFrontmatterProperty('', NOTE_ID_KEY, inner))
   })
 
-  it('a vault with 100 folders and no `.folder.md` gets exactly 100 files, each holding only its `id`; a second run writes nothing; the same folder path is given the same id on another run', async () => {
+  it('a vault with 100 folders and no `.folder.md` gets exactly 100 files, each holding only its `id`, their 100 numbers taken with one write of the count file (R19); a second run writes nothing', async () => {
     const dirs = Array.from({ length: 100 }, (_, i) => (i % 10 === 0 ? `Area ${i / 10}` : `Area ${Math.floor(i / 10)}/Topic ${i % 10}`))
     for (const dir of dirs) await mkdir(at(dir), { recursive: true })
     await sweepFolders()
     const written = await Promise.all(dirs.map((dir) => settingsOf(dir)))
     const ids = written.map((content) => /^---\nid: (.+)\n---\n$/.exec(content)?.[1])
-    expect(ids.every(isNoteId)).toBe(true)
+    expect(ids.every(isNumberId)).toBe(true)
     expect(new Set(ids).size).toBe(100)
+    expect(await countOf()).toMatchObject({ last: 100, made: [{ from: 1, to: 100 }] })
     const files: string[] = []
     await walk(root, files)
     expect(files.sort()).toEqual(dirs.map((dir) => at(dir, FOLDER_SETTINGS_FILE)).sort()) // exactly 100, none at the root
@@ -355,29 +342,8 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     await sweepFolders() // …or has not seen them yet
     expect(await mtimes()).toEqual(before)
     expect(await Promise.all(dirs.map((dir) => settingsOf(dir)))).toEqual(written)
-
-    const other = await otherDevice(dirs)
-    try {
-      await sweepFolders(new Map(), other)
-      expect(await Promise.all(dirs.map((dir) => readFile(path.join(other, dir, FOLDER_SETTINGS_FILE), 'utf8')))).toEqual(written)
-    } finally {
-      await rm(other, { recursive: true, force: true })
-    }
-  })
-
-  it('two devices that see the same new folder before syncing write byte-identical files: the id is derived from the folder path, so there is no conflict', async () => {
-    await mkdir(at('Inbox', 'From sync'), { recursive: true })
-    await sweepFolders()
-    const other = await otherDevice(['Inbox/From sync', 'Inbox/Another'])
-    try {
-      await sweepFolders(new Map(), other)
-      const there = (dir: string) => readFile(path.join(other, dir, FOLDER_SETTINGS_FILE))
-      expect(await there('Inbox')).toEqual(await readFile(at('Inbox', FOLDER_SETTINGS_FILE)))
-      expect(await there('Inbox/From sync')).toEqual(await readFile(at('Inbox', 'From sync', FOLDER_SETTINGS_FILE)))
-      expect(await there('Inbox/Another')).not.toEqual(await there('Inbox/From sync')) // another path, another id
-    } finally {
-      await rm(other, { recursive: true, force: true })
-    }
+    // And a second run, which found nothing to give, took no number.
+    expect(await countOf()).toMatchObject({ last: 100, made: [{ from: 1, to: 100 }] })
   })
 
   it('a folder that already has a `.folder.md` without an `id` is given one, whether or not the index has seen the file', async () => {
@@ -418,7 +384,8 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     await mkdir(at('Shown', '.cache', 'deep'), { recursive: true })
     await sweepFolders()
     for (const dir of skipped) {
-      expect(await names(dir)).toEqual(dir === VAULT_CONFIG_DIR ? [IDS_FILE, 'inner'] : ['inner'])
+      // The count files stand in the config folder (YAZ-2677 R14): hidden, so never a folder of the vault.
+      expect(await names(dir)).toEqual(dir === VAULT_CONFIG_DIR ? [COUNT_DIR, IDS_FILE, 'inner'] : ['inner'])
       expect(await names(dir, 'inner')).toEqual([])
     }
     expect(await names('Shown')).toEqual(['.cache', FOLDER_SETTINGS_FILE])
@@ -554,7 +521,7 @@ describe('a copied folder’s notes carry their values to the copy (YAZ-2455)', 
     await expectCarried('Hiring copy')
   })
 
-  it('a carry cut short (the app quit part-way) is finished by the next sweep: the folder has not taken its id yet, so it is found again and given the same one', async () => {
+  it('a carry cut short (the app quit part-way) is finished by the next sweep: the folder has not taken its id yet, so it is found again and given the next number; the number of the pass that was cut is a gap (YAZ-2677 S30)', async () => {
     const knewOriginal = (records: Map<string, IndexRecord>) => (p: string) => (p.startsWith(at('Hiring') + path.sep) ? records.get(p)?.id : undefined)
     const first = await vault({ ...under('Hiring'), ...under('Hiring copy') })
     await sweep(first, knewOriginal(first))
@@ -566,9 +533,13 @@ describe('a copied folder’s notes carry their values to the copy (YAZ-2455)', 
     for (const file of first.keys()) records.set(file, await scanFile(root, file))
     for (const [file, record] of cut) records.set(file, record)
     await sweepIds(root, records, [...cut.values()], knewOriginal(records))
-    expect(await idIn('Hiring copy', FOLDER_SETTINGS_FILE)).toBe(given)
+    const again = (await idIn('Hiring copy', FOLDER_SETTINGS_FILE))!
+    expect(isNumberId(again)).toBe(true)
+    expect(again).not.toBe(given)
+    expect(again).not.toBe(HIRING)
+    // The note the first pass carried holds its values under the id that pass gave: this pass carries from the original's, which that note no longer holds.
     expect(await read('Hiring copy', 'Noor.md')).toBe(noor)
-    expect(((await valuesIn('Hiring copy', 'Stages', 'Deep', 'Sam.md')) as Record<string, unknown>)[given]).toEqual({ Status: 'Offer' })
+    expect(((await valuesIn('Hiring copy', 'Stages', 'Deep', 'Sam.md')) as Record<string, unknown>)[again]).toEqual({ Status: 'Offer' })
   })
 
   it('a note that changed under the carry’s write is read again and carried', async () => {
@@ -623,7 +594,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createFile(at('Made here.md'), true)
+    await createFile(at('Made here.md'), await doorOf(root))
     await until(async () => (await indexed('Made here.md')) !== undefined)
     await rm(at('Made here.md'))
     await until(async () => (await indexed('Made here.md')) === undefined)
@@ -734,7 +705,7 @@ describe('sweepIds, wired into the live index', () => {
     expect((await folders()).map((r) => r.folder)).toEqual(['Empty', 'Pictures', 'Projects'])
     for (const r of await folders()) expect(await readFile(r.path, 'utf8')).toBe(`---\nid: ${r.id}\n---\n`)
     expect((await readdir(root)).sort()).toEqual([VAULT_CONFIG_DIR, 'Empty', 'Pictures', 'Projects'])
-    expect(await readdir(at(VAULT_CONFIG_DIR))).toEqual([IDS_FILE])
+    expect((await readdir(at(VAULT_CONFIG_DIR))).sort()).toEqual([COUNT_DIR, IDS_FILE])
     expect(await readdir(at('Pictures', '.thumbs'))).toEqual([])
     expect((await readdir(at('Projects'))).sort()).toEqual([FOLDER_SETTINGS_FILE, 'a.md'])
   })
@@ -759,7 +730,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createDir({ path: at('Made here') }, true)
+    await createDir({ path: at('Made here') }, await doorOf(root))
     const born = await read('Made here', FOLDER_SETTINGS_FILE)
     await until(async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here'))
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
@@ -770,7 +741,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    await createDir({ path: at('Made here') }, true)
+    await createDir({ path: at('Made here') }, await doorOf(root))
     const born = await idIn('Made here', FOLDER_SETTINGS_FILE)
     const listed = async () => (await getIndex(root)).folders.some((r) => r.folder === 'Made here' && r.id === born)
     await until(listed)
@@ -804,7 +775,7 @@ describe('sweepIds, wired into the live index', () => {
     const ready = watcherReady()
     await getIndex(root)
     await ready
-    const { to } = await copyEntry(at('a.md'), root, true)
+    const { to } = await copyEntry(at('a.md'), root, await doorOf(root))
     const copied = await readFile(to, 'utf8')
     const id = /^id: (.+)$/m.exec(copied)?.[1]
     expect(isNoteId(id)).toBe(true)
@@ -840,7 +811,7 @@ describe('sweepIds, wired into the live index', () => {
     await getIndex(root)
     await ready
     await until(async () => (await getIndex(root)).folders.length === 3) // `Stages/Deep` has been given its own file
-    const { to } = await copyEntry(at('Hiring'), root, true)
+    const { to } = await copyEntry(at('Hiring'), root, await doorOf(root))
     const files: string[] = []
     await walk(to, files)
     const contents = () => Promise.all(files.map((file) => readFile(file, 'utf8')))

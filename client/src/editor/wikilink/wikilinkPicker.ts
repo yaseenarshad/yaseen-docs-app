@@ -39,7 +39,9 @@
  * `id` (YAZ-2293, 🔒) is offered under the same rows but every one of them inserts the plain
  * `[[id]]`. When nothing matches a non-empty fragment, a single "Create" row creates the page
  * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
- * `createPage`) and links it by the id it is born with — `[[typed text]]` as-is when there is
+ * `createPage`) and links it by the id it is born with — the vault's next number, which the door
+ * in the main process gives (YAZ-2677 D4), so the link is `[[typed text]]` for the moment the
+ * number takes to come — and `[[typed text]]` as-is when there is
  * no vault to create in, the vault does not use IDs (YAZ-2523 🔒 V3), or the creation fails. A `|` in the fragment is alias
  * entry: the popup closes and typing continues as plain text. Code is excluded like the
  * decorations: no picker inside `code_block` or inline-`code` text.
@@ -49,7 +51,7 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { mintNoteId } from '@shared/noteId'
+import { api } from '../../api'
 import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
@@ -116,13 +118,29 @@ interface PickerSession {
   selected: number
 }
 
+/**
+ * A Create row's link while the door gives its number (YAZ-2677 S35, S36): where the typed page
+ * name stands inside its `[[…]]`, followed through every edit made meanwhile, so the id goes where
+ * the name is and no character typed during the wait is touched.
+ */
+interface Waiting {
+  key: number
+  from: number
+  to: number
+}
+
 interface PickerState {
   session: PickerSession | null
   /** `from` of an Esc-dismissed `[[`: that session stays closed until the context dissolves. */
   dismissed: number | null
+  /** The links whose number has not come yet: almost always none, and never more than the creates in flight. */
+  waiting: readonly Waiting[]
 }
 
-type PickerMeta = { type: 'move'; delta: 1 | -1 } | { type: 'dismiss' } | { type: 'refresh' }
+type PickerMeta = { type: 'move'; delta: 1 | -1 } | { type: 'dismiss' } | { type: 'refresh' } | ({ type: 'wait' } & Waiting) | { type: 'done'; key: number }
+
+const NO_WAITING: readonly Waiting[] = []
+let waits = 0
 
 const pickerKey = new PluginKey<PickerState>('mdapp-wikilink-picker')
 
@@ -148,8 +166,25 @@ function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): Picker
   return fragment.trim() === '' ? [] : [{ label: fragment, insert: fragment, create: true }]
 }
 
+/**
+ * The waiting links after `tr`: each place mapped through the edit — text typed AT either end of
+ * the name is in it, so a name the user changed is seen to be changed — then the one that starts
+ * to wait, at its place in the new document, or without the one whose number came.
+ */
+function waitingAfter(prev: readonly Waiting[], tr: Transaction | null, meta: PickerMeta | undefined): readonly Waiting[] {
+  let waiting = prev
+  if (waiting.length > 0 && tr?.docChanged === true) waiting = waiting.map(({ key, from, to }) => ({ key, from: tr.mapping.map(from, -1), to: tr.mapping.map(to, 1) }))
+  if (meta?.type === 'wait') waiting = [...waiting, { key: meta.key, from: meta.from, to: meta.to }]
+  if (meta?.type === 'done') waiting = waiting.filter((w) => w.key !== meta.key)
+  return waiting
+}
+
 function compute(state: EditorState, prev: PickerState | null, tr: Transaction | null, source: WikilinkCandidateSource): PickerState {
   const meta = tr?.getMeta(pickerKey) as PickerMeta | undefined
+  return { ...session(state, prev, tr, meta, source), waiting: waitingAfter(prev?.waiting ?? NO_WAITING, tr, meta) }
+}
+
+function session(state: EditorState, prev: PickerState | null, tr: Transaction | null, meta: PickerMeta | undefined, source: WikilinkCandidateSource): Pick<PickerState, 'session' | 'dismissed'> {
   let dismissed = prev === null || prev.dismissed === null ? null : tr?.docChanged ? tr.mapping.map(prev.dismissed) : prev.dismissed
   if (meta?.type === 'dismiss' && prev?.session != null) dismissed = prev.session.from
   const ctx = findContext(state)
@@ -177,42 +212,78 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
  * typing; the link turns from dim to resolved on the index echo), one passive notice either way.
  * Without a nav there is no vault to create in, so the row only inserts.
  *
- * The link is already in the document by `id` (YAZ-2293), so the page is born WITH that id.
- * When it is not born — a failure — nothing carries the id, and the id goes back to the page
- * name that was typed: found by its text, which a fresh id makes unique in the document,
- * wherever typing has since pushed it.
+ * 🔒 Where the vault uses IDs the order is fixed (YAZ-2677 S35): the NUMBER first, from the door
+ * (`fs:mint-note-id`); then the link, `[[id]]` where the typed name stands (`wait`, the key of its
+ * place); then the note, born WITH that id. Each step that fails leaves a link that reads: no
+ * number, and the link stays the typed name; a name the user changed during the wait stays as
+ * they left it, and the note is still made; no note, and nothing carries the id, so the id goes
+ * back to the typed name — found by its text, which an id makes unique in the document, wherever
+ * typing has since pushed it.
  *
- * No `id`: the vault does not use IDs (`ids`, YAZ-2523 🔒 V3). The page is made the plain way, and
+ * No `wait`: the vault does not use IDs (`ids`, YAZ-2523 🔒 V3). The page is made the plain way, and
  * the link already holds the name that was typed.
  */
-function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, ids: boolean, id: string | undefined): void {
-  void createFromLink(nav.root, name, ids, nav.createFolder(), id).then((result) => {
-    if (result.status === 'created') return nav.onNotice(`Created "${linkPageName(name)}"`)
-    if (result.status === 'error') nav.onNotice(result.message)
-    if (id === undefined || view === undefined || view.isDestroyed) return
-    let from = -1
-    view.state.doc.descendants((node, pos) => {
-      const at = node.text?.indexOf(`[[${id}`) ?? -1
-      if (at !== -1) from = pos + at + 2
-    })
-    if (from !== -1) view.dispatch(view.state.tr.insertText(name.split('#', 1)[0], from, from + id.length))
+async function createPage(view: EditorView | undefined, nav: WikilinkNav, name: string, ids: boolean, wait?: number): Promise<void> {
+  const page = name.split('#', 1)[0]
+  /** The id the note is born with, and the id the LINK holds: a note that is not born gives the link its typed name back. */
+  let id: string | undefined
+  let linked: string | undefined
+  let numbered = ids
+  if (wait !== undefined) {
+    const given = await api.mintNoteId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    const placed = placeId(view, wait, page, typeof given === 'string' ? given : undefined)
+    if (given instanceof Error) return nav.onNotice(`Can't create "${linkPageName(name)}": ${given.message}`)
+    // `null`: the vault stopped using IDs after the pick. The page is made the plain way, and the link holds its name.
+    if (given === null) numbered = false
+    else {
+      id = given
+      if (placed) linked = given
+    }
+  }
+  const result = await createFromLink(nav.root, name, numbered, nav.createFolder(), id)
+  if (result.status === 'created') return nav.onNotice(`Created "${linkPageName(name)}"`)
+  if (result.status === 'error') nav.onNotice(result.message)
+  if (linked === undefined || view === undefined || view.isDestroyed) return
+  let from = -1
+  view.state.doc.descendants((node, pos) => {
+    const at = node.text?.indexOf(`[[${linked}`) ?? -1
+    if (at !== -1) from = pos + at + 2
   })
+  if (from !== -1) view.dispatch(view.state.tr.insertText(page, from, from + linked.length))
+}
+
+/**
+ * The wait of the link `key` ends: `id` (when one came) replaces the typed `page` name where it
+ * stands now — only while it still reads as it was typed. True when the link holds the id.
+ */
+function placeId(view: EditorView | undefined, key: number, page: string, id: string | undefined): boolean {
+  if (view === undefined || view.isDestroyed) return false
+  const at = pickerKey.getState(view.state)?.waiting.find((w) => w.key === key)
+  const tr = view.state.tr.setMeta(pickerKey, { type: 'done', key } satisfies PickerMeta)
+  const stands = id !== undefined && at !== undefined && at.from < at.to && view.state.doc.textBetween(at.from, at.to) === page
+  if (stands) tr.insertText(id, at.from, at.to)
+  view.dispatch(tr)
+  return stands
 }
 
 /**
  * Replace the `[[fragment` with the full `[[insert]]` text, park the caret after it — and, for the
- * Create row, make the page: a freshly minted id (YAZ-2293) the page is then born with stands in
- * for the typed page name, and a `#heading` typed after it rides along. Where the vault does not
- * use IDs (`links.ids`, YAZ-2523 🔒 V3) none is minted, and the typed name goes in as it is.
+ * Create row, make the page (`createPage`). Where the vault uses IDs the link goes in as the typed
+ * name and WAITS for its number (YAZ-2677 S35, S36): the brackets are closed at once, so what the
+ * user types next lands after the link and is never part of it. Where the vault does not use IDs
+ * (`links.ids`, YAZ-2523 🔒 V3) no number is asked for, and the typed name is the link.
  */
 function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, links: WikilinkResolveSource, nav?: WikilinkNav, view?: EditorView): boolean {
   if (dispatch) {
-    const born = row.create && nav !== undefined ? { nav, id: links.ids ? mintNoteId() : undefined } : undefined
-    const text = `[[${born?.id === undefined ? row.insert : row.insert.replace(/^[^#]*/, born.id)}]]`
+    const text = `[[${row.insert}]]`
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
+    const born = row.create && nav !== undefined
+    // A name with no page part (`[[#heading]]`) makes no page, so it waits for no number.
+    const wait = born && links.ids && linkPageName(row.insert) !== '' ? ++waits : undefined
+    if (wait !== undefined) tr.setMeta(pickerKey, { type: 'wait', key: wait, from: session.from + 2, to: session.from + 2 + row.insert.split('#', 1)[0].length } satisfies PickerMeta)
     dispatch(tr.scrollIntoView())
-    if (born !== undefined) createPage(view, born.nav, row.insert, links.ids, born.id)
+    if (born) void createPage(view, nav, row.insert, links.ids, wait)
   }
   return true
 }

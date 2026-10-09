@@ -24,6 +24,8 @@ vi.mock('../api', async (importOriginal) => {
         disk.set(path, content)
         return { path, mtime: 2, size: content.length }
       }),
+      // The door in the main process (YAZ-2677 D4): the vault's next number.
+      mintNoteId: (await import('../testNoteIds')).testDoor(),
     },
   }
 })
@@ -258,12 +260,52 @@ describe('adding a shortcut (YAZ-2290 D2)', () => {
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${PROJECTS_ID}\n---\n`)
   })
 
-  it('a folder with NO settings file: the file is written holding just a fresh id, and that id is the one used', async () => {
+  it('a folder with NO settings file: the file is written holding just a fresh id — the next number, from the door (YAZ-2677 D4) — and that id is the one used', async () => {
+    const asked = vi.mocked(api.mintNoteId).mock.calls.length
     await pickTwice()
     const { id } = frontmatterOf(SETTINGS_FILE)
     expect(isNoteId(id)).toBe(true)
+    expect(id).toMatch(/^YAZ-[1-9]\d*$/)
     expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${String(id)}\n---\n`)
     expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', id])
+    // One number, asked for the folder; the second pick found the id and took none.
+    expect(vi.mocked(api.mintNoteId).mock.calls.slice(asked)).toEqual([[PROJECTS]])
+  })
+
+  it('a folder that holds its id costs no number, and a number ID written by hand in another case is used as the index holds it (YAZ-2677 R2)', async () => {
+    const asked = vi.mocked(api.mintNoteId).mock.calls.length
+    disk.set(SETTINGS_FILE, '---\nid: yaz-77\n---\n')
+    await pickTwice()
+    expect(disk.get(SETTINGS_FILE)).toBe('---\nid: yaz-77\n---\n')
+    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', 'YAZ-77'])
+    expect(vi.mocked(api.mintNoteId).mock.calls).toHaveLength(asked)
+  })
+
+  it('an `also_in` entry written by hand in another case names the same folder: no second entry is added, and "Remove shortcut" takes it out (YAZ-2677 R2)', async () => {
+    disk.set(SETTINGS_FILE, '---\nid: YAZ-77\n---\n')
+    disk.set(NOTE, '---\nalso_in:\n  - yaz-77\n  - Old Folder\n---\nBody\n')
+    await addShortcut(PROJECTS, NOTE)
+    expect(disk.get(NOTE)).toBe('---\nalso_in:\n  - yaz-77\n  - Old Folder\n---\nBody\n')
+    await removeShortcut(PROJECTS, NOTE, [{ ...rec('/vault/Projects/.folder.md'), id: 'YAZ-77' }], '/vault')
+    expect(frontmatterOf(NOTE).also_in).toEqual(['Old Folder'])
+  })
+
+  it('an id that reaches the settings file while the door is asked stays: the number taken is a gap, and the id in the file is the one used', async () => {
+    vi.mocked(api.mintNoteId).mockImplementationOnce(async () => {
+      disk.set(SETTINGS_FILE, `---\nid: ${PROJECTS_ID}\n---\n`) // the sweep in the main process was first
+      return 'YAZ-500'
+    })
+    await addShortcut(PROJECTS, NOTE)
+    expect(disk.get(SETTINGS_FILE)).toBe(`---\nid: ${PROJECTS_ID}\n---\n`)
+    expect(frontmatterOf(NOTE).also_in).toEqual([AREAS_ID, 'Old Folder', PROJECTS_ID])
+  })
+
+  it('a vault that does not use IDs after all (the door answers null): the shortcut is refused, and nothing is written', async () => {
+    vi.mocked(api.mintNoteId).mockResolvedValueOnce(null)
+    const note = disk.get(NOTE)
+    await expect(addShortcut(PROJECTS, NOTE)).rejects.toThrow('this vault does not use IDs')
+    expect(disk.get(NOTE)).toBe(note)
+    expect(disk.has(SETTINGS_FILE)).toBe(false)
   })
 
   it('a settings file with NO id: a fresh one is written into it beside its settings, then used', async () => {

@@ -41,7 +41,7 @@ export interface WikilinkIndexBridgeProps {
 }
 
 export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly, onSnapshot }: WikilinkIndexBridgeProps) {
-  const { status, records, folders, ids, ask } = useIndex(root, watch)
+  const { status, records, folders, ids, letters, ask } = useIndex(root, watch)
   // The folders a link can name (YAZ-2290 D10) come off the window's one tree feed. Read as ONE
   // string, so a tree that moved no folder wakes no editor (YAZ-2196).
   const dirList = useSyncExternalStore(
@@ -70,16 +70,16 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
   const semantic = useMemo(() => {
     if (!ready) return null
     const dirs = dirList === '' ? [] : dirList.split('\n')
-    const resolve = linkResolver(records, root, dirs, folders)
+    const resolve = linkResolver(records, root, dirs, folders, letters)
     return { resolve, rows: [...linkCandidates(records), ...folderLinkCandidates(root, dirs, resolve, folders)] }
-  }, [ready, records, folders, root, dirList])
+  }, [ready, records, folders, letters, root, dirList])
   useEffect(() => {
     if (semantic === null) return
     // The snapshot rides ALONG with the resolver (Links D, GRO-2193): the backlinks section
     // reads both off the same source, so N and the resolution behind it always agree.
-    source.update(semantic.resolve, records, folders, ids)
+    source.update(semantic.resolve, records, folders, ids, letters)
     candidates?.update(mergeLinkCandidates(semantic.rows, viewOnly?.catalog?.candidates ?? []))
-  }, [semantic, records, folders, ids, source, candidates, viewOnly])
+  }, [semantic, records, folders, ids, letters, source, candidates, viewOnly])
   // Its own effect: a folder list that moved re-feeds the sources above, and is no index snapshot.
   useEffect(() => {
     if (ready) onSnapshot?.(records, folders, ids, ask)

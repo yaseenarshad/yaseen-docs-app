@@ -28,7 +28,7 @@ import {
 import { alsoIn } from '@shared/alsoIn'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
 import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults } from '@shared/types'
@@ -36,7 +36,8 @@ import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 import { parseState } from '../main/store'
 import { STATE_FILE, userDataDir } from '../main/userData'
-import { giveId, idsOf, readPage } from '../main/vaultIndex/idSweep'
+import { giveId, idsOf, nextId, readPage } from '../main/vaultIndex/idSweep'
+import { vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { scanFile, walk } from '../main/vaultIndex/scan'
 
@@ -343,12 +344,16 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     case 'id': {
       const root = await idVault(dirname(page))
       if (root === null) throw new Error(`${page}'s vault does not give its notes IDs (turn on "Give this vault's notes IDs" in the app's Settings)`)
+      const { letters } = await vaultIds(root)
       const { properties, error } = parseFrontmatter(splitFrontmatter((await readPage(page)).content).frontmatter)
-      let id = properties[NOTE_ID_KEY]
-      if (!isNoteId(id)) {
+      // An ID of this vault (YAZ-2677 R5), printed as the app writes it; any other `id` is another tool's (R7).
+      let id = vaultNoteId(properties[NOTE_ID_KEY], letters)
+      if (id === undefined) {
         // The sweep's own refusals (`vaultIndex/idSweep.ts`), each given its reason; `giveId` checks them again on the bytes it writes against.
         if (error !== undefined) throw new Error('the properties block does not parse (invalid)')
-        id = await giveId(root, page, undefined)
+        // The number the app would give (R20, S40): from the same door, with this Mac's one count
+        // file. The command holds no index, so the door scans the vault for its highest number.
+        id = await giveId(page, undefined, letters, nextId(root))
         if (id === undefined) throw new Error(`${page} changed while it was being given an id — run this again`)
       }
       io.stdout(`${id}\n`)
@@ -357,9 +362,15 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     case 'links': {
       const root = await idVault(dirname(page))
       if (root === null) throw new Error(`${page}'s vault does not use IDs, so there are no ID links to list`)
+      const { letters } = await vaultIds(root)
+      /** `value` as an ID of this vault (YAZ-2677 R5, S92): a number ID or an old ID; a name is none. */
+      const own = (value: unknown): string[] => {
+        const id = vaultNoteId(value, letters)
+        return id === undefined ? [] : [id]
+      }
       const { links, properties } = await scanFile(root, page)
-      const linked = links.filter(isNoteId)
-      const ids = [...new Set([...linked, ...alsoIn(properties)])]
+      const linked = links.flatMap(own)
+      const ids = [...new Set([...linked, ...alsoIn(properties).flatMap(own)])]
       const held = folderBlocks(properties).map(([id]) => id)
       // The vault as the app's index sees it (the same walk, the same scan). In path order, so of two pages sharing an id — a copy the sweep has not met — the one named is the sweep's first choice too.
       const files: string[] = []
@@ -367,7 +378,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       const records = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
       // Each id with the title (YAZ-2420 🔒 D14) and the real path of what it names now.
       const rows = ids.map((id): { id: string; kind: 'note' | 'folder' | 'missing'; title?: string; path?: string } => {
-        const r = records.find((o) => o.id === id)
+        const r = records.find((o) => vaultNoteId(o.id, letters) === id)
         if (r === undefined) return { id, kind: 'missing' }
         // A folder's id is carried by its `.folder.md`; what it names is the folder.
         if (isFolderSettingsPath(r.path)) return { id, kind: 'folder', title: r.title, path: r.folder }
@@ -377,7 +388,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
         `${r.id}  ${r.kind === 'missing' ? '(missing)' : `${r.title}  ${r.kind === 'note' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`}`
       // The folders the page holds values for (`in`, D19), apart from its links: a block whose id no folder has is its id alone.
       const blocks = held.map((id): { id: string; title?: string; path?: string } => {
-        const folder = records.find((o) => o.id === id && isFolderSettingsPath(o.path))
+        const folder = records.find((o) => o.id !== undefined && vaultNoteId(o.id, letters) === vaultNoteId(id, letters) && isFolderSettingsPath(o.path))
         return folder === undefined ? { id } : { id, title: folder.title, path: folder.folder }
       })
       const listed = rows.length === 0 ? `no ids on ${page}\n` : `${rows.map(line).join('\n')}\n`

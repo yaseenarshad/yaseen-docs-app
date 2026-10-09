@@ -20,6 +20,7 @@ import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
+import { initMint } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
 import { createWindowOpenHandler } from './windowOpenPolicy'
 
@@ -81,6 +82,8 @@ const store = createStore(join(app.getPath('userData'), STATE_FILE))
 
 /** Persistent vault-index cache (GRO-2223 D1): one JSON per vault under userData, never in the vault. */
 initIndexCache(join(app.getPath('userData'), 'index-cache'))
+/** This Mac's ID for the count files (YAZ-2677 R13) is kept in userData, never in a vault. */
+initMint(app.getPath('userData'))
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
 const manager = createWindowManager(store, {

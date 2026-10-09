@@ -14,7 +14,7 @@ import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, relTo } from '../lib/paths'
 import { latestTree } from '../lib/treeFeed'
 import { allDirs } from '../lib/treeState'
-import { resolverFor, targetKey, typedFolders } from '../views/engine'
+import { idKey, resolverFor, targetKey, typedFolders } from '../views/engine'
 import { FileValue, type Resolver } from '../views/expr'
 import { nameCandidate, titleCandidates, type LinkCandidate } from './completion'
 import { folderLabel, folderRows, folderTitle, foldersByDir, foldersById } from './shortcuts'
@@ -38,7 +38,7 @@ export function vaultDirs(root: string): readonly string[] {
  * (`makeResolver`) — or, pathed, a path of titles as a note's is (`typedFolders`, YAZ-2478).
  * Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  */
-export function folderResolver(root: string, dirs: readonly string[], folders: readonly IndexRecord[] = [], opts: { ids?: boolean } = {}): ResolveLink {
+export function folderResolver(root: string, dirs: readonly string[], folders: readonly IndexRecord[] = [], opts: { ids?: boolean; letters?: readonly string[] } = {}): ResolveLink {
   const byRel = new Map<string, string>()
   const byTitle = new Map<string, { dir: string; depth: number }>()
   const byName = new Map<string, { dir: string; depth: number }>()
@@ -55,7 +55,8 @@ export function folderResolver(root: string, dirs: readonly string[], folders: r
     const dir = byRel.get(settings.folder.toLowerCase())
     if (dir !== undefined) shallowest(byTitle, settings.title.toLowerCase(), dir, settings.folder.split('/').length)
   }
-  const byId = opts.ids === false ? new Map<string, IndexRecord>() : foldersById(folders)
+  // By the id in lowercase, as a note's is (`makeResolver`): an ID is read in any case (YAZ-2677 R1).
+  const byId = new Map(opts.ids === false ? [] : [...foldersById(folders)].map(([id, settings]) => [id.toLowerCase(), settings]))
   const typed = typedFolders(folders)
   const titledPath = (key: string): string | null => {
     let dir = ''
@@ -64,18 +65,19 @@ export function folderResolver(root: string, dirs: readonly string[], folders: r
   }
   return (target) => {
     const key = targetKey(target).replace(/^\/+|\/+$/g, '')
-    return byRel.get(byId.get(key)?.folder.toLowerCase() ?? key) ?? byTitle.get(key)?.dir ?? (key.includes('/') ? titledPath(key) : byName.get(key)?.dir ?? null)
+    return byRel.get(byId.get(idKey(key, opts.letters))?.folder.toLowerCase() ?? key) ?? byTitle.get(key)?.dir ?? (key.includes('/') ? titledPath(key) : byName.get(key)?.dir ?? null)
   }
 }
 
 /**
  * THE path-level resolver every wikilink surface shares (`ResolveLink`): a note first — id,
  * path, title, name, a path of titles (YAZ-2478), alias (`resolverFor`) — and a folder only when
- * none answers, so a note or alias of the same name always wins.
+ * none answers, so a note or alias of the same name always wins. `letters` are the vault's ID
+ * letters (`IndexResponse.letters`): with them an ID that has letters of before is found too (YAZ-2677 R5).
  */
-export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = []): ResolveLink {
-  const note = resolverFor(records, root, { folders })
-  const folder = folderResolver(root, dirs, folders)
+export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = [], letters?: readonly string[]): ResolveLink {
+  const note = resolverFor(records, root, { folders, letters })
+  const folder = folderResolver(root, dirs, folders, { letters })
   return (target) => note(target)?.record.path ?? folder(target)
 }
 
@@ -111,6 +113,9 @@ export function pageResolver(records: readonly IndexRecord[], folders: readonly 
     const hit = note(target)
     const dir = hit === null ? link(target) : null
     if (dir === null) return hit
+    // The window's resolver knows the vault's letters of before (YAZ-2677 R5): what it found by them is a note, by its path.
+    const found = note(dir)
+    if (found !== null) return found
     const name = basename(dir)
     return new FileValue({ path: dir, name, basename: name, title: folderTitle(folders, dir), folder: dirname(relTo(root ?? '', dir)), ext: '', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
   }
