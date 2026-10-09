@@ -1,11 +1,12 @@
 import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
+import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName, titleOf } from '@shared/noteName'
 import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type RenameFileResponse } from '@shared/types'
 import type { FileClip } from '../fileClip'
 import { carryFolderValues } from '../vaultIndex/idSweep'
+import type { IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure, createDurable, createFolderSettings, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -54,11 +55,51 @@ async function freeTitle(dir: string, title: string): Promise<string> {
   }
 }
 
+/**
+ * The fresh ids of ONE copy (YAZ-2677 S34, S53): the vault's next numbers, all taken from its door
+ * with one write of the count file before anything is copied (R18, R19), and handed out one at a time.
+ */
+interface Fresh {
+  next(): string
+  letters: readonly string[]
+}
+
+/**
+ * How many ids a copy of `src` takes at most: one for a note; for a folder, one for each note in
+ * it that the copy reaches and one for each `.folder.md` it writes — the one the user `picked`
+ * gets a `.folder.md` even when it has none. A note that will not parse is counted and takes none.
+ */
+async function idsFor(src: string, kind: 'file' | 'dir', picked = true): Promise<number> {
+  if (kind === 'file') return isMarkdown(src) ? 1 : 0
+  const entries = await readdir(src, { withFileTypes: true })
+  let count = picked || entries.some((entry) => entry.name === FOLDER_SETTINGS_FILE) ? 1 : 0
+  for (const entry of entries) {
+    // A hidden entry — the folder's own `.folder.md` among them, counted above — comes as it is.
+    if (isSkipped(entry.name) || !(entry.isDirectory() || entry.isFile())) continue
+    count += await idsFor(path.join(src, entry.name), entry.isDirectory() ? 'dir' : 'file', false)
+  }
+  return count
+}
+
+async function freshFor(door: IdDoor, src: string, kind: 'file' | 'dir'): Promise<Fresh> {
+  const count = await idsFor(src, kind)
+  const ids = count === 0 ? [] : await door.mint(count)
+  return {
+    letters: door.letters,
+    next: () => {
+      const id = ids.shift()
+      // Never reached by a copy as counted above; a source that grew under the copy stops it here.
+      if (id === undefined) throw new BridgeFailure('CONFLICT', 'this folder changed while it was copied; try again', { path: src })
+      return id
+    },
+  }
+}
+
 /** `content`'s properties and `content` holding a fresh `id`; undefined when they do not parse: it can hold neither an id nor a title, and is copied as it is. */
-function reborn(content: string): { properties: Record<string, unknown>; id: string; content: string } | undefined {
+function reborn(content: string, fresh: Fresh): { properties: Record<string, unknown>; id: string; content: string } | undefined {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error !== undefined) return
-  const id = mintNoteId()
+  const id = fresh.next()
   return { properties, id, content: setFrontmatterProperty(content, NOTE_ID_KEY, id) }
 }
 
@@ -70,8 +111,8 @@ const copyBytes = (src: string, to: string): Promise<void> => fsCall(to, () => c
  * the name built from both. Resolves to where it landed; undefined, and nothing written, for a
  * file that is no note or a note whose properties do not parse.
  */
-async function copyNote(src: string, dir: string, suffix = ''): Promise<string | undefined> {
-  const born = isMarkdown(src) ? reborn(await readFile(src, 'utf8')) : undefined
+async function copyNote(src: string, dir: string, fresh: Fresh, suffix = ''): Promise<string | undefined> {
+  const born = isMarkdown(src) ? reborn(await readFile(src, 'utf8'), fresh) : undefined
   if (born === undefined) return
   const title = titleOf(born.properties, path.parse(src).name) + suffix
   const to = path.join(dir, noteFileName(title, born.id))
@@ -88,9 +129,9 @@ async function copyNote(src: string, dir: string, suffix = ''): Promise<string |
  * comes as it is. Last, the notes carry their values for the original to the copy's id
  * (`carryFolderValues`, YAZ-2375 D19).
  */
-async function copyFolder(src: string, dir: string, picked = false): Promise<string> {
+async function copyFolder(src: string, dir: string, fresh: Fresh, picked = false): Promise<string> {
   const settings = await readFile(folderSettingsPath(src), 'utf8').catch(() => (picked ? '' : undefined))
-  const born = settings === undefined ? undefined : reborn(settings)
+  const born = settings === undefined ? undefined : reborn(settings, fresh)
   const title = picked ? await freeTitle(dir, titleOf(born?.properties ?? {}, path.basename(src))) : undefined
   const to = path.join(dir, title === undefined ? path.basename(src) : kebabTitle(title))
   await fsCall(to, () => mkdir(to))
@@ -98,11 +139,12 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
   for (const entry of await readdir(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name)
     if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
-    if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to)
-    else if (!entry.isFile() || isSkipped(entry.name) || (await copyNote(from, to)) === undefined) await copyBytes(from, path.join(to, entry.name))
+    if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to, fresh)
+    else if (!entry.isFile() || isSkipped(entry.name) || (await copyNote(from, to, fresh)) === undefined) await copyBytes(from, path.join(to, entry.name))
   }
+  // The values the notes hold for the original are under its id as its file holds it.
   const held = born?.properties[NOTE_ID_KEY]
-  if (born !== undefined && isNoteId(held)) await carryFolderValues(to, held, born.id)
+  if (born !== undefined && typeof held === 'string' && vaultNoteId(held, fresh.letters) !== undefined) await carryFolderValues(to, held, born.id)
   return to
 }
 
@@ -112,7 +154,9 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
  *
  * A note and a folder are born again (YAZ-2420 🔒 D21: `copyNote`, `copyFolder`); any other file,
  * and a note whose properties do not parse, is `fs.cp` under Finder's next free name (`freeName`).
- * So is every entry where the vault does not use IDs (`ids`, YAZ-2523 🔒 V3): the same bytes, all the way down.
+ * So is every entry where the vault does not use IDs (`ids` is null, YAZ-2523 🔒 V3): the same bytes, all
+ * the way down. Each fresh id is the next number of the vault the copy lands in (`ids`, its door).
+ * The original keeps its id (YAZ-2293 D4, YAZ-2677 S34).
  *
  * Guards borrowed from rename/remove, and only where they transfer: a source the tree hides
  * (`isSkipped`: dot-entries, node_modules) is refused `BAD_REQUEST` — the UI never showed it,
@@ -124,7 +168,7 @@ async function copyFolder(src: string, dir: string, picked = false): Promise<str
  * `add`/`addDir` echo fills the tree, and the client refreshes anyway — idempotent).
  * NOT in v1: carrying assets/images/drawings across vaults, link rewriting on copy.
  */
-export async function copyEntry(from: unknown, toDir: unknown, ids: boolean): Promise<PastedEntry> {
+export async function copyEntry(from: unknown, toDir: unknown, ids: IdDoor | null): Promise<PastedEntry> {
   const src = requireAbsPath(from, 'from')
   const dir = requireAbsPath(toDir, 'toDir')
   return fsCall(src, async () => {
@@ -136,9 +180,10 @@ export async function copyEntry(from: unknown, toDir: unknown, ids: boolean): Pr
     if (kind === 'dir' && (dir === src || dir.startsWith(`${src}${path.sep}`))) {
       throw new BridgeFailure('BAD_REQUEST', 'a folder cannot be copied inside itself', { path: dir })
     }
-    if (ids) {
-      if (kind === 'dir') return { from: src, to: await copyFolder(src, dir, true), kind }
-      const copied = await copyNote(src, dir, ' copy')
+    if (ids !== null) {
+      const fresh = await freshFor(ids, src, kind)
+      if (kind === 'dir') return { from: src, to: await copyFolder(src, dir, fresh, true), kind }
+      const copied = await copyNote(src, dir, fresh, ' copy')
       if (copied !== undefined) return { from: src, to: copied, kind }
     }
     const to = path.join(dir, await freeName(dir, path.basename(src), kind))

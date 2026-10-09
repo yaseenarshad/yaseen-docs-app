@@ -44,6 +44,13 @@ export const CONTRACT = {
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
   createDir: invoke<[req: CreateDirRequest], CreateDirResponse>('fs:create-dir', 1),
   createFile: invoke<[req: string | CreateFileRequest], CreateFileResponse>('fs:create-file', 1),
+  /**
+   * The door (YAZ-2677 🔒 D4, R17): the next ID of the vault that holds `path`, for a caller that
+   * must know it before its note exists (`CreateFileRequest.id`). The number is saved before it is
+   * answered, so one that is never used is a gap and no ID is given two times. Null where the vault
+   * does not use IDs.
+   */
+  mintNoteId: invoke<[path: string], string | null>('fs:mint-note-id', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first `index(root)` build. Read it AFTER the first index snapshot. */

@@ -156,6 +156,20 @@ describe('subscribeConfig', () => {
     expect(changes).toHaveLength(2)
   })
 
+  it("a Mac's count file in `.yaseendocs/ids/` is no config: a new number wakes no subscriber (YAZ-2677 D4)", async () => {
+    const root = await makeRoot()
+    await writeConfig(root, 'ids.json', { enabled: true, letters: 'YAZ' })
+    const changes = collect(root)
+    await sleep(300) // let the watcher finish its initial scan
+    await mkdir(path.join(root, VAULT_CONFIG_DIR, 'ids'))
+    const count = path.join(root, VAULT_CONFIG_DIR, 'ids', 'aaaaaaaaaaaa.json')
+    await writeFile(count, '{ "last": 1 }')
+    await writeFile(count, '{ "last": 2 }')
+    await rm(count)
+    await sleep(600)
+    expect(changes).toEqual([])
+  })
+
   it('one watcher per root shared by all subscribers, closed when the last one leaves', async () => {
     const root = await makeRoot()
     const a = collect(root)
