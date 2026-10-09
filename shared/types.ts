@@ -256,10 +256,10 @@ export interface FileResponse {
 
 /** How many bytes of a note `readHeads` reads off disk: room for the frontmatter block and the head under it. */
 export const HEAD_READ_BYTES = 8192
-/** How much of a note's body `readHeads` answers with, in UTF-16 units: the first lines of a tab overview card. */
+/** How much of a note's body `readHeads` answers with, in UTF-16 units: the first lines of a page of the tab board. */
 export const HEAD_CHARS = 600
 
-/** The top of one note, for the tab overview's card (YAZ-2648 D6). */
+/** The top of one note, for its page of the tab board (YAZ-2648 D6). */
 export interface FileHead {
   path: string
   mtime: number

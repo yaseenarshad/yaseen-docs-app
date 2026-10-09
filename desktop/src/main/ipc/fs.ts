@@ -38,7 +38,7 @@ const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unkno
 export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.tree, tree)
   handle(CONTRACT.readFile, readFile)
-  // The tab overview's cards (YAZ-2648 D6): read-only, one call for every open tab.
+  // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
   handle(CONTRACT.readHeads, readHeads)
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)

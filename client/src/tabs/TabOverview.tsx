@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
@@ -9,7 +9,7 @@ import { TabMenu, type TabMenuAt } from './TabMenu'
 import { useTabHeads } from './useTabHeads'
 import './tabs.css'
 
-/** How long the board's zoom takes, in ms: the stylesheet's `--tab-zoom-ms` is this number. */
+/** How long the board's zoom takes, in ms. The board hands it to the tab stack as `--tab-zoom-ms`, for its own animation and for the page layer's (tabs.css). */
 export const ZOOM_MS = 250
 
 export interface TabOverviewProps {
@@ -53,11 +53,12 @@ const SIZES = {
   '--tab-fan-x': `${BOARD.fanX}px`,
   '--tab-fan-y': `${BOARD.fanY}px`,
   '--tab-pad': `${BOARD.padTop}px ${BOARD.padX}px ${BOARD.padBottom}px`,
-  '--tab-zoom-ms': `${ZOOM_MS}ms`,
 } as CSSProperties
 
-const ZOOM_VARS = ['--tab-zoom-scale', '--tab-zoom-x', '--tab-zoom-y', '--tab-layer-x', '--tab-layer-y']
-const NO_STACKS: ReadonlySet<string> = new Set()
+/** Where the zoom aims, as custom properties on the tab stack: gone when there is no page to aim at. */
+const ZOOM_POINT = ['--tab-zoom-scale', '--tab-zoom-x', '--tab-zoom-y', '--tab-layer-x', '--tab-layer-y']
+/** No island, no page: the empty set the spread islands and the pick both start from. */
+const NONE: ReadonlySet<string> = new Set()
 const WAYS: Record<string, Way> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 const tabCount = (n: number): string => (n === 1 ? '1 tab' : `${n} tabs`)
 
@@ -101,7 +102,7 @@ function PageFace({ label, lines }: { label: string; lines: string }) {
  * a keystroke renders the board and nothing else of the window.
  *
  * Three more gestures, none of which leaves the board. SPACE, held, shows the highlighted page
- * big (a peek). A page DRAGS: onto the strip the board shows along its right edge, or onto the
+ * big (a peek). A page DRAGS: onto the drop area the board shows along its right edge, or onto the
  * right panel itself, and it opens beside the page. SHIFT-click PICKS pages — shift is the
  * selection gesture everywhere in the app — and a small bar closes the picked ones, or the others.
  */
@@ -109,7 +110,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   /** The islands the user spread by hand: they stay spread until the board closes. */
-  const [spread, setSpread] = useState<ReadonlySet<string>>(NO_STACKS)
+  const [spread, setSpread] = useState<ReadonlySet<string>>(NONE)
   /** The room the islands have: the scroller's own box, less its padding. Null until it is measured. */
   const [area, setArea] = useState<{ w: number; h: number } | null>(null)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
@@ -117,10 +118,10 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   /** The menu of the picked pages, opened on one of them. */
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number } | null>(null)
   /** The pages picked with shift-click. The board's own, for as long as it is open. */
-  const [picked, setPicked] = useState<ReadonlySet<string>>(NO_STACKS)
+  const [picked, setPicked] = useState<ReadonlySet<string>>(NONE)
   /** Space is down on a highlighted page. */
   const [peeking, setPeeking] = useState(false)
-  /** The page a drag carries, and whether it is over the board's drop strip. */
+  /** The page a drag carries, and whether it is over the board's drop area. */
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropOver, setDropOver] = useState(false)
   /** The filter box was the last thing used: Space then types a space (see `onKeyDown`). */
@@ -129,6 +130,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const refocus = useRef(false)
   const lastPeek = useRef<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  /** The listbox of pages, and the stem of each stop's id: what the filter box points a reader at. */
+  const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const isFolder = useFolderPaths(roots)
@@ -145,7 +148,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   // Text in the filter spreads every island: a match must be on show.
   const stacked =
     terms.length > 0
-      ? NO_STACKS
+      ? NONE
       : stackedIslands(
           board.map((vault) => ({ named: many && vault.at < roots.length, islands: vault.islands.map((island) => ({ dir: island.dir, count: island.pages.length })) })),
           area,
@@ -161,6 +164,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const lastAt = useRef(0)
   if (at !== -1) lastAt.current = at
   const current = at !== -1 ? cursor : (shown[Math.min(lastAt.current, shown.length - 1)] ?? null)
+  /** The id of every stop, a page (`p:`) or a stack (`s:`): the filter box names the highlighted one to a reader. */
+  const stopIds = new Map<string, string>()
+  shown.forEach((path, i) => stopIds.set(`p:${path}`, `${listId}-p${i}`))
+  ;[...islands.keys()].forEach((dir, i) => stopIds.set(`s:${dir}`, `${listId}-s${i}`))
+  const currentStop = current === null ? undefined : stopIds.get(stacked.has(dirname(current)) ? `s:${dirname(current)}` : `p:${current}`)
 
   /** What the arrows walk: the pages on show and the stacks, as elements in reading order. */
   const stops = (): HTMLElement[] => Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('[data-path], [data-stack]') ?? [])
@@ -172,7 +180,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const togglePick = (path: string): void => setPicked((now) => new Set(now.has(path) ? [...now].filter((one) => one !== path) : [...now, path]))
   const closePick = (others: boolean): void => {
     onCloseTabs(others ? tabs.filter((path) => !picked.has(path)) : pick)
-    setPicked(NO_STACKS)
+    setPicked(NONE)
   }
   const anyMenu = pageMenu !== null || islandMenu !== null || pickMenu !== null
   // The strip lights the tab of the highlighted page (`boardHighlight.ts`), and a board that goes lets go.
@@ -218,6 +226,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const h = root.offsetHeight
     const els = stops()
     const target = active === null ? undefined : els[stopOf(els, active)]
+    stack.style.setProperty('--tab-zoom-ms', `${ZOOM_MS}ms`)
     if (w > BOARD.pageW && target !== undefined) {
       const scale = w / BOARD.pageW
       const page = centreIn(target, root, bodyRef.current?.scrollTop ?? 0)
@@ -226,13 +235,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       stack.style.setProperty('--tab-zoom-y', `${page.y}px`)
       stack.style.setProperty('--tab-layer-x', `${(scale * page.x - w / 2) / (scale - 1)}px`)
       stack.style.setProperty('--tab-layer-y', `${(scale * page.y - h / 2) / (scale - 1)}px`)
-    } else for (const name of ZOOM_VARS) stack.style.removeProperty(name)
+    } else for (const name of ZOOM_POINT) stack.style.removeProperty(name)
     root.dataset.zoom = leaving ? 'out' : 'in'
   }, [leaving, active, area, stackedKey])
   useEffect(() => {
     const stack = rootRef.current?.parentElement
     return () => {
-      for (const name of ZOOM_VARS) stack?.style.removeProperty(name)
+      for (const name of [...ZOOM_POINT, '--tab-zoom-ms']) stack?.style.removeProperty(name)
     }
   }, [])
   // The way out takes as long as the animation: a timer, so it ends where no animation runs too.
@@ -298,7 +307,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (e.key === 'Escape') {
       e.preventDefault()
       // The first Esc drops the pick; the board goes on the next.
-      if (pick.length > 0) setPicked(NO_STACKS)
+      if (pick.length > 0) setPicked(NONE)
       else onDismiss()
       return
     }
@@ -329,7 +338,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const to = els[boxes[from].width === 0 ? from + (way === 'left' || way === 'up' ? -1 : 1) : nearest(boxes, from, way)]
     if (to === undefined) return
     typed.current = false
-    // The highlight never rests inside a pile: walking onto a stack spreads it.
+    // The arrows never rest on a stack: walking onto one spreads it.
     const dir = to.dataset.stack
     if (dir !== undefined) spreadIsland(dir)
     setCursor(dir !== undefined ? (islands.get(dir)?.pages[0].path ?? current) : (to.dataset.path ?? current))
@@ -350,6 +359,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (vault === undefined || vault.at >= roots.length) return null
     return island.top ? (many ? roots[vault.at] : null) : island.dir
   }
+  const menuRow = menuIsland === undefined ? null : sidebarRowOf(menuIsland)
 
   return (
     // A click anywhere but the filter box leaves the focus in it, so the keys keep working. A page
@@ -372,6 +382,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         value={query}
         placeholder="Filter open tabs"
         aria-label="Filter open tabs"
+        // The focus stays here while the arrows move the highlight: a reader is told which page has it.
+        role="combobox"
+        aria-expanded
+        aria-controls={listId}
+        aria-activedescendant={currentStop}
         spellCheck={false}
         onChange={(e) => changeQuery(e.target.value)}
         onBlur={() => {
@@ -383,7 +398,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           })
         }}
       />
-      <div className="taboverview__body" ref={bodyRef} role="listbox" aria-label="Open tabs">
+      <div className="taboverview__body" ref={bodyRef} id={listId} role="listbox" aria-label="Open tabs">
         {shown.length === 0 && <p className="taboverview__msg">{tabs.length === 0 ? 'No open tabs.' : 'No open tab matches.'}</p>}
         {board.map((vault) => (
           <div key={vault.at} className="taboverview__vault">
@@ -394,10 +409,10 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                 const count = island.pages.length
                 const isStack = stacked.has(island.dir)
                 const cut = island.label.lastIndexOf(' / ')
-                // A pile shows the page the user came from when it holds it, else its first.
+                // A stack shows the page the user came from when it holds it, else its first.
                 const top = island.pages.find((page) => page.path === active) ?? island.pages[0]
                 return (
-                  <div key={island.dir} className="taboverview__island" role="group" aria-label={island.label} data-island={island.dir}>
+                  <div key={island.dir} className="taboverview__island" role="group" aria-label={island.label}>
                     <div
                       className="taboverview__island-head"
                       onContextMenu={(e) => menuOn(e, () => setIslandMenu({ x: e.clientX, y: e.clientY, dir: island.dir }))}
@@ -413,7 +428,23 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                       </button>
                     </div>
                     {isStack ? (
-                      <button type="button" className="taboverview__stack" data-stack={island.dir} aria-label={`Spread ${island.label}: ${tabCount(count)}`} title={`Show the ${tabCount(count)}`} onClick={() => spreadIsland(island.dir)}>
+                      <button
+                        type="button"
+                        className="taboverview__stack"
+                        id={stopIds.get(`s:${island.dir}`)}
+                        role="option"
+                        aria-selected={current !== null && dirname(current) === island.dir}
+                        data-stack={island.dir}
+                        aria-label={`Spread ${island.label}: ${tabCount(count)}`}
+                        title={`Show the ${tabCount(count)}`}
+                        onClick={() => spreadIsland(island.dir)}
+                        // The pointer on a stack highlights the page it shows, and spreads nothing: Space peeks that page (D13).
+                        onMouseMove={() => {
+                          if (top.path === current) return
+                          typed.current = false
+                          setCursor(top.path)
+                        }}
+                      >
                         {count > 2 && <span className="taboverview__sheet taboverview__sheet--far" />}
                         <span className="taboverview__sheet" />
                         <span className={`taboverview__page${top.path === active ? ' taboverview__page--active' : ''}${top.path === preview ? ' taboverview__page--preview' : ''}${current !== null && dirname(current) === island.dir ? ' taboverview__page--current' : ''}`}>
@@ -433,12 +464,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                             <div
                               key={path}
                               className={cls.join(' ')}
+                              id={stopIds.get(`p:${path}`)}
                               role="option"
                               aria-selected={path === current}
                               aria-current={path === active ? 'page' : undefined}
                               data-path={path}
                               title={path}
-                              data-picked={picked.has(path) || undefined}
                               // Shift is the selection gesture and nothing else, as on a sidebar row: it picks, and never opens.
                               onClick={(e) => (e.shiftKey ? togglePick(path) : onOpen(path))}
                               // On one of two or more picked pages the menu is the pick's; on any other page, the tab's.
@@ -519,7 +550,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           <button type="button" onClick={() => closePick(true)}>
             Close the others
           </button>
-          <button type="button" onClick={() => setPicked(NO_STACKS)}>
+          <button type="button" onClick={() => setPicked(NONE)}>
             Clear
           </button>
         </div>
@@ -556,13 +587,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       {/* An island is a folder: its row in the sidebar, its path, and its tabs as one. */}
       {islandMenu !== null && menuIsland !== undefined && (
         <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} onClose={() => setIslandMenu(null)}>
-          {onShowInSidebar !== undefined && sidebarRowOf(menuIsland) !== null && (
+          {onShowInSidebar !== undefined && menuRow !== null && (
             <button
               type="button"
               className="ctx-menu__item"
               role="menuitem"
               onClick={() => {
-                onShowInSidebar(sidebarRowOf(menuIsland) ?? menuIsland.dir)
+                onShowInSidebar(menuRow)
                 setIslandMenu(null)
               }}
             >

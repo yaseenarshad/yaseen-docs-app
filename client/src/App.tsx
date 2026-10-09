@@ -92,7 +92,7 @@ export function App() {
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
   const {
-    tabs, active: file, mounted, preview, blank, openCurrent, navigate, openKept, keep, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, move: moveTab,
+    tabs, active: file, mounted, preview, blank, openCurrent, navigate, openKept, keep, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -104,7 +104,7 @@ export function App() {
    * D10), where `file` is still the last real active tab, the one the window stores. What the user
    * LOOKS at reads this: the title, the sidebar's highlight, ⌘⇧C. What is stored reads `file`.
    */
-  const seen = blank ? null : file
+  const pageOnShow = blank ? null : file
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -337,7 +337,7 @@ export function App() {
   // the index's (YAZ-2420 🔒 D14), so the title follows both.
   useEffect(() => {
     const sync = (): void => {
-      document.title = windowTitle(activeName, seen, pathTitles(activeLinks.records, activeLinks.folders), seen !== null && isFolderPath(activeRoot, seen))
+      document.title = windowTitle(activeName, pageOnShow, pathTitles(activeLinks.records, activeLinks.folders), pageOnShow !== null && isFolderPath(activeRoot, pageOnShow))
     }
     sync()
     const offIndex = activeLinks.subscribe(sync)
@@ -346,7 +346,7 @@ export function App() {
       offIndex()
       offTree?.()
     }
-  }, [activeName, seen, activeRoot, activeLinks])
+  }, [activeName, pageOnShow, activeRoot, activeLinks])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -490,7 +490,6 @@ export function App() {
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
-  useLinkEvents({ onOpenFile: openCurrent, onNotice: notify })
   // Upkeep review (YAZ-2322): each vault counts what is due and can hold a session, and the window
   // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
   // because the sidebar that shows the count unmounts while collapsed.
@@ -555,6 +554,26 @@ export function App() {
     setOverview((at) => (at.phase !== 'open' ? at : zoom ? { phase: 'leaving', from: null } : OVERVIEW_CLOSED))
   }, [activate])
   const leaveOverviewForOpenPage = useCallback(() => leaveOverview(null), [leaveOverview])
+  // The doors of a trip from outside the board: the sidebar's click and its double click, a deep
+  // link, ⌃Tab. The effect above knows a trip only when `file` moves, so each door closes the
+  // board itself: the page ALREADY open is a trip too, and it must show (S46).
+  const openPage = useCallback((path: string) => {
+    setOverview(OVERVIEW_CLOSED)
+    openCurrent(path)
+  }, [openCurrent])
+  const openKeptPage = useCallback((path: string) => {
+    setOverview(OVERVIEW_CLOSED)
+    openKept(path)
+  }, [openKept])
+  const toNextTab = useCallback(() => {
+    setOverview(OVERVIEW_CLOSED)
+    nextTab()
+  }, [nextTab])
+  const toPrevTab = useCallback(() => {
+    setOverview(OVERVIEW_CLOSED)
+    prevTab()
+  }, [prevTab])
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify })
   const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
   const toggleOverview = useCallback(() => {
     const { phase, file: open } = now.current
@@ -578,18 +597,28 @@ export function App() {
     openBlank()
     openSearch()
   }, [openBlank, openSearch])
-  /** A page's ✕, an island's ✕, a tab's ✕ under the board: each tab closes as ⌘W closes it, and the board stays. */
+  /**
+   * A page's ✕, an island's ✕, a tab's ✕ under the board: the tabs close as ⌘W closes each, in ONE
+   * change of the workspace, and the board stays — until its last tab goes: then it closes, and
+   * the window shows the empty state (R18).
+   */
   const closeUnderOverview = useCallback((paths: string[]) => {
-    const { file: open } = now.current
+    const { file: open, tabs: all } = now.current
+    if (all.every((path) => paths.includes(path))) setOverview(OVERVIEW_CLOSED)
     ownChange.current = open !== null && paths.includes(open)
-    paths.forEach(closeTab)
-  }, [closeTab])
+    closeTabs(paths)
+  }, [closeTabs])
   const closeOneUnderOverview = useCallback((path: string) => closeUnderOverview([path]), [closeUnderOverview])
-  /** "Move to right panel" on a page of the board: the page leaves the board, and the board stays. */
-  const moveRightUnderOverview = useCallback((path: string) => {
+  /** "Move to right panel", on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
+  const movePageToRight = useCallback((path: string) => {
     ownChange.current = path === now.current.file
     transferMainToRight(path, now.current.right)
   }, [transferMainToRight])
+  /** A rename or a move of the page on show, or of a folder above it, changes `file` and is no trip to a page: an open board stays. */
+  const renamedUnderOverview = useCallback((oldPath: string, newPath: string, dir: boolean) => {
+    const { file: open, phase } = now.current
+    if (phase === 'open' && open !== null && oldPath !== newPath && (open === oldPath || (dir && open.startsWith(`${oldPath}/`)))) ownChange.current = true
+  }, [])
   // Off the board the keyboard goes back to the page, which shows again by now — unless the
   // sidebar has it: a click or Enter there previews, and the walk keeps its place (YAZ-921). A tab
   // that mounts for the first time takes the caret by itself, under the same rule.
@@ -605,7 +634,7 @@ export function App() {
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
   // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322). ⌘W on the blank tab
   // closes it alone (YAZ-2655 S75): that is `closeActive`'s own rule.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: nextTab, onPrevTab: prevTab, onTabOverview: toggleOverview, onNewTab: newTab, onZoom: requestZoom })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onZoom: requestZoom })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
@@ -626,7 +655,7 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!ownsCopyPathHotkey(event)) return
       const selected = sidebarSelection.current
-      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : seen
+      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow
       if (text === null) return
       event.preventDefault()
       // BOTH outcomes speak through the window's one passive notice (YAZ-1341): the user cannot
@@ -639,7 +668,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [seen])
+  }, [pageOnShow])
 
   /**
    * ⌘C / ⌘X / ⌘V for the sidebar's FILE clipboard (D6 amended, YAZ-1674) — ⌘⇧C's sibling in every
@@ -706,14 +735,16 @@ export function App() {
             storage.mirrorRoots(moved)
             slots.current = renameSlots(slots.current, oldPath, newPath)
           }
+          renamedUnderOverview(oldPath, newPath, true)
           renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
           if (vaultMoved) setRoots(moved)
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
+        renamedUnderOverview(oldPath, newPath, false)
         renameWorkspacePath(oldPath, newPath)
       }),
-    [renameWorkspacePath, renameWorkspaceDir],
+    [renameWorkspacePath, renameWorkspaceDir, renamedUnderOverview],
   )
 
   /**
@@ -1039,7 +1070,7 @@ export function App() {
   /** The first vault whose sync needs attention: one banner at a time. */
   const unsynced = vaults.find((vault) => vault.syncBanner !== null)
   const syncCopy = unsynced?.syncBanner ?? null
-  const shown = session === null ? seen : session.path
+  const shown = session === null ? pageOnShow : session.path
 
   const dropOnMain = (page: PageDrag, at: number): void => {
     if (page.owner === 'right') transferRightToMain(page.path, at)
@@ -1117,9 +1148,9 @@ export function App() {
           onRemoveVault={removeVault}
           onReorderVaults={reorderVaults}
           // Under the blank tab no row is the open one (YAZ-2655): every row opens, the one of the tab that was active too.
-          activeFile={seen}
-          onOpenFile={openCurrent}
-          onKeepFile={openKept}
+          activeFile={pageOnShow}
+          onOpenFile={openPage}
+          onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
           onPickFolder={pick}
@@ -1194,7 +1225,7 @@ export function App() {
               onClose={overviewOpen ? closeOneUnderOverview : closeTab}
               onMove={moveTab}
               onDropPage={dropOnMain}
-              onMoveToRight={(path) => transferMainToRight(path, rightPanel.items.length)}
+              onMoveToRight={movePageToRight}
               canBack={canBack}
               canForward={canForward}
               onBack={back}
@@ -1264,7 +1295,7 @@ export function App() {
                 onCloseTabs={closeUnderOverview}
                 onDismiss={leaveOverviewForOpenPage}
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
-                onMoveToRight={moveRightUnderOverview}
+                onMoveToRight={movePageToRight}
                 onShowInSidebar={showInSidebar}
                 onNotice={notify}
                 reviewState={reviewState}

@@ -1,7 +1,7 @@
 /**
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): tablist semantics per the ViewTabs
  * pattern, extension-stripped labels with full-path tooltips, the close
- * affordances (✕, middle-click) vs activation, drag-to-reorder with the insertion indicator,
+ * affordances (✕, middle-click) vs activation, drag-to-reorder with the gap at the drop place,
  * and the active tab scrolled into view on activation. Plus the right-click Copy path menu
  * (YAZ-922) and the ◀ ▶ history buttons (YAZ-721).
  */
@@ -120,7 +120,7 @@ describe('TabBar', () => {
     expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
   })
 
-  it('marks only the active tab: aria-selected + the underline modifier', () => {
+  it('marks only the active tab: aria-selected + the active modifier', () => {
     const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/b.md', ...noop, ...noNav })
     expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true'])
     expect([...el.querySelectorAll('.tabbar__tab')].map((t) => t.classList.contains('tabbar__tab--active'))).toEqual([false, true])
@@ -165,7 +165,7 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
   const fire = (target: Element, type: string, clientX = 0) =>
     act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
 
-  it('dropping past a tab\'s midpoint calls onMove with the final index; grab and indicator classes mark the drag', () => {
+  it('dropping past a tab\'s midpoint calls onMove with the final index; the grab class and the gap classes mark the drag', () => {
     const onMove = vi.fn()
     const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove, ...noNav })
     fire(tabAt(el, 0), 'dragstart')
@@ -297,6 +297,14 @@ describe('TabBar slide and room (YAZ-2656 D12)', () => {
     expect(sliding(el, 'in')).toEqual(['d', 'New tab'])
     render({ tabs: ['/v/a.md', '/v/c.md', '/v/d.md', '/v/e.md'], active: '/v/e.md', blank: false })
     expect(sliding(el, 'in')).toEqual(['d'])
+    // A tab that closes, or one that moves, builds no other tab again (YAZ-2657 A3): a later tab
+    // stays the SAME element, so its slide does not play a second time and it keeps hover and focus.
+    const tabOf = (name: string) => [...el.querySelectorAll('.tabbar__tab')].find((tab) => tab.textContent?.replace('✕', '') === name)
+    const [d, e] = [tabOf('d'), tabOf('e')]
+    render({ tabs: ['/v/a.md', '/v/d.md', '/v/e.md'], active: '/v/e.md', blank: false })
+    expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
+    render({ tabs: ['/v/e.md', '/v/a.md', '/v/d.md'], active: '/v/e.md', blank: false })
+    expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
   })
 
   it('S88: a closed tab slides shut where it stood — a ghost that is no tab, gone after the slide; with no motion asked for there is none', () => {
@@ -313,7 +321,11 @@ describe('TabBar slide and room (YAZ-2656 D12)', () => {
     expect([...el.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(['c'])
     expect(el.querySelector('.tabbar__tab--out')?.getAttribute('aria-hidden')).toBe('true')
     expect(el.querySelector('.tabbar__tab--out button')).toBeNull()
-    act(() => void vi.advanceTimersByTime(200))
+    // The ghost goes when the slide ends: the time the row hands the stylesheet is the timer's own (YAZ-2657 A19).
+    const ms = parseInt(el.querySelector<HTMLElement>('.tabbar-row')!.style.getPropertyValue('--tab-slide-ms'), 10)
+    act(() => void vi.advanceTimersByTime(ms - 1))
+    expect(sliding(el, 'out')).toEqual(['a'])
+    act(() => void vi.advanceTimersByTime(1))
     expect(sliding(el, 'out')).toEqual([])
     // A page that takes a tab's place closes nothing.
     render({ tabs: ['/v/d.md'], active: '/v/d.md' })

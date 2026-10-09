@@ -326,9 +326,13 @@ function TreeLevel({
                 // caret in (a keyboard click has `detail === 0`); a MOUSE click on the open note
                 // just selects it, so click-then-⌘C works on every row instead of handing the key
                 // to the editor.
+                // The open row asks for its page too: the workspace changes nothing for the page
+                // it already shows, and App closes the tab board over it (YAZ-2648 S46).
                 if (e.metaKey) onOpenFileBackground(node.path)
-                else if (node.path !== activeFile) onOpenFile(node.path)
-                else if (e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
+                else {
+                  onOpenFile(node.path)
+                  if (node.path === activeFile && e.detail === 0) focusOpenDocument() // YAZ-961: the VISIBLE one
+                }
               }}
               // The second click of a double click KEEPS the tab the first one previewed (YAZ-2648 D2).
               // A row with no viewer in the app has no tab, and ⌘ opened a kept tab already.

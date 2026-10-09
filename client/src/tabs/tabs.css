@@ -122,11 +122,10 @@
   align-items: center;
   flex: 0 1 200px;
   min-width: 140px;
-  max-width: 220px;
   height: 32px;
   overflow: hidden;
   border: 0 solid transparent;
-  transition: border-width 150ms ease;
+  transition: border-width var(--tab-slide-ms, 150ms) ease;
 }
 
 .tabbar__tab::before {
@@ -189,13 +188,14 @@
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* The slide (S88): a tab that joins the strip opens, the ghost of one that left shuts. */
+/* The slide (S88): a tab that joins the strip opens, the ghost of one that left shuts. Its time is
+   TabBar's `SLIDE_MS`, which the row hands down as `--tab-slide-ms`. */
 .tabbar__tab--in {
-  animation: tab-in 150ms ease-out;
+  animation: tab-in var(--tab-slide-ms, 150ms) ease-out;
 }
 
 .tabbar__tab--out {
-  animation: tab-in 150ms ease-in reverse forwards;
+  animation: tab-in var(--tab-slide-ms, 150ms) ease-in reverse forwards;
   pointer-events: none;
 }
 
@@ -489,11 +489,13 @@
   line-height: 14px;
   color: var(--fg-muted);
   border-radius: 4px;
-  visibility: hidden;
+  /* Opacity, not visibility: the Tab key gets to the button, and its focus shows it. */
+  opacity: 0;
 }
 
-.taboverview__island:hover .taboverview__island-close {
-  visibility: visible;
+.taboverview__island:hover .taboverview__island-close,
+.taboverview__island-close:focus-visible {
+  opacity: 1;
 }
 
 .taboverview__island-close:hover,
@@ -536,7 +538,7 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* The active tab's page wears the strip's own mark: the accent underline. */
+/* The active tab's page wears the board's own mark (R32): an accent line along its foot. */
 .taboverview__page--active::after {
   content: '';
   position: absolute;
@@ -597,7 +599,7 @@
   visibility: visible;
 }
 
-/* A stack: an island that shows as one fanned pile while the board would not fit (`stackedIslands`).
+/* A stack: an island that shows its pages as one, fanned, while the board would not fit (`stackedIslands`).
    Its top page is a page; one or two sheets fan out behind it. A click spreads it. */
 .taboverview__stack {
   position: relative;
@@ -606,7 +608,7 @@
   height: var(--tab-page-h);
 }
 
-/* The pile is one page high: its sheets fan up into the gap under the island's label. */
+/* A stack is one page high: its sheets fan up into the gap under the island's label. */
 .taboverview__stack .taboverview__page,
 .taboverview__sheet {
   position: absolute;
@@ -674,7 +676,7 @@
   background: var(--bg-hover);
 }
 
-/* The drop strip along the right edge, on show only while a page is dragged: the page opens in
+/* The drop area along the right edge, on show only while a page is dragged: the page opens in
    the right panel. An accent tint and one line of words. */
 .taboverview__drop {
   position: absolute;
@@ -756,7 +758,7 @@
 }
 
 /* No motion asked for: the board and the page change places at once (App skips the way out too),
-   the peek and the drop strip are there or not, and no tab of the strip slides (TabBar makes no ghost). */
+   the peek and the drop area are there or not, and no tab of the strip slides (TabBar makes no ghost). */
 @media (prefers-reduced-motion: reduce) {
   .taboverview[data-zoom],
   .tabstack__layer--zoom-out,

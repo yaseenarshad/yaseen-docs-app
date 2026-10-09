@@ -20,6 +20,13 @@ describe('readHeads (YAZ-2648 D6)', () => {
     expect(heads[2]).toMatchObject({ path: note })
     expect(heads[2]?.mtime).toBeGreaterThan(0)
     expect((await failure(readHeads('not a list'))).code).toBe('BAD_REQUEST')
+
+    // S55: an empty note, and a note of a properties block alone, have a head with no text: the page shows its title.
+    const empty = path.join(root, 'empty.md')
+    const onlyBlock = path.join(root, 'only-block.md')
+    await writeFile(empty, '')
+    await writeFile(onlyBlock, '---\ntitle: Only\n---\n')
+    expect((await readHeads([empty, onlyBlock])).map((head) => head?.text ?? null)).toEqual(['', ''])
   })
 
   it('reads only the head of a big note: the text is cut at HEAD_CHARS, never inside a character, and a frontmatter block still open where the read stops gives no text', async () => {

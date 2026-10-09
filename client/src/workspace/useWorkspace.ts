@@ -79,13 +79,14 @@ export type WorkspaceAction =
 export type TabsAction =
   | { type: 'open-current'; path: string } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (activate instead when already open)
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (activate instead when already open)
-  | { type: 'open-new'; path: string } // append a KEPT tab at the end + activate (activate instead when already open)
+  | { type: 'open-new'; path: string } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
   | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (no-op when already open)
   | { type: 'keep'; path: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
   | { type: 'new-tab' } // ⌘T, the strip's "+": the blank tab shows (no-op while it does)
   | { type: 'close-blank' } // ⌘W on the blank tab, its ✕: it goes, and the tab that was active is active again
   | { type: 'activate'; path: string } // tab-strip click
   | { type: 'close'; path: string } // ✕ / ⌘W: the active tab closes to its right neighbour, else left
+  | { type: 'close-many'; paths: readonly string[] } // the tab board's "Close them", "Close the others" and an island's ✕: each tab by `close`, in ONE change
   | { type: 'move'; from: number; to: number } // drag-to-reorder (I3): the tab at `from` lands at final index `to`
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'back' } // the active tab steps back through its OWN stack (YAZ-721)
@@ -181,9 +182,11 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       return replaceSlot(s, s.active, a.path)
     }
     case 'open-new': {
-      if (s.blank) return fillBlank(s, a.path)
-      if (a.path === s.active) return s
-      if (s.tabs.includes(a.path)) return withActive(s, a.path)
+      // A kept tab is asked for (YAZ-2648 D2): the preview tab that shows the page loses its mark first.
+      const kept = a.path === s.preview ? { ...s, preview: null } : s
+      if (kept.blank) return fillBlank(kept, a.path)
+      if (a.path === kept.active) return kept
+      if (kept.tabs.includes(a.path)) return withActive(kept, a.path)
       return { tabs: [...s.tabs, a.path], active: a.path, mounted: [...s.mounted, a.path], history: s.history, preview: s.preview, blank: false }
     }
     case 'open-background': {
@@ -249,6 +252,9 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const heir = s.tabs[i + 1] ?? s.tabs[i - 1] ?? null
       return heir === null ? { ...rest, active: null } : { ...withActive({ ...rest, active: null }, heir), blank: s.blank }
     }
+    case 'close-many':
+      // One fold over `close`, as `delete-dir` does: the heir is whatever is left when all of them are gone.
+      return a.paths.reduce((acc, path) => tabsReducer(acc, { type: 'close', path }), s)
     case 'move': {
       // Reorder only: `active` and `mounted` are untouched — dragging never activates a tab.
       // A preview tab that is given a place is kept (YAZ-2648 D2).
@@ -601,11 +607,9 @@ export interface UseWorkspace extends WorkspaceState {
   openCurrent: (path: string) => void
   /** A link inside a tab's page (YAZ-2648 D3): the page takes the ACTIVE tab's slot, and Back returns. */
   navigate: (path: string) => void
-  /** Rule 5: append a kept tab at the end + activate. */
-  openNew: (path: string) => void
   /**
-   * A double click on a sidebar row (YAZ-2648 D2): the page is a KEPT tab — opened as one when it is
-   * not open, and the preview tab the first click made keeps its page.
+   * Rule 5, and a double click on a sidebar row (YAZ-2648 D2): the page is a KEPT tab — appended at
+   * the end and activated when it is not open, and the preview tab the first click made keeps its page.
    */
   openKept: (path: string) => void
   /** The preview tab becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other path. */
@@ -618,6 +622,8 @@ export interface UseWorkspace extends WorkspaceState {
   openBackground: (path: string) => void
   activate: (path: string) => void
   close: (path: string) => void
+  /** The tab board's closes of several tabs (YAZ-2648 D9, D15): each as `close`, and ONE identity write for all of them. */
+  closeMany: (paths: readonly string[]) => void
   /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
   move: (from: number, to: number) => void
   /** ⌘W: closes the active tab — the blank tab alone, while it shows (YAZ-2655 S75); false when there is none (App escalates to `closeSelf`). */
@@ -691,19 +697,17 @@ export function useWorkspace(root: string | null): UseWorkspace {
 
   const openCurrent = useCallback((path: string) => dispatch({ type: 'open-current', path }), [dispatch])
   const navigate = useCallback((path: string) => dispatch({ type: 'navigate', path }), [dispatch])
-  const openNew = useCallback((path: string) => dispatch({ type: 'open-new', path }), [dispatch])
-  // `keep` changes no stored field (the mark is session-only, D4), so it is never mirrored.
+  // `keep` changes no stored field (the mark is session-only, D4), so it is never mirrored — and
+  // neither is `open-new` on the page the active preview tab shows, which only takes its mark off.
   const keep = useCallback((path: string) => dispatch({ type: 'keep', path }, { mirror: false }), [dispatch])
   const openKept = useCallback(
-    (path: string) => {
-      dispatch({ type: 'open-new', path })
-      dispatch({ type: 'keep', path }, { mirror: false })
-    },
+    (path: string) => dispatch({ type: 'open-new', path }, { mirror: !(path === stateRef.current.preview && path === stateRef.current.active) }),
     [dispatch],
   )
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((path: string) => dispatch({ type: 'activate', path }), [dispatch])
   const close = useCallback((path: string) => dispatch({ type: 'close', path }), [dispatch])
+  const closeMany = useCallback((paths: readonly string[]) => dispatch({ type: 'close-many', paths }), [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
   const newTab = useCallback(() => dispatch({ type: 'new-tab' }, { mirror: false }), [dispatch])
@@ -759,7 +763,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const rightH: TabHistory | undefined = state.rightHistory[state.rightPanel.expanded ?? '']
   return {
     ...state,
-    openCurrent, navigate, openNew, openKept, keep, newTab, closeBlank, openBackground, activate, close, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, keep, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,
