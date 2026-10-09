@@ -37,9 +37,9 @@ export const NEW_LETTERS_ASK = 'Type the new ID letters: 2 to 5 letters, like BU
 export const lettersLine = ({ letters, stale }: Pick<IdsState, 'letters' | 'stale'>): string =>
   `This vault's ID letters are ${letters}.${stale > 0 ? ` ${count(stale, 'note')} still ${stale === 1 ? 'has' : 'have'} the old letters.` : ''}`
 
-/** The line of the row "Old IDs" (S88). */
-export const oldIdsLine = (old: number): string => `${count(old, 'note')} ${old === 1 ? 'has' : 'have'} an old ID, like 6cbnmcq5n2sj.`
+/** The line of the row "Old IDs" (S88). With no note left, a run stopped before each link followed its note (S90). */
+export const oldIdsLine = (old: number): string => (old === 0 ? 'Each note has a number, but some links still hold an old ID.' : `${count(old, 'note')} ${old === 1 ? 'has' : 'have'} an old ID, like 6cbnmcq5n2sj.`)
 
 /** The box of "Give them numbers" (🔒 D6, S89, S91): the count, what happens, and what to do on the other Mac first. */
 export const oldIdsAskMessage = (old: number, vault?: string): string =>
-  `Give the ${count(old, 'note')} with an old ID in ${vault ?? 'this vault'} a number? Each one gets the next number of the vault, the oldest file first. Each link and file name follows. First sync this vault and close the app on your other Macs: a Mac with edits that are not synced can conflict.`
+  `${old === 0 ? `Finish giving the old IDs in ${vault ?? 'this vault'} numbers? Each note has its number. Each link that still holds an old ID follows.` : `Give the ${count(old, 'note')} with an old ID in ${vault ?? 'this vault'} a number? Each one gets the next number of the vault, the oldest file first. Each link and file name follows.`} First sync this vault and close the app on your other Macs: a Mac with edits that are not synced can conflict.`

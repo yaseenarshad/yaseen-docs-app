@@ -31,7 +31,7 @@
  * top-level entry does, through the same `resolves` / `newTarget` pair, so their spelling rules
  * cannot drift from anyone else's.
  * The key's own module owns both the key name and the list of link-bearing leaves
- * (`views/folderSettings.ts` `mapFolderSettingsLinks`) — this engine never re-parses it.
+ * (`@shared/folderSettingsLinks` `mapFolderSettingsLinks`) — this engine never re-parses it.
  * The referencing-set probe learned the same leaves, because a page whose ONLY reference lives
  * in there has no `links` entry to be found by: one construction, never two truths.
  *
@@ -49,7 +49,7 @@
  *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a note through its frontmatter
  *    `aliases` is NEVER rewritten — the alias travels with the file, so it still resolves
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
- *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
+ *  - ID-form links (YAZ-2293 D5): `[[YAZ-12]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
  *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the note whose `title:` that is, or
  *    to the folder whose `.folder.md` holds it — the same again. A page with no `title:` is
@@ -63,7 +63,7 @@
  */
 import { isViewOnly } from '@shared/fileKind'
 import { folderSettingsLinks } from '@shared/folderSettingsLinks'
-import { exactLinkTarget, maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks, type NewTarget, type ResolvesToOld } from '@shared/linkRewrite'
+import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld } from '@shared/linkRewrite'
 import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
@@ -76,7 +76,6 @@ import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnl
 
 // The rewrite of ONE file's text is in `@shared/linkRewrite` (YAZ-2677): the main process changes
 // an ID to a new ID with the same parser. What a rename MOVED is decided here and handed to it.
-export { maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks, type NewTarget, type ResolvesToOld }
 
 /**
  * Form preservation for one matched target: bare stays bare (the new basename), pathed
@@ -174,7 +173,7 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
   // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
   // in that file's own frontmatter and travels with it, so it keeps pointing there. Building
   // the probe without the alias map keeps the dry-run count and the rewrite agreeing on that.
-  // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
+  // An ID-form link (`[[YAZ-12]]`, YAZ-2293) is the same story told by the id: it names
   // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
   const resolver = resolverFor(records, root, { aliases: false, ids: false, folders })
   // A path of titles (YAZ-2478) is the target only the folders answer; it is rewritten to the note's id.

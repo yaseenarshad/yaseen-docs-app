@@ -17,11 +17,10 @@
  * text (`isExactWikilink`) — the index's own frontmatter-link rule (`vaultIndex/scan.ts`).
  */
 
-import { BULLET_LINE, mapOutlineLinks } from '@shared/folderSettingsLinks'
+import { BULLET_LINE } from '@shared/folderSettingsLinks'
 
 // The line rule (`isExactWikilink`), the bullet line and the rename's walk into an outline are in
 // `@shared/folderSettingsLinks`: the main process's ID rewrite reads the same lines (YAZ-2677).
-export { mapOutlineLinks }
 
 /** One bullet: its nesting level (0 = top) and its text — everything after the marker, untouched but for the padding. */
 export interface OutlineLine {

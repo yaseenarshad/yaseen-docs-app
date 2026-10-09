@@ -9,7 +9,7 @@
 // sweeps are done, so no test sleeps. The clock is set by hand (`at('10:07')`), and so are the
 // timers: `later(ms)` is the only way ten minutes pass.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { noteFileName } from '@shared/noteName'
@@ -32,7 +32,8 @@ vi.mock('../fs/watchers', () => ({
 }))
 
 // One seam: a write of a note that loses once to another writer, as when the editor saves the note at that moment.
-const fails = vi.hoisted(() => ({ write: undefined as string | undefined }))
+// `wrote` hears each write that was made, after it: what the user does at that moment.
+const fails = vi.hoisted(() => ({ write: undefined as string | undefined, wrote: undefined as ((file: string) => Promise<void>) | undefined }))
 vi.mock('../fs/file', async (importOriginal) => {
   const real = await importOriginal<typeof import('../fs/file')>()
   const { BridgeFailure } = await import('../fs/fsUtils')
@@ -43,7 +44,9 @@ vi.mock('../fs/file', async (importOriginal) => {
         fails.write = undefined
         throw new BridgeFailure('CONFLICT', 'file changed on disk since last read', { path: req.path })
       }
-      return real.writeFile(req)
+      const res = await real.writeFile(req)
+      await fails.wrote?.(req.path)
+      return res
     },
   }
 })
@@ -257,6 +260,7 @@ afterEach(async () => {
   onIdFixes(undefined)
   _setIdleMs()
   fails.write = undefined
+  fails.wrote = undefined
   _evictAll()
   // Nothing of this test is still writing when its folders go.
   await flushIndexCache()
@@ -319,6 +323,18 @@ describe('a clash: two Macs gave one number before a sync (S41 to S50)', () => {
     await syncAndSee()
     expect(await read(air, 'plan.md')).toBe(forms('YAZ-102').replace('[[yaz-102#Goals]]', '[[YAZ-102#Goals]]'))
     expect(air.notices).toEqual(['YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 5 links updated.'])
+  })
+
+  it('S42: a link written with letters the vault had before follows too (R5, R28)', async () => {
+    await arrives(`${VAULT_CONFIG_DIR}/ids.json`, '{\n  "enabled": true,\n  "letters": "YAZ",\n  "was": ["OLD"]\n}\n')
+    await bothMake101()
+    at('10:08')
+    await write(air, 'plan.md', linking('plan.md', 'OLD-101'))
+    at('10:20')
+    await syncAndSee()
+    expect(await read(air, 'plan.md')).toBe(linking('plan.md', 'YAZ-102'))
+    expect(air.notices).toEqual(['YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.'])
+    await converged()
   })
 
   it('S43: a link the Pro wrote meant "Foo": no Mac changes it, and the notice of the Air lists it', async () => {
@@ -525,6 +541,39 @@ describe('the fix is safe to run again, and to stop anywhere', () => {
     await converged()
   })
 
+  it('IDs are turned off during a fix: after the write that was running, no byte changes; on again, the fix ends with the SAME number (YAZ-2523 V4)', async () => {
+    await bothMake101()
+    at('10:08')
+    await write(air, 'plan.md', linking('plan.md', 'YAZ-101'))
+    await write(air, 'inbox.md', linking('inbox.md', 'YAZ-101'))
+    at('10:20')
+    await sync()
+    // The user clicks Off at the moment the first link file is written.
+    fails.wrote = async () => {
+      fails.wrote = undefined
+      await saveIdsAnswer(air.root, false)
+    }
+    await pump(air)
+    const links = [await read(air, 'plan.md'), await read(air, 'inbox.md')]
+    expect(links.filter((content) => content.includes('[[YAZ-102]]'))).toHaveLength(1)
+    expect(links.filter((content) => content.includes('[[YAZ-101]]'))).toHaveLength(1)
+    expect(await idIn(air, 'bar-yaz-101.md')).toBe('YAZ-101')
+    expect(air.notices).toEqual([])
+    await writesNothing(air, async () => {
+      await quit(air)
+      await open(air)
+    })
+    await saveIdsAnswer(air.root, true)
+    await giveIdsNow(air.root)
+    await pump(air)
+    expect(await read(air, 'plan.md')).toBe(linking('plan.md', 'YAZ-102'))
+    expect(await read(air, 'inbox.md')).toBe(linking('inbox.md', 'YAZ-102'))
+    expect(await idIn(air, 'bar-yaz-102.md')).toBe('YAZ-102')
+    expect((await countOf(air)).last).toBe(102)
+    expect(air.notices).toEqual(['YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 2 links updated.'])
+    await converged()
+  })
+
   it('after the fix, a Finder copy of the keeper is a copy: the Air — the one Mac that writes for that number — gives it the next number, and the original keeps its ID and its links', async () => {
     await bothMake101()
     at('10:20')
@@ -670,6 +719,22 @@ describe('a file that arrives with no ID: one Mac gives the number (S59 to S68, 
     await later(1000)
     // `a copy of seed.md` is first in path order: only what the index knew before tells the original.
     expect([await idIn(air, 'seed.md'), await idIn(air, 'a copy of seed.md')]).toEqual(['YAZ-99', 'YAZ-101'])
+  })
+
+  it('S53: a folder duplicated in Finder on the Air, the Pro off: the Air waits 10 minutes, then each note of the copy and its `.folder.md` get the next numbers, and the notes of the copy carry their folder values to the new folder ID', async () => {
+    const clients = await makeFolder(pro, 'Clients')
+    await syncAndSee()
+    await quit(pro)
+    const original = await filesOf(air.root)
+    await cp(path.join(air.root, 'Clients'), path.join(air.root, 'Clients copy'), { recursive: true })
+    await writesNothing(air, () => pump(air).then(() => later(ID_WAIT_MS - 1000)))
+    await later(1000)
+    const [folder, note] = [await idIn(air, `Clients copy/${FOLDER_SETTINGS_FILE}`), await idIn(air, 'Clients copy/member.md')]
+    expect([folder, note].sort()).toEqual(['YAZ-102', 'YAZ-103'])
+    expect(await read(air, 'Clients copy/member.md')).toContain(`in:\n  ${folder}:\n    Status: open\n`)
+    expect(await read(air, 'Clients copy/member.md')).not.toContain(clients.id)
+    // The original folder and its note keep each byte.
+    expect(await filesOf(air.root)).toMatchObject(Object.fromEntries(Object.entries(original).filter(([rel]) => !rel.startsWith(`${VAULT_CONFIG_DIR}/`))))
   })
 
   it('S63: a vault that only one Mac opens: that Mac is first, and nothing waits', async () => {

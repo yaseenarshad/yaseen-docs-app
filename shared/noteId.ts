@@ -16,7 +16,9 @@ export const NOTE_ID_KEY = 'id'
 const OLD_ID_RE = /^(?=.*\d)[0-9a-hjkmnp-tv-z]{12}$/
 /** 15 digits at most: every such number is one JavaScript counts exactly, so the next one is never wrong. */
 const NUMBER_ID_RE = /^([A-Za-z]{2,5})-([1-9]\d{0,14})$/
-const LETTERS_RE = /^[A-Za-z]{2,5}$/
+
+/** An old ID (R3): the 12-character shape. "Give old IDs numbers" gives each one a number (🔒 D6). */
+export const isOldId = (value: unknown): value is string => typeof value === 'string' && OLD_ID_RE.test(value)
 
 /** A number ID of ANY vault, in any case (R1). Whether it is one of THIS vault is `vaultNoteId`'s to say. */
 export const isNumberId = (value: unknown): value is string => typeof value === 'string' && NUMBER_ID_RE.test(value)
@@ -26,7 +28,7 @@ export const isNumberId = (value: unknown): value is string => typeof value === 
  * never an id, and the app writes its own over it (YAZ-2420 🔒 D30). Where the vault is known, ask
  * `vaultNoteId`: other `LETTERS-NUMBER` text is a name there (R5, R6).
  */
-export const isNoteId = (value: unknown): value is string => typeof value === 'string' && (OLD_ID_RE.test(value) || NUMBER_ID_RE.test(value))
+export const isNoteId = (value: unknown): value is string => isOldId(value) || isNumberId(value)
 
 /** `letters` and `number` as the app writes an ID (R2). */
 export const numberId = (letters: string, number: number): string => `${letters}-${number}`
@@ -101,6 +103,9 @@ export function defaultIdLetters(vaultName: string): string {
   return letters.length < 2 ? 'DOC' : letters
 }
 
+/** A vault's ID letters (YAZ-2677): 2 to 5 of A to Z, in any case. */
+export const isIdLetters = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z]{2,5}$/.test(value)
+
 /**
  * The ID letters in a parsed `IDS_FILE` (R9), in capitals: `letters`, then each entry of `was` —
  * the list `vaultNoteId` reads an ID with. `saved` is false when the file holds no valid `letters`
@@ -108,10 +113,10 @@ export function defaultIdLetters(vaultName: string): string {
  */
 export function idLettersOf(config: unknown, vaultName: string): { letters: string[]; saved: boolean } {
   const { letters: held, was } = (config ?? {}) as { letters?: unknown; was?: unknown }
-  const saved = typeof held === 'string' && LETTERS_RE.test(held)
+  const saved = isIdLetters(held)
   const letters = [saved ? held.toUpperCase() : defaultIdLetters(vaultName)]
   for (const entry of Array.isArray(was) ? was : []) {
-    const before = typeof entry === 'string' && LETTERS_RE.test(entry) ? entry.toUpperCase() : undefined
+    const before = isIdLetters(entry) ? entry.toUpperCase() : undefined
     if (before !== undefined && !letters.includes(before)) letters.push(before)
   }
   return { letters, saved }
@@ -124,13 +129,4 @@ export const IDS_FILE = 'ids.json'
 export function idsAnswer(config: unknown): boolean | undefined {
   const enabled = (config as { enabled?: unknown } | null | undefined)?.enabled
   return typeof enabled === 'boolean' ? enabled : undefined
-}
-
-/** A vault's ID letters (YAZ-2677): 2 to 5 of A to Z, in any case. */
-export const isIdLetters = (value: string): boolean => /^[A-Z]{2,5}$/i.test(value)
-
-/** The ID letters in a parsed `IDS_FILE` (YAZ-2677 R9), in capitals. Anything else, a missing file too, is none. */
-export function idsLetters(config: unknown): string | undefined {
-  const letters = (config as { letters?: unknown } | null | undefined)?.letters
-  return typeof letters === 'string' && isIdLetters(letters) ? letters.toUpperCase() : undefined
 }

@@ -11,15 +11,11 @@ import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitF
 import { PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { isRecord } from '@shared/guards'
+// The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
+// `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import type { ViewDef } from './viewSchema'
 import { transformFile, writeProperty } from './writeProperty'
-
-/**
- * The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
- * `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
- */
-export { FOLDER_SETTINGS_KEY, folderSettingsLinks, mapFolderSettingsLinks } from '@shared/folderSettingsLinks'
 
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export type ColumnDecl = PropertyDecl

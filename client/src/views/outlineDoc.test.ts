@@ -4,7 +4,8 @@
  * exact-wikilink LINES only, byte-for-byte elsewhere.
  */
 import { describe, expect, it } from 'vitest'
-import { escapeBlockStart, escapeOutlineMarkdown, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
+import { mapOutlineLinks } from '@shared/folderSettingsLinks'
+import { escapeBlockStart, escapeOutlineMarkdown, parseOutline, serializeOutline } from './outlineDoc'
 
 describe('parseOutline: depth is relative indentation', () => {
   it('reads four spaces, two spaces and tabs all as one level down', () => {

@@ -36,7 +36,7 @@ import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 import { parseState } from '../main/store'
 import { STATE_FILE, userDataDir } from '../main/userData'
-import { giveId, idsOf, nextId, readPage } from '../main/vaultIndex/idSweep'
+import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
 import { vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { scanFile, walk } from '../main/vaultIndex/scan'
@@ -77,8 +77,9 @@ A vault gives its notes IDs only when "Give this vault's notes IDs" is on in the
 (\`.yaseendocs/ids.json\`). In a vault that does not, a page's name is its file name, and \`id\`
 and \`links\` are refused. The next two paragraphs describe a vault that does.
 
-Every page has a permanent id in its frontmatter (\`id: k3m9x2pq7abc\`); a rename or a move never
-changes it. A page's title is its \`title:\` line, and the app builds the file name from the title
+Every page has a permanent id in its frontmatter (\`id: YAZ-12\`: the vault's letters and a
+number); a rename or a move never changes it. An old id of 12 characters (\`k3m9x2pq7abc\`) is
+still read. A page's title is its \`title:\` line, and the app builds the file name from the title
 and the id (\`<kebab-title>-<id>.md\`). A link between pages is written \`[[<id>]]\`, and the app
 shows the page's current title in its place. \`id\` prints a page's id — a page that has none, or
 an \`id\` some other tool wrote, is given one first, exactly as the app would, and only inside a
@@ -210,7 +211,7 @@ async function vaultRoot(from: string): Promise<string | null> {
  */
 async function idVault(from: string): Promise<string | null> {
   for (let dir = from; ; dir = dirname(dir)) {
-    const answer = await idsOf(dir)
+    const { answer } = await vaultIds(dir)
     if (answer !== undefined) return answer ? dir : null
     if (dir === dirname(dir)) return null
   }

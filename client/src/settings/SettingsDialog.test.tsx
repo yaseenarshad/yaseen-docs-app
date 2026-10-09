@@ -26,7 +26,7 @@ beforeEach(() => {
   scrollIntoView.mockClear()
 })
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; state?: Partial<IdsState> }, vaultName?: string) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string) {
   const onChange = vi.fn()
   const onClose = vi.fn()
   const setEnabled = vi.fn()
@@ -38,17 +38,17 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   // The same for Review: no settings handed over is no vault open, so no section.
   const review = reviewSettings === undefined ? undefined : { settings: reviewSettings, save }
   // And for the vault's IDs switch (YAZ-2523): no answer handed over is no vault open, so no row.
-  // `letters` reads the vault's ID letters out of its `ids.json` (YAZ-2677 S9): asked at the click on On.
-  const readLetters = vi.fn(async () => vaultIds?.letters)
+  // `letters` are the ID letters the vault's `ids.json` already holds (YAZ-2677 S9): they come with the snapshot's `ask`.
+  const ask = vaultIds?.ask === undefined ? undefined : { ...vaultIds.ask, ...(vaultIds.letters !== undefined && { letters: vaultIds.letters }) }
   // "Check for duplicates" (YAZ-2677 S55): the main process answers with one line.
   const checkIds = vi.fn(async () => 'No duplicates.')
   // The rows "ID letters" and "Old IDs" (YAZ-2677 D5, D6): the main process answers with the state of the vault.
-  const STATE: IdsState = { letters: vaultIds?.letters ?? 'YAZ', notes: 3, stale: 0, old: vaultIds?.old ?? 0, ...vaultIds?.state }
+  const STATE: IdsState = { letters: vaultIds?.letters ?? 'YAZ', notes: 3, stale: 0, old: vaultIds?.old ?? 0, unfinished: false, ...vaultIds?.state }
   // It answers only where the test hands a `state` over: a row that no test looks at stays as it was mounted.
   const idsState = vi.fn((): Promise<IdsState> => (vaultIds?.state === undefined ? new Promise(() => undefined) : Promise.resolve(STATE)))
   const reletter = vi.fn(async (letters: string): Promise<IdsState> => ({ ...STATE, letters, stale: 0 }))
   const backfill = vi.fn(async (): Promise<IdsState> => ({ ...STATE, old: 0 }))
-  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: setIds, check: checkIds, old: vaultIds.old ?? 0, state: idsState, reletter, backfill }
+  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask, set: setIds, check: checkIds, old: vaultIds.old ?? 0, unfinished: vaultIds.unfinished ?? false, state: idsState, reletter, backfill }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -56,7 +56,7 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, readLetters, checkIds, idsState, reletter, backfill, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -657,8 +657,7 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
   const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
 
   it('a click on On opens the box and writes nothing: what an ID is, the counts, how to undo, and a text field (S5, S12)', async () => {
-    const { el, setIds, readLetters } = await open()
-    expect(readLetters).toHaveBeenCalledTimes(1)
+    const { el, setIds } = await open()
     expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage(ASK))
     expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk(undefined))
     expect(field(el).value).toBe('')
@@ -742,14 +741,6 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
     const { el } = await open({ ask: ASK }, 'Work')
     expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage(ASK, 'Work'))
     expect(el.querySelector('.confirm__text')?.textContent).toContain('Give the notes in Work IDs?')
-  })
-
-  it('the letters cannot be read (`ids.json` is not valid JSON): no box opens and nothing is written', async () => {
-    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ask: ASK })
-    mounted.readLetters.mockRejectedValueOnce(new Error('ids.json is not valid JSON'))
-    await act(async () => rowButtons(mounted.el, 'ids')[0].click())
-    expect(mounted.el.querySelector('.confirm')).toBeNull()
-    expect(mounted.setIds).not.toHaveBeenCalled()
   })
 
   it('Off in a vault whose notes hold IDs still asks first, and "Turn off" saves no with no letters handed over (S11)', async () => {
@@ -947,10 +938,29 @@ describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
     await act(async () => button(el).click())
     act(() => sheetBtn(el, 'Cancel').click())
     expect(backfill).not.toHaveBeenCalled()
-    backfill.mockResolvedValueOnce({ letters: 'YAZ', notes: 5, stale: 0, old: 1 })
+    backfill.mockResolvedValueOnce({ letters: 'YAZ', notes: 5, stale: 0, old: 1, unfinished: true })
     await act(async () => button(el).click())
     type(field(el), 'YAZ')
     await act(async () => sheetBtn(el, 'Give them numbers').click())
     expect(line(el)).toBe('1 note has an old ID, like 6cbnmcq5n2sj. Run it again to finish.')
+  })
+
+  it('S90: a run that stopped with links left, after each note has its number: the row still shows, and a second run finishes it', async () => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true, letters: 'YAZ', old: 0, unfinished: true, state: {} })
+    await act(async () => undefined)
+    const { el, backfill } = mounted
+    expect(line(el)).toBe('Each note has a number, but some links still hold an old ID.')
+    await act(async () => button(el).click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(oldIdsAskMessage(0))
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('Finish giving the old IDs in this vault numbers?')
+    backfill.mockResolvedValueOnce({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: true })
+    type(field(el), 'YAZ')
+    await act(async () => sheetBtn(el, 'Give them numbers').click())
+    expect(line(el)).toBe('Each note has a number, but some links still hold an old ID. Run it again to finish.')
+    await act(async () => button(el).click())
+    type(field(el), 'YAZ')
+    await act(async () => sheetBtn(el, 'Give them numbers').click())
+    expect(backfill).toHaveBeenCalledTimes(2)
+    expect(line(el)).toBe('Each note has a number now.')
   })
 })

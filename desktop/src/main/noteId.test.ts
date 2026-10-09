@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, defaultIdLetters, holdsId, idLettersOf, idsAnswer, isNoteId, isNumberId, isVaultNumberId, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, defaultIdLetters, holdsId, idLettersOf, idsAnswer, isIdLetters, isNoteId, isNumberId, isVaultNumberId, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
 
 describe('note ids (YAZ-2293 D2, YAZ-2677 D3)', () => {
   it('the frontmatter key is `id`', () => {
@@ -128,6 +128,14 @@ describe("a vault's answer to IDs, and its letters (YAZ-2523 V1, YAZ-2677 R9, R1
   it('an entry of `was` that is no letters, or is the current letters, is dropped', () => {
     expect(idLettersOf({ letters: 'YAZ', was: ['YAZ', 'OLD', 'old', 7, 'X', 'TOOLONG', null] }, 'v')).toEqual({ letters: ['YAZ', 'OLD'], saved: true })
     expect(idLettersOf({ letters: 'YAZ', was: 'OLD' }, 'v')).toEqual({ letters: ['YAZ'], saved: true })
+  })
+
+  it('2 to 5 letters A to Z, in any case, are ID letters (D2)', () => {
+    for (const value of ['YA', 'YAZ', 'yaz', 'Docs', 'ABCDE']) expect(isIdLetters(value)).toBe(true)
+  })
+
+  it('nothing, 1 letter, 6 letters, a digit, a space, a hyphen and a letter outside A to Z are not (S6)', () => {
+    for (const value of ['', 'Y', 'ABCDEF', 'YA1', '12', 'YA Z', ' YAZ', 'YAZ ', 'YAZ\n', 'YA-Z', 'YÄZ', 12, null, undefined]) expect(isIdLetters(value)).toBe(false)
   })
 })
 

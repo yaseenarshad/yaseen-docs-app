@@ -1,12 +1,11 @@
 import path from 'node:path'
-import { rewriteIds } from '@shared/linkRewrite'
 import { vaultNoteId } from '@shared/noteId'
-import { TITLE_KEY, noteFileName, titleOf } from '@shared/noteName'
+import { TITLE_KEY, titleOf } from '@shared/noteName'
 import { isFolderSettingsPath, type IndexRecord } from '@shared/types'
-import { readFile, writeFile } from '../fs/file'
 import { renameFile } from '../fs/rename'
 import { namedIds, saveDiary, type Book } from './diary'
 import { highestNumber, mintIds, type Counts, type Maker } from './mint'
+import { pathWithId, rewriteFile } from './reletter'
 
 /**
  * A CLASH (YAZ-2677 🔒 D7, R22 to R30a): two Macs that sync one vault each gave the same number
@@ -83,6 +82,8 @@ export type ClashOutcome =
 
 /** How the sweep writes: its own compare-and-set, one write at a time. */
 export interface SweepWrites {
+  /** Does the vault still say yes to IDs? Asked before every write, so a no stops a fix that is running (YAZ-2523 🔒 V4). */
+  gives(): Promise<boolean>
   /** Do the bytes of `file` still hold `held`, and can it be written? Asked before a number is taken for it: one that could not be used is a gap. */
   needs(file: string, held: string): Promise<boolean>
   /** The file takes `to` while it still holds `held`; `first` runs before, with the new id. False when it took none. */
@@ -130,8 +131,9 @@ export async function settleClash(pair: Pair, counts: Counts, makers: readonly M
   const { root, id } = pair
   /** Until this Mac's note takes its number, the other note is the one the ID opens (S46). */
   const later: ClashOutcome = { kind: 'later', keeper: pair.sharing.find((r) => r.path !== mine.path)?.path }
-  // Nothing is taken or changed for a note that cannot take its number now: the links would name an ID no note holds.
-  if (!(await writes.needs(mine.path, id))) return later
+  // Nothing is taken or changed in a vault that said no since the pass started, or for a note that
+  // cannot take its number now: the links would name an ID no note holds.
+  if (!(await writes.gives()) || !(await writes.needs(mine.path, id))) return later
   if (entry.to === undefined) {
     // The sweep holds the vault's notes: the door is told their highest number, as for every number a sweep takes.
     const to = (await mintIds(root, 1, highestNumber(pair.records.values(), pair.letters)).catch(() => null))?.[0]
@@ -148,7 +150,11 @@ export async function settleClash(pair: Pair, counts: Counts, makers: readonly M
   /** The files that name the old ID no more: the note itself, and each link file that was changed now or before. */
   const settled = new Set([mine.path])
   for (const [file] of meant) {
-    const links = await rewriteFile(file, id, to)
+    // A fix that a no stops here is safe: the note still holds the old ID, and a yes continues with the same number.
+    if (!(await writes.gives())) return later
+    // `links` is null for a file that is gone, cannot be read, or is being written: its link is then listed.
+    // The ID however it is written in the file: with the vault's letters of now, or with letters it had before (R5).
+    const links = await rewriteFile(file, (written) => (vaultNoteId(written, pair.letters) === id ? to : undefined)).then((done) => done?.changed ?? null, () => null)
     if (links === null) continue
     settled.add(file)
     if (links === 0) continue
@@ -156,6 +162,7 @@ export async function settleClash(pair: Pair, counts: Counts, makers: readonly M
     book.dirty = true
   }
   const dir = path.dirname(mine.path)
+  if (!(await writes.gives())) return later
   if (!(await writes.give(mine.path, id, to, isFolderSettingsPath(mine.path) ? (given) => writes.carry(dir, id, given) : undefined))) return later
   const renamedTo = await followName(mine, id, to)
   entry.done = true
@@ -186,6 +193,7 @@ async function blindFix(pair: Pair, book: Book, now: number, writes: SweepWrites
   for (const [i, r] of others.entries()) {
     const to = numbers[i]
     const dir = path.dirname(r.path)
+    if (!(await writes.gives())) break
     if (!(await writes.give(r.path, id, to, isFolderSettingsPath(r.path) ? (given) => writes.carry(dir, id, given) : undefined))) continue
     const renamedTo = await followName(r, id, to)
     fixes.push({ id, to, title: r.title, path: renamedTo ?? r.path, ...(renamedTo !== undefined && { renamedFrom: r.path }), links: 0, left: leftLinks(pair, new Set(sharing.map((s) => s.path))), blind: true })
@@ -197,29 +205,13 @@ async function blindFix(pair: Pair, book: Book, now: number, writes: SweepWrites
 }
 
 /**
- * Each `from` in `file` becomes `to` (`rewriteIds`): a compare-and-set, tried one more time when the
- * file changed under it. Resolves to the links changed — 0 for a file that names `from` no more —
- * and null for a file that is gone, cannot be read, or is being written: its link is then listed.
- */
-async function rewriteFile(file: string, from: string, to: string): Promise<number | null> {
-  const attempt = async (): Promise<number> => {
-    const { content, mtime } = await readFile(file)
-    const next = rewriteIds(content, new Map([[from, to]]))
-    if (next.changed > 0) await writeFile({ path: file, content: next.content, expectedMtime: mtime })
-    return next.changed
-  }
-  return attempt().catch(attempt).catch(() => null)
-}
-
-/**
  * A note whose file name is the one the app builds from its title and its ID (`noteFileName`) gets
  * the name of its new ID (R26). Resolves to the new path; undefined when the name was not built, a
  * neighbour holds the new one, or the rename failed — the note keeps its name, and the ID is right.
  */
 async function followName(note: IndexRecord, from: string, to: string): Promise<string | undefined> {
-  const title = titleOf({ [TITLE_KEY]: note.properties[TITLE_KEY] }, '')
-  if (isFolderSettingsPath(note.path) || path.basename(note.path) !== noteFileName(title, from)) return undefined
-  const newPath = path.join(path.dirname(note.path), noteFileName(title, to))
+  const newPath = pathWithId(note.path, titleOf({ [TITLE_KEY]: note.properties[TITLE_KEY] }, ''), [from], to)
+  if (newPath === undefined) return undefined
   return renameFile({ oldPath: note.path, newPath }).then(
     () => newPath,
     () => undefined,
@@ -253,7 +245,7 @@ export function fixNotice(fixes: readonly ClashFix[]): string {
 }
 
 /** The line for a pair another Mac must fix (S57). */
-export const theirsLine = (id: string, other: string | undefined): string =>
+const theirsLine = (id: string, other: string | undefined): string =>
   `${id} is on two notes. The Mac that made ${other === undefined ? 'the newer note' : `"${other}"`} fixes it when its app runs.`
 
 /** What "Check for duplicates" tells, in one line (S55 to S57): each note that took a number, and each ID another Mac must fix. */

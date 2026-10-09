@@ -82,11 +82,11 @@ async function opens(): Promise<Record<string, string | undefined>> {
 describe('Give old IDs numbers (S88, S89)', () => {
   it('each old note takes the next number, oldest file first, with one write of the count file; each link, `also_in` entry, folder-value key and built file name follows; each link opens the same note as before', async () => {
     await make()
-    expect(await idsState(root)).toEqual({ letters: 'YAZ', notes: 1, stale: 0, old: 4 })
+    expect(await idsState(root)).toEqual({ letters: 'YAZ', notes: 1, stale: 0, old: 4, unfinished: false })
     const before = await opens()
     const renames: RenameFileResponse[] = []
     const state = await giveOldIdsNumbers(root, async (res) => void renames.push(res))
-    expect(state).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0 })
+    expect(state).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: false })
     expect(await files()).toEqual(DONE)
     // No file holds an old ID.
     expect(Object.values(await files()).join('\n')).not.toMatch(/[a-d]{11}\d/)
@@ -106,7 +106,7 @@ describe('Give old IDs numbers (S88, S89)', () => {
     await make()
     await giveOldIdsNumbers(root)
     const made = await count()
-    expect(await giveOldIdsNumbers(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0 })
+    expect(await giveOldIdsNumbers(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: false })
     expect(await files()).toEqual(DONE)
     expect(await count()).toEqual(made)
   })
@@ -138,10 +138,34 @@ describe('Give old IDs numbers: a run that stopped (S90)', () => {
     for (const [link, title] of Object.entries(before)) if (title !== 'Zeta') expect(during[link]).toBe(title)
     expect((await idsState(root)).old).toBe(3)
     // The second run: the same numbers, and no second write of the count file.
-    expect(await giveOldIdsNumbers(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0 })
+    expect(await giveOldIdsNumbers(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: false })
     expect(await files()).toEqual(DONE)
     expect(await count()).toMatchObject({ last: 11, made: [{ from: 8, to: 11 }] })
     expect(Object.values(await opens())).toEqual(Object.values(before))
+  })
+
+  it('each note has its number and a file of links is left: the plan is in the vault, so the index and the state say `unfinished`, and a second run finishes it', async () => {
+    const left = VAULT.find(([rel]) => rel === 'log.md') as [string, string]
+    await make([...Object.entries(DONE).filter(([rel]) => rel !== 'log.md'), left, [PLAN, json({ [ZETA]: 'YAZ-8', [ALPHA]: 'YAZ-9', [FOLDER]: 'YAZ-10', [PLAIN]: 'YAZ-11' })]])
+    expect((await getIndex(root)).unfinished).toBe(true)
+    expect(await idsState(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: true })
+    expect(await giveOldIdsNumbers(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: false })
+    expect(await files()).toEqual(DONE)
+    expect(await getIndex(root)).not.toHaveProperty('unfinished')
+  })
+
+  it('the vault says no during the run: no file after that one is written, the plan stays, and after a yes a second run finishes with the SAME numbers (YAZ-2523 V4)', async () => {
+    await make()
+    // The user clicks Off as the first note takes its new name.
+    await giveOldIdsNumbers(root, () => writeFile(path.join(root, CONFIG), json({ enabled: false, letters: 'YAZ' })))
+    const stopped = await files()
+    expect(JSON.parse(stopped[PLAN])).toEqual({ [ZETA]: 'YAZ-8', [ALPHA]: 'YAZ-9', [FOLDER]: 'YAZ-10', [PLAIN]: 'YAZ-11' })
+    const { [CONFIG]: _config, [PLAN]: _plan, [`zeta-${ZETA}.md`]: _zeta, ...rest } = Object.fromEntries(VAULT)
+    expect(stopped).toMatchObject(rest)
+    await writeFile(path.join(root, CONFIG), json({ enabled: true, letters: 'YAZ' }))
+    expect(await giveOldIdsNumbers(root)).toEqual({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: false })
+    expect(await files()).toEqual(DONE)
+    expect(await count()).toMatchObject({ last: 11, made: [{ from: 8, to: 11 }] })
   })
 
   it('a link that already has the number of the plan, to a note that still has its old ID: the note takes THAT number', async () => {

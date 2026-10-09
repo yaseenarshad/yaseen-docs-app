@@ -12,9 +12,10 @@ import { countsOf, firstMac, highestNumber, makersOf, mintIds, vaultIds, type Co
 import { walk } from './scan'
 
 /**
- * One sweep write at a time. Every watch event sweeps on its own, so a copied folder's notes are
- * each being given their id while the folder carries its values to them: two compare-and-sets on
- * one file, and the loser would be a copy left holding its original's id, or its values.
+ * One sweep write at a time. One pass runs at a time for a vault, and an index event joins a pass
+ * that waits (`sweepIds`). But a folder's carry (`carryNote`) writes notes too, and the app's own
+ * copy calls it outside any pass, for any vault: without this queue, two compare-and-sets could
+ * meet on one file, and the loser would be a copy left holding its original's id, or its values.
  */
 let turn: Promise<unknown> = Promise.resolve()
 function inTurn<T>(write: () => Promise<T>): Promise<T> {
@@ -251,7 +252,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     const book = await openDiary(root, held, letters, now)
     let atOnce = false
     if (makers.length >= 2) {
-      const outcome = await settleClash(pair, held, makers, book, now, { needs, give, carry: carryFolderValues })
+      const outcome = await settleClash(pair, held, makers, book, now, { gives: () => givesIds(root), needs, give, carry: carryFolderValues })
       if (outcome.kind === 'fixed') result.fixes.push(...outcome.fixes)
       if (outcome.kind === 'theirs') result.theirs.push({ id, ...(outcome.other !== undefined && { other: outcome.other }) })
       if (outcome.kind === 'later') result.later.push(id)
@@ -333,17 +334,11 @@ async function onDisk(holders: readonly IndexRecord[], swept: readonly IndexReco
 }
 
 /**
- * The vault's answer to "do your notes get IDs?" (YAZ-2523 🔒 V1): its `ids.json`. Undefined when it
- * has not answered; a file that is missing, unreadable or not JSON has not. Read straight off the
- * disk (`vaultIds`): the `yaseendocs` command asks too, and must not carry the app's config watcher with it.
+ * Does this vault give its notes IDs (YAZ-2523 🔒 V1, V10)? Only when its `ids.json` says yes: that
+ * `.yaseendocs/` exists means nothing, and a file that is missing, unreadable or not JSON has not
+ * answered. Read straight off the disk (`vaultIds`). The ONE gate for every id the app writes on its own.
  */
-export const idsOf = async (root: string): Promise<boolean | undefined> => (await vaultIds(root)).answer
-
-/**
- * Does this vault give its notes IDs (🔒 V1, V10)? Only when it said yes: that `.yaseendocs/`
- * exists means nothing. The ONE gate for every id the app writes on its own.
- */
-export const givesIds = async (root: string): Promise<boolean> => (await idsOf(root)) === true
+export const givesIds = async (root: string): Promise<boolean> => (await vaultIds(root)).answer === true
 
 /**
  * A settings file deleted from a folder that is still there is created again holding the `id` it

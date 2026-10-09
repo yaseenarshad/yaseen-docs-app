@@ -2893,9 +2893,9 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
   const ASK = { notes: 1, folders: 2, foreign: 0 }
   const note = (id?: string): IndexRecord => ({ path: '/v/a.md', name: 'a.md', basename: 'a', title: 'a', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(id === undefined ? {} : { id }) })
-  /** The index's snapshot, and what the vault's `ids.json` holds (null: no file). A vault whose answer is not yes carries `ask`, as main sends it. */
-  const feed = (ids: boolean, records: IndexRecord[], file: unknown = null) => (b: ReturnType<typeof installBridge>) => {
-    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids, ...(!ids && { ask: ASK }) })
+  /** The index's snapshot, and what the vault's `ids.json` holds (null: no file). A vault whose answer is not yes carries `ask`, as main sends it: with the letters the file holds. */
+  const feed = (ids: boolean, records: IndexRecord[], file: { letters?: string; [key: string]: unknown } | null = null) => (b: ReturnType<typeof installBridge>) => {
+    b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids, ...(!ids && { ask: { ...ASK, ...(file?.letters !== undefined && { letters: file.letters }) } }) })
     b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === IDS_FILE ? file : null))
   }
   const idsButtons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="ids"] .settings__options button')]
@@ -2987,10 +2987,9 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
 
-  it('`ids.json` that is not valid JSON: On opens no box, Off saves nothing, and a notice says why', async () => {
-    // Main refuses both the read and the save of a file that is not valid JSON, and writes nothing over it.
+  it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
+    // Main refuses the save of a file that is not valid JSON, and writes nothing over it.
     const broken = (b: ReturnType<typeof installBridge>) => {
-      b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === IDS_FILE ? Promise.reject(new Error('ids.json is not valid JSON')) : null))
       b.bridge.ids.set.mockRejectedValue(new Error('ids.json is not valid JSON'))
     }
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
@@ -2999,8 +2998,11 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     })
     act(() => emitSettings())
     await act(async () => idsButtons(el)[0].click())
-    expect(el.querySelector('.confirm')).toBeNull()
-    expect(el.querySelector('.link-notice')?.textContent).toBe("Couldn't read this vault's ID settings: ids.json is not valid JSON")
+    typeLetters(el, 'yaz')
+    await act(async () => sheetBtn(el, 'Give IDs')?.click())
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', true, 'YAZ')
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
+    expect(idsReads(bridge)).toEqual([])
     act(() => root?.unmount())
     const on = await mount(defaultAppState(), VAULT, {}, (b) => {
       feed(true, [])(b)
@@ -3009,7 +3011,6 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     act(() => on.emitSettings())
     await act(async () => idsButtons(on.el)[1].click())
     expect(on.el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
-    expect(bridge.ids.set).not.toHaveBeenCalled()
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     expect(on.bridge.vaultConfig.write).not.toHaveBeenCalled()
   })

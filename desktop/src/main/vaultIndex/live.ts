@@ -1,17 +1,16 @@
 import path from 'node:path'
-import { isRecord } from '@shared/guards'
-import { IDS_FILE, NOTE_ID_KEY, isIdLetters, vaultNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, idsAnswer, isIdLetters, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { BridgeFailure, fsCall, isMarkdown, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
-import { readConfigDetailed, writeConfig } from '../vaultConfig'
+import { writeConfig } from '../vaultConfig'
 import { checkLine, fixNotice, type ClashFix } from './clash'
 import { see } from './diary'
 import { ID_WAIT_MS, restoreFolderId, sweepIds, type SweepResult } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
-import { countNotesWith, highestNumber, vaultIds } from './mint'
+import { changeIds, highestFrom, highestNumber, vaultIds } from './mint'
 import { reconcile, type ColdStartDiff } from './reconcile'
-import { backfill, configWithLetters, idsStateOf, reletter, type Pass, type Renamed } from './reletter'
+import { backfill, configWithLetters, idsStateOf, planLeft, reletter, type Pass, type Renamed } from './reletter'
 import { fileTitle, scanFile, walk } from './scan'
 
 interface Entry {
@@ -182,15 +181,17 @@ async function build(root: string): Promise<Entry> {
     const { records, diff } = await reconcile(root, files, cached)
     entry.records = records
     entry.coldDiff = diff
-    const { letters, config, ...held } = await vaultIds(root)
+    const { letters, ...held } = await vaultIds(root)
     let answer = held.answer
     // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
     // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays
-    // unanswered. Each other key of the file stays (YAZ-2677 R10): its letters most of all.
+    // unanswered, and so does one whose `ids.json` is not valid JSON: it is not written over. Each
+    // other key of the file stays (YAZ-2677 R10), and an answer that arrived meanwhile stands.
     const ask = wouldWrite(records, dirs, letters)
     if (answer === undefined && ask.notes === 0 && ask.folders === 0 && [...records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) !== undefined)) {
-      answer = await writeConfig(root, IDS_FILE, { ...config, enabled: true }).then(
-        () => true,
+      let now: boolean | undefined
+      answer = await saveIds(root, (config) => ((now = idsAnswer(config)) === undefined ? { ...config, enabled: true } : undefined)).then(
+        () => now ?? true,
         () => undefined,
       )
     }
@@ -240,7 +241,7 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   // The vault's kind is applied HERE, where the index is handed out (YAZ-2523 🔒 V5): the live
   // records hold what is in the files, whatever the answer was when they were read. So are its
   // letters (YAZ-2677 R5): they, too, can change after a record was read.
-  const { answer, letters } = await vaultIds(root)
+  const { answer, letters, saved } = await vaultIds(root)
   const ids = answer === true
   if (ids && !entry.ids) sweepIndexed(root)
   entry.ids = ids
@@ -251,8 +252,10 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   const current = `${letters[0]}-`
   const kept = keptIds(entry, letters)
   for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? owned(r, letters, current, kept) : plain(r))
-  // `ask` goes out while the answer is not yes (YAZ-2677 🔒 D2): the box in Settings shows the counts for a vault that said no too.
-  return { root, records, folders, generatedAt: Date.now(), ids, ...(ids ? { letters } : { ask: wouldWrite(entry.records, entry.dirs, letters) }) }
+  // `ask` goes out while the answer is not yes (YAZ-2677 🔒 D2): the box in Settings shows the counts for a vault that said no too,
+  // and asks for the letters the vault's file already holds (S9).
+  if (!ids) return { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(entry.records, entry.dirs, letters), ...(saved && { letters: letters[0] }) } }
+  return { root, records, folders, generatedAt: Date.now(), ids, letters, ...((await planLeft(root)) && { unfinished: true as const }) }
 }
 
 /** The live index of `root`: built on the first call, with each scan the watcher has started already in it. */
@@ -275,7 +278,7 @@ async function liveEntry(root: string): Promise<Entry> {
 
 // The door's answer to "what is the highest number in this vault?" (YAZ-2677 R16) comes from the
 // live records, in memory: a new note reads no file for it. Also a number a note held by hand (S37).
-countNotesWith(async (root, letters) => highestNumber((await liveEntry(root)).records.values(), letters))
+highestFrom(async (root, letters) => highestNumber((await liveEntry(root)).records.values(), letters))
 
 /** A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties. */
 function plain({ id: _id, ...r }: IndexRecord): IndexRecord {
@@ -324,9 +327,6 @@ function sweepIndexed(root: string): void {
   void walk(root, [], dirs).then(all, all)
 }
 
-/** One save of a vault's answer at a time: the read and the write of `ids.json` are one step, so two windows that save at one moment each keep the other's change. */
-const answers = new Map<string, Promise<unknown>>()
-
 /**
  * The switch in Settings (YAZ-2677 🔒 D2, R10, R12): the vault's answer goes into its `ids.json`,
  * and with a yes its ID letters, in capitals. Every key the save does not change stays — `letters`
@@ -340,22 +340,8 @@ export async function saveIdsAnswer(root: unknown, enabled: unknown, letters?: u
   await saveIds(r, (config) => ({ ...config, enabled, ...(letters !== undefined && { letters: letters.toUpperCase() }) }))
 }
 
-/** `ids.json` of `root` read, changed by `change` and written as ONE step, behind each save before it. Undefined from `change` writes nothing. */
-function saveIds(r: string, change: (config: Record<string, unknown>) => Record<string, unknown> | undefined): Promise<void> {
-  const save = async (): Promise<void> => {
-    const held = await readConfigDetailed(r, IDS_FILE)
-    if (held.state === 'malformed') throw new BridgeFailure('INVALID_CONFIG', `${IDS_FILE} is not valid JSON`, { path: held.file })
-    const next = change(held.state === 'ok' && isRecord(held.value) ? held.value : {})
-    if (next !== undefined) await writeConfig(r, IDS_FILE, next)
-  }
-  const mine = (answers.get(r) ?? Promise.resolve()).then(save)
-  const tail = mine.catch(() => undefined)
-  answers.set(r, tail)
-  void tail.then(() => {
-    if (answers.get(r) === tail) answers.delete(r)
-  })
-  return mine
-}
+/** A change of `ids.json` by the app (`changeIds`, the ONE write of that file), written as the app writes a vault's config: each window of the vault hears of it at once. */
+const saveIds = (r: string, change: (config: Record<string, unknown>) => Record<string, unknown> | undefined): Promise<void> => changeIds(r, change, (config) => writeConfig(r, IDS_FILE, config))
 
 /** The live index of a vault that uses IDs, and its letters; refused for any other. */
 async function idsVault(root: unknown): Promise<{ r: string; entry: Entry; letters: string[]; saved: boolean }> {
@@ -374,13 +360,13 @@ async function stateAfter(root: string, entry: Entry, { changed, gone }: Pass): 
   for (const file of gone) entry.records.delete(file)
   for (const file of changed) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
   if (changed.length > 0 || gone.length > 0) schedulePersist(root, entry.records)
-  return idsStateOf(entry.records.values(), (await vaultIds(root)).letters)
+  return idsStateOf(entry.records.values(), (await vaultIds(root)).letters, await planLeft(root))
 }
 
 /** What the rows "ID letters" and "Old IDs" of Settings show (YAZ-2677 🔒 D5, D6, `IdsState`). */
 export async function idsState(root: unknown): Promise<IdsState> {
-  const { entry, letters } = await idsVault(root)
-  return idsStateOf(entry.records.values(), letters)
+  const { r, entry, letters } = await idsVault(root)
+  return idsStateOf(entry.records.values(), letters, await planLeft(r))
 }
 
 /**

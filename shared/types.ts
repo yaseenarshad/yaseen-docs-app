@@ -209,7 +209,9 @@ export interface IndexResponse {
    * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
    * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
    */
-  ask?: { notes: number; folders: number; foreign: number }
+  ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
+  /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
+  unfinished?: true
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
@@ -436,6 +438,8 @@ export interface IdsState {
   stale: number
   /** Notes that hold an old 12-character ID (S88). */
   old: number
+  /** A run of "Give old IDs numbers" stopped with files left (`IndexResponse.unfinished`, S90). */
+  unfinished: boolean
 }
 
 export interface RenameFileResponse {
