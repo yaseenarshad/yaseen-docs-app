@@ -76,7 +76,7 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
       ['foo-yaz-1.md', 'foo-doc-1.md'],
     ])
     expect(renames.every((r) => r.kind === 'file')).toBe(true)
-    expect(state).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2 })
+    expect(state).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2, unfinished: false })
   })
 
   it('a second run changes no byte', async () => {
@@ -100,7 +100,7 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
   it('S85: the same letters change nothing, and letters in `was` move back to `letters`', async () => {
     await make(root)
     const before = await files(root)
-    expect(await changeLetters(root, 'yaz')).toEqual({ letters: 'YAZ', notes: 4, stale: 0, old: 2 })
+    expect(await changeLetters(root, 'yaz')).toEqual({ letters: 'YAZ', notes: 4, stale: 0, old: 2, unfinished: false })
     expect(await files(root)).toEqual(before)
     await changeLetters(root, 'DOC')
     await changeLetters(root, 'YAZ')
@@ -141,7 +141,7 @@ describe('Change letters: a change that did not reach each file (S82, S83)', () 
     expect(state.letters).toBe('DOC')
     expect(state.stale).toBeGreaterThan(0)
     // "Finish" is the same change again.
-    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2 })
+    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2, unfinished: false })
     expect(await files(root)).toEqual(CHANGED)
   })
 
@@ -173,8 +173,8 @@ describe('Change letters: a vault with no `letters` in its `ids.json` (R11)', ()
   it('the row shows the default letters, and a change saves the new letters and changes the notes that carry the default', async () => {
     // The default of a folder named `mdapp-reletter-…` is `MDA`.
     await make(root, { [CONFIG]: config({ enabled: true }), 'one-mda-1.md': '---\nid: MDA-1\ntitle: One\n---\n[[MDA-1]]\n', 'two.md': `---\nid: ${OLD}\n---\n` })
-    expect(await idsState(root)).toEqual({ letters: 'MDA', notes: 1, stale: 0, old: 1 })
-    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', notes: 1, stale: 0, old: 1 })
+    expect(await idsState(root)).toEqual({ letters: 'MDA', notes: 1, stale: 0, old: 1, unfinished: false })
+    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', notes: 1, stale: 0, old: 1, unfinished: false })
     expect(await files(root)).toEqual({ [CONFIG]: config({ enabled: true, letters: 'DOC', was: ['MDA'] }), 'one-doc-1.md': '---\nid: DOC-1\ntitle: One\n---\n[[DOC-1]]\n', 'two.md': `---\nid: ${OLD}\n---\n` })
   })
 })

@@ -204,12 +204,12 @@ describe('WikilinkIndexBridge', () => {
     expect(source.ids).toBe(false)
     await flush()
     expect(source.ids).toBe(true)
-    expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, true, undefined)
+    expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, true, undefined, false)
     const ask = { notes: 2, folders: 1, foreign: 0 }
     indexFn.mockResolvedValue({ ...response('/vault/Note.md'), ids: false, ask })
     await emitPastDebounce({ type: 'change', path: '/vault/Note.md', mtime: 2 })
     expect(source.ids).toBe(false)
-    expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, false, ask)
+    expect(onSnapshot).toHaveBeenLastCalledWith(source.records, source.folders, false, ask, false)
   })
 
   it('a switch of root forgets the old vault at once (YAZ-2523): no resolver, no records and no `ids` until the new vault’s index lands', async () => {

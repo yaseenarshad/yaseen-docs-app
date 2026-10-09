@@ -33,10 +33,10 @@ export function TypedConfirmSheet({ labelId, text, ask, confirmLabel, valid, onC
   )
 }
 
-const said = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+export const said = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-/** One change at a time for a row, and a row that is gone is told nothing: `run` resolves to the line the row shows. */
-function useRun(): { busy: boolean; line: string | null; run: (working: string, change: () => Promise<string | null>) => void } {
+/** One change at a time for a row, and a row that is gone is told nothing: `change` resolves to the line the row shows. "Check for duplicates" runs by it too. */
+export function useRun(): { busy: boolean; line: string | null; run: (working: string, change: () => Promise<string | null>) => void } {
   const [line, setLine] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const shown = useRef(true)
@@ -126,7 +126,8 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
 /**
  * "Old IDs" (🔒 D6, S88 to S91): how many notes hold an old 12-character ID, and "Give them
  * numbers". The box says the count and to sync and close the other Mac first, and takes the vault's
- * own letters. The row goes when the vault's index holds no old ID; while some are left, a second run finishes.
+ * own letters. The row goes when the vault's index holds no old ID and no run is unfinished; while
+ * some notes are left, or links of a run that stopped (`unfinished`), a second run finishes.
  */
 export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
   const [asking, setAsking] = useState<string | null>(null)
@@ -152,7 +153,7 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
             setAsking(null)
             run('Giving numbers…', () =>
               ids.backfill().then(
-                ({ old }) => (old === 0 ? 'Each note has a number now.' : `${oldIdsLine(old)} Run it again to finish.`),
+                ({ old, unfinished }) => (old === 0 && !unfinished ? 'Each note has a number now.' : `${oldIdsLine(old)} Run it again to finish.`),
                 (err: unknown) => `Couldn't give the numbers: ${said(err)}`,
               ),
             )

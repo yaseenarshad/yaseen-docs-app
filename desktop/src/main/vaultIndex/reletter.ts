@@ -1,15 +1,16 @@
-import { rm } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { isRecord } from '@shared/guards'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { rewriteIds, type IdChange } from '@shared/linkRewrite'
-import { NOTE_ID_KEY, canonicalNoteId, isNoteId, isNumberId, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
+import { NOTE_ID_KEY, canonicalNoteId, isNoteId, isNumberId, isOldId, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, noteFileName, titleOf } from '@shared/noteName'
 import { VAULT_CONFIG_DIR, isFolderSettingsPath, type IdsState, type IndexRecord, type RenameFileResponse } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { renameFile } from '../fs/rename'
 import { readConfigDetailed, writeConfig } from '../vaultConfig'
 import { namedIds } from './diary'
+import { givesIds } from './idSweep'
 import { highestNumber, mintIds } from './mint'
 import { walk } from './scan'
 
@@ -28,6 +29,9 @@ import { walk } from './scan'
  * mtime read (as the sweep's), a file that names no changed ID keeps each byte, and the content is
  * written BEFORE the name: a run that stopped between the two is finished by the next, which finds
  * the new ID under the old name (`former`).
+ *
+ * 🔒 Only in a vault that says yes, asked before EVERY file (`givesIds`, YAZ-2523 V4): a no stops a
+ * pass that is running (`Pass.stopped`), and the next run finishes it.
  */
 
 /** Hears each file that took a new name, at once: the bridge repairs its open tab, its favorite and each stored path (S86). */
@@ -41,61 +45,85 @@ export interface Pass {
   changed: string[]
   /** Each path a renamed file left. */
   gone: string[]
+  /** The vault said no during the pass: the files after that one were not looked at. */
+  stopped: boolean
 }
 
-const newPass = (): Pass => ({ left: [], changed: [], gone: [] })
+const newPass = (): Pass => ({ left: [], changed: [], gone: [], stopped: false })
+
+/**
+ * THE NAME FOLLOWS THE ID (R8, R26): the path of the note at `file` when its name is the one the app
+ * builds from `title` and one of `from` (`noteFileName`), with `to` in its place. Undefined when it
+ * keeps its name: any other name is the user's, and a folder's settings file has one name.
+ */
+export function pathWithId(file: string, title: string, from: readonly string[], to: string): string | undefined {
+  if (isFolderSettingsPath(file)) return undefined
+  const name = path.basename(file)
+  return from.some((before) => before !== to && name === noteFileName(title, before)) ? path.join(path.dirname(file), noteFileName(title, to)) : undefined
+}
+
+/**
+ * THE ONE REWRITE OF A FILE (`rewriteIds`), for the clash fix and for both passes here: a
+ * compare-and-set, tried one more time when the file changed under it. Resolves to the content the
+ * file holds now and how many IDs changed; null for a file that cannot be read; rejects for one
+ * that names a changed ID and could not be written.
+ */
+export function rewriteFile(file: string, change: IdChange, opts?: { own?: boolean }): Promise<{ content: string; changed: number } | null> {
+  const attempt = async (): Promise<{ content: string; changed: number } | null> => {
+    const page = await readFile(file).catch(() => null)
+    if (page === null) return null
+    const next = rewriteIds(page.content, change, opts)
+    if (next.changed > 0) await writeFile({ path: file, content: next.content, expectedMtime: page.mtime })
+    return next
+  }
+  return attempt().catch(attempt)
+}
 
 /** The IDs that the ID a file holds now had before: its file name can still be built from one of them. */
 type Former = (id: string) => readonly string[]
 
 /** The path `file` takes when its name was built from its title and an ID it had before; undefined when it keeps its name. */
 function nameAfter(file: string, content: string, former: Former): string | undefined {
-  if (isFolderSettingsPath(file)) return undefined
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   const held = error === undefined ? properties[NOTE_ID_KEY] : undefined
   if (!isNoteId(held)) return undefined
   const id = canonicalNoteId(held)
-  const title = titleOf({ [TITLE_KEY]: properties[TITLE_KEY] }, '')
-  const name = path.basename(file)
-  return former(id).some((before) => before !== id && name === noteFileName(title, before)) ? path.join(path.dirname(file), noteFileName(title, id)) : undefined
+  return pathWithId(file, titleOf({ [TITLE_KEY]: properties[TITLE_KEY] }, ''), former(id), id)
 }
 
 /**
- * One file of the pass: its content by `change` (a compare-and-set, tried one more time when the
- * file changed under it), then its name. A file that names a changed ID and could not be written
- * goes to `pass.left`; a file that cannot be read is left as the index leaves it.
+ * One file of the pass: its content by `change` (`rewriteFile`, with its own `id:` line), then its
+ * name. A file that names a changed ID and could not be written goes to `pass.left`; a file that
+ * cannot be read is left as the index leaves it.
  */
 async function rewriteOne(file: string, change: IdChange, former: Former, renamed: Renamed | undefined, pass: Pass): Promise<void> {
-  const attempt = async (): Promise<{ content: string; wrote: boolean } | null> => {
-    const page = await readFile(file).catch(() => null)
-    if (page === null) return null
-    const next = rewriteIds(page.content, change, { own: true })
-    if (next.changed > 0) await writeFile({ path: file, content: next.content, expectedMtime: page.mtime })
-    return { content: next.content, wrote: next.changed > 0 }
-  }
-  const done = await attempt()
-    .catch(attempt)
-    .catch(() => undefined)
+  const done = await rewriteFile(file, change, { own: true }).catch(() => undefined)
   if (done === undefined) pass.left.push(file)
   if (done === undefined || done === null) return
   const newPath = nameAfter(file, done.content, former)
   // A neighbour holds the new name, or the rename failed: the note keeps its name, and its ID is right.
   const res = newPath === undefined ? undefined : await renameFile({ oldPath: file, newPath }).catch(() => undefined)
   if (res !== undefined) pass.gone.push(file)
-  if (res !== undefined || done.wrote) pass.changed.push(res?.newPath ?? file)
+  if (res !== undefined || done.changed > 0) pass.changed.push(res?.newPath ?? file)
   if (res !== undefined) await renamed?.(res)
 }
 
-/** The pass over `files`, one at a time and in path order: the same on each Mac. */
-async function rewriteFiles(files: readonly string[], change: IdChange, former: Former, renamed: Renamed | undefined, pass: Pass): Promise<void> {
-  for (const file of [...files].sort()) await rewriteOne(file, change, former, renamed, pass)
+/** The pass over `files`, one at a time: the same on each Mac. It stops at the first file where the vault says yes no more (`Pass.stopped`). */
+async function rewriteFiles(root: string, files: readonly string[], change: (file: string) => IdChange, former: Former, renamed: Renamed | undefined, pass: Pass): Promise<void> {
+  for (const file of files) {
+    if (pass.stopped || !(await givesIds(root))) {
+      pass.stopped = true
+      return
+    }
+    await rewriteOne(file, change(file), former, renamed, pass)
+  }
 }
 
-/** Each Markdown file of the vault as it is on disk now: the index can be a moment behind. */
+/** Each Markdown file of the vault as it is on disk now, in path order: the index can be a moment behind. */
 async function markdownFiles(root: string): Promise<string[]> {
   const files: string[] = []
   await walk(root, files).catch(() => undefined)
-  return files
+  return files.sort()
 }
 
 // ---------- change letters ----------
@@ -115,7 +143,7 @@ export async function reletter(root: string, letters: readonly string[], renamed
   const pass = newPass()
   if (letters.length < 2) return pass
   const change = (id: string): string | undefined => vaultNoteId(id, letters)
-  await rewriteFiles(await markdownFiles(root), change, (id) => formerLetters(id, letters), renamed, pass)
+  await rewriteFiles(root, await markdownFiles(root), () => change, (id) => formerLetters(id, letters), renamed, pass)
   return pass
 }
 
@@ -129,10 +157,10 @@ function formerLetters(id: string, letters: readonly string[]): string[] {
  * What Settings shows about a vault's IDs (`IdsState`), from the index in memory. `stale` counts a
  * file when its own ID, an ID it names, or its built file name still has letters the vault had before.
  */
-export function idsStateOf(records: Iterable<IndexRecord>, letters: readonly string[]): IdsState {
+export function idsStateOf(records: Iterable<IndexRecord>, letters: readonly string[], unfinished: boolean): IdsState {
   const current = `${letters[0]}-`
   const before = (id: string | undefined): boolean => id !== undefined && isNumberId(id) && !id.startsWith(current) && vaultNoteId(id, letters) !== undefined
-  const state: IdsState = { letters: letters[0], notes: 0, stale: 0, old: 0 }
+  const state: IdsState = { letters: letters[0], notes: 0, stale: 0, old: 0, unfinished }
   for (const r of records) {
     const id = vaultNoteId(r.id, letters)
     if (id === undefined) continue
@@ -140,7 +168,7 @@ export function idsStateOf(records: Iterable<IndexRecord>, letters: readonly str
     else state.notes++
     if (letters.length < 2) continue
     const title = titleOf({ [TITLE_KEY]: r.properties[TITLE_KEY] }, '')
-    const named = !isFolderSettingsPath(r.path) && formerLetters(id, letters).some((was) => r.name === noteFileName(title, was))
+    const named = pathWithId(r.path, title, formerLetters(id, letters), id) !== undefined
     if (before(r.id) || named || namedIds(r).some(before)) state.stale++
   }
   return state
@@ -151,7 +179,8 @@ export function idsStateOf(records: Iterable<IndexRecord>, letters: readonly str
 /** The plan of a backfill (D6): each old ID to the number ID it takes, saved in the vault BEFORE any note is written. */
 export const BACKFILL_FILE = 'ids-backfill.json'
 
-const isOldId = (id: unknown): id is string => isNoteId(id) && !isNumberId(id)
+/** Is a plan in the vault at `root`: did a backfill stop with files left (`IndexResponse.unfinished`)? */
+export const planLeft = (root: string): Promise<boolean> => stat(path.join(root, VAULT_CONFIG_DIR, BACKFILL_FILE)).then((st) => st.isFile(), () => false)
 
 /** The plan in the vault, as far as it is one: an old ID to a number ID of this vault. Anything else is dropped. */
 async function readPlan(root: string, letters: readonly string[]): Promise<Map<string, string>> {
@@ -174,7 +203,7 @@ async function readPlan(root: string, letters: readonly string[]): Promise<Map<s
  * 🔒 THE PLAN (`BACKFILL_FILE`) is the map from each old ID to its number, on disk before any note
  * changes. A run that stopped is finished by the next with the SAME numbers: a note in the plan
  * takes the number of the plan, and only a note that is not in it is given a new one. The plan
- * goes when a run ends with no file left.
+ * goes when a run ends with no file left; while it is there, Settings shows the row "Old IDs" (`planLeft`).
  *
  * 🔒 A NOTE TAKES ITS ID FIRST, THEN ITS LINKS FOLLOW: part A writes each old note's own `id:` line
  * (and its name), part B each link, `also_in` entry and folder-value key of the vault. So an old ID
@@ -198,13 +227,11 @@ export async function backfill(root: string, records: Iterable<IndexRecord>, let
   if (plan.size === 0) return pass
   const former: Former = (id) => [...plan].filter(([, to]) => to === id).map(([old]) => old)
   // Part A, oldest first: the note's own ID. Its links wait for part B.
-  for (const r of olds) {
-    const id = r.id as string
-    await rewriteOne(r.path, new Map([[id, plan.get(id) as string]]), former, renamed, pass)
-  }
+  const idOf = new Map(olds.map((r) => [r.path, r.id as string]))
+  await rewriteFiles(root, [...idOf.keys()], (file) => new Map([[idOf.get(file) as string, plan.get(idOf.get(file) as string) as string]]), former, renamed, pass)
   // Part B: each file as it is named now. A file part A could not write is tried again here.
   pass.left = []
-  await rewriteFiles(await markdownFiles(root), plan, former, renamed, pass)
-  if (pass.left.length === 0) await rm(path.join(root, VAULT_CONFIG_DIR, BACKFILL_FILE), { force: true }).catch(() => undefined)
+  await rewriteFiles(root, await markdownFiles(root), () => plan, former, renamed, pass)
+  if (pass.left.length === 0 && !pass.stopped) await rm(path.join(root, VAULT_CONFIG_DIR, BACKFILL_FILE), { force: true }).catch(() => undefined)
   return pass
 }

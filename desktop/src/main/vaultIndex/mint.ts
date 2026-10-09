@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import path from 'node:path'
 import { IDS_FILE, idLettersOf, idsAnswer, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { BridgeFailure, atomicWrite } from '../fs/fsUtils'
+import { isRecord } from '@shared/guards'
+import { BridgeFailure, atomicWrite, createDurable, toBridgeFailure } from '../fs/fsUtils'
 import { userDataDir } from '../userData'
 import { scanAll } from './reconcile'
 import { walk } from './scan'
@@ -16,8 +17,8 @@ import { walk } from './scan'
  *
  * Each Mac keeps its own count file in the vault, `.yaseendocs/ids/<mac id>.json`, and only that
  * Mac writes it (R15): two Macs that sync the vault never change one file, so the sync cannot
- * conflict on a count. Two Macs CAN give one number before they sync; the sweep's keeper rule
- * settles that (`idSweep.ts`).
+ * conflict on a count. Two Macs CAN give one number before they sync; the clash rule settles that
+ * (`clash.ts`).
  *
  * One request at a time for a vault (R17), and the count is on disk BEFORE the ID is returned (R18):
  * a crash, or a create that fails, leaves a gap and never a number given two times.
@@ -140,7 +141,8 @@ async function readOrMakeMacId(dir: string): Promise<string> {
   const bytes = `${JSON.stringify({ id: fresh }, null, 2)}\n`
   await mkdir(dir, { recursive: true })
   try {
-    await writeFile(file, bytes, { flag: 'wx' })
+    // Durable (YAZ-2677 R15): a crash here must not leave a cut file, and so a second Mac ID for this Mac.
+    await createDurable(file, bytes)
     return fresh
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
@@ -162,24 +164,85 @@ export interface VaultIds {
   letters: string[]
   /** False while the letters are the default of the folder's name and not yet in the file (R11). */
   saved: boolean
-  /** The parsed file, for a write that keeps each key it does not change (R10); undefined when there is none to keep. */
-  config: Record<string, unknown> | undefined
 }
+
+const idsFile = (root: string): string => path.join(root, VAULT_CONFIG_DIR, IDS_FILE)
+
+/** The ONE read of `ids.json`: its parsed bytes; undefined for a file that is not there, and `malformed` for one that is not valid JSON. */
+async function readIds(root: string): Promise<{ config?: unknown; malformed?: true }> {
+  let raw: string
+  try {
+    raw = await readFile(idsFile(root), 'utf8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return {}
+    throw toBridgeFailure(err, idsFile(root))
+  }
+  try {
+    return { config: JSON.parse(raw) as unknown }
+  } catch {
+    return { malformed: true }
+  }
+}
+
+/** What a parsed `ids.json` says, for the vault at `root`. */
+const idsIn = (config: unknown, root: string): VaultIds => ({ answer: idsAnswer(config), ...idLettersOf(isRecord(config) ? config : undefined, path.basename(root)) })
 
 /** `root`'s answer and letters. A file that is missing, unreadable or not JSON has not answered, and holds no letters. */
 export async function vaultIds(root: string): Promise<VaultIds> {
-  const config: unknown = await readFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), 'utf8').then(
-    (raw) => {
-      try {
-        return JSON.parse(raw) as unknown
-      } catch {
-        return undefined
-      }
-    },
-    () => undefined,
-  )
-  const object = typeof config === 'object' && config !== null && !Array.isArray(config) ? (config as Record<string, unknown>) : undefined
-  return { answer: idsAnswer(config), ...idLettersOf(object, path.basename(root)), config: object }
+  return idsIn((await readIds(root).catch(() => ({ config: undefined }))).config, root)
+}
+
+/** One change of a vault's `ids.json` at a time in this process. */
+const changes = new Map<string, Promise<unknown>>()
+
+/**
+ * THE ONE WRITE OF `ids.json` (YAZ-2677 R10): the file of `root` is read, changed by `change` and
+ * written as ONE step, behind each change before it. So a save keeps each key it does not change,
+ * two saves at one moment each keep the other's, and `change` always sees the answer that is on
+ * disk NOW: a no that arrived a moment before is never written over. Undefined from `change`
+ * writes nothing. A file that is not valid JSON is never written over (`INVALID_CONFIG`).
+ *
+ * `write` is how the app writes a vault's config (`writeConfig`: its windows hear of it at once).
+ * The door, which the command uses too, writes the file itself.
+ */
+export function changeIds(
+  root: string,
+  change: (config: Record<string, unknown>) => Record<string, unknown> | undefined,
+  write: (config: Record<string, unknown>) => Promise<unknown> = async (config) => {
+    await mkdir(path.dirname(idsFile(root)), { recursive: true })
+    await atomicWrite(idsFile(root), `${JSON.stringify(config, null, 2)}\n`)
+  },
+): Promise<void> {
+  const step = async (): Promise<void> => {
+    const held = await readIds(root)
+    if (held.malformed === true) throw new BridgeFailure('INVALID_CONFIG', `${IDS_FILE} is not valid JSON`, { path: idsFile(root) })
+    const next = change(isRecord(held.config) ? held.config : {})
+    if (next !== undefined) await write(next)
+  }
+  const mine = (changes.get(root) ?? Promise.resolve()).then(step)
+  const tail = mine.catch(() => undefined)
+  changes.set(root, tail)
+  void tail.then(() => {
+    if (changes.get(root) === tail) changes.delete(root)
+  })
+  return mine
+}
+
+/**
+ * The default letters are saved when the first number is given (R11), each other key kept (R10).
+ * Resolves to what the file says after the step: a no, or letters, that arrived since the door read
+ * it stand as they are. Undefined when the file could not be read or written.
+ */
+async function saveDefaultLetters(root: string): Promise<VaultIds | undefined> {
+  let now: VaultIds | undefined
+  await changeIds(root, (config) => {
+    now = idsIn(config, root)
+    if (now.answer !== true || now.saved) return undefined
+    now.saved = true
+    return { ...config, letters: now.letters[0] }
+  }).catch(() => (now = undefined))
+  return now
 }
 
 /** The highest number among `notes`' IDs that are IDs of the vault with `letters` (R5); 0 when none is. An old ID has no number (S20). */
@@ -204,8 +267,8 @@ const scanned: Highest = async (root, letters) => {
 
 let highest: Highest = scanned
 
-/** The app's live index answers for the vault's notes from memory (`live.ts`): no file is read for a new number. */
-export function countNotesWith(ask: Highest): void {
+/** Who answers "what is the highest number in this vault?": the app's live index does, from memory (`live.ts`), so no file is read for a new number. */
+export function highestFrom(ask: Highest): void {
   highest = ask
 }
 
@@ -254,7 +317,7 @@ function madeWith(made: readonly Run[], run: Run, now: number): Run[] {
 }
 
 async function take(root: string, door: Door, count: number, floor: number | undefined): Promise<string[] | null> {
-  const ids = await vaultIds(root)
+  let ids = await vaultIds(root)
   if (ids.answer !== true) return null
   const dir = countDir(root)
   const own = `${await macId(root)}.json`
@@ -273,8 +336,15 @@ async function take(root: string, door: Door, count: number, floor: number | und
     // other wrote since the read above is read again before anything is written over it.
     const st = await stat(file).catch(() => null)
     if (attempt < RETRIES && (st?.mtimeMs !== mine?.mtimeMs || st?.size !== mine?.size)) continue
-    // The default letters are saved when the first number is given (R11), each other key kept (R10).
-    if (!ids.saved) await atomicWrite(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), `${JSON.stringify({ ...ids.config, letters: ids.letters[0] }, null, 2)}\n`)
+    if (!ids.saved) {
+      const now = await saveDefaultLetters(root)
+      // The vault said no since the read above (the user clicked Off): no number, and nothing more is written.
+      if (now?.answer !== true) return null
+      const same = now.letters[0] === ids.letters[0]
+      ids = now
+      // Other letters were saved meanwhile: the number is counted again, with them.
+      if (!same) continue
+    }
     await mkdir(dir, { recursive: true })
     const written = await atomicWrite(file, serialise(next))
     door.files.set(own, { mtimeMs: written.mtime, size: written.size, count: next })
@@ -286,7 +356,7 @@ async function take(root: string, door: Door, count: number, floor: number | und
  * The next `count` IDs of the vault at `root`, in order — null, and nothing written, where the
  * vault does not use IDs. All of them are saved with ONE write of this Mac's count file (R19)
  * before they are returned (R18). `floor` is the highest number among the vault's notes when the
- * caller already holds them (the sweep); else the index is asked (`countNotesWith`).
+ * caller already holds them (the sweep); else the index is asked (`highestFrom`).
  */
 export function mintIds(root: string, count: number, floor?: number): Promise<string[] | null> {
   return inTurn(root, (door) => take(root, door, count, floor))
@@ -344,9 +414,6 @@ export function countsOf(root: string): Promise<Counts> {
     return { me, files: new Map([...door.files].flatMap(([name, { count }]) => (count === null ? [] : [[name.slice(0, -'.json'.length), count] as const]))) }
   })
 }
-
-/** Each Mac's count file in the vault at `root`, by its Mac ID (`countsOf`). */
-export const readCounts = async (root: string): Promise<ReadonlyMap<string, CountFile>> => (await countsOf(root)).files
 
 /**
  * The vault's FIRST Mac (YAZ-2677 R33): the one whose count file is oldest (`since`), and of two

@@ -778,7 +778,7 @@ describe('sweepIds, wired into the live index', () => {
     expect(await readdir(root)).toEqual([VAULT_CONFIG_DIR])
   })
 
-  it('a folder renamed outside the app takes its `.folder.md` with it: the id it was given is not derived again from the new path', async () => {
+  it('a folder renamed outside the app takes its `.folder.md` with it: it is not given a second number', async () => {
     await mkdir(at('Before'))
     const ready = watcherReady()
     await getIndex(root)

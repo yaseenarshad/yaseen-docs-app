@@ -19,6 +19,8 @@ export interface IndexState {
   letters: readonly string[]
   /** What a yes would write, while the vault's answer is not yes (`IndexResponse.ask`). */
   ask: IndexResponse['ask']
+  /** A run of "Give old IDs numbers" stopped with files left (`IndexResponse.unfinished`). */
+  unfinished: boolean
   /** Fetch failure message; null unless `status` is 'error'. */
   error: string | null
   /** Refetch immediately, skipping the debounce. */
@@ -58,6 +60,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
   const [ids, setIds] = useState(false)
   const [letters, setLetters] = useState(NO_LETTERS)
   const [ask, setAsk] = useState<IndexResponse['ask']>()
+  const [unfinished, setUnfinished] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Bumped on every fetch and on unmount/root change: only the latest fetch may commit.
   const generation = useRef(0)
@@ -75,6 +78,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
         const next = res.letters ?? NO_LETTERS
         setLetters((prev) => (prev.length === next.length && prev.every((held, i) => held === next[i]) ? prev : next))
         setAsk(res.ask)
+        setUnfinished(res.unfinished === true)
         setStatus('ready')
         setError(null)
       },
@@ -93,6 +97,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     setIds(false)
     setLetters(NO_LETTERS)
     setAsk(undefined)
+    setUnfinished(false)
     setError(null)
     refresh()
     const unsubscribe = watch.subscribe((ev) => {
@@ -115,5 +120,5 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     }
   }, [root, watch, refresh])
 
-  return { status, records, folders, ids, letters, ask, error, refresh }
+  return { status, records, folders, ids, letters, ask, unfinished, error, refresh }
 }

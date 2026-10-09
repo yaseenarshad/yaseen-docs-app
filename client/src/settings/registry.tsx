@@ -21,7 +21,7 @@
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
@@ -29,7 +29,7 @@ import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
-import { IdLettersControl, OldIdsControl, TypedConfirmSheet } from './IdLettersControl'
+import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
@@ -44,11 +44,10 @@ export interface SettingsCtx {
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
-   * while the answer is not yes. `letters` reads the vault's ID letters out of its `ids.json` (none:
-   * it has none yet), and rejects where they cannot be read. `set` saves the answer, and with a yes
-   * the ID letters (YAZ-2677 🔒 D2). `check` settles the notes that share an ID now, and resolves to
+   * while the answer is not yes, with the ID letters the vault already has (none: it has none
+   * yet). `set` saves the answer, and with a yes the ID letters (YAZ-2677 🔒 D2). `check` settles the notes that share an ID now, and resolves to
    * the result in one line (🔒 D7, S55 to S57). `old`: how many notes and folders hold an old
-   * 12-character ID. `state` asks the main process for the letters and the counts; `reletter` is
+   * 12-character ID; `unfinished`: a run of "Give old IDs numbers" stopped with links left to change. `state` asks the main process for the letters and the counts; `reletter` is
    * "Change letters" and `backfill` "Give old IDs numbers" (🔒 D5, D6): each resolves, when the
    * change is done, to the state after it.
    */
@@ -56,10 +55,10 @@ export interface SettingsCtx {
     enabled: boolean
     held: boolean
     ask: IndexResponse['ask']
-    letters: () => Promise<string | undefined>
     set: (enabled: boolean, letters?: string) => void
     check: () => Promise<string>
     old: number
+    unfinished: boolean
     state: () => Promise<IdsState>
     reletter: (letters: string) => Promise<IdsState>
     backfill: () => Promise<IdsState>
@@ -161,33 +160,12 @@ function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNu
  * which ID another Mac must fix. Nothing runs until the click, and one check runs at a time.
  */
 function DuplicatesControl({ check }: { check: () => Promise<string> }) {
-  const [line, setLine] = useState('')
-  const [checking, setChecking] = useState(false)
-  // A check that ends after the dialog closed has no row to tell.
-  const shown = useRef(true)
-  useEffect(() => {
-    shown.current = true
-    return () => {
-      shown.current = false
-    }
-  }, [])
-  const run = (): void => {
-    if (checking) return
-    setChecking(true)
-    setLine('Checking…')
-    check()
-      .catch((err: unknown) => `Couldn't check: ${err instanceof Error ? err.message : String(err)}`)
-      .then((said) => {
-        if (!shown.current) return
-        setLine(said)
-        setChecking(false)
-      })
-  }
+  const { busy, line, run } = useRun()
   // The row is `wide`: the button keeps its own width, and the line under it has the row's width to wrap in.
   return (
     <>
       <div className="settings__options">
-        <button type="button" className="settings__option" disabled={checking} onClick={run}>
+        <button type="button" className="settings__option" disabled={busy} onClick={() => run('Checking…', () => check().catch((err: unknown) => `Couldn't check: ${said(err)}`))}>
           Check for duplicates
         </button>
       </div>
@@ -201,11 +179,11 @@ function DuplicatesControl({ check }: { check: () => Promise<string> }) {
 /**
  * The vault's IDs switch. Only a CHANGE writes: a click on the answer the row shows is nothing, and a
  * vault with no answer reads Off. On opens the box with the typed ID letters and writes nothing
- * before it is confirmed (YAZ-2677 🔒 D2); the vault's letters are read at the click. Off in a vault
+ * before it is confirmed (YAZ-2677 🔒 D2); the letters the vault already has come with the index (`ask.letters`). Off in a vault
  * whose notes hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
  */
 function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
-  const [asking, setAsking] = useState<'off' | { letters: string | undefined } | null>(null)
+  const [asking, setAsking] = useState<'off' | 'on' | null>(null)
   return (
     <>
       <Segmented
@@ -213,7 +191,7 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
         value={ids.enabled}
         onChange={(on) => {
           if (on === ids.enabled) return
-          if (on) ids.letters().then((letters) => setAsking({ letters }), () => undefined)
+          if (on) setAsking('on')
           else if (ids.held) setAsking('off')
           else ids.set(false)
         }}
@@ -232,11 +210,11 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking !== null && asking !== 'off' && (
+      {asking === 'on' && (
         <GiveIdsSheet
           ask={ids.ask ?? NOTHING_TO_WRITE}
           vault={vault}
-          letters={asking.letters}
+          letters={ids.ask?.letters}
           onConfirm={(letters) => {
             setAsking(null)
             ids.set(true, letters)
@@ -446,7 +424,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Notes from before numbers have an ID of 12 characters. It still works; this gives each one a number.',
             keywords: ['old', 'ids', 'numbers', 'backfill', 'migrate'],
             wide: true,
-            available: (ctx) => ctx.ids?.enabled === true && ctx.ids.old > 0,
+            available: (ctx) => ctx.ids?.enabled === true && (ctx.ids.old > 0 || ctx.ids.unfinished),
             render: ({ ids, vaultName }) => ids && <OldIdsControl ids={ids} vault={vaultName} />,
           },
         ],

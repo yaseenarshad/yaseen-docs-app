@@ -35,13 +35,13 @@ export interface WikilinkIndexBridgeProps {
    * consecutive snapshots — this component already sees them all, so no second `useIndex`
    * (which would double every fetch). Keep the identity stable (App's hook does). With it, the
    * snapshot's answer to "does this vault use IDs?" and what a yes would write (YAZ-2523 🔒 V5):
-   * the ONE place the window learns the vault's kind.
+   * the ONE place the window learns the vault's kind. `unfinished`: a run of "Give old IDs numbers" stopped (YAZ-2677 S90).
    */
-  onSnapshot?: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => void
+  onSnapshot?: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask'], unfinished: boolean) => void
 }
 
 export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly, onSnapshot }: WikilinkIndexBridgeProps) {
-  const { status, records, folders, ids, letters, ask } = useIndex(root, watch)
+  const { status, records, folders, ids, letters, ask, unfinished } = useIndex(root, watch)
   // The folders a link can name (YAZ-2290 D10) come off the window's one tree feed. Read as ONE
   // string, so a tree that moved no folder wakes no editor (YAZ-2196).
   const dirList = useSyncExternalStore(
@@ -82,8 +82,8 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
   }, [semantic, records, folders, ids, letters, source, candidates, viewOnly])
   // Its own effect: a folder list that moved re-feeds the sources above, and is no index snapshot.
   useEffect(() => {
-    if (ready) onSnapshot?.(records, folders, ids, ask)
-  }, [ready, records, folders, ids, ask, onSnapshot])
+    if (ready) onSnapshot?.(records, folders, ids, ask, unfinished)
+  }, [ready, records, folders, ids, ask, unfinished, onSnapshot])
   return viewOnly === undefined ? null : (
     <ViewOnlyCatalogBridge
       root={root}

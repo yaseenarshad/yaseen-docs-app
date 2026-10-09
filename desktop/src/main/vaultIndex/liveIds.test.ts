@@ -154,6 +154,13 @@ describe('a vault with no answer', () => {
     expect(await readConfig(root, IDS_FILE)).toEqual({ letters: 'YAZ', was: ['OLD'], enabled: true })
   })
 
+  it('an `ids.json` that is not valid JSON is not written over: the vault stays with no answer (YAZ-2679 decision 4)', async () => {
+    await vault({ 'a.md': '---\nid: YAZ-7\n---\n', [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": tr' })
+    expect((await getIndex(root)).ids).toBe(false)
+    await quiet()
+    expect(await read(VAULT_CONFIG_DIR, IDS_FILE)).toBe('{ "enabled": tr')
+  })
+
   it('every note holds an id but a folder has no settings file: a yes would write one, so the vault is asked and nothing is saved or written', async () => {
     await vault({ 'a.md': '---\nid: k3m9x2pq7abc\n---\n', 'Projects/b.md': '---\nid: p1a1n0000001\n---\n' })
     const before = await vaultFiles(root)
