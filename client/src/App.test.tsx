@@ -1438,6 +1438,29 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect([captured.startPage?.previewPath, el.querySelector('.quicklook')]).toEqual([null, null])
   })
 
+  it('the preview panel draws the file of the LAST one that asked (YAZ-2663 S39): the search names a file while the panel shows a row of the new tab page — the panel is the search\'s, and the page reads that its own is gone; the panel of the page writes nothing of the window (S5)', async () => {
+    const { bridge, el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitNewTab())
+    const writes = bridge.window.setIdentity.mock.calls.length
+    const drawn = () => [...el.querySelectorAll('.quicklook__title')].map((t) => t.textContent)
+    act(() => captured.startPage?.onPreview?.('/v/archive.zip'))
+    expect(drawn()).toEqual(['archive.zip'])
+    // ⌘K, a word, ↓ and Space: the search asks for its file. Its Esc then closes the panel.
+    act(() => captured.sidebar?.onPreview('/v/book.epub'))
+    expect(drawn()).toEqual(['book.epub'])
+    expect([captured.startPage?.previewPath, captured.sidebar?.previewPath]).toEqual([null, '/v/book.epub'])
+    act(() => captured.sidebar?.onPreview(null))
+    expect(drawn()).toEqual([])
+    // The other way: the page asks while the search holds a file. The panel is the page's until the page lets it go.
+    act(() => captured.sidebar?.onPreview('/v/book.epub'))
+    act(() => captured.startPage?.onPreview?.('/v/archive.zip'))
+    expect(drawn()).toEqual(['archive.zip'])
+    act(() => captured.startPage?.onPreview?.(null))
+    expect(drawn()).toEqual(['book.epub'])
+    // S5: a panel is no page on show. Nothing went to the window identity, so the record got no use.
+    expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
+  })
+
   it('a right-click on a row of the new tab page asks the sidebar for its row menu of that path at the mouse; the sidebar shows first when it is hidden, and a consumed request does not replay (YAZ-2663 S27, S31)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' })
     expect(el.querySelector('[data-sidebar]')).toBeNull()

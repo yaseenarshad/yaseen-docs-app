@@ -138,6 +138,11 @@ export function App() {
   // follows its own highlight, and with one shared path it takes the panel back from the page.
   const [pagePreviewPath, setPagePreviewPath] = useState<string | null>(null)
   const panelPath = pagePreviewPath ?? previewPath
+  // The panel draws the file of the LAST one that asked: when the search names a file — ⌘K from a
+  // row of the page, a word, Space — the path of the page goes, and the page reads that its panel is gone.
+  useEffect(() => {
+    if (previewPath !== null) setPagePreviewPath(null)
+  }, [previewPath])
   const closePanel = useCallback(() => {
     setPreviewPath(null)
     setPagePreviewPath(null)

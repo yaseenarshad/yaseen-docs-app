@@ -8,8 +8,8 @@
  *   - each vault's favorites, read one time and again on `favorites.onChanged`;
  *   - what is on the disk, and whether it is a file or a folder, off the window's one tree feed.
  */
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent } from 'react'
-import { rootOfPath, stripSlash, type TreeNode } from '@shared/types'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
+import { rootOfPath, stripSlash, type OpenStat, type TreeNode } from '@shared/types'
 import { api } from '../api'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
@@ -24,7 +24,7 @@ import { suggestFavorites } from './suggestFavorites'
 import './startPage.css'
 
 /** "Recent" and "Favorites" show this many rows at most (YAZ-2663 D3). */
-export const START_ROWS = 8
+const START_ROWS = 8
 
 /** The columns in their order, each with the one grey line it shows when it has no rows (S19). */
 const COLUMNS = [
@@ -33,10 +33,24 @@ const COLUMNS = [
   { col: 'suggested', label: 'Used a lot, not a favorite yet', empty: 'Nothing to suggest now.' },
 ] as const
 
-/** A row: a path the Files tree holds, as its node there. `last` is when it was last on show ("Recent" alone says it). */
+/** What the page reads of the app state for one vault of the window (R1): what the app calls the vault, and its open history. */
+interface VaultRecord {
+  root: string
+  name: string
+  opens: Readonly<Record<string, OpenStat>>
+}
+
+/** `a` and `b` read the same. Each broadcast of the app state is a new copy of it all, so only what a record HOLDS says that it changed. */
+function sameRecord(a: VaultRecord, b: VaultRecord): boolean {
+  const paths = Object.keys(a.opens)
+  return a.root === b.root && a.name === b.name && paths.length === Object.keys(b.opens).length && paths.every((path) => path in b.opens && b.opens[path].last === a.opens[path].last && b.opens[path].score === a.opens[path].score)
+}
+
+/** A row: a path the Files tree holds, as its node there, and the vault that holds it. `last` is when it was last on show ("Recent" alone says it). */
 interface Row {
   path: string
   node: TreeNode
+  vault: VaultRecord
   last?: number
 }
 
@@ -46,7 +60,7 @@ export interface StartPageProps {
   titles: PathTitles
   /** A click on a file (S21): App opens it as a sidebar click does, so it fills the blank tab. */
   onOpen: (path: string) => void
-  /** ⌘-click on a file (S21): a background tab, and the page stays. */
+  /** ⌘-click and ⌘Enter (S21, S38): a background tab — of a folder's page too, as on a search row (YAZ-2662 S3) — and the page stays. */
   onOpenBackground: (path: string) => void
   /** A click or Enter on a folder (S22), and Shift+Enter on any row (S38): App shows the row in Files — a folder open — with the keyboard focus on it. */
   onShowInFiles: (path: string) => void
@@ -81,9 +95,16 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     for (const vault of roots) fetchTree(vault).catch(() => undefined) // a vault whose folder is gone is App's to drop
   }, [roots])
   // The record, the Favorites order across vaults (YAZ-2631 D1) and the names of the vaults are in
-  // the app state (R1): a use that the main process adds, in any window, draws the page again.
-  const [, redraw] = useReducer((n: number) => n + 1, 0)
-  useEffect(() => storage.subscribe(redraw), [])
+  // the app state (R1): a use that the main process adds, in any window, draws the page again. A
+  // broadcast that changes nothing the page reads does not: the records are the same list until one
+  // of them holds a different use or name (`useLatestTrees`' idiom), and `storage` keeps the order.
+  const held = useRef<readonly VaultRecord[]>([])
+  const records = useSyncExternalStore(storage.subscribe, () => {
+    const next = roots.map((vault) => ({ root: vault, name: storage.vaultName(vault), opens: storage.getOpens(vault) }))
+    if (next.length !== held.current.length || next.some((record, at) => !sameRecord(record, held.current[at]))) held.current = next
+    return held.current
+  })
+  const favoritesOrder = useSyncExternalStore(storage.subscribe, storage.getFavoritesOrder)
   // Each vault's favorites (R1), as the sidebar reads them (`useVaultTree`): one read when the page
   // shows, and one more on each `favorites:changed` for a vault of the window.
   const [favoritesByRoot, setFavoritesByRoot] = useState<Readonly<Record<string, readonly string[]>>>({})
@@ -106,34 +127,32 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
   }, [roots])
 
-  const now = Date.now()
-  const many = roots.length > 1
-  /** `path` as the tree of its vault holds it; null when that tree has not landed, or does not hold it. */
-  const nodeOf = (path: string): TreeNode | null => {
-    const tree = trees[roots.indexOf(rootOfPath(roots, path) ?? '')]
-    return tree == null ? null : findNode(tree.tree, path)
-  }
-  const rowsOf = (list: readonly { path: string; last?: number }[]): Row[] =>
-    list.flatMap(({ path, last }) => {
-      const node = nodeOf(path)
-      return node === null ? [] : [{ path, node, last }]
-    })
-  // A column says it is empty only when what it reads has answered: no line for a list nobody has read yet.
-  const treesLanded = trees.every((tree) => tree !== null)
-  const favoritesRead = treesLanded && roots.every((vault) => favoritesByRoot[vault] !== undefined)
-  const records = roots.map((vault) => ({ root: vault, opens: storage.getOpens(vault) }))
-  const favoritePaths = favoriteOrder(roots, favoritesByRoot, storage.getFavoritesOrder())
-  const columns: Record<(typeof COLUMNS)[number]['col'], { rows: Row[]; read: boolean }> = {
-    // S12: the pages last on show, the newest first, of every vault.
-    recent: {
-      rows: rowsOf(records.flatMap(({ opens }) => Object.entries(opens).map(([path, stat]) => ({ path, last: stat.last }))).sort((a, b) => b.last - a.last)).slice(0, START_ROWS),
-      read: treesLanded,
-    },
-    // S13: the order of the Favorites tab; a favorite with no file on this machine draws no row there either (YAZ-1766 D14).
-    favorites: { rows: rowsOf(favoritePaths.map((path) => ({ path }))).slice(0, START_ROWS), read: favoritesRead },
-    // S14 to S17. Until every list of favorites is read, a favorite would show here as a suggestion.
-    suggested: { rows: favoritesRead ? rowsOf(suggestFavorites(records, favoritePaths, now, (path) => nodeOf(path)?.type ?? null)) : [], read: favoritesRead },
-  }
+  // The columns are cut when what they read changes (R5), not on each render: App renders on each
+  // broadcast of the app state, on each resize of the window and through a drag of the sidebar edge.
+  const columns = useMemo((): Record<(typeof COLUMNS)[number]['col'], { rows: Row[]; read: boolean }> => {
+    /** `path` as the tree of its vault holds it; no row when that tree has not landed, or does not hold it. */
+    const rowsOf = (list: readonly { path: string; last?: number }[]): Row[] =>
+      list.flatMap(({ path, last }) => {
+        const at = roots.indexOf(rootOfPath(roots, path) ?? '')
+        const node = trees[at] == null ? null : findNode(trees[at].tree, path)
+        return node === null ? [] : [{ path, node, vault: records[at], last }]
+      })
+    // A column says it is empty only when what it reads has answered: no line for a list nobody has read yet.
+    const treesLanded = trees.every((tree) => tree !== null)
+    const favoritesRead = treesLanded && roots.every((vault) => favoritesByRoot[vault] !== undefined)
+    const favoritePaths = favoriteOrder(roots, favoritesByRoot, favoritesOrder)
+    return {
+      // S12: the pages last on show, the newest first, of every vault.
+      recent: {
+        rows: rowsOf(records.flatMap(({ opens }) => Object.entries(opens).map(([path, stat]) => ({ path, last: stat.last }))).sort((a, b) => b.last - a.last)).slice(0, START_ROWS),
+        read: treesLanded,
+      },
+      // S13: the order of the Favorites tab; a favorite with no file on this machine draws no row there either (YAZ-1766 D14).
+      favorites: { rows: rowsOf(favoritePaths.map((path) => ({ path }))).slice(0, START_ROWS), read: favoritesRead },
+      // S14 to S17. Until every list of favorites is read, a favorite would show here as a suggestion.
+      suggested: { rows: favoritesRead ? rowsOf(suggestFavorites(records, favoritePaths, Date.now(), (path) => rowsOf([{ path }])[0]?.node.type ?? null)) : [], read: favoritesRead },
+    }
+  }, [roots, trees, records, favoritesByRoot, favoritesOrder])
 
   // The preview panel (S39), as the search drives it (YAZ-2662 D5): "a panel is on show" is
   // `previewPath`, App's alone, so the keys here and the ✕ there cannot disagree. `parked` is what
@@ -185,10 +204,12 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
   // The page goes while the keyboard is on one of its rows — Enter opened the row, or a different
   // tab shows. The focus would be on nothing, so the caret goes into the page on show, as off the
   // tab board (YAZ-2648). A page that mounts for the first time takes the caret by itself.
+  // In the tab stack alone: with no text on show there (a PDF), a note of the right panel does not get the caret.
   useLayoutEffect(() => {
     const el = page.current
     return () => {
-      if (el?.contains(document.activeElement) === true) queueMicrotask(focusOpenDocument)
+      const stack = el?.closest('.tabstack') ?? undefined
+      if (el?.contains(document.activeElement) === true) queueMicrotask(() => focusOpenDocument(stack))
     }
   }, [])
 
@@ -223,6 +244,9 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
     // The columns that have rows, in their order: ← and → go over a column with none (S36).
     const shown = COLUMNS.map((column) => column.col).filter((column) => columns[column].rows.length > 0)
+    // A held Enter or Space acts ONE time, as on a search row (YAZ-2669): a repeat of the press is
+    // taken and does nothing, so no panel shows and closes, and no default app opens, at the rate of the key.
+    if (e.repeat && (e.key === 'Enter' || e.key === ' ')) return e.preventDefault()
     if (e.key === 'Enter') {
       // The keys of a search row (YAZ-2662 D8): Shift+Enter shows the row in Files, and ⌘ is read before Shift (S7).
       if (e.shiftKey && !e.metaKey) {
@@ -265,6 +289,8 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     e.preventDefault()
   }
 
+  // "How long ago" is from this draw: the page has no timer.
+  const now = Date.now()
   return (
     <div ref={page} className="start" onKeyDown={onKeys}>
       <div className="start__columns">
@@ -276,19 +302,19 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
             ) : (
               <ul className="start__rows">
                 {columns[col].rows.map((row, at) => {
-                  const vault = rootOfPath(roots, row.path) ?? roots[0]
+                  const vault = row.vault.root
                   const folder = row.node.type === 'dir'
                   const dir = dirname(row.path)
                   return (
                     <li key={row.path}>
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} data-path={row.path} data-col={col} data-row={at} data-kind={row.node.type} title={row.path} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} data-path={row.path} data-col={col} data-row={at} title={row.path} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
                         {folder && <span className="tree__chevron" />}
                         <span className="start__name">{pageLabel(row.path, folder, titles)}</span>
                         {/* The folder the row is in, as the tab board names it; a row at the top of its vault names none. */}
                         {dir !== stripSlash(vault) && <span className="start__where">{relTo(vault, dir).split('/').join(' / ')}</span>}
                         {/* S20: the tag of a top row of the Favorites tab (YAZ-2631 D4), by what the app calls the vault. */}
-                        {many && <span className="tree__vault">{storage.vaultName(vault)}</span>}
+                        {roots.length > 1 && <span className="tree__vault">{row.vault.name}</span>}
                         {row.last !== undefined && <span className="start__when">{relativeTime(row.last, now)}</span>}
                       </button>
                     </li>
