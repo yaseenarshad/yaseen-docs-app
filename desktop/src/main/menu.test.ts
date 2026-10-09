@@ -24,6 +24,7 @@ const noopHandlers = (): MenuHandlers => ({
   zoom: vi.fn(),
   nextTab: vi.fn(),
   prevTab: vi.fn(),
+  tabOverview: vi.fn(),
   toggleSidebar: vi.fn(),
   openHelp: vi.fn(),
 })
@@ -181,6 +182,7 @@ describe('buildMenuTemplate', () => {
       'menu.window.prev-tab',
       'menu.window.next-tab-alt',
       'menu.window.prev-tab-alt',
+      'menu.window.tab-overview',
       'separator',
       'front',
     ])
@@ -217,6 +219,12 @@ describe('buildMenuTemplate', () => {
     expect(prevAlt?.acceleratorWorksWhenHidden).toBe(true)
     click(prevAlt)
     expect(handlers.prevTab).toHaveBeenCalledTimes(2)
+
+    // The tab overview (YAZ-2648 D5) stands beside them: one visible item, ⌘⇧A.
+    const overview = byId('menu.window.tab-overview')
+    expect([overview?.label, overview?.accelerator, overview?.visible]).toEqual(['Tab Overview', 'CmdOrCtrl+Shift+A', undefined])
+    click(overview)
+    expect(handlers.tabOverview).toHaveBeenCalledTimes(1)
   })
 
   it('Window menu lists the numbered vaults above front (YAZ-2555 D3, S32): one row each, by name, ⌘<its number>, then one separator; a click hands the path and the name to goToVault; a `&` in a label is written `&&`', () => {
@@ -227,7 +235,7 @@ describe('buildMenuTemplate', () => {
     ]
     const items = menuOf(build(RECENTS, false, handlers, keyed), 'Window')
     // The rows stand in the order they were given (number order is `menuKeyedVaults`' job).
-    expect(items.slice(items.findIndex((i) => i.id === 'menu.window.prev-tab-alt') + 1).map((i) => [i.role ?? i.id ?? i.type, i.label, i.accelerator])).toEqual([
+    expect(items.slice(items.findIndex((i) => i.id === 'menu.window.tab-overview') + 1).map((i) => [i.role ?? i.id ?? i.type, i.label, i.accelerator])).toEqual([
       ['separator', undefined, undefined],
       ['menu.window.vault.2', 'Work', 'CmdOrCtrl+2'],
       ['menu.window.vault.9', 'notes', 'CmdOrCtrl+9'],
@@ -535,13 +543,16 @@ describe('createMenuHandlers', () => {
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNextTab.channel)
     handlers.prevTab()
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onPrevTab.channel)
-    expect(wc.send).toHaveBeenCalledTimes(3)
+    handlers.tabOverview()
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onTabOverview.channel)
+    expect(wc.send).toHaveBeenCalledTimes(4)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => {
       unfocused.closeTab()
       unfocused.nextTab()
       unfocused.prevTab()
+      unfocused.tabOverview()
     }).not.toThrow()
   })
 

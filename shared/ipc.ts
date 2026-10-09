@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -37,6 +37,8 @@ const push = <T = void>(channel: string): Push<T> => ({ kind: 'push', channel })
 export const CONTRACT = {
   tree: invoke<[root: string], TreeResponse>('fs:tree', 1),
   readFile: invoke<[path: string], FileResponse>('fs:read', 1),
+  /** The top of each note in `paths`, in their order (YAZ-2648 D6): only the head is read off disk, never the file. `null` for a path that is no note or could not be read; one never fails the rest. */
+  readHeads: invoke<[paths: readonly string[]], (FileHead | null)[]>('fs:read-heads', 1),
   readPdf: invoke<[path: string], PdfResponse>('fs:read-pdf', 1),
   readImage: invoke<[path: string], ImageResponse>('fs:read-image', 1),
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
@@ -118,6 +120,8 @@ export const CONTRACT = {
     onNextTab: push('menu:next-tab'),
     /** Window › Previous Tab (⌃⇧Tab / ⌘⇧[): activate the tab to the left (GRO-2232). */
     onPrevTab: push('menu:prev-tab'),
+    /** Window › Tab Overview (⌘⇧A): show every open tab of the window at once, or go back to the page (YAZ-2648 D5). */
+    onTabOverview: push('menu:tab-overview'),
   },
   /** Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes it to the best window. */
   link: {

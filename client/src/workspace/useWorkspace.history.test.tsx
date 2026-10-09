@@ -11,8 +11,9 @@ const B = '/v/b.md'
 const C = '/v/c.md'
 const D = '/v/d.md'
 
-const nav = (s: TabsState, path: string): TabsState => tabsReducer(s, { type: 'open-current', path })
-const fresh = (): TabsState => nav({ tabs: [], active: null, mounted: [], history: {} }, A)
+// Same-tab navigation is a link inside a page (`navigate`, YAZ-2648 D3): the sidebar's click goes to the preview tab.
+const nav = (s: TabsState, path: string): TabsState => tabsReducer(s, { type: 'navigate', path })
+const fresh = (): TabsState => nav({ tabs: [], active: null, mounted: [], history: {}, preview: null }, A)
 /** A → B → C in one tab. */
 const abc = (): TabsState => nav(nav(fresh(), B), C)
 
@@ -67,9 +68,9 @@ describe('back / forward', () => {
   })
 
   it('with no active tab or no record, back and forward are no-ops', () => {
-    const empty: TabsState = { tabs: [], active: null, mounted: [], history: {} }
+    const empty: TabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null }
     expect(tabsReducer(empty, { type: 'back' })).toBe(empty)
-    const noRecord: TabsState = { tabs: [A], active: A, mounted: [A], history: {} }
+    const noRecord: TabsState = { tabs: [A], active: A, mounted: [A], history: {}, preview: null }
     expect(tabsReducer(noRecord, { type: 'forward' })).toBe(noRecord)
   })
 

@@ -177,6 +177,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     width: 260,
     activeFile: null,
     onOpenFile: vi.fn(),
+    onKeepFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
     // A search row's tree-drawing menu items (🔒 D2, YAZ-2050): App flips to Files and issues the reveal request.
     onRevealInFiles: vi.fn(),
@@ -396,7 +397,7 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a double click on a FOLDER row opens the folder itself as a tab; a single click still only selects and folds (YAZ-2290 D3)', async () => {
+  it('a double click on a FOLDER row opens the folder itself as a KEPT tab (YAZ-2648 D2); a single click still only selects and folds (YAZ-2290 D3)', async () => {
     const { props, el } = await mount()
     const row = el.querySelector<HTMLButtonElement>('.tree__row--dir')!
     const open = row.parentElement!.getAttribute('aria-expanded')
@@ -405,8 +406,22 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(row.className).toContain('tree__row--selected')
     expect(row.parentElement!.getAttribute('aria-expanded')).not.toBe(open)
     act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('a double click on a FILE row keeps the tab its first click previewed (YAZ-2648 D2); with shift or ⌘ it keeps nothing', async () => {
+    const { props, el } = await mount()
+    const row = fileRow(el)!
+    act(() => row.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onKeepFile).not.toHaveBeenCalled()
+    act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, shiftKey: true })))
+    act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, metaKey: true })))
+    expect(props.onKeepFile).toHaveBeenCalledTimes(1)
   })
 
   it('the folder row menu LEADS with "Open", which opens the folder as a tab; a file row and blank space have no such item (YAZ-2290 D3)', async () => {
@@ -414,7 +429,9 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el)[0]?.textContent).toBe('Open')
     act(() => itemByLabel(el, 'Open')?.click())
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    // As the row's double click opens it: a kept tab (YAZ-2648 D2).
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(el.querySelector('.ctx-menu')).toBeNull()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Open')).toBeUndefined()
@@ -1517,7 +1534,7 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(cursor(el)).toEqual(['Plans'])
     expect(props.onOpenFile).toHaveBeenCalledTimes(1)
     act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Plans`)
+    expect(props.onKeepFile).toHaveBeenLastCalledWith(`${v}/Plans`)
     // S28: a row inside an opened folder is no match — it opens as a tree row does, and the highlight stays.
     await type(input, 'archive')
     click(row(el, `${v}/Archive`))
@@ -2375,7 +2392,8 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
     act(() => void dirResult(el)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 

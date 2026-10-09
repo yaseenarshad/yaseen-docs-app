@@ -252,6 +252,21 @@ export interface FileResponse {
   size: number
 }
 
+// ---------- readHeads(paths) (YAZ-2648 D6) ----------
+
+/** How many bytes of a note `readHeads` reads off disk: room for the frontmatter block and the head under it. */
+export const HEAD_READ_BYTES = 8192
+/** How much of a note's body `readHeads` answers with, in UTF-16 units: the first lines of a tab overview card. */
+export const HEAD_CHARS = 600
+
+/** The top of one note, for the tab overview's card (YAZ-2648 D6). */
+export interface FileHead {
+  path: string
+  mtime: number
+  /** The first `HEAD_CHARS` of the body, the frontmatter block off; '' when the block alone fills the bytes read. */
+  text: string
+}
+
 /** Dedicated binary response for the native PDF viewer; never base64-encoded or sent through `readFile`. */
 export interface PdfResponse {
   path: string

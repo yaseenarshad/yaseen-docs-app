@@ -70,7 +70,10 @@ interface SidebarProps {
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
   asideRef?: Ref<HTMLElement>
   activeFile: string | null
+  /** A click on a row, Enter on a search match: App passes the workspace's openCurrent — the page opens in the preview tab (YAZ-2648 D1). */
   onOpenFile: (path: string) => void
+  /** A double click on a row (YAZ-2648 D2): App passes the workspace's openKept. */
+  onKeepFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
   /**
@@ -356,6 +359,7 @@ export function Sidebar({
   onReorderVaults,
   activeFile,
   onOpenFile,
+  onKeepFile,
   onOpenFileBackground,
   onRevealInFiles,
   onPickFolder,
@@ -770,6 +774,7 @@ export function Sidebar({
     activeFile,
     onToggle: toggleDir,
     onOpenFile,
+    onKeepFile,
     onOpenFileBackground,
     onOpenDefault: openDefault,
     onNodeContextMenu: openRowMenu,
@@ -1027,7 +1032,7 @@ export function Sidebar({
           sections={buildMenuSections(
             { ...menu, clip },
             {
-              onOpen: onOpenFile,
+              onOpen: onKeepFile,
               onOpenInNewTabs: openFilesInTabs,
               onShowInSidebar: onRevealInFiles,
               onOpenNewWindow: openFileNewWindow,

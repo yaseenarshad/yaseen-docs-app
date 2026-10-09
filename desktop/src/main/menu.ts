@@ -37,6 +37,8 @@ export interface MenuHandlers {
   nextTab(): void
   /** Window › Previous Tab (⌃⇧Tab / ⌘⇧[, GRO-2232): the focused window's renderer activates the tab to the left. */
   prevTab(): void
+  /** Window › Tab Overview (⌘⇧A, YAZ-2648 D5): the focused window's renderer shows every open tab at once, or goes back to the page. */
+  tabOverview(): void
   /** View › Toggle Sidebar: ask only the focused renderer to toggle its window identity. */
   toggleSidebar(): void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note or the app (YAZ-1710). */
@@ -144,6 +146,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev }: MenuInputs, h
         { id: 'menu.window.prev-tab', label: 'Previous Tab', accelerator: 'Control+Shift+Tab', click: () => handlers.prevTab() },
         { id: 'menu.window.next-tab-alt', label: 'Next Tab', accelerator: 'CmdOrCtrl+Shift+]', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.nextTab() },
         { id: 'menu.window.prev-tab-alt', label: 'Previous Tab', accelerator: 'CmdOrCtrl+Shift+[', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.prevTab() },
+        // The tab overview (YAZ-2648 D5): the same key opens it and closes it.
+        { id: 'menu.window.tab-overview', label: 'Tab Overview', accelerator: 'CmdOrCtrl+Shift+A', click: () => handlers.tabOverview() },
         { type: 'separator' },
         // The numbered vaults (YAZ-2555 D3): one row each, ⌘<its number>. The MENU owns the key, so
         // it answers from any window, with the caret anywhere, and with every window minimized.
@@ -324,6 +328,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
     },
     prevTab() {
       host.focusedWebContents()?.send(CONTRACT.menu.onPrevTab.channel)
+    },
+    tabOverview() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onTabOverview.channel)
     },
     toggleSidebar() {
       host.focusedWebContents()?.send(CONTRACT.menu.onToggleSidebar.channel)
