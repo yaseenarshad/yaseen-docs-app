@@ -4,7 +4,7 @@
 
 - A `<br>` at the end of a line, or on a line of its own, is one line break. The paragraph does not split after a save, and no backslash shows in the text.
 - The editor never changes the text of code when it loads or saves a note.
-- Done: the gates are green, the pull request is open, Yasin's hand walk passed, the work is on `main`.
+- Done: the gates are green and the work is on `main` since `d54760a`. Yasin did not need a hand walk.
 
 ## Constraints
 
@@ -36,8 +36,10 @@
   - [x] YAZ-2659: 1- A `<br>` beside a line ending is one line break (B1 to B12)
   - [x] YAZ-2660: 2- The editor's text rules never change code (C1 to C13, one strong round-trip test)
   - [x] The audit, inside each issue
-- Now: [→] The pull request is open. Yasin's hand walk is next (`docs/REGRESSION.md`, "E29–E30").
-- Next: the merge, after Yasin says the hand walk passed.
+  - [x] Merged by #102 as `d54760a`; CI on the pull request was green, the size gate too. Yasin did not need a hand walk.
+  - [x] Closeout: the handoff is on YAZ-2649 and on each subissue; the three issues are Done; the pull request is attached to YAZ-2649
+- Now: closed. No release holds this work yet.
+- Next: YAZ-2661 (the link index and a rename read a fence under a nested bullet as text), when Yasin asks for it. It is not scoped.
 
 ## Decisions made during the build
 
