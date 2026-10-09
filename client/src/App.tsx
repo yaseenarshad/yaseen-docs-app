@@ -35,6 +35,7 @@ import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
+import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
@@ -129,6 +130,18 @@ export function App() {
   // The row menu a row of the new tab page asked for (YAZ-2663 D6): the reveal request's idiom.
   const sidebarMenuId = useRef(0)
   const [sidebarMenuRequest, setSidebarMenuRequest] = useState<SidebarMenuRequest | null>(null)
+  // The preview panel of the search (YAZ-2662 D5): the file that it draws over the page area, or
+  // null with no panel on show. It is no tab — the preview TAB is the workspace's `preview` — and
+  // nothing of it is stored. The sidebar names the file and reads it back; the panel's ✕ clears it.
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
+  // The same panel for a row of the new tab page (YAZ-2663 S39), on a path of its own: the search
+  // follows its own highlight, and with one shared path it takes the panel back from the page.
+  const [pagePreviewPath, setPagePreviewPath] = useState<string | null>(null)
+  const panelPath = pagePreviewPath ?? previewPath
+  const closePanel = useCallback(() => {
+    setPreviewPath(null)
+    setPagePreviewPath(null)
+  }, [])
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
@@ -1183,6 +1196,8 @@ export function App() {
           onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
+          previewPath={previewPath}
+          onPreview={setPreviewPath}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
@@ -1275,7 +1290,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBackToSearch={openSearch} focusRef={startPageFocus} onNotice={notify} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
@@ -1335,6 +1350,8 @@ export function App() {
                 onSetReview={setReview}
               />
             )}
+            {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
+            {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} onClose={closePanel} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>

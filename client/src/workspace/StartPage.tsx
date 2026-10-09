@@ -19,14 +19,12 @@ import { relativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { favoriteOrder, findNode } from '../lib/treeState'
+import { PREVIEW_FOLLOW_MS } from '../sidebar/hooks/useSidebarSearch'
 import { suggestFavorites } from './suggestFavorites'
 import './startPage.css'
 
 /** "Recent" and "Favorites" show this many rows at most (YAZ-2663 D3). */
 export const START_ROWS = 8
-
-/** With the preview on, the panel follows the keyboard focus this long after its LAST move: the wait of the search (YAZ-2662 S32). */
-export const PREVIEW_FOLLOW_MS = 120
 
 /** The columns in their order, each with the one grey line it shows when it has no rows (S19). */
 const COLUMNS = [
