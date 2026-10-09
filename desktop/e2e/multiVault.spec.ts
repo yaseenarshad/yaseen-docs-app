@@ -122,7 +122,7 @@ function oneVaultState(): AppState {
     { path: vaultA, lastOpened: now },
     { path: vaultB, lastOpened: now - 60_000 },
   ]
-  state.folders[vaultB] = { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null }
+  state.folders[vaultB] = { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null }
   return state
 }
 

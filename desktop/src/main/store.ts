@@ -10,6 +10,7 @@ import {
   MAX_FAVORITES_ORDER,
   MAX_FOCUS,
   MAX_FOLD_KEYS_PER_FILE,
+  MAX_OPENS,
   MAX_RECENT_ROOTS,
   MAX_VAULT_SETS,
   NEW_NOTE_LOCATIONS,
@@ -22,6 +23,7 @@ import {
   STARTUP_WINDOWS,
   THEMES,
   THREAD_WIDTHS,
+  addOpen,
   addRecentRoot,
   cleanVaultKey,
   cleanVaultName,
@@ -33,6 +35,7 @@ import {
   isValidNewNoteFolder,
   mergeFavoritesOrder,
   normalizeRoots,
+  rootOfPath,
   stripSlash,
   type AppState,
   type CommentsOrder,
@@ -40,6 +43,7 @@ import {
   type FolderPatch,
   type FolderState,
   type NewNoteLocation,
+  type OpenStat,
   type RecentRoots,
   type RightPanelIdentity,
   type SettingsState,
@@ -71,8 +75,13 @@ export interface Store {
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
-  /** `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`). */
-  upsertWindow(entry: Omit<WindowEntry, 'rightPanel' | 'roots'> & Partial<Pick<WindowEntry, 'rightPanel' | 'roots'>>): void
+  /**
+   * `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`).
+   * `opened` is the page that just came on show in the window (YAZ-2663 D1): the SAME commit adds one
+   * use of it to the open history of the vault of the entry that holds it (R2). A page that none of
+   * its vaults holds adds nothing.
+   */
+  upsertWindow(entry: Omit<WindowEntry, 'rightPanel' | 'roots'> & Partial<Pick<WindowEntry, 'rightPanel' | 'roots'>>, opened?: string | null, now?: number): void
   /** Several ids go in one commit (YAZ-2589 D3: the windows a launch does not bring back). */
   removeWindow(...ids: string[]): void
   /**
@@ -80,7 +89,7 @@ export interface Store {
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its focus
    * list `focusList` (YAZ-1628, YAZ-2619), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
-   * baseGroups keys (`<basePath>::<view>`), the vaults of each saved set (YAZ-2602 S71), and the
+   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8), the vaults of each saved set (YAZ-2602 S71), and the
    * Favorites order across vaults (YAZ-2631 R6).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
@@ -95,7 +104,7 @@ export interface Store {
    * deleted tabs are dropped as are its `focusList` entries
    * (YAZ-1628, YAZ-2619), `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
-   * (`<basePath>::<view>`) go too. A saved set loses the vault, and a set with fewer than two
+   * (`<basePath>::<view>`) / open history entries (YAZ-2663 S8) go too. A saved set loses the vault, and a set with fewer than two
    * vaults left is removed (YAZ-2602 S71). The Favorites order across vaults loses the entry (YAZ-2631 R6).
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
@@ -242,6 +251,16 @@ function sanitizeKeyLists(raw: unknown, cap: number): Record<string, string[]> {
   return out
 }
 
+/** The open history (YAZ-2663 D1, S9): page → its use. A wrong entry drops alone — a path that is not absolute, or a use without a score above 0 and a time — and the record is cut at MAX_OPENS. */
+function sanitizeOpens(raw: unknown): Record<string, OpenStat> {
+  if (!isRecord(raw)) return {}
+  const out: Array<[string, OpenStat]> = []
+  for (const [file, stat] of Object.entries(raw)) {
+    if (isAbsolute(file) && isRecord(stat) && isFiniteNumber(stat.score) && stat.score > 0 && isFiniteNumber(stat.last)) out.push([file, { score: stat.score, last: stat.last }])
+  }
+  return Object.fromEntries(out.slice(0, MAX_OPENS))
+}
+
 function sanitizeFolder(raw: unknown): FolderState | null {
   if (!isRecord(raw)) return null
   return {
@@ -251,6 +270,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     lastFile: typeof raw.lastFile === 'string' ? raw.lastFile : null,
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
+    opens: sanitizeOpens(raw.opens),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
   }
@@ -458,11 +478,14 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, baseGroups } } })
     },
 
-    upsertWindow(entry) {
+    upsertWindow(entry, opened = null, now = Date.now()) {
       const tabs = normalizeTabs(entry.tabs, entry.file)
       const normalized: WindowEntry = { ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
-      commit({ ...state, windows })
+      // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
+      const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
+      const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
+      commit({ ...state, windows, folders })
     },
 
     removeWindow(...ids) {
@@ -491,7 +514,7 @@ export function createStore(filePath: string): Store {
         changed = true
         return newPath + key.slice(oldPath.length)
       }
-      const remapKeys = (lists: Record<string, string[]>, remapKey: (key: string) => string): Record<string, string[]> =>
+      const remapKeys = <T>(lists: Record<string, T>, remapKey: (key: string) => string): Record<string, T> =>
         Object.fromEntries(Object.entries(lists).map(([key, value]) => [remapKey(key), value]))
       const windows = state.windows.map((w) => {
         const root = w.root === null ? null : remap(w.root)
@@ -523,6 +546,8 @@ export function createStore(filePath: string): Store {
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
+            // The open history (YAZ-2663 S8) is keyed by page, as `folds` is: a renamed page keeps its uses.
+            opens: remapKeys(folder.opens, remap),
           },
         ]),
       )
@@ -604,6 +629,7 @@ export function createStore(filePath: string): Store {
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),
+              opens: dropKeys(folder.opens, gone),
             },
           ]),
       )
