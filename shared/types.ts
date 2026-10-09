@@ -423,6 +423,21 @@ export interface RenameFileRequest {
   newPath: string
 }
 
+/**
+ * What Settings shows about the IDs of a vault that uses them (YAZ-2677 🔒 D5, D6), counted by the
+ * main process from its index. A folder's settings file counts like a note.
+ */
+export interface IdsState {
+  /** The vault's ID letters now; the default of its folder's name while its `ids.json` holds none (R11). */
+  letters: string
+  /** Notes that hold a number ID: what "Change letters" changes (S80). */
+  notes: number
+  /** Notes that still have letters the vault had before, in their ID, in an ID they name or in their file name (S83). */
+  stale: number
+  /** Notes that hold an old 12-character ID (S88). */
+  old: number
+}
+
 export interface RenameFileResponse {
   oldPath: string
   newPath: string

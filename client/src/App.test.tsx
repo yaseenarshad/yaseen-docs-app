@@ -281,7 +281,14 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
     // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
-    ids: { set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined), check: vi.fn(async (_root?: string) => 'No duplicates.') },
+    ids: {
+      set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined),
+      check: vi.fn(async (_root?: string) => 'No duplicates.'),
+      // The rows "ID letters" and "Old IDs" (YAZ-2677 D5, D6).
+      state: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
+      reletter: vi.fn(async (_root?: string, letters = 'YAZ') => ({ letters, notes: 0, stale: 0, old: 0 })),
+      backfill: vi.fn(async (_root?: string) => ({ letters: 'YAZ', notes: 0, stale: 0, old: 0 })),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {

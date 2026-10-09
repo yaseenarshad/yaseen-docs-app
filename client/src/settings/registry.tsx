@@ -19,15 +19,17 @@
  * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
  * row is `available` only with a vault open and calls `ids.set`. On asks first (YAZ-2677 🔒 D2).
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
+ * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
-import type { GithubSyncStatus, IndexResponse, SettingsState } from '@shared/types'
+import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
+import { IdLettersControl, OldIdsControl, TypedConfirmSheet } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
@@ -45,9 +47,23 @@ export interface SettingsCtx {
    * while the answer is not yes. `letters` reads the vault's ID letters out of its `ids.json` (none:
    * it has none yet), and rejects where they cannot be read. `set` saves the answer, and with a yes
    * the ID letters (YAZ-2677 🔒 D2). `check` settles the notes that share an ID now, and resolves to
-   * the result in one line (🔒 D7, S55 to S57).
+   * the result in one line (🔒 D7, S55 to S57). `old`: how many notes and folders hold an old
+   * 12-character ID. `state` asks the main process for the letters and the counts; `reletter` is
+   * "Change letters" and `backfill` "Give old IDs numbers" (🔒 D5, D6): each resolves, when the
+   * change is done, to the state after it.
    */
-  ids?: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void; check: () => Promise<string> }
+  ids?: {
+    enabled: boolean
+    held: boolean
+    ask: IndexResponse['ask']
+    letters: () => Promise<string | undefined>
+    set: (enabled: boolean, letters?: string) => void
+    check: () => Promise<string>
+    old: number
+    state: () => Promise<IdsState>
+    reletter: (letters: string) => Promise<IdsState>
+    backfill: () => Promise<IdsState>
+  }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
    * over only where the window has two or more vaults, and each per-vault page then says which one
@@ -132,22 +148,11 @@ const NOTHING_TO_WRITE = { notes: 0, folders: 0, foreign: 0 }
  * The box that On opens before anything is written (YAZ-2677 🔒 D2): what an ID is, what a yes would
  * write, how to undo it, and a text field. The user types the vault's ID letters: any 2 to 5 letters
  * for a vault that has none, and exactly its own letters, in any case, for one that has them (S9).
- * "Give IDs" and Enter do nothing until then. The field holds the focus: Enter in it is safe.
+ * "Give IDs" and Enter do nothing until then. The box is the one typed-confirm piece (`TypedConfirmSheet`).
  */
 function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
-  const [typed, setTyped] = useState('')
-  const field = useRef<HTMLInputElement>(null)
-  // After the sheet's own effect, which puts the focus on Cancel.
-  useEffect(() => field.current?.focus(), [])
-  const valid = letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters
-  return (
-    <ConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault)} confirmLabel="Give IDs" confirmDisabled={!valid} keys="contained" onConfirm={() => onConfirm(typed.toUpperCase())} onCancel={onCancel}>
-      <label className="confirm__letters">
-        {idsLettersAsk(letters)}
-        <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
-      </label>
-    </ConfirmSheet>
-  )
+  const valid = (typed: string): boolean => (letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters)
+  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
 }
 
 /**
@@ -425,6 +430,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true,
             render: ({ ids }) => ids && <DuplicatesControl check={ids.check} />,
+          },
+          {
+            id: 'idLetters',
+            label: 'ID letters',
+            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches every note, link and file name.',
+            keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true,
+            render: ({ ids, vaultName }) => ids && <IdLettersControl ids={ids} vault={vaultName} />,
+          },
+          {
+            id: 'oldIds',
+            label: 'Old IDs',
+            hint: 'Notes from before numbers have an ID of 12 characters. It still works; this gives each one a number.',
+            keywords: ['old', 'ids', 'numbers', 'backfill', 'migrate'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true && ctx.ids.old > 0,
+            render: ({ ids, vaultName }) => ids && <OldIdsControl ids={ids} vault={vaultName} />,
           },
         ],
       },

@@ -3,7 +3,7 @@
  * when a vault opened is gone (🔒 D1); Settings shows these words when the user clicks On. The record
  * locks what the box must say, not these sentences. They live in pure functions.
  */
-import type { IndexResponse } from '@shared/types'
+import type { IdsState, IndexResponse } from '@shared/types'
 
 type Ask = NonNullable<IndexResponse['ask']>
 
@@ -22,3 +22,24 @@ export function idsAskMessage({ notes, folders, foreign }: Ask, vault?: string):
 
 /** The line above the text field: a vault with no ID letters chooses them (S5), and one that has them types those (S9). */
 export const idsLettersAsk = (letters: string | undefined): string => (letters === undefined ? 'Type the ID letters for this vault: 2 to 5 letters, like BUS.' : `Type this vault's ID letters, ${letters}, to confirm.`)
+
+/**
+ * The box of "Change letters" (YAZ-2677 🔒 D5, S80): what changes, counted, what stays, and when to do it.
+ * `notes` counts each note and folder that holds a number ID.
+ */
+export const lettersAskMessage = ({ letters, notes }: Pick<IdsState, 'letters' | 'notes'>, vault?: string): string =>
+  `Change the ID letters of ${vault ?? 'this vault'}? They are ${letters} now. The app will change the ID of ${count(notes, 'note')}, and each link and file name that holds one. The numbers stay, and a link with the old letters still opens. Do this on one Mac, while this vault is synced and closed on your other Macs.`
+
+/** The line above the text field of "Change letters". */
+export const NEW_LETTERS_ASK = 'Type the new ID letters: 2 to 5 letters, like BUS.'
+
+/** The line of the row "ID letters": the letters, and what a change that stopped left (S79, S83). */
+export const lettersLine = ({ letters, stale }: Pick<IdsState, 'letters' | 'stale'>): string =>
+  `This vault's ID letters are ${letters}.${stale > 0 ? ` ${count(stale, 'note')} still ${stale === 1 ? 'has' : 'have'} the old letters.` : ''}`
+
+/** The line of the row "Old IDs" (S88). */
+export const oldIdsLine = (old: number): string => `${count(old, 'note')} ${old === 1 ? 'has' : 'have'} an old ID, like 6cbnmcq5n2sj.`
+
+/** The box of "Give them numbers" (🔒 D6, S89, S91): the count, what happens, and what to do on the other Mac first. */
+export const oldIdsAskMessage = (old: number, vault?: string): string =>
+  `Give the ${count(old, 'note')} with an old ID in ${vault ?? 'this vault'} a number? Each one gets the next number of the vault, the oldest file first. Each link and file name follows. First sync this vault and close the app on your other Macs: a Mac with edits that are not synced can conflict.`
