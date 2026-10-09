@@ -103,6 +103,19 @@ function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) 
 }
 
 /**
+ * A HELD Enter on a row does nothing (YAZ-2662 D1, D8): Enter and Shift+Enter in the search bar put
+ * the keyboard focus on a row of Files, and the repeats of that press arrive there — where Enter
+ * opens the row and Shift+Enter toggles it in the selection. The ONE guard, for a folder row, a
+ * file row and Shift alike: the repeat is taken at the top of the tree, before the row and its
+ * button's own click. A rename box or a create box is no row, so its Enter stays its own.
+ */
+function heldEnter(e: React.KeyboardEvent<HTMLElement>): void {
+  if (e.key !== 'Enter' || !e.repeat || !(e.target instanceof HTMLElement) || !e.target.matches('.tree__row')) return
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+/**
  * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
  * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
  * a favorite standing at the root AND inside its favorited parent shows selected on BOTH of its
@@ -222,7 +235,8 @@ function TreeLevel({
   const needleFor = (path: string) => (marks?.hits.has(path) ? marks.needle : undefined)
   return (
     // The arrows are the whole tree's, taken once at its top (YAZ-2662 D11) — not a search tree's, whose keys are the search bar's.
-    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle) : undefined}>
+    // A held Enter is stopped there too, in each tree.
+    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle) : undefined}>
       {pending !== null && pending.parentDir === dirPath && (
         <li>
           <CreateInline
@@ -271,12 +285,9 @@ function TreeLevel({
                 }}
                 // Enter opens it too, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold.
-                // A HELD Enter is taken and does nothing: Enter on a folder of the search puts the
-                // focus on this row (YAZ-2662 D1), and the repeats of that press arrive here.
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()
-                  if (e.repeat) return
                   selection.set(node.path)
                   onOpenFile(node.path)
                 }}

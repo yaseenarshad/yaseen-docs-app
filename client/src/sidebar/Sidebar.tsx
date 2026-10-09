@@ -525,15 +525,15 @@ export function Sidebar({
   const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
-  // Esc and its keycap: back to the lens the window last showed, and the caret goes into the open
-  // page (YAZ-2662 D9). With no page open no caret moves.
+  // The way out of the Search tab, for the search's Esc (`searchEsc`): back to the lens the window
+  // last showed, and the caret goes into the open page (YAZ-2662 D9). With no page open no caret moves.
   const leaveSearch = useCallback(() => {
     onLensChange(storage.getSidebarLens())
     focusOpenDocument()
   }, [onLensChange])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
-  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview)
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview)
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null
@@ -1017,9 +1017,10 @@ export function Sidebar({
           />
           {/* The way out, in sight (YAZ-2638 D2): Esc goes back to the lens the window last showed,
               keeps the text and puts the caret in the open page (YAZ-2662 D9), and this keycap —
-              always in the bar — says so and does it on a click. No Tab stop: the key it names is
-              the keyboard's way. */}
-          <button type="button" className="sidebar__search-back" title="Back (Esc)" aria-label="Leave search" tabIndex={-1} onClick={leaveSearch}>
+              always in the bar — says so and IS the key on a click (S58): with the preview panel on
+              show it closes the panel only. No Tab stop: the key it names is the keyboard's way.
+              A press on it takes no focus, so the caret is still in the bar after such a click. */}
+          <button type="button" className="sidebar__search-back" title="Back (Esc)" aria-label="Leave search" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={searchEsc}>
             esc
           </button>
         </div>

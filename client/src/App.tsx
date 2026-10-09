@@ -137,16 +137,11 @@ export function App() {
   // The same panel for a row of the new tab page (YAZ-2663 S39), on a path of its own: the search
   // follows its own highlight, and with one shared path it takes the panel back from the page.
   const [pagePreviewPath, setPagePreviewPath] = useState<string | null>(null)
-  const panelPath = pagePreviewPath ?? previewPath
   // The panel draws the file of the LAST one that asked: when the search names a file — ⌘K from a
   // row of the page, a word, Space — the path of the page goes, and the page reads that its panel is gone.
   useEffect(() => {
     if (previewPath !== null) setPagePreviewPath(null)
   }, [previewPath])
-  const closePanel = useCallback(() => {
-    setPreviewPath(null)
-    setPagePreviewPath(null)
-  }, [])
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
@@ -591,6 +586,23 @@ export function App() {
     if (ownChange.current) ownChange.current = false
     else setOverview(OVERVIEW_CLOSED)
   }, [file, inReview])
+  // The preview panel of the search gives way to the board and to a review (YAZ-2662 S67): each
+  // stands in the page area, and the panel is a look at a file over a PAGE. `previewShown` is the
+  // path that is drawn and that the sidebar reads. A path that is named while one of them shows is
+  // dropped, so no panel comes back when it closes.
+  const previewShown = overview.phase === 'closed' && !inReview ? previewPath : null
+  useEffect(() => {
+    if (previewShown === null) setPreviewPath(null)
+  }, [previewShown, previewPath])
+  // The panel's ✕, and Esc with the keyboard focus inside the panel (S66): the panel closes, and a
+  // focus that was inside it goes back to the search bar, by the door of ⌘K.
+  const closePreview = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest('.quicklook') !== null) openSearch()
+    setPreviewPath(null)
+    setPagePreviewPath(null)
+  }, [openSearch])
+  // What the panel draws: the file of a row of the new tab page (YAZ-2663 S39), else the file of the search.
+  const panelPath = pagePreviewPath ?? previewShown
   /** Leave the board for `path`'s page — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
   const leaveOverview = useCallback((path: string | null) => {
     const { file: open, tabs: all } = now.current
@@ -1201,7 +1213,7 @@ export function App() {
           onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
-          previewPath={previewPath}
+          previewPath={previewShown}
           onPreview={setPreviewPath}
           onPickFolder={pick}
           pickDisabled={picking}
@@ -1356,7 +1368,7 @@ export function App() {
               />
             )}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
-            {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} onClose={closePanel} />}
+            {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} onClose={closePreview} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
