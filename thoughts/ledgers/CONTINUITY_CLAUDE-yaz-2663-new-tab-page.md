@@ -35,10 +35,14 @@
   - [x] YAZ-2672: 2- The new tab page shows three columns (`c79184e`)
   - [x] YAZ-2673: 3- The rows of the page have the row menu of the sidebar (`eb27ece`)
   - [x] YAZ-2674: 4- The arrow keys walk the rows of the page (`eb27ece`; Space and the preview panel in the merge `7b99430`)
-- Now: [→] YAZ-2675: 5- Polish and anti-slop. The audit and its result are comments on the issue. The changes are in the working tree, not committed. The coordinator reviews and commits.
-- Next: merge `yaz-2662-search-keys` again (`6d61727`, `95593a5`). See "The next merge" below.
+  - [x] YAZ-2675: 5- Polish and anti-slop (`c31242b`): the audit (19 items) and its result are comments on the issue
+  - [x] The branch of YAZ-2662 is merged in, to its pull request #104 (`cc39f97`). The panel draws `pagePreviewPath ?? previewShown`; `closePreview` clears both paths.
+  - [x] The four size ceilings (`e5672b3`), with Yasin's OK
+- Now: [→] YAZ-2676: 6- Verify and deliver. The gates are green on the merged branch: 310 test files, 6,110 passed, 2 skipped; the size gate passes. The pull request is open, stacked on `yaz-2662-search-keys`. The issues are In Review.
+- Next: Yasin's hand walk (W13 of `docs/REGRESSION.md`; the steps and the commands are a comment on YAZ-2676). Then the merge, after the pull request #104 of YAZ-2662.
 - Remaining:
-  - [ ] YAZ-2676: 6- Verify and deliver (the pull request, the size ceilings, the hand walk vault and steps: W13 of `docs/REGRESSION.md`)
+  - [ ] Yasin: the hand walk, and his word on the decisions that he has not seen (the pull request lists them)
+  - [ ] The merge, then the issues go to Done, the worktree and the hand-walk folder are removed
 
 ## Key Decisions of YAZ-2673 and YAZ-2674
 
