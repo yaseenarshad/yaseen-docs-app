@@ -336,18 +336,18 @@ describe('line numbers after a save: built from the text the editor wrote', () =
     expectWordsOnTheirLines(root, saved)
   })
 
-  // The save writes `text<br>` + a line break as `text\` + a blank line: one paragraph on the page, two in the file.
+  // A `<br>` and the line ending beside it are ONE break: the save writes `text\` + a line ending, and the paragraph stays one block.
   it.each([
-    { shape: 'a paragraph', file: 'a<br>\nb\n\nAfter.\n', loaded: [1, 4] },
-    { shape: 'a break on its own line', file: 'a\n<br>\nb\n\nAfter.\n', loaded: [1, 5] },
-    { shape: 'a bullet', file: '- a<br>\n  b\n- c\n\nAfter.\n', loaded: [1, 3, 5] },
-    { shape: 'a quote', file: '> a<br>\n> b\n\nAfter.\n', loaded: [1, 4] },
-  ])('an inline break before a line break, in $shape: the saved file has one block more than the page, so no number shows (S64)', async ({ file, loaded }) => {
+    { shape: 'a paragraph', file: 'a<br>\nb\n\nAfter.\n', loaded: ['1–2', '4'], saved: ['1–2', '4'] },
+    { shape: 'a break on its own line', file: 'a\n<br>\nb\n\nAfter.\n', loaded: ['1–3', '5'], saved: ['1–2', '4'] },
+    { shape: 'a bullet', file: '- a<br>\n  b\n- c\n\nAfter.\n', loaded: ['1–2', '3', '5'], saved: ['1–2', '3', '5'] },
+    { shape: 'a quote', file: '> a<br>\n> b\n\nAfter.\n', loaded: ['1–2', '4'], saved: ['1–2', '4'] },
+  ])('an inline break before a line break, in $shape: the saved file has the page’s blocks, so each number shows on its own line of that file', async ({ file, loaded, saved }) => {
     const { crepe, root } = await open(file)
-    expect(numbers(root)).toEqual(loaded)
-    const saved = showSaved(crepe, file)
-    expectWordsOnTheirLines(root, saved)
-    expect(numbers(root)).toEqual([])
+    expect(ranges(root)).toEqual(loaded)
+    const written = showSaved(crepe, file)
+    expect(ranges(root)).toEqual(saved)
+    expectWordsOnTheirLines(root, written)
   })
 })
 

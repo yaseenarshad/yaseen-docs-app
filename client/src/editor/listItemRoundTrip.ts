@@ -5,7 +5,7 @@
  * as the start of an HTML block that runs to the next blank line, so the item's nested
  * children became literal text. Obsidian writes an empty bullet as a bare marker.
  *
- * Five pieces, all schema/remark/text-level (no Milkdown fork):
+ * Seven pieces, all schema/remark/text-level (no Milkdown fork):
  *  1. serialise: an empty paragraph that STARTS a list item is emitted as an empty mdast
  *     paragraph → bare marker (`*`, `1.`); other empty paragraphs keep `<br />`. Inside Milkdown
  *     an empty TASK item stays `* [ ] <br />` (remark drops the checkbox from `* [ ]`, and `[ ]`
@@ -19,16 +19,25 @@
  *     bare markers so their children are not swallowed, and Obsidian's empty task `* [ ] ` /
  *     `* [ ]` (text `[ ]` for remark, round-tripped as `* \[ ]`) to `* [ ] <br />` so it stays a
  *     checkbox.
- *  4. save: `stripEmptyTaskBreaks()` turns `* [ ] <br />` back into `* [ ]` — `<br />` never
+ *  4. save: `restoreItemLine()` turns `* [ ] <br />` back into `* [ ]` — `<br />` never
  *     reaches the disk, and 3 restores the checkbox on the next load.
  *  5. load (GRO-2112): `unifySiblingMarkers()` makes `-` / `*` / `+` siblings at one indent share a
  *     marker so they parse as ONE list (see its docblock).
  *  6. load/save (YAZ-1329): `* 6) text` / `* 6. text` are bullet text, not an implicit ordered
- *     child. Load temporarily escapes that inner delimiter for CommonMark; save restores the
- *     visible source spelling. Real ordered lines (`6. text`) remain structural.
+ *     child. Load temporarily escapes that inner delimiter for CommonMark; save
+ *     (`restoreItemLine()`) restores the visible source spelling. Real ordered lines (`6. text`)
+ *     remain structural.
  *  7. load (YAZ-1357): `separateEmptyNestedItems()` puts a blank line between a text item and a
  *     deeper bare marker on the next line — an EMPTY item cannot interrupt a paragraph in
  *     CommonMark, so without it rule 1's spelling reads back as text (or a setext heading).
+ *
+ * 🔒 ONE WALK: every text rule (3 to 7), on load and on save, reads the text through
+ * `mapOutsideFences()`, and so does the save rule for wikilinks: `postProcessMarkdown()`
+ * (createCrepe.ts) is that walk on save. The walk skips fenced code. It knows the fence character,
+ * the fence length, and that a closing fence has no text after it, so a line of 3 backticks inside
+ * a fence of 4, a backtick line inside a `~~~` fence and a line such as ```js inside a fence do not
+ * end the code. Not seen as code: indented code (4 spaces, no fence), where a guess can read a
+ * nested list as code, and a code span over two or more lines.
  */
 import { paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as MdNode } from '@milkdown/kit/transformer'
@@ -78,20 +87,26 @@ const listItemLeadingParagraph = $remark('mdapp-list-item-leading-paragraph', ()
 export const listItemRoundTrip = [emptyParagraphFirstInListItem, listItemLeadingParagraph].flat()
 
 const MARKER = String.raw`[ \t]*(?:[-*+]|\d+[.)])`
-const LEGACY_EMPTY_ITEM = new RegExp(String.raw`^(${MARKER}) <br />[ \t]*$`, 'gm')
-const EMPTY_TASK_ITEM = new RegExp(String.raw`^(${MARKER} \[[ xX]\])[ \t]*$`, 'gm')
-const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br />$`, 'gm')
+/** The end of ONE line of the walk, which keeps the `\r` of a CRLF file: the two load rules stop before it, so the line keeps its ending. */
+const LINE_END = String.raw`(?=\r?$)`
+const LEGACY_EMPTY_ITEM = new RegExp(String.raw`^(${MARKER}) <br />[ \t]*${LINE_END}`)
+const EMPTY_TASK_ITEM = new RegExp(String.raw`^(${MARKER} \[[ xX]\])[ \t]*${LINE_END}`)
+const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br />$`)
 
 const SAME_LINE_ORDERED_MARKER = /^([ \t]*[-*+][ \t]+\d+)([.)])(?=[ \t\r]|$)/
 const ESCAPED_SAME_LINE_ORDERED_MARKER = /^([ \t]*[-*+][ \t]+\d+)\\([.)])(?=[ \t\r]|$)/
 const FENCE_BOUNDARY = /^[ \t]*(`{3,}|~{3,})/
 
-/** Transform ordinary Markdown lines while leaving complete fenced code blocks byte-identical. */
-const mapOutsideFences = (markdown: string, transform: (line: string) => string): string => {
+/**
+ * Transform ordinary Markdown lines while leaving complete fenced code blocks byte-identical.
+ * 🔒 EVERY text rule of the editor, on load and on save, goes through this ONE walk: a rule that
+ * reads the text by itself reads code as Markdown. `next` is the line below, for a rule that looks ahead.
+ */
+export const mapOutsideFences = (markdown: string, transform: (line: string, next: string | undefined) => string): string => {
   let fence: { marker: '`' | '~'; length: number } | null = null
   return markdown
     .split('\n')
-    .map((line) => {
+    .map((line, index, lines) => {
       const boundary = FENCE_BOUNDARY.exec(line)
       if (fence !== null) {
         if (
@@ -108,7 +123,7 @@ const mapOutsideFences = (markdown: string, transform: (line: string) => string)
         fence = { marker: boundary[1][0] as '`' | '~', length: boundary[1].length }
         return line
       }
-      return transform(line)
+      return transform(line, lines[index + 1])
     })
     .join('\n')
 }
@@ -117,9 +132,12 @@ const mapOutsideFences = (markdown: string, transform: (line: string) => string)
 export const escapeSameLineOrderedMarkers = (markdown: string): string =>
   mapOutsideFences(markdown, (line) => line.replace(SAME_LINE_ORDERED_MARKER, '$1\\$2'))
 
-/** Before writing: canonicalize the same-line delimiter to its visible, unescaped spelling. */
-export const restoreSameLineOrderedMarkers = (markdown: string): string =>
-  mapOutsideFences(markdown, (line) => line.replace(ESCAPED_SAME_LINE_ORDERED_MARKER, '$1$2'))
+/**
+ * Before writing, ONE line outside code: `* [ ] <br />` (Milkdown's empty task) → `* [ ]`, and the
+ * same-line delimiter back to its visible, unescaped spelling.
+ */
+export const restoreItemLine = (line: string): string =>
+  line.replace(EMPTY_TASK_ITEM_BREAK, '$1').replace(ESCAPED_SAME_LINE_ORDERED_MARKER, '$1$2')
 
 /** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox);
  * then markers unified; then (LAST, since the blank line resets the marker memory) an empty bullet
@@ -127,7 +145,7 @@ export const restoreSameLineOrderedMarkers = (markdown: string): string =>
 export const normalizeEmptyItems = (markdown: string): string =>
   separateEmptyNestedItems(
     unifySiblingMarkers(
-      escapeSameLineOrderedMarkers(markdown).replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'),
+      mapOutsideFences(escapeSameLineOrderedMarkers(markdown), (line) => line.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />')),
     ),
   )
 
@@ -135,7 +153,6 @@ export const normalizeEmptyItems = (markdown: string): string =>
 const BULLET_LINE = /^(\s*)([-*+])(?:\s|$)/
 /** `- - -` / `* * *` / `***`: a thematic break, which would otherwise pass as a bullet. */
 const THEMATIC_BREAK = /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/
-const FENCE_LINE = /^\s*(```|~~~)/
 /** Tabs count as four spaces, the editor's own rule for depth. */
 const indentWidth = (indent: string): number => indent.replace(/\t/g, '    ').length
 
@@ -153,27 +170,19 @@ const indentWidth = (indent: string): number => indent.replace(/\t/g, '    ').le
  */
 export const unifySiblingMarkers = (markdown: string): string => {
   const markerAtIndent = new Map<number, string>()
-  let inFence = false
-  return markdown
-    .split('\n')
-    .map((line) => {
-      if (FENCE_LINE.test(line)) {
-        inFence = !inFence
-        return line
-      }
-      if (inFence || THEMATIC_BREAK.test(line)) return line
-      const match = BULLET_LINE.exec(line)
-      if (match === null) {
-        if (line.trim() === '') markerAtIndent.clear()
-        return line
-      }
-      const indent = indentWidth(match[1])
-      for (const deeper of [...markerAtIndent.keys()]) if (deeper > indent) markerAtIndent.delete(deeper)
-      const marker = markerAtIndent.get(indent) ?? match[2]
-      markerAtIndent.set(indent, marker)
-      return marker === match[2] ? line : `${match[1]}${marker}${line.slice(match[1].length + 1)}`
-    })
-    .join('\n')
+  return mapOutsideFences(markdown, (line) => {
+    if (THEMATIC_BREAK.test(line)) return line
+    const match = BULLET_LINE.exec(line)
+    if (match === null) {
+      if (line.trim() === '') markerAtIndent.clear()
+      return line
+    }
+    const indent = indentWidth(match[1])
+    for (const deeper of [...markerAtIndent.keys()]) if (deeper > indent) markerAtIndent.delete(deeper)
+    const marker = markerAtIndent.get(indent) ?? match[2]
+    markerAtIndent.set(indent, marker)
+    return marker === match[2] ? line : `${match[1]}${marker}${line.slice(match[1].length + 1)}`
+  })
 }
 
 /** A bullet or ordered item WITH text. */
@@ -190,21 +199,11 @@ const BARE_ITEM = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]*\r?$/
  * as a nested empty item — and the one Milkdown writes back, so the file converges on it. A no-op
  * once the blank line exists; fenced code is left alone; a SIBLING bare marker is not nested.
  */
-export const separateEmptyNestedItems = (markdown: string): string => {
-  const lines = markdown.split('\n')
-  const out: string[] = []
-  let inFence = false
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    out.push(line)
-    if (FENCE_LINE.test(line)) inFence = !inFence
-    if (inFence) continue
+export const separateEmptyNestedItems = (markdown: string): string =>
+  mapOutsideFences(markdown, (line, below) => {
     const text = TEXT_ITEM.exec(line)
-    const next = i + 1 < lines.length ? BARE_ITEM.exec(lines[i + 1]) : null
-    if (text !== null && next !== null && indentWidth(next[1]) > indentWidth(text[1])) out.push('')
-  }
-  return out.join('\n')
-}
+    const next = below === undefined ? null : BARE_ITEM.exec(below)
+    // The line plus one line ending: the walk joins it to the next, which leaves a blank line between.
+    return text !== null && next !== null && indentWidth(next[1]) > indentWidth(text[1]) ? `${line}\n` : line
+  })
 
-/** Before writing: `* [ ] <br />` (Milkdown's empty task) → `* [ ]`. */
-export const stripEmptyTaskBreaks = (markdown: string): string => markdown.replace(EMPTY_TASK_ITEM_BREAK, '$1')
