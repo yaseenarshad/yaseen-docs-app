@@ -97,7 +97,7 @@ With IDs on, the same group of Settings has three more rows.
 
 - **ID letters**: "Change letters" changes the letters in every note's ID, in each link and in each file name. The numbers stay, and a link with the old letters still opens its note. Do it on one Mac, while the vault is synced and closed on the others.
 - **Duplicate IDs**: two Macs that have not synced yet can give two notes the same number. The app fixes that by itself after the sync: the older note keeps the number, the Mac that made the newer note gives it the next one and updates the links it wrote, and a notice says what changed (`YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.`). "Check for duplicates" runs the same check now.
-- **Old IDs**: shown only while a note still has a 12-character ID.
+- **Old IDs**: shown while a note still has a 12-character ID, or while a run that gives them numbers stopped before its end. "Give them numbers" gives each such note the next number, oldest file first, and its links and its file name follow. Sync the vault and close it on the other Macs first.
 
 A file that arrives with no ID (an agent wrote it, or you dropped it in Finder) gets its number from one Mac only: the vault's first Mac (the one whose count file in `.yaseendocs/ids/` is oldest) does it at once, and every other Mac waits 10 minutes and does it only if the file still has none. So two Macs never write two numbers into one file.
 
