@@ -40,6 +40,8 @@ const tree: TreeNode[] = Array.from({ length: 50 }, (_, f) => ({
     ...Array.from({ length: 40 }, (_, j) => file(`/vault/folder${f}/Note ${j * 50 + f}.md`, 'markdown')),
   ],
 }))
+/** A change of the text leaves no folder that shows all (YAZ-2662 S53): a keystroke cuts with none. */
+const NO_FULL: ReadonlySet<string> = new Set()
 // Every note has an id, so each keystroke also looks for all 2,000 in the query (YAZ-2420 D32).
 const records = Array.from({ length: 2000 }, (_, i) => ({ ...rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]), id: `k3m9x2pq${String(i).padStart(4, '0')}` }))
 
@@ -49,7 +51,7 @@ describe('searchCandidates', () => {
     const candidates = [...folderCandidates('/vault', allDirs(tree), []), ...searchCandidates(records), ...fileCandidates('/vault', otherFiles(tree))]
     let rows = 0
     // One keystroke is the ranking scan AND the cut of the tree to what it kept (YAZ-2620 🔒 D1).
-    for (let i = 0; i < 10; i++) rows = searchTree(tree, new Set(searchRows(candidates, `Note 49`).map((c) => c.path))).order.length
+    for (let i = 0; i < 10; i++) rows = searchTree(tree, new Set(searchRows(candidates, `Note 49`).map((c) => c.path)), NO_FULL).order.length
     const elapsed = performance.now() - start
     expect(candidates).toHaveLength(4750) // 500 folder rows + one basename row + one alias row per record + 250 other files
     expect(rows).toBe(11) // `Note 49` and `Note 490`…`Note 499`: the cut found every kept row in the tree
@@ -80,8 +82,8 @@ describe('searchCandidates', () => {
     for (let i = 0; i < 10; i++) {
       rows = searchRows(candidates, `Note`, first)
       const hits = new Set(rows.map((c) => c.path))
-      const top = searchTree(pinned, hits)
-      drawn = top.order.length + searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits).order.length
+      const top = searchTree(pinned, hits, NO_FULL)
+      drawn = top.order.length + searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits, NO_FULL).order.length
     }
     const elapsed = performance.now() - start
     expect(rows).toHaveLength(50)

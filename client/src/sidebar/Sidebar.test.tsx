@@ -2721,6 +2721,15 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect([key(row(el, `${v}/Projects`), ' '), key(row(el, `${v}/top.md`), 'Enter'), key(row(el, `${v}/top.md`), ' ')].map((event) => event.defaultPrevented)).toEqual([false, false, false])
   })
 
+  it('D1: a held Enter on a folder row opens no page and folds nothing — Enter on a folder of the search puts the keyboard focus on its row in Files, and the repeats of that press arrive there', async () => {
+    const { el, v, props } = await mountVault()
+    const held = key(row(el, `${v}/Projects`), 'Enter', { repeat: true })
+    // Taken, so the button's own click does not fold the row; and no page, no selection.
+    expect([held.defaultPrevented, isOpen(el, `${v}/Projects`)]).toEqual([true, 'false'])
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
   it('S64: the arrows do nothing while a rename box or a create box has the focus', async () => {
     const { el, v } = await mountVault()
     const box = () => el.querySelector<HTMLInputElement>('.sidebar__body .create-inline__input')
@@ -2948,6 +2957,252 @@ describe('the matches of the pinned items show first (YAZ-2662 D2, D3, D4)', () 
     expect(parts(el)).toEqual(['No matches'])
     expect(el.querySelector('.sidebar__msg--error')).toBeNull()
     expect(vi.mocked(props.onNotice).mock.calls.filter(([, kind]) => kind === 'error')).toEqual([])
+  })
+})
+
+/**
+ * The list keys of the search (YAZ-2662 D6, D7): Space, → and ←. They act on the highlight once ↑
+ * or ↓ moved it; until then, and after a change of the text, they are text keys, and so is a list
+ * key with nothing to do on the highlight. Space or → on a folder shows ALL that it holds, in the
+ * search tree, and ↑ and ↓ then stop on each row on show inside it; Space again puts the folder
+ * back as the search drew it, and ← closes an open folder. The S-numbers are the case record on YAZ-2662.
+ */
+describe('Space, → and ← on a folder of the search tree (YAZ-2662 D6, D7)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  /**
+   * `log` finds: the folder Work log, inside Area/, and in it Log week 1 and Team log; the folder Log book and in it Entry log; Changelog at the top.
+   * Log book is in the focus list. Team log and Readme, both in Work log, are favorites: the first is a match and the second is not.
+   */
+  const VAULT = (v: string): TreeNode[] => [
+    folder(`${v}/Area`, [
+      folder(`${v}/Area/Work log`, [
+        folder(`${v}/Area/Work log/Drafts`, [note(`${v}/Area/Work log/Drafts/Idea.md`)]),
+        folder(`${v}/Area/Work log/Empty`, []),
+        folder(`${v}/Area/Work log/Weeks`, [note(`${v}/Area/Work log/Weeks/Log week 1.md`), note(`${v}/Area/Work log/Weeks/Summary.md`)]),
+        note(`${v}/Area/Work log/Readme.md`),
+        note(`${v}/Area/Work log/Team log.md`),
+      ]),
+    ]),
+    folder(`${v}/Log book`, [folder(`${v}/Log book/Notes`, [note(`${v}/Log book/Notes/Page.md`)]), note(`${v}/Log book/Cover.md`), note(`${v}/Log book/Entry log.md`)]),
+    note(`${v}/Changelog.md`),
+  ]
+  const notePaths = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.type === 'dir' ? notePaths(n.children) : [n.path]))
+
+  let vaults = 0
+  /** A fresh vault and a fresh window per mount, over an index of each note of the tree. Then `query` typed into the bar of the Search tab. */
+  const search = async (query: string) => {
+    const v = `/v-listkeys-${++vaults}`
+    const m = await mount({ root: v, lens: 'search' }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.index.mockResolvedValue({ root: v, records: notePaths(VAULT(v)).map((path) => ({ ...indexRecord(path), folder: path.slice(v.length + 1, Math.max(v.length + 1, path.lastIndexOf('/'))) })), folders: [], generatedAt: 1, ids: true } as never)
+      b.favorites.get.mockResolvedValue([`${v}/Area/Work log/Readme.md`, `${v}/Area/Work log/Team log.md`])
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [`${v}/Log book`] })
+      await storage.init()
+    })
+    const input = searchBar(m.el)!
+    await type(input, query)
+    const shape = () =>
+      [...m.el.querySelectorAll<HTMLElement>('.sidebar__body .tree__row')].map((row) => {
+        let depth = -1
+        for (let list = row.closest('ul.tree'); list !== null; list = list.parentElement?.closest('ul.tree') ?? null) depth++
+        return `${'  '.repeat(depth)}${row.querySelector('.tree__label')?.textContent}`
+      })
+    const row = (rel: string) => m.el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${v}${rel}"]`)
+    const cursor = () => [...m.el.querySelectorAll('.sidebar__body .tree__row--selected .tree__label')].map((n) => n.textContent)
+    /** A key in the bar, as the keyboard sends it; the event comes back, so a test can ask whether the key was taken from the text. */
+    const press = (key: string, mods: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mods })
+      act(() => void input.dispatchEvent(event))
+      return event
+    }
+    /** ↑ to the first stop, then ↓ to the row labelled `label`: the highlight is on it, moved by the keyboard. */
+    const go = (label: string) => {
+      for (let i = 0; i < 20; i++) press('ArrowUp')
+      for (let i = 0; i < 20 && cursor()[0] !== label; i++) press('ArrowDown')
+      expect(cursor()).toEqual([label])
+    }
+    /** The labels that ↓ stops on from the highlight, until it stops moving. */
+    const walk = () => {
+      const stops: (string | null)[] = []
+      for (let last = cursor()[0]; press('ArrowDown') && cursor()[0] !== last; last = cursor()[0]) stops.push(cursor()[0])
+      return stops
+    }
+    return { ...m, v, input, shape, row, cursor, press, go, walk, isOpen: (rel: string) => row(rel)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded'), dim: (rel: string) => row(rel)?.classList.contains('tree__row--context') }
+  }
+  const click = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  const TOP = ['Log book', '  Entry log', 'Team log']
+  /** The search tree of `log` as the search draws it: the top group, then "Everything else". */
+  const DRAWN = [...TOP, 'Area', '  Work log', '    Weeks', '      Log week 1', 'Changelog']
+  /** Work log showing all: Team log is drawn by the top group, so it is not here a second time (S19). */
+  const WORK_LOG = ['  Work log', '    Drafts', '    Empty', '    Weeks', '      Log week 1', '    Readme']
+
+  it('S30: with no ↑ or ↓ the three keys are text keys — Space types a space, so `work log` can be typed; after ↑ or ↓ a change of the text gives them back to the text', async () => {
+    const { input, shape, press, go, isOpen } = await search('log')
+    expect(shape()).toEqual(DRAWN)
+    expect([' ', 'ArrowRight', 'ArrowLeft'].map((key) => press(key).defaultPrevented)).toEqual([false, false, false])
+    expect(shape()).toEqual(DRAWN)
+    await type(input, 'work log')
+    expect(shape()).toEqual(['Area', '  Work log'])
+    go('Work log')
+    await type(input, 'work lo')
+    expect([' ', 'ArrowRight', 'ArrowLeft'].map((key) => press(key).defaultPrevented)).toEqual([false, false, false])
+    expect([shape(), isOpen('/Area/Work log')]).toEqual([['Area', '  Work log'], 'false'])
+  })
+
+  it('S46, S47: after ↑ or ↓, Space on a folder shows each row that it holds — a row that is no match is dim and a match keeps its mark; a folder inside it that leads to a match stays open with its matches, one that leads to none is closed; a pinned item that the top group draws is not drawn a second time', async () => {
+    const { el, shape, row, press, go, isOpen, dim } = await search('log')
+    go('Work log')
+    expect(press(' ').defaultPrevented).toBe(true)
+    expect(shape()).toEqual([...TOP, 'Area', ...WORK_LOG, 'Changelog'])
+    expect(['/Area/Work log/Drafts', '/Area/Work log/Empty', '/Area/Work log/Weeks', '/Area/Work log/Readme.md', '/Area/Work log/Weeks/Log week 1.md'].map(dim)).toEqual([true, true, true, true, false])
+    expect([row('/Area/Work log/Weeks/Log week 1.md')?.querySelector('.tree__mark')?.textContent, row('/Area/Work log/Readme.md')?.querySelector('.tree__mark')]).toEqual(['Log', null])
+    expect(['/Area/Work log', '/Area/Work log/Drafts', '/Area/Work log/Weeks'].map(isOpen)).toEqual(['true', 'false', 'true'])
+    expect(el.querySelectorAll('.sidebar__body .tree__row[data-path$="/Team log.md"]')).toHaveLength(1)
+  })
+
+  it('S48: ↑ and ↓ stop on each row on show inside a folder that Space opened, a match or not — and on the rows of a folder inside it that a click opened; outside it they stop on the matches only', async () => {
+    const { row, press, go, walk, cursor } = await search('log')
+    go('Log book')
+    expect(walk()).toEqual(['Entry log', 'Team log', 'Work log', 'Log week 1', 'Changelog'])
+    go('Work log')
+    press(' ')
+    expect(walk()).toEqual(['Drafts', 'Empty', 'Weeks', 'Log week 1', 'Readme', 'Changelog'])
+    click(row('/Area/Work log/Drafts'))
+    go('Drafts')
+    press('ArrowDown')
+    expect(cursor()).toEqual(['Idea'])
+    for (const expected of ['Drafts', 'Work log', 'Team log']) {
+      press('ArrowUp')
+      expect(cursor()).toEqual([expected])
+    }
+  })
+
+  it('S49: Space again on that folder puts it, and each folder inside it, back as the search drew it; the highlight stays on it', async () => {
+    const { row, shape, press, go, cursor } = await search('log')
+    go('Work log')
+    press(' ')
+    go('Drafts')
+    press(' ')
+    click(row('/Area/Work log/Weeks'))
+    expect(shape()).toEqual([...TOP, 'Area', '  Work log', '    Drafts', '      Idea', '    Empty', '    Weeks', '    Readme', 'Changelog'])
+    go('Work log')
+    expect(press(' ').defaultPrevented).toBe(true)
+    expect([shape(), cursor()]).toEqual([DRAWN, ['Work log']])
+    press(' ')
+    expect(shape()).toEqual([...TOP, 'Area', ...WORK_LOG, 'Changelog'])
+  })
+
+  it('S50: → on a folder does what the first Space does, in the top group too; → on a folder that shows all, and on a file, is a text key', async () => {
+    const { shape, press, go, walk, dim } = await search('log')
+    go('Log book')
+    expect(press('ArrowRight').defaultPrevented).toBe(true)
+    const ALL = ['Log book', '  Notes', '  Cover', '  Entry log', 'Team log', ...DRAWN.slice(TOP.length)]
+    expect([shape(), dim('/Log book/Notes'), dim('/Log book/Cover.md'), dim('/Log book/Entry log.md')]).toEqual([ALL, true, true, false])
+    expect(press('ArrowRight').defaultPrevented).toBe(false)
+    expect(shape()).toEqual(ALL)
+    expect(walk().slice(0, 4)).toEqual(['Notes', 'Cover', 'Entry log', 'Team log'])
+    go('Entry log')
+    expect(press('ArrowRight').defaultPrevented).toBe(false)
+    expect(shape()).toEqual(ALL)
+  })
+
+  it('S51: ← on an open folder closes it; ← on a closed folder, and on a file, is a text key; → opens it again with all that it holds, and Space then puts it back', async () => {
+    const { shape, press, go } = await search('log')
+    go('Log book')
+    expect(press('ArrowLeft').defaultPrevented).toBe(true)
+    const CLOSED = ['Log book', 'Team log', ...DRAWN.slice(TOP.length)]
+    expect(shape()).toEqual(CLOSED)
+    expect(press('ArrowLeft').defaultPrevented).toBe(false)
+    expect(shape()).toEqual(CLOSED)
+    press('ArrowRight')
+    expect(shape()).toEqual(['Log book', '  Notes', '  Cover', '  Entry log', 'Team log', ...DRAWN.slice(TOP.length)])
+    press('ArrowLeft')
+    expect(shape()).toEqual(CLOSED)
+    // Closed, it does not show all: Space opens it again, and the next Space puts it back.
+    press(' ')
+    expect(shape()).toEqual(['Log book', '  Notes', '  Cover', '  Entry log', 'Team log', ...DRAWN.slice(TOP.length)])
+    press(' ')
+    expect(shape()).toEqual(DRAWN)
+    go('Entry log')
+    expect(press('ArrowLeft').defaultPrevented).toBe(false)
+    expect(shape()).toEqual(DRAWN)
+  })
+
+  it('R6: a click folds a folder as before — a matched folder with no match inside opens to all that it holds, and ↑ and ↓ do not go into it until → or Space', async () => {
+    const { row, shape, press, go, walk, cursor } = await search('book')
+    expect(shape()).toEqual(['Log book'])
+    click(row('/Log book'))
+    const ALL = ['Log book', '  Notes', '  Cover', '  Entry log']
+    expect([shape(), walk(), cursor()]).toEqual([ALL, [], ['Log book']])
+    // It is open and does not show all to the keys yet: → is taken, and the folder stays open.
+    expect(press('ArrowRight').defaultPrevented).toBe(true)
+    expect([shape(), walk()]).toEqual([ALL, ['Notes', 'Cover', 'Entry log']])
+    go('Log book')
+    click(row('/Log book'))
+    expect(shape()).toEqual(['Log book'])
+  })
+
+  it('S52: Enter, ⌘Enter and Shift+Enter on a row that is no match do what they do on a match — a file opens, a folder shows in Files; Space on a folder there opens that folder too', async () => {
+    const { v, shape, press, go, cursor, props } = await search('log')
+    go('Work log')
+    press(' ')
+    go('Readme')
+    press('Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Area/Work log/Readme.md`)
+    press('Enter', { metaKey: true })
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/Area/Work log/Readme.md`)
+    press('Enter', { shiftKey: true })
+    expect(vi.mocked(props.onRevealInFiles).mock.calls).toEqual([[`${v}/Area/Work log/Readme.md`, true]])
+    go('Drafts')
+    press('Enter')
+    expect(vi.mocked(props.onRevealInFiles).mock.calls[1]).toEqual([`${v}/Area/Work log/Drafts`, true])
+    expect(press(' ').defaultPrevented).toBe(true)
+    expect(shape()).toEqual([...TOP, 'Area', '  Work log', '    Drafts', '      Idea', ...WORK_LOG.slice(2), 'Changelog'])
+    press('ArrowDown')
+    expect(cursor()).toEqual(['Idea'])
+    expect(props.onOpenFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('S53: a change of the text puts each folder back as the search draws it for the new text', async () => {
+    const { input, shape, press, go } = await search('log')
+    go('Work log')
+    press(' ')
+    go('Log book')
+    press('ArrowLeft')
+    await type(input, 'lo')
+    expect(shape()).toEqual(DRAWN)
+    await type(input, 'log')
+    expect(shape()).toEqual(DRAWN)
+  })
+
+  it('S54: Space on a folder with nothing in it opens it and shows no row, with no error; Space again closes it', async () => {
+    const { el, shape, press, go, isOpen, props } = await search('log')
+    go('Work log')
+    press(' ')
+    go('Empty')
+    expect(press(' ').defaultPrevented).toBe(true)
+    expect([isOpen('/Area/Work log/Empty'), shape()]).toEqual(['true', [...TOP, 'Area', ...WORK_LOG, 'Changelog']])
+    expect(press(' ').defaultPrevented).toBe(true)
+    expect(isOpen('/Area/Work log/Empty')).toBe('false')
+    expect(el.querySelector('.sidebar__msg--error')).toBeNull()
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a click closes a folder above the highlight, which is on a row that is no match: the highlight goes to the next row that the tree still draws', async () => {
+    const { row, press, go, cursor } = await search('log')
+    go('Work log')
+    press(' ')
+    go('Readme')
+    click(row('/Area'))
+    expect(cursor()).toEqual(['Changelog'])
+  })
+
+  it('a list key with ⌘, ⌥, ⌃ or Shift is a text key', async () => {
+    const { shape, press, go } = await search('log')
+    go('Work log')
+    expect([{ metaKey: true }, { altKey: true }, { ctrlKey: true }, { shiftKey: true }].flatMap((mods) => [' ', 'ArrowRight', 'ArrowLeft'].map((key) => press(key, mods).defaultPrevented))).toEqual(Array(12).fill(false))
+    expect(shape()).toEqual(DRAWN)
   })
 })
 
@@ -7070,6 +7325,24 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await type(input, 'plan d')
     expect(shape(el)).toEqual(['docs', '  plan d'])
     expect(vaultRowLabels(el)).toEqual([])
+  })
+
+  it('YAZ-2662 S55: a vault row is never the highlight, so no list key acts on it — ↑ from a folder that Space opened stops at the folder, and ← with nothing to close leaves the vault row open', async () => {
+    const { el, input } = await searchTwo()
+    await type(input, 'docs')
+    expect(shape(el)).toEqual(['Work', '  docs'])
+    await press(input, 'ArrowUp')
+    await press(input, ' ')
+    expect(shape(el)).toEqual(['Work', '  docs', '    d', '    plan d'])
+    const stops: (string | null)[] = []
+    for (const key of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowUp']) {
+      await press(input, key)
+      stops.push(cursor(el)[0])
+    }
+    expect(stops).toEqual(['d', 'plan d', 'plan d', 'd', 'docs', 'docs'])
+    await press(input, 'ArrowLeft')
+    await press(input, 'ArrowLeft')
+    expect(shape(el)).toEqual(['Work', '  docs'])
   })
 
   it('one vault: the cut tree has no vault row, and a match stands at its own depth, as before (S11, A9)', async () => {

@@ -5,13 +5,12 @@
  * to the matches (`searchTree`) — so this also holds that tree, its folds and the keyboard's
  * highlighted match. With two or more vaults the tree that is cut is the forest (YAZ-2602 A9): each
  * match stands under its vault's row. Since YAZ-2662 the matches of the pinned items — the focus
- * list and the favorites — are a group of their own, drawn first (D2). The shortcut picker keeps
- * the flat list and shares `useResultKeys`.
+ * list and the favorites — are a group of their own, drawn first (D2), and Space, → and ← act on
+ * the highlighted folder (D6, D7). The shortcut picker keeps the flat list and shares `useResultKeys`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { TreeNode } from '@shared/types'
 import { withoutPaths } from '../../lib/treeState'
-import type { SearchCandidate } from '../../search/searchCandidates'
 import { searchTree } from '../../search/searchTree'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
 import type { TreeMarks, TreeSelection } from '../Tree'
@@ -61,8 +60,8 @@ export function useSidebarSearch(
   onLeave: () => void,
   pendingSearchFocus: boolean,
   onSearchFocusHandled: () => void,
-  /** Enter on the highlight; `background` is ⌘, and `reveal` is Shift (YAZ-2662 D8). */
-  activate: (hit: SearchCandidate, background: boolean, reveal: boolean) => void,
+  /** Enter on the highlight, a match or not (YAZ-2662 S52); `background` is ⌘, and `reveal` is Shift (D8). */
+  activate: (row: TreeNode, background: boolean, reveal: boolean) => void,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -84,12 +83,15 @@ export function useSidebarSearch(
   // a top row, so no folder above it is drawn (S14) — and `rest` is every other match, cut from the
   // tree without the pinned items that `top` draws (S19). A pinned item that `top` does not draw
   // stays in its folder, and no pinned match is the one tree of before (S21). A row is in one group
-  // only, so the two share one set of open folders and one order.
+  // only, so the two share one set of open folders and one order. A folder of `full` shows ALL that
+  // it holds (D6): Space or → put it there, and it lasts as long as its query, as a fold does. In
+  // `rest` that is all but the pinned items that `top` draws, so no row shows two times (S19).
+  const [full, setFull] = useState<ReadonlySet<string>>(NO_FOLDS)
   const found = useMemo(() => {
-    const top = searchTree(pinned, hits)
-    const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits)
+    const top = searchTree(pinned, hits, full)
+    const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits, full)
     return { top: top.nodes, rest: rest.nodes, open: new Set([...top.open, ...rest.open]), order: [...top.order, ...rest.order] }
-  }, [tree, pinned, hits])
+  }, [tree, pinned, hits, full])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
   const marks: TreeMarks = useMemo(() => ({ hits, needle: query.trim().toLowerCase() }), [hits, query])
   // A fold clicked during a search lasts as long as its query (S15, S16) and lives here alone (R4):
@@ -100,25 +102,24 @@ export function useSidebarSearch(
   // ↑/↓ walk the MATCHES in the order the tree draws them (🔒 D4) — the top group, then the rest
   // (YAZ-2662 S22); a note and its alias rows are one row (S9), and a match below a folder the user
   // closed is not on screen, so it is no stop (S21). Read off the two trees as drawn: the rows above
-  // a match of the top group start at its pinned item, not at its vault.
-  const byPath = useMemo(() => new Map([...results].reverse().map((r) => [r.path, r])), [results])
+  // a match of the top group start at its pinned item, not at its vault. Inside a folder that shows
+  // all, each row on show is a stop, a match or not (YAZ-2662 S48).
   const rows = useMemo(() => {
-    const shown: SearchCandidate[] = []
-    const walk = (nodes: readonly TreeNode[]): void => {
+    const shown: TreeNode[] = []
+    const walk = (nodes: readonly TreeNode[], all: boolean): void => {
       for (const node of nodes) {
-        const hit = byPath.get(node.path)
-        if (hit !== undefined) shown.push(hit)
-        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children)
+        if (all || hits.has(node.path)) shown.push(node)
+        if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children, all || full.has(node.path))
       }
     }
-    walk(found.top)
-    walk(found.rest)
+    walk(found.top, false)
+    walk(found.rest, false)
     return shown
-  }, [found, searchOpen, byPath])
+  }, [found, searchOpen, hits, full])
   // The highlight is held by its PATH (`null`: nobody moved it yet), so a fold that moves rows in or
   // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first, a
   // pinned match when there is one (YAZ-2662 S23) — wherever the tree draws it (S19); once its match
-  // has left the screen, it is on the next match the tree still draws, else the last (S21).
+  // has left the screen, it is on the next row the tree still draws, else the last (S21).
   const [picked, setPicked] = useState<string | null>(null)
   const sel = useMemo(() => {
     const at = (path: string | undefined) => rows.findIndex((r) => r.path === path)
@@ -130,15 +131,15 @@ export function useSidebarSearch(
     return next !== -1 ? next : Math.max(0, rows.length - 1)
   }, [rows, picked, results, found])
   // The bar keeps focus while the tree is driven from it (YAZ-803). Opening leaves the results up.
-  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (hit, e) => activate(hit, e.metaKey, e.shiftKey))
+  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (row, e) => activate(row, e.metaKey, e.shiftKey))
   // With text typed the Search tab's body is the search tree (YAZ-2620); with none it is one line
   // of help (YAZ-2638 D2). A conditional render, not a teardown — every bit of the other tabs' tree
   // state (data, expansion, pending create/rename, drag) lives in the Sidebar's other hooks
   // (useVaultTree, rowGestures) and is waiting untouched when one of them shows again.
   const typed = query.trim() !== ''
 
-  // The highlight as the tree takes a selection (S39): the one match the keys are on. A click moves
-  // it to the clicked row when that row is a match (S26, S27) and leaves it be otherwise (S28).
+  // The highlight as the tree takes a selection (S39): the one row the keys are on. A click moves
+  // it to the clicked row when the keys can stop on that row (S26, S27) and leaves it be otherwise (S28).
   // Stable while nothing moved, as the per-level memo of `Tree` asks (YAZ-2194).
   const cursor = rows[sel]?.path
   const cursorPaths = useMemo(() => (cursor === undefined ? NO_CURSOR : new Set([cursor])), [cursor])
@@ -165,6 +166,33 @@ export function useSidebarSearch(
     setQuery(e.target.value)
     setPicked(null) // a new query is a new ranking: the best match is the highlight again
     setFlipped(NO_FOLDS) // and a new tree: its folds are the search's own again (S16)
+    setFull(NO_FOLDS) // and no folder shows all (YAZ-2662 S53)
+  }
+
+  // The list keys (YAZ-2662 D7): Space, → and ← act on the highlight once ↑ or ↓ moved it. Until
+  // then, after a change of the text, and with a modifier they are the text's; so is a list key with
+  // nothing to do on the highlight (S50, S51), which is not taken. Says whether the key was taken.
+  const listKey = (e: KeyboardEvent<HTMLInputElement>): boolean => {
+    const row = picked === null || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey ? undefined : rows[sel]
+    // On a file → and ← have nothing to do (S50, S51); Space on a file is the preview panel's key (D5).
+    if (row?.type !== 'dir') return false
+    const dir = row.path
+    const open = searchOpen.has(dir)
+    // ← closes an open folder (S51).
+    if (e.key === 'ArrowLeft' && open) toggleSearchDir(dir)
+    // Space and → open the folder with ALL that it holds (D6, S50): whatever its fold was, it is open.
+    else if ((e.key === ' ' || e.key === 'ArrowRight') && !(open && full.has(dir))) {
+      setFull((prev) => new Set([...prev, dir]))
+      setFlipped((prev) => new Set([...prev].filter((path) => path !== dir)))
+    }
+    // Space on a folder that shows all puts it, and each folder inside it, back as the search drew it (S49).
+    else if (e.key === ' ') {
+      const outside = (prev: ReadonlySet<string>) => new Set([...prev].filter((path) => path !== dir && !path.startsWith(`${dir}/`)))
+      setFull(outside)
+      setFlipped(outside)
+    } else return false
+    e.preventDefault()
+    return true
   }
 
   const searchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -172,7 +200,7 @@ export function useSidebarSearch(
       e.preventDefault()
       e.stopPropagation()
       onLeave()
-    } else onKeys(e)
+    } else if (!listKey(e)) onKeys(e)
   }
 
   return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown }

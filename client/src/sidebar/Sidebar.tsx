@@ -10,8 +10,8 @@ import { relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, findNode, pinnedRoots, treeHasFile } from '../lib/treeState'
-import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
+import { ancestorDirs, findDirNode, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { SEARCH_CAP } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
@@ -469,19 +469,19 @@ export function Sidebar({
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
   // row's own (YAZ-2620 🔒 D1): it opens a note the same way, and folds a folder.
-  const activate = (hit: SearchCandidate, background: boolean, reveal: boolean) => {
-    const node = forest === null ? null : findNode(forest, hit.path)
+  // The row is the search tree's own: a match, or a row of a folder that shows all (YAZ-2662 S52).
+  const activate = (row: TreeNode, background: boolean, reveal: boolean) => {
     // Enter on a folder, and Shift+Enter on any row, show the row in Files with the keyboard focus on
     // it (YAZ-2662 D1, D8). ⌘ is read first (S7): ⌘Enter is a background tab, of a folder's page too.
-    if (!background && (reveal || hit.kind === 'dir')) onRevealInFiles(hit.path, true)
+    if (!background && (reveal || row.type === 'dir')) onRevealInFiles(row.path, true)
     // A file with no viewer in the app opens in its default app, as its tree row does (YAZ-1577 D2;
     // S24 on YAZ-2620): no tab, so nothing for ⌘ to background either.
-    else if (node?.type === 'file' && node.kind === null) openDefault(hit.path)
-    else if (background) onOpenFileBackground(hit.path)
+    else if (row.type === 'file' && row.kind === null) openDefault(row.path)
+    else if (background) onOpenFileBackground(row.path)
     else {
       // The page already open is asked for too: nothing changes in the workspace, and App closes the tab board over it (YAZ-2648 S46).
-      onOpenFile(hit.path)
-      if (hit.path === activeFile) focusOpenDocument()
+      onOpenFile(row.path)
+      if (row.path === activeFile) focusOpenDocument()
     }
   }
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own

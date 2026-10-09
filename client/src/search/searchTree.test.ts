@@ -17,7 +17,9 @@ const TREE: TreeNode[] = [
   file('/v/Root.md'),
 ]
 
-const cutOf = (...hits: string[]) => searchTree(TREE, new Set(hits))
+const cutOf = (...hits: string[]) => searchTree(TREE, new Set(hits), new Set())
+/** The cut with the folders `full` showing all (YAZ-2662 D6). */
+const cutAll = (full: string[], ...hits: string[]) => searchTree(TREE, new Set(hits), new Set(full))
 /** The cut as indented paths, so a whole shape reads at a glance. */
 const shape = (nodes: readonly TreeNode[], depth = 0): string[] =>
   nodes.flatMap((n) => [`${'  '.repeat(depth)}${n.path.slice('/v/'.length)}`, ...(n.type === 'dir' ? shape(n.children, depth + 1) : [])])
@@ -61,5 +63,36 @@ describe('searchTree (YAZ-2620)', () => {
     expect(cut.order).toEqual(['/v/Clients/Acme', '/v/Clients/Acme/Call.md', '/v/Clients/Index.md', '/v/Transcripts/Feb.md', '/v/Root.md'])
     expect(shape(cut.nodes)).toEqual(['Clients', '  Clients/Acme', '    Clients/Acme/Call.md', '  Clients/Index.md', 'Transcripts', '  Transcripts/Feb.md', 'Root.md'])
     expect(TREE[0].type === 'dir' && TREE[0].children[0].type === 'dir' && TREE[0].children[0].children).toHaveLength(2) // the tree itself is never cut
+  })
+})
+
+describe('searchTree: a folder that shows all (YAZ-2662 D6)', () => {
+  it('S46, S47: it keeps each row that it holds — a folder inside it that leads to a match stays as cut, open; one that leads to none is the tree\'s own node, closed', () => {
+    const cut = cutAll(['/v/Clients'], '/v/Clients', '/v/Clients/Acme/Plan.md')
+    expect(shape(cut.nodes)).toEqual(['Clients', '  Clients/Acme', '    Clients/Acme/Plan.md', '  Clients/Index.md'])
+    expect(cut.open).toEqual(new Set(['/v/Clients', '/v/Clients/Acme']))
+    const old = cutAll(['/v/Transcripts'], '/v/Transcripts/Feb.md')
+    expect(shape(old.nodes)).toEqual(['Transcripts', '  Transcripts/Old', '    Transcripts/Old/Jan.md', '  Transcripts/Feb.md'])
+    expect(old.open).toEqual(new Set(['/v/Transcripts']))
+    expect(old.nodes[0].type === 'dir' && old.nodes[0].children[0]).toBe(TREE[1].type === 'dir' && TREE[1].children[0])
+  })
+
+  it('S48: `order` holds each row below it, a match or not, at its place in the tree', () => {
+    expect(cutAll(['/v/Transcripts'], '/v/Clients/Index.md', '/v/Transcripts/Feb.md', '/v/Root.md').order).toEqual(['/v/Clients/Index.md', '/v/Transcripts/Old', '/v/Transcripts/Old/Jan.md', '/v/Transcripts/Feb.md', '/v/Root.md'])
+  })
+
+  it('S52: a folder inside it shows all too — one that leads to no match is the tree\'s own node, open', () => {
+    const cut = cutAll(['/v/Transcripts', '/v/Transcripts/Old'], '/v/Transcripts')
+    expect(shape(cut.nodes)).toEqual(['Transcripts', '  Transcripts/Old', '    Transcripts/Old/Jan.md', '  Transcripts/Feb.md'])
+    expect(cut.open).toEqual(new Set(['/v/Transcripts', '/v/Transcripts/Old']))
+  })
+
+  it('S54: a folder with nothing in it is open, with no row', () => {
+    const cut = searchTree([dir('/v/Empty')], new Set(['/v/Empty']), new Set(['/v/Empty']))
+    expect([shape(cut.nodes), cut.open]).toEqual([['Empty'], new Set(['/v/Empty'])])
+  })
+
+  it('a folder that the search does not draw is not drawn because it shows all', () => {
+    expect(shape(cutAll(['/v/Clients', '/v/Clients/Acme'], '/v/Root.md').nodes)).toEqual(['Root.md'])
   })
 })

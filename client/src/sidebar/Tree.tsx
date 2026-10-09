@@ -271,9 +271,12 @@ function TreeLevel({
                 }}
                 // Enter opens it too, as it opens a file row — there through the button's own click,
                 // which on this row folds. So the key is taken here and Space is left to fold.
+                // A HELD Enter is taken and does nothing: Enter on a folder of the search puts the
+                // focus on this row (YAZ-2662 D1), and the repeats of that press arrive here.
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' || e.shiftKey || vaultRows.has(node.path)) return
                   e.preventDefault()
+                  if (e.repeat) return
                   selection.set(node.path)
                   onOpenFile(node.path)
                 }}
