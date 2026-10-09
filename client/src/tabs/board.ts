@@ -10,27 +10,29 @@
 import { rootOfPath, stripSlash } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
 
-/** Every length is in px. A page is a small sheet of paper, 3:4. */
+/** Every length is in px. A page is a sheet of paper, 3:4, big enough to read its first lines. */
 export const BOARD = {
-  pageW: 132,
-  pageH: 176,
+  pageW: 200,
+  pageH: 266,
   /** Between two pages of an island. */
-  pageGap: 10,
-  /** Around an island's pages, and between its label row and them. */
-  islandPad: 10,
-  /** An island's label row. */
-  labelH: 22,
+  pageGap: 14,
+  /** Around an island's pages. */
+  islandPad: 14,
+  /** An island's label row, the gap under the label in it. */
+  labelH: 28,
   /** Between two islands, sideways and down, and between two vaults. */
-  islandGap: 14,
+  islandGap: 20,
   /** A vault's name above its islands (two or more vaults). */
-  vaultH: 28,
+  vaultH: 34,
   /** How far a stack's fanned pages reach past the top one: sideways, and up into the gap under the label. */
-  fanX: 14,
-  fanY: 8,
+  fanX: 20,
+  fanY: 10,
   /** Around the whole board, inside its scroller. */
-  padX: 24,
-  padTop: 8,
-  padBottom: 28,
+  padX: 28,
+  padTop: 10,
+  padBottom: 32,
+  /** The fewest pages an island needs before it can be a stack: "more than three" (the owner's rule). */
+  stackMin: 4,
 } as const
 
 export interface BoardPage {
@@ -87,9 +89,9 @@ export function buildBoard(tabs: readonly string[], roots: readonly string[], va
     }))
 }
 
-/** How many pages an island sets side by side: a row up to four, then two rows, five wide at most — and never more than the board is wide. */
+/** How many pages an island sets side by side: three at most, and four pages as two and two — and never more than the board is wide. */
 export function islandCols(count: number, boardW: number): number {
-  const wanted = count <= 4 ? count : Math.min(5, Math.ceil(count / 2))
+  const wanted = count === 4 ? 2 : Math.min(count, 3)
   const fits = Math.floor((boardW - 2 * BOARD.islandPad + BOARD.pageGap) / (BOARD.pageW + BOARD.pageGap))
   return Math.max(1, Math.min(wanted, fits))
 }
@@ -137,8 +139,9 @@ export function boardHeight(shape: readonly BoardShape[], stacked: ReadonlySet<s
  * THE STACK RULE (YAZ-2648): which islands show as a fanned pile.
  *
  * A board that fits its area stacks nothing. One that does not stacks the island with the most
- * pages, then the next, until it fits or no island of two or more pages is left spread; then it
- * scrolls. An island of one page never stacks. One the user spread (`spread`) stays spread. The
+ * pages, then the next, until it fits or no island of `BOARD.stackMin` pages is left spread; then
+ * it scrolls. An island of three pages or fewer never stacks: a pile of two hides as much as it
+ * saves. One the user spread (`spread`) stays spread. The
  * island of the active tab (`keep`) goes last, so the page the user came from is a pile only when
  * nothing else is left.
  *
@@ -152,7 +155,7 @@ export function stackedIslands(shape: readonly BoardShape[], area: { w: number; 
   if (area === null || area.w <= 0 || area.h <= 0) return stacked
   const order = shape
     .flatMap((vault) => vault.islands)
-    .filter((island) => island.count > 1 && !spread.has(island.dir))
+    .filter((island) => island.count >= BOARD.stackMin && !spread.has(island.dir))
     // The sort is stable: islands of one size go in the board's order.
     .sort((a, b) => Number(a.dir === keep) - Number(b.dir === keep) || b.count - a.count)
   for (const island of order) {

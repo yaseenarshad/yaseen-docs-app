@@ -19,7 +19,7 @@ const state = (tabs: string[], active: string | null, mounted?: string[]): TabsS
   active,
   mounted: mounted ?? (active === null ? [] : [active]),
   history: {},
-  preview: null,
+  preview: null, blank: false,
 })
 
 describe('tabsReducer', () => {
@@ -32,6 +32,7 @@ describe('tabsReducer', () => {
         mounted: ['/v/b.md', '/v/a.md', '/v/c.md'],
         history: {},
         preview: '/v/c.md',
+        blank: false,
       })
       expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual({ ...state(['/v/a.md'], '/v/a.md'), preview: '/v/a.md' })
     })
@@ -44,6 +45,7 @@ describe('tabsReducer', () => {
         mounted: ['/v/b.md', '/v/c.md'],
         history: { '/v/c.md': { entries: ['/v/p.md', '/v/c.md'], index: 1 } },
         preview: '/v/c.md',
+        blank: false,
       })
     })
 
@@ -55,6 +57,7 @@ describe('tabsReducer', () => {
         mounted: ['/v/p.md', '/v/a.md'],
         history: {},
         preview: '/v/p.md',
+        blank: false,
       })
     })
 
@@ -70,7 +73,7 @@ describe('tabsReducer', () => {
 
     it('keep makes the preview tab a kept tab, so the next open gets a NEW preview tab; keep on any other path is a no-op', () => {
       const kept = tabsReducer(previewing(), { type: 'keep', path: '/v/p.md' })
-      expect(kept).toEqual({ ...previewing(), preview: null })
+      expect(kept).toEqual({ ...previewing(), preview: null, blank: false })
       expect(tabsReducer(kept, { type: 'open-current', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], preview: '/v/c.md' })
       const s = previewing()
       expect(tabsReducer(s, { type: 'keep', path: '/v/a.md' })).toBe(s)
@@ -78,9 +81,9 @@ describe('tabsReducer', () => {
     })
 
     it('a drag of the preview tab keeps it; a close of it clears the mark; another tab moved or closed leaves the mark', () => {
-      expect(tabsReducer(previewing(), { type: 'move', from: 1, to: 0 })).toMatchObject({ tabs: ['/v/p.md', '/v/a.md'], preview: null })
+      expect(tabsReducer(previewing(), { type: 'move', from: 1, to: 0 })).toMatchObject({ tabs: ['/v/p.md', '/v/a.md'], preview: null, blank: false })
       expect(tabsReducer(previewing(), { type: 'move', from: 0, to: 1 })).toMatchObject({ tabs: ['/v/p.md', '/v/a.md'], preview: '/v/p.md' })
-      expect(tabsReducer(previewing(), { type: 'close', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], active: '/v/a.md', preview: null })
+      expect(tabsReducer(previewing(), { type: 'close', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], active: '/v/a.md', preview: null, blank: false })
       expect(tabsReducer(previewing(), { type: 'close', path: '/v/a.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: '/v/p.md' })
     })
 
@@ -92,6 +95,7 @@ describe('tabsReducer', () => {
         mounted: ['/v/p.md', '/v/c.md'],
         history: { '/v/c.md': { entries: ['/v/a.md', '/v/c.md'], index: 1 } },
         preview: '/v/p.md',
+        blank: false,
       })
       const onPreview = tabsReducer(previewing(), { type: 'navigate', path: '/v/c.md' })
       expect(onPreview).toMatchObject({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md', preview: '/v/c.md' })
@@ -102,17 +106,75 @@ describe('tabsReducer', () => {
       expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/q.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/q.md'], preview: '/v/q.md' })
       expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/a.md', newPath: '/v/z.md' })).toMatchObject({ tabs: ['/v/z.md', '/v/p.md'], preview: '/v/p.md' })
       // The new path is open already: the old tab is dropped (de-dup), and its mark with it.
-      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null })
+      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
       const inDir: TabsState = { ...state(['/v/a.md', '/v/Old/p.md'], '/v/a.md'), preview: '/v/Old/p.md' }
       expect(tabsReducer(inDir, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toMatchObject({ tabs: ['/v/a.md', '/v/New/p.md'], preview: '/v/New/p.md' })
-      expect(tabsReducer(inDir, { type: 'delete-dir', path: '/v/Old' })).toMatchObject({ tabs: ['/v/a.md'], preview: null })
-      expect(tabsReducer(previewing(), { type: 'delete', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null })
-      expect(tabsReducer(previewing(), { type: 'reset', tabs: ['/v/p.md'], active: '/v/p.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: null })
+      expect(tabsReducer(inDir, { type: 'delete-dir', path: '/v/Old' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
+      expect(tabsReducer(previewing(), { type: 'delete', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
+      expect(tabsReducer(previewing(), { type: 'reset', tabs: ['/v/p.md'], active: '/v/p.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: null, blank: false })
     })
 
     it('open-new and open-background open KEPT tabs: the mark stays where it was', () => {
       expect(tabsReducer(previewing(), { type: 'open-new', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], active: '/v/c.md', preview: '/v/p.md' })
       expect(tabsReducer(previewing(), { type: 'open-background', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], active: '/v/p.md', preview: '/v/p.md' })
+    })
+  })
+
+  describe('the blank tab (YAZ-2655 D10): one, in memory, never in `tabs`', () => {
+    const two = (): TabsState => state(['/v/a.md', '/v/b.md'], '/v/a.md')
+    /** ⌘T on two kept tabs: the blank tab shows, and `active` — the stored file — is still the last real tab. */
+    const blank = (): TabsState => tabsReducer(two(), { type: 'new-tab' })
+
+    it('S70, S74, S77: new-tab shows the blank tab and changes nothing that is stored; a second one is the same state; it works with no tabs', () => {
+      expect(blank()).toEqual({ ...two(), blank: true })
+      const s = blank()
+      expect(tabsReducer(s, { type: 'new-tab' })).toBe(s)
+      expect(tabsReducer(state([], null), { type: 'new-tab' })).toEqual({ ...state([], null), blank: true })
+    })
+
+    it('S71: the next page opened by the preview rule FILLS it — a kept tab at the end, where the blank tab stood — and the preview tab is not touched', () => {
+      const withPreview: TabsState = { ...blank(), tabs: ['/v/a.md', '/v/p.md', '/v/b.md'], preview: '/v/p.md' }
+      expect(tabsReducer(withPreview, { type: 'open-current', path: '/v/c.md' })).toEqual({
+        tabs: ['/v/a.md', '/v/p.md', '/v/b.md', '/v/c.md'],
+        active: '/v/c.md',
+        mounted: ['/v/a.md', '/v/c.md'],
+        history: {},
+        preview: '/v/p.md',
+        blank: false,
+      })
+      // The first page of an empty window too; and a kept open (a folder row's double click) fills it the same way.
+      expect(tabsReducer(tabsReducer(state([], null), { type: 'new-tab' }), { type: 'open-current', path: '/v/c.md' })).toEqual(state(['/v/c.md'], '/v/c.md'))
+      expect(tabsReducer(blank(), { type: 'open-new', path: '/v/Docs' })).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/Docs'], active: '/v/Docs', preview: null, blank: false })
+    })
+
+    it('S72, S73: a page that is open already — the one that was active too — and a click on a tab go to that tab, and the unused blank tab goes away', () => {
+      expect(tabsReducer(blank(), { type: 'open-current', path: '/v/b.md' })).toEqual(state(['/v/a.md', '/v/b.md'], '/v/b.md', ['/v/a.md', '/v/b.md']))
+      expect(tabsReducer(blank(), { type: 'open-current', path: '/v/a.md' })).toEqual(two())
+      expect(tabsReducer(blank(), { type: 'activate', path: '/v/b.md' })).toMatchObject({ active: '/v/b.md', blank: false })
+      expect(tabsReducer(blank(), { type: 'activate', path: '/v/a.md' })).toEqual(two())
+      // ⌃Tab from the blank tab, which stands last: on to the first tab, back to the last.
+      expect(tabsReducer(blank(), { type: 'cycle', dir: 1 })).toMatchObject({ active: '/v/a.md', blank: false })
+      expect(tabsReducer(blank(), { type: 'cycle', dir: -1 })).toMatchObject({ active: '/v/b.md', blank: false })
+    })
+
+    it('S75: close-blank closes the blank tab only: the tab that was active before is active again', () => {
+      expect(tabsReducer(blank(), { type: 'close-blank' })).toEqual(two())
+      const s = two()
+      expect(tabsReducer(s, { type: 'close-blank' })).toBe(s)
+    })
+
+    it('S78: open-background while it is active appends a kept tab and the blank tab stays active — in an empty window the page becomes the stored file, as main requires', () => {
+      expect(tabsReducer(blank(), { type: 'open-background', path: '/v/c.md' })).toEqual({ ...state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/a.md'), blank: true })
+      expect(tabsReducer(tabsReducer(state([], null), { type: 'new-tab' }), { type: 'open-background', path: '/v/c.md' })).toEqual({ ...state(['/v/c.md'], '/v/c.md'), blank: true })
+    })
+
+    it('the blank tab has no history, closes with no tab of the strip, and a reset starts without it (S76)', () => {
+      const walked = tabsReducer(tabsReducer(two(), { type: 'navigate', path: '/v/c.md' }), { type: 'new-tab' })
+      expect(tabsReducer(walked, { type: 'back' })).toBe(walked)
+      // A ✕ on another tab — the one that was active — is no trip to a tab: its heir is the stored file, and the blank tab stays.
+      expect(tabsReducer(blank(), { type: 'close', path: '/v/a.md' })).toEqual({ ...state(['/v/b.md'], '/v/b.md'), blank: true })
+      expect(tabsReducer(blank(), { type: 'move', from: 0, to: 1 })).toMatchObject({ tabs: ['/v/b.md', '/v/a.md'], blank: true })
+      expect(tabsReducer(blank(), { type: 'reset', tabs: ['/v/a.md'], active: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], blank: false })
     })
   })
 
@@ -124,7 +186,7 @@ describe('tabsReducer', () => {
         active: '/v/b.md',
         mounted: ['/v/a.md', '/v/b.md'],
         history: {},
-        preview: null,
+        preview: null, blank: false,
       })
     })
 
@@ -140,7 +202,7 @@ describe('tabsReducer', () => {
         active: '/v/a.md',
         mounted: ['/v/a.md'],
         history: {},
-        preview: null,
+        preview: null, blank: false,
       })
     })
 
@@ -260,7 +322,7 @@ describe('tabsReducer', () => {
         active: '/v/new.md',
         mounted: ['/v/x.md', '/v/new.md'],
         history: {},
-        preview: null,
+        preview: null, blank: false,
       })
     })
 
@@ -291,7 +353,7 @@ describe('tabsReducer', () => {
         active: '/v/New/a.md',
         mounted: ['/v/x.md', '/v/New/a.md'],
         history: {},
-        preview: null,
+        preview: null, blank: false,
       })
     })
 
@@ -302,7 +364,7 @@ describe('tabsReducer', () => {
         active: '/v/New',
         mounted: ['/v/New'],
         history: {},
-        preview: null,
+        preview: null, blank: false,
       })
     })
 
@@ -527,6 +589,36 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(latest.preview).toBe('/v/c.md')
   })
 
+  it('the blank tab is never written (YAZ-2655 D10): ⌘T and its close mirror nothing, the stored file stays the last real tab, ⌘W closes it alone, and a fill is ONE ordinary write', () => {
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.navigate('/v/a2.md'))
+    expect(latest.canBack).toBe(true)
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.newTab())
+    expect(latest.blank).toBe(true)
+    expect(latest.active).toBe('/v/a2.md')
+    // The blank tab has no stack: the arrows have nowhere to go.
+    expect(latest.canBack).toBe(false)
+    let closed = false
+    act(() => {
+      closed = latest.closeActive()
+    })
+    expect(closed).toBe(true)
+    expect(latest.blank).toBe(false)
+    expect(latest.tabs).toEqual(['/v/a2.md'])
+    act(() => latest.newTab())
+    act(() => latest.closeBlank())
+    expect(latest.blank).toBe(false)
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
+
+    act(() => latest.newTab())
+    act(() => latest.openCurrent('/v/b.md'))
+    expect(latest.blank).toBe(false)
+    expect(latest.preview).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a2.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
+  })
+
   it('canBack / canForward read the ACTIVE tab\'s place in its own stack (YAZ-721 D1)', () => {
     act(() => latest.openCurrent('/v/a.md'))
     act(() => latest.openCurrent('/v/b.md'))
@@ -577,7 +669,7 @@ describe('workspaceReducer right-panel ownership', () => {
     active: '/v/a.md',
     mounted: ['/v/a.md'],
     history: {},
-    preview: null,
+    preview: null, blank: false,
     rightPanel: defaultRightPanelIdentity(),
     rightMounted: [],
     rightHistory: {},
@@ -726,7 +818,7 @@ describe('workspaceReducer right-panel ownership', () => {
  * than ⌘W does", which nobody reports and everybody feels.
  */
 describe('delete / delete-dir (GRO-2272)', () => {
-  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: {}, preview: null })
+  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: {}, preview: null, blank: false })
 
   it('deleting a NON-active tab leaves the active one alone', () => {
     const next = tabsReducer(S(['/a.md', '/b.md', '/c.md'], '/a.md'), { type: 'delete', path: '/b.md' })
@@ -748,7 +840,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('deleting the ONLY tab empties the window; it stays alive', () => {
     const next = tabsReducer(S(['/a.md'], '/a.md'), { type: 'delete', path: '/a.md' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false })
   })
 
   it('deleting a path that is not open returns the SAME state object (no identity mirror)', () => {
@@ -776,7 +868,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('delete-dir empties the window when every tab was under the folder', () => {
     const next = tabsReducer(S(['/Docs/a.md', '/Docs/b.md'], '/Docs/a.md'), { type: 'delete-dir', path: '/Docs' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false })
   })
 
   it('delete-dir needs a real path segment: /Docsy.md is not under /Docs', () => {

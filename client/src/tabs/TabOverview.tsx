@@ -4,6 +4,7 @@ import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import { readPageDrag, writePageDrag } from '../workspace/pageDrag'
 import { BOARD, buildBoard, islandCols, nearest, stackedIslands, withoutTitle, type Island, type Way } from './board'
+import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type TabMenuAt } from './TabMenu'
 import { useTabHeads } from './useTabHeads'
 import './tabs.css'
@@ -174,6 +175,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     setPicked(NO_STACKS)
   }
   const anyMenu = pageMenu !== null || islandMenu !== null || pickMenu !== null
+  // The strip lights the tab of the highlighted page (`boardHighlight.ts`), and a board that goes lets go.
+  useEffect(() => {
+    setBoardHighlight(current)
+  }, [current])
+  useEffect(() => () => setBoardHighlight(null), [])
   // What the peek shows: the highlighted page while Space is down, and the same page while it shrinks away.
   if (peeking && current !== null) lastPeek.current = current
   const peekPath = lastPeek.current !== null && tabs.includes(lastPeek.current) ? lastPeek.current : null

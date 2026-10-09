@@ -21,6 +21,7 @@ function installBridge() {
   const nextTabListeners = new Set<() => void>()
   const prevTabListeners = new Set<() => void>()
   const tabOverviewListeners = new Set<() => void>()
+  const newTabListeners = new Set<() => void>()
   const zoomListeners = new Set<(step: -1 | 0 | 1) => void>()
   const sub = <T,>(set: Set<T>) =>
     vi.fn((l: T) => {
@@ -39,6 +40,7 @@ function installBridge() {
       onNextTab: sub(nextTabListeners),
       onPrevTab: sub(prevTabListeners),
       onTabOverview: sub(tabOverviewListeners),
+      onNewTab: sub(newTabListeners),
       onZoom: sub(zoomListeners),
     },
   }
@@ -54,8 +56,9 @@ function installBridge() {
     emitNextTab: () => nextTabListeners.forEach((l) => l()),
     emitPrevTab: () => prevTabListeners.forEach((l) => l()),
     emitTabOverview: () => tabOverviewListeners.forEach((l) => l()),
+    emitNewTab: () => newTabListeners.forEach((l) => l()),
     emitZoom: (step: -1 | 0 | 1) => zoomListeners.forEach((l) => l(step)),
-    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + switchVaultListeners.size + settingsListeners.size + toggleSidebarListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size + tabOverviewListeners.size + zoomListeners.size,
+    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + switchVaultListeners.size + settingsListeners.size + toggleSidebarListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size + tabOverviewListeners.size + newTabListeners.size + zoomListeners.size,
   }
 }
 
@@ -70,6 +73,7 @@ interface ProbeProps {
   onNextTab: () => void
   onPrevTab: () => void
   onTabOverview: () => void
+  onNewTab: () => void
   onZoom: (step: -1 | 0 | 1) => void
 }
 
@@ -88,7 +92,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onZoom: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onZoom: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -112,6 +116,8 @@ describe('useMenuEvents', () => {
     expect(handlers.onPrevTab).toHaveBeenCalledTimes(1)
     act(() => b.emitTabOverview())
     expect(handlers.onTabOverview).toHaveBeenCalledTimes(1)
+    act(() => b.emitNewTab())
+    expect(handlers.onNewTab).toHaveBeenCalledTimes(1)
     act(() => b.emitZoom(-1))
     expect(handlers.onZoom).toHaveBeenCalledExactlyOnceWith(-1)
 

@@ -3,7 +3,7 @@
  * keys' geometry, and the title a page does not repeat. Pure functions, no DOM.
  */
 import { describe, expect, it } from 'vitest'
-import { boardHeight, buildBoard, islandBox, nearest, stackedIslands, withoutTitle, type BoardShape } from './board'
+import { BOARD, boardHeight, buildBoard, islandBox, islandCols, nearest, stackedIslands, withoutTitle, type BoardShape } from './board'
 
 const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
 
@@ -42,28 +42,35 @@ describe('stackedIslands — the stack rule', () => {
   })
 
   it('a board that does not fit stacks the island with the most pages, then the next, and stops as soon as it fits', () => {
-    // 8 pages (two rows of four), 5 (two rows of three), 2: at 620 wide they take three lines.
+    // 5, 8 and 2 pages at 620 wide: two pages side by side at most, so each island takes its own line.
     const s = shape(5, 8, 2)
     const w = 620
     const whole = boardHeight(s, new Set(), w)
     expect([...stackedIslands(s, { w, h: whole })]).toEqual([])
-    // One px short: the biggest goes first, and that is enough when the rest then shares a line.
+    // One px short: the biggest goes first, and that is enough.
     const afterOne = boardHeight(s, new Set(['/v/1']), w)
     expect([...stackedIslands(s, { w, h: whole - 1 })]).toEqual(['/v/1'])
     expect([...stackedIslands(s, { w, h: afterOne })]).toEqual(['/v/1'])
     expect([...stackedIslands(s, { w, h: afterOne - 1 })]).toEqual(['/v/1', '/v/0'])
   })
 
-  it('an island of one page never stacks, so a board of them scrolls; one the user spread stays spread; the active tab\'s island goes last', () => {
-    expect([...stackedIslands(shape(1, 1, 1, 1), { w: 200, h: oneRow })]).toEqual([])
-    const s = shape(4, 3, 2, 1)
+  it('an island of three pages or fewer never stacks (R25a), so a board of them scrolls', () => {
     const tiny = { w: 320, h: 10 }
-    expect([...stackedIslands(s, tiny)]).toEqual(['/v/0', '/v/1', '/v/2'])
-    expect([...stackedIslands(s, tiny, new Set(['/v/0']))]).toEqual(['/v/1', '/v/2'])
-    expect([...stackedIslands(s, tiny, new Set(), '/v/0')]).toEqual(['/v/1', '/v/2', '/v/0'])
+    expect([...stackedIslands(shape(1, 1, 1, 1), { w: 200, h: oneRow })]).toEqual([])
+    expect([...stackedIslands(shape(3, 3, 2, 1), tiny)]).toEqual([])
+    // Four is the first count that can: the smaller islands beside it stay spread.
+    expect([...stackedIslands(shape(3, 4, 2), tiny)]).toEqual(['/v/1'])
+  })
+
+  it('one the user spread stays spread; the active tab\'s island goes last', () => {
+    const s = shape(5, 4, 3, 2, 1)
+    const tiny = { w: 320, h: 10 }
+    expect([...stackedIslands(s, tiny)]).toEqual(['/v/0', '/v/1'])
+    expect([...stackedIslands(s, tiny, new Set(['/v/0']))]).toEqual(['/v/1'])
+    expect([...stackedIslands(s, tiny, new Set(), '/v/0')]).toEqual(['/v/1', '/v/0'])
     // Kept last means: not stacked at all while stacking another is enough.
-    const enough = { w: 700, h: boardHeight(s, new Set(['/v/1']), 700) }
-    expect([...stackedIslands(s, enough)]).toEqual(['/v/0'])
+    const enough = { w: 720, h: boardHeight(s, new Set(['/v/1']), 720) }
+    expect(stackedIslands(s, enough).has('/v/0')).toBe(true)
     expect([...stackedIslands(s, enough, new Set(), '/v/0')]).toEqual(['/v/1'])
   })
 
@@ -79,6 +86,17 @@ describe('stackedIslands — the stack rule', () => {
       expect(islandBox(count, true, 700).w).toBeLessThanOrEqual(islandBox(count, false, 700).w)
       expect(islandBox(count, true, 700).h).toBeLessThanOrEqual(islandBox(count, false, 700).h)
     }
+  })
+})
+
+describe('islandCols / islandBox — the sizes the stylesheet is given', () => {
+  it('three pages side by side at most, four as two and two, and never more than the board is wide; a pile is one page high', () => {
+    expect([1, 2, 3, 4, 5, 7].map((count) => islandCols(count, 2000))).toEqual([1, 2, 3, 2, 3, 3])
+    expect(islandCols(7, 500)).toBe(2)
+    expect(islandCols(7, 100)).toBe(1)
+    const { pageW, pageH, pageGap, islandPad, labelH, fanX } = BOARD
+    expect(islandBox(5, false, 2000)).toEqual({ w: 3 * pageW + 2 * pageGap + 2 * islandPad, h: labelH + 2 * pageH + pageGap + 2 * islandPad })
+    expect(islandBox(5, true, 2000)).toEqual({ w: pageW + fanX + 2 * islandPad, h: labelH + pageH + 2 * islandPad })
   })
 })
 

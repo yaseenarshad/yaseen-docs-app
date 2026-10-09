@@ -13,6 +13,7 @@ import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandle
 const noopHandlers = (): MenuHandlers => ({
   copyAs: vi.fn(),
   pasteAs: vi.fn(),
+  newTab: vi.fn(),
   newWindow: vi.fn(),
   switchVault: vi.fn(),
   openFolder: vi.fn(),
@@ -66,9 +67,14 @@ describe('buildMenuTemplate', () => {
     expect(handlers.settings).toHaveBeenCalledTimes(1)
   })
 
-  it('File menu: New Window ⌘⇧N, Switch Vault… ⌘O, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
+  it('File menu: New Tab ⌘T, New Window ⌘⇧N, Switch Vault… ⌘O, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
+
+    // ⌘T leads the menu (YAZ-2655 D10), above New Window, as in a browser.
+    expect([file[0].id, file[0].label, file[0].accelerator]).toEqual(['menu.file.new-tab', 'New Tab', 'CmdOrCtrl+T'])
+    click(file[0])
+    expect(handlers.newTab).toHaveBeenCalledTimes(1)
 
     const newWindow = file.find((i) => i.label === 'New Window')
     expect(newWindow?.accelerator).toBe('CmdOrCtrl+Shift+N')
@@ -220,9 +226,9 @@ describe('buildMenuTemplate', () => {
     click(prevAlt)
     expect(handlers.prevTab).toHaveBeenCalledTimes(2)
 
-    // The tab overview (YAZ-2648 D5) stands beside them: one visible item, ⌘⇧A.
+    // The tab overview (YAZ-2648 D5) stands beside them: one visible item, ⌘⇧M (⌘⇧A until YAZ-2652's change).
     const overview = byId('menu.window.tab-overview')
-    expect([overview?.label, overview?.accelerator, overview?.visible]).toEqual(['Tab Overview', 'CmdOrCtrl+Shift+A', undefined])
+    expect([overview?.label, overview?.accelerator, overview?.visible]).toEqual(['Tab Overview', 'CmdOrCtrl+Shift+M', undefined])
     click(overview)
     expect(handlers.tabOverview).toHaveBeenCalledTimes(1)
   })
@@ -545,7 +551,9 @@ describe('createMenuHandlers', () => {
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onPrevTab.channel)
     handlers.tabOverview()
     expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onTabOverview.channel)
-    expect(wc.send).toHaveBeenCalledTimes(4)
+    handlers.newTab()
+    expect(wc.send).toHaveBeenLastCalledWith(CONTRACT.menu.onNewTab.channel)
+    expect(wc.send).toHaveBeenCalledTimes(5)
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => {
@@ -553,6 +561,7 @@ describe('createMenuHandlers', () => {
       unfocused.nextTab()
       unfocused.prevTab()
       unfocused.tabOverview()
+      unfocused.newTab()
     }).not.toThrow()
   })
 
