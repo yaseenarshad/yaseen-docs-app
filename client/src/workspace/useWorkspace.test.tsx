@@ -19,40 +19,100 @@ const state = (tabs: string[], active: string | null, mounted?: string[]): TabsS
   active,
   mounted: mounted ?? (active === null ? [] : [active]),
   history: {},
+  preview: null,
 })
 
 describe('tabsReducer', () => {
-  describe('open-current (rule 4: replace the active tab)', () => {
-    it('creates the first tab of an empty window', () => {
-      expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual({
-        ...state(['/v/a.md'], '/v/a.md'),
-        history: {},
-      })
-    })
-
-    it('replaces the active tab in its slot; the replaced path leaves the mounted set', () => {
+  describe('open-current (YAZ-2648 D1: the sidebar opens in the PREVIEW tab; a kept tab is never replaced)', () => {
+    it('with no preview tab the page gets one at the END of the strip, and the kept tabs stay — the first tab of an empty window too', () => {
       const s = state(['/v/a.md', '/v/b.md'], '/v/a.md', ['/v/b.md', '/v/a.md'])
       expect(tabsReducer(s, { type: 'open-current', path: '/v/c.md' })).toEqual({
-        tabs: ['/v/c.md', '/v/b.md'],
+        tabs: ['/v/a.md', '/v/b.md', '/v/c.md'],
+        active: '/v/c.md',
+        mounted: ['/v/b.md', '/v/a.md', '/v/c.md'],
+        history: {},
+        preview: '/v/c.md',
+      })
+      expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual({ ...state(['/v/a.md'], '/v/a.md'), preview: '/v/a.md' })
+    })
+
+    it("the next open takes the preview tab's SLOT — in the middle of the strip, with a kept tab active — and its stack gains the page", () => {
+      const s: TabsState = { ...state(['/v/a.md', '/v/p.md', '/v/b.md'], '/v/b.md', ['/v/b.md', '/v/p.md']), preview: '/v/p.md' }
+      expect(tabsReducer(s, { type: 'open-current', path: '/v/c.md' })).toEqual({
+        tabs: ['/v/a.md', '/v/c.md', '/v/b.md'],
         active: '/v/c.md',
         mounted: ['/v/b.md', '/v/c.md'],
-        history: { '/v/c.md': { entries: ['/v/a.md', '/v/c.md'], index: 1 } },
+        history: { '/v/c.md': { entries: ['/v/p.md', '/v/c.md'], index: 1 } },
+        preview: '/v/c.md',
       })
     })
 
-    it('ACTIVATES an already-open path instead of duplicating (rule 3)', () => {
-      const s = state(['/v/a.md', '/v/b.md'], '/v/a.md')
-      expect(tabsReducer(s, { type: 'open-current', path: '/v/b.md' })).toEqual({
-        tabs: ['/v/a.md', '/v/b.md'],
-        active: '/v/b.md',
-        mounted: ['/v/a.md', '/v/b.md'],
+    it('ACTIVATES an already-open path instead of duplicating (rule 3): the preview tab stays the preview tab', () => {
+      const s: TabsState = { ...state(['/v/a.md', '/v/p.md'], '/v/p.md'), preview: '/v/p.md' }
+      expect(tabsReducer(s, { type: 'open-current', path: '/v/a.md' })).toEqual({
+        tabs: ['/v/a.md', '/v/p.md'],
+        active: '/v/a.md',
+        mounted: ['/v/p.md', '/v/a.md'],
         history: {},
+        preview: '/v/p.md',
       })
     })
 
     it('re-opening the active path is a no-op (same state object — no identity mirror)', () => {
       const s = state(['/v/a.md'], '/v/a.md')
       expect(tabsReducer(s, { type: 'open-current', path: '/v/a.md' })).toBe(s)
+    })
+  })
+
+  describe('the preview mark (YAZ-2648 D2–D4)', () => {
+    /** A kept tab and the preview tab, which is the active one. */
+    const previewing = (): TabsState => ({ ...state(['/v/a.md', '/v/p.md'], '/v/p.md', ['/v/a.md', '/v/p.md']), preview: '/v/p.md' })
+
+    it('keep makes the preview tab a kept tab, so the next open gets a NEW preview tab; keep on any other path is a no-op', () => {
+      const kept = tabsReducer(previewing(), { type: 'keep', path: '/v/p.md' })
+      expect(kept).toEqual({ ...previewing(), preview: null })
+      expect(tabsReducer(kept, { type: 'open-current', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], preview: '/v/c.md' })
+      const s = previewing()
+      expect(tabsReducer(s, { type: 'keep', path: '/v/a.md' })).toBe(s)
+      expect(tabsReducer(kept, { type: 'keep', path: '/v/p.md' })).toBe(kept)
+    })
+
+    it('a drag of the preview tab keeps it; a close of it clears the mark; another tab moved or closed leaves the mark', () => {
+      expect(tabsReducer(previewing(), { type: 'move', from: 1, to: 0 })).toMatchObject({ tabs: ['/v/p.md', '/v/a.md'], preview: null })
+      expect(tabsReducer(previewing(), { type: 'move', from: 0, to: 1 })).toMatchObject({ tabs: ['/v/p.md', '/v/a.md'], preview: '/v/p.md' })
+      expect(tabsReducer(previewing(), { type: 'close', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], active: '/v/a.md', preview: null })
+      expect(tabsReducer(previewing(), { type: 'close', path: '/v/a.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: '/v/p.md' })
+    })
+
+    it('navigate (D3, a link inside a page) replaces the ACTIVE tab in its slot, kept or not; in the preview tab the mark follows, and Back carries it back', () => {
+      const onKept = tabsReducer({ ...previewing(), active: '/v/a.md' }, { type: 'navigate', path: '/v/c.md' })
+      expect(onKept).toEqual({
+        tabs: ['/v/c.md', '/v/p.md'],
+        active: '/v/c.md',
+        mounted: ['/v/p.md', '/v/c.md'],
+        history: { '/v/c.md': { entries: ['/v/a.md', '/v/c.md'], index: 1 } },
+        preview: '/v/p.md',
+      })
+      const onPreview = tabsReducer(previewing(), { type: 'navigate', path: '/v/c.md' })
+      expect(onPreview).toMatchObject({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md', preview: '/v/c.md' })
+      expect(tabsReducer(onPreview, { type: 'back' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md'], active: '/v/p.md', preview: '/v/p.md' })
+    })
+
+    it('the mark follows a renamed file and a renamed folder, and goes with a deleted one; a reset starts with none', () => {
+      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/q.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/q.md'], preview: '/v/q.md' })
+      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/a.md', newPath: '/v/z.md' })).toMatchObject({ tabs: ['/v/z.md', '/v/p.md'], preview: '/v/p.md' })
+      // The new path is open already: the old tab is dropped (de-dup), and its mark with it.
+      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null })
+      const inDir: TabsState = { ...state(['/v/a.md', '/v/Old/p.md'], '/v/a.md'), preview: '/v/Old/p.md' }
+      expect(tabsReducer(inDir, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toMatchObject({ tabs: ['/v/a.md', '/v/New/p.md'], preview: '/v/New/p.md' })
+      expect(tabsReducer(inDir, { type: 'delete-dir', path: '/v/Old' })).toMatchObject({ tabs: ['/v/a.md'], preview: null })
+      expect(tabsReducer(previewing(), { type: 'delete', path: '/v/p.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null })
+      expect(tabsReducer(previewing(), { type: 'reset', tabs: ['/v/p.md'], active: '/v/p.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: null })
+    })
+
+    it('open-new and open-background open KEPT tabs: the mark stays where it was', () => {
+      expect(tabsReducer(previewing(), { type: 'open-new', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], active: '/v/c.md', preview: '/v/p.md' })
+      expect(tabsReducer(previewing(), { type: 'open-background', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], active: '/v/p.md', preview: '/v/p.md' })
     })
   })
 
@@ -64,6 +124,7 @@ describe('tabsReducer', () => {
         active: '/v/b.md',
         mounted: ['/v/a.md', '/v/b.md'],
         history: {},
+        preview: null,
       })
     })
 
@@ -79,6 +140,7 @@ describe('tabsReducer', () => {
         active: '/v/a.md',
         mounted: ['/v/a.md'],
         history: {},
+        preview: null,
       })
     })
 
@@ -198,6 +260,7 @@ describe('tabsReducer', () => {
         active: '/v/new.md',
         mounted: ['/v/x.md', '/v/new.md'],
         history: {},
+        preview: null,
       })
     })
 
@@ -228,6 +291,7 @@ describe('tabsReducer', () => {
         active: '/v/New/a.md',
         mounted: ['/v/x.md', '/v/New/a.md'],
         history: {},
+        preview: null,
       })
     })
 
@@ -238,6 +302,7 @@ describe('tabsReducer', () => {
         active: '/v/New',
         mounted: ['/v/New'],
         history: {},
+        preview: null,
       })
     })
 
@@ -438,6 +503,30 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
   })
 
+  it('keep writes nothing — the preview mark is session-only (YAZ-2648 D4) — and openKept is a double click: the previewed page stays, a page not open yet opens kept', () => {
+    act(() => latest.openCurrent('/v/a.md'))
+    expect(latest.preview).toBe('/v/a.md')
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.keep('/v/a.md'))
+    expect(latest.preview).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
+
+    // A sidebar double click: the first click previews, the second keeps what the first opened.
+    act(() => latest.openCurrent('/v/b.md'))
+    act(() => latest.openKept('/v/b.md'))
+    expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md'])
+    expect(latest.preview).toBeNull()
+    // A folder row's double click had no first open: the folder opens as a kept tab.
+    act(() => latest.openKept('/v/Docs'))
+    expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs'])
+    expect(latest.active).toBe('/v/Docs')
+    expect(latest.preview).toBeNull()
+    // Nothing was replaced: the next click gets a new preview tab.
+    act(() => latest.openCurrent('/v/c.md'))
+    expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs', '/v/c.md'])
+    expect(latest.preview).toBe('/v/c.md')
+  })
+
   it('canBack / canForward read the ACTIVE tab\'s place in its own stack (YAZ-721 D1)', () => {
     act(() => latest.openCurrent('/v/a.md'))
     act(() => latest.openCurrent('/v/b.md'))
@@ -488,6 +577,7 @@ describe('workspaceReducer right-panel ownership', () => {
     active: '/v/a.md',
     mounted: ['/v/a.md'],
     history: {},
+    preview: null,
     rightPanel: defaultRightPanelIdentity(),
     rightMounted: [],
     rightHistory: {},
@@ -636,7 +726,7 @@ describe('workspaceReducer right-panel ownership', () => {
  * than ⌘W does", which nobody reports and everybody feels.
  */
 describe('delete / delete-dir (GRO-2272)', () => {
-  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: {} })
+  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: {}, preview: null })
 
   it('deleting a NON-active tab leaves the active one alone', () => {
     const next = tabsReducer(S(['/a.md', '/b.md', '/c.md'], '/a.md'), { type: 'delete', path: '/b.md' })
@@ -658,7 +748,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('deleting the ONLY tab empties the window; it stays alive', () => {
     const next = tabsReducer(S(['/a.md'], '/a.md'), { type: 'delete', path: '/a.md' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {} })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null })
   })
 
   it('deleting a path that is not open returns the SAME state object (no identity mirror)', () => {
@@ -686,7 +776,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('delete-dir empties the window when every tab was under the folder', () => {
     const next = tabsReducer(S(['/Docs/a.md', '/Docs/b.md'], '/Docs/a.md'), { type: 'delete-dir', path: '/Docs' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {} })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {}, preview: null })
   })
 
   it('delete-dir needs a real path segment: /Docsy.md is not under /Docs', () => {

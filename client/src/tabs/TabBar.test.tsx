@@ -56,6 +56,21 @@ describe('TabBar', () => {
     expect(tabsEls.map((t) => t.title)).toEqual(['/v/Note.md', '/v/sub/Plan.markdown'])
   })
 
+  it('the preview tab wears the preview class and a double click on a tab asks to keep it (YAZ-2648 D1, D2); the grid button after ▶ toggles the overview and is pressed while it shows (D8)', () => {
+    const onKeep = vi.fn()
+    const onToggleOverview = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', preview: '/v/b.md', onKeep, onToggleOverview, overviewOpen: true, ...noop, ...noNav })
+    expect([...el.querySelectorAll('.tabbar__tab--preview [role="tab"]')].map((t) => t.textContent)).toEqual(['b'])
+    act(() => void el.querySelectorAll('[role="tab"]')[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(onKeep).toHaveBeenCalledExactlyOnceWith('/v/b.md')
+
+    const nav = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
+    expect(nav.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward', 'Show all open tabs'])
+    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (⌘⇧A)', 'true'])
+    act(() => nav[2].click())
+    expect(onToggleOverview).toHaveBeenCalledTimes(1)
+  })
+
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
     const titles = new Map([['/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/v/upwork', 'Upwork 2026']])
     const el = mount({ tabs: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/upwork', '/v/scan.pdf'], active: '/v/scan.pdf', titles, ...noop, ...noNav })

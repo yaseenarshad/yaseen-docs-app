@@ -107,9 +107,15 @@ interface EditorProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /** The vault's review settings (YAZ-2322): App owns the one `useReviewSettings`; the Reviews section computes its dates from them. */
   reviewSettings?: ReviewSettings
+  /**
+   * The user changed this note's text (YAZ-2648 D2): App keeps the preview tab that shows it. Said
+   * when the note turns unsaved, so never for a change made outside the app. A main tab's editor
+   * gets it; the right panel has no preview tab.
+   */
+  onUserEdit?: (path: string) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps) {
   const inTree = useTreeKind(root, path)
   if (path === null) {
     return (
@@ -162,11 +168,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings }: EditorProps & { path: string }) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps & { path: string }) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -175,7 +181,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
       )}
     </section>
   )
@@ -202,6 +208,7 @@ function CrepeHost({
   commentsOrder,
   onChangeCommentsOrder,
   reviewSettings,
+  onUserEdit,
 }: {
   root: string
   file: FileResponse
@@ -222,6 +229,7 @@ function CrepeHost({
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
   reviewSettings?: ReviewSettings
+  onUserEdit?: (path: string) => void
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
@@ -309,6 +317,17 @@ function CrepeHost({
   titleRef.current = pageLabel(file.path, false, titles)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
+  // The user's own edit keeps a preview tab (YAZ-2648 D2), and the signal is the note turning
+  // UNSAVED, never `onMarkdownUpdated`: that fires for a silent reload of an outside change too.
+  // The autosave turns unsaved only when the editor's text differs from what it last read or
+  // wrote, and a reload makes the reloaded text that baseline (`markReloaded`) before the listener
+  // reports it — so an outside edit never says this. It costs nothing per keystroke: the effect
+  // runs when the chip's status changes, once per save cycle. Outside the Crepe effect's deps, so
+  // the callback's identity rebuilds no editor.
+  const unsaved = autosave.status === 'unsaved'
+  useEffect(() => {
+    if (unsaved) onUserEdit?.(file.path)
+  }, [unsaved, onUserEdit, file.path])
   const reloadRef = useRef<() => void>(() => {})
   /**
    * The whole-file bytes last seen on disk (YAZ-1356). `file.content` is frozen at mount — a fresh

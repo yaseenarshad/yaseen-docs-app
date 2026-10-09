@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { api, BridgeRequestError } from '../api'
-import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
-import { SidebarPanelIcon } from '../views/view/icons'
+import { GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
+import { TabMenu, type TabMenuAt } from './TabMenu'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -14,7 +13,11 @@ export interface TabBarProps {
   tabs: readonly string[]
   /** The active tab (the window's `file`); null with no tabs open. */
   active: string | null
+  /** The preview tab (YAZ-2648 D1), or null: its label is italic until the tab is kept. */
+  preview?: string | null
   onActivate: (path: string) => void
+  /** A double click on a tab (YAZ-2648 D2): the preview tab becomes a kept tab; any other tab is one already. */
+  onKeep?: (path: string) => void
   onClose: (path: string) => void
   /** Drag-to-reorder (I3, GRO-2235): the tab at `from` lands at final index `to`. */
   onMove: (from: number, to: number) => void
@@ -34,6 +37,13 @@ export interface TabBarProps {
   onShowSidebar?: () => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
+  /**
+   * The tab overview's button (YAZ-2648 D8), right of ▶: it opens the overview, and closes it again.
+   * Absent on a mount with no overview.
+   */
+  onToggleOverview?: () => void
+  /** Whether the overview shows: the button's one state. */
+  overviewOpen?: boolean
   /**
    * Where a failed OS action says so (YAZ-963) — App's passive notice. Optional: a mount with
    * nowhere to show one loses the message, never the gesture.
@@ -69,17 +79,20 @@ const Chevron = ({ d }: { d: string }) => (
  * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none) with an accent
  * insertion indicator; the strip scrolls when full and keeps the ACTIVE tab in view. Left of
  * the strip sit the ◀ ▶ history buttons (YAZ-721), disabled when the active tab's stack has
- * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
+ * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item. Right of them
+ * the grid button shows every open tab at once (YAZ-2648 D8). The ONE preview tab (YAZ-2648 D1)
+ * wears an italic label; a double click on it keeps it.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
-  // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The note's
-  // review state (YAZ-2322) is read when the menu opens, so the review item is about the tab that
-  // was right-clicked; a null state hides it.
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string; review: boolean | null } | null>(null)
+  // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The items are
+  // `TabMenu`'s, which the board's pages open too (YAZ-2648). The note's review state (YAZ-2322)
+  // is read when the menu opens, so the review item is about the tab that was right-clicked; a
+  // null state hides it.
+  const [menu, setMenu] = useState<TabMenuAt | null>(null)
   const activeRef = useRef<HTMLDivElement | null>(null)
   const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
@@ -126,20 +139,6 @@ export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDro
     onDropPage?.(page, insertion)
   }
 
-  /**
-   * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so the
-   * menu closes at once and there is nothing to confirm or repair — but a STALE tab (deleted or
-   * moved externally) rejects `NOT_FOUND`, and without the notice the item would just look
-   * broken. Both messages are the caller's, because "reveal" and "open … in VS Code" name the
-   * gesture differently in each half.
-   */
-  const osAction = (call: Promise<unknown>, stale: string, failed: string): void => {
-    setMenu(null)
-    call.catch((err: unknown) => {
-      onNotice?.(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? stale : `${failed}: ${err instanceof Error ? err.message : String(err)}`)
-    })
-  }
-
   return (
     <div className="tabbar-row">
       <div className="tabbar-nav">
@@ -154,6 +153,11 @@ export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDro
         <button type="button" className="tabbar-nav__btn" aria-label="Forward" title="Forward" disabled={!canForward} onClick={onForward}>
           <Chevron d="m6 4 4 4-4 4" />
         </button>
+        {onToggleOverview && (
+          <button type="button" className="tabbar-nav__btn" aria-label="Show all open tabs" title="Show all open tabs (⌘⇧A)" aria-pressed={overviewOpen} onClick={onToggleOverview}>
+            <GridIcon />
+          </button>
+        )}
       </div>
       <div
         className={`tabbar scroll-strip${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
@@ -188,6 +192,7 @@ export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDro
           const label = labelOf(path)
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
+          if (path === preview) cls.push('tabbar__tab--preview')
           if (drag !== null && drag.from === i) cls.push('tabbar__tab--dragging')
           // The insertion indicator: an accent edge on the tab the drop would land before —
           // or after the LAST tab for the end slot.
@@ -241,6 +246,7 @@ export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDro
                 aria-selected={isActive}
                 title={path}
                 onClick={() => onActivate(path)}
+                onDoubleClick={() => onKeep?.(path)}
                 onAuxClick={(e) => {
                   // Middle-click closes — the browser-tab convention.
                   if (e.button === 1) onClose(path)
@@ -255,65 +261,7 @@ export function TabBar({ roots, tabs, active, onActivate, onClose, onMove, onDro
           )
         })}
       </div>
-      {menu !== null && (
-        <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
-          {onMoveToRight !== undefined && (
-            <button
-              type="button"
-              className="ctx-menu__item"
-              role="menuitem"
-              onClick={() => {
-                onMoveToRight(menu.path)
-                setMenu(null)
-              }}
-            >
-              Move to right panel
-            </button>
-          )}
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onShowInSidebar?.(menu.path)
-              setMenu(null)
-            }}
-          >
-            Show in sidebar
-          </button>
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              void navigator.clipboard.writeText(menu.path)
-              setMenu(null)
-            }}
-          >
-            Copy path
-          </button>
-          {/* The review toggle (YAZ-2322), under Copy path: a tab that is not a note has no state and no item. */}
-          {menu.review !== null && (
-            <button
-              type="button"
-              className="ctx-menu__item"
-              role="menuitem"
-              onClick={() => {
-                onSetReview?.(menu.path, !menu.review)
-                setMenu(null)
-              }}
-            >
-              {menu.review ? 'Turn review off' : 'Turn review on'}
-            </button>
-          )}
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${labelOf(menu.path)}" — it is no longer there`, "Can't reveal")}>
-            Reveal in Finder
-          </button>
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${labelOf(menu.path)}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
-            Open in VS Code
-          </button>
-        </ContextMenuSurface>
-      )}
+      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
     </div>
   )
 }

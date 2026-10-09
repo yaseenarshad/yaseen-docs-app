@@ -1,6 +1,7 @@
 /* Window tab strip + per-tab editor stack (Tabs I2, GRO-2234). Owned by TabBar.tsx (the
    feature-CSS convention); .workspace/.tabstack are rendered by App around it. Follows the
-   ViewTabs look (views.css): an underline-active tablist on the app theme tokens. */
+   ViewTabs look (views.css): an underline-active tablist on the app theme tokens. The tab
+   overview (YAZ-2648, TabOverview.tsx) is at the end: it stands in the stack's box. */
 
 /* The editor half of the app row: tab strip on top, editor stack below. */
 .workspace {
@@ -50,6 +51,12 @@
   cursor: default;
 }
 
+/* Lit while the overview shows (YAZ-2648 D8): the one state the grid button has. */
+.tabbar-nav__btn[aria-pressed='true'] {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 /* Overflow (I3): tabs shrink to their floor first, then the strip scrolls (Obsidian-like);
    TabBar scrolls the ACTIVE tab into view on activation. The scrolling itself — no scrollbar, an
    edge fade — is `.scroll-strip` (app.css), worn beside this class. */
@@ -74,6 +81,11 @@
 
 .tabbar__tab--active {
   border-bottom-color: var(--accent);
+}
+
+/* The ONE preview tab (YAZ-2648 D1): the next sidebar click reuses it. Italic until it is kept. */
+.tabbar__tab--preview .tabbar__label {
+  font-style: italic;
 }
 
 /* Drag-to-reorder (I3): the grabbed tab dims; the drop slot draws an accent edge on the tab
@@ -169,4 +181,487 @@
      paint, so tab switches, resizes and theme changes stop paying for every mounted tab. Unlike
      display:none it keeps each scroller's offset, so rule 6 still holds. */
   content-visibility: hidden;
+}
+
+/* THE ZOOM (YAZ-2648): two animations on the active tab's layer, each paired with one on the tab
+   board below it. `--zoom-out` rides on a HIDDEN layer: while the board opens, the page shrinks
+   onto its own page of the board and fades, and is then hidden as every other layer is — both
+   visibilities hold "visible" for the length of an animation that ends hidden, so the page is
+   painted all the way and skips layout again after. `--zoom-in` is the way back, on the layer that
+   shows. Transform and opacity only: nothing in the layer is laid out or rendered again, and its
+   scroller keeps its offset. The point and the scale are the board's (TabOverview.tsx), set on
+   the stack. */
+.tabstack__layer--zoom-out {
+  transform-origin: var(--tab-layer-x, 50%) var(--tab-layer-y, 50%);
+  animation: tab-page-shrink var(--tab-zoom-ms, 250ms) cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+.tabstack__layer--zoom-in {
+  transform-origin: var(--tab-layer-x, 50%) var(--tab-layer-y, 50%);
+  animation: tab-page-grow var(--tab-zoom-ms, 250ms) cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+@keyframes tab-page-shrink {
+  from {
+    visibility: visible;
+    content-visibility: visible;
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    visibility: hidden;
+    content-visibility: hidden;
+    opacity: 0;
+    transform: scale(calc(1 / var(--tab-zoom-scale, 4)));
+  }
+}
+
+@keyframes tab-page-grow {
+  from {
+    opacity: 0;
+    transform: scale(calc(1 / var(--tab-zoom-scale, 4)));
+  }
+}
+
+/* ---------- tab board (YAZ-2648 D5–D8) ---------- */
+
+/* Every open tab as a small page, over the stack while it shows: the layers under it are hidden,
+   never unmounted, so each page keeps its scroll, caret and undo. The filter box stays put; the
+   islands scroll. Every length of the board is a custom property TabOverview.tsx sets from
+   `board.ts`, where the stack rule reads the same numbers. */
+.taboverview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  transform-origin: var(--tab-zoom-x, 50%) var(--tab-zoom-y, 50%);
+}
+
+/* The board's half of the zoom: it settles in around the page the user came from while that
+   page's layer shrinks onto it (above), and swells again around the page that was chosen. */
+.taboverview[data-zoom='in'] {
+  animation: tab-board-arrive var(--tab-zoom-ms, 250ms) cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+.taboverview[data-zoom='out'] {
+  animation: tab-board-leave var(--tab-zoom-ms, 250ms) cubic-bezier(0.3, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes tab-board-arrive {
+  from {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes tab-board-leave {
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+.taboverview__filter {
+  flex: none;
+  align-self: center;
+  width: min(360px, calc(100% - 48px));
+  margin: 20px 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+}
+
+.taboverview__filter:focus {
+  border-color: var(--fg-muted);
+}
+
+.taboverview__filter::placeholder {
+  color: var(--fg-muted);
+}
+
+/* The board's area: what the stack rule measures. Its box is the window's to size, never the
+   pages' — the gutter is kept whether it scrolls or not — so stacking cannot change it. */
+.taboverview__body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: var(--tab-pad);
+  user-select: none;
+}
+
+.taboverview__msg {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.taboverview__vault + .taboverview__vault {
+  margin-top: var(--tab-island-gap);
+}
+
+/* A vault's name, only where the window has two or more (D7). */
+.taboverview__vault-name {
+  height: var(--tab-vault-h);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: var(--tab-vault-h);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Islands stand side by side and wrap, each as big as its pages. */
+.taboverview__islands {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--tab-island-gap);
+}
+
+/* One folder's pages: a soft region, no border. */
+.taboverview__island {
+  flex: none;
+  box-sizing: border-box;
+  padding: var(--tab-island-pad);
+  border-radius: 12px;
+  background: var(--bg-side);
+}
+
+/* The label row never widens its island: the pages set the width, the label gives way inside it. */
+.taboverview__island-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
+  height: var(--tab-label-h);
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--fg-muted);
+}
+
+.taboverview__island-label {
+  display: flex;
+  min-width: 0;
+}
+
+.taboverview__island-path,
+.taboverview__island-leaf {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.taboverview__island-path {
+  flex: 0 1000 auto;
+}
+
+.taboverview__island-leaf {
+  flex: 0 1 auto;
+  color: var(--fg);
+}
+
+.taboverview__island-count {
+  flex: none;
+}
+
+.taboverview__island-close {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 12px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  visibility: hidden;
+}
+
+.taboverview__island:hover .taboverview__island-close {
+  visibility: visible;
+}
+
+.taboverview__island-close:hover,
+.taboverview__close:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.taboverview__pages {
+  display: grid;
+  grid-auto-rows: var(--tab-page-h);
+  gap: var(--tab-page-gap);
+}
+
+/* A page: a small sheet, 3:4, the title and the note's first lines on it. It lifts under the pointer. */
+.taboverview__page {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: var(--tab-page-w);
+  height: var(--tab-page-h);
+  padding: 10px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.taboverview__page:hover,
+.taboverview__stack:hover .taboverview__page {
+  transform: translateY(-2px);
+}
+
+/* The highlight: the page Enter opens. The pointer and the arrows move the same one. */
+.taboverview__page--current {
+  border-color: var(--fg-muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* The active tab's page wears the strip's own mark: the accent underline. */
+.taboverview__page--active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.taboverview__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.taboverview__page--preview .taboverview__title {
+  font-style: italic;
+}
+
+/* The note's first lines (D6): plain text, the note's own line breaks kept, cut at a whole line. */
+.taboverview__lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+  overflow: hidden;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--fg-muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* The strip's ✕, shown the way the strip shows it: on the page under the pointer or the highlight. */
+.taboverview__close {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  padding: 2px 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  background: var(--bg);
+  visibility: hidden;
+}
+
+.taboverview__page:hover .taboverview__close,
+.taboverview__page--current .taboverview__close {
+  visibility: visible;
+}
+
+/* A stack: an island that shows as one fanned pile while the board would not fit (`stackedIslands`).
+   Its top page is a page; one or two sheets fan out behind it. A click spreads it. */
+.taboverview__stack {
+  position: relative;
+  display: block;
+  width: calc(var(--tab-page-w) + var(--tab-fan-x));
+  height: var(--tab-page-h);
+}
+
+/* The pile is one page high: its sheets fan up into the gap under the island's label. */
+.taboverview__stack .taboverview__page,
+.taboverview__sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.taboverview__sheet {
+  box-sizing: border-box;
+  width: var(--tab-page-w);
+  height: var(--tab-page-h);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  transform: translate(calc(var(--tab-fan-x) / 2), calc(var(--tab-fan-y) / -2)) rotate(2deg);
+}
+
+.taboverview__sheet--far {
+  transform: translate(var(--tab-fan-x), calc(var(--tab-fan-y) * -1)) rotate(4deg);
+}
+
+/* A picked page (shift-click): the accent, as an outline. The highlight keeps its shadow under it. */
+.taboverview__page--picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.taboverview__page--picked.taboverview__page--current {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.taboverview__page--dragging {
+  opacity: 0.5;
+}
+
+/* The pick's bar, bottom left, only while pages are picked: a count and what can be done with them. */
+.taboverview__pick {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+}
+
+.taboverview__pick-count {
+  margin-right: 6px;
+  color: var(--fg-muted);
+}
+
+.taboverview__pick button {
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+
+.taboverview__pick button:hover {
+  background: var(--bg-hover);
+}
+
+/* The drop strip along the right edge, on show only while a page is dragged: the page opens in
+   the right panel. An accent tint and one line of words. */
+.taboverview__drop {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 148px;
+  padding: 0 16px;
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.taboverview__drop--on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.taboverview__drop--over {
+  border-style: solid;
+  color: var(--fg);
+}
+
+/* The peek: the highlighted page at a size to read, in the middle of the board, while Space is
+   held. It grows and shrinks by transform and opacity; hidden, it takes no pointer and no reader. */
+.taboverview__peek {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: min(440px, calc(100% - 64px));
+  height: min(587px, calc(100% - 48px));
+  padding: 30px 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.4);
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease,
+    visibility 0s linear 150ms;
+}
+
+.taboverview__peek--on {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%);
+  transition-delay: 0s;
+}
+
+.taboverview__peek .taboverview__title {
+  -webkit-line-clamp: 3;
+  font-size: 20px;
+  line-height: 26px;
+}
+
+.taboverview__peek .taboverview__lines {
+  -webkit-line-clamp: 22;
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--fg);
+}
+
+/* No motion asked for: the board and the page change places at once (App skips the way out too),
+   and the peek and the drop strip are there or not. */
+@media (prefers-reduced-motion: reduce) {
+  .taboverview[data-zoom],
+  .tabstack__layer--zoom-out,
+  .tabstack__layer--zoom-in {
+    animation: none;
+  }
+
+  .taboverview__page,
+  .taboverview__peek,
+  .taboverview__drop {
+    transition: none;
+  }
 }
