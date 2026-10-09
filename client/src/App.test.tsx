@@ -62,6 +62,9 @@ interface SidebarStubProps {
   onRevealConsumed?: (id: number) => void
   /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir — with `focus` when the keyboard asked (YAZ-2662 D1, D8). */
   onRevealInFiles?: (path: string, focus?: boolean) => void
+  /** The preview panel of the search (YAZ-2662 D5): the path that App draws, and the one door that names it or clears it. */
+  previewPath: string | null
+  onPreview: (path: string | null) => void
   /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
   width: number
   /** The aside itself, which a resize drag writes its live width to (YAZ-2239). */
@@ -1324,6 +1327,39 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
     act(() => emitCloseTab())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
+  })
+
+  it('the preview panel of the search (YAZ-2662 S31, S43): the path that the sidebar names shows in a panel over the page area, the last of the stack and no layer of it — no tab opens, no page changes and nothing is stored; the ✕ closes it, and the sidebar reads that', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const before = { strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }
+    expect([captured.sidebar?.previewPath, el.querySelector('.quicklook')]).toEqual([null, null])
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    const panel = el.querySelector('.tabstack > .quicklook')
+    expect(panel).toBe(el.querySelector('.tabstack')?.lastElementChild)
+    expect([panel?.querySelector('.quicklook__title')?.textContent, panel?.querySelector('.quicklook__body')?.textContent]).toEqual(['archive.zip', 'No preview for this file.'])
+    expect(captured.sidebar?.previewPath).toBe('/v/archive.zip')
+    expect({ strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }).toEqual(before)
+    expect([activeLabel(el), captured.sidebar?.activeFile, el.querySelector('.tabbar__tab--preview')]).toEqual(['a', '/v/a.md', null])
+    // The panel follows the highlight: the next path takes its place.
+    act(() => captured.sidebar?.onPreview('/v/book.epub'))
+    expect([...el.querySelectorAll('.quicklook__title')].map((t) => t.textContent)).toEqual(['book.epub'])
+    act(() => el.querySelector<HTMLButtonElement>('.quicklook button[aria-label="Close preview"]')?.click())
+    expect([el.querySelector('.quicklook'), captured.sidebar?.previewPath]).toEqual([null, null])
+    expect({ strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }).toEqual(before)
+  })
+
+  it('the preview panel over the blank tab (YAZ-2662 S45): it shows over the empty page, and the blank tab stays; the door is safe under the tab board too', async () => {
+    const { el, emitNewTab, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitNewTab())
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(el.querySelector('.tabstack > .quicklook .quicklook__title')?.textContent).toBe('archive.zip')
+    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'New tab'], 'New tab'])
+    act(() => captured.sidebar?.onPreview(null))
+    expect(el.querySelector('.quicklook')).toBeNull()
+    expect(activeLabel(el)).toBe('New tab')
+    await act(async () => emitTabOverview())
+    expect(() => act(() => captured.sidebar?.onPreview('/v/archive.zip'))).not.toThrow()
   })
 
   it('the strip\'s slide (YAZ-2656 S88) is the strip\'s own: a closed tab slides shut as a ghost and no editor renders for it; with the right panel closed the row keeps its end free (S93)', async () => {

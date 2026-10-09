@@ -5,8 +5,9 @@
  * to the matches (`searchTree`) — so this also holds that tree, its folds and the keyboard's
  * highlighted match. With two or more vaults the tree that is cut is the forest (YAZ-2602 A9): each
  * match stands under its vault's row. Since YAZ-2662 the matches of the pinned items — the focus
- * list and the favorites — are a group of their own, drawn first (D2), and Space, → and ← act on
- * the highlighted folder (D6, D7). The shortcut picker keeps the flat list and shares `useResultKeys`.
+ * list and the favorites — are a group of their own, drawn first (D2), Space, → and ← act on
+ * the highlighted folder (D6, D7), and Space on the highlighted file shows App's preview panel,
+ * which then follows the highlight (D5). The shortcut picker keeps the flat list and shares `useResultKeys`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { TreeNode } from '@shared/types'
@@ -41,6 +42,9 @@ export function useResultKeys<T>(results: readonly T[], activate: (hit: T, e: Ke
   return { sel, setSelected, onKeys: resultKeys(results, sel, setSelected, activate) }
 }
 
+/** The preview panel follows the highlight this long after its LAST move (YAZ-2662 S32): a walk with ↑ or ↓ reads no file on its way. */
+export const PREVIEW_FOLLOW_MS = 120
+
 /** No fold and no highlight: one object each, so a search that has neither hands the memoised tree nothing new (YAZ-2194). */
 const NO_FOLDS: ReadonlySet<string> = new Set()
 const NO_CURSOR: ReadonlySet<string> = new Set()
@@ -62,6 +66,10 @@ export function useSidebarSearch(
   onSearchFocusHandled: () => void,
   /** Enter on the highlight, a match or not (YAZ-2662 S52); `background` is ⌘, and `reveal` is Shift (D8). */
   activate: (row: TreeNode, background: boolean, reveal: boolean) => void,
+  /** The file that App's preview panel draws (YAZ-2662 D5), or `null` with no panel on show. App's ✕ clears it too. */
+  previewPath: string | null,
+  /** The one door of the preview panel: the file to draw, or `null` for no panel. */
+  onPreview: (path: string | null) => void,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -130,8 +138,47 @@ export function useSidebarSearch(
     const next = rows.findIndex((r) => after.has(r.path))
     return next !== -1 ? next : Math.max(0, rows.length - 1)
   }, [rows, picked, results, found])
+  // The preview panel (YAZ-2662 D5). "A panel is on show" is `previewPath`, App's alone, so the
+  // keys here and the ✕ there cannot disagree. `parked` is what App cannot hold: the preview is on
+  // and the highlight is on a folder, so no panel is drawn (S38).
+  const [parked, setParked] = useState(false)
+  const previewing = previewPath !== null || parked
+  const stopPreview = () => {
+    setParked(false)
+    onPreview(null)
+  }
+  // With the preview on, the panel follows the highlight (S32): a file shows `PREVIEW_FOLLOW_MS`
+  // after the last move, and the earlier file stays until then. On a folder no panel is drawn, at once (S38).
+  const followed = previewing ? rows[sel] : undefined
+  const followedPath = followed?.path
+  const followsFile = followed?.type === 'file'
+  useEffect(() => {
+    if (followedPath === undefined || followedPath === previewPath) return
+    if (!followsFile) {
+      setParked(true)
+      onPreview(null)
+      return
+    }
+    const timer = setTimeout(() => {
+      setParked(false)
+      onPreview(followedPath)
+    }, PREVIEW_FOLLOW_MS)
+    return () => clearTimeout(timer)
+  }, [followedPath, followsFile, previewPath, onPreview])
+  // A different tab shows, or the sidebar is hidden (S37): the bar that drives the panel is gone, and the panel with it.
+  useEffect(() => {
+    if (!active) return
+    return () => {
+      setParked(false)
+      onPreview(null)
+    }
+  }, [active, onPreview])
+
   // The bar keeps focus while the tree is driven from it (YAZ-803). Opening leaves the results up.
-  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (row, e) => activate(row, e.metaKey, e.shiftKey))
+  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (row, e) => {
+    if (previewing) stopPreview() // Enter does its own work and closes the preview panel (YAZ-2662 S36)
+    activate(row, e.metaKey, e.shiftKey)
+  })
   // With text typed the Search tab's body is the search tree (YAZ-2620); with none it is one line
   // of help (YAZ-2638 D2). A conditional render, not a teardown — every bit of the other tabs' tree
   // state (data, expansion, pending create/rename, drag) lives in the Sidebar's other hooks
@@ -167,6 +214,7 @@ export function useSidebarSearch(
     setPicked(null) // a new query is a new ranking: the best match is the highlight again
     setFlipped(NO_FOLDS) // and a new tree: its folds are the search's own again (S16)
     setFull(NO_FOLDS) // and no folder shows all (YAZ-2662 S53)
+    if (previewing) stopPreview() // and no preview: Space is the text's again (S35)
   }
 
   // The list keys (YAZ-2662 D7): Space, → and ← act on the highlight once ↑ or ↓ moved it. Until
@@ -174,7 +222,14 @@ export function useSidebarSearch(
   // nothing to do on the highlight (S50, S51), which is not taken. Says whether the key was taken.
   const listKey = (e: KeyboardEvent<HTMLInputElement>): boolean => {
     const row = picked === null || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey ? undefined : rows[sel]
-    // On a file → and ← have nothing to do (S50, S51); Space on a file is the preview panel's key (D5).
+    // Space on a file shows the preview panel on it, at once, and Space again closes the panel (D5, S33).
+    if (row?.type === 'file' && e.key === ' ') {
+      if (previewing) stopPreview()
+      else onPreview(row.path)
+      e.preventDefault()
+      return true
+    }
+    // On a file → and ← have nothing to do (S50, S51).
     if (row?.type !== 'dir') return false
     const dir = row.path
     const open = searchOpen.has(dir)
@@ -199,7 +254,9 @@ export function useSidebarSearch(
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      onLeave()
+      // The first Esc closes the panel only (S34). With none on show — the highlight on a folder too (S38) — Esc leaves.
+      if (previewPath !== null) stopPreview()
+      else onLeave()
     } else if (!listKey(e)) onKeys(e)
   }
 

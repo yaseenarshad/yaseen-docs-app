@@ -7,7 +7,7 @@
  * Real Tree/ContextMenu render against the jsdom bridge stub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, act } from 'react'
+import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_SETTINGS, MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type FileClipRequest, type FileClipState, type IndexRecord, type PasteResponse, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
@@ -66,6 +66,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
   return { ...real, folderShortcuts }
 })
 
+import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -130,6 +131,23 @@ let container: HTMLElement | null = null
 let showTab: ((lens: SidebarTab) => void) | null = null
 
 type PanelProps = Parameters<typeof Sidebar>[0]
+/** App's half of the preview panel of the search (YAZ-2662 D5), of the mounted panel: the path on show, and App's ✕. Null between tests. */
+let previewPanel: { path: string | null; close: () => void } | null = null
+/**
+ * The Sidebar as App mounts it for the preview panel: the path that `onPreview` names is App's
+ * state, handed back as `previewPath` in the same pass. The ✕ of the panel clears that state with
+ * no word from the Sidebar.
+ */
+function WithPreview(props: PanelProps) {
+  const [path, setPath] = useState<string | null>(null)
+  const { onPreview } = props
+  const show = useCallback((next: string | null) => {
+    setPath(next)
+    onPreview(next)
+  }, [onPreview])
+  previewPanel = { path, close: () => setPath(null) }
+  return <Sidebar {...props} previewPath={path} onPreview={show} />
+}
 type Vault = PanelProps['vaults'][number]
 /** A vault's own review facts (YAZ-2602 R5): upkeep on or off, what is due, whether its review is open; and the Inbox row's click. */
 type Inbox = Partial<Pick<Vault, 'upkeep' | 'dueCount' | 'reviewing'>> & { onOpenInbox?: () => void }
@@ -181,6 +199,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onOpenFileBackground: vi.fn(),
     // A search row's tree-drawing menu items (🔒 D2, YAZ-2050): App flips to Files and issues the reveal request.
     onRevealInFiles: vi.fn(),
+    // The preview panel of the search (YAZ-2662 D5): `WithPreview` holds the path, as App does, and tells this door each path that the Sidebar names.
+    previewPath: null,
+    onPreview: vi.fn(),
     onPickFolder: vi.fn(),
     pickDisabled: false,
     // The header's vault switcher (YAZ-1767): 0 = no ⌘O pending; the panel itself is VaultSwitcher.test's subject.
@@ -222,10 +243,10 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     ...(over.vaults !== undefined && { vaults: withInbox(over.vaults, over) }),
   }
   const { onOpenInbox: _door, ...panelProps } = props
-  await act(async () => root?.render(<StrictMode><Sidebar {...panelProps} /></StrictMode>))
+  await act(async () => root?.render(<StrictMode><WithPreview {...panelProps} /></StrictMode>))
   // The tab that shows is App's state: a later render keeps it unless it names a different one.
   let lens = panelProps.lens
-  const again = (next: Partial<PanelProps> & Inbox) => <StrictMode><Sidebar {...panelProps} lens={lens} {...panel(next)} vaults={withInbox(next.vaults ?? panelProps.vaults, { ...over, ...next })} /></StrictMode>
+  const again = (next: Partial<PanelProps> & Inbox) => <StrictMode><WithPreview {...panelProps} lens={lens} {...panel(next)} vaults={withInbox(next.vaults ?? panelProps.vaults, { ...over, ...next })} /></StrictMode>
   /** Re-render the SAME Sidebar instance with changed props (the App-driven activation path); a review fact changes on the vaults as they stand. */
   const rerender = async (next: Partial<PanelProps> & Inbox) => {
     lens = next.lens ?? lens
@@ -311,6 +332,7 @@ afterEach(() => {
   container?.remove()
   container = null
   showTab = null
+  previewPanel = null
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
 })
@@ -3203,6 +3225,200 @@ describe('Space, → and ← on a folder of the search tree (YAZ-2662 D6, D7)', 
     go('Work log')
     expect([{ metaKey: true }, { altKey: true }, { ctrlKey: true }, { shiftKey: true }].flatMap((mods) => [' ', 'ArrowRight', 'ArrowLeft'].map((key) => press(key, mods).defaultPrevented))).toEqual(Array(12).fill(false))
     expect(shape()).toEqual(DRAWN)
+  })
+
+  /**
+   * Space on a FILE is the preview panel's key (YAZ-2662 D5). The panel is App's: the Sidebar names
+   * the path to show through `onPreview`, or `null`, and reads the path that App draws as
+   * `previewPath` (`WithPreview`). The clock is a fake one from the first key on.
+   */
+  describe('Space on a file: the preview panel (YAZ-2662 D5)', () => {
+    afterEach(() => vi.useRealTimers())
+
+    const preview = async (query = 'log') => {
+      const s = await search(query)
+      const onPreview = vi.mocked(s.props.onPreview)
+      onPreview.mockClear()
+      act(() => s.input.focus())
+      vi.useFakeTimers()
+      return {
+        ...s,
+        onPreview,
+        wait: (ms: number) => act(() => void vi.advanceTimersByTime(ms)),
+        /** The ✕ of the panel. */
+        close: () => act(() => previewPanel?.close()),
+        /** The file that the panel shows, as a path inside the vault; null with no panel. */
+        panel: () => previewPanel?.path?.slice(s.v.length) ?? null,
+      }
+    }
+    /** No door of the workspace was used: no page opened, in a tab or in the background, and nothing was shown in Files. */
+    const untouched = (props: PanelProps) => [props.onOpenFile, props.onKeepFile, props.onOpenFileBackground, props.onRevealInFiles, props.onLensChange].every((door) => vi.mocked(door).mock.calls.length === 0)
+
+    it('S30: with no ↑ or ↓, Space on the best match — a file — types a space and shows no panel', async () => {
+      const { press, cursor, panel, onPreview } = await preview('entry')
+      expect(cursor()).toEqual(['Entry log'])
+      expect(press(' ').defaultPrevented).toBe(false)
+      expect([panel(), onPreview.mock.calls]).toEqual([null, []])
+    })
+
+    it('S31: after ↑ or ↓, Space on a file asks App for the panel on that file, at once — the caret and the text stay in the bar, and no door of the workspace is used', async () => {
+      const { v, input, props, press, go, panel, onPreview } = await preview()
+      go('Entry log')
+      expect(press(' ').defaultPrevented).toBe(true)
+      expect([panel(), onPreview.mock.calls]).toEqual(['/Log book/Entry log.md', [[`${v}/Log book/Entry log.md`]]])
+      expect([document.activeElement === input, input.value]).toEqual([true, 'log'])
+      expect(untouched(props)).toBe(true)
+      // With a modifier Space is the text's, as each list key is: the panel stays as it is.
+      expect(press(' ', { shiftKey: true }).defaultPrevented).toBe(false)
+      expect(panel()).toBe('/Log book/Entry log.md')
+    })
+
+    it('S32, S52: the panel follows the highlight 120 ms after its LAST move and keeps the earlier file until then — onto a row that is no match too; back on the file that shows, nothing is asked', async () => {
+      const { v, press, go, wait, panel, onPreview } = await preview()
+      go('Work log')
+      press(' ')
+      go('Log week 1')
+      press(' ')
+      expect(panel()).toBe('/Area/Work log/Weeks/Log week 1.md')
+      onPreview.mockClear()
+      // Two moves, 100 ms apart: Readme is passed over and is never shown.
+      press('ArrowDown')
+      wait(100)
+      press('ArrowDown')
+      wait(PREVIEW_FOLLOW_MS - 1)
+      expect([panel(), onPreview.mock.calls]).toEqual(['/Area/Work log/Weeks/Log week 1.md', []])
+      wait(1)
+      expect([panel(), onPreview.mock.calls]).toEqual(['/Changelog.md', [[`${v}/Changelog.md`]]])
+      // Away and back inside the wait: the panel is on that file already.
+      press('ArrowUp')
+      wait(50)
+      press('ArrowDown')
+      wait(1000)
+      expect(onPreview).toHaveBeenCalledTimes(1)
+      // A row that is no match, inside the folder that Space opened (S52).
+      press('ArrowUp')
+      wait(PREVIEW_FOLLOW_MS)
+      expect(panel()).toBe('/Area/Work log/Readme.md')
+    })
+
+    it('S33: Space again closes the panel, and the next Space shows it again; the file that the keys were on the way to is not shown later', async () => {
+      const { press, go, wait, panel } = await preview()
+      go('Entry log')
+      press(' ')
+      press('ArrowDown')
+      expect(press(' ').defaultPrevented).toBe(true)
+      expect(panel()).toBeNull()
+      wait(1000)
+      expect(panel()).toBeNull()
+      press(' ')
+      expect(panel()).toBe('/Area/Work log/Team log.md')
+    })
+
+    it('S34: the first Esc closes the panel only; the next Esc leaves the Search tab', async () => {
+      const { props, press, go, panel } = await preview()
+      go('Entry log')
+      press(' ')
+      expect(press('Escape').defaultPrevented).toBe(true)
+      expect([panel(), vi.mocked(props.onLensChange).mock.calls]).toEqual([null, []])
+      press('Escape')
+      expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    })
+
+    it('S35: a change of the text closes the panel, and Space is a text key again', async () => {
+      const { input, press, go, wait, panel } = await preview()
+      go('Entry log')
+      press(' ')
+      press('ArrowDown')
+      await type(input, 'lo')
+      expect(panel()).toBeNull()
+      wait(1000)
+      expect(panel()).toBeNull()
+      expect(press(' ').defaultPrevented).toBe(false)
+      expect(panel()).toBeNull()
+    })
+
+    it.each([
+      ['Enter', {}, 'onOpenFile'],
+      ['⌘Enter', { metaKey: true }, 'onOpenFileBackground'],
+      ['Shift+Enter', { shiftKey: true }, 'onRevealInFiles'],
+    ] as const)('S36: %s with the panel on show does its own work and closes the panel', async (_name, mods, door) => {
+      const { v, props, press, go, panel } = await preview()
+      go('Entry log')
+      press(' ')
+      press('Enter', mods)
+      expect(vi.mocked(props[door]).mock.calls.map(([path]) => path)).toEqual([`${v}/Log book/Entry log.md`])
+      expect(panel()).toBeNull()
+    })
+
+    it('R4: Enter on the file whose page is open, with the panel on show over that page — the caret goes into the page, never into the note of the panel', async () => {
+      const { v, rerender, press, go, panel } = await preview()
+      // The note of the panel wears the editor's class and stands BEFORE the page here: it is passed over for what it is.
+      const quicklook = document.createElement('div')
+      quicklook.className = 'quicklook'
+      document.body.appendChild(quicklook)
+      quicklook.appendChild(editorStub().parentElement!)
+      const page = editorStub()
+      await rerender({ activeFile: `${v}/Log book/Entry log.md` })
+      go('Entry log')
+      press(' ')
+      press('Enter')
+      expect([document.activeElement === page, panel()]).toEqual([true, null])
+      quicklook.remove()
+      page.parentElement?.remove()
+    })
+
+    it('S37: a different sidebar tab shows and the panel closes; back on the Search tab the preview is off, so Space shows the panel', async () => {
+      const { el, press, go, cursor, panel, onPreview } = await preview()
+      go('Entry log')
+      press(' ')
+      onPreview.mockClear()
+      showTab?.('files')
+      expect([panel(), onPreview.mock.calls]).toEqual([null, [[null]]])
+      showTab?.('search')
+      expect([panel(), cursor()]).toEqual([null, ['Entry log']])
+      // The bar is drawn again with its tab: the key goes to the bar that is there now.
+      act(() => void searchBar(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
+      expect(panel()).toBe('/Log book/Entry log.md')
+    })
+
+    it('S38: on a folder the panel is not drawn, at once, and Space keeps its meaning for a folder; on the next file the panel shows again after the wait; Esc on the folder leaves the Search tab', async () => {
+      const { props, shape, cursor, press, go, wait, panel } = await preview()
+      go('Entry log')
+      press(' ')
+      press('ArrowUp')
+      expect([panel(), cursor()]).toEqual([null, ['Log book']])
+      // Space on the folder shows all that it holds (D6), and the preview stays on.
+      expect(press(' ').defaultPrevented).toBe(true)
+      expect(shape().slice(0, 4)).toEqual(['Log book', '  Notes', '  Cover', '  Entry log'])
+      press('ArrowDown')
+      press('ArrowDown')
+      wait(PREVIEW_FOLLOW_MS - 1)
+      expect([panel(), cursor()]).toEqual([null, ['Cover']])
+      wait(1)
+      expect(panel()).toBe('/Log book/Cover.md')
+      go('Log book')
+      expect(panel()).toBeNull()
+      press('Escape')
+      expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    })
+
+    it('S43: after the ✕ of the panel the preview is off for the keys too — ↑ and ↓ show no panel, Space shows it again, and Esc leaves the Search tab', async () => {
+      const { props, press, go, wait, close, panel, onPreview } = await preview()
+      go('Entry log')
+      press(' ')
+      press('ArrowDown')
+      close()
+      onPreview.mockClear()
+      wait(1000)
+      press('ArrowUp')
+      wait(1000)
+      expect([panel(), onPreview.mock.calls]).toEqual([null, []])
+      press(' ')
+      expect(panel()).toBe('/Log book/Entry log.md')
+      close()
+      press('Escape')
+      expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    })
   })
 })
 
@@ -6171,7 +6387,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, at.b))
     act(() => itemByLabel(el, 'New note')?.click())
     expect(props.onSetVaultOpen).toHaveBeenCalledExactlyOnceWith(at.b, true)
-    await act(async () => root?.render(<StrictMode><Sidebar {...props} closedVaults={[]} /></StrictMode>))
+    await act(async () => root?.render(<StrictMode><WithPreview {...props} closedVaults={[]} /></StrictMode>))
     const field = el.querySelector<HTMLInputElement>('.create-inline__input')!
     // The input stands at the head of the vault's own tree, under its row.
     expect(field.closest('ul.tree')?.parentElement?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, at.b))
