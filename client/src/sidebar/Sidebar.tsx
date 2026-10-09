@@ -10,7 +10,7 @@ import { relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, findDirNode, findNode, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
@@ -113,6 +113,15 @@ interface SidebarProps {
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
   onRevealConsumed: (id: number) => void
   /**
+   * One row menu asked from outside the panel (YAZ-2663 D6): a right-click on a row of the new tab
+   * page. The panel opens its OWN row menu for that path at the point, one time. Set at MOUNT is
+   * the right-click with the sidebar hidden (S31): App shows the sidebar, and the menu opens when
+   * the tree lands.
+   */
+  menuRequest: SidebarMenuRequest | null
+  /** The request was acted on, or its path is not in the tree: it must not replay after a remount. */
+  onMenuConsumed: (id: number) => void
+  /**
    * The settings (GRO-2024); App owns and applies them. The sidebar no longer edits them (the
    * dialog does, YAZ-1679) but still READS `confirmDelete` and writes it back through the
    * delete sheet's "Don't ask me again" (GRO-2272).
@@ -153,6 +162,12 @@ interface SidebarProps {
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
   onSearchFocusHandled: () => void
   /**
+   * The way out of the EMPTY search bar (YAZ-2663 D7, S33): → or ↓ there asks App to put the
+   * keyboard focus on the new tab page, and App says whether a row took it. Absent, or answered
+   * `false` — no page shows, or no column of it has a row — the key is the bar's as before.
+   */
+  onLeaveToPage?: () => boolean
+  /**
    * ⌘⇧C's read-only window onto the multi-selection (🔒 D4, YAZ-1338). The state stays HERE
    * (🔒 D1) — it is per root and dies with the panel — but the CHORD is App's: this component is
    * unmounted while the sidebar is collapsed, and a shortcut that stops existing when a panel is
@@ -179,6 +194,14 @@ interface SidebarProps {
   onSetReview: (path: string, on: boolean) => void
   /** An Inbox row was clicked (YAZ-2602 R5): App opens the review of THAT vault, or closes it when it is the one open. */
   onInbox: (root: string) => void
+}
+
+/** One "open the row menu of this path at this point" gesture (YAZ-2663 D6): the reveal request's idiom. */
+export interface SidebarMenuRequest {
+  id: number
+  path: string
+  x: number
+  y: number
 }
 
 /** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
@@ -383,6 +406,8 @@ export function Sidebar({
   onLensChange,
   revealRequest,
   onRevealConsumed,
+  menuRequest,
+  onMenuConsumed,
   settings,
   onChangeSettings,
   onOpenSettings,
@@ -394,6 +419,7 @@ export function Sidebar({
   onNotice,
   pendingSearchFocus,
   onSearchFocusHandled,
+  onLeaveToPage,
   selectionRef,
   clipboardRef,
   onReviewFolder,
@@ -570,10 +596,13 @@ export function Sidebar({
 
   // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
 
-  const openMenu = useCallback(
-    (node: MenuRow | null, e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
+  // The ONE builder of the row menu, by the row and the point: a right-click in the panel
+  // (`openMenu`) and a menu request (YAZ-2663 D6). `outside` is a row that is not the panel's — a
+  // row of the new tab page. It is a row like a search row: a disk row, with "Show in sidebar"
+  // first, whose tree-drawing items show it in Files first (S27, S30). It is no pick and no
+  // highlight of the panel, and its menu is the menu of one row (S32).
+  const openMenuAt = useCallback(
+    (node: MenuRow | null, x: number, y: number, outside = false) => {
       const filePath = node?.type === 'file' ? node.path : null
       // A right-click on a row the selection does NOT hold is a fresh target, so the selection
       // becomes THAT row (D9, YAZ-1674 — the Finder rule; it used to merely clear), which keeps
@@ -581,14 +610,14 @@ export function Sidebar({
       // BLANK SPACE is not a row and never touches it (YAZ-1337): its menu is about the vault
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
-      if (node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
+      if (!outside && node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
       // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
-      if (searching && node !== null) searchCursor.set(node.path)
+      if (!outside && searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
       // other target this menu pins.
-      const plural = node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      const plural = !outside && node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       // A VAULT row (YAZ-2602 D3) is its own kind: a folder that is a vault, with that vault's root.
       // It creates and pastes like a folder; it is not opened, clipped, renamed, deleted, favorited,
       // reviewed or put in the focus list (S13, A2). A selection that holds one has no plural item (A3).
@@ -601,16 +630,17 @@ export function Sidebar({
       // App's answer for the row (YAZ-2322), asked ONCE here like every other target this menu pins.
       const inReview = filePath === null ? null : reviewState(filePath)
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
-      const menuLens: SidebarLens = searching ? 'files' : lens
+      const asSearch = searching || outside
+      const menuLens: SidebarLens = asSearch ? 'files' : lens
       // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       setMenu({
-        x: e.clientX,
-        y: e.clientY,
+        x,
+        y,
         lens: menuLens,
-        leaveSearchTo: searching ? (node?.path ?? null) : null,
+        leaveSearchTo: asSearch ? (node?.path ?? null) : null,
         // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
-        showPath: lens !== 'files' && plural === null ? (node?.path ?? null) : null,
+        showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
         targetDir: node === null && multi ? null : targetDirFor(node, root),
         rowKind: node?.type ?? null,
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
@@ -656,6 +686,28 @@ export function Sidebar({
     },
     [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
   )
+  const openMenu = useCallback(
+    (node: MenuRow | null, e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      openMenuAt(node, e.clientX, e.clientY)
+    },
+    [openMenuAt],
+  )
+  // A menu request (YAZ-2663 D6) is acted on one time, when the panel can say what the path is: a
+  // request that is set when the panel mounts waits for the tree of its vault, and for the
+  // favorites of that vault, which the menu reads as it opens (S31). A path the tree does not hold
+  // opens nothing.
+  const seenMenuId = useRef<number | null>(null)
+  useEffect(() => {
+    if (menuRequest === null || seenMenuId.current === menuRequest.id) return
+    const vault = rootOf(menuRequest.path)
+    if (forest === null || !trees.has(vault) || favoritesByRoot[vault] === undefined) return
+    seenMenuId.current = menuRequest.id
+    onMenuConsumed(menuRequest.id)
+    const node = findNode(forest, menuRequest.path)
+    if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
+  }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
 
@@ -945,7 +997,14 @@ export function Sidebar({
             aria-label="Search notes"
             value={query}
             onChange={changeQuery}
-            onKeyDown={searchKeyDown}
+            // With no text → and ↓ have nothing to do in the bar: they go to the first row of the
+            // new tab page, when it shows and has one (YAZ-2663 D7, S33). With text, and with no
+            // such row, every key is the search's as before (S34).
+            onKeyDown={(e) => {
+              const out = query === '' && (e.key === 'ArrowRight' || e.key === 'ArrowDown') && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
+              if (out && onLeaveToPage?.() === true) e.preventDefault()
+              else searchKeyDown(e)
+            }}
           />
           {/* The way out, in sight (YAZ-2638 D2): Esc goes back to the lens the window last showed,
               keeps the text and puts the caret in the open page (YAZ-2662 D9), and this keycap —

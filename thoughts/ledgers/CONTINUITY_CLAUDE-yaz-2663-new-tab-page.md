@@ -31,18 +31,40 @@
   - [x] Scoping, locked into Linear (D1 to D7, S1 to S41)
   - [x] Subissues: YAZ-2671 to YAZ-2676
   - [x] Worktree and `npm install`
-- Now: [→] YAZ-2671: 1- The app stores an open history
-- Next: YAZ-2672: 2- The new tab page shows three columns
+  - [x] YAZ-2671: 1- The app stores an open history (`26b67cd`)
+  - [x] YAZ-2672: 2- The new tab page shows three columns (`c79184e`)
+- Now: [→] YAZ-2673 and YAZ-2674 are built and the gates ran. The changes are in the working tree, not committed. The coordinator reviews and commits.
+  - [→] YAZ-2673: 3- The rows of the page have the row menu of the sidebar
+  - [→] YAZ-2674: 4- The arrow keys walk the rows of the page
+- Next: connect Space to the preview panel when YAZ-2668 is on the branch (see below).
 - Remaining:
-  - [ ] YAZ-2673: 3- The rows of the page have the row menu of the sidebar
-  - [ ] YAZ-2674: 4- The arrow keys walk the rows of the page (the three parts that wait for YAZ-2662)
-  - [ ] YAZ-2675: 5- Polish and anti-slop
+  - [ ] YAZ-2675: 5- Polish and anti-slop (the key hints of the page, the hotkey reference)
   - [ ] YAZ-2676: 6- Verify and deliver (the pull request, the hand walk vault and steps)
+
+## Key Decisions of YAZ-2673 and YAZ-2674
+
+- The row menu: App holds `sidebarMenuRequest { id, path, x, y }`. The Sidebar has ONE builder, `openMenuAt(node, x, y, outside)`. A page row uses the fields of a search row (`leaveSearchTo`, `showPath`, `lens: 'files'`). No new field in `MenuTargets`.
+- The request waits for the tree and the favorites of the vault of the path. A path that the tree does not hold opens nothing.
+- The way in from the empty search bar is in `Sidebar.tsx` (the `onKeyDown` of the bar, prop `onLeaveToPage`). `useSidebarSearch.ts` has no change: the code of YAZ-2668 adds two arguments to the same call and changes `searchKeyDown`.
+- The focus door is a box, `focusRef: { current: (() => boolean) | null }`, as `clipboardRef`. The page fills it. App asks it on a key.
+- `onShowFolder` is now `onShowInFiles`: one door for a folder row and for Shift+Enter.
+- ⌘Enter on a folder row does what ⌘-click does: the folder shows in Files (S22). It opens no folder page.
+- S41 is built: a typed letter calls `onBackToSearch` and the key is not taken. The hand walk must prove that the letter is in the bar.
+- The page goes while a row has the keyboard focus: the caret goes into the page on show (`focusOpenDocument`).
+- The preview of S39 is built against `previewPath` and `onPreview`. App passes neither yet.
+
+## To do when YAZ-2668 is on the branch
+
+- App: `const [pagePreviewPath, setPagePreviewPath] = useState<string | null>(null)`.
+- `<StartPage … previewPath={pagePreviewPath} onPreview={setPagePreviewPath} />`.
+- The panel draws `pagePreviewPath ?? previewPath`. Its ✕ clears both.
+- Do not give the page the `previewPath` of the search: the hook of the search follows its own highlight and takes the panel back after 120 ms.
+- Replace `PREVIEW_FOLLOW_MS` of `StartPage.tsx` with the constant of `useSidebarSearch.ts`.
 
 ## Open Questions
 
-- UNCONFIRMED: S41, a typed letter on a row of the page lands in the search bar. Try it in YAZ-2674; if it is not clean, do not build it and record why.
-- UNCONFIRMED: the door of the preview panel of YAZ-2668 (not on the branch yet at `8425e13`).
+- UNCONFIRMED: S41 in the app. jsdom cannot show that the browser types the letter in the bar. Hand walk.
+- UNCONFIRMED: Enter and Space on a row in the app make no second click of the button (`preventDefault` on keydown). Hand walk.
 
 ## Working Set
 

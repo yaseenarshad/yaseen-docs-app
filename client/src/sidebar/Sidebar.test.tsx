@@ -194,6 +194,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onLensChange: vi.fn(),
     revealRequest: null,
     onRevealConsumed: vi.fn(),
+    // A row menu asked from the new tab page (YAZ-2663 D6): none unless a test makes the request.
+    menuRequest: null,
+    onMenuConsumed: vi.fn(),
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
     onOpenSettings: vi.fn(),
@@ -2215,6 +2218,199 @@ describe('search-row context menu (YAZ-2050)', () => {
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(input.value).toBe('a')
     expect(result(el)?.classList.contains('tree__row--selected')).toBe(true) // still the search: its highlight is on the row
+  })
+})
+
+/**
+ * The way out of the EMPTY search bar to the new tab page (YAZ-2663 D7): → and ↓ have nothing to do
+ * in a bar with no text, so they ask App for the page. With text they are the search's (YAZ-2662).
+ */
+describe('the way from the empty search bar to the new tab page (YAZ-2663 D7)', () => {
+  const press = (input: HTMLInputElement, key: string, init: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    act(() => void input.dispatchEvent(event))
+    return event
+  }
+  const highlighted = (el: HTMLElement) => el.querySelector<HTMLElement>('.tree__row--selected')?.dataset.path
+
+  it('S33: with no text → and ↓ ask for the page, and the key is taken when the page took the focus; when the page says no, when no page is there, and with a modifier, the key is the bar\'s as before', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, rerender } = await mount({ lens: 'search', onLeaveToPage })
+    const input = searchBar(el)!
+    expect([press(input, 'ArrowRight').defaultPrevented, press(input, 'ArrowDown').defaultPrevented]).toEqual([true, true])
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // Other keys, and a → or ↓ with a modifier, do not ask.
+    for (const [key, init] of [['ArrowLeft', {}], ['ArrowUp', {}], ['Enter', {}], [' ', {}], ['ArrowRight', { metaKey: true }], ['ArrowDown', { shiftKey: true }], ['ArrowRight', { altKey: true }]] as const) expect([key, press(input, key, init).defaultPrevented]).toEqual([key, false])
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // No column of the page has a row: the page says no, and the key does nothing, as before.
+    onLeaveToPage.mockReturnValue(false)
+    expect(press(input, 'ArrowDown').defaultPrevented).toBe(false)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(3)
+    // No page shows: App hands no door.
+    await rerender({ onLeaveToPage: undefined })
+    expect([press(input, 'ArrowRight').defaultPrevented, press(input, 'ArrowDown').defaultPrevented]).toEqual([false, false])
+    expect(document.activeElement).toBe(document.body) // the harness gave the bar no focus, and no key moved one
+  })
+
+  it('S34: with text in the bar → and ↓ do what the search says, and the page is not asked', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const records = ['/v/a.md', '/v/zed/ab.md'].map(indexRecord)
+    const tree: TreeNode[] = [TREE[1], { type: 'dir', name: 'zed', path: '/v/zed', children: [{ type: 'file', name: 'ab.md', path: '/v/zed/ab.md', size: 1, mtime: 1, kind: 'markdown' }] }]
+    const { el } = await mount({ lens: 'search', onLeaveToPage }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
+    })
+    const input = searchBar(el)!
+    await type(input, 'a')
+    expect(highlighted(el)).toBe('/v/a.md')
+    // ↓ moves the highlight (YAZ-803), and → is the text's key: the caret moves (YAZ-2662 S50).
+    expect(press(input, 'ArrowDown').defaultPrevented).toBe(true)
+    expect(highlighted(el)).toBe('/v/zed/ab.md')
+    expect(press(input, 'ArrowRight').defaultPrevented).toBe(false)
+    // A bar that holds only a space is not empty: → moves the caret over the space.
+    await type(input, ' ')
+    expect(press(input, 'ArrowRight').defaultPrevented).toBe(false)
+    expect(onLeaveToPage).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A row menu asked from outside the panel (YAZ-2663 D6): a right-click on a row of the new tab page
+ * makes App's `menuRequest`, and the Sidebar opens its OWN row menu for that path at the mouse. The
+ * page row is a row like a search row: "Show in sidebar" first, and an item that draws INTO the
+ * tree shows the row in Files first. It is no row of the sidebar, so no selection follows it.
+ */
+describe('a row menu asked for a path: the rows of the new tab page (YAZ-2663 D6)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  /** Projects/ holding a note, and a note at the top. */
+  const VAULT = (v: string): TreeNode[] => [folder(`${v}/Projects`, [note(`${v}/Projects/plan.md`)]), note(`${v}/top.md`)]
+  const ITEM = 'Show in sidebar'
+  const POINT = { x: 300, y: 200 }
+
+  let vaults = 0
+  const freshVault = () => `/v-ask-${++vaults}`
+  /** A fresh vault and a fresh window per mount; `over` is handed the vault, so a request can be set at the mount. */
+  const mountVault = async (over: (v: string) => Partial<SidebarProps> = () => ({}), tweak?: (bridge: ReturnType<typeof installBridge>, v: string) => void) => {
+    const v = freshVault()
+    const m = await mount({ root: v, ...over(v) }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })
+      tweak?.(b, v)
+      await storage.init()
+    })
+    return { ...m, v }
+  }
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${path}"]`)
+  const click = (target: Element | null, init: MouseEventInit = {}) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init })))
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+  const closeMenu = (el: HTMLElement) => act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  const labels = (el: HTMLElement) => menuItems(el).map((b) => b.textContent)
+  const selected = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((r) => r.dataset.path)
+  /** The menu of a row of the Files tab, top level, in order; the menu is closed again. */
+  const menuOf = (el: HTMLElement, target: Element | null) => {
+    rightClick(target)
+    const out = labels(el)
+    closeMenu(el)
+    return out
+  }
+
+  it.each(['files', 'focus'] as const)('S27: with the %s tab on show a request opens the menu of that row at the point, "Show in sidebar" first and then the menu of its row in Files, for a file and for a folder; the request is consumed one time and no selection changes', async (lens) => {
+    const { el, v, props, rerender } = await mountVault(() => ({ onMenuConsumed: vi.fn() }))
+    const inFiles = Object.fromEntries(['/Projects', '/top.md'].map((rel) => [rel, menuOf(el, row(el, `${v}${rel}`))]))
+    expect(inFiles['/top.md']).not.toContain(ITEM)
+    // One row of the sidebar is selected, and it is not the row of the request.
+    click(row(el, `${v}/top.md`))
+    await rerender({ lens })
+    const before = selected(el)
+
+    await rerender({ menuRequest: { id: 1, path: `${v}/Projects`, ...POINT } })
+    expect(labels(el)).toEqual([ITEM, ...inFiles['/Projects']])
+    const menu = el.querySelector<HTMLElement>('.ctx-menu')!
+    expect([menu.style.left, menu.style.top]).toEqual(['300px', '200px'])
+    expect(props.onMenuConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    expect(selected(el)).toEqual(before)
+    // The same request again is no new request: a closed menu stays closed.
+    closeMenu(el)
+    await rerender({ menuRequest: { id: 1, path: `${v}/Projects`, ...POINT } })
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    await rerender({ menuRequest: { id: 2, path: `${v}/top.md`, ...POINT } })
+    expect(labels(el)).toEqual([ITEM, ...inFiles['/top.md']])
+    act(() => itemByLabel(el, ITEM)?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(`${v}/top.md`)
+    expect(selected(el)).toEqual(before)
+  })
+
+  it('S27: with text in the Search tab a request moves no highlight of the search', async () => {
+    const { el, v, rerender } = await mountVault(
+      () => ({ lens: 'search' }),
+      (b, vault) => b.index.mockResolvedValue({ root: vault, records: ['/Projects/plan.md', '/top.md'].map((rel) => ({ ...indexRecord(`${vault}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) })), folders: [], generatedAt: 1, ids: true } as never),
+    )
+    await type(searchBar(el)!, 'p') // `top` and `plan` both match
+    const before = selected(el)
+    expect(before).toHaveLength(1)
+    const other = [`${v}/top.md`, `${v}/Projects/plan.md`].find((path) => path !== before[0])!
+    await rerender({ menuRequest: { id: 1, path: other, ...POINT } })
+    expect(labels(el)[0]).toBe(ITEM)
+    closeMenu(el)
+    expect(selected(el)).toEqual(before)
+  })
+
+  it('S30: Rename and New note on that menu show the row in Files first, as on a search row; the input then stands on the row', async () => {
+    const { el, v, props, rerender } = await mountVault()
+    const path = `${v}/Projects/plan.md` // inside a closed folder: Files does not draw the row yet
+    expect(row(el, path)).toBeNull()
+    await rerender({ menuRequest: { id: 1, path, ...POINT } })
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(path)
+    // What App does with that door: the Files tab, and the reveal.
+    await rerender({ lens: 'files', menuRequest: null, revealRequest: { id: 1, path } })
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('plan')
+
+    await rerender({ menuRequest: { id: 2, path: `${v}/Projects`, ...POINT }, revealRequest: null })
+    act(() => itemByLabel(el, 'New note')?.click())
+    expect(vi.mocked(props.onRevealInFiles).mock.calls).toEqual([[path], [`${v}/Projects`]])
+  })
+
+  it('S32: the menu is always the menu of ONE row: a request for a row inside a selection of two rows has no item that counts, and the selection stays', async () => {
+    const { el, v, rerender } = await mountVault()
+    click(row(el, `${v}/Projects`))
+    click(row(el, `${v}/top.md`), { shiftKey: true })
+    expect(selected(el)).toHaveLength(2)
+    expect(menuOf(el, row(el, `${v}/top.md`))[0]).toBe('Open 2 in new tabs') // the sidebar's own right-click counts the selection
+    await rerender({ menuRequest: { id: 1, path: `${v}/top.md`, ...POINT } })
+    expect(labels(el)[0]).toBe(ITEM)
+    expect(labels(el).filter((label) => /\d/.test(label ?? ''))).toEqual([])
+    expect(labels(el)).toEqual(expect.arrayContaining(['Cut', 'Copy', 'Add to favorites', 'Rename']))
+    expect(selected(el)).toHaveLength(2)
+  })
+
+  it('a path the tree does not hold opens nothing and says nothing; the request is consumed', async () => {
+    const { el, props } = await mountVault((vault) => ({ onMenuConsumed: vi.fn(), menuRequest: { id: 1, path: `${vault}/gone.md`, ...POINT } }))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onMenuConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('S31, S29: the sidebar was hidden. A request that is set when the panel mounts waits for the tree and for the favorites of its vault, then opens the menu one time: a favorite row says "Remove from favorites"', async () => {
+    let land: () => void = () => undefined
+    let list: () => void = () => undefined
+    const { el, props } = await mountVault(
+      (vault) => ({ onMenuConsumed: vi.fn(), menuRequest: { id: 1, path: `${vault}/top.md`, ...POINT } }),
+      (b, vault) => {
+        b.tree.mockImplementation((r: string) => new Promise((resolve) => (land = () => resolve({ root: r, tree: VAULT(vault), generatedAt: 1 }))))
+        b.favorites.get.mockImplementation(() => new Promise((resolve) => (list = () => resolve([`${vault}/top.md`]))))
+      },
+    )
+    await act(async () => land())
+    // The tree is here and the favorites are not: a menu now would say "Add to favorites" of a favorite.
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onMenuConsumed).not.toHaveBeenCalled()
+    await act(async () => list())
+    expect(labels(el)[0]).toBe(ITEM)
+    expect(labels(el)).toContain('Remove from favorites')
+    expect(props.onMenuConsumed).toHaveBeenCalledExactlyOnceWith(1)
   })
 })
 

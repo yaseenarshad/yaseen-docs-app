@@ -37,7 +37,7 @@ import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRen
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { plainEntryName } from './sidebar/createEntry'
-import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
+import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { TabOverview } from './tabs/TabOverview'
@@ -126,6 +126,9 @@ export function App() {
   const sidebarClipboard = useRef<SidebarClipboard | null>(null)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
+  // The row menu a row of the new tab page asked for (YAZ-2663 D6): the reveal request's idiom.
+  const sidebarMenuId = useRef(0)
+  const [sidebarMenuRequest, setSidebarMenuRequest] = useState<SidebarMenuRequest | null>(null)
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
@@ -482,16 +485,32 @@ export function App() {
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, focus })
   }, [changeLens])
 
-  // A folder row of the new tab page (YAZ-2663 S22): the folder shows in Files, open, with the
-  // keyboard focus on its row, as Enter on a folder of the search tree does (YAZ-2662 D1). The page
-  // shows with the sidebar hidden too, so the sidebar shows first.
-  const showFolderInFiles = useCallback((path: string) => {
+  // A folder row of the new tab page (YAZ-2663 S22), and Shift+Enter on any of its rows (S38): the
+  // row shows in Files — a folder open — with the keyboard focus on it, as Enter on a folder and
+  // Shift+Enter do in the search tree (YAZ-2662 D1, D8). The page shows with the sidebar hidden too,
+  // so the sidebar shows first.
+  const showRowInFiles = useCallback((path: string) => {
     if (sidebarCollapsed) toggleSidebar()
     revealInFiles(path, true)
   }, [sidebarCollapsed, toggleSidebar, revealInFiles])
+  // The way in to the new tab page from the empty search bar (YAZ-2663 D7, S33): the page fills
+  // this box with its door while it shows, so with no page the answer is no and the key stays the bar's.
+  const startPageFocus = useRef<(() => boolean) | null>(null)
+  const leaveSearchToPage = useCallback(() => startPageFocus.current?.() ?? false, [])
 
   const consumeSidebarReveal = useCallback((id: number) => {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
+  }, [])
+
+  // A right-click on a row of the new tab page (YAZ-2663 D6): the sidebar opens its OWN row menu
+  // for that path at the mouse, so the page has no menu and no rule is written twice. With the
+  // sidebar hidden it shows first, and it mounts with the request already set (S31).
+  const showRowMenu = useCallback((path: string, x: number, y: number) => {
+    if (sidebarCollapsed) toggleSidebar()
+    setSidebarMenuRequest({ id: ++sidebarMenuId.current, path, x, y })
+  }, [sidebarCollapsed, toggleSidebar])
+  const consumeSidebarMenu = useCallback((id: number) => {
+    setSidebarMenuRequest((request) => request?.id === id ? null : request)
   }, [])
 
   // The settings dialog (YAZ-1679) is App's so the sidebar cog, ⌘, and the app menu's Settings…
@@ -1171,6 +1190,8 @@ export function App() {
           lens={sidebarLens}
           revealRequest={sidebarRevealRequest}
           onRevealConsumed={consumeSidebarReveal}
+          menuRequest={sidebarMenuRequest}
+          onMenuConsumed={consumeSidebarMenu}
           onLensChange={changeLens}
           settings={settings}
           onChangeSettings={changeSettings}
@@ -1187,6 +1208,7 @@ export function App() {
           clipboardRef={sidebarClipboard}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
+          onLeaveToPage={leaveSearchToPage}
           // ⌘O (YAZ-1767 D8): only a request made on THIS sidebar counts; any other reads as none.
           switcherOpenRequest={switcherRequest.key === sidebarKey.current ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
@@ -1253,7 +1275,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowFolder={showFolderInFiles} onNotice={notify} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBackToSearch={openSearch} focusRef={startPageFocus} onNotice={notify} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
