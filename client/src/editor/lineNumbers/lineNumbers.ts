@@ -1,14 +1,21 @@
 import type { Crepe } from '../crepe'
+import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import type { BlockLines } from './blockLines'
+import { CODE_LINE_ATTR, syncCodeLines } from './codeLines'
+
+/** What the host sends: the file's blocks. With no `ends`, every block is one line. */
+export type ShownLines = Omit<BlockLines, 'ends'> & Partial<Pick<BlockLines, 'ends'>>
 
 const pluginKey = new PluginKey<DecorationSet>('mdapp-line-numbers')
 const CONTAINERS = new Set(['bullet_list', 'ordered_list', 'list_item', 'blockquote'])
 const KIND: Record<string, string> = { paragraph: 'p', heading: 'h', code_block: 'c', hr: 'r', table: 't' }
+/** The file's two kinds of code block, both the page's `code_block`: the fence lines above the first code line. */
+const FENCE: Record<string, number> = { c: 1, i: 0 }
 
 /**
  * Pairs the page's leaf blocks with the file's, in order. No number beats a wrong one, so the
@@ -16,8 +23,14 @@ const KIND: Record<string, string> = { paragraph: 'p', heading: 'h', code_block:
  * before it stay. When every pair agreed and one side still has blocks, the two sides count
  * differently somewhere above, and no number shows at all. The empty paragraph Crepe keeps at the
  * end of the page is not such a block.
+ *
+ * A block gets its start as `data-line` and, when it ends on a later line, its end as
+ * `data-line-end` (D7). A code block also gets the file line of its first code line (D8), but only
+ * when the page holds as many code lines as the file has inside the block. An empty block, a fence
+ * that is never closed, and indented code that the load-time rules gave a blank line do not, and
+ * keep their own 1, 2, 3.
  */
-const build = (doc: ProseNode, blocks: BlockLines): DecorationSet => {
+const build = (doc: ProseNode, blocks: ShownLines): DecorationSet => {
   const decorations: Decoration[] = []
   let index = 0
   let disagreed = false
@@ -28,9 +41,18 @@ const build = (doc: ProseNode, blocks: BlockLines): DecorationSet => {
     const kind = KIND[node.type.name]
     // `undefined` past the file's last block.
     const fileKind: string | undefined = blocks.kinds[index]
-    if (kind === undefined || (fileKind !== undefined && kind !== fileKind)) disagreed = true
+    const fence: number | undefined = FENCE[fileKind]
+    if (kind === undefined || (fileKind !== undefined && kind !== (fence === undefined ? fileKind : 'c'))) disagreed = true
     else if (fileKind === undefined) pageHasMore ||= kind !== 'p' || node.content.size > 0
-    else decorations.push(Decoration.node(pos, pos + node.nodeSize, { 'data-line': String(blocks.lines[index++]) }))
+    else {
+      const line = blocks.lines[index]
+      const end = blocks.ends?.[index] ?? line
+      const attrs: Record<string, string> = { 'data-line': String(line) }
+      if (end > line) attrs['data-line-end'] = String(end)
+      if (fence !== undefined && node.textContent.split('\n').length === end - line + 1 - 2 * fence) attrs[CODE_LINE_ATTR] = String(line + fence)
+      decorations.push(Decoration.node(pos, pos + node.nodeSize, attrs))
+      index++
+    }
     return false
   })
   if (!disagreed && (pageHasMore || index < blocks.lines.length)) return DecorationSet.empty
@@ -49,7 +71,7 @@ export const lineNumbers = $prose(
       state: {
         init: () => DecorationSet.empty,
         apply: (tr, set) => {
-          const blocks = tr.getMeta(pluginKey) as BlockLines | null | undefined
+          const blocks = tr.getMeta(pluginKey) as ShownLines | null | undefined
           if (blocks === undefined) return tr.docChanged ? set.map(tr.mapping, tr.doc) : set
           return blocks === null ? DecorationSet.empty : build(tr.doc, blocks)
         },
@@ -58,10 +80,18 @@ export const lineNumbers = $prose(
     }),
 )
 
-export const showLineNumbers = (crepe: Crepe, blocks: BlockLines | null): void =>
+/**
+ * Sends the file's blocks to the plugin, or null for "off". Then each code block that has a
+ * CodeMirror now takes its inner lines from what the plugin just decided for it (`codeLines.ts`).
+ */
+export const showLineNumbers = (crepe: Crepe, blocks: ShownLines | null): void =>
   crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
     view.dispatch(view.state.tr.setMeta(pluginKey, blocks).setMeta('addToHistory', false))
+    for (const block of view.dom.querySelectorAll<HTMLElement>('.milkdown-code-block')) {
+      const cm = CodeMirrorView.findFromDOM(block)
+      if (cm !== null) syncCodeLines(cm)
+    }
   })
 
 let worker: Worker | null = null

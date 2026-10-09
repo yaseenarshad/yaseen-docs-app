@@ -92,7 +92,7 @@ import { fetchTree } from '../lib/treeFeed'
 import { createCrepe, getPlainText, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
-import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
+import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
 
 interface FakeCrepe {
   md: string
@@ -1078,7 +1078,7 @@ describe('the page settings cog (YAZ-2643)', () => {
 
 describe('line numbers follow the file on disk (YAZ-2643)', () => {
   /** What the host last sent to the editor: the blocks, or null for "off". */
-  const sent = (): BlockLines | null | undefined => showLineNumbersMock.mock.calls.at(-1)?.[1]
+  const sent = (): ShownLines | null | undefined => showLineNumbersMock.mock.calls.at(-1)?.[1]
 
   it('nothing is asked and nothing is sent while the numbers are off, through a whole save (S58, S59)', async () => {
     await mount(FM + BODY)
@@ -1095,7 +1095,16 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     switchLineNumbers(el)
     await settle()
     expect(requestBlockLinesMock).toHaveBeenCalledExactlyOnceWith(BODY)
-    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(crepe(), { lines: [4, 6], kinds: 'hp' })
+    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(crepe(), { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+  })
+
+  it('sends where each block ENDS too, as a line of the file: the frontmatter lines counted, and a blank line the load added taken out (S66)', async () => {
+    // Under 3 lines of frontmatter: a wrapped paragraph (4–6), a bullet (8), a bare nested marker (9), a wrapped bullet (10–11), a code block (13–16).
+    const body = 'one\ntwo\nthree\n\n* a\n  *\n  * b\n    wrapped\n\n```\nx\ny\n```\n'
+    const el = await mount(FM + body)
+    switchLineNumbers(el)
+    await settle()
+    expect(sent()).toEqual({ lines: [4, 8, 9, 10, 13], ends: [6, 8, 9, 11, 16], kinds: 'ppppc' })
   })
 
   it('never builds them on a keystroke or while a save is in flight; the settled save builds them from the saved file (S25–S27)', async () => {
@@ -1114,7 +1123,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await settle()
     expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
     expect(requestBlockLinesMock).toHaveBeenCalledExactlyOnceWith('# Hello\n\nsome text\n\nnew block\n')
-    expect(sent()).toEqual({ lines: [4, 6, 8], kinds: 'hpp' })
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'hpp' })
   })
 
   it('with the numbers on, typing asks for nothing; each settled save builds them again (S25, S26)', async () => {
@@ -1129,7 +1138,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await pastDebounce()
     await settle()
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
-    expect(sent()).toEqual({ lines: [1, 3, 5], kinds: 'php' })
+    expect(sent()).toEqual({ lines: [1, 3, 5], ends: [1, 3, 5], kinds: 'php' })
   })
 
   it('an outside change with nothing unsaved reloads the note and builds them from the new file (S28)', async () => {
@@ -1142,7 +1151,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await emit({ type: 'change', path: PATH, mtime: 2 })
     await settle()
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
-    expect(sent()).toEqual({ lines: [6, 8, 9], kinds: 'hpp' })
+    expect(sent()).toEqual({ lines: [6, 8, 9], ends: [6, 8, 9], kinds: 'hpp' })
   })
 
   it('an outside change over unsaved edits keeps them until "Reload" settles (S29)', async () => {
@@ -1167,7 +1176,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await settle()
     expect(el.querySelector('.conflict-bar')).toBeNull()
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
-    expect(sent()).toEqual({ lines: [4], kinds: 'h' })
+    expect(sent()).toEqual({ lines: [4], ends: [4], kinds: 'h' })
   })
 
   it('an outside change over unsaved edits keeps them until "Keep mine" has saved (S29)', async () => {
@@ -1188,7 +1197,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM}# Hello\n\nmine\n\nand more\n`, expectedMtime: 2 })
     expect(el.querySelector('.conflict-bar')).toBeNull()
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
-    expect(sent()).toEqual({ lines: [4, 6, 8], kinds: 'hpp' })
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'hpp' })
   })
 
   it('an outside change that puts back the bytes the note was opened with still builds them again (S28)', async () => {
@@ -1198,7 +1207,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     type('intro\n\n# Hello\n\nsome text\n')
     await pastDebounce()
     await settle()
-    expect(sent()).toEqual({ lines: [4, 6, 8], kinds: 'php' })
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'php' })
     // A revert from outside (git, an AI): the file is byte-for-byte what this editor mounted on.
     diskHas(FM + BODY, 100)
     diskHas(FM + BODY, 100) // reload() re-reads
@@ -1206,19 +1215,19 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await settle()
     expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), BODY)
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(3)
-    expect(sent()).toEqual({ lines: [4, 6], kinds: 'hp' })
+    expect(sent()).toEqual({ lines: [4, 6], ends: [4, 6], kinds: 'hp' })
   })
 
   it('a property write changes the frontmatter’s line count: every number moves with it (S30)', async () => {
     const el = await mount(FM + BODY)
     switchLineNumbers(el)
     await settle()
-    expect(sent()).toEqual({ lines: [4, 6], kinds: 'hp' })
+    expect(sent()).toEqual({ lines: [4, 6], ends: [4, 6], kinds: 'hp' })
     diskHas(`---\nstatus: done\nowner: yasin\ntags:\n  - a\n---\n${BODY}`, 2)
     await emit({ type: 'change', path: PATH, mtime: 2 })
     await settle()
     expect(applyExternalMock).not.toHaveBeenCalled()
-    expect(sent()).toEqual({ lines: [7, 9], kinds: 'hp' })
+    expect(sent()).toEqual({ lines: [7, 9], ends: [7, 9], kinds: 'hp' })
   })
 
   it('turn-off drops every number (S32)', async () => {
@@ -1236,7 +1245,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     const el = await mount(BODY)
     switchLineNumbers(el)
     switchLineNumbers(el)
-    await act(async () => answer({ lines: [1, 3], kinds: 'hp' }))
+    await act(async () => answer({ lines: [1, 3], ends: [1, 3], kinds: 'hp' }))
     await settle()
     expect(showLineNumbersMock.mock.calls.map((call) => call[1])).toEqual([null])
   })
@@ -1251,8 +1260,8 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     diskHas(next, 2)
     await emit({ type: 'change', path: PATH, mtime: 2 })
     await settle()
-    expect(sent()).toEqual({ lines: [1, 3, 5], kinds: 'hpp' })
-    await act(async () => answer({ lines: [1, 3], kinds: 'hp' }))
+    expect(sent()).toEqual({ lines: [1, 3, 5], ends: [1, 3, 5], kinds: 'hpp' })
+    await act(async () => answer({ lines: [1, 3], ends: [1, 3], kinds: 'hp' }))
     await settle()
     expect(showLineNumbersMock).toHaveBeenCalledTimes(1)
   })
@@ -1272,7 +1281,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     await pastDebounce()
     await settle()
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
-    expect(sent()).toEqual({ lines: [4, 6, 8], kinds: 'hpp' })
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'hpp' })
     expect(onNotice).toHaveBeenCalledTimes(1)
   })
 
@@ -1300,7 +1309,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     expect(showLineNumbersMock).not.toHaveBeenCalled()
     await act(async () => created())
     await settle()
-    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(crepe(), { lines: [4, 6], kinds: 'hp' })
+    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(crepe(), { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
     clickCog(el)
     expect(vi.mocked(getPlainText)).toHaveBeenCalledExactlyOnceWith(crepe())
   })
@@ -1310,7 +1319,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     switchLineNumbers(el)
     await settle()
     const first = crepe()
-    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(first, { lines: [4, 6], kinds: 'hp' })
+    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(first, { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
     // A new `onOpenFile` identity is one of the mount effect's dependencies: the editor is rebuilt in place.
     act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={() => undefined} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} />))
     await settle()
@@ -1319,6 +1328,6 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     expect(second).not.toBe(first)
     expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
     expect(showLineNumbersMock).toHaveBeenCalledTimes(2)
-    expect(showLineNumbersMock).toHaveBeenLastCalledWith(second, { lines: [4, 6], kinds: 'hp' })
+    expect(showLineNumbersMock).toHaveBeenLastCalledWith(second, { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
   })
 })

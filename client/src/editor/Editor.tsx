@@ -503,8 +503,8 @@ function CrepeHost({
     const { frontmatter, body } = diskParts()
     const { text, toFileLine } = fileLines(frontmatter, body)
     void requestBlockLines(text).then(
-      ({ lines, kinds }) => {
-        if (!cancelled && crepeRef.current === crepe) showLineNumbers(crepe, { lines: lines.map(toFileLine), kinds })
+      ({ lines, ends, kinds }) => {
+        if (!cancelled && crepeRef.current === crepe) showLineNumbers(crepe, { lines: lines.map(toFileLine), ends: ends.map(toFileLine), kinds })
       },
       () => {
         if (!cancelled) onNotice?.('Line numbers could not load.')
