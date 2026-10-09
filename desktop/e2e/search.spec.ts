@@ -34,7 +34,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, launchApp, lensTab, menuItem, quitApp, readState, searchBar, searchTab, seededState, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
+import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, launchApp, lensTab, menuItem, quitApp, readState, previewTab, searchBar, searchTab, seededState, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -168,7 +168,7 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- YAZ-802 / 803 / 2620: find and open
 
-test('step 1 — ⌘K shows the Search tab, its bar and one line of help; a typed title cuts the tree down to the matches and their parents; Enter opens the BEST match in the CURRENT tab', async () => {
+test('step 1 — ⌘K shows the Search tab, its bar and one line of help; a typed title cuts the tree down to the matches and their parents; Enter opens the BEST match in the PREVIEW tab', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
@@ -200,11 +200,13 @@ test('step 1 — ⌘K shows the Search tab, its bar and one line of help; a type
   await expectHighlight(win, 'Nurture')
   await shoot(win, 'search-01-tree')
 
-  // Enter opens the highlight in the CURRENT tab: still ONE tab, now the seeded note.
+  // Enter opens the highlight by the preview rule (YAZ-2648 D1, S28): a NEW tab at the end, italic,
+  // and the launch's tab — a kept tab — stays. Before YAZ-2648 the note took that tab's place.
   await searchBar(win).press('Enter')
   await expect(activeTab(win)).toHaveText('Nurture')
   await expect(editorOf(win)).toContainText(SEEDED_BODY)
-  await expect(tabsOf(win)).toHaveCount(1)
+  await expect(tabsOf(win)).toHaveText(['CEO', 'Nurture'])
+  await expect(previewTab(win)).toHaveText(['Nurture'])
   // Opening does not dismiss the results — the Search tab stays (S24), so the rows are still there.
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(matchLabels(win)).toHaveText(NURTURE)

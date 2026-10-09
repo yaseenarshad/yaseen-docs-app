@@ -9,6 +9,7 @@ import { copyEntry, pasteEntries } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
+import { readHeads } from '../fs/heads'
 import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
 import { openInVsCode } from '../fs/openInVsCode'
@@ -37,6 +38,8 @@ const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unkno
 export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CONTRACT.tree, tree)
   handle(CONTRACT.readFile, readFile)
+  // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
+  handle(CONTRACT.readHeads, readHeads)
   handle(CONTRACT.readPdf, readPdf)
   handle(CONTRACT.readImage, readImage)
   handle(CONTRACT.writeFile, writeFile)

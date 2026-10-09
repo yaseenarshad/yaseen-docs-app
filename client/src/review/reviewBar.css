@@ -2,12 +2,10 @@
    bar is the tab strip's row and buttons (`.tabbar-row`, `.tabbar-nav__btn`), and every text
    button is the confirm sheet's (`.confirm__btn`). */
 
-/* The strip's height, and room on the right for the floating "Show right panel" button. */
+/* The strip's height is `.tabbar-row`'s own; here, room on the right for the floating "Show right panel" button. */
 .review-bar {
-  align-items: center;
   gap: 8px;
-  min-height: 30px;
-  padding: 0 40px 0 12px;
+  padding: 0 44px 0 12px;
   font-size: 13px;
 }
 

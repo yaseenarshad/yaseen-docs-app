@@ -7,6 +7,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
   const bridge = {
     tree: vi.fn(),
     readFile: vi.fn(),
+    readHeads: vi.fn(),
     readPdf: vi.fn(),
     readImage: vi.fn(),
     writeFile: vi.fn(),

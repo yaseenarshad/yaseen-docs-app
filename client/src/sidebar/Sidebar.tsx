@@ -70,7 +70,10 @@ interface SidebarProps {
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
   asideRef?: Ref<HTMLElement>
   activeFile: string | null
+  /** A click on a row, Enter on a search match: App passes the workspace's openCurrent — the page opens in the preview tab (YAZ-2648 D1). */
   onOpenFile: (path: string) => void
+  /** A double click on a row (YAZ-2648 D2): App passes the workspace's openKept. */
+  onKeepFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
   /**
@@ -356,6 +359,7 @@ export function Sidebar({
   onReorderVaults,
   activeFile,
   onOpenFile,
+  onKeepFile,
   onOpenFileBackground,
   onRevealInFiles,
   onPickFolder,
@@ -458,8 +462,11 @@ export function Sidebar({
     // S24 on YAZ-2620): no tab, so nothing for ⌘ to background either.
     if (node?.type === 'file' && node.kind === null) openDefault(hit.path)
     else if (background) onOpenFileBackground(hit.path)
-    else if (hit.path === activeFile) focusOpenDocument()
-    else onOpenFile(hit.path)
+    else {
+      // The page already open is asked for too: nothing changes in the workspace, and App closes the tab board over it (YAZ-2648 S46).
+      onOpenFile(hit.path)
+      if (hit.path === activeFile) focusOpenDocument()
+    }
   }
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
@@ -770,6 +777,7 @@ export function Sidebar({
     activeFile,
     onToggle: toggleDir,
     onOpenFile,
+    onKeepFile,
     onOpenFileBackground,
     onOpenDefault: openDefault,
     onNodeContextMenu: openRowMenu,
@@ -1027,7 +1035,7 @@ export function Sidebar({
           sections={buildMenuSections(
             { ...menu, clip },
             {
-              onOpen: onOpenFile,
+              onOpen: onKeepFile,
               onOpenInNewTabs: openFilesInTabs,
               onShowInSidebar: onRevealInFiles,
               onOpenNewWindow: openFileNewWindow,

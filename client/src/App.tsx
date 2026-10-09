@@ -16,6 +16,7 @@ import { dropFolderValuesAfterMove, valuesLeftBehind, type LeftBehind } from './
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
+import { focusOpenDocument } from './lib/focusHandoff'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
 import { ConfirmIds } from './components/ConfirmIds'
 import { NoticeIcon } from './components/NoticeIcon'
@@ -39,6 +40,7 @@ import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
+import { TabOverview } from './tabs/TabOverview'
 import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
@@ -51,6 +53,9 @@ function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
 
+
+/** No tab board (YAZ-2648): one object, so closing a board that is closed is no state change. */
+const OVERVIEW_CLOSED = { phase: 'closed', from: null } as const
 
 // A workspace state change still re-renders App, but unchanged retained editors must not render
 // with it: a folder's Board runs layout animation after every render, so an unrelated right
@@ -87,13 +92,19 @@ export function App() {
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
   const {
-    tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab,
+    tabs, active: file, mounted, preview, blank, openCurrent, navigate, openKept, keep, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
     rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
   } = useWorkspace(root)
+  /**
+   * The page on show in the main pane: the active tab's — and none under the blank tab (YAZ-2655
+   * D10), where `file` is still the last real active tab, the one the window stores. What the user
+   * LOOKS at reads this: the title, the sidebar's highlight, ⌘⇧C. What is stored reads `file`.
+   */
+  const pageOnShow = blank ? null : file
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -118,7 +129,7 @@ export function App() {
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
-  // it activates the file's tab when already open, else opens it in the CURRENT tab;
+  // it activates the file's tab when already open, else opens it in the PREVIEW tab (YAZ-2648 D1);
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
   const [notice, setNotice] = useState<Notice | null>(null)
   // The one door every surface uses (D10 amended, YAZ-1674): text plus an optional glyph kind,
@@ -320,12 +331,13 @@ export function App() {
   useEffect(() => syncHash(file), [file])
 
   // The OS window title mirrors what is open (C3, GRO-2165) under the display name (YAZ-1974 D4) of the ACTIVE tab's vault (YAZ-2602 S36); Electron follows document.title.
+  // Under the blank tab no page is open, and the title is the vault's alone (YAZ-2655 R20).
   const { name: activeName, root: activeRoot, wikilinks: activeLinks } = active
   // Whether the active tab is a FOLDER is the Files tree's to say (YAZ-2290), and the page's title
   // the index's (YAZ-2420 🔒 D14), so the title follows both.
   useEffect(() => {
     const sync = (): void => {
-      document.title = windowTitle(activeName, file, pathTitles(activeLinks.records, activeLinks.folders), file !== null && isFolderPath(activeRoot, file))
+      document.title = windowTitle(activeName, pageOnShow, pathTitles(activeLinks.records, activeLinks.folders), pageOnShow !== null && isFolderPath(activeRoot, pageOnShow))
     }
     sync()
     const offIndex = activeLinks.subscribe(sync)
@@ -334,7 +346,7 @@ export function App() {
       offIndex()
       offTree?.()
     }
-  }, [activeName, file, activeRoot, activeLinks])
+  }, [activeName, pageOnShow, activeRoot, activeLinks])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -478,7 +490,6 @@ export function App() {
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
-  useLinkEvents({ onOpenFile: openCurrent, onNotice: notify })
   // Upkeep review (YAZ-2322): each vault counts what is due and can hold a session, and the window
   // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
   // because the sidebar that shows the count unmounts while collapsed.
@@ -496,20 +507,134 @@ export function App() {
   // The row menus ask and write by path: a note is in review by its own vault's settings (S42).
   const reviewState = useCallback((path: string) => scopeOf(path).review.inReview(path), [scopeOf])
   const setReview = useCallback((path: string, on: boolean) => scopeOf(path).review.setInReview(path, on), [scopeOf])
-  // A link clicked in a tab's page opens in that tab. While a review is open it opens in a
+  // A link clicked in a tab's page opens in that tab (`navigate`, YAZ-2648 D3: the sidebar's click
+  // goes to the preview tab, a page's own link does not). While a review is open it opens in a
   // background tab instead: the review stays in front and the active tab under it does not move.
   // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
   const reviewing = useRef(false)
   reviewing.current = reviewer !== null
-  const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : openCurrent)(path), [openBackground, openCurrent])
+  const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
   useEffect(() => closeReview(), [file, closeReview])
 
+  // The tab board (YAZ-2648 D5): every open tab as a small page, in the tab stack's place. Whether
+  // it shows is this window's, for the session, like the settings dialog: nothing is stored. The
+  // grid button and ⌘⇧M both open it and close it. A review is not a tab and stands in the same
+  // place, so the board does not open over one, and a review that starts closes it. The Welcome
+  // window has no tabs and no board.
+  //
+  // `open` remembers the page it opened from (`from`): that tab's layer is the one that zooms out
+  // under the board. `leaving` is the zoom back in — the chosen tab is active already and its
+  // layer grows from its page of the board, which says when it is done (`leftOverview`). Where no
+  // motion is asked for (and where there is no `matchMedia`) there is no way out to wait for.
+  const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
+  const overviewOpen = overview.phase === 'open'
+  /** What the doors below read at the moment they are used; they keep their identity under the board. */
+  const now = useRef({ file, tabs, phase: overview.phase, right: rightPanel.items.length })
+  now.current = { file, tabs, phase: overview.phase, right: rightPanel.items.length }
+  // Going to a page — a sidebar click, ⌃Tab, a deep link — closes the board at once, by the review's
+  // rule above: the page asked for must not open unseen under it. A change of the active tab the
+  // board made ITSELF is no such trip, and says so here first: the page it zooms into, and the
+  // heir of an active tab it closed or sent to the right panel, after which it stays open.
+  const ownChange = useRef(false)
+  const inReview = reviewer !== null
+  useEffect(() => {
+    if (ownChange.current) ownChange.current = false
+    else setOverview(OVERVIEW_CLOSED)
+  }, [file, inReview])
+  /** Leave the board for `path`'s page — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
+  const leaveOverview = useCallback((path: string | null) => {
+    const { file: open, tabs: all } = now.current
+    if (path !== null && path !== open && all.includes(path)) {
+      ownChange.current = true
+      activate(path)
+    }
+    const zoom = (path ?? open) !== null && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === false
+    setOverview((at) => (at.phase !== 'open' ? at : zoom ? { phase: 'leaving', from: null } : OVERVIEW_CLOSED))
+  }, [activate])
+  const leaveOverviewForOpenPage = useCallback(() => leaveOverview(null), [leaveOverview])
+  // The doors of a trip from outside the board: the sidebar's click and its double click, a deep
+  // link, ⌃Tab. The effect above knows a trip only when `file` moves, so each door closes the
+  // board itself: the page ALREADY open is a trip too, and it must show (S46).
+  const openPage = useCallback((path: string) => {
+    setOverview(OVERVIEW_CLOSED)
+    openCurrent(path)
+  }, [openCurrent])
+  const openKeptPage = useCallback((path: string) => {
+    setOverview(OVERVIEW_CLOSED)
+    openKept(path)
+  }, [openKept])
+  const toNextTab = useCallback(() => {
+    setOverview(OVERVIEW_CLOSED)
+    nextTab()
+  }, [nextTab])
+  const toPrevTab = useCallback(() => {
+    setOverview(OVERVIEW_CLOSED)
+    prevTab()
+  }, [prevTab])
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify })
+  const leftOverview = useCallback(() => setOverview((at) => (at.phase === 'leaving' ? OVERVIEW_CLOSED : at)), [])
+  const toggleOverview = useCallback(() => {
+    const { phase, file: open } = now.current
+    if (phase === 'open') leaveOverview(null)
+    else if (phase === 'closed' && !reviewing.current && live.current.roots.length > 0) {
+      ownChange.current = false
+      // The blank tab is no page of the board: one that was not used goes away (YAZ-2655 R19).
+      closeBlank()
+      setOverview({ phase: 'open', from: open })
+    }
+  }, [leaveOverview, closeBlank])
+  // ⌘T and the strip's "+" (YAZ-2655 D10, D11): the one blank tab shows, last in the strip and
+  // active, over the empty page — and the caret goes to the sidebar's search bar, by the door ⌘K
+  // uses, because a new empty tab has one job: to pick a page. The next page opened fills it as a
+  // kept tab (the workspace's rule). Again while it shows, it only takes the caret back to the bar.
+  // A review is not a tab and stands in the strip's place, so ⌘T does nothing during one (R21);
+  // the Welcome window has no strip. The board gives way to it at once: the blank tab is no page of it.
+  const newTab = useCallback(() => {
+    if (reviewing.current || live.current.roots.length === 0) return
+    setOverview(OVERVIEW_CLOSED)
+    openBlank()
+    openSearch()
+  }, [openBlank, openSearch])
+  /**
+   * A page's ✕, an island's ✕, a tab's ✕ under the board: the tabs close as ⌘W closes each, in ONE
+   * change of the workspace, and the board stays — until its last tab goes: then it closes, and
+   * the window shows the empty state (R18).
+   */
+  const closeUnderOverview = useCallback((paths: string[]) => {
+    const { file: open, tabs: all } = now.current
+    if (all.every((path) => paths.includes(path))) setOverview(OVERVIEW_CLOSED)
+    ownChange.current = open !== null && paths.includes(open)
+    closeTabs(paths)
+  }, [closeTabs])
+  const closeOneUnderOverview = useCallback((path: string) => closeUnderOverview([path]), [closeUnderOverview])
+  /** "Move to right panel", on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
+  const movePageToRight = useCallback((path: string) => {
+    ownChange.current = path === now.current.file
+    transferMainToRight(path, now.current.right)
+  }, [transferMainToRight])
+  /** A rename or a move of the page on show, or of a folder above it, changes `file` and is no trip to a page: an open board stays. */
+  const renamedUnderOverview = useCallback((oldPath: string, newPath: string, dir: boolean) => {
+    const { file: open, phase } = now.current
+    if (phase === 'open' && open !== null && oldPath !== newPath && (open === oldPath || (dir && open.startsWith(`${oldPath}/`)))) ownChange.current = true
+  }, [])
+  // Off the board the keyboard goes back to the page, which shows again by now — unless the
+  // sidebar has it: a click or Enter there previews, and the walk keeps its place (YAZ-921). A tab
+  // that mounts for the first time takes the caret by itself, under the same rule.
+  const lastPhase = useRef(overview.phase)
+  useEffect(() => {
+    const was = lastPhase.current
+    lastPhase.current = overview.phase
+    const inSidebar = document.activeElement instanceof HTMLElement && document.activeElement.closest('.sidebar') !== null
+    if (was === 'open' && overview.phase !== 'open' && !inSidebar) focusOpenDocument()
+  }, [overview.phase])
+
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
-  // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322).
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
+  // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322). ⌘W on the blank tab
+  // closes it alone (YAZ-2655 S75): that is `closeActive`'s own rule.
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onZoom: requestZoom })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
@@ -530,7 +655,7 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!ownsCopyPathHotkey(event)) return
       const selected = sidebarSelection.current
-      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : file
+      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow
       if (text === null) return
       event.preventDefault()
       // BOTH outcomes speak through the window's one passive notice (YAZ-1341): the user cannot
@@ -543,7 +668,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [file])
+  }, [pageOnShow])
 
   /**
    * ⌘C / ⌘X / ⌘V for the sidebar's FILE clipboard (D6 amended, YAZ-1674) — ⌘⇧C's sibling in every
@@ -610,14 +735,16 @@ export function App() {
             storage.mirrorRoots(moved)
             slots.current = renameSlots(slots.current, oldPath, newPath)
           }
+          renamedUnderOverview(oldPath, newPath, true)
           renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
           if (vaultMoved) setRoots(moved)
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
+        renamedUnderOverview(oldPath, newPath, false)
         renameWorkspacePath(oldPath, newPath)
       }),
-    [renameWorkspacePath, renameWorkspaceDir],
+    [renameWorkspacePath, renameWorkspaceDir, renamedUnderOverview],
   )
 
   /**
@@ -943,13 +1070,15 @@ export function App() {
   /** The first vault whose sync needs attention: one banner at a time. */
   const unsynced = vaults.find((vault) => vault.syncBanner !== null)
   const syncCopy = unsynced?.syncBanner ?? null
-  const shown = session === null ? file : session.path
+  const shown = session === null ? pageOnShow : session.path
 
   const dropOnMain = (page: PageDrag, at: number): void => {
     if (page.owner === 'right') transferRightToMain(page.path, at)
   }
   const dropOnRight = (page: PageDrag, at: number): void => {
     if (page.owner === 'main') {
+      // A page dragged off the board (YAZ-2648): the board stays, as it does for its own menu's move.
+      if (overviewOpen) ownChange.current = page.path === file
       transferMainToRight(page.path, at)
       return
     }
@@ -1018,8 +1147,10 @@ export function App() {
           onPickVault={pickVault}
           onRemoveVault={removeVault}
           onReorderVaults={reorderVaults}
-          activeFile={file}
-          onOpenFile={openCurrent}
+          // Under the blank tab no row is the open one (YAZ-2655): every row opens, the one of the tab that was active too.
+          activeFile={pageOnShow}
+          onOpenFile={openPage}
+          onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
           onPickFolder={pick}
@@ -1081,17 +1212,28 @@ export function App() {
               roots={roots}
               tabs={tabs}
               active={file}
-              onActivate={activate}
-              onClose={closeTab}
+              preview={preview}
+              blank={blank}
+              onNewTab={newTab}
+              onCloseBlank={closeBlank}
+              // The "Show right panel" button floats over the row's end while that panel is closed (YAZ-2656 S93).
+              reserveEnd={!rightPanel.open}
+              // Under the board the strip acts as the pages do: a tab — the active one too — is zoomed
+              // into, and a tab's ✕ leaves the board open.
+              onActivate={overviewOpen ? leaveOverview : activate}
+              onKeep={keep}
+              onClose={overviewOpen ? closeOneUnderOverview : closeTab}
               onMove={moveTab}
               onDropPage={dropOnMain}
-              onMoveToRight={(path) => transferMainToRight(path, rightPanel.items.length)}
+              onMoveToRight={movePageToRight}
               canBack={canBack}
               canForward={canForward}
               onBack={back}
               onForward={forward}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}
+              onToggleOverview={toggleOverview}
+              overviewOpen={overviewOpen}
               onNotice={notify}
               titles={titles}
               reviewState={reviewState}
@@ -1099,14 +1241,29 @@ export function App() {
             />
           )}
           <div className="tabstack">
-            {mounted.length === 0 && session === null && <RetainedEditor {...editorPropsFor(null)} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+            {/* The empty page: of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. */}
+            {(mounted.length === 0 || blank) && session === null && <RetainedEditor {...editorPropsFor(null)} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
               // for why display:none would lose scroll positions.
-              <div key={path} className={path === shown ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
-                {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. */}
-                <RetainedEditor {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} />
+              // Under the tab board (YAZ-2648 D5) the active layer hides the same way: still mounted.
+              // The layer the board opened from zooms out as it hides, and the one that is chosen
+              // zooms in (tabs.css): a class each, so no editor renders for it.
+              <div
+                key={path}
+                className={
+                  path !== shown || (overviewOpen && path !== overview.from)
+                    ? 'tabstack__layer tabstack__layer--hidden'
+                    : overviewOpen
+                      ? 'tabstack__layer tabstack__layer--hidden tabstack__layer--zoom-out'
+                      : overview.phase === 'leaving'
+                        ? 'tabstack__layer tabstack__layer--zoom-in'
+                        : 'tabstack__layer'
+                }
+              >
+                {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
+                <RetainedEditor {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keep} />
               </div>
             ))}
             {/* A review's note (YAZ-2322) shows through its own tab's layer, above, when it has
@@ -1123,6 +1280,28 @@ export function App() {
                   </div>
                 )
               ))}
+            {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
+            {overview.phase !== 'closed' && session === null && (
+              <TabOverview
+                roots={roots}
+                vaultNames={vaults.map((vault, i) => vault.name ?? storage.vaultName(roots[i]))}
+                tabs={tabs}
+                active={file}
+                preview={preview}
+                titles={titles}
+                leaving={overview.phase === 'leaving'}
+                onLeft={leftOverview}
+                onOpen={leaveOverview}
+                onCloseTabs={closeUnderOverview}
+                onDismiss={leaveOverviewForOpenPage}
+                // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
+                onMoveToRight={movePageToRight}
+                onShowInSidebar={showInSidebar}
+                onNotice={notify}
+                reviewState={reviewState}
+                onSetReview={setReview}
+              />
+            )}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>

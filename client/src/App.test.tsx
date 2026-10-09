@@ -38,6 +38,8 @@ interface SidebarStubProps {
   onReorderVaults: (next: string[]) => void
   activeFile: string | null
   onOpenFile: (path: string) => void
+  /** A double click on a row (YAZ-2648 D2): the workspace's openKept. */
+  onKeepFile: (path: string) => void
   onOpenFileBackground: (path: string) => void
   /** The vault whose folder could not be read. */
   onRootMissing: (root: string) => void
@@ -100,12 +102,12 @@ const captured = vi.hoisted(() => ({
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder. */
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor })
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -145,6 +147,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuCloseTab = new Set<() => void>()
   const menuNextTab = new Set<() => void>()
   const menuPrevTab = new Set<() => void>()
+  const menuTabOverview = new Set<() => void>()
+  const menuNewTab = new Set<() => void>()
   const menuZoom = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
@@ -166,6 +170,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       if (f === undefined) return Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist', path })
       return { path, content: f.content, mtime: f.mtime, size: f.content.length }
     }),
+    // The tab board's pages (YAZ-2648 D6): no note has a head here, so a page shows its title.
+    readHeads: vi.fn(async (paths: readonly string[]) => paths.map(() => null)),
     writeFile: vi.fn(async ({ path, content }: { path: string; content: string }) => {
       files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
       return { path, mtime: files[path].mtime, size: content.length }
@@ -225,6 +231,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onCloseTab: menuSub(menuCloseTab),
       onNextTab: menuSub(menuNextTab),
       onPrevTab: menuSub(menuPrevTab),
+      onTabOverview: menuSub(menuTabOverview),
+      onNewTab: menuSub(menuNewTab),
       onZoom: menuSub(menuZoom),
     },
     link: {
@@ -286,6 +294,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitCloseTab: () => menuCloseTab.forEach((l) => l()),
     emitNextTab: () => menuNextTab.forEach((l) => l()),
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
+    emitTabOverview: () => menuTabOverview.forEach((l) => l()),
+    emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
@@ -1176,14 +1186,301 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
-  it('a sidebar click opens in the CURRENT tab: the active tab is replaced in place and its editor unmounts (rule 4)', async () => {
+  it('a sidebar click opens in the PREVIEW tab (YAZ-2648 D1): a new tab at the end, no kept tab replaced; the next click reuses it; a double click or the first edit keeps it (D2)', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/x.md'] })
+    const previewLabels = () => [...el.querySelectorAll('.tabbar__tab--preview [role="tab"]')].map((t) => t.textContent)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
-    expect(stripLabels(el)).toEqual(['b', 'x'])
-    expect(layers(el)).toEqual([['/v/b.md', false]]) // a's editor is GONE (→ autosave flush on unmount)
+    expect(stripLabels(el)).toEqual(['a', 'x', 'b'])
+    expect(previewLabels()).toEqual(['b'])
+    // a was not replaced: its editor stays mounted, hidden.
+    expect(layers(el)).toEqual([
+      ['/v/a.md', true],
+      ['/v/b.md', false],
+    ])
     // ONE explicit identity write carries BOTH halves — never the legacy {file}-only patch.
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/x.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/x.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { lastFile: '/v/b.md' })
+
+    // The next click takes the preview tab's slot: b's editor is GONE (→ autosave flush on unmount).
+    act(() => captured.sidebar?.onOpenFile('/v/c.md'))
+    expect(stripLabels(el)).toEqual(['a', 'x', 'c'])
+    expect(previewLabels()).toEqual(['c'])
+    expect(layers(el)).toEqual([
+      ['/v/a.md', true],
+      ['/v/c.md', false],
+    ])
+
+    // A double click keeps it: the mark is the session's (D4). The next click gets a NEW preview tab.
+    act(() => captured.sidebar?.onKeepFile('/v/c.md'))
+    expect(previewLabels()).toEqual([])
+    act(() => captured.sidebar?.onOpenFile('/v/d.md'))
+    expect(stripLabels(el)).toEqual(['a', 'x', 'c', 'd'])
+    expect(previewLabels()).toEqual(['d'])
+
+    // The first edit of the page keeps it too; an edit in a kept tab changes nothing.
+    act(() => captured.editors.filter((editor) => editor.path === '/v/d.md').at(-1)?.onUserEdit?.('/v/d.md'))
+    expect(previewLabels()).toEqual([])
+    expect(stripLabels(el)).toEqual(['a', 'x', 'c', 'd'])
+  })
+
+  it('the blank tab (YAZ-2655): ⌘T and "+" show "New tab" last and active over an empty page, with the caret asked into the search bar; the next page fills it as a KEPT tab (S70, S71, S74, S81)', async () => {
+    const { bridge, el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => emitNewTab())
+    expect(stripLabels(el)).toEqual(['a', 'b', 'New tab'])
+    expect(activeLabel(el)).toBe('New tab')
+    // The empty page a window with no tabs has; a's editor stays mounted, hidden behind it.
+    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(layers(el)).toEqual([['/v/a.md', true]])
+    // D11: the Search tab, with its bar asked to take the caret. The sidebar highlights no row: every row opens.
+    expect(captured.sidebar?.lens).toBe('search')
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    expect(captured.sidebar?.activeFile).toBeNull()
+    // S81: the title shows the vault only.
+    expect(document.title).toBe('v')
+
+    // S79: Esc in the search bar goes back to the lens the window showed, as ever; the blank tab stays.
+    act(() => captured.sidebar?.onLensChange('files'))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(activeLabel(el)).toBe('New tab')
+    const writes = bridge.window.setIdentity.mock.calls.length
+
+    // S74: again — by the "+" this time — and there is still one, and the bar is asked for again.
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b', 'New tab'])
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+
+    // S71: the page the user opens fills it — a kept tab where the blank tab stood, in ONE ordinary write.
+    act(() => captured.sidebar?.onOpenFile('/v/c.md'))
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('c')
+    expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
+    expect(el.querySelector('.tabstack > [data-editor]')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], file: '/v/c.md', rightPanel: defaultRightPanelIdentity() })
+    expect(document.title).toBe('v — c')
+  })
+
+  it('the blank tab goes away unused (YAZ-2655): for a page that is open already, for a click on a tab, for ⌘W and its ✕ — which close it alone — and when the board opens; ⌘-click leaves it active (S72, S73, S75, S78, S80)', async () => {
+    const { bridge, el, emitNewTab, emitCloseTab, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const tab = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')].find((t) => t.textContent === label)
+    // S72: a page that is open already — here the very tab that was active before.
+    act(() => emitNewTab())
+    act(() => captured.sidebar?.onOpenFile('/v/a.md'))
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('a')
+    // S73: a click on a tab.
+    act(() => emitNewTab())
+    act(() => tab('b')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('b')
+    // S75: ⌘W closes the blank tab only, and b is active again; so does its ✕.
+    act(() => emitNewTab())
+    act(() => emitCloseTab())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('b')
+    act(() => emitNewTab())
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Close New tab"]')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('b')
+    // S78: ⌘-click opens a kept tab in the background, before the blank tab, which stays active.
+    act(() => emitNewTab())
+    act(() => captured.sidebar?.onOpenFileBackground('/v/c.md'))
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c', 'New tab'])
+    expect(activeLabel(el)).toBe('New tab')
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
+    // S80: the board opens without it, and it is no page of the board.
+    act(() => emitTabOverview())
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect([...el.querySelectorAll('.taboverview__title')].map((t) => t.textContent)).toEqual(['a', 'b', 'c'])
+    // ⌘T from the board: the board closes for the blank tab.
+    act(() => emitNewTab())
+    expect(el.querySelector('.taboverview')).toBeNull()
+    expect(activeLabel(el)).toBe('New tab')
+  })
+
+  it('⌘T in a window with no tabs shows the blank tab (S77); ⌘W then closes it, and only the next ⌘W the window', async () => {
+    const { bridge, el, emitNewTab, emitCloseTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => emitNewTab())
+    expect(stripLabels(el)).toEqual(['New tab'])
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    act(() => emitCloseTab())
+    expect(stripLabels(el)).toEqual([])
+    expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+    act(() => emitCloseTab())
+    expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
+  })
+
+  it('the strip\'s slide (YAZ-2656 S88) is the strip\'s own: a closed tab slides shut as a ghost and no editor renders for it; with the right panel closed the row keeps its end free (S93)', async () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }) })
+    try {
+      const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+      expect(el.querySelector('.tabbar-row')?.className).toContain('tabbar-row--end')
+      act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Close b"]')?.click())
+      expect(stripLabels(el)).toEqual(['a'])
+      expect(el.querySelector('.tabbar__tab--out')?.textContent).toBe('b')
+      const renders = captured.editors.length
+      await act(async () => new Promise((done) => setTimeout(done, 200)))
+      expect(el.querySelector('.tabbar__tab--out')).toBeNull()
+      expect(captured.editors.length).toBe(renders)
+    } finally {
+      delete (window as unknown as Record<string, unknown>).matchMedia
+    }
+  })
+
+  it('the tab board (YAZ-2648 D5): the grid button and the menu key open it over the stack with every editor still mounted; a page opens its tab and closes it; a page ✕ and an island ✕ leave it open; going to a page closes it', async () => {
+    const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md'] })
+    const overview = () => el.querySelector('.taboverview')
+    const page = (label: string) => [...el.querySelectorAll<HTMLElement>('.taboverview__page')].find((c) => c.querySelector('.taboverview__title')?.textContent === label)
+    const button = el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+
+    act(() => button.click())
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect([...el.querySelectorAll('.taboverview__title')].map((t) => t.textContent)).toEqual(['a', 'b', 'c', 'd'])
+    expect(page('a')?.getAttribute('aria-current')).toBe('page')
+    // The page under it is hidden, never unmounted: its scroll, caret and unsaved text stay.
+    expect(layers(el)).toEqual([['/v/a.md', true]])
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c', 'd']) // the strip stays
+
+    // A page: its tab becomes the active one and the board closes.
+    act(() => page('b')?.click())
+    expect(overview()).toBeNull()
+    expect(activeLabel(el)).toBe('b')
+    expect(layers(el)).toEqual([
+      ['/v/a.md', true],
+      ['/v/b.md', false],
+    ])
+
+    // ⌘⇧M (Window › Tab Overview) opens it, and closes it again.
+    act(() => emitTabOverview())
+    expect(overview()).not.toBeNull()
+    act(() => emitTabOverview())
+    expect(overview()).toBeNull()
+
+    // A page's ✕ on the ACTIVE tab closes that tab and the board stays; so does an island's ✕, which closes every tab of its folder.
+    act(() => emitTabOverview())
+    act(() => page('b')?.querySelector<HTMLButtonElement>('.taboverview__close')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'c', 'd'])
+    expect(overview()).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('[role="group"][aria-label="Docs"] .taboverview__island-close')?.click())
+    expect(stripLabels(el)).toEqual(['a'])
+    expect(overview()).not.toBeNull()
+    // A sidebar click is a trip to a page.
+    act(() => captured.sidebar?.onOpenFile('/v/c.md'))
+    expect(overview()).toBeNull()
+    expect(activeLabel(el)).toBe('c')
+  })
+
+  it('the ways off the tab board: every trip to a page closes it, the page ALREADY open too (S46, YAZ-2657 A2); ⌘W closes the tab and it (S47); its last tab closes it (S44, R18). A rename of the open page, an island\'s ✕ — ONE identity write — and "Move to right panel" from a strip tab\'s menu leave it open (R12, R30)', async () => {
+    const { bridge, el, emitTabOverview, emitNextTab, emitCloseTab, emitLinkOpenFile, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md'] })
+    const board = () => el.querySelector('.taboverview')
+    const open = () => {
+      if (board() === null) act(() => emitTabOverview())
+      expect(board()).not.toBeNull()
+    }
+    const stripTab = (label: string) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab [role="tab"]')].find((tab) => tab.textContent === label)
+    /** With the board open: do it, and say whether the board is gone and which tab is the active one. */
+    const after = async (trip: () => void) => {
+      open()
+      await act(async () => trip())
+      return [board() === null, activeLabel(el)]
+    }
+
+    // S46: a tab of the strip, ⌃Tab, a deep link.
+    expect(await after(() => stripTab('b')?.click())).toEqual([true, 'b'])
+    expect(await after(() => emitNextTab())).toEqual([true, 'x'])
+    expect(await after(() => emitLinkOpenFile('/v/Docs/c.md'))).toEqual([true, 'c'])
+
+    // A rename of the open page, or of a folder above it, is no trip: the board stays (YAZ-2657 A5).
+    expect(await after(() => emitFileRenamed('/v/Docs', '/v/Papers', 'dir'))).toEqual([false, 'c'])
+    expect(await after(() => emitFileRenamed('/v/Papers/c.md', '/v/Papers/c2.md', 'file'))).toEqual([false, 'c2'])
+
+    // A trip to the page ALREADY open: the active tab does not change, and the board still closes.
+    expect(await after(() => stripTab('c2')?.click())).toEqual([true, 'c2'])
+    expect(await after(() => captured.sidebar?.onOpenFile('/v/Papers/c2.md'))).toEqual([true, 'c2'])
+    expect(await after(() => captured.sidebar?.onKeepFile('/v/Papers/c2.md'))).toEqual([true, 'c2'])
+    expect(await after(() => emitLinkOpenFile('/v/Papers/c2.md'))).toEqual([true, 'c2'])
+
+    // An island's ✕ closes its three tabs — the active one with them — in ONE identity write, and the board stays (YAZ-2657 A10).
+    open()
+    bridge.window.setIdentity.mockClear()
+    expect(await after(() => el.querySelector<HTMLButtonElement>('[role="group"][aria-label="Papers"] .taboverview__island-close')?.click())).toEqual([false, 'x'])
+    expect(stripLabels(el)).toEqual(['a', 'b', 'x'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ tabs: ['/v/a.md', '/v/b.md', '/v/x.md'], file: '/v/x.md' }))
+
+    // S47: ⌘W closes the active tab, and then the board.
+    expect(await after(() => emitCloseTab())).toEqual([true, 'b'])
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+
+    // R30: "Move to right panel" in the menu of the ACTIVE tab of the strip moves the page and leaves the board, as the board's own does (YAZ-2657 A4).
+    open()
+    act(() => void stripTab('b')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    expect(await after(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Move to right panel')?.click())).toEqual([false, 'a'])
+    expect(stripLabels(el)).toEqual(['a'])
+
+    // ⌃Tab with one tab goes to the page already open.
+    expect(await after(() => emitNextTab())).toEqual([true, 'a'])
+
+    // S44: the last tab closes from the board: the board closes, and the window shows the empty state.
+    open()
+    act(() => el.querySelector<HTMLButtonElement>('.taboverview__page .taboverview__close')?.click())
+    expect(board()).toBeNull()
+    expect(stripLabels(el)).toEqual([])
+    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+  })
+
+  it('S11: a link in a page opens in THAT tab — a kept tab too — and makes no tab; Back returns (the page\'s door is `navigate`, not the sidebar\'s)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => el.querySelector<HTMLButtonElement>('[data-path="/v/a.md"] [data-open-right-current]')?.click())
+    expect(stripLabels(el)).toEqual(['c', 'b'])
+    expect(activeLabel(el)).toBe('c')
+    expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Back"]')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+  })
+
+  it('a page dragged to the board\'s right edge moves its tab to the right panel — the active one too — and the board stays open (YAZ-2648)', async () => {
+    const { bridge, el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => emitTabOverview())
+    act(() => void el.querySelector('.taboverview__page')?.dispatchEvent(new Event('dragstart', { bubbles: true })))
+    act(() => void el.querySelector('.taboverview__drop')?.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true })))
+    expect(stripLabels(el)).toEqual(['b'])
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/b.md'], file: '/v/b.md', rightPanel: expect.objectContaining({ open: true, items: ['/v/a.md'] }) }))
+    expect([...el.querySelectorAll('.taboverview__title')].map((t) => t.textContent)).toEqual(['b'])
+  })
+
+  it('the board\'s zoom (YAZ-2648): the layer it opened from zooms out as it hides; a chosen page is active at once, its layer zooms in under the leaving board, and the board is gone when the zoom is over', async () => {
+    // jsdom has no matchMedia, and there the board closes at once (every other test). Here motion is allowed.
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }) })
+    try {
+      const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+      const classes = () => [...el.querySelectorAll<HTMLElement>('.tabstack__layer')].map((l) => [l.querySelector('[data-editor]')?.getAttribute('data-path'), l.className.replace(/tabstack__layer(--)?/g, '').trim()])
+      const renders = captured.editors.length
+      act(() => emitTabOverview())
+      expect(classes()).toEqual([['/v/a.md', 'hidden zoom-out']])
+
+      act(() => [...el.querySelectorAll<HTMLElement>('.taboverview__page')][1].click())
+      // The tab is the active one already, and both editors are on show's side of the zoom.
+      expect(activeLabel(el)).toBe('b')
+      expect(el.querySelector<HTMLElement>('.taboverview')?.dataset.zoom).toBe('out')
+      expect(classes()).toEqual([
+        ['/v/a.md', 'hidden'],
+        ['/v/b.md', 'zoom-in'],
+      ])
+      const mountedB = captured.editors.length
+      await act(async () => new Promise((done) => setTimeout(done, 300)))
+      expect(el.querySelector('.taboverview')).toBeNull()
+      expect(classes()).toEqual([
+        ['/v/a.md', 'hidden'],
+        ['/v/b.md', ''],
+      ])
+      // The zoom rendered no editor: a's never again, and b's only as its tab was first shown.
+      expect(captured.editors.slice(renders).some((editor) => editor.path === '/v/a.md')).toBe(false)
+      expect(captured.editors.length).toBe(mountedB)
+    } finally {
+      delete (window as unknown as Record<string, unknown>).matchMedia
+    }
   })
 
   it('opening an already-open path ACTIVATES its tab (rule 3); both visited editors stay mounted, the inactive one hidden', async () => {
@@ -1251,13 +1548,13 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('c') // and back
   })
 
-  it('a deep link activates an already-open file\'s tab; a new file opens in the CURRENT tab (rule 10)', async () => {
+  it('a deep link activates an already-open file\'s tab; a new file opens in the PREVIEW tab, like a sidebar click (rule 10, YAZ-2648 D1)', async () => {
     const { el, emitLinkOpenFile } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     act(() => emitLinkOpenFile('/v/b.md'))
     expect(stripLabels(el)).toEqual(['a', 'b'])
     expect(activeLabel(el)).toBe('b')
     act(() => emitLinkOpenFile('/v/c.md'))
-    expect(stripLabels(el)).toEqual(['a', 'c']) // replaced the active b, like a sidebar click
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c']) // no kept tab is replaced
     expect(activeLabel(el)).toBe('c')
   })
 
@@ -2293,6 +2590,29 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(el.querySelector('.right-panel__header')?.textContent).toBe('r')
     expect(el.querySelector('.review-bar')).toBeNull()
     expect(el.querySelector('.review-answers')).toBeNull()
+  })
+
+  it('S48: a review that starts closes the tab board, and the board does not open during a review — by the key or by the button', async () => {
+    const { el, emitTabOverview } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    act(() => emitTabOverview())
+    expect(el.querySelector('.taboverview')).not.toBeNull()
+    openInbox()
+    expect(el.querySelector('.taboverview')).toBeNull()
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    act(() => emitTabOverview())
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
+    expect(el.querySelector('.taboverview')).toBeNull()
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+  })
+
+  it('⌘T during a review does nothing (YAZ-2655 S82)', async () => {
+    const { el, emitNewTab } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    openInbox()
+    act(() => emitNewTab())
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    expect(captured.sidebar?.pendingSearchFocus).toBe(false)
+    act(() => button(el, 'Close review')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
   })
 
   it('with a session open the tab strip gives way to the review bar, and the note\'s editor is the only visible layer', async () => {
