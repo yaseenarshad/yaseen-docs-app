@@ -89,19 +89,36 @@ export function fileCandidates(root: string, files: readonly string[]): SearchCa
   })
 }
 
-/** Rows matching `query`, ranked exact → prefix → substring by the shared matcher, capped at SEARCH_CAP. */
-export function searchTitles(candidates: readonly SearchCandidate[], query: string): SearchCandidate[] {
-  return matchLinkCandidates(candidates, query, SEARCH_CAP)
+const NO_PATHS: ReadonlySet<string> = new Set()
+
+/** `rows` with the rows at the paths of `first` before the others, each part in its own order: one look in the set for each row. */
+function firstRows(rows: SearchCandidate[], first: ReadonlySet<string>): SearchCandidate[] {
+  const top: SearchCandidate[] = []
+  const rest: SearchCandidate[] = []
+  for (const row of rows) (first.has(row.path) ? top : rest).push(row)
+  return [...top, ...rest]
+}
+
+/**
+ * Rows matching `query`, ranked exact → prefix → substring by the shared matcher, capped at SEARCH_CAP.
+ * `first` is the paths of the rows that are a pinned item or are inside one (YAZ-2662 D4): each
+ * match there goes before each other match, each part in its ranked order, and the cap cuts AFTER
+ * that, so it cuts no pinned match while another match shows. Without it — the shortcut picker's
+ * call — the ranking is the matcher's own.
+ */
+export function searchTitles(candidates: readonly SearchCandidate[], query: string, first: ReadonlySet<string> = NO_PATHS): SearchCandidate[] {
+  if (first.size === 0) return matchLinkCandidates(candidates, query, SEARCH_CAP)
+  return firstRows(matchLinkCandidates(candidates, query, candidates.length), first).slice(0, SEARCH_CAP)
 }
 
 /**
  * What the search box shows for `query` (YAZ-2420 🔒 D32): when the text holds the id of a note or
  * a folder anywhere in it — a pasted id, an `[[id]]` link, a file name, a whole path — exactly
  * those, each under its title; otherwise `searchTitles`. An id is held whole or not at all: no part
- * of one matches.
+ * of one matches. Either way the rows of `first` lead (YAZ-2662 D4, S25).
  */
-export function searchRows(candidates: readonly SearchCandidate[], query: string): SearchCandidate[] {
+export function searchRows(candidates: readonly SearchCandidate[], query: string, first: ReadonlySet<string> = NO_PATHS): SearchCandidate[] {
   const text = query.toLowerCase()
   const held = candidates.filter((c) => c.id !== undefined && text.includes(c.id))
-  return held.length > 0 ? held : searchTitles(candidates, query)
+  return held.length > 0 ? firstRows(held, first) : searchTitles(candidates, query, first)
 }

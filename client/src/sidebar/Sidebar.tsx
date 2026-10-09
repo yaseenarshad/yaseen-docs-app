@@ -10,8 +10,8 @@ import { relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, findNode, treeHasFile } from '../lib/treeState'
-import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
+import { ancestorDirs, findDirNode, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { SEARCH_CAP } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
@@ -469,19 +469,19 @@ export function Sidebar({
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
   // row's own (YAZ-2620 🔒 D1): it opens a note the same way, and folds a folder.
-  const activate = (hit: SearchCandidate, background: boolean, reveal: boolean) => {
-    const node = forest === null ? null : findNode(forest, hit.path)
+  // The row is the search tree's own: a match, or a row of a folder that shows all (YAZ-2662 S52).
+  const activate = (row: TreeNode, background: boolean, reveal: boolean) => {
     // Enter on a folder, and Shift+Enter on any row, show the row in Files with the keyboard focus on
     // it (YAZ-2662 D1, D8). ⌘ is read first (S7): ⌘Enter is a background tab, of a folder's page too.
-    if (!background && (reveal || hit.kind === 'dir')) onRevealInFiles(hit.path, true)
+    if (!background && (reveal || row.type === 'dir')) onRevealInFiles(row.path, true)
     // A file with no viewer in the app opens in its default app, as its tree row does (YAZ-1577 D2;
     // S24 on YAZ-2620): no tab, so nothing for ⌘ to background either.
-    else if (node?.type === 'file' && node.kind === null) openDefault(hit.path)
-    else if (background) onOpenFileBackground(hit.path)
+    else if (row.type === 'file' && row.kind === null) openDefault(row.path)
+    else if (background) onOpenFileBackground(row.path)
     else {
       // The page already open is asked for too: nothing changes in the workspace, and App closes the tab board over it (YAZ-2648 S46).
-      onOpenFile(hit.path)
-      if (hit.path === activeFile) focusOpenDocument()
+      onOpenFile(row.path)
+      if (row.path === activeFile) focusOpenDocument()
     }
   }
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
@@ -496,7 +496,9 @@ export function Sidebar({
     onLensChange(storage.getSidebarLens())
     focusOpenDocument()
   }, [onLensChange])
-  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate)
+  // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
+  const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate)
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null
@@ -811,6 +813,8 @@ export function Sidebar({
     shortcuts,
     titles,
   }
+  // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
+  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (
@@ -1008,9 +1012,20 @@ export function Sidebar({
           // creates, renames or drags, and a note shows once, where it lives (S7). Only this tree
           // gets `marks` (🔒 D5): the typed text bold in a match, every other row dim. With two or
           // more vaults each match stands under its vault's row, a parent like any folder (YAZ-2602 A9).
-          found.nodes.length > 0 ? (
+          // The matches of the pinned items are a group of their own, first and under its label
+          // (YAZ-2662 D2): its top rows are the pinned items, each named for its vault where the
+          // window has two or more, as on the Favorites tab (S26). A line and a label then head the
+          // other matches. With no pinned match there is neither (S21); with no other match, no line (S20).
+          found.top.length > 0 || found.rest.length > 0 ? (
             <>
-              <Tree {...treeProps} nodes={found.nodes} expanded={searchOpen} onToggle={toggleSearchDir} pending={null} renaming={null} move={INERT_MOVE} selection={searchSelection} shortcuts={NO_SHORTCUTS} marks={marks} />
+              {found.top.length > 0 && (
+                <>
+                  <p className="sidebar__group">Favorites and focus</p>
+                  <Tree {...searchTreeProps} nodes={found.top} />
+                  {found.rest.length > 0 && <p className="sidebar__group">Everything else</p>}
+                </>
+              )}
+              {found.rest.length > 0 && <Tree {...searchTreeProps} nodes={found.rest} />}
               {/* The limit (🔒 D6): the ranking keeps the best `SEARCH_CAP` candidate rows — of every vault together — and a line says so once it is reached. */}
               {results.length === SEARCH_CAP && <p className="sidebar__msg">Showing {SEARCH_CAP} matches. Type more to narrow.</p>}
             </>
