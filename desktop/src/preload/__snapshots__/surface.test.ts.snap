@@ -43,6 +43,7 @@ menu.onSwitchVault/1: on menu:switch-vault -> listener[[{"id":"0-0-0-0-0","ev":"
 menu.onTabOverview/1: on menu:tab-overview -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:tab-overview
 menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
+mintNoteId/1: invoke fs:mint-note-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 properties.get/1: invoke properties:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 properties.onChange/1: on properties:changed -> listener[["props"]]; off properties:changed

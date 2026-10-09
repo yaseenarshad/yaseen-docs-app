@@ -17,6 +17,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     coldDiff: vi.fn(),
     readAsset: vi.fn(),
     writeAsset: vi.fn(),
+    mintNoteId: vi.fn(),
     pickFolder: vi.fn(),
     watch: vi.fn(),
     state: vi.fn(),

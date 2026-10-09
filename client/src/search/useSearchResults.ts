@@ -30,7 +30,7 @@ export interface SearchVault {
   files: readonly string[]
 }
 
-type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[] }>
+type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[]; letters?: readonly string[] }>
 const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
 
 /** One vault's rows as they were last built, with what each part was built from. */
@@ -72,7 +72,7 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string):
         // here would shout about something the tree below is already showing fine.
         api.index(root).then(
           (res) => {
-            if (mine === generation) setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders }))
+            if (mine === generation) setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders, letters: res.letters }))
           },
           () => undefined,
         )
@@ -114,10 +114,11 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string):
   const candidates = useMemo(() => {
     const next = new Map<string, Rows>()
     for (const { root, dirs, files } of vaults) {
-      const { records, folders } = snapshots.get(root) ?? NO_SNAPSHOT
+      // `letters` arrive with the snapshot they belong to (YAZ-2677 D9, S77), so the rows built from it carry them.
+      const { records, folders, letters } = snapshots.get(root) ?? NO_SNAPSHOT
       const last = built.current.get(root)
-      const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders)
-      const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records)
+      const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders, letters)
+      const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records, letters)
       const fileRows = last !== undefined && last.files === files ? last.fileRows : fileCandidates(root, files)
       const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows
       next.set(root, { dirs, files, records, folders, folderRows, noteRows, fileRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows] })
