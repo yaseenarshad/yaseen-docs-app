@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { IDS_FILE, idsLetters } from '@shared/noteId'
-import type { IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
+import { IDS_FILE, idsLetters, isNoteId, isNumberId } from '@shared/noteId'
+import type { IdsState, IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
@@ -42,9 +42,24 @@ export interface VaultScope {
   renames: ExternalRenames
   /**
    * The vault's IDs as its last snapshot said them (YAZ-2523 🔒 V5), its ID letters as its `ids.json`
-   * holds them now, the switch (YAZ-2677 🔒 D2) and the duplicate check (🔒 D7); undefined until its index has loaded.
+   * holds them now, the switch (YAZ-2677 🔒 D2), the duplicate check (🔒 D7), and the two changes of
+   * every ID with what Settings shows about them (🔒 D5, D6); undefined until its index has loaded.
    */
-  ids: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void; check: () => Promise<string> } | undefined
+  ids:
+    | {
+        enabled: boolean
+        held: boolean
+        ask: IndexResponse['ask']
+        letters: () => Promise<string | undefined>
+        set: (enabled: boolean, letters?: string) => void
+        check: () => Promise<string>
+        /** How many notes and folders of the snapshot hold an old 12-character ID (S88). */
+        old: number
+        state: () => Promise<IdsState>
+        reletter: (letters: string) => Promise<IdsState>
+        backfill: () => Promise<IdsState>
+      }
+    | undefined
   /** Every READY index snapshot of this vault, from its `WikilinkIndexBridge`. */
   onSnapshot: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => void
 }
@@ -108,12 +123,14 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // vault opens (YAZ-2677 🔒 D1). `ask` is what a yes would write, while the answer is not yes: the
   // counts of the box in Settings (🔒 D2). `held` says a note holds an ID, which is true only while
   // the vault uses IDs (a plain vault's records carry none).
-  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; ask: IndexResponse['ask'] } | null>(null)
+  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; ask: IndexResponse['ask'] } | null>(null)
   const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
   const onSnapshot = useCallback(
     (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => {
       onIndexSnapshot(records, folders, ids)
-      setIdsSnapshot({ root, enabled: ids, held: records.some((record) => record.id !== undefined), ask })
+      // An old ID is one that is not a number ID (YAZ-2677 R3): the row "Old IDs" shows while one is left (S88).
+      const old = [...records, ...folders].filter((record) => isNoteId(record.id) && !isNumberId(record.id)).length
+      setIdsSnapshot({ root, enabled: ids, held: records.some((record) => record.id !== undefined), old, ask })
     },
     [root, onIndexSnapshot],
   )
@@ -133,6 +150,10 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   }
   /** "Check for duplicates" (YAZ-2677 🔒 D7): the result in one line, for the row in Settings. */
   const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))
+  // The rows "ID letters" and "Old IDs" (YAZ-2677 🔒 D5, D6): the main process counts and changes. Stable, so a row reads the state one time.
+  const idsState = useCallback((): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.state(root)), [root])
+  const reletter = (letters: string): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.reletter(root, letters))
+  const backfill = (): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.backfill(root))
   /** The vault's ID letters, read when Settings asks (S9). A file that cannot be read is said in the notice, and the caller opens no box. */
   const readLetters = (): Promise<string | undefined> =>
     root === null
@@ -156,7 +177,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     reviewSettings,
     review,
     renames,
-    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: saveIds, check: checkIds },
+    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: saveIds, check: checkIds, old: vaultIds.old, state: idsState, reletter, backfill },
     onSnapshot,
   }
 }

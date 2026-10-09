@@ -21,7 +21,7 @@ import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
-import { checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import type { WindowManager } from '../windows'
@@ -137,6 +137,13 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   })
   // "Check for duplicates" (🔒 D7, S55 to S57): one line for the row in Settings.
   handleWithEvent(CONTRACT.ids.check, async (e, root: unknown) => checkDuplicates(ownVault(e, root)))
+  // The rows "ID letters" and "Old IDs" (🔒 D5, D6): what they show, and the two changes of every ID
+  // in the vault. A file that takes a new name takes the rename handler's downstream AT ONCE, so its
+  // open tab, its favorite and its stored paths follow (S86) — also when the change stops later.
+  const followed = (res: RenameFileResponse): Promise<unknown> => afterRename(res).catch(() => undefined)
+  handleWithEvent(CONTRACT.ids.state, async (e, root: unknown) => idsState(ownVault(e, root)))
+  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => changeLetters(ownVault(e, root), letters, followed))
+  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => giveOldIdsNumbers(ownVault(e, root), followed))
   // A clash this Mac fixed (S45): a note whose file name followed its new ID (R26) takes the rename
   // handler's downstream, so its open tab, its favorite and its stored paths follow; then ONE
   // notice in each window that shows the vault. Set once: `registerFsIpc` runs once.

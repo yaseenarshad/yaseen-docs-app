@@ -1601,6 +1601,18 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(cursor(el)).toEqual(['Zed'])
   })
 
+  it('YAZ-2677 S70: the row of a note found by its number shows its full ID in front of its title; found by its title, it shows the title alone', async () => {
+    const { el, input, v } = await search('12', {}, {
+      records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {})),
+    })
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.textContent).toBe('YAZ-12 — Zed')
+    await type(input, 'yaz 12')
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    await type(input, 'zed')
+    expect(shape(el)).toEqual(['Plans', '  Zed'])
+  })
+
   it('S37, S38, S40, S9, S10: a match shows the typed text bold where it first sits — whatever its case, spaces aside — and every other row steps back; a tree outside a search is drawn as ever (R7)', async () => {
     const vault = await search('', {}, {
       records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Alpha.md') ? { aliases: ['First letter'] } : path.endsWith('/Zed.md') ? { id: 'k3m9x2pq7abc' } : {})),

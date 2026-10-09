@@ -101,6 +101,8 @@ export interface TreeSelection {
 export interface TreeMarks {
   hits: ReadonlySet<string>
   needle: string
+  /** The rows found by their ID, each with its full ID (YAZ-2677 S70): shown in front of the title, which tells note 12 of two vaults apart. */
+  ids?: ReadonlyMap<string, string>
 }
 
 interface TreeProps {
@@ -200,6 +202,8 @@ function TreeLevel({
   // In a search tree (🔒 D5, YAZ-2620) a row the query did not match only gives a match its place.
   const context = (path: string) => (marks !== undefined && !marks.hits.has(path) ? ' tree__row--context' : '')
   const needleFor = (path: string) => (marks?.hits.has(path) ? marks.needle : undefined)
+  /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
+  const idFor = (path: string) => (marks?.ids?.has(path) ? `${marks.ids.get(path)} — ` : null)
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -284,7 +288,10 @@ function TreeLevel({
                 }}
               >
                 <span className={`tree__chevron${expanded.has(node.path) ? ' tree__chevron--open' : ''}`} />
-                <span className="tree__label">{vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}</span>
+                <span className="tree__label">
+                  {idFor(node.path)}
+                  {vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}
+                </span>
                 {vaultTag(node.path)}
               </button>
             )}
@@ -362,7 +369,10 @@ function TreeLevel({
                 rowReorder.drop()
               }}
             >
-              <span className="tree__label">{marked(pageLabel(node.path, false, titles), needleFor(node.path))}</span>
+              <span className="tree__label">
+                {idFor(node.path)}
+                {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
+              </span>
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
             </button>

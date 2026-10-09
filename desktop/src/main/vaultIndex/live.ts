@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { isRecord } from '@shared/guards'
 import { IDS_FILE, NOTE_ID_KEY, isIdLetters, vaultNoteId } from '@shared/noteId'
-import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { BridgeFailure, fsCall, isMarkdown, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { readConfigDetailed, writeConfig } from '../vaultConfig'
@@ -11,6 +11,7 @@ import { ID_WAIT_MS, restoreFolderId, sweepIds, type SweepResult } from './idSwe
 import { loadIndexCache, schedulePersist } from './cache'
 import { countNotesWith, highestNumber, vaultIds } from './mint'
 import { reconcile, type ColdStartDiff } from './reconcile'
+import { backfill, configWithLetters, idsStateOf, reletter, type Pass, type Renamed } from './reletter'
 import { fileTitle, scanFile, walk } from './scan'
 
 interface Entry {
@@ -336,11 +337,16 @@ export async function saveIdsAnswer(root: unknown, enabled: unknown, letters?: u
   const r = requireAbsPath(root, 'root')
   if (typeof enabled !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'enabled' must be true or false")
   if (letters !== undefined && (typeof letters !== 'string' || !isIdLetters(letters))) throw new BridgeFailure('BAD_REQUEST', "'letters' must be 2 to 5 letters")
+  await saveIds(r, (config) => ({ ...config, enabled, ...(letters !== undefined && { letters: letters.toUpperCase() }) }))
+}
+
+/** `ids.json` of `root` read, changed by `change` and written as ONE step, behind each save before it. Undefined from `change` writes nothing. */
+function saveIds(r: string, change: (config: Record<string, unknown>) => Record<string, unknown> | undefined): Promise<void> {
   const save = async (): Promise<void> => {
     const held = await readConfigDetailed(r, IDS_FILE)
     if (held.state === 'malformed') throw new BridgeFailure('INVALID_CONFIG', `${IDS_FILE} is not valid JSON`, { path: held.file })
-    const config = held.state === 'ok' && isRecord(held.value) ? held.value : {}
-    await writeConfig(r, IDS_FILE, { ...config, enabled, ...(letters !== undefined && { letters: letters.toUpperCase() }) })
+    const next = change(held.state === 'ok' && isRecord(held.value) ? held.value : {})
+    if (next !== undefined) await writeConfig(r, IDS_FILE, next)
   }
   const mine = (answers.get(r) ?? Promise.resolve()).then(save)
   const tail = mine.catch(() => undefined)
@@ -349,6 +355,58 @@ export async function saveIdsAnswer(root: unknown, enabled: unknown, letters?: u
     if (answers.get(r) === tail) answers.delete(r)
   })
   return mine
+}
+
+/** The live index of a vault that uses IDs, and its letters; refused for any other. */
+async function idsVault(root: unknown): Promise<{ r: string; entry: Entry; letters: string[]; saved: boolean }> {
+  const r = requireAbsPath(root, 'root')
+  const entry = await liveEntry(r)
+  const { answer, letters, saved } = await vaultIds(r)
+  if (answer !== true) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs', { path: r })
+  return { r, entry, letters, saved }
+}
+
+/**
+ * The state of `root` after a pass. The index takes what the pass did at once: the watcher tells it
+ * the same a moment later, and Settings must not show the counts of before meanwhile.
+ */
+async function stateAfter(root: string, entry: Entry, { changed, gone }: Pass): Promise<IdsState> {
+  for (const file of gone) entry.records.delete(file)
+  for (const file of changed) await scanFile(root, file).then((record) => entry.records.set(file, record), () => undefined)
+  if (changed.length > 0 || gone.length > 0) schedulePersist(root, entry.records)
+  return idsStateOf(entry.records.values(), (await vaultIds(root)).letters)
+}
+
+/** What the rows "ID letters" and "Old IDs" of Settings show (YAZ-2677 🔒 D5, D6, `IdsState`). */
+export async function idsState(root: unknown): Promise<IdsState> {
+  const { entry, letters } = await idsVault(root)
+  return idsStateOf(entry.records.values(), letters)
+}
+
+/**
+ * "Change letters" (YAZ-2677 🔒 D5, S79 to S87), at once on this Mac (R32). FIRST `ids.json` takes
+ * the new letters and keeps the letters of before in `was` (S81): from then on each note opens,
+ * whatever happens next, because the index reads an ID with letters of before as an ID of the
+ * vault (S82, S83). THEN each file follows (`reletter`). The letters the vault already has write
+ * nothing into `ids.json` and finish a change that stopped (S83, S85). The same change on two Macs
+ * writes the same bytes (S84): no number is taken, and nothing depends on the time.
+ */
+export async function changeLetters(root: unknown, letters: unknown, renamed?: Renamed): Promise<IdsState> {
+  if (typeof letters !== 'string' || !isIdLetters(letters)) throw new BridgeFailure('BAD_REQUEST', "'letters' must be 2 to 5 letters")
+  const { r, entry, letters: held, saved } = await idsVault(root)
+  const to = letters.toUpperCase()
+  // A vault with no letters in its file saves them here, and keeps its default in `was` (R11): a note that carries the default follows.
+  if (to !== held[0] || !saved) await saveIds(r, (config) => configWithLetters(config, held, to))
+  return stateAfter(r, entry, await reletter(r, (await vaultIds(r)).letters, renamed))
+}
+
+/**
+ * "Give old IDs numbers" (YAZ-2677 🔒 D6, S88 to S90), at once on this Mac (R32): `backfill` over
+ * the notes the index holds. Never throws for a file it could not write: the state says what is left.
+ */
+export async function giveOldIdsNumbers(root: unknown, renamed?: Renamed): Promise<IdsState> {
+  const { r, entry, letters } = await idsVault(root)
+  return stateAfter(r, entry, await backfill(r, entry.records.values(), letters, renamed))
 }
 
 /**

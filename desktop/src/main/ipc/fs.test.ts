@@ -65,7 +65,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -481,6 +481,43 @@ describe('registerFsIpc', () => {
         senderWinId = undefined
         expect(await call(CONTRACT.ids.set, vault, true, 'YAZ')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await config()).toEqual({ enabled: false, was: ['OLD'], letters: 'YAZ' })
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('`ids:state`, `ids:reletter` and `ids:backfill` act on a vault of the window, and a file that takes a new name takes the rename downstream: its tab, its favorite and the push (YAZ-2677 D5, D6, S86)', async () => {
+      const vault = await open(true)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        await writeFile(at('foo-yaz-1.md'), '---\nid: YAZ-1\ntitle: Foo\n---\n[[YAZ-1]]\n')
+        await writeFile(at(`old-${ID}.md`), `---\nid: ${ID}\ntitle: Old\n---\n[[YAZ-1]]\n`)
+        await writeFile(at('Plans', 'Name.md'), '---\nid: YAZ-2\n---\nbody\n')
+        await writeFile(at('Plans', '.folder.md'), '---\nid: YAZ-3\n---\n')
+        store.upsertWindow({ id: 'w-kind', root: vault, file: at('foo-yaz-1.md'), tabs: [at('foo-yaz-1.md'), at(`old-${ID}.md`)], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        const w = fakeWindow()
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+        vi.mocked(favorites.renamePath).mockClear()
+        expect(await call(CONTRACT.ids.state, vault)).toEqual({ ok: true, value: { letters: 'YAZ', notes: 3, stale: 0, old: 1 } })
+        // Change letters: the open tab follows the file.
+        expect(await call(CONTRACT.ids.reletter, vault, 'doc')).toEqual({ ok: true, value: { letters: 'DOC', notes: 3, stale: 0, old: 1 } })
+        expect(JSON.parse(await readFile(at('.yaseendocs', 'ids.json'), 'utf8'))).toEqual({ enabled: true, letters: 'DOC', was: ['YAZ'] })
+        expect(await readFile(at('foo-doc-1.md'), 'utf8')).toBe('---\nid: DOC-1\ntitle: Foo\n---\n[[DOC-1]]\n')
+        expect(store.get().windows.find((win) => win.id === 'w-kind')).toMatchObject({ file: at('foo-doc-1.md'), tabs: [at('foo-doc-1.md'), at(`old-${ID}.md`)] })
+        expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([vault]), at('foo-yaz-1.md'), at('foo-doc-1.md'))
+        expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: at('foo-yaz-1.md'), newPath: at('foo-doc-1.md'), kind: 'file' })
+        // Give old IDs numbers: the same downstream.
+        expect(await call(CONTRACT.ids.backfill, vault)).toEqual({ ok: true, value: { letters: 'DOC', notes: 4, stale: 0, old: 0 } })
+        expect(await readFile(at('old-doc-4.md'), 'utf8')).toBe('---\nid: DOC-4\ntitle: Old\n---\n[[DOC-1]]\n')
+        expect(store.get().windows.find((win) => win.id === 'w-kind')?.tabs).toEqual([at('foo-doc-1.md'), at('old-doc-4.md')])
+        expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: at(`old-${ID}.md`), newPath: at('old-doc-4.md'), kind: 'file' })
+        // Bad letters, and a folder that is no vault of the calling window, change nothing.
+        expect(await call(CONTRACT.ids.reletter, vault, 'x')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        for (const door of [CONTRACT.ids.state, CONTRACT.ids.backfill]) expect(await call(door, tmpdir())).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.ids.reletter, path.join(vault, 'Plans'), 'ABC')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        senderWinId = undefined
+        expect(await call(CONTRACT.ids.reletter, vault, 'ABC')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(JSON.parse(await readFile(at('.yaseendocs', 'ids.json'), 'utf8'))).toEqual({ enabled: true, letters: 'DOC', was: ['YAZ'] })
       } finally {
         await close(vault)
       }

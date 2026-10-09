@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -204,6 +204,23 @@ export const CONTRACT = {
      * which ID another Mac must fix (then nothing was written).
      */
     check: invoke<[root: string], string>('ids:check', 1),
+    /** What the rows "ID letters" and "Old IDs" show (🔒 D5, D6): the letters and the counts, from main's index. A vault that does not use IDs → `BAD_REQUEST`. */
+    state: invoke<[root: string], IdsState>('ids:state', 1),
+    /**
+     * "Change letters" (🔒 D5, S79 to S87): main FIRST saves `letters` and puts the letters of before
+     * into `was`, THEN changes each `id:` line, link, `also_in` entry, folder-value key and built
+     * file name. A number never changes, and an old ID is not touched. The letters the vault has
+     * now are "Finish": only the files a stopped change left are written. Resolves when it is done,
+     * to the state after it.
+     */
+    reletter: invoke<[root: string, letters: string], IdsState>('ids:reletter', 2),
+    /**
+     * "Give old IDs numbers" (🔒 D6, S88 to S90): each note and folder with an old 12-character ID
+     * takes the vault's next number, oldest file first, and each link, `also_in` entry, folder-value
+     * key and built file name follows. A second run finishes one that stopped, with the same numbers.
+     * Resolves when it is done, to the state after it.
+     */
+    backfill: invoke<[root: string], IdsState>('ids:backfill', 1),
   },
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835): targeted, serialised mutators; a corrupt file rejects every write `INVALID_CONFIG`. */
   properties: {
