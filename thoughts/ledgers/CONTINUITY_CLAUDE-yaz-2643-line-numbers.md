@@ -4,7 +4,7 @@
 
 - Each Markdown note has a cog left of the zoom pill. Its menu turns line numbers on and off and shows the word count and the character count.
 - With the numbers on, each block shows the line of the file ON DISK where it starts. An AI's "line 43" is the 43 on the page.
-- Done: the gates are green, the pull request is open, Yasin's hand walk passed, the work is on `main`.
+- Done: the gates are green, the pull request is open, Yasin's hand walk passed, the work is on `main`. All four are true since `3fe18bb`.
 
 ## Constraints
 
@@ -41,8 +41,10 @@
   - [x] YAZ-2647: the e2e spec and the two docs (`fcd510c`), written and typechecked, not run; the three ceilings (`ecc9251`)
   - [x] The hand walk on the dev app found three changes: D7, D8, D9 (`f7ea250`). Yasin then said that everything looks good.
   - [x] Yasin approved the ceilings two times: the first numbers, then the final numbers after D7 to D9.
-- Now: [→] The merge of the pull request #101, when CI is green.
-- Next: closeout, when Yasin asks for it.
+  - [x] Merged by #101 as `3fe18bb`; CI on the pull request was green, the size gate too
+  - [x] Closeout: the handoff is on YAZ-2643 and on each subissue; the five issues are Done; the pull request is attached to YAZ-2643
+- Now: closed. No release holds this work yet: Yasin makes one together with other work.
+- Next: on the next packaged build, the last step of the hand scenario E28 (the worker loads from `app://`).
 
 ## Decisions made during the build
 
