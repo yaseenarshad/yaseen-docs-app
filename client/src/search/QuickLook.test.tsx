@@ -154,6 +154,20 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('S66: a click in the panel puts the keyboard focus on it — it is no Tab stop — and Esc there asks App to close the panel; no other key is taken', async () => {
+    const { panel, onClose } = await show('/v/archive.zip', 'archive.zip')
+    expect(panel.getAttribute('tabindex')).toBe('-1')
+    act(() => panel.focus())
+    expect(document.activeElement).toBe(panel)
+    const key = (name: string) => {
+      const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })
+      act(() => void document.activeElement?.dispatchEvent(event))
+      return event.defaultPrevented
+    }
+    expect([key('ArrowDown'), key(' '), key('Enter'), onClose.mock.calls.length]).toEqual([false, false, false, 0])
+    expect([key('Escape'), onClose.mock.calls.length]).toEqual([true, 1])
+  })
+
   it('R3: one read for each file the panel is shown; a read that lands after the panel moved on is dropped, and the document of the earlier file is taken down', async () => {
     const pending = new Map<string, (f: File) => void>()
     readFile.mockImplementation((path) => new Promise((resolve) => pending.set(path, resolve)))

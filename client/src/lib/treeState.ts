@@ -111,9 +111,11 @@ export function pinnedRoots(nodes: readonly TreeNode[]): TreeNode[] {
 /**
  * `tree` without the nodes at `paths`, at any depth: what the search cuts "Everything else" from
  * (YAZ-2662 S19) — `paths` are the pinned items that its top group draws. A folder that holds none
- * of them is the tree's own node, and so is a tree that holds none.
+ * of them is the tree's own node, and so is a tree that holds none. With no path — a search with
+ * no pinned match — nothing is walked (R1).
  */
 export function withoutPaths(tree: readonly TreeNode[], paths: ReadonlySet<string>): readonly TreeNode[] {
+  if (paths.size === 0) return tree
   let same = true
   const kept = tree.flatMap((n): TreeNode[] => {
     if (paths.has(n.path)) {

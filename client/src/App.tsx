@@ -550,6 +550,20 @@ export function App() {
     if (ownChange.current) ownChange.current = false
     else setOverview(OVERVIEW_CLOSED)
   }, [file, inReview])
+  // The preview panel of the search gives way to the board and to a review (YAZ-2662 S67): each
+  // stands in the page area, and the panel is a look at a file over a PAGE. `previewShown` is the
+  // path that is drawn and that the sidebar reads. A path that is named while one of them shows is
+  // dropped, so no panel comes back when it closes.
+  const previewShown = overview.phase === 'closed' && !inReview ? previewPath : null
+  useEffect(() => {
+    if (previewShown === null) setPreviewPath(null)
+  }, [previewShown, previewPath])
+  // The panel's ✕, and Esc with the keyboard focus inside the panel (S66): the panel closes, and a
+  // focus that was inside it goes back to the search bar, by the door of ⌘K.
+  const closePreview = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest('.quicklook') !== null) openSearch()
+    setPreviewPath(null)
+  }, [openSearch])
   /** Leave the board for `path`'s page — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
   const leaveOverview = useCallback((path: string | null) => {
     const { file: open, tabs: all } = now.current
@@ -1160,7 +1174,7 @@ export function App() {
           onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
-          previewPath={previewPath}
+          previewPath={previewShown}
           onPreview={setPreviewPath}
           onPickFolder={pick}
           pickDisabled={picking}
@@ -1312,7 +1326,7 @@ export function App() {
               />
             )}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
-            {previewPath !== null && <QuickLook path={previewPath} title={nameOf(previewPath)} watch={scopeOf(previewPath).watch} wikilinks={scopeOf(previewPath).wikilinks} onClose={() => setPreviewPath(null)} />}
+            {previewShown !== null && <QuickLook path={previewShown} title={nameOf(previewShown)} watch={scopeOf(previewShown).watch} wikilinks={scopeOf(previewShown).wikilinks} onClose={closePreview} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>

@@ -2046,6 +2046,16 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     }
   })
 
+  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, ↑, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663)', async () => {
+    const { el } = await open({ lens: 'search' })
+    const taken = (key: string) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      act(() => void searchBar(el)!.dispatchEvent(event))
+      return event.defaultPrevented
+    }
+    expect(['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(6).fill(false))
+  })
+
   it('S17, S19: the Search tab has no expand-all button and no blank-space menu — not even the OS one — with text or with none', async () => {
     const { el, rerender } = await open()
     expect(allButton(el)).not.toBeNull() // Files has folders to unfold
@@ -2743,13 +2753,52 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect([key(row(el, `${v}/Projects`), ' '), key(row(el, `${v}/top.md`), 'Enter'), key(row(el, `${v}/top.md`), ' ')].map((event) => event.defaultPrevented)).toEqual([false, false, false])
   })
 
-  it('D1: a held Enter on a folder row opens no page and folds nothing — Enter on a folder of the search puts the keyboard focus on its row in Files, and the repeats of that press arrive there', async () => {
+  it('D1, D8: a held Enter on a row does nothing — Enter and Shift+Enter in the search bar put the keyboard focus on a row of Files, and the repeats of that press arrive there: a folder row and a file row, with Shift and without, open no page, fold nothing and select nothing', async () => {
     const { el, v, props } = await mountVault()
-    const held = key(row(el, `${v}/Projects`), 'Enter', { repeat: true })
-    // Taken, so the button's own click does not fold the row; and no page, no selection.
-    expect([held.defaultPrevented, isOpen(el, `${v}/Projects`)]).toEqual([true, 'false'])
+    const held = (path: string, mods: KeyboardEventInit = {}) => key(row(el, path), 'Enter', { repeat: true, ...mods }).defaultPrevented
+    // Taken, so the button's own click does not follow: on a folder row it folds, on a file row it opens, and with Shift it toggles the row in the selection.
+    expect([held(`${v}/Projects`), held(`${v}/Projects`, { shiftKey: true }), held(`${v}/top.md`), held(`${v}/top.md`, { shiftKey: true }), held(`${v}/book.epub`)]).toEqual([true, true, true, true, true])
+    expect(isOpen(el, `${v}/Projects`)).toBe('false')
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
+    // A press that is no repeat is the row's own, as before.
+    expect(key(row(el, `${v}/top.md`), 'Enter').defaultPrevented).toBe(false)
+    key(row(el, `${v}/Projects`), 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Projects`)
+  })
+
+  it('D1, D8: a held Enter on a row of the search tree does nothing too, and a rename box keeps its Enter — a box is no row', async () => {
+    const { el, v, props, rerender } = await search('alpha')
+    expect(key(row(el, `${v}/Projects/Alpha`), 'Enter', { repeat: true }).defaultPrevented).toBe(true)
     expect(props.onOpenFile).not.toHaveBeenCalled()
+    await rerender({ lens: 'files' })
+    const box = () => el.querySelector<HTMLInputElement>('.sidebar__body .create-inline__input')
+    rightClick(row(el, `${v}/top.md`))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(document.activeElement).toBe(box())
+    // Enter in the box is its commit: with the name as it was, the box closes and nothing is renamed.
+    await act(async () => void box()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })))
+    expect(box()).toBeNull()
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('S4: a held Enter in the search bar is ONE Enter — the repeats of the press that previews a file are taken and do nothing, so no repeat is the second Enter that takes the caret into the page', async () => {
+    const page = editorStub()
+    const { v, input, props, rerender } = await search('plan')
+    const path = `${v}/Projects/plan.md`
+    key(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
+    await rerender({ activeFile: path }) // App shows the page
+    expect(Array.from({ length: 3 }, () => key(input, 'Enter', { repeat: true }).defaultPrevented)).toEqual([true, true, true])
+    expect([document.activeElement === input, vi.mocked(props.onOpenFile).mock.calls.length]).toEqual([true, 1])
+    // A held Shift+Enter and a held ⌘Enter are one press too.
+    key(input, 'Enter', { repeat: true, shiftKey: true })
+    key(input, 'Enter', { repeat: true, metaKey: true })
+    expect([vi.mocked(props.onRevealInFiles).mock.calls, vi.mocked(props.onOpenFileBackground).mock.calls]).toEqual([[], []])
+    // A new press is the second Enter (YAZ-961).
+    key(input, 'Enter')
+    expect(document.activeElement).toBe(page)
+    page.parentElement?.remove()
   })
 
   it('S64: the arrows do nothing while a rename box or a create box has the focus', async () => {
@@ -3418,6 +3467,71 @@ describe('Space, → and ← on a folder of the search tree (YAZ-2662 D6, D7)', 
       close()
       press('Escape')
       expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    })
+
+    it('S58: a click on the `esc` keycap is the Esc key — with the panel on show it closes the panel only, and a press on it takes no focus from the bar; the next click leaves the Search tab', async () => {
+      const { el, input, props, press, go, panel } = await preview()
+      const keycap = el.querySelector<HTMLButtonElement>('.sidebar__search-back')!
+      go('Entry log')
+      press(' ')
+      const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      act(() => void keycap.dispatchEvent(down))
+      expect(down.defaultPrevented).toBe(true)
+      act(() => keycap.click())
+      expect([panel(), vi.mocked(props.onLensChange).mock.calls, document.activeElement === input]).toEqual([null, [], true])
+      // The preview is off for the keys, as after Esc: Space shows the panel again.
+      press(' ')
+      expect(panel()).toBe('/Log book/Entry log.md')
+      act(() => keycap.click())
+      act(() => keycap.click())
+      expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    })
+
+    it.each([
+      ['a click on a file row', '/Changelog.md', 'click'],
+      ['a click on a folder row', '/Area/Work log', 'click'],
+      ['a right-click on a row', '/Changelog.md', 'contextmenu'],
+    ])('S65: the mouse on a row of the search tree closes the preview — %s does its own work with no panel over it, and the preview is off for the keys', async (_name, rel, gesture) => {
+      const { v, props, row, press, go, wait, panel, onPreview, isOpen } = await preview()
+      go('Entry log')
+      press(' ')
+      onPreview.mockClear()
+      act(() => void row(rel)?.dispatchEvent(new MouseEvent(gesture, { bubbles: true, cancelable: true })))
+      expect([panel(), onPreview.mock.calls]).toEqual([null, [[null]]])
+      // The row's own work: a file opens, a folder folds, a menu shows.
+      if (rel === '/Area/Work log') expect(isOpen(rel)).toBe('false')
+      else if (gesture === 'click') expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}${rel}`)
+      // No panel follows to the row, and ↑ and ↓ show none: the preview is off until the next Space.
+      wait(1000)
+      press('ArrowUp')
+      wait(1000)
+      expect([panel(), onPreview.mock.calls]).toEqual([null, [[null]]])
+    })
+
+    it('S65: with no preview on, the mouse on a row asks nothing of the panel', async () => {
+      const { row, go, onPreview } = await preview()
+      go('Entry log')
+      act(() => void row('/Changelog.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      expect(onPreview).not.toHaveBeenCalled()
+    })
+
+    it('a held Space acts one time: after ↑ or ↓ its repeats are taken and do nothing — the panel does not show and close on each, and a folder does not open and go back on each; a Space that is a text key repeats', async () => {
+      const { input, shape, press, go, panel } = await preview()
+      go('Entry log')
+      press(' ')
+      expect(Array.from({ length: 3 }, () => press(' ', { repeat: true }).defaultPrevented)).toEqual([true, true, true])
+      expect(panel()).toBe('/Log book/Entry log.md')
+      press(' ')
+      expect(panel()).toBeNull()
+      go('Log book')
+      press(' ')
+      const all = shape()
+      expect(all.slice(0, 4)).toEqual(['Log book', '  Notes', '  Cover', '  Entry log'])
+      expect(press(' ', { repeat: true }).defaultPrevented).toBe(true)
+      expect(shape()).toEqual(all)
+      // The text changed: Space is the text's again, each repeat of it too (S30).
+      await type(input, 'lo')
+      expect(press(' ', { repeat: true }).defaultPrevented).toBe(false)
     })
   })
 })
