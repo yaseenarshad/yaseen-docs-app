@@ -119,14 +119,15 @@ test('step 4 — plain click a resolved link: the target replaces the CURRENT ta
 })
 
 test('step 5 — click an UNRESOLVED link: the note is created beside the hub (at the vault root) and opened', async () => {
-  // Reopen the hub (replaces the Roadmap tab) and wait for the index gate again.
+  // Reopen the hub and wait for the index gate again. A sidebar click opens the preview tab
+  // (YAZ-2648 D1): a NEW tab at the end here, and the Roadmap tab — a kept tab — stays.
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
   await expect(win.locator('.wikilink--unresolved')).toHaveText(FRESH)
 
   await linkIn(win, FRESH).click()
-  await expect(activeTab(win)).toHaveText(FRESH) // opened in the CURRENT tab…
-  await expect(tabsOf(win)).toHaveText([FRESH, 'Ideas']) // …so the count is unchanged
+  await expect(activeTab(win)).toHaveText(FRESH) // opened in the CURRENT tab, the hub's…
+  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', FRESH]) // …so the link added no tab: the hub's own was the third
   // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
   // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
   // Born with its id and its title, the link's own text, and nothing else, under the name built

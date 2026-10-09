@@ -120,7 +120,7 @@ test('step 2 — a .pdf opens in the PDF viewer frame over a blob: URL on the ap
   await expect(viewer).toHaveAttribute('aria-busy', 'false')
   await expect(viewer.locator('.pdf-viewer__error')).toHaveCount(0)
 
-  await expect(tabsOf(win)).toHaveText([PDF_FILE]) // a plain click REPLACES the tab (I3)
+  await expect(tabsOf(win)).toHaveText([PDF_FILE]) // a plain click shows the file in the ONE preview tab (YAZ-2648 D1)
   await shoot(win, 'viewers-02-pdf')
 })
 
