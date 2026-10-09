@@ -227,6 +227,54 @@ describe('registerWindowIpc', () => {
     })
   })
 
+  describe('the open history (YAZ-2663 D1, R2)', () => {
+    const T = 1_700_000_000_000
+    const set = (patch: unknown) => registered(CONTRACT.window.setIdentity.channel)({ sender }, patch)
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(T)
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('S1, S2: a page comes on show → its vault\'s record gets one use and the time, in ONE commit with the window; a trip to another tab\'s page is one use of that page; a page in no vault of the window adds nothing', async () => {
+      let commits = 0
+      store.onChange(() => commits++)
+      // S1: a click in the sidebar puts `b.md` on show in a new tab.
+      expect(await set({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md' })).toEqual(ok(undefined))
+      expect(commits).toBe(1)
+      expect(store.get().windows[0]).toMatchObject({ file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'] })
+      expect(store.get().folders['/v'].opens).toEqual({ '/v/b.md': { score: 1, last: T } })
+      // S2: a trip to the other tab, then back.
+      vi.setSystemTime(T + 5)
+      await set({ file: '/v/a.md' })
+      expect(store.get().folders['/v'].opens).toEqual({ '/v/b.md': { score: 1, last: T }, '/v/a.md': { score: 1, last: T + 5 } })
+      vi.setSystemTime(T + 9)
+      await set({ file: '/v/b.md' })
+      const again = store.get().folders['/v'].opens['/v/b.md']
+      expect(again.last).toBe(T + 9)
+      expect(again.score).toBeCloseTo(2, 6)
+      // A page of the window's second vault goes in the record of that vault; a page no vault holds goes in none.
+      await set({ roots: ['/v', '/w'] })
+      await set({ file: '/w/c.md' })
+      await set({ file: '/else/d.md' })
+      expect(store.get().folders['/w'].opens).toEqual({ '/w/c.md': { score: 1, last: T + 9 } })
+      expect(Object.keys(store.get().folders['/v'].opens)).toEqual(['/v/b.md', '/v/a.md'])
+      expect(Object.keys(store.get().folders).sort()).toEqual(['/v', '/w'])
+      expect(commits).toBe(6) // one for each call: the use never has a commit of its own
+    })
+
+    it('S3, S4: a patch that puts no new page on show adds nothing — no `file` in it (the blank tab mirrors nothing; the lens, the right panel), `file: null`, the page the window shows now, and a patch that main rejects', async () => {
+      await set({ sidebarLens: 'focus' })
+      await set({ rightPanel: { ...RIGHT, open: false } })
+      await set({ file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }) // S4: `a.md` is the page of the window
+      expect(await set({ file: '/v/b.md', tabs: ['rel.md'] })).toEqual(bad('NOT_ABSOLUTE'))
+      await set({ file: null })
+      expect(store.get().folders).toEqual({})
+    })
+  })
+
   it('window:set-identity rejects the whole call on any bad tabs element, leaving the entry untouched', async () => {
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { tabs: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { tabs: ['/v/a.md', 'rel.md'] })).toEqual(bad('NOT_ABSOLUTE'))

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOCUS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openVaultRoots, rootOfPath, sameVaults, type AppState, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOCUS, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -131,7 +131,7 @@ describe('createStore: loading', () => {
       sidebarWidth: 320,
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites' })],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, name: null, key: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, name: null, key: null } },
       vaultSets: [],
       favoritesOrder: ['/v/a.md', '/w/b.md'],
     }
@@ -339,7 +339,7 @@ describe('createStore: loading', () => {
     const store = createStore(file)
     expect((await readdir(dir)).filter((n) => n.includes('.corrupt-'))).toEqual([])
     expect(store.get().windows[0]).toEqual(win('w', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'favorites', focusList: ['/v/sub'] }))
-    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: 'Wiki', key: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, opens: {}, name: 'Wiki', key: null })
     // The next write drops both keys from disk.
     store.setSidebarWidth(321)
     await store.flush()
@@ -447,12 +447,12 @@ describe('createStore: loading', () => {
       }),
     )
     const { folders } = createStore(file).get()
-    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, name: null, key: null })
+    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, opens: {}, name: null, key: null })
     expect(folders['/b']).toBeUndefined()
     expect(folders['/c'].expanded).toEqual([]) // a session list: the file's value is ignored (YAZ-1642)
     expect(folders['/c'].lastFile).toBe('/c/a.md')
     expect(folders['/c'].folds['/c/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
-    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     await seed(valid({ folders: [] }))
     expect(createStore(file).get().folders).toEqual({})
   })
@@ -469,7 +469,7 @@ describe('createStore: loading', () => {
     )
     const { folders } = createStore(file).get()
     expect(folders['/a'].baseGroups).toEqual({ '/a/x.md::T': ['v:idea'] })
-    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     expect(folders['/c'].baseGroups['/c/x.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
 
@@ -559,7 +559,7 @@ describe('createStore: loading', () => {
     )
     const store = createStore(file)
     // No migration: the vault bucket could not say WHICH window was focused, so every window starts unfocused.
-    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     expect(store.get().windows[0]).toMatchObject({ focusList: [] })
     store.setSidebarWidth(321)
     await store.flush()
@@ -689,13 +689,13 @@ describe('createStore: mutations', () => {
   it('setFolder creates the entry with defaults, merges the patch and ignores unknown keys', () => {
     const store = createStore(file)
     store.setFolder('/r1', { expanded: ['/r1/a'] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     store.setFolder('/r1', { lastFile: '/r1/a/x.md' })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     store.setFolder('/r1', { lastFile: null, folds: { '/r1/a.md': ['k'] } } as never)
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     store.setFolder('/r2', {})
-    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
   })
 
   it('setFolder cleans the display name, other patches leave it alone, and removeRecent keeps it (YAZ-1974 D3)', () => {
@@ -752,13 +752,13 @@ describe('createStore: mutations', () => {
     store.setFolds('/r1', '/r1/a.md', ['k1', 'k2'])
     store.setFolds('/r1', '/r1/b.md', ['k3'])
     store.setFolds('/r2', '/r2/a.md', ['k4'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, opens: {}, name: null, key: null })
     store.setFolds('/r1', '/r1/a.md', ['k2']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].folds['/r1/a.md']).toEqual(['k2'])
     store.setFolder('/r1', { lastFile: '/r1/a.md' })
     store.setFolds('/r1', '/r1/a.md', [])
     store.setFolds('/r1', '/r1/b.md', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     store.setFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `k${i}`))
     expect(store.get().folders['/r2'].folds['/r2/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
   })
@@ -768,12 +768,12 @@ describe('createStore: mutations', () => {
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:idea', 'v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', ['∅'])
     store.setBaseGroups('/r2', '/r2/a.md::T', ['v:x'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, opens: {}, name: null, key: null })
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:done']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].baseGroups['/r1/a.md::T']).toEqual(['v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T', [])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     store.setBaseGroups('/r2', '/r2/a.md::T', Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`))
     expect(store.get().folders['/r2'].baseGroups['/r2/a.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
@@ -1118,11 +1118,12 @@ describe('createStore: mutations', () => {
         expanded: [NEW, `${NEW}/deep`, '/v/other'],
         folds: { [`${NEW}/a.md`]: ['k1'], '/v/x.md': ['k2'] },
         baseGroups: { [`${NEW}/T.md::Table`]: ['g1'] },
+        opens: {},
         name: null,
         key: null,
       })
       expect(store.get().folders[OLD]).toBeUndefined()
-      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, name: null, key: null })
+      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     })
 
     it('a renamed vault ROOT keeps its display name and its number under the new key (YAZ-1974 D3, YAZ-2555 S20); a deleted one loses both', () => {
@@ -1184,17 +1185,17 @@ describe('createStore: persistence', () => {
     await vi.advanceTimersByTimeAsync(60)
     await store.flush()
     expect(renames()).toHaveLength(1)
-    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {}, name: null, key: null } } })
+    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {}, opens: {}, name: null, key: null } } })
     expect((await readdir(dir)).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 
   it('the session list lives in get() for every window but never reaches disk, so a relaunch starts collapsed (YAZ-1642)', async () => {
     const store = createStore(file)
     store.setFolder('/v', { expanded: ['/v/sub'] })
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
     await store.flush()
-    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
-    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null })
+    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
+    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
   })
 
   it('a change that leaves the file byte-identical (folder expand / collapse) writes nothing; the next real change does (YAZ-2198)', async () => {
@@ -1485,5 +1486,136 @@ describe('favoritesOrder (YAZ-2631 D1)', () => {
     expect(seen).toHaveLength(4)
     store.removePath('/v/a/other.md')
     expect(seen).toHaveLength(4)
+  })
+})
+
+describe('the open history (YAZ-2663 D1, D2)', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const T = 1_700_000_000_000
+  /** A store that counts its commits: each one is a `state:changed`. */
+  const counted = () => {
+    const store = createStore(file)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    return { store, seen }
+  }
+
+  it('S6: a score is worth half after 14 days with no use — 4 is 2, and 1 after 28 days; a clock that went back takes nothing off', () => {
+    expect(OPEN_HALF_LIFE_MS).toBe(14 * DAY)
+    const stat: OpenStat = { score: 4, last: T }
+    expect(openScore(stat, T)).toBe(4)
+    expect(openScore(stat, T + 14 * DAY)).toBe(2)
+    expect(openScore(stat, T + 28 * DAY)).toBe(1)
+    expect(openScore(stat, T + 7 * DAY)).toBeCloseTo(4 / Math.SQRT2, 10)
+    expect(openScore(stat, T - DAY)).toBe(4)
+  })
+
+  it('S1, S7: addOpen is one more use on what the score is worth now, with the time; the 101st page puts out the page whose score is worth the least now, and the page just used stays', () => {
+    const first = addOpen({}, '/v/a.md', T)
+    expect(first).toEqual({ '/v/a.md': { score: 1, last: T } })
+    const second = addOpen(first, '/v/a.md', T)
+    expect(second).toEqual({ '/v/a.md': { score: 2, last: T } })
+    expect(first).toEqual({ '/v/a.md': { score: 1, last: T } }) // pure: the record handed in is not changed
+    // 14 days with no use: 2 is worth 1, and one more use makes 2.
+    expect(addOpen(second, '/v/a.md', T + 14 * DAY)).toEqual({ '/v/a.md': { score: 2, last: T + 14 * DAY } })
+
+    // S7: 100 pages. `old.md` has the highest stored score, 8, but its last use was 56 days ago: it is worth 0.5 now, the least.
+    const full: Record<string, OpenStat> = { '/v/old.md': { score: 8, last: T - 56 * DAY } }
+    for (let i = 1; i < MAX_OPENS; i++) full[`/v/p${i}.md`] = { score: 1 + i, last: T }
+    expect(Object.keys(full)).toHaveLength(MAX_OPENS)
+    const next = addOpen(full, '/v/new.md', T)
+    expect(Object.keys(next)).toHaveLength(MAX_OPENS)
+    expect(next['/v/old.md']).toBeUndefined()
+    expect(next['/v/new.md']).toEqual({ score: 1, last: T }) // worth less than each page that stays, and it stays
+    expect(next['/v/p1.md']).toEqual({ score: 2, last: T })
+    // One more use of a page that is in a full record puts out nothing.
+    expect(Object.keys(addOpen(next, '/v/p1.md', T)).sort()).toEqual(Object.keys(next).sort())
+  })
+
+  it('S9: a state file with no `opens` loads with an empty record; a wrong entry is dropped and the others load; a long record is cut at MAX_OPENS', async () => {
+    await seed(valid({ folders: { '/v': { lastFile: '/v/a.md', folds: {}, baseGroups: {}, name: null, key: null } } })) // a file of 1.0.0: no key
+    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
+    for (const junk of ['nope', 5, null, ['/v/a.md']]) {
+      await seed(valid({ folders: { '/v': { opens: junk } } }))
+      expect(createStore(file).get().folders['/v'].opens).toEqual({})
+    }
+    await seed(
+      valid({
+        folders: {
+          '/v': {
+            opens: {
+              '/v/a.md': { score: 2.5, last: T },
+              '/v/b.md': 'nope',
+              '/v/c.md': { score: 'x', last: T },
+              '/v/d.md': { score: 1 },
+              '/v/e.md': { score: 0, last: T },
+              'rel/f.md': { score: 1, last: T },
+              '/v/g.md': { score: 1, last: T + 1, extra: true },
+            },
+          },
+        },
+      }),
+    )
+    expect(createStore(file).get().folders['/v'].opens).toEqual({ '/v/a.md': { score: 2.5, last: T }, '/v/g.md': { score: 1, last: T + 1 } })
+    await seed(valid({ folders: { '/v': { opens: Object.fromEntries(Array.from({ length: MAX_OPENS + 5 }, (_, i) => [`/v/n${i}.md`, { score: 1, last: T }])) } } }))
+    expect(Object.keys(createStore(file).get().folders['/v'].opens)).toHaveLength(MAX_OPENS)
+  })
+
+  it('S1 (R2): upsertWindow with the page that came on show adds one use to the record of the vault of the window that holds the page, in the SAME commit as the window; a page in no vault of the window adds nothing, and no page named adds nothing; the record is in the file and there after a relaunch', async () => {
+    const { store, seen } = counted()
+    store.setFolder('/v', { name: 'Wiki', lastFile: '/v/a.md' })
+    seen.length = 0
+    const on = (page: string) => win('w1', { root: '/v', roots: ['/v', '/w', '/v/deep'], file: page, tabs: [page] })
+    store.upsertWindow(on('/v/a.md'), '/v/a.md', T)
+    expect(seen).toHaveLength(1)
+    expect(seen[0].windows).toEqual([on('/v/a.md')])
+    // The other fields of the vault stay as they were.
+    expect(seen[0].folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: { '/v/a.md': { score: 1, last: T } }, name: 'Wiki', key: null })
+    // A second vault of the window, and a vault inside a vault: the most specific one holds the page.
+    store.upsertWindow(on('/w/b.md'), '/w/b.md', T + 1)
+    store.upsertWindow(on('/v/deep/c.md'), '/v/deep/c.md', T + 2)
+    expect(store.get().folders['/w'].opens).toEqual({ '/w/b.md': { score: 1, last: T + 1 } })
+    expect(store.get().folders['/v/deep'].opens).toEqual({ '/v/deep/c.md': { score: 1, last: T + 2 } })
+    expect(store.get().folders['/v'].opens).toEqual({ '/v/a.md': { score: 1, last: T } })
+    expect(seen).toHaveLength(3)
+    // A page that no vault of the window holds: the window changes, no record does.
+    store.upsertWindow(on('/else/d.md'), '/else/d.md', T + 3)
+    // No page named (a move of the window, a change of its lens): no use.
+    store.upsertWindow(on('/v/a.md'))
+    expect(seen).toHaveLength(5)
+    expect(Object.keys(store.get().folders).sort()).toEqual(['/v', '/v/deep', '/w'])
+    expect(store.get().folders['/v'].opens).toEqual({ '/v/a.md': { score: 1, last: T } })
+
+    await store.flush()
+    expect((await onDisk()).folders['/v'].opens).toEqual({ '/v/a.md': { score: 1, last: T } })
+    expect(createStore(file).get().folders['/v'].opens).toEqual({ '/v/a.md': { score: 1, last: T } })
+  })
+
+  it('S8: renamePath moves the record of a renamed or moved page, and of each page under a renamed folder; removePath drops the record of a deleted page, and of a deleted folder by prefix; each is ONE commit also when the record alone holds the path, and none when it does not', () => {
+    const { store, seen } = counted()
+    const pages = ['/v/a.md', '/v/docs/b.md', '/v/docs/sub/c.md', '/v/docs2/d.md', '/v/x.md']
+    pages.forEach((page, i) => store.upsertWindow(win('w1', { root: '/v', file: page }), page, T + i))
+    const stat = (i: number): OpenStat => ({ score: 1, last: T + i })
+    seen.length = 0
+    // The window shows `x.md`: of the other pages, the record alone holds the path.
+    store.renamePath('/v/a.md', '/v/docs/a2.md')
+    store.renamePath('/v/docs', '/v/papers')
+    expect(store.get().folders['/v'].opens).toEqual({ '/v/papers/a2.md': stat(0), '/v/papers/b.md': stat(1), '/v/papers/sub/c.md': stat(2), '/v/docs2/d.md': stat(3), '/v/x.md': stat(4) })
+    expect(seen).toHaveLength(2)
+    store.renamePath('/v/nope.md', '/v/else.md')
+    expect(seen).toHaveLength(2)
+
+    store.removePath('/v/papers/b.md')
+    expect(store.get().folders['/v'].opens).toEqual({ '/v/papers/a2.md': stat(0), '/v/papers/sub/c.md': stat(2), '/v/docs2/d.md': stat(3), '/v/x.md': stat(4) })
+    store.removePath('/v/papers')
+    expect(store.get().folders['/v'].opens).toEqual({ '/v/docs2/d.md': stat(3), '/v/x.md': stat(4) })
+    expect(seen).toHaveLength(4)
+    store.removePath('/v/nope.md')
+    expect(seen).toHaveLength(4)
+
+    // The folder of the vault itself is renamed: its record follows it, with each page.
+    store.renamePath('/v', '/vault')
+    expect(store.get().folders['/v']).toBeUndefined()
+    expect(store.get().folders['/vault'].opens).toEqual({ '/vault/docs2/d.md': stat(3), '/vault/x.md': stat(4) })
   })
 })

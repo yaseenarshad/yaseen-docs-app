@@ -851,6 +851,36 @@ export interface WindowEntry {
   bounds: WindowBounds
 }
 
+/** How much a page is used (YAZ-2663 D2): `score` is what its uses were worth at `last`, the time (ms) it last came on show. */
+export interface OpenStat {
+  score: number
+  last: number
+}
+/** A vault's open history keeps this many pages at most (YAZ-2663 R4). */
+export const MAX_OPENS = 100
+/** A score is worth half after this long with no use (YAZ-2663 D2): 14 days. */
+export const OPEN_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000
+
+/** Pure: what a score is worth at `now` (YAZ-2663 D2) — half for each OPEN_HALF_LIFE_MS since the last use. A clock that went back takes nothing off. */
+export function openScore(stat: OpenStat, now: number): number {
+  return stat.score * 0.5 ** (Math.max(0, now - stat.last) / OPEN_HALF_LIFE_MS)
+}
+
+/**
+ * Pure: `opens` with one more use of `file` at `now` (YAZ-2663 D2) — on what its score is worth now.
+ * Past MAX_OPENS the pages whose scores are worth the least now go; the page just used stays, so
+ * "Recent" never misses it.
+ */
+export function addOpen(opens: Record<string, OpenStat>, file: string, now: number): Record<string, OpenStat> {
+  const prev = opens[file]
+  const next = { ...opens, [file]: { score: (prev === undefined ? 0 : openScore(prev, now)) + 1, last: now } }
+  const over = Object.keys(next).length - MAX_OPENS
+  if (over <= 0) return next
+  const least = Object.keys(next).filter((path) => path !== file).sort((a, b) => openScore(next[a], now) - openScore(next[b], now))
+  for (const path of least.slice(0, over)) delete next[path]
+  return next
+}
+
 /**
  * View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds).
  * `expanded` is a SESSION list (YAZ-1642): shared by every window on the
@@ -864,6 +894,8 @@ export interface FolderState {
   folds: Record<string, string[]>
   /** `<pagePath>::<viewName>` → collapsed group keys (max MAX_COLLAPSED_GROUP_KEYS). Session chrome, never written to the page's own card (GRO-2137). */
   baseGroups: Record<string, string[]>
+  /** The open history (YAZ-2663 D1): page → how much it is used, and when it was last on show (max MAX_OPENS). The main process alone adds a use (`upsertWindow`). Persisted, per machine. */
+  opens: Record<string, OpenStat>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
@@ -931,7 +963,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */
