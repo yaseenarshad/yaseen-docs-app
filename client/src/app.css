@@ -1344,13 +1344,14 @@ button {
 
 /* The way out of the Search tab (YAZ-2638 D2): a keycap that names the key, and is the key on a
    click — back to the lens the window last showed. Always in the bar. The keys that the empty
-   Search tab lists wear the same keycap (YAZ-2662 D10). */
+   Search tab lists wear the same keycap (YAZ-2662 D10), in the font of the bar: a `kbd` has its own. */
 .sidebar__search-back,
 .sidebar__keys kbd {
   flex: none;
   padding: 0 5px;
   border: 1px solid var(--border);
   border-radius: 4px;
+  font-family: inherit;
   font-size: 10px;
   line-height: 1.5;
   background: var(--bg);
@@ -1397,10 +1398,6 @@ button {
 
 .sidebar__keys dd {
   margin: 0;
-}
-
-.sidebar__keys kbd {
-  font-family: inherit;
 }
 
 /* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and

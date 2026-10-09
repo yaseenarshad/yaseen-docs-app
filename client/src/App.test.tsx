@@ -1348,8 +1348,8 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect({ strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }).toEqual(before)
   })
 
-  it('the preview panel over the blank tab (YAZ-2662 S45): it shows over the empty page, and the blank tab stays; the door is safe under the tab board too', async () => {
-    const { el, emitNewTab, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+  it('the preview panel over the blank tab (YAZ-2662 S45): it shows over the empty page, and the blank tab stays', async () => {
+    const { el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     act(() => emitNewTab())
     act(() => captured.sidebar?.onPreview('/v/archive.zip'))
     expect(el.querySelector('.tabstack > .quicklook .quicklook__title')?.textContent).toBe('archive.zip')
@@ -1358,8 +1358,42 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onPreview(null))
     expect(el.querySelector('.quicklook')).toBeNull()
     expect(activeLabel(el)).toBe('New tab')
+  })
+
+  it('the preview panel gives way to the tab board (YAZ-2662 S67): the board closes the panel, the sidebar reads that, a path named under the board shows no panel, and none comes back when the board closes', async () => {
+    const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const shown = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, el.querySelector('.taboverview') !== null]
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([true, '/v/archive.zip', false])
     await act(async () => emitTabOverview())
-    expect(() => act(() => captured.sidebar?.onPreview('/v/archive.zip'))).not.toThrow()
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => emitTabOverview())
+    expect(shown()).toEqual([false, null, false])
+    // With the board closed the door is the door again.
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([true, '/v/archive.zip', false])
+  })
+
+  it('Esc with the keyboard focus inside the preview panel (YAZ-2662 S66): the panel closes and the caret is asked back into the search bar, by the door of ⌘K; the ✕ with the caret outside the panel moves no caret', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const show = () => {
+      act(() => captured.sidebar?.onLensChange('search'))
+      act(() => captured.sidebar?.onSearchFocusHandled())
+      act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+      return el.querySelector<HTMLElement>('.quicklook')!
+    }
+    const state = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]
+    show()
+    expect(state()).toEqual([true, '/v/archive.zip', 'search', false])
+    act(() => el.querySelector<HTMLButtonElement>('.quicklook button[aria-label="Close preview"]')?.click())
+    expect(state()).toEqual([false, null, 'search', false])
+    // A click in the panel left the keyboard focus on it.
+    const panel = show()
+    act(() => panel.focus())
+    act(() => void panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(state()).toEqual([false, null, 'search', true])
   })
 
   it('the strip\'s slide (YAZ-2656 S88) is the strip\'s own: a closed tab slides shut as a ghost and no editor renders for it; with the right panel closed the row keeps its end free (S93)', async () => {
@@ -2654,6 +2688,19 @@ describe('App upkeep review (YAZ-2322)', () => {
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
     expect(el.querySelector('.taboverview')).toBeNull()
     expect(el.querySelector('.review-bar')).not.toBeNull()
+  })
+
+  it('YAZ-2662 S67: a review that starts closes the preview panel of the search, and no panel shows during a review or comes back when it closes', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    const shown = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, el.querySelector('.review-bar') !== null]
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([true, '/v/archive.zip', false])
+    openInbox()
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => button(el, 'Close review')?.click())
+    expect(shown()).toEqual([false, null, false])
   })
 
   it('⌘T during a review does nothing (YAZ-2655 S82)', async () => {

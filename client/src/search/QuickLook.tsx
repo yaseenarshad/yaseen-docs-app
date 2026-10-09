@@ -61,7 +61,7 @@ interface QuickLookProps {
   /** The watcher and the link source of the vault that holds the file. */
   watch: WatchSource
   wikilinks: WikilinkResolveSource
-  /** The ✕ (S43). */
+  /** The ✕ (S43), and Esc with the keyboard focus inside the panel (S66). */
   onClose: () => void
 }
 
@@ -69,7 +69,19 @@ export function QuickLook({ path, title, watch, wikilinks, onClose }: QuickLookP
   // The kinds are the ones `Editor` shows as a page (S39); a file with no viewer gets one line (S40).
   const kind = fileKind(path)
   return (
-    <section className="quicklook" aria-label="Preview">
+    // The panel takes no focus when it shows. A click in it — to select text — puts the keyboard
+    // focus on it (no Tab stop), so the search bar's Esc is out of reach: Esc here closes the panel (S66).
+    <section
+      className="quicklook"
+      aria-label="Preview"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+      }}
+    >
       <header className="quicklook__header">
         <span className="quicklook__title">{title}</span>
         {/* A press on the ✕ takes no focus: the caret stays in the search bar. */}

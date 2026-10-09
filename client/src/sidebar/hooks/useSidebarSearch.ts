@@ -87,14 +87,15 @@ export function useSidebarSearch(
   // like any folder (YAZ-2602 A9): no row of the ranking is a vault, so it is never a match, and it
   // stands open over its matches whatever its fold on the Files tab.
   const hits = useMemo(() => new Set(results.map((r) => r.path)), [results])
+  // A folder of `full` shows ALL that it holds (YAZ-2662 D6): Space or → put it there, and it lasts
+  // as long as its query, as a fold does.
+  const [full, setFull] = useState<ReadonlySet<string>>(NO_FOLDS)
   // The two groups (YAZ-2662 D2): `top` is the pinned items cut to their matches — a pinned item is
   // a top row, so no folder above it is drawn (S14) — and `rest` is every other match, cut from the
   // tree without the pinned items that `top` draws (S19). A pinned item that `top` does not draw
-  // stays in its folder, and no pinned match is the one tree of before (S21). A row is in one group
-  // only, so the two share one set of open folders and one order. A folder of `full` shows ALL that
-  // it holds (D6): Space or → put it there, and it lasts as long as its query, as a fold does. In
-  // `rest` that is all but the pinned items that `top` draws, so no row shows two times (S19).
-  const [full, setFull] = useState<ReadonlySet<string>>(NO_FOLDS)
+  // stays in its folder, so a folder of `rest` that shows all holds all but the items that `top`
+  // draws, and no row shows two times. With no pinned match `top` is empty and `rest` is the whole
+  // cut tree (S21). A row is in one group only, so the two share one set of open folders and one order.
   const found = useMemo(() => {
     const top = searchTree(pinned, hits, full)
     const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits, full)
@@ -143,10 +144,10 @@ export function useSidebarSearch(
   // and the highlight is on a folder, so no panel is drawn (S38).
   const [parked, setParked] = useState(false)
   const previewing = previewPath !== null || parked
-  const stopPreview = () => {
+  const stopPreview = useCallback(() => {
     setParked(false)
     onPreview(null)
-  }
+  }, [onPreview])
   // With the preview on, the panel follows the highlight (S32): a file shows `PREVIEW_FOLLOW_MS`
   // after the last move, and the earlier file stays until then. On a folder no panel is drawn, at once (S38).
   const followed = previewing ? rows[sel] : undefined
@@ -168,17 +169,9 @@ export function useSidebarSearch(
   // A different tab shows, or the sidebar is hidden (S37): the bar that drives the panel is gone, and the panel with it.
   useEffect(() => {
     if (!active) return
-    return () => {
-      setParked(false)
-      onPreview(null)
-    }
-  }, [active, onPreview])
+    return stopPreview
+  }, [active, stopPreview])
 
-  // The bar keeps focus while the tree is driven from it (YAZ-803). Opening leaves the results up.
-  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (row, e) => {
-    if (previewing) stopPreview() // Enter does its own work and closes the preview panel (YAZ-2662 S36)
-    activate(row, e.metaKey, e.shiftKey)
-  })
   // With text typed the Search tab's body is the search tree (YAZ-2620); with none it is one line
   // of help (YAZ-2638 D2). A conditional render, not a teardown — every bit of the other tabs' tree
   // state (data, expansion, pending create/rename, drag) lives in the Sidebar's other hooks
@@ -187,14 +180,17 @@ export function useSidebarSearch(
 
   // The highlight as the tree takes a selection (S39): the one row the keys are on. A click moves
   // it to the clicked row when the keys can stop on that row (S26, S27) and leaves it be otherwise (S28).
-  // Stable while nothing moved, as the per-level memo of `Tree` asks (YAZ-2194).
+  // The mouse on a row — a click, a right-click — also ends the preview (YAZ-2662 S65): the row does
+  // its own work, and no panel stands over the page that it opens.
+  // Stable while nothing moved, as the per-level memo of `Tree` asks (YAZ-2194): `now` is what a click reads.
   const cursor = rows[sel]?.path
   const cursorPaths = useMemo(() => (cursor === undefined ? NO_CURSOR : new Set([cursor])), [cursor])
-  const rowsRef = useRef(rows)
-  rowsRef.current = rows
+  const now = useRef({ rows, previewing })
+  now.current = { rows, previewing }
   const moveCursor = useCallback((path: string) => {
-    if (rowsRef.current.some((r) => r.path === path)) setPicked(path)
-  }, [])
+    if (now.current.rows.some((r) => r.path === path)) setPicked(path)
+    if (now.current.previewing) stopPreview()
+  }, [stopPreview])
   const searchCursor: TreeSelection = useMemo(() => ({ paths: cursorPaths, toggle: noToggle, set: moveCursor }), [cursorPaths, moveCursor])
 
   // The focus handshake (YAZ-801), the ONE path of the caret to the bar: ⌘K or a click on the
@@ -217,11 +213,24 @@ export function useSidebarSearch(
     if (previewing) stopPreview() // and no preview: Space is the text's again (S35)
   }
 
+  // The keys of the bar, which keeps the focus while the tree is driven from it (YAZ-803): ↑, ↓ and
+  // Enter. Opening leaves the results up.
+  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (row, e) => {
+    if (previewing) stopPreview() // Enter does its own work and closes the preview panel (YAZ-2662 S36)
+    activate(row, e.metaKey, e.shiftKey)
+  })
+
   // The list keys (YAZ-2662 D7): Space, → and ← act on the highlight once ↑ or ↓ moved it. Until
   // then, after a change of the text, and with a modifier they are the text's; so is a list key with
   // nothing to do on the highlight (S50, S51), which is not taken. Says whether the key was taken.
   const listKey = (e: KeyboardEvent<HTMLInputElement>): boolean => {
     const row = picked === null || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey ? undefined : rows[sel]
+    // A held Space acts one time: its repeats are taken and do nothing, so the panel does not show
+    // and close, and a folder does not open and go back, at the rate of the key.
+    if (row !== undefined && e.key === ' ' && e.repeat) {
+      e.preventDefault()
+      return true
+    }
     // Space on a file shows the preview panel on it, at once, and Space again closes the panel (D5, S33).
     if (row?.type === 'file' && e.key === ' ') {
       if (previewing) stopPreview()
@@ -250,15 +259,25 @@ export function useSidebarSearch(
     return true
   }
 
+  // Esc, and its keycap on a click (S58): the first closes the panel only (S34). With none on show
+  // — the highlight on a folder too (S38) — it leaves the Search tab.
+  const searchEsc = () => {
+    if (previewPath !== null) stopPreview()
+    else onLeave()
+  }
+
   const searchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      // The first Esc closes the panel only (S34). With none on show — the highlight on a folder too (S38) — Esc leaves.
-      if (previewPath !== null) stopPreview()
-      else onLeave()
-    } else if (!listKey(e)) onKeys(e)
+      searchEsc()
+    }
+    // A held Enter is ONE Enter (YAZ-961): a repeat of the press that previews a file would be the
+    // second Enter, the caret would go into the page, and the next repeats would type into the note.
+    // Taken here and not in `resultKeys`, which the shortcut picker shares (YAZ-2662 R7).
+    else if (e.key === 'Enter' && e.repeat) e.preventDefault()
+    else if (!listKey(e)) onKeys(e)
   }
 
-  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown }
+  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc }
 }
