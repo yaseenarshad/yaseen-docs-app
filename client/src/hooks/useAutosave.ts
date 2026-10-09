@@ -27,6 +27,8 @@ export interface AutosaveHandle {
    * body edits) stays untouched. Returns false when the body changed (GRO-2186).
    */
   absorbFrontmatterOnly: (diskContent: string, diskMtime: number) => boolean
+  /** The file as it sits on disk now, in the two parts it was read or written in: what a line number counts in (YAZ-2643). */
+  diskParts: () => { frontmatter: string; body: string }
 }
 
 /** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount and window close. */
@@ -164,5 +166,7 @@ export function useAutosave(path: string): AutosaveHandle {
     return true
   }, [])
 
-  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly }
+  const diskParts = useCallback(() => ({ frontmatter: frontmatterRef.current, body: diskBodyRef.current }), [])
+
+  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts }
 }
