@@ -5,6 +5,8 @@
  *  - A LINE NUMBER is a line of the file ON DISK, frontmatter included. The numbers are built when
  *    the switch turns on, when an outside change lands, and when a save settles. This is the one
  *    place the web worker is proved to load from the built app: no unit suite has a real `Worker`.
+ *  - A block of two or more lines carries its END too (D7), a code block's own gutter counts in
+ *    lines of the file (D8), and the scroller makes the numbers' lane with 64px of left padding (D9).
  *  - NOTHING IS STORED: the switch is state of the mounted editor. It never reaches the state file,
  *    and a note opened again starts with the numbers off.
  *
@@ -97,6 +99,12 @@ const numbered = (w: Page) =>
       })),
     )
 const numbers = async (w: Page): Promise<number[]> => (await numbered(w)).map(({ line }) => line)
+const codeBlock = (w: Page) => editorOf(w).locator('.milkdown-code-block')
+/** The numbers the code block's own gutter draws (CodeMirror keeps one hidden element there, for the gutter's width). */
+const codeGutter = (w: Page): Promise<string[]> =>
+  codeBlock(w)
+    .locator('.cm-lineNumbers .cm-gutterElement')
+    .evaluateAll((elements) => elements.filter((el) => (el as HTMLElement).style.visibility !== 'hidden').map((el) => el.textContent ?? ''))
 
 /** The first word of each numbered paragraph and heading must be on the line of the file ON DISK that its number names. */
 async function expectWordsOnTheirDiskLines(w: Page): Promise<void> {
@@ -143,6 +151,12 @@ test('step 1 — the cog opens the menu; "Line numbers" shows each block’s lin
   // The first build starts the worker: the numbers on the page prove the built chunk loads and answers.
   await expect.poll(() => numbers(win), { timeout: 15_000 }).toEqual([6, 9, 11, 12, 13, 15, 19])
   await expectWordsOnTheirDiskLines(win)
+  // The code block is lines 15 to 17 of the file, and its one code line is line 16. The other blocks are one line each.
+  await expect(codeBlock(win)).toHaveAttribute('data-line-end', '17')
+  await expect(editorOf(win).locator('[data-line-end]')).toHaveCount(1)
+  await expect.poll(() => codeGutter(win)).toEqual(['16'])
+  // The numbers' own lane: the scroller's left padding, so the page slides right while they show.
+  await expect(host(win)).toHaveCSS('padding-left', '64px')
   expect(await readFile(notePath, 'utf8')).toBe(BODY)
   await shoot(win, 'line-numbers-01-on')
 
@@ -159,6 +173,9 @@ test('step 2 — an agent edits the file on disk; the numbers follow the new fil
   await expect(editorOf(win)).toContainText(ADDED, { timeout: 15_000 })
   await expect.poll(() => numbers(win), { timeout: 15_000 }).toEqual([7, 9, 12, 14, 15, 16, 18, 22])
   await expectWordsOnTheirDiskLines(win)
+  // The code block moved three lines down: its range and its own gutter follow.
+  await expect(codeBlock(win)).toHaveAttribute('data-line-end', '20')
+  await expect.poll(() => codeGutter(win)).toEqual(['19'])
   await expect(win.locator('.conflict-bar')).toHaveCount(0)
   expect(await readFile(notePath, 'utf8')).toBe(EDITED)
   await shoot(win, 'line-numbers-02-outside-change')
@@ -188,6 +205,10 @@ test('step 4 — the switch turns the numbers off; a second click on the cog clo
   await expect(lineSwitch(win)).toHaveAttribute('aria-pressed', 'false')
   await expect(editorOf(win).locator('[data-line]')).toHaveCount(0)
   await expect(layer(win).locator('.editor-host[data-line-numbers]')).toHaveCount(0)
+  // Off: no range, the code block counts 1, 2, 3 again, and the page is back where it was.
+  await expect(editorOf(win).locator('[data-line-end], [data-line-code]')).toHaveCount(0)
+  await expect.poll(() => codeGutter(win)).toEqual(['1'])
+  await expect(host(win)).toHaveCSS('padding-left', '0px')
 
   await cog(win).click()
   await expect(menu(win)).toHaveCount(0)

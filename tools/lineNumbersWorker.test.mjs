@@ -31,8 +31,8 @@ function ask(text) {
 }
 
 describe('the line-number worker bundle', () => {
-  it('loads without a document and answers with the block lines, under the id it was asked with', () => {
-    expect(ask('# Title\n\nFish &amp; chips.\n\n* a\n*\n\n| a |\n| - |\n')).toEqual([{ id: 7, lines: [1, 3, 5, 6, 8], kinds: 'hpppt' }])
+  it('loads without a document and answers with the block lines and their ends, under the id it was asked with', () => {
+    expect(ask('# Title\n\nFish &amp; chips.\n\n* a\n*\n\n| a |\n| - |\n')).toEqual([{ id: 7, lines: [1, 3, 5, 6, 8], ends: [1, 3, 5, 6, 9], kinds: 'hpppt' }])
   })
 
   it('holds the parser only: no editor, no React', () => {

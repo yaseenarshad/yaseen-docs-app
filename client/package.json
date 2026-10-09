@@ -6,6 +6,7 @@
   "dependencies": {
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "^6.3.1",
+    "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.9",
     "@excalidraw/common": "file:vendor/yaseendraw-common-0.18.0-9e63bdf2.tgz",
     "@excalidraw/element": "file:vendor/yaseendraw-element-0.18.0-9e63bdf2.tgz",

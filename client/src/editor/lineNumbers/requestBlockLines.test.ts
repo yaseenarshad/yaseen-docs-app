@@ -52,10 +52,10 @@ describe('requestBlockLines', () => {
     const [worker] = FakeWorker.made
     const [a, b] = worker.posted
     expect(a.id).not.toBe(b.id)
-    worker.onmessage!({ data: { id: b.id, lines: [2], kinds: 'h' } })
-    worker.onmessage!({ data: { id: a.id, lines: [1], kinds: 'p' } })
-    expect(await first).toMatchObject({ lines: [1], kinds: 'p' })
-    expect(await second).toMatchObject({ lines: [2], kinds: 'h' })
+    worker.onmessage!({ data: { id: b.id, lines: [2], ends: [2], kinds: 'h' } })
+    worker.onmessage!({ data: { id: a.id, lines: [1], ends: [1], kinds: 'p' } })
+    expect(await first).toMatchObject({ lines: [1], ends: [1], kinds: 'p' })
+    expect(await second).toMatchObject({ lines: [2], ends: [2], kinds: 'h' })
   })
 
   it.each(['onerror', 'onmessageerror'] as const)('a worker that fails (%s) rejects every waiting request and is terminated; the next request starts a new worker (S65)', async (failure) => {
@@ -70,8 +70,8 @@ describe('requestBlockLines', () => {
     expect(FakeWorker.made).toHaveLength(2)
     const [, fresh] = FakeWorker.made
     expect(fresh.posted.map(({ text }) => text)).toEqual(['three'])
-    fresh.onmessage!({ data: { id: fresh.posted[0].id, lines: [3], kinds: 'p' } })
-    expect(await third).toMatchObject({ lines: [3], kinds: 'p' })
+    fresh.onmessage!({ data: { id: fresh.posted[0].id, lines: [3], ends: [3], kinds: 'p' } })
+    expect(await third).toMatchObject({ lines: [3], ends: [3], kinds: 'p' })
     expect(fresh.terminate).not.toHaveBeenCalled()
   })
 

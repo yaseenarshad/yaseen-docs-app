@@ -5,6 +5,10 @@
  *
  * Every expected number below was counted by hand in the file text. The second check is the one
  * that cannot be fooled by a wrong count: the file line at each number holds that block's own words.
+ *
+ * A block of two or more lines also carries the line it ENDS on (D7), and a code block the file line
+ * of its first code line (D8). This file holds the attributes; `codeLines.test.ts` holds what the
+ * code block's own CodeMirror draws from the second one.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -25,8 +29,8 @@ afterEach(unmountAll)
 function show(crepe: Crepe, file: string): void {
   const { frontmatter, body } = splitFrontmatter(file)
   const { text, toFileLine } = fileLines(frontmatter, body)
-  const { lines, kinds } = blockLines(text)
-  showLineNumbers(crepe, { lines: lines.map(toFileLine), kinds })
+  const { lines, ends, kinds } = blockLines(text)
+  showLineNumbers(crepe, { lines: lines.map(toFileLine), ends: ends.map(toFileLine), kinds })
 }
 
 async function open(file: string) {
@@ -46,6 +50,22 @@ const numbered = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll
 const numbers = (root: HTMLElement): number[] => numbered(root).map((el) => Number(el.dataset.line))
 /** `line:first word` for each numbered block, an empty block as `line:`. */
 const words = (root: HTMLElement): string[] => numbered(root).map((el) => `${el.dataset.line}:${el.textContent?.trim().split(/\s+/)[0] ?? ''}`)
+
+/** `start–end` for each numbered block; a block with no end as its start alone. */
+const ranges = (root: HTMLElement): string[] => numbered(root).map((el) => (el.dataset.lineEnd === undefined ? `${el.dataset.line}` : `${el.dataset.line}–${el.dataset.lineEnd}`))
+/** The file line of the first code line, for each code block of the page; `null` where the block's own 1, 2, 3 stay. */
+const codeLines = (root: HTMLElement): Array<string | null> => [...root.querySelectorAll<HTMLElement>('.milkdown-code-block')].map((el) => el.getAttribute('data-line-code'))
+
+/** Each paragraph that shows a range: its LAST word must be on the file line its end names. */
+function expectLastWordsOnTheirEndLines(root: HTMLElement, file: string): void {
+  const fileLine = file.split('\n')
+  const wrapped = numbered(root).filter((el) => el.tagName === 'P' && el.dataset.lineEnd !== undefined)
+  expect(wrapped.length).toBeGreaterThan(0)
+  for (const el of wrapped) {
+    const word = el.textContent?.trim().split(/\s+/).at(-1) ?? ''
+    expect(fileLine[Number(el.dataset.lineEnd) - 1], `line ${el.dataset.lineEnd} should hold "${word}"`).toContain(word)
+  }
+}
 
 /** Each numbered text block's first word must be on the file line its number names. */
 function expectWordsOnTheirLines(root: HTMLElement, file: string): void {
@@ -154,6 +174,147 @@ describe('line numbers: the number is the block’s line in the file on disk', (
     const { root } = await open(EMPTY_AND_HEADING_BULLET)
     expect(numbers(root)).toEqual([1, 3, 5, 7, 8])
     expectWordsOnTheirLines(root, EMPTY_AND_HEADING_BULLET)
+  })
+})
+
+/** Frontmatter, a gap of two blank lines, and a paragraph an AI wrapped by hand over three lines of the file. */
+const WRAPPED = [
+  '---', //                          1
+  'name: wrapped', //                2
+  '---', //                          3
+  '', //                             4
+  '# Title', //                      5
+  '', //                             6
+  '', //                             7
+  'A paragraph that an AI', //       8
+  'wrapped by hand over', //         9
+  'three lines of the file.', //     10
+  '', //                             11
+  'One line.', //                    12
+  '', //                             13
+  '* a bullet whose text', //        14
+  '  runs on', //                    15
+  '  * nested', //                   16
+  '',
+].join('\n')
+
+describe('line numbers: a block of two or more lines of the file shows where it ends (D7)', () => {
+  it('a soft-wrapped paragraph on lines 8 to 10 has start 8 and end 10, in two attributes (S66, S68, S71)', async () => {
+    const { root } = await open(WRAPPED)
+    const paragraph = root.querySelector<HTMLElement>('.ProseMirror > p')!
+    expect(paragraph.textContent).toContain('wrapped by hand')
+    expect(paragraph.getAttribute('data-line')).toBe('8')
+    expect(paragraph.getAttribute('data-line-end')).toBe('10')
+    expect(numbers(root)).toEqual([5, 8, 12, 14, 16])
+    expect(ranges(root)).toEqual(['5', '8–10', '12', '14–15', '16'])
+    expectWordsOnTheirLines(root, WRAPPED)
+    expectLastWordsOnTheirEndLines(root, WRAPPED)
+  })
+
+  it('a block of one line has no end: only the blocks that span lines carry `data-line-end` (S67)', async () => {
+    const { root } = await open(WRAPPED)
+    expect([...root.querySelectorAll<HTMLElement>('[data-line-end]')].map((el) => el.dataset.line)).toEqual(['8', '14'])
+    for (const el of numbered(root)) expect(el.dataset.line).toMatch(/^\d+$/)
+  })
+
+  it('a fenced code block runs from its opening fence to its closing one, and a table from its header row to its last row (S69, S70)', async () => {
+    const { root } = await open(EVERY_BLOCK)
+    expect(ranges(root)).toEqual(['1', '3', '5', '6', '7', '8', '10–12', '14–16', '18', '20', '22'])
+    expect(root.querySelector('.milkdown-code-block')!.getAttribute('data-line-end')).toBe('12')
+    expect(root.querySelector('.milkdown-table-block')!.getAttribute('data-line-end')).toBe('16')
+  })
+
+  it('a setext heading ends on its underline, a raw HTML block on its last line, an indented code block on its last code line (S69, S70)', async () => {
+    const { root } = await open(['Title', '=====', '', '<div>', 'raw', '</div>', '', '    code', '    more', '', 'End.', ''].join('\n'))
+    expect(ranges(root)).toEqual(['1–2', '4–6', '8–9', '11'])
+  })
+
+  it('an AI-style file keeps every start, and its one wrapped paragraph gets its end', async () => {
+    const { root } = await open(AI_STYLE)
+    expect(numbers(root)).toEqual([6, 9, 12, 13, 14, 18, 20, 21, 23, 24, 26])
+    expect(ranges(root)).toEqual(['6', '9–10', '12', '13', '14', '18', '20', '21', '23', '24', '26'])
+    expectLastWordsOnTheirEndLines(root, AI_STYLE)
+  })
+
+  it('after a save the ends are those of the file the editor wrote', async () => {
+    const { crepe, root } = await open(WRAPPED)
+    const saved = showSaved(crepe, WRAPPED)
+    expect(saved).not.toBe(WRAPPED)
+    expect(ranges(root).filter((range) => range.includes('–'))).toHaveLength(2)
+    expectWordsOnTheirLines(root, saved)
+    expectLastWordsOnTheirEndLines(root, saved)
+  })
+
+  it('lines with no ends beside them, or with an end that is the start, give no `data-line-end` (S71)', async () => {
+    const { crepe, root } = await mount('First.\n\nSecond.\n')
+    showLineNumbers(crepe, { lines: [1, 3], kinds: 'pp' })
+    expect(ranges(root)).toEqual(['1', '3'])
+    showLineNumbers(crepe, { lines: [1, 3], ends: [1, 4], kinds: 'pp' })
+    expect(ranges(root)).toEqual(['1', '3–4'])
+    showLineNumbers(crepe, null)
+    expect(root.querySelectorAll('[data-line], [data-line-end]')).toHaveLength(0)
+  })
+
+  it('typed text moves the end with its block, as it moves the start (S25, S73)', async () => {
+    const { crepe, root, view } = await mount('First.\n\nSecond.\n')
+    showLineNumbers(crepe, { lines: [40, 70], ends: [42, 70], kinds: 'pp' })
+    view.dispatch(view.state.tr.insertText('typed ', 1))
+    expect(ranges(root)).toEqual(['40–42', '70'])
+  })
+})
+
+describe('line numbers: the file line of a code block’s first code line (D8)', () => {
+  it('a fenced block’s first code line is the line under its opening fence (S74)', async () => {
+    const { root } = await open(EVERY_BLOCK)
+    expect(codeLines(root)).toEqual(['11'])
+    expect(root.querySelectorAll('[data-line-code]')).toHaveLength(1)
+  })
+
+  it('an indented block has no fence: its first code line is the block’s own start line (S76)', async () => {
+    const { root } = await open(['Text.', '', '    code', '    more', '', '* a', '', '      in a bullet', '', 'End.', ''].join('\n'))
+    expect(ranges(root)).toEqual(['1', '3–4', '6', '8', '10'])
+    expect(codeLines(root)).toEqual(['3', '8'])
+  })
+
+  it('a fenced block in a bullet, and one under frontmatter and a blank line the load added', async () => {
+    const { root } = await open(['---', 'a: 1', '---', '* parent', '  *', '  * child', '', '    ```js', '    one', '', '    three', '    ```', ''].join('\n'))
+    expect(ranges(root)).toEqual(['4', '5', '6', '8–12'])
+    expect(codeLines(root)).toEqual(['9'])
+  })
+
+  it('a block whose code lines the file does not hold one for one keeps its own 1, 2, 3: an empty block, and a fence that is never closed (S77)', async () => {
+    const empty = await open(['```', '```', '', 'End.', ''].join('\n'))
+    expect(ranges(empty.root)).toEqual(['1–2', '4'])
+    expect(codeLines(empty.root)).toEqual([null])
+    const open_ = await open(['Text.', '', '~~~', 'never closed', '', 'still code'].join('\n'))
+    expect(ranges(open_.root)).toEqual(['1', '3–6'])
+    expect(codeLines(open_.root)).toEqual([null])
+  })
+
+  // The load-time rules do not know indented code: rule 7 puts a blank line above the bare marker INSIDE this block.
+  it('an indented block that the load gave one line more than the file has keeps its own 1, 2, 3, and its range is the file’s (S77)', async () => {
+    const { root, view } = await open(['Text.', '', '    * a', '      *', '    end', '', 'After.', ''].join('\n'))
+    expect(view.state.doc.child(1).textContent.split('\n')).toHaveLength(4)
+    expect(ranges(root)).toEqual(['1', '3–5', '7'])
+    expect(codeLines(root)).toEqual([null])
+  })
+
+  it('a code block the file says is longer or shorter than the page’s gets no inner line, and keeps its outer one (S77)', async () => {
+    const { crepe, root } = await mount('```\none\ntwo\n```\n')
+    showLineNumbers(crepe, { lines: [27], ends: [30], kinds: 'c' })
+    expect(codeLines(root)).toEqual(['28'])
+    showLineNumbers(crepe, { lines: [27], ends: [31], kinds: 'c' })
+    expect(ranges(root)).toEqual(['27–31'])
+    expect(codeLines(root)).toEqual([null])
+    showLineNumbers(crepe, { lines: [27], ends: [28], kinds: 'i' })
+    expect(codeLines(root)).toEqual(['27'])
+    showLineNumbers(crepe, { lines: [27], kinds: 'c' })
+    expect(codeLines(root)).toEqual([null])
+  })
+
+  it('the page’s one kind of code block pairs with both of the file’s: the numbers go on past an indented block (S45, S73)', async () => {
+    const { root } = await open(['    code', '', 'After.', ''].join('\n'))
+    expect(words(root)).toEqual(['1:code', '3:After.'])
   })
 })
 
