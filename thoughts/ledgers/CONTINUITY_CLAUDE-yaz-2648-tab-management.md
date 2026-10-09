@@ -47,11 +47,15 @@
   - [x] YAZ-2655: 6- Blank tab and ⌘T
   - [x] YAZ-2656: 7- The look of the tab strip, changed by Yasin in the demo to pills as in Linear
   - [x] Changes from the demo: pages of 200 by 266 px, ⌘⇧M for the board, the accent on the active tab in the light theme, a stack only for an island of four or more pages, the strip lights the tab of the page that the board highlights
-- Now: [→] YAZ-2657: 8- Polish and anti-slop
-- Next: YAZ-2658: 9- Verify and deliver
+  - [x] YAZ-2657: 8- Polish and anti-slop: an independent audit, A1 to A21; 18 applied, 3 declined with a reason (`cfc27bc`)
+  - [x] YAZ-2658: 9- the e2e spec and the two docs (`9ac8a9d`), written and typechecked, not run; the case list is on the issue
+  - [x] `main` merged in again (`73b54ad`): YAZ-2649
+  - [x] Four ceilings set to the measured numbers (`15b2a44`, `6716f59`)
+  - [x] The pull request is open: #103. The ten issues are In Review.
+- Now: [→] Yasin's hand walk on the development app
+- Next: the merge, after Yasin says that the walk passed. No release.
 - Remaining:
-  - [ ] YAZ-2658: 9- Verify and deliver: the gates, the case list, the e2e spec, the docs, the pull request
-  - [ ] Yasin's hand walk, then the merge
+  - [ ] Closeout: the handoff comment on YAZ-2648, the issues to Done
 
 ## Open Questions
 
@@ -59,7 +63,7 @@
 - UNCONFIRMED: the page stays painted while it becomes small in the zoom (the build relies on Chromium keeping `content-visibility` visible during the animation).
 - UNCONFIRMED: an edit from outside the app leaves the preview tab a preview tab in the REAL editor (S23). The unit test uses a fake editor.
 - UNCONFIRMED: the end-to-end spec will be written and typechecked, not run.
-- The ceiling `rendererEagerCssBytes` (140,553) is what `main` measured, so this work is over it. It needs a new ceiling in its own commit and Yasin's OK in the pull request.
+- Four ceilings are new: `rendererEagerJsBytes` 2,007,099 (from 1,982,923), `rendererEagerCssBytes` 149,568 (from 140,553), `rendererTotalBytes` 13,148,534 (from 13,115,343), `mainBundleBytes` 529,077 (from 526,429). Yasin approved the CSS one in chat before the numbers were measured. The three others need his OK; the pull request names all four.
 - With pills of 200px, 4 tabs fit at full width in a window of 1280px with the sidebar open, 5 at the floor of 140px. Yasin accepted fewer tabs; the hand walk asks if this is too few.
 - The demo app breaks when a change of `shared/ipc.ts` or of the main process hot-reloads the renderer against an old preload. Restart the app after such a change.
 - The rule for Space with text in the filter (R36) has a simpler form. Yasin selects in the hand walk.
@@ -72,7 +76,7 @@
 - Worktree `.claude/worktrees/yaz-2648-tab-management`, branch `yaz-2648-tab-management`, from `main` at `248a25c` (0.9.38), with `main` at `8a97b4a` merged in.
 - New files: `client/src/tabs/{TabOverview,TabMenu}.tsx`, `client/src/tabs/{board,boardHighlight,useTabHeads}.ts`, `desktop/src/main/fs/heads.ts`, and their tests.
 - Changed files: `client/src/workspace/useWorkspace.ts`, `client/src/App.tsx`, `client/src/tabs/{TabBar.tsx,tabs.css}`, `client/src/sidebar/{Tree,Sidebar}.tsx`, `client/src/sidebar/menuSections.ts`, `client/src/editor/Editor.tsx`, `client/src/views/view/icons.tsx`, `client/src/hooks/useMenuEvents.ts`, `shared/{ipc,types}.ts`, `desktop/src/main/{menu.ts,ipc/fs.ts}`, the preload surface snapshot.
-- Tests at `3ba6864`: 306 files, 5,881 passed, 2 skipped. Baseline at `248a25c`: 5,694 passed, 2 skipped.
+- Tests at `6716f59`: 306 files, 5,952 passed, 2 skipped. Baseline at `248a25c`: 5,694 passed, 2 skipped.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`.
 - The demo: `node node_modules/.verify/yaz-2648-demo.mjs <demo-dir>` makes the vault "Tab Management", a second vault and an app profile. Run the app on it with `YASEEN_DOCS_USER_DATA_DIR=<demo-dir>/profile npm run dev`. The script is not in git.
 - For the release notes: the state before this work is `main` at `248a25c`.
