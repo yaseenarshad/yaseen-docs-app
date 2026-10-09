@@ -42,6 +42,18 @@ async function roundTrip(markdown: string): Promise<string> {
   return out
 }
 
+/** One open of `markdown`: the text a save writes, and the number of paragraphs on the page. */
+async function openAndSave(markdown: string): Promise<{ text: string; paragraphs: number }> {
+  const { crepe, close } = await open(markdown)
+  let paragraphs = 0
+  crepe.editor.ctx.get(editorViewCtx).state.doc.descendants((node) => {
+    if (node.type.name === 'paragraph') paragraphs++
+  })
+  const text = getMarkdownForSave(crepe)
+  await close()
+  return { text, paragraphs }
+}
+
 /** Inline node type names of the first paragraph inside the first node of `type`. */
 async function inlineTypes(markdown: string, type: string): Promise<string[]> {
   const { crepe, close } = await open(markdown)
@@ -214,6 +226,37 @@ describe('inline <br> elsewhere', () => {
     expect(await inlineTypes('a<br><br>\n\nb', 'paragraph')).toEqual(['text'])
     expect(await roundTrip('a<br><br>\n\nb')).toBe('a\n\nb\n')
     expect(await roundTrip('a<br>')).toBe('a\n')
+  })
+})
+
+/**
+ * A `<br>` and the line ending beside it are ONE hard break. Each case is saved, the saved text
+ * is opened again, and that is saved too: the paragraph must not split, and a second save must
+ * not add a backslash.
+ */
+describe('a <br> beside a line ending is one line break (YAZ-2659)', () => {
+  it.each([
+    { id: 'B1', shape: '`<br>` at a line end', file: 'a<br>\nb', saved: 'a\\\nb\n', paragraphs: 1 },
+    { id: 'B2', shape: '`<br />` at a line end', file: 'a<br />\nb', saved: 'a\\\nb\n', paragraphs: 1 },
+    { id: 'B3', shape: '`<br>` on a line of its own', file: 'a\n<br>\nb', saved: 'a\\\nb\n', paragraphs: 1 },
+    { id: 'B4', shape: 'a space before the `<br>`', file: 'x <br>\ny', saved: 'x \\\ny\n', paragraphs: 1 },
+    { id: 'B5', shape: 'two `<br>` at a line end', file: 'a<br><br>\nb', saved: 'a\\\n\\\nb\n', paragraphs: 1 },
+    { id: 'B6', shape: 'a bullet', file: '* a<br>\n  b\n* c', saved: '* a\\\n  b\n* c\n', paragraphs: 2 },
+    { id: 'B7', shape: 'a quote', file: '> a<br>\n> b', saved: '> a\\\n> b\n', paragraphs: 1 },
+    { id: 'B8', shape: '`a<br>b` on one line', file: 'a<br>b', saved: 'a\\\nb\n', paragraphs: 1 },
+    { id: 'B9', shape: '`<br>` at the end of a paragraph', file: 'a<br>', saved: 'a\n', paragraphs: 1 },
+    { id: 'B9', shape: '`<br>` at the end of a paragraph with a paragraph below', file: 'a<br>\n\nb', saved: 'a\n\nb\n', paragraphs: 2 },
+    { id: 'B11', shape: 'a lone `<br />` paragraph', file: 'p1\n\n<br />\n\np2', saved: 'p1\n\n<br />\n\np2\n', paragraphs: 3 },
+  ])('$id, $shape: the paragraphs stay after the next open, and the second save is the first save (B12)', async ({ file, saved, paragraphs }) => {
+    const first = await openAndSave(file)
+    expect(first).toEqual({ text: saved, paragraphs })
+    expect(await openAndSave(first.text)).toEqual(first)
+  })
+
+  it('B10, a table cell: the cell keeps its `<br>`, and the second save is the first save (B12)', async () => {
+    const first = await openAndSave(table('a<br>b'))
+    expect(savedCell(first.text)).toBe('a<br>b')
+    expect(await openAndSave(first.text)).toEqual(first)
   })
 })
 
