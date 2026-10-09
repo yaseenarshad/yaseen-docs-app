@@ -79,6 +79,8 @@ export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 export const contents = (w: Page) => layer(w).locator('.folder-view')
 export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
+/** The preview tab (YAZ-2648 D1): the one tab a sidebar click reuses, its name italic. None when every tab is a kept tab. */
+export const previewTab = (w: Page) => w.locator('.tabbar .tabbar__tab--preview [role="tab"]')
 /** A file row of the sidebar tree by its exact label. */
 export const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /**
@@ -264,7 +266,8 @@ export async function expandDirs(win: Page, dirs: string[]): Promise<void> {
 }
 
 /**
- * Opens the folder `dir` (absolute path) as the CURRENT tab, by the double click a user makes on
+ * Opens the folder `dir` (absolute path) as a KEPT tab at the end of the strip, and the active one
+ * (YAZ-2648 D2 — before it, the folder took the current tab's place), by the double click a user makes on
  * its Files row (YAZ-2290 D3; `onDoubleClick` in client/src/sidebar/Tree.tsx). The two clicks of
  * that gesture fold and unfold the row on the way, so it ends as open or shut as it started.
  * Resolves once the folder view is on screen. A nested folder needs `expandDirs` on its ancestors.
