@@ -185,7 +185,8 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   const records: IndexRecord[] = []
   const folders: IndexRecord[] = []
   for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? r : plain(r))
-  return { root, records, folders, generatedAt: Date.now(), ids, ...(answer === undefined && { ask: wouldWrite(entry.records, entry.dirs) }) }
+  // `ask` goes out while the answer is not yes (YAZ-2677 🔒 D2): the box in Settings shows the counts for a vault that said no too.
+  return { root, records, folders, generatedAt: Date.now(), ids, ...(!ids && { ask: wouldWrite(entry.records, entry.dirs) }) }
 }
 
 /** A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties. */

@@ -112,3 +112,45 @@ describe('ConfirmSheet without onDismiss: unchanged', () => {
     expect(calls()).toEqual([1, 2, 0])
   })
 })
+
+/** A sheet that cannot be confirmed yet (YAZ-2677 🔒 D2): the box in Settings, until the typed ID letters are valid. */
+describe('ConfirmSheet with confirmDisabled: the confirm button and Enter do nothing', () => {
+  const renderDisabled = (confirmDisabled: boolean): HTMLElement => {
+    Object.values(cb).forEach((fn) => fn.mockClear())
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    act(() => root?.render(<ConfirmSheet labelId="t" text="Text" confirmLabel="Yes" confirmDisabled={confirmDisabled} onConfirm={cb.onConfirm} onCancel={cb.onCancel} />))
+    return host
+  }
+
+  it('the confirm button is disabled and a click on it confirms nothing', () => {
+    const el = renderDisabled(true)
+    expect(buttons(el).map((b) => b.disabled)).toEqual([false, true])
+    act(() => buttons(el)[1].click())
+    expect(calls()).toEqual([0, 0, 0])
+  })
+
+  it('Enter confirms nothing, and is swallowed so it cannot press the focused Cancel', () => {
+    renderDisabled(true)
+    expect(key('Enter').defaultPrevented).toBe(true)
+    expect(calls()).toEqual([0, 0, 0])
+  })
+
+  it('Cancel, Esc and a click outside still cancel', () => {
+    const el = renderDisabled(true)
+    act(() => buttons(el)[0].click())
+    key('Escape')
+    clickAway(el)
+    expect(calls()).toEqual([0, 3, 0])
+  })
+
+  it('once it is false again, the button and Enter confirm', () => {
+    const el = renderDisabled(true)
+    act(() => root?.render(<ConfirmSheet labelId="t" text="Text" confirmLabel="Yes" confirmDisabled={false} onConfirm={cb.onConfirm} onCancel={cb.onCancel} />))
+    expect(buttons(el)[1].disabled).toBe(false)
+    act(() => buttons(el)[1].click())
+    key('Enter')
+    expect(calls()).toEqual([2, 0, 0])
+  })
+})

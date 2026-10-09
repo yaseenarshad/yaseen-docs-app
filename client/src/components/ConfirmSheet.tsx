@@ -32,11 +32,13 @@ export interface ConfirmSheetProps {
    * holds the focus itself: on a button, a Space typed as the sheet appears would press an answer.
    */
   onDismiss?: () => void
+  /** While true, the confirm button and Enter do nothing (YAZ-2677 🔒 D2): the sheet waits for input in `children`. */
+  confirmDisabled?: boolean
   /** Extra controls between the text and the buttons (the delete sheet's "Don't ask me again"). */
   children?: ReactNode
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, cancelLabel = 'Cancel', onDismiss, children }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, cancelLabel = 'Cancel', onDismiss, confirmDisabled = false, children }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
   const dismiss = onDismiss ?? onCancel
@@ -55,14 +57,14 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
     e.preventDefault()
     if (keys === 'contained') e.stopPropagation()
     if (e.key === 'Escape') dismiss()
-    else if (onDismiss === undefined) onConfirm()
+    else if (onDismiss === undefined && !confirmDisabled) onConfirm()
   }
 
   useEffect(() => {
     if (keys !== 'window') return
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [keys, onConfirm, onCancel, onDismiss]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
+  }, [keys, onConfirm, onCancel, onDismiss, confirmDisabled]) // eslint-disable-line react-hooks/exhaustive-deps -- `onKey` reads exactly these
 
   return (
     <div
@@ -82,7 +84,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
           <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
             {cancelLabel}
           </button>
-          <button type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onConfirm}>
+          <button type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} disabled={confirmDisabled} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>

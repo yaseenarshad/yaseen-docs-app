@@ -13,7 +13,7 @@
  *
  * Both vaults are copies of the generated fixture under FIXED folder names, as in
  * `multiVault.spec.ts`: each row is found by its `data-path`, since the two trees hold the same
- * names, and each vault has answered "Not for this vault" on IDs, so a row reads its file name.
+ * names, and each vault has said no to IDs (`.yaseendocs/ids.json`), so a row reads its file name.
  * THE DRAG is `dragAbove` (helpers.ts), the one `favorites.spec.ts` reorders with.
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, copies of the generated fixture,
@@ -98,7 +98,7 @@ test.beforeAll(async () => {
   vaultA = path.join(vaultsDir, ALPHA)
   vaultB = path.join(vaultsDir, BETA)
   await Promise.all([cp(vaultSrc, vaultA, { recursive: true }), cp(vaultSrc, vaultB, { recursive: true })])
-  // Each vault has said no to IDs ("Two kinds of vault"): no box asks, and nothing is written into a note.
+  // Each vault has said no to IDs ("Two kinds of vault"): the app writes nothing into a note. No vault is asked when it opens (YAZ-2677 D1).
   for (const vault of [vaultA, vaultB]) {
     await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: false }))
