@@ -87,7 +87,7 @@ test('a state file with no lens boots on FILES (YAZ-1846 D1): the file tree', as
 
 // ---------------------------------------------------------------- the Search tab (YAZ-2638 D2)
 
-test('the Search tab has the bar and one line of help; a click on the tab and Esc in the page put the caret in the bar; Esc in the bar and the `esc` keycap go back to the lens the window last showed; no lens has the bar', async () => {
+test('the Search tab has the bar, one line of help and the keys of the search; a click on the tab and Esc in the page put the caret in the bar; Esc in the bar and the `esc` keycap go back to the lens the window last showed and put the caret in the open page; no lens has the bar', async () => {
   // A click on the tab shows it, with the caret in its bar (S5) and no tree below (S7).
   await searchTab(win).click()
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
@@ -95,6 +95,8 @@ test('the Search tab has the bar and one line of help; a click on the tab and Es
   await expect(searchBar(win)).toBeFocused()
   await expect(keycap(win)).toBeVisible()
   await expect(bodyMsg(win)).toHaveText(SEARCH_EMPTY)
+  // Below the line, the keys of the search: seven rows (YAZ-2662 S59). `search.spec.ts` reads their words.
+  await expect(win.locator('.sidebar__body .sidebar__keys dd')).toHaveCount(7)
   await expect(fileRow(win, 'Ideas')).toHaveCount(0)
   await shoot(win, 'lens-02-search-tab')
 
@@ -119,11 +121,13 @@ test('the Search tab has the bar and one line of help; a click on the tab and Es
   await expect(searchBar(win)).toBeVisible()
   await expect(searchBar(win)).not.toBeFocused()
 
-  // Esc goes back to the lens the window last showed: Files (S12).
+  // Esc goes back to the lens the window last showed: Files (S12). The caret goes into the open
+  // page (YAZ-2662 S56; before, the focus was given up).
   await searchBar(win).press('Escape')
   await expectLens(win, 'Files')
   await expect(searchBar(win)).toHaveCount(0)
   await expect(fileRow(win, 'Ideas')).toBeVisible()
+  await expect(editorOf(win)).toBeFocused()
 
   // From the Focus tab the way back is the Focus tab — by the keycap this time (S13). Focus has no bar either (S6).
   await focusTab(win).click()
@@ -135,6 +139,8 @@ test('the Search tab has the bar and one line of help; a click on the tab and Es
   await keycap(win).click()
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(bodyMsg(win)).toHaveText(FOCUS_EMPTY)
+  // A click on the keycap is the Esc key (YAZ-2662 S58): the caret is in the open page after it too.
+  await expect(editorOf(win)).toBeFocused()
 })
 
 test('the Search tab is never stored (YAZ-2638 S15): a window that quits on it starts again on its last lens', async () => {
