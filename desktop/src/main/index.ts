@@ -19,7 +19,7 @@ import { createStore } from './store'
 import { runQuitSequence } from './quitSequence'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
-import { flushIndexCache, initIndexCache } from './vaultIndex'
+import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
 import { createWindowOpenHandler } from './windowOpenPolicy'
@@ -220,7 +220,8 @@ app.on('before-quit', (event) => {
   void runQuitSequence({
     flushWindows: () => manager.flushAllForQuit(),
     flushStore: () => store.flush(),
-    flushIndex: flushIndexCache,
+    // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
+    flushIndex: () => Promise.all([flushIndexCache(), flushDiaries()]).then(() => undefined),
     flushSync: () => gitSync?.flushForQuit(),
     exit: () => app.exit(0),
   })

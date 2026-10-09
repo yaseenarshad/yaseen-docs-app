@@ -43,6 +43,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
 import { pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
@@ -134,8 +135,8 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   }
 }
 
-/** Non-embed wiki links; inner brackets are unrepresentable (same shape as the index's WIKILINK_RE). */
-export const WIKILINK_RE = /(!?)\[\[([^[\]]+)\]\]/g
+// The wiki link pattern is the shared rewrite's (YAZ-2677): the editor and the rewrite read one shape.
+export { WIKILINK_RE }
 
 /**
  * The page-name half of a raw `[[inner]]` text: `|alias` and `#heading` / `#^block` stripped,

@@ -42,9 +42,9 @@ export interface VaultScope {
   renames: ExternalRenames
   /**
    * The vault's IDs as its last snapshot said them (YAZ-2523 🔒 V5), its ID letters as its `ids.json`
-   * holds them now, and the switch (YAZ-2677 🔒 D2); undefined until its index has loaded.
+   * holds them now, the switch (YAZ-2677 🔒 D2) and the duplicate check (🔒 D7); undefined until its index has loaded.
    */
-  ids: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void } | undefined
+  ids: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void; check: () => Promise<string> } | undefined
   /** Every READY index snapshot of this vault, from its `WikilinkIndexBridge`. */
   onSnapshot: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => void
 }
@@ -121,17 +121,18 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   /** The keys of the vault's `ids.json` as they are on disk now; a missing file has none. Rejects on a file that is not valid JSON. */
   const readIds = (vault: string): Promise<Record<string, unknown>> => api.vaultConfig.read(vault, IDS_FILE).then((config) => (typeof config === 'object' && config !== null && !Array.isArray(config) ? (config as Record<string, unknown>) : {}))
   /**
-   * Save the vault's answer in its `ids.json` (🔒 V1), from Settings, and with a yes its ID letters
-   * (YAZ-2677 🔒 D2); the index refetches off the write. Each key that the save does not change
-   * stays (R10, R12): `letters` and `was` are read off the disk first. A file that cannot be read
-   * is not written over.
+   * Save the vault's answer (🔒 V1), from Settings, and with a yes its ID letters (YAZ-2677 🔒 D2).
+   * The main process does the save (`ids:set`): it reads and writes `ids.json` as one step, so each
+   * key that the save does not change stays (R10, R12) and two windows that save at one moment each
+   * keep the other's change; and a yes gives the numbers now, on this Mac (R32, S64). The index
+   * refetches off the write. A file that cannot be read is not written over.
    */
   const saveIds = (enabled: boolean, letters?: string): void => {
     if (root === null) return
-    readIds(root)
-      .then((config) => api.vaultConfig.write(root, IDS_FILE, { ...config, enabled, ...(letters !== undefined && { letters }) }))
-      .catch((err: unknown) => notify(`Couldn't save this vault's answer: ${said(err)}`, 'error'))
+    api.ids.set(root, enabled, letters).catch((err: unknown) => notify(`Couldn't save this vault's answer: ${said(err)}`, 'error'))
   }
+  /** "Check for duplicates" (YAZ-2677 🔒 D7): the result in one line, for the row in Settings. */
+  const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))
   /** The vault's ID letters, read when Settings asks (S9). A file that cannot be read is said in the notice, and the caller opens no box. */
   const readLetters = (): Promise<string | undefined> =>
     root === null
@@ -155,7 +156,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     reviewSettings,
     review,
     renames,
-    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: saveIds },
+    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: saveIds, check: checkIds },
     onSnapshot,
   }
 }

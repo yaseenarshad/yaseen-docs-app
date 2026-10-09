@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { IDS_FILE, NOTE_ID_KEY, isNoteId, isNumberId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { copyEntry } from '../fs/copy'
+import { makeFirstMac, removeVault } from '../fs/testFixture'
 import { createDir, createFile } from '../fs/create'
 import { renameFile } from '../fs/rename'
 import { tree } from '../fs/tree'
@@ -14,7 +15,7 @@ import { writeConfig } from '../vaultConfig'
 import { _resetIndexCache } from './cache'
 import { carryFolderValues, sweepIds } from './idSweep'
 import { _evictAll, flushIndexCache, getColdStartDiff, getIndex, initIndexCache } from './index'
-import { COUNT_DIR, doorOf, macId } from './mint'
+import { COUNT_DIR, countsOf, doorOf, macId } from './mint'
 import { scanFile, walk } from './scan'
 
 // Passthrough, with one seam: what ANOTHER WRITER does between the sweep's read of a file — found
@@ -33,9 +34,27 @@ vi.mock('../fs/file', async (importOriginal) => {
     },
   }
 })
-/** The other writer, once: `content` lands in the file the sweep has just read. */
+// Passthrough spy: the count files are asked for only where the sweep needs them (YAZ-2677).
+vi.mock('./mint', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./mint')>()
+  return { ...real, countsOf: vi.fn(real.countsOf) }
+})
+
+/** The other writer, once: `content` lands in the file that has just been read. */
 const writesAfterTheRead = (content: string): void => {
   race.afterRead = async (file) => {
+    race.afterRead = undefined
+    await writeFile(file, content)
+  }
+}
+/**
+ * The same under a SWEEP: `content` lands after the sweep's read for its WRITE. That is its second
+ * read of a file: the first only counts what still needs a number (YAZ-2677).
+ */
+const writesUnderTheSweep = (content: string): void => {
+  const counted = new Set<string>()
+  race.afterRead = async (file) => {
+    if (!counted.has(file)) return void counted.add(file)
     race.afterRead = undefined
     await writeFile(file, content)
   }
@@ -55,7 +74,7 @@ beforeEach(async () => {
 afterEach(async () => {
   race.afterRead = undefined
   _evictAll()
-  await rm(root, { recursive: true, force: true })
+  await removeVault(root)
 })
 
 const at = (...p: string[]) => path.join(root, ...p)
@@ -182,9 +201,11 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
   it('a no that arrives while the pass is running stops it: the note being written is finished, the rest are left as they are (YAZ-2523 V4)', async () => {
     const records = await vault({ 'a.md': 'a\n', 'b.md': 'b\n', 'c.md': 'c\n' })
     await mkdir(at('Projects'))
-    // The other writer here is the user, saying no in Settings just as the first note is read.
+    // The other writer here is the user, saying no in Settings just as the first note is read for its write.
+    let counted = false
     race.afterRead = async (file) => {
       if (file !== at('a.md')) return
+      if (!counted) return void (counted = true)
       race.afterRead = undefined
       await writeConfig(root, IDS_FILE, { enabled: false, letters: 'YAZ' })
     }
@@ -232,7 +253,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
   it('another tool’s `id` is replaced under the sweep’s guards: nothing in a vault that has not said yes, and never over bytes another writer changed since the read (D30)', async () => {
     const foreign = '---\nid: 42\n---\nbody\n'
     const records = await vault({ 'a.md': foreign })
-    writesAfterTheRead('---\nid: 42\n---\nbody, edited elsewhere\n')
+    writesUnderTheSweep('---\nid: 42\n---\nbody, edited elsewhere\n')
     await sweep(records)
     expect(await read('a.md')).toBe('---\nid: 42\n---\nbody, edited elsewhere\n')
     await rm(at(VAULT_CONFIG_DIR), { recursive: true })
@@ -249,7 +270,7 @@ describe('sweepIds: a note with no id gets one (D3)', () => {
 
   it("a file another writer changes between the sweep's read and its write keeps that writer's bytes; its next scan is given the id (A9)", async () => {
     const records = await vault({ 'a.md': 'body\n' })
-    writesAfterTheRead('body, edited elsewhere\n')
+    writesUnderTheSweep('body, edited elsewhere\n')
     await sweep(records)
     expect(await read('a.md')).toBe('body, edited elsewhere\n') // the mtime guard: no id, and nothing of the stale read
     await sweep(new Map([[at('a.md'), await scanFile(root, at('a.md'))]]))
@@ -396,10 +417,10 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
 
   it('never writes over a `.folder.md` that appears between its look and its write, and a folder gone by then is passed over: nothing is thrown', async () => {
     await mkdir(at('Projects'))
-    writesAfterTheRead('---\nid: k3m9x2pq7abc\nlabel: theirs\n---\n')
+    writesUnderTheSweep('---\nid: k3m9x2pq7abc\nlabel: theirs\n---\n')
     await sweepFolders()
     expect(await settingsOf('Projects')).toBe('---\nid: k3m9x2pq7abc\nlabel: theirs\n---\n')
-    await expect(sweepIds(root, new Map(), [], () => undefined, [at('Gone'), at('Projects')])).resolves.toBeUndefined()
+    await expect(sweepIds(root, new Map(), [], () => undefined, [at('Gone'), at('Projects')])).resolves.toEqual({ fixes: [], theirs: [], copies: [], later: [], kept: new Map() })
     expect(await names()).toEqual([VAULT_CONFIG_DIR, 'Projects'])
   })
 
@@ -573,6 +594,9 @@ describe('a copied folder’s notes carry their values to the copy (YAZ-2455)', 
 })
 
 describe('sweepIds, wired into the live index', () => {
+  // The sweep's numbers come at once only on the vault's first Mac (YAZ-2677 R31): this Mac is it.
+  beforeEach(() => makeFirstMac(root))
+
   const until = async (pred: () => Promise<boolean>, ms = 5000) => {
     const t0 = Date.now()
     while (!(await pred())) {
@@ -965,5 +989,120 @@ describe('sweepIds, wired into the live index', () => {
       return isNoteId(second) && second !== first
     })
     expect(await idIn('Plan.md')).toBe(first)
+  })
+})
+
+// YAZ-2677 (a finding on YAZ-2681): each index event starts a sweep, and a file that just arrived is
+// often in two of them — the first index and its own `add`, or an `add` and a `change`. Each sweep
+// counted the file and took a number for it; one wrote, and the other's number was a gap.
+describe('sweepIds: a number is taken one time for a file, however many sweeps see it (YAZ-2677 R19)', () => {
+  it('two sweeps of one note with no id, started at the same moment, take one number', async () => {
+    const records = await vault({ 'a.md': 'body\n' })
+    await Promise.all([sweep(records), sweep(records)])
+    expect(await idIn('a.md')).toBe('YAZ-1')
+    expect((await countOf())?.last).toBe(1)
+  })
+
+  it('a sweep that still holds the record of before, after another sweep gave the note its id, takes no number', async () => {
+    const records = await vault({ 'a.md': 'body\n', 'b.md': 'body\n' })
+    await sweep(records)
+    // The index has not read the two notes again yet: its records still say that they hold no id.
+    await sweep(records)
+    expect((await countOf())?.last).toBe(2)
+  })
+
+  it('a folder that an `addDir` event and the first index both see takes one number for its settings file', async () => {
+    await mkdir(at('Projects'))
+    const records = new Map<string, IndexRecord>()
+    await Promise.all([sweepIds(root, records, [], () => undefined, [at('Projects')]), sweepIds(root, records, [], () => undefined, [at('Projects')])])
+    expect(await idIn('Projects', FOLDER_SETTINGS_FILE)).toBe('YAZ-1')
+    expect((await countOf())?.last).toBe(1)
+  })
+
+  it('a note that cannot be written (its file is read-only) costs one number, not one for each sweep', async () => {
+    const records = await vault({ 'locked.md': 'body\n' })
+    await chmod(at('locked.md'), 0o444)
+    await chmod(root, 0o555)
+    try {
+      await sweep(records)
+      await sweep(records)
+      await sweep(records)
+    } finally {
+      await chmod(root, 0o755)
+    }
+    expect(await read('locked.md')).toBe('body\n')
+    expect((await countOf())?.last ?? 0).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('sweepIds: the count files are not read for each index event (YAZ-2677)', () => {
+  it('a note that holds its own ID asks nothing of the count files; two notes with one ID ask one time; a note that waits asks one time', async () => {
+    const records = await vault({ 'a.md': '---\nid: YAZ-1\n---\n', 'b.md': '---\nid: YAZ-2\n---\n', 'c.md': 'no id\n' })
+    const event = (rel: string, waits?: Map<string, number>) => sweepIds(root, records, [records.get(at(rel))!], (p) => records.get(p)?.id, [], { waits })
+    vi.mocked(countsOf).mockClear()
+    await event('a.md')
+    await event('b.md', new Map())
+    expect(countsOf).not.toHaveBeenCalled()
+    // A file that needs a number from the sweep: is this Mac the first? One question for the whole pass.
+    // (The vault has no count file yet, so no Mac is first, and both files wait.)
+    const more = await vault({ 'd.md': 'no id\n', 'e.md': 'no id\n' })
+    const waits = new Map<string, number>()
+    await sweepIds(root, more, [...more.values()], () => undefined, [], { waits })
+    expect(countsOf).toHaveBeenCalledTimes(1)
+    expect([...waits.keys()].sort()).toEqual([at('d.md'), at('e.md')])
+    expect(await read('d.md')).toBe('no id\n')
+    // The user asked (no `waits`): the number comes at once, and which Mac is first is not asked.
+    vi.mocked(countsOf).mockClear()
+    await event('c.md')
+    expect(countsOf).not.toHaveBeenCalled()
+    expect(await idIn('c.md')).toBe('YAZ-3')
+    // Two notes, one ID.
+    vi.mocked(countsOf).mockClear()
+    const pair = await vault({ 'a.md': '---\nid: YAZ-1\n---\n', 'a copy.md': '---\nid: YAZ-1\n---\n' })
+    await sweepIds(root, pair, [pair.get(at('a copy.md'))!], (p) => (p === at('a.md') ? 'YAZ-1' : undefined))
+    expect(countsOf).toHaveBeenCalledTimes(1)
+    expect([await idIn('a.md'), await idIn('a copy.md')]).toEqual(['YAZ-1', 'YAZ-4'])
+  })
+})
+
+describe('sweepIds: index events that arrive while a pass waits join that pass (YAZ-2677 R19)', () => {
+  it('a sync that brings many notes is few passes: the notes that arrive while one pass runs take all their numbers with ONE write of the count file', async () => {
+    await makeFirstMac(root)
+    const names = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']
+    const records = await vault(Object.fromEntries(names.map((name) => [name, 'body\n'])))
+    const waits = new Map<string, number>()
+    // Each note arrives as its own index event, all in one moment.
+    const results = await Promise.all(names.map((name) => sweepIds(root, records, [records.get(at(name))!], () => undefined, [], { waits })))
+    expect(new Set(await Promise.all(names.map((name) => idIn(name))))).toEqual(new Set(['YAZ-1', 'YAZ-2', 'YAZ-3', 'YAZ-4', 'YAZ-5']))
+    // The first event started a pass, and the four that arrived before it began joined it: ONE pass, one run in `made`.
+    expect((await countOf())?.made).toEqual([expect.objectContaining({ from: 1, to: 5 })])
+    expect(results).toHaveLength(5)
+    // A note that arrives while that pass RUNS starts the next pass, and waits for it.
+    const late = await vault({ 'f.md': 'body\n', 'g.md': 'body\n' })
+    const running = sweepIds(root, late, [late.get(at('f.md'))!], () => undefined, [], { waits })
+    await new Promise((resolve) => setImmediate(resolve))
+    await Promise.all([running, sweepIds(root, late, [late.get(at('g.md'))!], () => undefined, [], { waits })])
+    expect((await countOf())?.made.map(({ from, to }) => [from, to])).toEqual([[1, 5], [6, 6], [7, 7]])
+  })
+
+  it('what a joined pass did is reported one time, to the event that started it', async () => {
+    await makeFirstMac(root)
+    const records = await vault({ 'held.md': '---\nid: k3m9x2pq7abc\n---\n', 'first.md': 'body\n', 'a copy.md': '---\nid: k3m9x2pq7abc\n---\n', 'b copy.md': '---\nid: k3m9x2pq7abc\n---\n' })
+    const waits = new Map<string, number>()
+    const knew = (p: string) => (p === at('held.md') ? 'k3m9x2pq7abc' : undefined)
+    const event = (name: string) => sweepIds(root, records, [records.get(at(name))!], knew, [], { waits })
+    const [first, second, third] = await Promise.all([event('first.md'), event('a copy.md'), event('b copy.md')])
+    expect(first.copies.map((c) => c.title).sort()).toEqual(['a copy', 'b copy'])
+    expect(second.copies).toEqual([])
+    expect(third.copies).toEqual([])
+    expect(isNumberId(await idIn('first.md'))).toBe(true)
+    expect(await idIn('held.md')).toBe('k3m9x2pq7abc')
+  })
+
+  it('a pass the user asked for is never joined: each "Give IDs" and each "Check for duplicates" is its own pass, with its own result', async () => {
+    const records = await vault({ 'a.md': 'body\n', 'b.md': 'body\n' })
+    const [a, b] = await Promise.all([sweepIds(root, records, [records.get(at('a.md'))!], () => undefined), sweepIds(root, records, [records.get(at('b.md'))!], () => undefined)])
+    expect([a, b].map((r) => r.copies)).toEqual([[], []])
+    expect((await countOf())?.made.map(({ from, to }) => [from, to])).toEqual([[1, 1], [2, 2]])
   })
 })

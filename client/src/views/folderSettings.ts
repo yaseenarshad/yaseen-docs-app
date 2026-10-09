@@ -11,16 +11,15 @@ import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitF
 import { PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { isRecord } from '@shared/guards'
-import { mapOutlineLinks } from './outlineDoc'
+import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 import type { ViewDef } from './viewSchema'
 import { transformFile, writeProperty } from './writeProperty'
 
 /**
- * The one reserved key this module owns; nothing else may name it — exported (⚡ YAZ-884) only so
- * the properties panel's RESERVED list can be spelled from the real constants. Reading or writing
- * it stays this module's business.
+ * The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
+ * `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
  */
-export const FOLDER_SETTINGS_KEY = 'folder_settings'
+export { FOLDER_SETTINGS_KEY, folderSettingsLinks, mapFolderSettingsLinks } from '@shared/folderSettingsLinks'
 
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export type ColumnDecl = PropertyDecl
@@ -216,74 +215,6 @@ export function folderSettings(record: IndexRecord | undefined, ids: boolean): F
     views: readViews(raw.views, problems, ids),
     problems,
   }
-}
-
-/**
- * WHERE LINKS LIVE inside the one key, and the ONE place that knows it (YAZ-864). A rename has to
- * walk INTO `folder_settings` — the one reserved key with app-defined link semantics (🔒 Q1) —
- * and the rule that no surface re-parses that key holds for the rename engine too: it comes through
- * here, and the key STRING rides back in the result rather than being spelled anywhere else.
- *
- * The link-bearing leaves are exactly three: every view's [D5] `order` entry (🔒 Q3), every
- * outline LINE that is exactly a wikilink (🔒 D2, YAZ-900 — the line rule stays `outlineDoc`'s,
- * never re-spelled here) and every column's belongs-to `target` (🔒 Q2) — the places this module's
- * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT,
- * and a wikilink sitting inside an outline line's PROSE is not a leaf at all. Everything else in the
- * value — unknown view types, extra keys, unusable shapes — rides along verbatim.
- *
- * Deliberately over the RAW value, not the tolerant read: `folderSettings()` normalises and
- * DROPS what it cannot use, so a rewrite built on it would quietly delete a hand-written shape,
- * and a probe built on it would disagree with the rewrite about which leaves even exist. Null when
- * no leaf changed, so a page with settings but no reference is never written at all.
- */
-export function mapFolderSettingsLinks(
-  properties: Record<string, unknown>,
-  map: (link: string) => string | undefined,
-): { key: string; value: unknown } | null {
-  const raw = properties[FOLDER_SETTINGS_KEY]
-  if (!isRecord(raw)) return null
-  let changed = false
-  const mapLink = (link: unknown): unknown => {
-    const next = typeof link === 'string' ? map(link) : undefined
-    if (next === undefined) return link
-    changed = true
-    return next
-  }
-  // Spread-then-reassign, so every untouched key keeps its value AND its position.
-  const value: Record<string, unknown> = { ...raw }
-  if (Array.isArray(raw.views)) {
-    value.views = raw.views.map((view: unknown) => {
-      if (!isRecord(view)) return view
-      const next: Record<string, unknown> = { ...view }
-      if (Array.isArray(view.order)) next.order = view.order.map(mapLink)
-      if (typeof view.outline === 'string') {
-        const outline = mapOutlineLinks(view.outline, map)
-        if (outline !== undefined) {
-          changed = true
-          next.outline = outline
-        }
-      }
-      return next
-    })
-  }
-  if (isRecord(raw.columns)) {
-    const columns: Record<string, unknown> = {}
-    for (const [name, column] of Object.entries(raw.columns)) {
-      columns[name] = isRecord(column) && 'target' in column ? { ...column, target: mapLink(column.target) } : column
-    }
-    value.columns = columns
-  }
-  return changed ? { key: FOLDER_SETTINGS_KEY, value } : null
-}
-
-/** The same leaves for a caller that only needs to LOOK — verbatim, in walk order (YAZ-864). */
-export function folderSettingsLinks(properties: Record<string, unknown>): string[] {
-  const links: string[] = []
-  mapFolderSettingsLinks(properties, (link) => {
-    links.push(link)
-    return undefined
-  })
-  return links
 }
 
 /** The typed settings as the plain map YAML holds; `problems` are a read-time report and never reach disk. */

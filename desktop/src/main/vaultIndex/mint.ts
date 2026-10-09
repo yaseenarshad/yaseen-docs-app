@@ -71,12 +71,13 @@ function parseCount(raw: string): CountFile | null {
   }
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return null
   const { name, since, last, made } = doc as Record<string, unknown>
-  if (!isNumber(last) || !isTime(since)) return null
+  // `last: 0` is a Mac that has a count file and gave no number yet. The door never writes one; it is read like any other.
+  if (!(last === 0 || isNumber(last)) || !isTime(since)) return null
   const runs = (Array.isArray(made) ? made : []).filter((run: unknown): run is Run => {
     const { from, to, at } = (run ?? {}) as Record<string, unknown>
     return isNumber(from) && isNumber(to) && from <= to && isTime(at)
   })
-  return { name: typeof name === 'string' ? name : '', since, last, made: runs.slice(-MADE_MAX).map(({ from, to, at }) => ({ from, to, at })) }
+  return { name: typeof name === 'string' ? name : '', since, last: last as number, made: runs.slice(-MADE_MAX).map(({ from, to, at }) => ({ from, to, at })) }
 }
 
 /** One run on each line: a sync tool that shows the file's changes shows one line for one new note. */
@@ -86,6 +87,8 @@ const serialise = ({ name, since, last, made }: CountFile): string =>
 // ---------- this Mac ----------
 
 let appData: string | undefined
+/** Test hook (`_actAs`): the app data folder of the Mac that a vault folder stands for. */
+const appDataOf = new Map<string, string>()
 /** The Mac ID of each app data folder asked, read or made one time. */
 const macs = new Map<string, Promise<string>>()
 
@@ -97,13 +100,16 @@ export function initMint(userData: string): void {
   appData = userData
 }
 
+/** This Mac's app data folder: its ID is kept there, and so is its diary of each vault (`diary.ts`). `root` only tells Macs apart in a test. */
+export const appDataDir = (root?: string): string => (root === undefined ? undefined : appDataOf.get(root)) ?? appData ?? userDataDir(process.env, process.platform, homedir())
+
 /**
  * This Mac's ID (R13): a random name made one time and kept in the app data, never the host name —
  * two Macs can share a host name, and a Mac can change its own. Created and never written over: of
  * the app and the command starting together, the second reads what the first made.
  */
-export function macId(): Promise<string> {
-  const dir = appData ?? userDataDir(process.env, process.platform, homedir())
+export function macId(root?: string): Promise<string> {
+  const dir = appDataDir(root)
   let id = macs.get(dir)
   if (id === undefined) {
     id = readOrMakeMacId(dir)
@@ -251,7 +257,7 @@ async function take(root: string, door: Door, count: number, floor: number | und
   const ids = await vaultIds(root)
   if (ids.answer !== true) return null
   const dir = countDir(root)
-  const own = `${await macId()}.json`
+  const own = `${await macId(root)}.json`
   const file = path.join(dir, own)
   for (let attempt = 0; ; attempt++) {
     await refresh(door, dir, own)
@@ -283,10 +289,15 @@ async function take(root: string, door: Door, count: number, floor: number | und
  * caller already holds them (the sweep); else the index is asked (`countNotesWith`).
  */
 export function mintIds(root: string, count: number, floor?: number): Promise<string[] | null> {
+  return inTurn(root, (door) => take(root, door, count, floor))
+}
+
+/** `ask` behind every request already made of the door of `root`: one at a time for a vault (R17). */
+function inTurn<T>(root: string, ask: (door: Door) => Promise<T>): Promise<T> {
   let door = doors.get(root)
   if (door === undefined) doors.set(root, (door = { turn: Promise.resolve(), files: new Map() }))
   const held = door
-  const mine = held.turn.then(() => take(root, held, count, floor))
+  const mine = held.turn.then(() => ask(held))
   held.turn = mine.catch(() => undefined)
   return mine
 }
@@ -313,18 +324,85 @@ export async function doorOf(root: string): Promise<IdDoor | null> {
   }
 }
 
-/** Each Mac's count file in the vault at `root`, by its Mac ID, read off the disk. A file that is not a count is left out. */
-export async function readCounts(root: string): Promise<Map<string, CountFile>> {
-  const door: Door = { turn: Promise.resolve(), files: new Map() }
-  const own = `${await macId()}.json`
-  await refresh(door, countDir(root), own)
-  return new Map([...door.files].flatMap(([name, { count }]) => (count === null ? [] : [[name.slice(0, -'.json'.length), count] as const])))
+/** The count files of a vault as the door holds them, and which of them is this Mac's. */
+export interface Counts {
+  /** This Mac's ID. It has no count file in the vault until it gives its first number there. */
+  me: string
+  /** Each Mac's count by its Mac ID. A file that is not a count is left out. */
+  files: ReadonlyMap<string, CountFile>
+}
+
+/**
+ * Each Mac's count file in the vault at `root`, in the door's turn and from what the door already
+ * holds: a stat for each count file, and a read only for one whose size or time changed. The
+ * sweep asks only when two notes hold one ID or a file needs a number, never for each index event.
+ */
+export function countsOf(root: string): Promise<Counts> {
+  return inTurn(root, async (door) => {
+    const me = await macId(root)
+    await refresh(door, countDir(root), `${me}.json`)
+    return { me, files: new Map([...door.files].flatMap(([name, { count }]) => (count === null ? [] : [[name.slice(0, -'.json'.length), count] as const]))) }
+  })
+}
+
+/** Each Mac's count file in the vault at `root`, by its Mac ID (`countsOf`). */
+export const readCounts = async (root: string): Promise<ReadonlyMap<string, CountFile>> => (await countsOf(root)).files
+
+/**
+ * The vault's FIRST Mac (YAZ-2677 R33): the one whose count file is oldest (`since`), and of two
+ * made at one moment the Mac ID that is first in order. Undefined for a vault with no count file:
+ * it has no first Mac until some Mac gives the first number.
+ */
+export function firstMac(files: ReadonlyMap<string, CountFile>): string | undefined {
+  let first: { mac: string; since: number } | undefined
+  for (const [mac, count] of files) {
+    const since = Date.parse(count.since)
+    if (first === undefined || since < first.since || (since === first.since && mac < first.mac)) first = { mac, since }
+  }
+  return first?.mac
+}
+
+/** A Mac that gave a number, and when. */
+export interface Maker {
+  mac: string
+  /** The time of the run in its `made` that holds the number (ms). */
+  at: number
+}
+
+/**
+ * The Macs whose count file holds `number` in `made` (R22), the one that gave it first in front,
+ * and of two that gave it at one moment the Mac ID that is first in order (R23). Two or more: the
+ * notes that hold the number are a CLASH. A run older than `MADE_DAYS` days is not counted, whether
+ * or not its Mac has dropped it yet (S49).
+ */
+export function makersOf(files: ReadonlyMap<string, CountFile>, number: number, now: number): Maker[] {
+  const oldest = now - MADE_DAYS * 24 * 60 * 60 * 1000
+  const makers: Maker[] = []
+  for (const [mac, { made }] of files) {
+    let at: number | undefined
+    for (const run of made) {
+      if (number < run.from || number > run.to) continue
+      const time = Date.parse(run.at)
+      if (time >= oldest && (at === undefined || time < at)) at = time
+    }
+    if (at !== undefined) makers.push({ mac, at })
+  }
+  return makers.sort((a, b) => a.at - b.at || (a.mac < b.mac ? -1 : 1))
+}
+
+/** Did the Mac with this count give `number` in the last `MADE_DAYS` days? What the diary keeps a link for (R27, R21). */
+export const madeBy = (count: CountFile | undefined, number: number, now: number): boolean => count !== undefined && makersOf(new Map([['', count]]), number, now).length > 0
+
+/** Test hook: the vault folder at `root` stands for the Mac whose app data folder is `dir`, so two Macs can run in one test. */
+export function _actAs(root: string, dir: string): void {
+  appDataOf.set(root, dir)
 }
 
 /** Test hook: forgets each vault's door, this Mac, and who answers for the notes. */
 export function _resetMint(): void {
   doors.clear()
   macs.clear()
+  appDataOf.clear()
   appData = undefined
   highest = scanned
 }

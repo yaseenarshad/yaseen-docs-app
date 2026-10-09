@@ -280,6 +280,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     },
     // No `review.json` (YAZ-2322), so upkeep is off: App owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
+    ids: { set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined), check: vi.fn(async (_root?: string) => 'No duplicates.') },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
@@ -2876,8 +2878,9 @@ describe('App opens a vault with no question about IDs (YAZ-2677 D1)', () => {
 
 /**
  * The Settings switch (YAZ-2523 🔒 V4, V13) reads the vault's answer off the snapshot. On opens the
- * box with the typed ID letters first (YAZ-2677 🔒 D2), and each save keeps the keys of `ids.json`
- * that it does not change (R10).
+ * box with the typed ID letters first (YAZ-2677 🔒 D2). The SAVE is main's (`ids:set`): it keeps the
+ * keys of `ids.json` that it does not change (R10) and gives the numbers now (R32) — proved in
+ * `desktop/src/main/vaultIndex/twoMacs.test.ts`. The front end never writes `ids.json` itself.
  */
 describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2677 D2)', () => {
   const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
@@ -2915,7 +2918,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     await act(async () => idsButtons(el)[1].click())
     expect(el.querySelector('.confirm')).toBeNull()
     expect(idsReads(bridge)).toEqual([])
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
   })
 
   it('On opens the box with the counts of the snapshot and writes nothing; valid letters and "Give IDs" save yes and the letters in capitals (S5, S7, S12)', async () => {
@@ -2925,12 +2928,14 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     await act(async () => idsButtons(el)[0].click())
     expect(sheetText(el)).toContain('Give the notes in this vault IDs?')
     expect(sheetText(el)).toContain('the app will write an ID into 1 note, add a hidden settings file to 2 folders, and name the file of each note you make or retitle.')
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     typeLetters(el, 'yaz')
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: true, letters: 'YAZ' })
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', true, 'YAZ')
+    // The front end hands the answer to main, and writes no file itself: one save cannot lose another.
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
@@ -2941,42 +2946,46 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     typeLetters(el, 'yaz')
     await act(async () => sheetBtn(el, 'Cancel')?.click())
     expect(el.querySelector('.confirm')).toBeNull()
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     expect(pressed(el)).toEqual(['false', 'true'])
   })
 
-  it('a vault that has letters asks for them, and the save keeps `was` and each key that it does not change (S9, R10)', async () => {
+  it('a vault that has letters asks for them, and only those letters start the save (S9)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()], { enabled: false, letters: 'YAZ', was: ['OLD'], other: 1 }))
     act(() => emitSettings())
     await act(async () => idsButtons(el)[0].click())
     expect(el.querySelector('.confirm__letters')?.textContent).toBe("Type this vault's ID letters, YAZ, to confirm.")
     typeLetters(el, 'doc')
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     typeLetters(el, 'yaz')
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: true, letters: 'YAZ', was: ['OLD'], other: 1 })
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', true, 'YAZ')
   })
 
-  it('a vault whose notes hold IDs reads On; Off asks before it saves no, and the letters and `was` stay in the file (S11, R12)', async () => {
+  it('a vault whose notes hold IDs reads On; Off asks before it saves no, with no letters handed over (S11)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [note('k3m9x2pq7abc')], { enabled: true, letters: 'YAZ', was: ['OLD'] }))
     act(() => emitSettings())
     expect(pressed(el)).toEqual(['true', 'false'])
     act(() => idsButtons(el)[1].click())
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     await act(async () => sheetBtn(el, 'Turn off')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false, letters: 'YAZ', was: ['OLD'] })
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
 
   it('an ID vault with no note holding one yet: Off saves no at once', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
     act(() => emitSettings())
     await act(async () => idsButtons(el)[1].click())
-    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/v', IDS_FILE, { enabled: false })
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
 
   it('`ids.json` that is not valid JSON: On opens no box, Off saves nothing, and a notice says why', async () => {
-    const broken = (b: ReturnType<typeof installBridge>) => void b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === IDS_FILE ? Promise.reject(new Error('ids.json is not valid JSON')) : null))
+    // Main refuses both the read and the save of a file that is not valid JSON, and writes nothing over it.
+    const broken = (b: ReturnType<typeof installBridge>) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === IDS_FILE ? Promise.reject(new Error('ids.json is not valid JSON')) : null))
+      b.bridge.ids.set.mockRejectedValue(new Error('ids.json is not valid JSON'))
+    }
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
       feed(false, [note()])(b)
       broken(b)
@@ -2993,18 +3002,41 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     act(() => on.emitSettings())
     await act(async () => idsButtons(on.el)[1].click())
     expect(on.el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     expect(on.bridge.vaultConfig.write).not.toHaveBeenCalled()
   })
 
   it('a save that fails says so in the notice', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
-    bridge.vaultConfig.write.mockRejectedValueOnce(new Error('disk full'))
+    bridge.ids.set.mockRejectedValueOnce(new Error('disk full'))
     act(() => emitSettings())
     await act(async () => idsButtons(el)[0].click())
     typeLetters(el, 'YAZ')
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
     expect(el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: disk full")
+  })
+})
+
+/** "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the row asks main for the vault of the active tab, and shows its one line. */
+describe('App "Duplicate IDs" in Settings (YAZ-2677 D7)', () => {
+  const VAULT: IdentityFixture = { id: 'w1', root: '/v', file: null, tabs: [] }
+  const feed = (ids: boolean) => (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [], generatedAt: 1, ids, ...(ids ? { letters: ['YAZ'] } : { ask: { notes: 0, folders: 0, foreign: 0 } }) })
+  const row = (el: HTMLElement) => el.querySelector<HTMLElement>('[data-setting="duplicates"]')
+
+  it('the row is there only while the vault uses IDs; a click asks main, and the line shows what it answers', async () => {
+    const off = await mount(defaultAppState(), VAULT, {}, feed(false))
+    act(() => off.emitSettings())
+    expect(row(off.el)).toBeNull()
+    act(() => root?.unmount())
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true))
+    act(() => emitSettings())
+    expect(bridge.ids.check).not.toHaveBeenCalled()
+    bridge.ids.check.mockResolvedValueOnce('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+    await act(async () => row(el)?.querySelector('button')?.click())
+    await act(async () => undefined)
+    expect(bridge.ids.check).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(row(el)?.querySelector('[role="status"]')?.textContent).toBe('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
   })
 })
 
@@ -3226,7 +3258,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect({ ids: pressed('ids'), review: pressed('enabled'), sync: pressed('githubSync') }).toEqual({ ids: ['false', 'true'], review: ['false', 'true'], sync: ['false', 'true'] })
     // On asks first, and the box names the vault that it acts on (YAZ-2677 S13): the active tab's.
     await act(async () => turnOn('ids'))
-    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.ids.set).not.toHaveBeenCalled()
     expect(sheetText(el)).toContain('Give the notes in w IDs?')
     act(() => {
       const field = el.querySelector('.confirm__input') as HTMLInputElement
@@ -3234,7 +3266,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenCalledExactlyOnceWith('/w', IDS_FILE, { enabled: true, letters: 'WRK' })
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/w', true, 'WRK')
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     await act(async () => turnOn('enabled'))
     expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
     await act(async () => turnOn('githubSync'))

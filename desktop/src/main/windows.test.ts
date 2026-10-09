@@ -1322,6 +1322,28 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(w1.webContents.send).not.toHaveBeenCalled()
   })
 
+  it('vaultNotice (YAZ-2677 S45) shows in each window of THAT vault and in no other, raises none, and waits for a page that does not listen yet', () => {
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: '/other', roots: ['/other', '/v'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w3', root: '/elsewhere', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 70, y: 70, width: 800, height: 600 } })
+    const { host, created } = makeHost([AREA])
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const [w1, w2, w3] = created.map((c) => c.win)
+    manager.handleLinkReady(w1.webContents)
+    const notice = 'YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.'
+    manager.vaultNotice('/v', notice)
+    expect(sentOn(w1, CONTRACT.link.onNotice.channel)).toEqual([[CONTRACT.link.onNotice.channel, notice]])
+    // The page of w2 is still loading: it hears the notice when it listens. w3 shows another vault.
+    expect(w2.webContents.send).not.toHaveBeenCalled()
+    manager.handleLinkReady(w2.webContents)
+    manager.handleLinkReady(w3.webContents)
+    expect(sentOn(w2, CONTRACT.link.onNotice.channel)).toEqual([[CONTRACT.link.onNotice.channel, notice]])
+    expect(w3.webContents.send).not.toHaveBeenCalled()
+    expect([w1.focusCount, w2.focusCount, w3.focusCount]).toEqual([0, 0, 0])
+    expect(created).toHaveLength(3)
+  })
+
   it('linkNotice (the parse-failure path) restores + focuses a live window and delivers the message: the window that had focus last (YAZ-2555 S27), else the first live one', () => {
     const { manager, w1, w2 } = seedRouting()
     w1.minimized = true

@@ -40,7 +40,9 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   // And for the vault's IDs switch (YAZ-2523): no answer handed over is no vault open, so no row.
   // `letters` reads the vault's ID letters out of its `ids.json` (YAZ-2677 S9): asked at the click on On.
   const readLetters = vi.fn(async () => vaultIds?.letters)
-  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: setIds }
+  // "Check for duplicates" (YAZ-2677 S55): the main process answers with one line.
+  const checkIds = vi.fn(async () => 'No duplicates.')
+  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, letters: readLetters, set: setIds, check: checkIds }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -48,7 +50,7 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, readLetters, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, readLetters, checkIds, rerender, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -751,5 +753,58 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
     expect(setIds).not.toHaveBeenCalled()
     act(() => sheetBtn(el, 'Turn off').click())
     expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+  })
+})
+
+describe('SettingsDialog: Duplicate IDs (YAZ-2677 D7, S55 to S57)', () => {
+  const withIds = (enabled: boolean) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled })
+  const button = (el: HTMLElement) => rowButtons(el, 'duplicates')[0]
+  const result = (el: HTMLElement) => row(el, 'duplicates')?.querySelector('[role="status"]')?.textContent
+
+  it('the row shows only while the vault uses IDs: under "This vault", after the switch, with one button', () => {
+    expect(row(withIds(false).el, 'duplicates')).toBeNull()
+    unmount()
+    expect(row(mount().el, 'duplicates')).toBeNull()
+    unmount()
+    const { el, checkIds } = withIds(true)
+    expect(row(el, 'duplicates')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'duplicates')?.querySelector('.setting__label')?.textContent).toBe('Duplicate IDs')
+    expect(rowButtons(el, 'duplicates').map((b) => b.textContent)).toEqual(['Check for duplicates'])
+    expect(result(el)).toBe('')
+    // Nothing runs until the user asks.
+    expect(checkIds).not.toHaveBeenCalled()
+    type(searchInput(el), 'duplicate')
+    expect(rowIds(el)).toEqual(['duplicates'])
+  })
+
+  it('S55: a click runs the check now and tells the result in one line', async () => {
+    const { el, checkIds } = withIds(true)
+    await act(async () => button(el).click())
+    expect(checkIds).toHaveBeenCalledExactlyOnceWith()
+    expect(result(el)).toBe('No duplicates.')
+  })
+
+  it('S56, S57: the line is what the main process answers, whatever it is', async () => {
+    const { el, checkIds } = withIds(true)
+    checkIds.mockResolvedValueOnce('YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.')
+    await act(async () => button(el).click())
+    expect(result(el)).toBe('YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.')
+    checkIds.mockResolvedValueOnce('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+    await act(async () => button(el).click())
+    expect(result(el)).toBe('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+  })
+
+  it('while a check runs the button does nothing more, and a check that fails says why', async () => {
+    const { el, checkIds } = withIds(true)
+    let fail: (err: Error) => void = () => undefined
+    checkIds.mockReturnValueOnce(new Promise<string>((_, reject) => (fail = reject)))
+    act(() => button(el).click())
+    expect(button(el).disabled).toBe(true)
+    expect(result(el)).toBe('Checking…')
+    act(() => button(el).click())
+    expect(checkIds).toHaveBeenCalledTimes(1)
+    await act(async () => fail(new Error('the disk said no')))
+    expect(button(el).disabled).toBe(false)
+    expect(result(el)).toBe("Couldn't check: the disk said no")
   })
 })

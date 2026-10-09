@@ -18,6 +18,7 @@
  *
  * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
  * row is `available` only with a vault open and calls `ids.set`. On asks first (YAZ-2677 🔒 D2).
+ * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
@@ -43,9 +44,10 @@ export interface SettingsCtx {
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
    * while the answer is not yes. `letters` reads the vault's ID letters out of its `ids.json` (none:
    * it has none yet), and rejects where they cannot be read. `set` saves the answer, and with a yes
-   * the ID letters (YAZ-2677 🔒 D2).
+   * the ID letters (YAZ-2677 🔒 D2). `check` settles the notes that share an ID now, and resolves to
+   * the result in one line (🔒 D7, S55 to S57).
    */
-  ids?: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void }
+  ids?: { enabled: boolean; held: boolean; ask: IndexResponse['ask']; letters: () => Promise<string | undefined>; set: (enabled: boolean, letters?: string) => void; check: () => Promise<string> }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
    * over only where the window has two or more vaults, and each per-vault page then says which one
@@ -145,6 +147,49 @@ function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNu
         <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
       </label>
     </ConfirmSheet>
+  )
+}
+
+/**
+ * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the main process settles the notes that share
+ * an ID now, and its answer is the one line under the button — "No duplicates.", what was fixed, or
+ * which ID another Mac must fix. Nothing runs until the click, and one check runs at a time.
+ */
+function DuplicatesControl({ check }: { check: () => Promise<string> }) {
+  const [line, setLine] = useState('')
+  const [checking, setChecking] = useState(false)
+  // A check that ends after the dialog closed has no row to tell.
+  const shown = useRef(true)
+  useEffect(() => {
+    shown.current = true
+    return () => {
+      shown.current = false
+    }
+  }, [])
+  const run = (): void => {
+    if (checking) return
+    setChecking(true)
+    setLine('Checking…')
+    check()
+      .catch((err: unknown) => `Couldn't check: ${err instanceof Error ? err.message : String(err)}`)
+      .then((said) => {
+        if (!shown.current) return
+        setLine(said)
+        setChecking(false)
+      })
+  }
+  // The row is `wide`: the button keeps its own width, and the line under it has the row's width to wrap in.
+  return (
+    <>
+      <div className="settings__options">
+        <button type="button" className="settings__option" disabled={checking} onClick={run}>
+          Check for duplicates
+        </button>
+      </div>
+      <p className="setting__hint" role="status">
+        {line}
+      </p>
+    </>
   )
 }
 
@@ -371,6 +416,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
             render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
+          },
+          {
+            id: 'duplicates',
+            label: 'Duplicate IDs',
+            hint: 'Two Macs that sync this vault can give two notes one ID. The app fixes that by itself; this checks now.',
+            keywords: ['duplicate', 'clash', 'ids', 'check', 'fix'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true,
+            render: ({ ids }) => ids && <DuplicatesControl check={ids.check} />,
           },
         ],
       },

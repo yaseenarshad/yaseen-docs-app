@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { IDS_FILE, isNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
-import { sleep, vaultFiles } from '../fs/testFixture'
+import { makeFirstMac, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { subscribe } from '../fs/watchers'
 import { readConfig, writeConfig } from '../vaultConfig'
 import { createFile } from '../fs/create'
@@ -19,7 +19,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   _evictAll()
-  await rm(root, { recursive: true, force: true })
+  await removeVault(root)
 })
 
 const at = (...p: string[]) => path.join(root, ...p)
@@ -77,6 +77,7 @@ describe('the one gate: an id is written only where the vault said yes', () => {
   it('the same vault once it says yes: its notes are given ids, another tool’s `id` is written over, and each folder is given its `.folder.md`', async () => {
     await vault({ ...NOTES, [`${VAULT_CONFIG_DIR}/favorites.json`]: '[]\n' })
     await answers(true)
+    await makeFirstMac(root)
     await opened()
     await until(async () => isNoteId(await idIn('a.md')) && isNoteId(await idIn('Projects', 'b.md')) && isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
   })
@@ -98,6 +99,7 @@ describe('the one gate: an id is written only where the vault said yes', () => {
     await vault(NOTES)
     await opened()
     expect((await getIndex(root)).ids).toBe(false)
+    await makeFirstMac(root)
     await answers(true)
     expect((await getIndex(root)).ids).toBe(true)
     await until(async () => isNoteId((await indexed('a.md'))?.id) && isNoteId(await idIn('Projects', 'b.md')) && isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
@@ -118,6 +120,7 @@ describe('the one gate: an id is written only where the vault said yes', () => {
   it('a no written after a yes: the next `getIndex` answers plain, a note arriving afterwards is given no id, and nothing is removed', async () => {
     await vault({ 'a.md': 'body\n' })
     await answers(true)
+    await makeFirstMac(root)
     await opened()
     await until(async () => isNoteId((await indexed('a.md'))?.id))
     const given = await read('a.md')
@@ -339,6 +342,7 @@ describe('the index hands out the IDs of THIS vault (YAZ-2677 R2, R5)', () => {
   it("S23: an `id` with another vault's letters goes out as no id, and the sweep writes this vault's next number over it (R7)", async () => {
     await says({ enabled: true, letters: 'YAZ' })
     await vault({ 'ours.md': '---\nid: YAZ-40\n---\n', 'moved-in.md': '---\nid: BUS-12\n---\n' })
+    await makeFirstMac(root)
     await opened()
     await until(async () => (await idIn('moved-in.md')) === 'YAZ-41')
     expect((await indexed('ours.md'))?.id).toBe('YAZ-40')
@@ -374,6 +378,7 @@ describe('the door asks the live index for the highest number of the vault (YAZ-
 
   it('the count files are never notes of the vault: the index and the tree of folders do not hold them', async () => {
     await vault({ [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": true, "letters": "YAZ" }', 'a.md': 'body\n' })
+    await makeFirstMac(root)
     await opened()
     await until(async () => (await indexed('a.md'))?.id === 'YAZ-1')
     expect(await readdir(at(VAULT_CONFIG_DIR, COUNT_DIR))).toEqual([`${await macId()}.json`])
