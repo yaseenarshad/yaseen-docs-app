@@ -355,7 +355,7 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it("only the user's own edit says onUserEdit (YAZ-2648 D2): a body reloaded from disk and a property write do not, the first typed change does, once per save cycle", async () => {
+  it("only the user's own edit says onUserEdit (YAZ-2648 D2, S23, S24): a body reloaded from disk, a property write and a comment the user posts do not, the first typed change does, once per save cycle", async () => {
     const onUserEdit = vi.fn()
     await mount(FM + BODY, 1, { onUserEdit })
     // A property write from outside: absorbed, the body untouched.
@@ -371,6 +371,22 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     await pastDebounce()
     expect(onUserEdit).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
+
+    // A comment the user posts is a write of the properties block, not an edit of the page (S24).
+    act(() => container!.querySelector<HTMLButtonElement>('.comments__header')?.click())
+    const box = container!.querySelector<HTMLTextAreaElement>('.comments textarea.comments__textarea')!
+    diskHas(next, 3)
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(box, 'A remark')
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('.comments .btn--primary')?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: PATH, content: expect.stringContaining('A remark') }))
+    expect(onUserEdit).not.toHaveBeenCalled()
+    writeFile.mockClear()
 
     // The user types: the note turns unsaved, and that is the signal.
     type('# Someone else\n\nmine\n')

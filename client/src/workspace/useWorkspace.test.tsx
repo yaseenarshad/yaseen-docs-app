@@ -87,7 +87,7 @@ describe('tabsReducer', () => {
       expect(tabsReducer(previewing(), { type: 'close', path: '/v/a.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: '/v/p.md' })
     })
 
-    it('navigate (D3, a link inside a page) replaces the ACTIVE tab in its slot, kept or not; in the preview tab the mark follows, and Back carries it back', () => {
+    it('S10, S11: navigate (D3, a link inside a page) replaces the ACTIVE tab in its slot, kept or not; in the preview tab the mark follows, and Back and Forward carry it along', () => {
       const onKept = tabsReducer({ ...previewing(), active: '/v/a.md' }, { type: 'navigate', path: '/v/c.md' })
       expect(onKept).toEqual({
         tabs: ['/v/c.md', '/v/p.md'],
@@ -99,7 +99,10 @@ describe('tabsReducer', () => {
       })
       const onPreview = tabsReducer(previewing(), { type: 'navigate', path: '/v/c.md' })
       expect(onPreview).toMatchObject({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md', preview: '/v/c.md' })
-      expect(tabsReducer(onPreview, { type: 'back' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md'], active: '/v/p.md', preview: '/v/p.md' })
+      const back = tabsReducer(onPreview, { type: 'back' })
+      expect(back).toMatchObject({ tabs: ['/v/a.md', '/v/p.md'], active: '/v/p.md', preview: '/v/p.md' })
+      // Forward is the same walk the other way: the tab is still the preview tab, on the page it stepped to.
+      expect(tabsReducer(back, { type: 'forward' })).toMatchObject({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md', preview: '/v/c.md' })
     })
 
     it('the mark follows a renamed file and a renamed folder, and goes with a deleted one; a reset starts with none', () => {
@@ -114,9 +117,24 @@ describe('tabsReducer', () => {
       expect(tabsReducer(previewing(), { type: 'reset', tabs: ['/v/p.md'], active: '/v/p.md' })).toMatchObject({ tabs: ['/v/p.md'], preview: null, blank: false })
     })
 
-    it('open-new and open-background open KEPT tabs: the mark stays where it was', () => {
+    it('open-new and open-background open KEPT tabs: the mark stays where it was — and open-new on the preview tab itself is the ONE door that keeps it (S19, S25)', () => {
       expect(tabsReducer(previewing(), { type: 'open-new', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], active: '/v/c.md', preview: '/v/p.md' })
       expect(tabsReducer(previewing(), { type: 'open-background', path: '/v/c.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/c.md'], active: '/v/p.md', preview: '/v/p.md' })
+      // The second click of a double click: the page is open, in the preview tab, and it is kept — active or not.
+      expect(tabsReducer(previewing(), { type: 'open-new', path: '/v/p.md' })).toEqual({ ...previewing(), preview: null })
+      expect(tabsReducer({ ...previewing(), active: '/v/a.md' }, { type: 'open-new', path: '/v/p.md' })).toMatchObject({ active: '/v/p.md', preview: null })
+      const kept = state(['/v/a.md'], '/v/a.md')
+      expect(tabsReducer(kept, { type: 'open-new', path: '/v/a.md' })).toBe(kept)
+    })
+
+    it('close-many closes each tab as close does, in ONE action: the heir is what is left, and the mark goes with its tab', () => {
+      const s: TabsState = { ...state(['/v/a.md', '/v/b.md', '/v/p.md', '/v/d.md'], '/v/b.md', ['/v/a.md', '/v/b.md', '/v/p.md']), preview: '/v/p.md' }
+      const one = tabsReducer(tabsReducer(s, { type: 'close', path: '/v/b.md' }), { type: 'close', path: '/v/p.md' })
+      expect(tabsReducer(s, { type: 'close-many', paths: ['/v/b.md', '/v/p.md'] })).toEqual(one)
+      expect(one).toMatchObject({ tabs: ['/v/a.md', '/v/d.md'], active: '/v/d.md', preview: null })
+      expect(tabsReducer(s, { type: 'close-many', paths: ['/v/a.md', '/v/b.md', '/v/p.md', '/v/d.md'] })).toEqual(state([], null))
+      expect(tabsReducer(s, { type: 'close-many', paths: [] })).toBe(s)
+      expect(tabsReducer(s, { type: 'close-many', paths: ['/v/gone.md'] })).toBe(s)
     })
   })
 
@@ -508,6 +526,8 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.openCurrent('/v/a.md'))
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
     act(() => latest.activate('/v/a.md')) // already active
+    act(() => latest.openCurrent('/v/a.md')) // the page already open: its sidebar row asks for it again (YAZ-2648 S46)
+    act(() => latest.openKept('/v/a.md'))
     act(() => latest.openBackground('/v/a.md')) // already open
     act(() => latest.prev()) // one tab: nothing to cycle
     act(() => latest.close('/v/zzz.md')) // unknown
@@ -565,6 +585,15 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
   })
 
+  it('closeMany is ONE identity write for N tabs (YAZ-2657 A10)', () => {
+    for (const path of ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md']) act(() => latest.openBackground(path))
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.closeMany(['/v/a.md', '/v/b.md', '/v/c.md']))
+    expect(latest.tabs).toEqual(['/v/d.md'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/d.md'], file: '/v/d.md', rightPanel: defaultRightPanelIdentity() })
+  })
+
   it('keep writes nothing — the preview mark is session-only (YAZ-2648 D4) — and openKept is a double click: the previewed page stays, a page not open yet opens kept', () => {
     act(() => latest.openCurrent('/v/a.md'))
     expect(latest.preview).toBe('/v/a.md')
@@ -573,11 +602,13 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(latest.preview).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
 
-    // A sidebar double click: the first click previews, the second keeps what the first opened.
+    // A sidebar double click: the first click previews, the second keeps what the first opened — and writes nothing either.
     act(() => latest.openCurrent('/v/b.md'))
+    const afterPreview = bridge.window.setIdentity.mock.calls.length
     act(() => latest.openKept('/v/b.md'))
     expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md'])
     expect(latest.preview).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(afterPreview)
     // A folder row's double click had no first open: the folder opens as a kept tab.
     act(() => latest.openKept('/v/Docs'))
     expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs'])
@@ -708,18 +739,28 @@ describe('workspaceReducer right-panel ownership', () => {
     expectInvariants(next)
   })
 
-  it('transfers an existing right page back to an exact main slot and activates it', () => {
+  it('S16: transfers an existing right page back to an exact main slot and activates it — a KEPT tab, and the preview tab stays the preview tab', () => {
     const next = workspaceReducer(workspace({
+      preview: '/v/b.md',
       rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/d.md'], expanded: '/v/c.md' },
       rightMounted: ['/v/c.md'],
     }), { type: 'transfer-right-to-main', path: '/v/c.md', at: 1 })
     expect(next).toMatchObject({
       tabs: ['/v/a.md', '/v/c.md', '/v/b.md'],
       active: '/v/c.md',
+      preview: '/v/b.md',
       rightPanel: { items: ['/v/d.md'], expanded: '/v/d.md' },
       rightMounted: [],
     })
     expectInvariants(next)
+  })
+
+  it('S15: the preview tab moved to the right panel leaves the strip, and there is no preview tab; a kept tab moved there leaves the mark alone', () => {
+    const start = workspace({ preview: '/v/b.md' })
+    const moved = workspaceReducer(start, { type: 'transfer-main-to-right', path: '/v/b.md', at: 0 })
+    expect(moved).toMatchObject({ tabs: ['/v/a.md'], preview: null, rightPanel: { items: ['/v/b.md'] } })
+    expect(workspaceReducer(start, { type: 'transfer-main-to-right', path: '/v/a.md', at: 0 })).toMatchObject({ tabs: ['/v/b.md'], preview: '/v/b.md' })
+    expectInvariants(moved)
   })
 
   it('transfers main to an exact right slot, reorders right locally, and rejects stale sources', () => {

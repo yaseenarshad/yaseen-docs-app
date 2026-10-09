@@ -15,7 +15,7 @@ const utf8 = new TextDecoder('utf-8')
 /** The top of one note: `HEAD_READ_BYTES` off the start of the file at most, whatever its size. */
 async function readHead(raw: string): Promise<FileHead | null> {
   const p = requireAbsPath(raw, 'path')
-  // A card shows the first lines of a NOTE (D6): a PDF, an image and view-only text have none.
+  // A page of the tab board shows the first lines of a NOTE (D6): a PDF, an image and view-only text have none.
   if (!isMarkdown(p)) return null
   const handle = await open(p, 'r')
   try {

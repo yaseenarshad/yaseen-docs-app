@@ -5,7 +5,7 @@
  *
  * The sizes below are the board's ONE source: `TabOverview` hands them to the stylesheet as custom
  * properties, and the stack rule reads the same numbers. So what the rule computes is what the
- * browser lays out, and the rule never has to measure the cards it placed.
+ * browser lays out, and the rule never has to measure the pages it placed.
  */
 import { rootOfPath, stripSlash } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
@@ -96,10 +96,10 @@ export function islandCols(count: number, boardW: number): number {
   return Math.max(1, Math.min(wanted, fits))
 }
 
-/** An island's box as the stylesheet lays it out: its label row, then its pages in a grid — or one fanned pile. */
+/** An island's box as the stylesheet lays it out: its label row, then its pages in a grid — or, as a stack, one page with its fan. */
 export function islandBox(count: number, stacked: boolean, boardW: number): { w: number; h: number } {
   const { pageW, pageH, pageGap, islandPad, labelH, fanX } = BOARD
-  // A pile is one page high — its fan reaches up into the label's gap — so a stack is never bigger than its island spread.
+  // A stack is one page high — its fan reaches up into the label's gap — so it is never bigger than its island spread.
   if (stacked) return { w: pageW + fanX + 2 * islandPad, h: labelH + pageH + 2 * islandPad }
   const cols = islandCols(count, boardW)
   const rows = Math.ceil(count / cols)
@@ -136,17 +136,17 @@ export function boardHeight(shape: readonly BoardShape[], stacked: ReadonlySet<s
 }
 
 /**
- * THE STACK RULE (YAZ-2648): which islands show as a fanned pile.
+ * THE STACK RULE (YAZ-2648): which islands show as a stack — one page, the others fanned behind it.
  *
  * A board that fits its area stacks nothing. One that does not stacks the island with the most
  * pages, then the next, until it fits or no island of `BOARD.stackMin` pages is left spread; then
- * it scrolls. An island of three pages or fewer never stacks: a pile of two hides as much as it
+ * it scrolls. An island of three pages or fewer never stacks: a stack of two hides as much as it
  * saves. One the user spread (`spread`) stays spread. The
- * island of the active tab (`keep`) goes last, so the page the user came from is a pile only when
+ * island of the active tab (`keep`) goes last, so the page the user came from is in a stack only when
  * nothing else is left.
  *
  * It is a function of the board's AREA and of the tabs, and of nothing it decides: the area is
- * the scroller's own box, which the window sizes and the cards do not. So the answer cannot move
+ * the scroller's own box, which the window sizes and the pages do not. So the answer cannot move
  * the question, and asking twice gives the same set. An area not measured yet (`null`, or no
  * width) stacks nothing.
  */

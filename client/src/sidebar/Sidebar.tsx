@@ -462,8 +462,11 @@ export function Sidebar({
     // S24 on YAZ-2620): no tab, so nothing for ⌘ to background either.
     if (node?.type === 'file' && node.kind === null) openDefault(hit.path)
     else if (background) onOpenFileBackground(hit.path)
-    else if (hit.path === activeFile) focusOpenDocument()
-    else onOpenFile(hit.path)
+    else {
+      // The page already open is asked for too: nothing changes in the workspace, and App closes the tab board over it (YAZ-2648 S46).
+      onOpenFile(hit.path)
+      if (hit.path === activeFile) focusOpenDocument()
+    }
   }
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files

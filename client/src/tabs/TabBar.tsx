@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -71,8 +71,9 @@ export interface TabBarProps {
   onSetReview?: (path: string, on: boolean) => void
 }
 
-/** How long a tab slides open or shut, in ms (YAZ-2656 D12): the stylesheet's `tab-in` / `tab-out` run as long. */
+/** How long a tab slides open or shut, in ms (YAZ-2656 D12). The row hands it to the stylesheet as `--tab-slide-ms`, so the slide and the ghost's timer take the same time. */
 const SLIDE_MS = 150
+const SLIDE = { '--tab-slide-ms': `${SLIDE_MS}ms` } as CSSProperties
 
 /** A tab that closed, for as long as it slides shut: its label, and the tab it stood before (null: the end). */
 interface Ghost {
@@ -95,8 +96,8 @@ const Chevron = ({ d }: { d: string }) => (
 
 /**
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): one tab per open file, ViewTabs' tablist
- * semantics (role=tab, aria-selected). The look is a browser's (YAZ-2656 D12): the active tab is
- * a filled shape that joins the page. Labels hide only Markdown's vault
+ * semantics (role=tab, aria-selected). The tabs are pills (YAZ-2656 R40, R41): each has a fill of
+ * its own, the active one the brightest, and none joins the page. Labels hide only Markdown's vault
  * extension; view-only labels keep their extension, a folder's is its whole name (YAZ-2290) and
  * every full path lives in the title tooltip. Tabs reorder by HTML5 drag (the
  * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none), the other tabs
@@ -255,7 +256,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   const gap = over === null || (drag !== null && (over === drag.from || over === drag.from + 1)) ? null : over
 
   return (
-    <div className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}`}>
+    <div className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}`} style={SLIDE}>
       <div className="tabbar-nav">
         {onShowSidebar && (
           <button type="button" className="tabbar-nav__btn" aria-label="Show sidebar" title="Show sidebar" onClick={onShowSidebar}>
@@ -280,7 +281,8 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         aria-label="Open files"
         {...endSlot}
       >
-        {tabs.map((path, i) => {
+        {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
+        {tabs.flatMap((path, i) => {
           // Under the blank tab no tab of the strip is the active one (YAZ-2655).
           const isActive = !blank && path === active
           const label = labelOf(path)

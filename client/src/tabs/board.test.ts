@@ -20,6 +20,9 @@ describe('buildBoard (D7)', () => {
       ['', [['/elsewhere', ['loose']]]],
     ])
     expect(board[0].islands.map((island) => [island.dir, island.top])).toEqual([['/v', true], ['/v/Clients', false], ['/v/Clients/Acme', false], ['/v/Clients/Globex', false]])
+    // S36: three files of one name in three folders are three pages on three islands, each named by its folder.
+    const same = buildBoard(['/v/Clients/Acme/notes.md', '/v/notes.md', '/v/Clients/Globex/notes.md'], ['/v'], ['Notes'], name)
+    expect(same[0].islands.map((island) => [island.label, island.pages.map((page) => page.label)])).toEqual([['Notes', ['notes']], ['Clients / Acme', ['notes']], ['Clients / Globex', ['notes']]])
   })
 
   it('the filter keeps a page whose title or path in the vault holds every term, and an island with no page left is gone', () => {
@@ -54,7 +57,7 @@ describe('stackedIslands — the stack rule', () => {
     expect([...stackedIslands(s, { w, h: afterOne - 1 })]).toEqual(['/v/1', '/v/0'])
   })
 
-  it('an island of three pages or fewer never stacks (R25a), so a board of them scrolls', () => {
+  it('R44: an island of three pages or fewer never stacks, so a board of them scrolls', () => {
     const tiny = { w: 320, h: 10 }
     expect([...stackedIslands(shape(1, 1, 1, 1), { w: 200, h: oneRow })]).toEqual([])
     expect([...stackedIslands(shape(3, 3, 2, 1), tiny)]).toEqual([])
@@ -74,12 +77,14 @@ describe('stackedIslands — the stack rule', () => {
     expect([...stackedIslands(s, enough, new Set(), '/v/0')]).toEqual(['/v/1'])
   })
 
-  it('asked again with its own answer it says the same: the area is not the pages\' to change', () => {
+  it('its answer is the least that works: with it the board fits, without its last island it does not, and a stack is never bigger than its island spread', () => {
     const s = shape(7, 6, 4, 2, 1)
-    const area = { w: 700, h: 420 }
+    // An area as tall as the board with its two biggest islands stacked: 8px to spare.
+    const area = { w: 700, h: boardHeight(s, new Set(['/v/0', '/v/1']), 700) + 8 }
     const first = stackedIslands(s, area)
-    expect(first.size).toBeGreaterThan(0)
-    expect([...stackedIslands(s, area)]).toEqual([...first])
+    expect([...first]).toEqual(['/v/0', '/v/1'])
+    expect(boardHeight(s, first, area.w)).toBeLessThanOrEqual(area.h)
+    expect(boardHeight(s, new Set([...first].slice(0, -1)), area.w)).toBeGreaterThan(area.h)
     // A stack is never bigger than its island spread, so stacking can only shorten this board.
     expect(boardHeight(s, first, area.w)).toBeLessThan(boardHeight(s, new Set(), area.w))
     for (const count of [2, 3, 5, 9]) {
@@ -90,7 +95,7 @@ describe('stackedIslands — the stack rule', () => {
 })
 
 describe('islandCols / islandBox — the sizes the stylesheet is given', () => {
-  it('three pages side by side at most, four as two and two, and never more than the board is wide; a pile is one page high', () => {
+  it('three pages side by side at most, four as two and two, and never more than the board is wide; a stack is one page high', () => {
     expect([1, 2, 3, 4, 5, 7].map((count) => islandCols(count, 2000))).toEqual([1, 2, 3, 2, 3, 3])
     expect(islandCols(7, 500)).toBe(2)
     expect(islandCols(7, 100)).toBe(1)
