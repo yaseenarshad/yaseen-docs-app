@@ -120,8 +120,10 @@ export const CONTRACT = {
     onNextTab: push('menu:next-tab'),
     /** Window › Previous Tab (⌃⇧Tab / ⌘⇧[): activate the tab to the left (GRO-2232). */
     onPrevTab: push('menu:prev-tab'),
-    /** Window › Tab Overview (⌘⇧A): show every open tab of the window at once, or go back to the page (YAZ-2648 D5). */
+    /** Window › Tab Overview (⌘⇧M): show every open tab of the window at once, or go back to the page (YAZ-2648 D5). */
     onTabOverview: push('menu:tab-overview'),
+    /** File › New Tab (⌘T): show the one blank tab, with the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
+    onNewTab: push('menu:new-tab'),
   },
   /** Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes it to the best window. */
   link: {

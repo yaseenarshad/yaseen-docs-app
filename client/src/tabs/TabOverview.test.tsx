@@ -9,6 +9,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileHead } from '@shared/types'
 import { TabOverview, ZOOM_MS, type TabOverviewProps } from './TabOverview'
+import { boardHighlight } from './boardHighlight'
 import { _resetTabHeads } from './useTabHeads'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -158,14 +159,16 @@ describe('TabOverview', () => {
   })
 
   it('stacks only when the board does not fit (C): the biggest island becomes a pile, a click spreads it for good, an arrow onto it spreads it, and text in the filter spreads every one', async () => {
-    // Room for one line of islands, and too narrow for the three side by side: Projects (3 pages) must give way.
+    // Room for one line of islands, and too narrow for the three side by side: Projects must give way.
+    // It has FOUR pages here, the fewest that can be a pile (`BOARD.stackMin`).
+    const tabs = [...TABS.filter((path) => !path.startsWith('/w/')), '/v/Projects/zeta.md']
     const restore = boardArea(600, 300)
     try {
-      const { el, props } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: TABS.filter((path) => !path.startsWith('/w/')), preview: null })
+      const { el, props } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs, preview: null })
       const stacks = () => [...el.querySelectorAll<HTMLElement>('.taboverview__stack')].map((stack) => stack.dataset.stack)
       expect(stacks()).toEqual(['/v/Projects'])
       // The pile shows its count on the label and one page's face; its pages are not on the board.
-      expect(island(el, 'Projects').querySelector('.taboverview__island-count')?.textContent).toBe('3')
+      expect(island(el, 'Projects').querySelector('.taboverview__island-count')?.textContent).toBe('4')
       expect(texts(el, '[data-path] .taboverview__title')).toEqual(['a', '2026-10-08'])
       // → from the active page walks onto the pile: it spreads, and the highlight is its first page.
       key(el, 'ArrowRight')
@@ -180,7 +183,7 @@ describe('TabOverview', () => {
 
     const restoreTwo = boardArea(600, 300)
     try {
-      const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: TABS.filter((path) => !path.startsWith('/w/')), preview: null })
+      const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs, preview: null })
       const stacks = () => el.querySelectorAll('.taboverview__stack').length
       expect(stacks()).toBe(1)
       type(el, 'a')
@@ -190,7 +193,7 @@ describe('TabOverview', () => {
       // A click spreads it, and it stays spread: the board scrolls rather than pile it again.
       act(() => el.querySelector<HTMLButtonElement>('.taboverview__stack')?.click())
       expect(stacks()).toBe(0)
-      expect(texts(island(el, 'Projects'), '.taboverview__title')).toEqual(['plan', 'report.pdf', 'Alpha'])
+      expect(texts(island(el, 'Projects'), '.taboverview__title')).toEqual(['plan', 'report.pdf', 'Alpha', 'zeta'])
     } finally {
       restoreTwo()
     }
@@ -346,5 +349,13 @@ describe('TabOverview', () => {
     expect(onLeft).not.toHaveBeenCalled()
     act(() => void vi.advanceTimersByTime(ZOOM_MS))
     expect(onLeft).toHaveBeenCalledTimes(1)
+  })
+  it('tells the strip which page it highlights (YAZ-2648): the pointer and the arrows move it, and a board that goes lets go', async () => {
+    const { el } = await mount()
+    expect(boardHighlight()).toBe('/v/a.md')
+    act(() => void page(el, '/v/Projects/Alpha')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(boardHighlight()).toBe('/v/Projects/Alpha')
+    act(() => root?.unmount())
+    expect(boardHighlight()).toBeNull()
   })
 })
