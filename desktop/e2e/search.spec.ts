@@ -94,7 +94,7 @@ async function reset(w: Page): Promise<void> {
     await w.locator('.tabbar__tab--active .tabbar__close').click()
     await expect(tabsOf(w)).toHaveCount(n - 1)
   }
-  await expect(w.locator('.editor-msg')).toHaveText('Select a file from the sidebar.')
+  await expect(w.locator('.start')).toBeVisible() // the new tab page (YAZ-2663 D3)
   await showSearchTab(w)
   await searchBar(w).fill('')
   await lensTab(w, 'Files').click()

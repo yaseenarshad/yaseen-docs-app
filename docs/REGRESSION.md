@@ -284,7 +284,7 @@ The dev app (`npm run dev`) will do, on an isolated profile (`YASEEN_DOCS_USER_D
 
 The same setup, with three or four notes open.
 
-1. Press `⌘T`. A tab named "New tab" shows at the end of the strip and is the active one; the page reads "Select a file from the sidebar."; the sidebar shows the Search tab with the caret in its bar. Type part of a note's name and press Enter: the note takes the place of "New tab", and its name is upright (S70, S71).
+1. Press `⌘T`. A tab named "New tab" shows at the end of the strip and is the active one; the page shows three columns, "Recent", "Favorites" and "Used a lot, not a favorite yet"; the sidebar shows the Search tab with the caret in its bar. Type part of a note's name and press Enter: the note takes the place of "New tab", and its name is upright (S70, S71).
 2. Click the "+" after the last tab: the same. Press `⌘T` again: there is still one "New tab", and the caret is back in the bar. Press `⌘W`: only "New tab" closes, and the tab that was active before is active again.
 3. Press `⌘T`, then click a different tab: "New tab" is gone. Press `⌘T`, then ⌘-click a note in Files: the note is a new tab before "New tab", and "New tab" is still the active one.
 4. Click a note in Files, so that one tab is italic, press `⌘T`, and quit with `⌘Q`. Start the app again: every tab has an upright name, and there is no "New tab" (S14, S76). `⌘⇧N`: the new window's tabs are all upright too.
