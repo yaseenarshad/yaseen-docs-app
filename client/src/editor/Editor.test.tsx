@@ -66,7 +66,16 @@ vi.mock('./createCrepe', () => {
       crepe.md = md
     }),
     focusEditor: vi.fn(),
+    // The fake's "plain text" is its markdown: enough to see WHICH editor the page settings menu counts.
+    getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
   }
+})
+
+// Line numbers (YAZ-2643): jsdom has no Worker and the fake Crepe has no view. The request answers
+// with the real block index, in line; what the host SENDS to the editor is the thing under test.
+vi.mock('./lineNumbers/lineNumbers', async () => {
+  const { blockLines } = await import('./lineNumbers/blockLines')
+  return { requestBlockLines: vi.fn(async (text: string) => blockLines(text)), showLineNumbers: vi.fn() }
 })
 
 // External edits apply as diffs (YAZ-1347): the fake lands the body the way the real apply would.
@@ -77,11 +86,13 @@ vi.mock('./external/applyExternalMarkdown', () => ({
   }),
 }))
 
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, setMarkdown, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, getPlainText, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
+import type { BlockLines } from './lineNumbers/blockLines'
+import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
 
 interface FakeCrepe {
   md: string
@@ -97,6 +108,8 @@ const openLink = vi.mocked(api.shell.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
 const setMarkdownMock = vi.mocked(setMarkdown)
 const applyExternalMock = vi.mocked(applyExternalMarkdown)
+const requestBlockLinesMock = vi.mocked(requestBlockLines)
+const showLineNumbersMock = vi.mocked(showLineNumbers)
 const openFile = vi.fn()
 
 // React's act() refuses to run outside a test renderer unless this flag is set.
@@ -123,14 +136,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} />))
   await settle()
   await settle()
   return container
@@ -963,5 +976,386 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
     expect(renders).toEqual({ frontmatter: 0, comments: 0, backlinks: 0, reviews: 0 })
+  })
+})
+
+/** One click on the page settings cog: opens the menu, or closes it. */
+const clickCog = (host: ParentNode): void => act(() => host.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+
+/** The menu's one switch, through the real cog: opens the menu, clicks "Line numbers", closes the menu. */
+function switchLineNumbers(host: ParentNode): void {
+  clickCog(host)
+  act(() => host.querySelector<HTMLButtonElement>('.page-settings__menu button[aria-pressed]')!.click())
+  clickCog(host)
+}
+
+describe('the page settings cog (YAZ-2643)', () => {
+  /** Mounts <Editor> on `path` with whatever the case adds; the shared `mount` has no door for these props. */
+  async function open(path: string, props: Partial<Parameters<typeof Editor>[0]> = {}): Promise<HTMLElement> {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} {...props} />))
+    await settle()
+    await settle()
+    return container
+  }
+
+  it('is the first chip of a Markdown note: cog, zoom pill, sync chip, save chip (S1)', async () => {
+    readFile.mockResolvedValueOnce({ path: PATH, content: BODY, mtime: 1, size: BODY.length })
+    await open(PATH, { sync: { root: '/vault', state: 'synced' }, onSyncNow: noop })
+    const chips = [...container!.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])
+    expect(chips).toEqual(['page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
+    expect(container!.querySelector('.editor-host')!.contains(container!.querySelector('.page-settings'))).toBe(false)
+  })
+
+  it('a text file has no cog (S11)', async () => {
+    const el = await mount('{"a": 1}', 1, { path: '/vault/data.json' })
+    expect(el.querySelector('.text-viewer')).not.toBeNull()
+    expect(el.querySelector('.page-settings')).toBeNull()
+  })
+
+  it('a PDF has no cog (S11)', async () => {
+    readPdf.mockResolvedValueOnce({ path: '/vault/report.pdf', data: new Uint8Array([0x25, 0x50, 0x44, 0x46]), mtime: 1, size: 4 })
+    const el = await open('/vault/report.pdf')
+    expect(el.querySelector('.pdf-viewer__frame')).not.toBeNull()
+    expect(el.querySelector('.page-settings')).toBeNull()
+  })
+
+  it('an image has no cog (S11)', async () => {
+    readImage.mockResolvedValueOnce({ path: '/vault/photo.png', data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]), mime: 'image/png', mtime: 1, size: 4 })
+    const el = await open('/vault/photo.png')
+    expect(el.querySelector('.image-viewer__canvas')).not.toBeNull()
+    expect(el.querySelector('.page-settings')).toBeNull()
+  })
+
+  it('a folder page has no cog (S11)', async () => {
+    tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'dir', name: 'Projects', path: `${r}/Projects`, children: [] }], generatedAt: 1 }))
+    const source = createWikilinkResolveSource()
+    act(() => source.update(() => null, [], [])) // the first index snapshot: an empty vault, no folder settings
+    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source })
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-settings')).toBeNull()
+  })
+
+  it('the switch sets `data-line-numbers` on the scroller and clears it again; the Crepe is never recreated (S6)', async () => {
+    const el = await mount(BODY)
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    const count = createCrepeMock.mock.calls.length
+    expect(host.hasAttribute('data-line-numbers')).toBe(false)
+    switchLineNumbers(el)
+    expect(host.hasAttribute('data-line-numbers')).toBe(true)
+    switchLineNumbers(el)
+    expect(host.hasAttribute('data-line-numbers')).toBe(false)
+    expect(createCrepeMock).toHaveBeenCalledTimes(count)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('stores nothing: the switch calls no writer of the app state, and a renamed note (a new path, so a new editor) starts off (S9, S10)', async () => {
+    const el = await mount(BODY)
+    // Every `set…` door of the app state (main's `yaseendocs.json` and this window's identity), and the browser's own store.
+    const writers = (Object.keys(storage) as Array<keyof typeof storage>).filter((key) => key.startsWith('set')).map((key) => vi.spyOn(storage, key))
+    const stored = vi.spyOn(Storage.prototype, 'setItem')
+    expect(writers.length).toBeGreaterThan(5)
+    switchLineNumbers(el)
+    expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
+    for (const writer of writers) expect(writer, writer.getMockName()).not.toHaveBeenCalled()
+    expect(stored).not.toHaveBeenCalled()
+    for (const spy of [...writers, stored]) spy.mockRestore()
+    const renamed = '/vault/renamed.md'
+    readFile.mockResolvedValueOnce({ path: renamed, content: BODY, mtime: 1, size: BODY.length })
+    act(() => root!.render(<Editor root="/vault" path={renamed} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} />))
+    await settle()
+    await settle()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('renamed')
+    expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(false)
+  })
+
+  it('counts THIS editor’s body when the menu opens: the title, the properties and the comments are not in it (S16)', async () => {
+    const el = await mount(`${FM}one two\n`)
+    clickCog(el)
+    const menu = el.querySelector('.page-settings__menu')!
+    expect(menu.textContent).toContain('2 words')
+    expect(menu.textContent).toContain('8 characters')
+  })
+
+  it('each mounted editor has its own switch, a hidden tab keeps it, and a reopened one starts off (S7–S9)', async () => {
+    await mount(BODY)
+    readFile.mockImplementation(async (path) => ({ path, content: BODY, mtime: 1, size: BODY.length }))
+    const other = '/vault/other.md'
+    const links = createWikilinkResolveSource()
+    const render = (active: string, firstOpen = true) => {
+      act(() => root!.render(<>
+        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>}
+        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={links} /></div>
+      </>))
+    }
+    const on = (pane: string) => container!.querySelector(`[data-pane="${pane}"] .editor-host`)!.hasAttribute('data-line-numbers')
+    render(PATH); await settle(); await settle()
+    switchLineNumbers(container!.querySelector('[data-pane="first"]')!)
+    expect([on('first'), on('second')]).toEqual([true, false])
+    render(other)
+    render(PATH)
+    expect([on('first'), on('second')]).toEqual([true, false])
+    render(other, false)
+    render(PATH); await settle(); await settle()
+    expect([on('first'), on('second')]).toEqual([false, false])
+  })
+})
+
+describe('line numbers follow the file on disk (YAZ-2643)', () => {
+  /** What the host last sent to the editor: the blocks, or null for "off". */
+  const sent = (): ShownLines | null | undefined => showLineNumbersMock.mock.calls.at(-1)?.[1]
+
+  it('nothing is asked and nothing is sent while the numbers are off, through a whole save (S58, S59)', async () => {
+    await mount(FM + BODY)
+    type('# Hello\n\nedited\n')
+    await pastDebounce()
+    await settle()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(requestBlockLinesMock).not.toHaveBeenCalled()
+    expect(showLineNumbersMock).not.toHaveBeenCalled()
+  })
+
+  it('turn-on builds them from the disk file, the frontmatter lines counted (S22, S24)', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledExactlyOnceWith(BODY)
+    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(crepe(), { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+  })
+
+  it('sends where each block ENDS too, as a line of the file: the frontmatter lines counted, and a blank line the load added taken out (S66)', async () => {
+    // Under 3 lines of frontmatter: a wrapped paragraph (4–6), a bullet (8), a bare nested marker (9), a wrapped bullet (10–11), a code block (13–16).
+    const body = 'one\ntwo\nthree\n\n* a\n  *\n  * b\n    wrapped\n\n```\nx\ny\n```\n'
+    const el = await mount(FM + body)
+    switchLineNumbers(el)
+    await settle()
+    expect(sent()).toEqual({ lines: [4, 8, 9, 10, 13], ends: [6, 8, 9, 11, 16], kinds: 'ppppc' })
+  })
+
+  it('never builds them on a keystroke or while a save is in flight; the settled save builds them from the saved file (S25–S27)', async () => {
+    let written!: () => void
+    writeFile.mockImplementationOnce((body) => new Promise((resolve) => (written = () => resolve({ path: body.path, mtime: 99, size: body.content.length }))))
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nsome text\n\nnew block\n')
+    expect(el.querySelector('.save-indicator--unsaved')).not.toBeNull()
+    switchLineNumbers(el)
+    await settle()
+    expect(requestBlockLinesMock).not.toHaveBeenCalled()
+    await pastDebounce()
+    expect(el.querySelector('.save-indicator--saving')).not.toBeNull()
+    expect(requestBlockLinesMock).not.toHaveBeenCalled()
+    await act(async () => written())
+    await settle()
+    expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
+    expect(requestBlockLinesMock).toHaveBeenCalledExactlyOnceWith('# Hello\n\nsome text\n\nnew block\n')
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'hpp' })
+  })
+
+  it('with the numbers on, typing asks for nothing; each settled save builds them again (S25, S26)', async () => {
+    const el = await mount(BODY)
+    switchLineNumbers(el)
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(1)
+    type('intro\n\n# Hello\n\nsome text\n')
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(1)
+    expect(showLineNumbersMock).toHaveBeenCalledTimes(1)
+    await pastDebounce()
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
+    expect(sent()).toEqual({ lines: [1, 3, 5], ends: [1, 3, 5], kinds: 'php' })
+  })
+
+  it('an outside change with nothing unsaved reloads the note and builds them from the new file (S28)', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    const next = `${FM}\n\n# Someone else\n\n- a\n- b\n`
+    diskHas(next, 2)
+    diskHas(next, 2) // reload() re-reads
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
+    expect(sent()).toEqual({ lines: [6, 8, 9], ends: [6, 8, 9], kinds: 'hpp' })
+  })
+
+  it('an outside change over unsaved edits keeps them until "Reload" settles (S29)', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    type('# Hello\n\nunsaved edit\n')
+    const next = `${FM}# Someone else\n`
+    diskHas(next, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).not.toBeNull()
+    // The pending save meets the newer file: main refuses it, and the bar stays.
+    writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 2))
+    diskHas(next, 2)
+    await pastDebounce()
+    expect(el.querySelector('.conflict-bar')).not.toBeNull()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(1)
+    expect(showLineNumbersMock).toHaveBeenCalledTimes(1)
+    diskHas(next, 2)
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Reload')!.click())
+    await settle()
+    await settle()
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
+    expect(sent()).toEqual({ lines: [4], ends: [4], kinds: 'h' })
+  })
+
+  it('an outside change over unsaved edits keeps them until "Keep mine" has saved (S29)', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    type('# Hello\n\nmine\n\nand more\n')
+    diskHas(`${FM}# Someone else\n`, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 2))
+    diskHas(`${FM}# Someone else\n`, 2)
+    await pastDebounce()
+    expect(el.querySelector('.conflict-bar')).not.toBeNull()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(1)
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Keep mine')!.click())
+    await settle()
+    await settle()
+    expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM}# Hello\n\nmine\n\nand more\n`, expectedMtime: 2 })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'hpp' })
+  })
+
+  it('an outside change that puts back the bytes the note was opened with still builds them again (S28)', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    type('intro\n\n# Hello\n\nsome text\n')
+    await pastDebounce()
+    await settle()
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'php' })
+    // A revert from outside (git, an AI): the file is byte-for-byte what this editor mounted on.
+    diskHas(FM + BODY, 100)
+    diskHas(FM + BODY, 100) // reload() re-reads
+    await emit({ type: 'change', path: PATH, mtime: 100 })
+    await settle()
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), BODY)
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(3)
+    expect(sent()).toEqual({ lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+  })
+
+  it('a property write changes the frontmatter’s line count: every number moves with it (S30)', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    expect(sent()).toEqual({ lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+    diskHas(`---\nstatus: done\nowner: yasin\ntags:\n  - a\n---\n${BODY}`, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    await settle()
+    expect(applyExternalMock).not.toHaveBeenCalled()
+    expect(sent()).toEqual({ lines: [7, 9], ends: [7, 9], kinds: 'hp' })
+  })
+
+  it('turn-off drops every number (S32)', async () => {
+    const el = await mount(BODY)
+    switchLineNumbers(el)
+    await settle()
+    switchLineNumbers(el)
+    expect(showLineNumbersMock).toHaveBeenCalledTimes(2)
+    expect(showLineNumbersMock).toHaveBeenLastCalledWith(crepe(), null)
+  })
+
+  it('drops an answer that comes back after the numbers went off (S31)', async () => {
+    let answer!: (blocks: BlockLines) => void
+    requestBlockLinesMock.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    const el = await mount(BODY)
+    switchLineNumbers(el)
+    switchLineNumbers(el)
+    await act(async () => answer({ lines: [1, 3], ends: [1, 3], kinds: 'hp' }))
+    await settle()
+    expect(showLineNumbersMock.mock.calls.map((call) => call[1])).toEqual([null])
+  })
+
+  it('drops an answer that comes back after a newer request (S31)', async () => {
+    let answer!: (blocks: BlockLines) => void
+    requestBlockLinesMock.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    const el = await mount(BODY)
+    switchLineNumbers(el)
+    const next = '# Someone else\n\nnew\n\ntext\n'
+    diskHas(next, 2)
+    diskHas(next, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    await settle()
+    expect(sent()).toEqual({ lines: [1, 3, 5], ends: [1, 3, 5], kinds: 'hpp' })
+    await act(async () => answer({ lines: [1, 3], ends: [1, 3], kinds: 'hp' }))
+    await settle()
+    expect(showLineNumbersMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a worker that fails: one passive notice, nothing sent to the editor, no retry; the next settled save asks again (S65)', async () => {
+    const onNotice = vi.fn()
+    requestBlockLinesMock.mockRejectedValueOnce(new Error('the line-number worker failed'))
+    const el = await mount(FM + BODY, 1, { onNotice })
+    switchLineNumbers(el)
+    await settle()
+    await pastDebounce()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Line numbers could not load.')
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(1)
+    expect(showLineNumbersMock).not.toHaveBeenCalled()
+    expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
+    type('# Hello\n\nsome text\n\nnew block\n')
+    await pastDebounce()
+    await settle()
+    expect(requestBlockLinesMock).toHaveBeenCalledTimes(2)
+    expect(sent()).toEqual({ lines: [4, 6, 8], ends: [4, 6, 8], kinds: 'hpp' })
+    expect(onNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failure that comes back after the numbers went off says nothing (S31, S65)', async () => {
+    const onNotice = vi.fn()
+    let fail!: (reason: Error) => void
+    requestBlockLinesMock.mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)))
+    const el = await mount(BODY, 1, { onNotice })
+    switchLineNumbers(el)
+    switchLineNumbers(el)
+    await act(async () => fail(new Error('the line-number worker failed')))
+    await settle()
+    expect(onNotice).not.toHaveBeenCalled()
+  })
+
+  it('turned on before the editor is created: nothing is sent to it until it is, then the numbers are built', async () => {
+    let created!: () => void
+    createCrepeMock.mockImplementationOnce((opts) => ({ md: opts.defaultValue ?? '', onMarkdownUpdated: opts.onMarkdownUpdated, create: () => new Promise<void>((resolve) => (created = resolve)), destroy: () => Promise.resolve() }) as never)
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    // The menu opened on an editor that cannot take an action yet: it counts nothing, and does not ask.
+    expect(vi.mocked(getPlainText)).not.toHaveBeenCalled()
+    expect(requestBlockLinesMock).not.toHaveBeenCalled()
+    expect(showLineNumbersMock).not.toHaveBeenCalled()
+    await act(async () => created())
+    await settle()
+    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(crepe(), { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+    clickCog(el)
+    expect(vi.mocked(getPlainText)).toHaveBeenCalledExactlyOnceWith(crepe())
+  })
+
+  it('a Crepe recreated under the switch gets its numbers too, and the one it replaced gets nothing more', async () => {
+    const el = await mount(FM + BODY)
+    switchLineNumbers(el)
+    await settle()
+    const first = crepe()
+    expect(showLineNumbersMock).toHaveBeenCalledExactlyOnceWith(first, { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+    // A new `onOpenFile` identity is one of the mount effect's dependencies: the editor is rebuilt in place.
+    act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={() => undefined} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} />))
+    await settle()
+    await settle()
+    const second = crepe()
+    expect(second).not.toBe(first)
+    expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
+    expect(showLineNumbersMock).toHaveBeenCalledTimes(2)
+    expect(showLineNumbersMock).toHaveBeenLastCalledWith(second, { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
   })
 })
