@@ -105,6 +105,14 @@
  *    Registered only when `opts.image` supplies the root + note path; without it images render as
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
+ *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
+ *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
+ *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
+ *    state only: the host sends the lines in a metadata-only transaction (never `markdownUpdated`,
+ *    never history), and between two sends the set only rides the position mapping.
+ *    A code block's OWN gutter counts in lines of the file too (D8, `lineNumbers/codeLines.ts`):
+ *    one shared CodeMirror compartment in this file's CodeMirror extensions, empty until a build
+ *    gives the block `data-line-code`; setting it is an effects-only CodeMirror transaction.
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -144,6 +152,8 @@ import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
+import { codeLines } from './lineNumbers/codeLines'
+import { lineNumbers } from './lineNumbers/lineNumbers'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut } from './clipboardCopyOut'
@@ -304,7 +314,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
       // app.css `--code-*` so they follow Appearance (codeTheme.ts replaces Crepe's One Dark).
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping] },
+      // `codeLines` (YAZ-2643 D8): a code block's own line numbers are lines of the file while the numbers show.
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, extensions: [CodeMirrorView.lineWrapping, codeLines] },
     },
   })
   crepe.editor.use(
@@ -330,6 +341,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled', title: () => 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
+  crepe.editor.use(lineNumbers)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
@@ -421,6 +433,18 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {
   crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus())
+}
+
+/**
+ * The document's plain text, one block per line: what the page settings menu counts (YAZ-2643).
+ * No break at the end: the empty paragraph Crepe keeps under a last bullet, heading, code block or
+ * table is no text, and the count must not move when it appears.
+ */
+export function getPlainText(crepe: Crepe): string {
+  return crepe.editor.action((ctx) => {
+    const { doc } = ctx.get(editorViewCtx).state
+    return doc.textBetween(0, doc.content.size, '\n').replace(/\n+$/, '')
+  })
 }
 
 export function postProcessMarkdown(md: string): string {

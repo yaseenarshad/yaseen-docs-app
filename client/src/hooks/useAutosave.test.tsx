@@ -135,6 +135,35 @@ describe('useAutosave (YAZ-2172)', () => {
     expect(settled).toBe(true)
   })
 
+  describe('diskParts: the file as it sits on disk, in its two parts (YAZ-2643)', () => {
+    it('is the frontmatter block and the raw disk body after a load, whatever the editor made of the body', () => {
+      mountAttached(() => 'the editor’s own spelling')
+      expect(handle.diskParts()).toEqual({ frontmatter: FM, body: 'body' })
+    })
+
+    it('is the saved body after a save, and still the old one while the edit is unsaved', async () => {
+      const autosave = mountAttached(() => 'body')
+      act(() => autosave.update('body edited'))
+      expect(handle.diskParts()).toEqual({ frontmatter: FM, body: 'body' })
+      await act(() => autosave.flush())
+      expect(handle.diskParts()).toEqual({ frontmatter: FM, body: 'body edited' })
+    })
+
+    it('takes the new frontmatter block from a frontmatter-only absorb, with the body as it was', () => {
+      mountAttached(() => 'body')
+      const fm2 = '---\nstatus: done\nowner: yasin\n---\n'
+      expect(handle.absorbFrontmatterOnly(`${fm2}body`, 7)).toBe(true)
+      expect(handle.diskParts()).toEqual({ frontmatter: fm2, body: 'body' })
+    })
+
+    it('follows a reload from disk', () => {
+      mountAttached(() => 'body')
+      const fm2 = '---\nstatus: done\n---\n'
+      act(() => handle.markReloaded(() => 'reloaded', 9, fm2, 'reloaded\n'))
+      expect(handle.diskParts()).toEqual({ frontmatter: fm2, body: 'reloaded\n' })
+    })
+  })
+
   describe('a CONFLICT whose disk change is frontmatter only (YAZ-2175)', () => {
     const FM2 = '---\nstatus: done\n---\n'
 
