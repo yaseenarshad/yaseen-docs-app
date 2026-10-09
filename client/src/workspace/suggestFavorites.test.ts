@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { OPEN_HALF_LIFE_MS, addOpen, type OpenStat } from '@shared/types'
-import { SUGGEST_MAX, SUGGEST_MIN_PAGES, SUGGEST_MIN_SCORE, suggestFavorites, type PathKind } from './suggestFavorites'
+import { suggestFavorites, type PathKind } from './suggestFavorites'
 
 const NOW = 1_800_000_000_000
 /** A page used `score` times' worth, last on show at `NOW`. */
@@ -15,10 +15,6 @@ const kinds = (dirs: readonly string[] = [], gone: readonly string[] = []) => (p
 const rows = (...args: Parameters<typeof suggestFavorites>) => suggestFavorites(...args).map((row) => [row.path, row.folder, Math.round(row.score * 100) / 100])
 
 describe('suggestFavorites', () => {
-  it('the limits are the numbers of D4: 5 rows, three uses (a score of 2.5: a use is worth less than 1 a moment later), 3 pages', () => {
-    expect([SUGGEST_MAX, SUGGEST_MIN_SCORE, SUGGEST_MIN_PAGES]).toEqual([5, 2.5, 3])
-  })
-
   it('S15: three uses a day apart make a file a row; two do not', () => {
     const day = 24 * 60 * 60 * 1000
     const uses = (n: number) => Array.from({ length: n }, (_, i) => NOW - (n - 1 - i) * day).reduce((opens, at) => addOpen(opens, '/v/a.md', at), {} as Record<string, OpenStat>)

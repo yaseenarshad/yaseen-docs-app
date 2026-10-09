@@ -33,13 +33,12 @@
   - [x] Worktree and `npm install`
   - [x] YAZ-2671: 1- The app stores an open history (`26b67cd`)
   - [x] YAZ-2672: 2- The new tab page shows three columns (`c79184e`)
-- Now: [→] YAZ-2673 and YAZ-2674 are built and the gates ran. The changes are in the working tree, not committed. The coordinator reviews and commits.
-  - [→] YAZ-2673: 3- The rows of the page have the row menu of the sidebar
-  - [→] YAZ-2674: 4- The arrow keys walk the rows of the page
-- Next: connect Space to the preview panel when YAZ-2668 is on the branch (see below).
+  - [x] YAZ-2673: 3- The rows of the page have the row menu of the sidebar (`eb27ece`)
+  - [x] YAZ-2674: 4- The arrow keys walk the rows of the page (`eb27ece`; Space and the preview panel in the merge `7b99430`)
+- Now: [→] YAZ-2675: 5- Polish and anti-slop. The audit and its result are comments on the issue. The changes are in the working tree, not committed. The coordinator reviews and commits.
+- Next: merge `yaz-2662-search-keys` again (`6d61727`, `95593a5`). See "The next merge" below.
 - Remaining:
-  - [ ] YAZ-2675: 5- Polish and anti-slop (the key hints of the page, the hotkey reference)
-  - [ ] YAZ-2676: 6- Verify and deliver (the pull request, the hand walk vault and steps)
+  - [ ] YAZ-2676: 6- Verify and deliver (the pull request, the size ceilings, the hand walk vault and steps: W13 of `docs/REGRESSION.md`)
 
 ## Key Decisions of YAZ-2673 and YAZ-2674
 
@@ -48,18 +47,25 @@
 - The way in from the empty search bar is in `Sidebar.tsx` (the `onKeyDown` of the bar, prop `onLeaveToPage`). `useSidebarSearch.ts` has no change: the code of YAZ-2668 adds two arguments to the same call and changes `searchKeyDown`.
 - The focus door is a box, `focusRef: { current: (() => boolean) | null }`, as `clipboardRef`. The page fills it. App asks it on a key.
 - `onShowFolder` is now `onShowInFiles`: one door for a folder row and for Shift+Enter.
-- ⌘Enter on a folder row does what ⌘-click does: the folder shows in Files (S22). It opens no folder page.
+- ⌘ on a folder row, with a click or with Enter, opens the page of the folder in a background tab, as on a search row (YAZ-2662 S3). The first build showed the folder in Files; the coordinator changed it in `eb27ece`.
 - S41 is built: a typed letter calls `onBackToSearch` and the key is not taken. The hand walk must prove that the letter is in the bar.
-- The page goes while a row has the keyboard focus: the caret goes into the page on show (`focusOpenDocument`).
-- The preview of S39 is built against `previewPath` and `onPreview`. App passes neither yet.
+- The page goes while a row has the keyboard focus: the caret goes into the page on show in the tab stack (`focusOpenDocument(stack)`), never into the right panel (YAZ-2675).
+- The preview of S39: App holds `pagePreviewPath` for the page and draws `pagePreviewPath ?? previewPath`. The ✕ clears both.
 
-## To do when YAZ-2668 is on the branch
+## Key Decisions of YAZ-2675
 
-- App: `const [pagePreviewPath, setPagePreviewPath] = useState<string | null>(null)`.
-- `<StartPage … previewPath={pagePreviewPath} onPreview={setPagePreviewPath} />`.
-- The panel draws `pagePreviewPath ?? previewPath`. Its ✕ clears both.
-- Do not give the page the `previewPath` of the search: the hook of the search follows its own highlight and takes the panel back after 120 ms.
-- Replace `PREVIEW_FOLLOW_MS` of `StartPage.tsx` with the constant of `useSidebarSearch.ts`.
+- The panel draws the file of the last one that asked: an effect in App clears `pagePreviewPath` when the search names a file.
+- A held Enter or Space on a row acts one time (the rule of YAZ-2669).
+- The columns are cut in one `useMemo`. The records are read with `useSyncExternalStore` and keep their identity until a use or a vault name changes.
+- The hotkey reference has no entry for the keys of the page: it lists no key of the Search tab or of the tab board.
+- The page has no key hints. No screen says that `→` or `↓` in the empty search bar goes to the page. A decision for Yasin after the hand walk.
+
+## The next merge of `yaz-2662-search-keys`
+
+- `6d61727` changes the same lines of `App.tsx`: it adds `previewShown` and `closePreview`, and the panel draws `previewShown`.
+- Keep the rule of both: the panel draws `pagePreviewPath ?? previewShown`. The ✕ and Esc in the panel clear both paths.
+- The effect of YAZ-2675 (`if (previewPath !== null) setPagePreviewPath(null)`) must stay.
+- The panel of the page must give way to the board and to a review too. The page goes in both cases, so its clean-up closes it. Check it in the App tests after the merge.
 
 ## Open Questions
 

@@ -2,15 +2,15 @@ import { openScore, stripSlash, type OpenStat } from '@shared/types'
 import { dirname } from '../lib/paths'
 
 /** The third column shows this many rows at most (YAZ-2663 D4). */
-export const SUGGEST_MAX = 5
+const SUGGEST_MAX = 5
 /**
  * A row needs this score NOW (D4): a file its own, a folder the sum of its pages'. D4 says "3 uses".
  * A use is worth a little less than 1 a moment later (D2: a score halves in 14 days), so three uses
  * are never worth a full 3. 2.5 is three uses inside about a week.
  */
-export const SUGGEST_MIN_SCORE = 2.5
+const SUGGEST_MIN_SCORE = 2.5
 /** A folder is a row when this many pages directly in it are in the record (D4). */
-export const SUGGEST_MIN_PAGES = 3
+const SUGGEST_MIN_PAGES = 3
 
 /** What the Files tree says a path is. */
 export type PathKind = 'file' | 'dir'

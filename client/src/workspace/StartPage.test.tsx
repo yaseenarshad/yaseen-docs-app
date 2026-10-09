@@ -8,8 +8,15 @@ import { act, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
-import { START_ROWS, StartPage, type StartPageProps } from './StartPage'
+import { StartPage, type StartPageProps } from './StartPage'
+import { suggestFavorites } from './suggestFavorites'
 import startCss from './startPage.css?inline'
+
+// The REAL rules of the third column behind a counter (R5): a test can say when the page ran them.
+vi.mock('./suggestFavorites', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./suggestFavorites')>()
+  return { ...real, suggestFavorites: vi.fn(real.suggestFavorites) }
+})
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -91,6 +98,8 @@ const column = (el: HTMLElement, col: Col) => el.querySelector<HTMLElement>(`.st
 const rowsOf = (el: HTMLElement, col: Col) => [...column(el, col).querySelectorAll<HTMLButtonElement>('button.start__row')]
 const paths = (el: HTMLElement, col: Col) => rowsOf(el, col).map((row) => row.dataset.path)
 const part = (row: HTMLElement, name: string) => row.querySelector(`.${name}`)?.textContent ?? null
+/** A folder row, by the class that draws it as one. */
+const isDir = (row: HTMLElement) => row.classList.contains('start__row--dir')
 const emptyLine = (el: HTMLElement, col: Col) => column(el, col).querySelector('.start__empty')?.textContent ?? null
 const row = (el: HTMLElement, path: string) => [...el.querySelectorAll<HTMLButtonElement>('button.start__row')].find((button) => button.dataset.path === path)!
 const click = (target: Element, init: MouseEventInit = {}) => act(async () => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init })))
@@ -142,7 +151,6 @@ describe('StartPage', () => {
       ['suggested', 'Used a lot, not a favorite yet'],
     ])
     // 10 pages in the record of two vaults: the 8 newest, and the two oldest (n6, report.pdf) are not here.
-    expect(START_ROWS).toBe(8)
     expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/Projects/Alpha/plan.md`, ...notes.slice(0, 6)])
     const [x, plan, n0] = rowsOf(el, 'recent')
     // The name is the page's title; a page at the top of its vault names no folder.
@@ -170,8 +178,8 @@ describe('StartPage', () => {
     expect(paths(el, 'favorites')).toEqual([`${w}/x.md`, ...mine])
     expect(paths(el, 'favorites')).toHaveLength(8) // 9 favorites have a file: `y.md` is the ninth
     const [x, projects] = rowsOf(el, 'favorites')
-    expect([part(x, 'start__name'), part(x, 'tree__vault'), x.dataset.kind]).toEqual(['x', 'Work', 'file'])
-    expect([part(projects, 'start__name'), part(projects, 'tree__vault'), projects.dataset.kind]).toEqual(['Projects', 'Notes', 'dir'])
+    expect([part(x, 'start__name'), part(x, 'tree__vault'), isDir(x)]).toEqual(['x', 'Work', false])
+    expect([part(projects, 'start__name'), part(projects, 'tree__vault'), isDir(projects)]).toEqual(['Projects', 'Notes', true])
     // A favorites row says no time.
     expect(part(x, 'start__when')).toBeNull()
   })
@@ -192,9 +200,9 @@ describe('StartPage', () => {
       favorites: { [v]: [`${v}/fav.md`] },
     })
     // Projects stands for its three pages (6); `seldom` is under 3; `fav` is a favorite.
-    expect(rowsOf(el, 'suggested').map((button) => [button.dataset.path, button.dataset.kind, part(button, 'start__name')])).toEqual([
-      [`${v}/Projects`, 'dir', 'Projects'],
-      [`${v}/often.md`, 'file', 'often'],
+    expect(rowsOf(el, 'suggested').map((button) => [button.dataset.path, isDir(button), part(button, 'start__name')])).toEqual([
+      [`${v}/Projects`, true, 'Projects'],
+      [`${v}/often.md`, false, 'often'],
     ])
     expect(emptyLine(el, 'suggested')).toBeNull()
   })
@@ -330,6 +338,28 @@ describe('StartPage', () => {
     expect(listens).not.toHaveBeenCalled()
   })
 
+  it('R5: the columns are cut when what they read changes, not on each render — a broadcast of the app state that changes no record, and a new render by App, run the suggestions no second time; a new use, and a new name of a vault, are on the page at once', async () => {
+    const v = vault()
+    const w = vault('w')
+    const { el, props, state, emitState } = await mount({ trees: { [v]: [file(`${v}/a.md`), file(`${v}/b.md`)], [w]: [file(`${w}/x.md`)] }, opens: { [v]: { [`${v}/a.md`]: used(5, HOUR), [`${v}/b.md`]: used(1, 2 * HOUR) } } })
+    const runs = vi.mocked(suggestFavorites).mock.calls
+    const settled = runs.length
+    expect(settled).toBeGreaterThan(0)
+    // Each broadcast is a new COPY of all the app state: a change of a different key (the width of the sidebar) is no change of a record.
+    await emitState({ ...(JSON.parse(JSON.stringify(state)) as AppState), sidebarWidth: 300 })
+    await emitState(JSON.parse(JSON.stringify(state)) as AppState)
+    // App renders again — a resize of the window, a drag of the sidebar edge — and hands the page the props it had.
+    for (let n = 0; n < 3; n++) await act(async () => root?.render(<StartPage {...props} />))
+    expect(runs.length).toBe(settled)
+    expect(paths(el, 'recent')).toEqual([`${v}/a.md`, `${v}/b.md`])
+    // A use that main added, and the vault's new name: each is a change of what the page reads.
+    await emitState({ ...state, folders: { ...state.folders, [w]: { ...state.folders[w], opens: { [`${w}/x.md`]: used(1) } } } })
+    expect(runs.length).toBe(settled + 1)
+    expect(rowsOf(el, 'recent').map((button) => [button.dataset.path, part(button, 'tree__vault')])).toEqual([[`${w}/x.md`, 'Work'], [`${v}/a.md`, 'Notes'], [`${v}/b.md`, 'Notes']])
+    await emitState({ ...state, folders: { ...state.folders, [v]: { ...state.folders[v], name: 'Journal' } } })
+    expect(rowsOf(el, 'recent').map((button) => part(button, 'tree__vault'))).toEqual(['Journal', 'Journal'])
+  })
+
   /** "Recent" has three rows, "Favorites" none, and the third column two: `a` and `b` are used a lot. */
   const keysFixture = (v: string): Fixture => ({
     trees: { [v]: [file(`${v}/a.md`), file(`${v}/b.md`), file(`${v}/c.md`)] },
@@ -398,18 +428,44 @@ describe('StartPage', () => {
     expect(calls()).toEqual([[`${v}/a.md`], [`${v}/a.md`, `${v}/a.md`], []])
     press('Enter', { shiftKey: true })
     expect(calls()).toEqual([[`${v}/a.md`], [`${v}/a.md`, `${v}/a.md`], [`${v}/a.md`]])
-    // A folder is never opened as a page from here (S22): Enter, and Shift+Enter, show it in Files.
+    // A folder (S22): Enter, and Shift+Enter, show it in Files. ⌘Enter opens its page in a background tab, as ⌘-click does (YAZ-2662 S3).
     act(() => row(el, `${v}/Projects`).focus())
     press('Enter')
     press('Enter', { shiftKey: true })
     expect(calls()).toEqual([[`${v}/a.md`], [`${v}/a.md`, `${v}/a.md`], [`${v}/a.md`, `${v}/Projects`, `${v}/Projects`]])
+    press('Enter', { metaKey: true })
+    expect(calls()).toEqual([[`${v}/a.md`], [`${v}/a.md`, `${v}/a.md`, `${v}/Projects`], [`${v}/a.md`, `${v}/Projects`, `${v}/Projects`]])
     // A file that the app cannot show: Enter opens it in its default app, and Shift+Enter shows it in Files (YAZ-2662 S8).
     act(() => row(el, `${v}/data.zip`).focus())
     press('Enter')
     press('Enter', { shiftKey: true })
     await act(async () => undefined)
     expect(bridge.shell.openDefault.mock.calls).toEqual([[{ path: `${v}/data.zip` }]])
-    expect(calls()).toEqual([[`${v}/a.md`], [`${v}/a.md`, `${v}/a.md`], [`${v}/a.md`, `${v}/Projects`, `${v}/Projects`, `${v}/data.zip`]])
+    expect(calls()).toEqual([[`${v}/a.md`], [`${v}/a.md`, `${v}/a.md`, `${v}/Projects`], [`${v}/a.md`, `${v}/Projects`, `${v}/Projects`, `${v}/data.zip`]])
+  })
+
+  it('a held Enter or Space on a row acts one time, as on a search row (YAZ-2669): each repeat of the press is taken and does nothing', async () => {
+    const v = vault()
+    const onPreview = vi.fn()
+    const { el, props, bridge } = await mount({ trees: { [v]: [file(`${v}/a.md`), file(`${v}/data.zip`, null)] }, opens: { [v]: { [`${v}/a.md`]: used(1) } }, favorites: { [v]: [`${v}/data.zip`] } }, { onPreview })
+    const held = (key: string, init: KeyboardEventInit = {}) => [press(key, { ...init, repeat: true }), press(key, { ...init, repeat: true })].map((event) => event.defaultPrevented)
+    // A file with no viewer in the app: one press opens its default app ONE time, however long the key is down.
+    act(() => row(el, `${v}/data.zip`).focus())
+    press('Enter')
+    expect(held('Enter')).toEqual([true, true])
+    await act(async () => undefined)
+    expect(bridge.shell.openDefault).toHaveBeenCalledTimes(1)
+    // The panel does not show and close at the rate of the key; ⌘Enter and Shift+Enter do not act again either.
+    act(() => row(el, `${v}/a.md`).focus())
+    press(' ')
+    expect(held(' ')).toEqual([true, true])
+    expect(onPreview.mock.calls).toEqual([[`${v}/a.md`]])
+    expect([held('Enter', { metaKey: true }), held('Enter', { shiftKey: true })]).toEqual([[true, true], [true, true]])
+    expect([props.onOpen, props.onOpenBackground, props.onShowInFiles].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0, 0])
+    // An arrow that is held walks on: that is what a held arrow is for.
+    act(() => cell(el, 'recent', 0).focus())
+    expect(press('ArrowRight', { repeat: true }).defaultPrevented).toBe(true)
+    expect(at()).toBe('favorites 0')
   })
 
   it('S39: Space on a file shows the preview panel on it; the panel follows the keyboard focus 120 ms after its last move, and shows nothing on a folder at once; Space again closes it; Esc with a panel on show closes the panel only; a row that opens, and the page that goes, close it', async () => {
@@ -532,6 +588,36 @@ describe('StartPage', () => {
       expect(document.activeElement).toBe(doc)
     } finally {
       instance.remove()
+    }
+  })
+
+  it('the page goes while the keyboard is on one of its rows, and the page on show has no text (a PDF): the caret does NOT go into a note of the right panel', async () => {
+    const v = vault()
+    const { el } = await mount(keysFixture(v))
+    // As App draws them: the page stands in the tab stack, and the right panel is no part of that stack.
+    el.className = 'tabstack'
+    const editor = () => {
+      const instance = document.createElement('div')
+      instance.className = 'editor-instance'
+      instance.innerHTML = '<div class="ProseMirror" tabindex="-1"></div>'
+      Object.defineProperty(instance.firstElementChild, 'offsetParent', { get: () => document.body })
+      return instance
+    }
+    const right = editor()
+    document.body.insertBefore(right, el) // before the stack in the document: the first editor on show
+    try {
+      act(() => cell(el, 'recent', 0).focus())
+      await act(async () => root?.render(null))
+      expect(document.activeElement).not.toBe(right.firstElementChild)
+      // With a note on show in the stack too, the caret goes into THAT note.
+      await act(async () => root?.render(<StartPage {...doors([v])} />))
+      const main = editor()
+      el.appendChild(main)
+      act(() => cell(el, 'recent', 0).focus())
+      await act(async () => root?.render(null))
+      expect(document.activeElement).toBe(main.firstElementChild)
+    } finally {
+      right.remove()
     }
   })
 

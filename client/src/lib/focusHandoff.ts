@@ -15,10 +15,11 @@
  * keeps its editor mounted and hidden, and a folder's outline is an editor too. `offsetParent` is
  * the cheap "actually rendered" question — null for a `display: none` subtree. The note in the
  * preview panel of the search is no page (YAZ-2662 R4): it wears the editor's class for its
- * stylesheets, and the caret never goes into it.
+ * stylesheets, and the caret never goes into it. `within` is where to look: the new tab page asks
+ * for the tab stack alone (YAZ-2663), so the caret does not go into a note of the right panel.
  */
-export function focusOpenDocument(): boolean {
-  const doc = Array.from(document.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).find(
+export function focusOpenDocument(within: ParentNode = document): boolean {
+  const doc = Array.from(within.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).find(
     (el) => el.offsetParent !== null && el.closest('.quicklook') === null,
   )
   if (doc === undefined) return false
