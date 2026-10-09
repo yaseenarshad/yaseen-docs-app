@@ -4,7 +4,7 @@ import { hostname, tmpdir } from 'node:os'
 import path from 'node:path'
 import { IDS_FILE } from '@shared/noteId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { COUNT_DIR, MADE_DAYS, MADE_MAX, _resetMint, countNotesWith, highestNumber, initMint, macId, mintIds, readCounts, vaultIds } from './mint'
+import { COUNT_DIR, MADE_DAYS, MADE_MAX, _actAs, _resetMint, countNotesWith, countsOf, firstMac, highestNumber, initMint, macId, madeBy, makersOf, mintIds, readCounts, vaultIds, type CountFile } from './mint'
 
 // The door (YAZ-2677 D4, R13 to R21): one count file for each Mac, the next number of the vault.
 // Scenario record section C (S27 to S40). Each "Mac" here is one app data folder.
@@ -314,5 +314,90 @@ describe('the cost of one number', () => {
     console.info(`[mint] one number: ${each.toFixed(2)} ms (mean of ${runs}, 2 count files, ${(await readFile(await countFile(), 'utf8')).length} bytes)`)
     // Generous: the write is fsynced, and the CI disk is slow. A read of each count file or of the vault for each number would be far over it.
     expect(each).toBeLessThan(250)
+  })
+})
+
+// What issues 5 and 6 ask of the count files (YAZ-2677 R22, R23, R33): which Mac is the vault's
+// first, and which Macs gave a number.
+describe('the first Mac, and the Macs that gave a number (R22, R23, R33)', () => {
+  const count = (since: string, made: [from: number, to: number, at: string][] = []): CountFile => ({ name: 'mac', since, last: Math.max(0, ...made.map(([, to]) => to)), made: made.map(([from, to, at]) => ({ from, to, at })) })
+  const T = (time: string) => `2026-10-09T${time}:00.000Z`
+  const NOW = Date.parse(T('12:00'))
+
+  it('the first Mac has the oldest count file; of two made at one moment, the Mac ID that is first in order; a vault with no count file has none', () => {
+    expect(firstMac(new Map())).toBeUndefined()
+    expect(firstMac(new Map([['bbb', count(T('10:07'))], ['zzz', count(T('09:00'))], ['aaa', count(T('11:00'))]]))).toBe('zzz')
+    expect(firstMac(new Map([['bbb', count(T('09:00'))], ['aaa', count(T('09:00'))]]))).toBe('aaa')
+    expect(firstMac(new Map([['only', count(T('09:00'))]]))).toBe('only')
+  })
+
+  it('the Macs that hold a number in `made`, the one that gave it first in front; a run holds each number from its first to its last', () => {
+    const files = new Map([
+      ['air', count(T('10:07'), [[101, 101, T('10:07')]])],
+      ['pro', count(T('09:00'), [[90, 100, T('09:00')], [101, 101, T('10:00')]])],
+      ['old', count(T('08:00'), [[1, 50, T('08:00')]])],
+    ])
+    expect(makersOf(files, 101, NOW)).toEqual([{ mac: 'pro', at: Date.parse(T('10:00')) }, { mac: 'air', at: Date.parse(T('10:07')) }])
+    expect(makersOf(files, 95, NOW)).toEqual([{ mac: 'pro', at: Date.parse(T('09:00')) }])
+    expect(makersOf(files, 50, NOW).map((m) => m.mac)).toEqual(['old'])
+    expect(makersOf(files, 51, NOW)).toEqual([])
+    expect(makersOf(files, 102, NOW)).toEqual([])
+  })
+
+  it('equal times: the Mac ID that is first in order is in front (R23, S50)', () => {
+    const files = new Map([['bbb', count(T('10:00'), [[7, 7, T('10:00')]])], ['aaa', count(T('10:00'), [[7, 7, T('10:00')]])]])
+    expect(makersOf(files, 7, NOW).map((m) => m.mac)).toEqual(['aaa', 'bbb'])
+  })
+
+  it('a run older than 30 days is not counted, whether or not its Mac dropped it yet (S49)', () => {
+    const files = new Map([['pro', count(T('09:00'), [[7, 7, T('10:00')]])], ['air', count(T('09:30'), [[7, 7, T('10:07')]])]])
+    const month = MADE_DAYS * 24 * 60 * 60 * 1000
+    expect(makersOf(files, 7, Date.parse(T('10:00')) + month)).toHaveLength(2)
+    expect(makersOf(files, 7, Date.parse(T('10:00')) + month + 1).map((m) => m.mac)).toEqual(['air'])
+    expect(makersOf(files, 7, Date.parse(T('10:07')) + month + 1)).toEqual([])
+    expect(madeBy(files.get('pro'), 7, NOW)).toBe(true)
+    expect(madeBy(files.get('pro'), 8, NOW)).toBe(false)
+    expect(madeBy(undefined, 7, NOW)).toBe(false)
+  })
+
+  it('`countsOf` tells this Mac from the others, and reads a count file again only when it changed', async () => {
+    await mintIds(root, 2)
+    const proId = await macId()
+    onMac(air)
+    expect((await countsOf(root)).me).not.toBe(proId)
+    // The Air gave no number here yet: it has no count file, and the Pro is the first Mac.
+    expect([...(await countsOf(root)).files.keys()]).toEqual([proId])
+    expect(firstMac((await countsOf(root)).files)).toBe(proId)
+    await mintIds(root, 1)
+    const { me, files } = await countsOf(root)
+    expect([...files.keys()].sort()).toEqual([me, proId].sort())
+    expect(firstMac(files)).toBe(proId)
+    // A count file that did not change is not parsed again: the door hands out what it holds.
+    expect((await countsOf(root)).files.get(proId)).toBe(files.get(proId))
+    await writeFile(path.join(countDir(), `${proId}.json`), JSON.stringify({ name: 'x', since: '2020-01-01T00:00:00.000Z', last: 2, made: [] }))
+    expect((await countsOf(root)).files.get(proId)).toEqual({ name: 'x', since: '2020-01-01T00:00:00.000Z', last: 2, made: [] })
+  })
+
+  it('a count file with `last: 0` is a Mac that gave no number yet: it is read, and it can be the first Mac', async () => {
+    await mkdir(countDir(), { recursive: true })
+    await writeFile(path.join(countDir(), `${await macId()}.json`), JSON.stringify({ name: 'first', since: '2020-01-01T00:00:00.000Z', last: 0, made: [] }))
+    expect(firstMac((await countsOf(root)).files)).toBe(await macId())
+    expect(await mintIds(root, 1)).toEqual(['YAZ-1'])
+    expect((await countOf()).since).toBe('2020-01-01T00:00:00.000Z')
+  })
+
+  it('two vault folders can stand for two Macs in one test: each has its own Mac ID and its own count file', async () => {
+    const other = await mkdtemp(path.join(tmpdir(), 'mdapp-mint-other-'))
+    try {
+      await mkdir(path.join(other, VAULT_CONFIG_DIR), { recursive: true })
+      await writeFile(path.join(other, VAULT_CONFIG_DIR, IDS_FILE), JSON.stringify({ enabled: true, letters: 'YAZ' }))
+      _actAs(other, air)
+      expect(await macId(other)).not.toBe(await macId(root))
+      expect(await macId(root)).toBe(await macId())
+      await mintIds(other, 1)
+      expect(await readdir(path.join(other, VAULT_CONFIG_DIR, COUNT_DIR))).toEqual([`${await macId(other)}.json`])
+    } finally {
+      await rm(other, { recursive: true, force: true })
+    }
   })
 })

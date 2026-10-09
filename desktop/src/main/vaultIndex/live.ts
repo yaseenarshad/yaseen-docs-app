@@ -1,10 +1,13 @@
 import path from 'node:path'
-import { IDS_FILE, NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
+import { isRecord } from '@shared/guards'
+import { IDS_FILE, NOTE_ID_KEY, isIdLetters, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
-import { fsCall, isMarkdown } from '../fs/fsUtils'
+import { BridgeFailure, fsCall, isMarkdown, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
-import { writeConfig } from '../vaultConfig'
-import { restoreFolderId, sweepIds } from './idSweep'
+import { readConfigDetailed, writeConfig } from '../vaultConfig'
+import { checkLine, fixNotice, type ClashFix } from './clash'
+import { see } from './diary'
+import { ID_WAIT_MS, restoreFolderId, sweepIds, type SweepResult } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
 import { countNotesWith, highestNumber, vaultIds } from './mint'
 import { reconcile, type ColdStartDiff } from './reconcile'
@@ -22,6 +25,12 @@ interface Entry {
   dirs: string[]
   /** Whether the vault said yes to IDs when last asked (YAZ-2523 🔒 V4): a yes that arrives later starts the pass. */
   ids: boolean
+  /** Each file this Mac left for the vault's first Mac to number, with the time it first left it (YAZ-2677 R31). Gone with the entry: a restart starts the wait again (S66). */
+  waits: Map<string, number>
+  /** The ONE timer of this vault that sweeps the files in `waits` again when their wait is over (R34). */
+  wait?: NodeJS.Timeout
+  /** Each ID two Macs gave that two notes still hold, and the path of the note that keeps it (YAZ-2677 S46): the index hands the ID out for that note only. */
+  kept: Map<string, string>
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000
@@ -42,8 +51,10 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
         .then(
           (record) => {
             entry.records.set(ev.path, record)
+            // The diary notes each link to an ID this Mac made, with the time (YAZ-2677 R27).
+            if (entry.ids) see(root, record, Date.now())
             // Every other indexed note is known to hold what it holds; this one, what it held before.
-            void sweepIds(root, entry.records, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
+            void sweep(root, entry, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
           },
           () => entry.records.delete(ev.path),
         )
@@ -57,11 +68,12 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     case 'addDir':
       entry.dirs.push(ev.path)
       // A folder that appears is given its settings file, and so its id (D13).
-      void sweepIds(root, entry.records, [], (p) => entry.records.get(p)?.id, [ev.path])
+      void sweep(root, entry, [], (p) => entry.records.get(p)?.id, [ev.path])
       return
     case 'unlink': {
       const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
       entry.records.delete(ev.path)
+      entry.waits.delete(ev.path)
       schedulePersist(root, entry.records)
       if (id !== undefined) void restoreFolderId(root, ev.path, id)
       return
@@ -69,6 +81,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     case 'unlinkDir': {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
+      for (const p of entry.waits.keys()) if (p.startsWith(prefix)) entry.waits.delete(p)
       entry.dirs = entry.dirs.filter((dir) => dir !== ev.path && !dir.startsWith(prefix))
       schedulePersist(root, entry.records)
       return
@@ -76,6 +89,55 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     default:
       return
   }
+}
+
+/** Hears each clash this Mac fixed (YAZ-2677 S45): the bridge shows `notice` in the vault's windows, and a file that took a new name is repaired like any rename. */
+type FixListener = (root: string, fixes: readonly ClashFix[], notice: string | null) => void
+let fixed: FixListener | undefined
+
+/** One listener, set by the bridge at startup. `notice` is null when the caller tells the result itself ("Check for duplicates"). */
+export function onIdFixes(listener: FixListener | undefined): void {
+  fixed = listener
+}
+
+/**
+ * A sweep the INDEX starts — a file arrived, the index was built, a yes arrived by the sync — and
+ * so one whose numbers wait on a Mac that is not the vault's first (YAZ-2677 🔒 D8, R31). What the
+ * USER asks for sweeps with no `waits` (`giveIdsNow`, `checkDuplicates`, R32).
+ */
+function sweep(root: string, entry: Entry, among: readonly IndexRecord[], knew: (path: string) => string | undefined, dirs: readonly string[] = [], over: readonly string[] = []): Promise<void> {
+  return sweepIds(root, entry.records, among, knew, dirs, { waits: entry.waits, indexed: () => Promise.all([...entry.inFlight]) }).then((result) => {
+    // `over` are the files whose wait was over when this sweep started: whatever it did, they wait no more, so the timer never runs for one file two times.
+    for (const file of over) entry.waits.delete(file)
+    armWait(root, entry)
+    report(root, entry, result, true)
+  })
+}
+
+/** What a sweep found about two notes with one ID goes to the index (which note the ID opens meanwhile, S46) and to the bridge (S45). */
+function report(root: string, entry: Entry, { fixes, kept }: SweepResult, notice: boolean): void {
+  for (const [id, keeper] of kept) entry.kept.set(id, keeper)
+  for (const { id } of fixes) entry.kept.delete(id)
+  if (fixes.length > 0) fixed?.(root, fixes, notice ? fixNotice(fixes) : null)
+}
+
+/**
+ * The vault's one timer (R34): set for the file that has waited longest, and only while a file
+ * waits and the index of the vault is held. It sweeps the files whose wait is over — each is given
+ * its number if it still needs one — and is set again for the next. There is no timer for a file.
+ */
+function armWait(root: string, entry: Entry): void {
+  if (entry.wait !== undefined || entry.waits.size === 0 || entries.get(root) !== entry) return
+  let first = Infinity
+  for (const since of entry.waits.values()) first = Math.min(first, since)
+  entry.wait = setTimeout(() => {
+    entry.wait = undefined
+    const due = [...entry.waits].filter(([, since]) => Date.now() - since >= ID_WAIT_MS).map(([file]) => file)
+    const among = due.flatMap((file) => entry.records.get(file) ?? [])
+    const dirs = due.filter((file) => isFolderSettingsPath(file) && !entry.records.has(file)).map((file) => path.dirname(file))
+    void sweep(root, entry, among, (p) => entry.records.get(p)?.id, dirs, due)
+  }, Math.max(0, first + ID_WAIT_MS - Date.now()))
+  entry.wait.unref()
 }
 
 // TOMBSTONE (⚡ YAZ-815, ruled by Yasin): `readTypes(root)` stood here — a per-`getIndex` read of
@@ -101,7 +163,7 @@ function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly st
 
 async function build(root: string): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false }
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map() }
   const files: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
@@ -132,13 +194,16 @@ async function build(root: string): Promise<Entry> {
       )
     }
     entry.ids = answer === true
-    // Not awaited: a vault of id-less notes must not hold up its first index (YAZ-2293 D3).
-    void sweepIds(root, records, [...records.values()], (p) => cached.records?.get(p)?.id, dirs)
+    // The diary sees each link the index holds (YAZ-2677 R27): one it saw before keeps its time.
+    const now = Date.now()
+    if (entry.ids) for (const r of records.values()) see(root, r, now)
   } catch (err) {
     entry.unsubscribe()
     throw err
   }
   entries.set(root, entry)
+  // Not awaited: a vault of id-less notes must not hold up its first index (YAZ-2293 D3).
+  void sweep(root, entry, [...entry.records.values()], (p) => cached.records?.get(p)?.id, dirs)
   schedulePersist(root, entry.records)
   return entry
 }
@@ -147,6 +212,10 @@ function evict(root: string): void {
   const entry = entries.get(root)
   if (entry === undefined) return
   clearTimeout(entry.idle)
+  // The wait goes with the index (YAZ-2677 R34): the next index of the vault starts it again (S66).
+  clearTimeout(entry.wait)
+  entry.wait = undefined
+  entry.waits.clear()
   // Flush-ish: one last persist so an evicted index leaves a fresh cache behind (GRO-2223).
   schedulePersist(root, entry.records)
   entry.unsubscribe()
@@ -155,7 +224,8 @@ function evict(root: string): void {
 
 function touch(root: string, entry: Entry): void {
   clearTimeout(entry.idle)
-  entry.idle = setTimeout(() => evict(root), idleMs)
+  // An index with a file that waits for its number is kept until the wait is over (YAZ-2677 R34): evicted, the wait would start again and never end.
+  entry.idle = setTimeout(() => (entry.wait === undefined ? evict(root) : touch(root, entry)), idleMs)
   entry.idle.unref()
 }
 
@@ -178,7 +248,8 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   const records: IndexRecord[] = []
   const folders: IndexRecord[] = []
   const current = `${letters[0]}-`
-  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? owned(r, letters, current) : plain(r))
+  const kept = keptIds(entry, letters)
+  for (const r of sorted) (isFolderSettingsPath(r.path) ? folders : records).push(ids ? owned(r, letters, current, kept) : plain(r))
   // `ask` goes out while the answer is not yes (YAZ-2677 🔒 D2): the box in Settings shows the counts for a vault that said no too.
   return { root, records, folders, generatedAt: Date.now(), ids, ...(ids ? { letters } : { ask: wouldWrite(entry.records, entry.dirs, letters) }) }
 }
@@ -216,22 +287,107 @@ function plain({ id: _id, ...r }: IndexRecord): IndexRecord {
  * One with the letters the vault had before goes out with the `current` ones, so every link and
  * lookup finds it by one spelling; one with any other letters is another tool's `id` and goes out
  * as none (R7). The record itself, untouched, in every other case — almost all of them.
+ *
+ * An ID two Macs gave, while two notes still hold it (`kept`, YAZ-2677 S46): only the note that
+ * keeps it goes out with it, so a link by that ID opens the keeper on every Mac until the one Mac
+ * that must fix it has run. The other note goes out as a note that has no id yet.
  */
-function owned(r: IndexRecord, letters: readonly string[], current: string): IndexRecord {
-  if (r.id === undefined || r.id.startsWith(current)) return r
-  const id = vaultNoteId(r.id, letters)
-  if (id === r.id) return r
+function owned(r: IndexRecord, letters: readonly string[], current: string, kept: ReadonlyMap<string, string>): IndexRecord {
+  if (r.id === undefined) return r
+  const id = r.id.startsWith(current) ? r.id : vaultNoteId(r.id, letters)
+  if (id === r.id && kept.size === 0) return r
+  const keeper = id === undefined ? undefined : kept.get(id)
+  if (id === r.id && (keeper === undefined || keeper === r.path)) return r
   const { id: _id, ...rest } = r
-  return id === undefined ? rest : { ...rest, id }
+  return id === undefined || (keeper !== undefined && keeper !== r.path) ? rest : { ...rest, id }
 }
 
-/** Sweeps every note the live index holds for `root`, and every folder there now — for a vault that said yes after its index was built (YAZ-2523 🔒 V4). */
+/** `entry.kept` without each ID whose keeper holds it no more: that clash is over, or its keeper moved, and the ID goes out as the files hold it. */
+function keptIds(entry: Entry, letters: readonly string[]): ReadonlyMap<string, string> {
+  for (const [id, keeper] of entry.kept) if (vaultNoteId(entry.records.get(keeper)?.id, letters) !== id) entry.kept.delete(id)
+  return entry.kept
+}
+
+/**
+ * Sweeps every note the live index holds for `root`, and every folder there now — for a vault that
+ * said yes after its index was built (YAZ-2523 🔒 V4). A yes that arrived by the sync, or from
+ * another window: the numbers wait where this Mac is not the vault's first (YAZ-2677 S65).
+ */
 function sweepIndexed(root: string): void {
-  const records = entries.get(root)?.records
-  if (records === undefined) return
+  const entry = entries.get(root)
+  if (entry === undefined) return
+  const now = Date.now()
+  for (const r of entry.records.values()) see(root, r, now)
   const dirs: string[] = []
-  const sweep = (): Promise<void> => sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id, dirs)
-  void walk(root, [], dirs).then(sweep, sweep)
+  const all = (): Promise<void> => sweep(root, entry, [...entry.records.values()], (p) => entry.records.get(p)?.id, dirs)
+  void walk(root, [], dirs).then(all, all)
+}
+
+/** One save of a vault's answer at a time: the read and the write of `ids.json` are one step, so two windows that save at one moment each keep the other's change. */
+const answers = new Map<string, Promise<unknown>>()
+
+/**
+ * The switch in Settings (YAZ-2677 🔒 D2, R10, R12): the vault's answer goes into its `ids.json`,
+ * and with a yes its ID letters, in capitals. Every key the save does not change stays — `letters`
+ * and `was` most of all. A file that is not valid JSON is not written over (`INVALID_CONFIG`).
+ * The index refetches off the write, as off any change of the file.
+ */
+export async function saveIdsAnswer(root: unknown, enabled: unknown, letters?: unknown): Promise<void> {
+  const r = requireAbsPath(root, 'root')
+  if (typeof enabled !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'enabled' must be true or false")
+  if (letters !== undefined && (typeof letters !== 'string' || !isIdLetters(letters))) throw new BridgeFailure('BAD_REQUEST', "'letters' must be 2 to 5 letters")
+  const save = async (): Promise<void> => {
+    const held = await readConfigDetailed(r, IDS_FILE)
+    if (held.state === 'malformed') throw new BridgeFailure('INVALID_CONFIG', `${IDS_FILE} is not valid JSON`, { path: held.file })
+    const config = held.state === 'ok' && isRecord(held.value) ? held.value : {}
+    await writeConfig(r, IDS_FILE, { ...config, enabled, ...(letters !== undefined && { letters: letters.toUpperCase() }) })
+  }
+  const mine = (answers.get(r) ?? Promise.resolve()).then(save)
+  const tail = mine.catch(() => undefined)
+  answers.set(r, tail)
+  void tail.then(() => {
+    if (answers.get(r) === tail) answers.delete(r)
+  })
+  return mine
+}
+
+/**
+ * "Give IDs" (YAZ-2677 R32, S64): the user asked on THIS Mac, so every note and folder of `root`
+ * is given its number now, whichever Mac is the vault's first. A Mac that only sees the yes
+ * arrive sweeps by `sweepIndexed`, and waits. Resolves when the pass is done; never throws.
+ */
+export async function giveIdsNow(root: string): Promise<void> {
+  const entry = await liveEntry(root).catch(() => undefined)
+  if (entry === undefined) return
+  // This Mac said the yes: `getIndex` need not start the pass that waits.
+  entry.ids = true
+  const now = Date.now()
+  for (const r of entry.records.values()) see(root, r, now)
+  const dirs: string[] = []
+  await walk(root, [], dirs).catch(() => undefined)
+  report(root, entry, await sweepIds(root, entry.records, [...entry.records.values()], (p) => entry.records.get(p)?.id, dirs), true)
+}
+
+/**
+ * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the notes of `root` that share an ID are
+ * swept now, on this Mac (R32), and what happened is told in one line. A clash that another Mac
+ * must fix is told and not touched. A note with no ID is not given one here.
+ */
+export async function checkDuplicates(root: unknown): Promise<string> {
+  const r = requireAbsPath(root, 'root')
+  const entry = await liveEntry(r)
+  const { answer, letters } = await vaultIds(r)
+  if (answer !== true) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs', { path: r })
+  const holders = new Map<string, IndexRecord[]>()
+  for (const record of entry.records.values()) {
+    const id = vaultNoteId(record.id, letters)
+    if (id !== undefined) holders.set(id, [...(holders.get(id) ?? []), record])
+  }
+  const among = [...holders.values()].filter((group) => group.length > 1).flat()
+  const result = await sweepIds(r, entry.records, among, (p) => entry.records.get(p)?.id)
+  // The line below tells the result: no notice beside it.
+  report(r, entry, result, false)
+  return checkLine(result)
 }
 
 /**
@@ -242,6 +398,11 @@ function sweepIndexed(root: string): void {
  */
 export function getColdStartDiff(root: string): ColdStartDiff | undefined {
   return entries.get(root)?.coldDiff
+}
+
+/** Test hook: drops the cached index of one vault and its watcher subscription — the app of that Mac quits. */
+export function _evict(root: string): void {
+  evict(root)
 }
 
 /** Test hook: drops every cached index and its watcher subscription. */

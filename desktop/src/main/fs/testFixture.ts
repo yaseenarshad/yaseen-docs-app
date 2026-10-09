@@ -1,7 +1,8 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { IdDoor } from '../vaultIndex/mint'
+import { _swept } from '../vaultIndex/idSweep'
+import { COUNT_DIR, macId, type IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure } from './fsUtils'
 
 /** Creates a temp vault that gives its notes IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
@@ -30,7 +31,20 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
     writeFile(path.join(root, '.yaseendocs', 'ids.json'), '{"enabled":true}'),
     writeFile(path.join(root, 'node_modules', 'pkg', 'README.md'), 'readme'),
   ])
-  return { root, cleanup: () => rm(root, { recursive: true, force: true }) }
+  return { root, cleanup: () => removeVault(root) }
+}
+
+/**
+ * A test's vault goes. The sweep is not awaited by the index (it must not hold up a first index), so
+ * one can still be writing a `.folder.md` or a count file when the test ends: each sweep of the
+ * vault that was started ends first, and only then is the folder removed. Drop the index before
+ * (`_evictAll`), so no new event starts one.
+ */
+export async function removeVault(...roots: string[]): Promise<void> {
+  for (const root of roots) {
+    await _swept(root)
+    await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
 }
 
 /**
@@ -95,4 +109,15 @@ export function testDoor(letters = 'YAZ'): IdDoor & { given: string[] } {
       return ids
     },
   }
+}
+
+/**
+ * This Mac is the FIRST Mac of the vault at `root` (YAZ-2677 R33): it holds the oldest count file
+ * there, with no number given yet, so the sweep's numbers come at once (R31). A vault with no count
+ * file has no first Mac, and every Mac waits.
+ */
+export async function makeFirstMac(root: string): Promise<void> {
+  const dir = path.join(root, '.yaseendocs', COUNT_DIR)
+  await mkdir(dir, { recursive: true })
+  await writeFile(path.join(dir, `${await macId(root)}.json`), `${JSON.stringify({ name: 'first', since: new Date(0).toISOString(), last: 0, made: [] })}\n`)
 }

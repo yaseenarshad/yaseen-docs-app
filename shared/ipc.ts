@@ -188,6 +188,23 @@ export const CONTRACT = {
     /** Fired in every window after any vault's config change. */
     onChange: push<VaultConfigChange>('vaultConfig:changed'),
   },
+  /** A vault's IDs (YAZ-2677), each for a vault of the calling window: the switch in Settings and the duplicate check. */
+  ids: {
+    /**
+     * Save the vault's answer in its `ids.json`, and with a yes its ID letters, in capitals (🔒 D2).
+     * Every other key of the file stays (R10, R12), and the read and the write are one step in main,
+     * so two windows that save at one moment each keep the other's change. A yes gives every note
+     * and folder its number NOW, on this Mac (R32, S64); a Mac that only sees the yes arrive by the
+     * sync waits (S65). A file that is not valid JSON is not written over (`INVALID_CONFIG`).
+     */
+    set: invoke<[root: string, enabled: boolean, letters?: string], void>('ids:set', 3),
+    /**
+     * "Check for duplicates" (🔒 D7, S55 to S57): the notes that share an ID are settled now, on this
+     * Mac (R32), and the answer tells the result in one line: `No duplicates.`, what was fixed, or
+     * which ID another Mac must fix (then nothing was written).
+     */
+    check: invoke<[root: string], string>('ids:check', 1),
+  },
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835): targeted, serialised mutators; a corrupt file rejects every write `INVALID_CONFIG`. */
   properties: {
     /** Empty declarations (no error) when .yaseendocs/properties.json does not exist; never creates anything. */

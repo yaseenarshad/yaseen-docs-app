@@ -25,6 +25,8 @@ github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":
 github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+ids.check/1: invoke ids:check ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+ids.set/3: invoke ids:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 index/1: invoke fs:index ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
 link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file

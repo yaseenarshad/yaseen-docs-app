@@ -5,7 +5,7 @@ import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
-import { makeFixture, sleep, vaultFiles } from '../fs/testFixture'
+import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
 import { fileClip } from '../fileClip'
@@ -58,13 +58,14 @@ afterAll(async () => {
 
 /** Sender → window id lookup fake (E1b root guard); tests point `senderWinId` at a store entry. */
 let senderWinId: string | undefined
-const windows = { idFor: () => senderWinId }
+/** `vaultNotice` is the notice of a fixed clash (YAZ-2677 S45), sent to the windows of that vault. */
+const windows = { idFor: () => senderWinId, vaultNotice: vi.fn() }
 
 describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -352,7 +353,8 @@ describe('registerFsIpc', () => {
       senderWinId = undefined
       store.removeWindow('w-kind')
       fileClip.clear()
-      for (const dir of dirs) await rm(dir, { recursive: true, force: true })
+      // A sweep the index started for one of these vaults can still be writing: it ends first (YAZ-2677).
+      await removeVault(...dirs)
     }
     const call = (door: { channel: string }, ...args: unknown[]) => registered(door.channel)({ sender: {} }, ...args)
     const paste = (from: string, targetDir: string) => {
@@ -450,6 +452,37 @@ describe('registerFsIpc', () => {
         } finally {
           await close(vault)
         }
+      }
+    })
+
+    it('`ids:set` saves the answer of a vault of the window, keeps each other key, and with a yes gives the numbers now; `ids:check` tells the result in one line (YAZ-2677 D2, D7, R10, R32)', async () => {
+      const vault = await open(false)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        const config = async () => JSON.parse(await readFile(at('.yaseendocs', 'ids.json'), 'utf8')) as unknown
+        await writeFile(at('.yaseendocs', 'ids.json'), '{ "enabled": false, "was": ["OLD"] }')
+        // "Check for duplicates" is for a vault that uses IDs.
+        expect(await call(CONTRACT.ids.check, vault)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.ids.set, vault, true, 'yaz')).toEqual({ ok: true, value: undefined })
+        expect(await config()).toEqual({ enabled: true, was: ['OLD'], letters: 'YAZ' })
+        // This Mac is not the vault's first — the vault has no count file — and the user asked: the numbers come at once (S64).
+        const until = async (pred: () => Promise<boolean>) => {
+          for (const t0 = Date.now(); !(await pred()); await sleep(20)) if (Date.now() - t0 > 5000) throw new Error('condition not met')
+        }
+        await until(async () => /^id: YAZ-[12]$/m.test(await readFile(at('Plans', 'Name.md'), 'utf8')) && /^id: YAZ-[12]$/m.test(await readFile(at('Plans', '.folder.md'), 'utf8').catch(() => '')))
+        expect(await call(CONTRACT.ids.check, vault)).toEqual({ ok: true, value: 'No duplicates.' })
+        expect(await call(CONTRACT.ids.set, vault, false)).toEqual({ ok: true, value: undefined })
+        expect(await config()).toEqual({ enabled: false, was: ['OLD'], letters: 'YAZ' })
+        // Bad input, and a folder that is no vault of the calling window, change nothing.
+        expect(await call(CONTRACT.ids.set, vault, true, 'x')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.ids.set, vault, 'yes')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.ids.set, path.join(vault, 'Plans'), true, 'YAZ')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.ids.check, tmpdir())).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        senderWinId = undefined
+        expect(await call(CONTRACT.ids.set, vault, true, 'YAZ')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await config()).toEqual({ enabled: false, was: ['OLD'], letters: 'YAZ' })
+      } finally {
+        await close(vault)
       }
     })
 
