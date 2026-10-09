@@ -6,7 +6,7 @@
 - The grid button, or ⌘⇧A, zooms out to the tab board: each open tab is a small page in the island of its folder.
 - ⌘T opens one blank tab for the next page.
 - The tab strip looks like the tabs of a browser.
-- Done: the gates are green, the pull request is open, Yasin's hand walk passed, the work is on `main`.
+- Done: the gates are green, the pull request is open, Yasin's hand walk passed, the work is on `main`. All four are true since `12aaa39`.
 
 ## Constraints
 
@@ -52,18 +52,17 @@
   - [x] `main` merged in again (`73b54ad`): YAZ-2649
   - [x] Four ceilings set to the measured numbers (`15b2a44`, `6716f59`)
   - [x] The pull request is open: #103. The ten issues are In Review.
-- Now: [→] Yasin's hand walk on the development app
-- Next: the merge, after Yasin says that the walk passed. No release.
-- Remaining:
-  - [ ] Closeout: the handoff comment on YAZ-2648, the issues to Done
+  - [x] Yasin's hand walk on the development app: "walk passed". He approved the four ceilings: "OK on all four size limits".
+  - [x] Merged by #103 as `12aaa39`; CI on the pull request was green, the size gate too
+  - [x] Closeout: the handoff is on YAZ-2648 and on each subissue; the ten issues are Done; the pull request is attached to YAZ-2648
+- Now: closed. Yasin asked for a release with this work and the work of YAZ-2643 and YAZ-2649; that is a separate task.
+- Next: on the first run of the end-to-end specs, `desktop/e2e/tabs.spec.ts`, `search.spec.ts` and `links.spec.ts` prove the preview rule for the first time.
 
 ## Open Questions
 
-- UNCONFIRMED: nobody has seen the island board, the zoom, the stacks, the peek or the drag on a screen. They are hand-walk steps.
-- UNCONFIRMED: the page stays painted while it becomes small in the zoom (the build relies on Chromium keeping `content-visibility` visible during the animation).
-- UNCONFIRMED: an edit from outside the app leaves the preview tab a preview tab in the REAL editor (S23). The unit test uses a fake editor.
-- UNCONFIRMED: the end-to-end spec will be written and typechecked, not run.
-- Four ceilings are new: `rendererEagerJsBytes` 2,007,099 (from 1,982,923), `rendererEagerCssBytes` 149,568 (from 140,553), `rendererTotalBytes` 13,148,534 (from 13,115,343), `mainBundleBytes` 529,077 (from 526,429). Yasin approved the CSS one in chat before the numbers were measured. The three others need his OK; the pull request names all four.
+- The hand walk covered the board, the zoom, the stacks, the peek, the drag, the strip in the two themes, an edit from outside the app (S23), ⌘T, and a restart. Yasin said that it passed.
+- UNCONFIRMED: the end-to-end specs have never run.
+- Four ceilings are new: `rendererEagerJsBytes` 2,007,099 (from 1,982,923), `rendererEagerCssBytes` 149,568 (from 140,553), `rendererTotalBytes` 13,148,534 (from 13,115,343), `mainBundleBytes` 529,077 (from 526,429). Yasin approved all four in chat.
 - With pills of 200px, 4 tabs fit at full width in a window of 1280px with the sidebar open, 5 at the floor of 140px. Yasin accepted fewer tabs; the hand walk asks if this is too few.
 - The demo app breaks when a change of `shared/ipc.ts` or of the main process hot-reloads the renderer against an old preload. Restart the app after such a change.
 - The rule for Space with text in the filter (R36) has a simpler form. Yasin selects in the hand walk.
@@ -73,11 +72,11 @@
 
 ## Working Set
 
-- Worktree `.claude/worktrees/yaz-2648-tab-management`, branch `yaz-2648-tab-management`, from `main` at `248a25c` (0.9.38), with `main` at `8a97b4a` merged in.
+- The work was on the branch `yaz-2648-tab-management`, from `main` at `248a25c` (0.9.38), with `main` merged in two times (`3ba6864`, `73b54ad`).
 - New files: `client/src/tabs/{TabOverview,TabMenu}.tsx`, `client/src/tabs/{board,boardHighlight,useTabHeads}.ts`, `desktop/src/main/fs/heads.ts`, and their tests.
 - Changed files: `client/src/workspace/useWorkspace.ts`, `client/src/App.tsx`, `client/src/tabs/{TabBar.tsx,tabs.css}`, `client/src/sidebar/{Tree,Sidebar}.tsx`, `client/src/sidebar/menuSections.ts`, `client/src/editor/Editor.tsx`, `client/src/views/view/icons.tsx`, `client/src/hooks/useMenuEvents.ts`, `shared/{ipc,types}.ts`, `desktop/src/main/{menu.ts,ipc/fs.ts}`, the preload surface snapshot.
 - Tests at `6716f59`: 306 files, 5,952 passed, 2 skipped. Baseline at `248a25c`: 5,694 passed, 2 skipped.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. `PATH` needs `/opt/homebrew/bin`.
-- The demo: `node node_modules/.verify/yaz-2648-demo.mjs <demo-dir>` makes the vault "Tab Management", a second vault and an app profile. Run the app on it with `YASEEN_DOCS_USER_DATA_DIR=<demo-dir>/profile npm run dev`. The script is not in git.
+- The demo used a script, not in git, that made the vault "Tab Management", a second vault and an app profile, and ran the app on it with `YASEEN_DOCS_USER_DATA_DIR=<demo-dir>/profile npm run dev`. The demo, its vaults, the worktree and the branch are removed.
 - For the release notes: the state before this work is `main` at `248a25c`.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skills at `~/Documents/GitHub/skills-growprofit-eng/yaseen-skills-and-prompts/2-yaseen-linear-master-skill`.
