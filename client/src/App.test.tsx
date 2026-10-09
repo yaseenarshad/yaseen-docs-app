@@ -58,10 +58,10 @@ interface SidebarStubProps {
   lens: SidebarTab
   onLensChange: (lens: SidebarTab) => void
   onCollapse: () => void
-  revealRequest?: { id: number; path: string }
+  revealRequest?: { id: number; path: string; focus?: boolean }
   onRevealConsumed?: (id: number) => void
-  /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir. */
-  onRevealInFiles?: (path: string) => void
+  /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir — with `focus` when the keyboard asked (YAZ-2662 D1, D8). */
+  onRevealInFiles?: (path: string, focus?: boolean) => void
   /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
   width: number
   /** The aside itself, which a resize drag writes its live width to (YAZ-2239). */
@@ -946,6 +946,21 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     rightClick(el.querySelector('.tabbar__tab')!)
     act(() => showInSidebar(el)?.click())
     expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md' })
+  })
+
+  it('Enter on a folder of the search tree, and Shift+Enter on a row, ask with `focus`: the request says so, and one from a menu does not (YAZ-2662 D1, D8, S12)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => captured.sidebar?.onLensChange('search'))
+    act(() => captured.sidebar?.onRevealInFiles?.('/v/sub', true))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/sub', focus: true })
+    // S12: "Show in sidebar" — of a row, and of a tab — asks for the row alone.
+    act(() => captured.sidebar?.onRevealInFiles?.('/v/sub'))
+    expect(captured.sidebar?.revealRequest).toStrictEqual({ id: 2, path: '/v/sub', focus: undefined })
+    rightClick(el.querySelector('.tabbar__tab')!)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest).toStrictEqual({ id: 3, path: '/v/a.md' })
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('a') // no tab opened
   })
 
   it('consumes handled work without replaying it after collapse/reopen, while later gestures keep monotonic IDs', async () => {

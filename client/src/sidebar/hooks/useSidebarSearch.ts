@@ -53,11 +53,12 @@ export function useSidebarSearch(
   tree: readonly TreeNode[],
   /** The Search tab shows (YAZ-2638 D2): the query is ranked only then. */
   active: boolean,
-  /** Esc: back to the lens the window last showed. The query stays. */
+  /** Esc: back to the lens the window last showed, the caret into the open page (YAZ-2662 D9). The query stays. */
   onLeave: () => void,
   pendingSearchFocus: boolean,
   onSearchFocusHandled: () => void,
-  activate: (hit: SearchCandidate, background: boolean) => void,
+  /** Enter on the highlight; `background` is ⌘, and `reveal` is Shift (YAZ-2662 D8). */
+  activate: (hit: SearchCandidate, background: boolean, reveal: boolean) => void,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -109,7 +110,7 @@ export function useSidebarSearch(
     return next !== -1 ? next : Math.max(0, rows.length - 1)
   }, [rows, picked, results, found])
   // The bar keeps focus while the tree is driven from it (YAZ-803). Opening leaves the results up.
-  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (hit, e) => activate(hit, e.metaKey))
+  const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (hit, e) => activate(hit, e.metaKey, e.shiftKey))
   // With text typed the Search tab's body is the search tree (YAZ-2620); with none it is one line
   // of help (YAZ-2638 D2). A conditional render, not a teardown — every bit of the other tabs' tree
   // state (data, expansion, pending create/rename, drag) lives in the Sidebar's other hooks

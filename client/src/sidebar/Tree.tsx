@@ -83,6 +83,26 @@ const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
 }
 
 /**
+ * The arrows on a row of Files, Focus or Favorites (YAZ-2662 D11): ↓ and ↑ move the keyboard focus
+ * to the next row on show and to the row before, and stop at both ends; → opens a closed folder row
+ * and ← closes an open one. They read the rows as drawn, select nothing and open no page. A rename
+ * box or a create box is no row, so its arrows stay its own (S64).
+ */
+function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) => void): void {
+  const row = e.target instanceof HTMLElement && e.target.matches('.tree__row') ? e.target : null
+  const path = row?.dataset.path
+  if (row === null || path === undefined) return
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('.tree__row[data-path]')]
+    rows[rows.indexOf(row) + (e.key === 'ArrowDown' ? 1 : -1)]?.focus()
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    // A folder's item says whether it is open; a file's says nothing, so neither key acts on it.
+    if (row.closest('[role="treeitem"]')?.getAttribute('aria-expanded') === String(e.key === 'ArrowLeft')) onToggle(path)
+  } else return
+  e.preventDefault()
+}
+
+/**
  * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
  * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
  * a favorite standing at the root AND inside its favorited parent shows selected on BOTH of its
@@ -201,7 +221,8 @@ function TreeLevel({
   const context = (path: string) => (marks !== undefined && !marks.hits.has(path) ? ' tree__row--context' : '')
   const needleFor = (path: string) => (marks?.hits.has(path) ? marks.needle : undefined)
   return (
-    <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
+    // The arrows are the whole tree's, taken once at its top (YAZ-2662 D11) — not a search tree's, whose keys are the search bar's.
+    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle) : undefined}>
       {pending !== null && pending.parentDir === dirPath && (
         <li>
           <CreateInline
