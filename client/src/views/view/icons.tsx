@@ -37,6 +37,16 @@ export function SidebarPanelIcon() {
   )
 }
 
+/** Four tiles, for the tab strip's "Show all open tabs" button (YAZ-2648 D8). */
+export const GridIcon = () => (
+  <svg {...svg}>
+    <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
+    <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
+    <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
+    <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
+  </svg>
+)
+
 export const PlusIcon = () => (
   <svg {...svg}>
     <path d="M8 3v10M3 8h10" />

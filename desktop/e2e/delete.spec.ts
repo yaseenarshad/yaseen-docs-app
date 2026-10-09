@@ -97,8 +97,8 @@ test('step 2 — Cancel deletes nothing and leaves the tab open', async () => {
 })
 
 test('step 3 — confirming trashes the file and closes its tab; a neighbour takes over', async () => {
-  // ⌘-click opens a BACKGROUND tab (the locked I3 ruling); a plain click would REPLACE the
-  // active tab, leaving no heir for the delete to promote.
+  // ⌘-click opens a BACKGROUND tab (the locked I3 ruling); a plain click would open the preview
+  // tab and go to it (YAZ-2648 D1), and the delete below is of the ACTIVE tab, with an heir to promote.
   await fileRow(win, 'Keep').click({ modifiers: ['Meta'] })
   await expect(tabsOf(win)).toHaveText(['Doomed', 'Keep'])
   await expect(activeTab(win)).toHaveText('Doomed')

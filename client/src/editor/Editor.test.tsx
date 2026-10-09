@@ -136,14 +136,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onNotice?: (message: string) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onNotice={extra.onNotice} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} />))
   await settle()
   await settle()
   return container
@@ -353,6 +353,50 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     // The applied body IS the new baseline: no dirty state, no echo save back to disk (YAZ-1352).
     await pastDebounce()
     expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it("only the user's own edit says onUserEdit (YAZ-2648 D2, S23, S24): a body reloaded from disk, a property write and a comment the user posts do not, the first typed change does, once per save cycle", async () => {
+    const onUserEdit = vi.fn()
+    await mount(FM + BODY, 1, { onUserEdit })
+    // A property write from outside: absorbed, the body untouched.
+    diskHas(FM2 + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    // A body change from outside: reloaded as a diff, and the listener then reports the new text as any change.
+    const next = FM2 + '# Someone else\n'
+    diskHas(next, 3)
+    diskHas(next, 3) // reload() re-reads
+    await emit({ type: 'change', path: PATH, mtime: 3 })
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    type('# Someone else\n')
+    await pastDebounce()
+    expect(onUserEdit).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+
+    // A comment the user posts is a write of the properties block, not an edit of the page (S24).
+    act(() => container!.querySelector<HTMLButtonElement>('.comments__header')?.click())
+    const box = container!.querySelector<HTMLTextAreaElement>('.comments textarea.comments__textarea')!
+    diskHas(next, 3)
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(box, 'A remark')
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('.comments .btn--primary')?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: PATH, content: expect.stringContaining('A remark') }))
+    expect(onUserEdit).not.toHaveBeenCalled()
+    writeFile.mockClear()
+
+    // The user types: the note turns unsaved, and that is the signal.
+    type('# Someone else\n\nmine\n')
+    expect(onUserEdit).toHaveBeenCalledExactlyOnceWith(PATH)
+    type('# Someone else\n\nmine too\n')
+    expect(onUserEdit).toHaveBeenCalledTimes(1)
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    type('# Someone else\n\nmine three\n')
+    expect(onUserEdit).toHaveBeenCalledTimes(2)
   })
 
   it('absorbs frontmatter added to a note that had none', async () => {

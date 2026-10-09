@@ -171,11 +171,12 @@
   .right-panel { transition: none; }
 }
 
+/* Centred in the tab strip's 44px row (YAZ-2656), which keeps this room free at its end. */
 .right-panel-reopen {
   position: absolute;
   z-index: 10;
-  top: 7px;
-  right: 7px;
+  top: 9px;
+  right: 9px;
   width: 26px;
   height: 26px;
   color: var(--fg-muted);

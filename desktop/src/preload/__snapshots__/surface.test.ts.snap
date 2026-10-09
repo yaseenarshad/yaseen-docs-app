@@ -31,6 +31,7 @@ link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","r
 link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
+menu.onNewTab/1: on menu:new-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:new-tab
 menu.onNextTab/1: on menu:next-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:next-tab
 menu.onOpenFolder/1: on menu:open-folder -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:open-folder
 menu.onOpenRoot/1: on menu:open-root -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:open-root
@@ -39,6 +40,7 @@ menu.onPrevTab/1: on menu:prev-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","roo
 menu.onSearch/1: on menu:search -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:search
 menu.onSettings/1: on menu:settings -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:settings
 menu.onSwitchVault/1: on menu:switch-vault -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:switch-vault
+menu.onTabOverview/1: on menu:tab-overview -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:tab-overview
 menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
 pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -48,6 +50,7 @@ properties.removeProperty/2: invoke properties:remove-property ["a0","a1"]; => "
 properties.setProperty/3: invoke properties:set-property ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readAsset/2: invoke fs:read-asset ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readFile/1: invoke fs:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+readHeads/1: invoke fs:read-heads ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readImage/1: invoke fs:read-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

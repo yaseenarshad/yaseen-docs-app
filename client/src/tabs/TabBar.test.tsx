@@ -1,7 +1,7 @@
 /**
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): tablist semantics per the ViewTabs
  * pattern, extension-stripped labels with full-path tooltips, the close
- * affordances (✕, middle-click) vs activation, drag-to-reorder with the insertion indicator,
+ * affordances (✕, middle-click) vs activation, drag-to-reorder with the gap at the drop place,
  * and the active tab scrolled into view on activation. Plus the right-click Copy path menu
  * (YAZ-922) and the ◀ ▶ history buttons (YAZ-721).
  */
@@ -10,6 +10,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabBar, type TabBarProps } from './TabBar'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
+import { setBoardHighlight } from './boardHighlight'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -56,6 +57,47 @@ describe('TabBar', () => {
     expect(tabsEls.map((t) => t.title)).toEqual(['/v/Note.md', '/v/sub/Plan.markdown'])
   })
 
+  it('the preview tab wears the preview class and a double click on a tab asks to keep it (YAZ-2648 D1, D2); the grid button after ▶ toggles the overview and is pressed while it shows (D8)', () => {
+    const onKeep = vi.fn()
+    const onToggleOverview = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', preview: '/v/b.md', onKeep, onToggleOverview, overviewOpen: true, ...noop, ...noNav })
+    expect([...el.querySelectorAll('.tabbar__tab--preview [role="tab"]')].map((t) => t.textContent)).toEqual(['b'])
+    act(() => void el.querySelectorAll('[role="tab"]')[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(onKeep).toHaveBeenCalledExactlyOnceWith('/v/b.md')
+
+    const nav = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
+    expect(nav.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward', 'Show all open tabs'])
+    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (⌘⇧M)', 'true'])
+    act(() => nav[2].click())
+    expect(onToggleOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('the blank tab (YAZ-2655 D10) is the last tab, named "New tab", and the active one while it shows: its ✕ and a middle click close it, it does not drag and has no menu; the "+" stands after the tabs, outside the scroller (S87)', () => {
+    const onNewTab = vi.fn()
+    const onCloseBlank = vi.fn()
+    const onClose = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', blank: true, onNewTab, onCloseBlank, ...noop, onClose, ...noNav })
+    const tabs = [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+    expect(tabs.map((t) => [t.textContent, t.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['New tab', 'true']])
+    const blank = tabs[2].closest<HTMLElement>('.tabbar__tab')!
+    expect(blank.className).toContain('tabbar__tab--active')
+    expect(blank.draggable).toBe(false)
+    act(() => blank.querySelector<HTMLButtonElement>('[aria-label="Close New tab"]')?.click())
+    act(() => void tabs[2].dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 })))
+    expect(onCloseBlank).toHaveBeenCalledTimes(2)
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => void blank.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    const plus = el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')!
+    expect(plus.title).toBe('New tab (⌘T)')
+    // After the tabs, and no child of the scroller: it stays on show when the strip scrolls.
+    expect(plus.closest('.tabbar')).toBeNull()
+    expect(el.querySelector('.tabbar')?.compareDocumentPosition(plus)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    act(() => plus.click())
+    expect(onNewTab).toHaveBeenCalledTimes(1)
+  })
+
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
     const titles = new Map([['/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/v/upwork', 'Upwork 2026']])
     const el = mount({ tabs: ['/v/up-001-abdul-k3m9x2pq7abc.md', '/v/upwork', '/v/scan.pdf'], active: '/v/scan.pdf', titles, ...noop, ...noNav })
@@ -78,7 +120,7 @@ describe('TabBar', () => {
     expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
   })
 
-  it('marks only the active tab: aria-selected + the underline modifier', () => {
+  it('marks only the active tab: aria-selected + the active modifier', () => {
     const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/b.md', ...noop, ...noNav })
     expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true'])
     expect([...el.querySelectorAll('.tabbar__tab')].map((t) => t.classList.contains('tabbar__tab--active'))).toEqual([false, true])
@@ -123,26 +165,47 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
   const fire = (target: Element, type: string, clientX = 0) =>
     act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
 
-  it('dropping past a tab\'s midpoint calls onMove with the final index; grab and indicator classes mark the drag', () => {
+  it('dropping past a tab\'s midpoint calls onMove with the final index; the grab class and the gap classes mark the drag', () => {
     const onMove = vi.fn()
     const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove, ...noNav })
     fire(tabAt(el, 0), 'dragstart')
     expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(true)
-    fire(tabAt(el, 2), 'dragover', 5) // right half of c → the end slot: the last tab marks --insert-after
-    expect(tabAt(el, 2).classList.contains('tabbar__tab--insert-after')).toBe(true)
+    fire(tabAt(el, 2), 'dragover', 5) // right half of c → the end slot: the tabs part after the last one (--gap-after)
+    expect(tabAt(el, 2).classList.contains('tabbar__tab--gap-after')).toBe(true)
     fire(tabAt(el, 2), 'drop', 5)
     expect(onMove).toHaveBeenCalledWith(0, 2) // a lands last
     expect(el.querySelector('.tabbar__tab--dragging')).toBeNull() // drag state cleared
   })
 
-  it('dropping on a tab\'s left half inserts BEFORE it (--insert-before on that tab)', () => {
+  it('dropping on a tab\'s left half inserts BEFORE it: the tabs part there (--gap-before on that tab)', () => {
     const onMove = vi.fn()
     const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove, ...noNav })
     fire(tabAt(el, 0), 'dragstart')
     fire(tabAt(el, 2), 'dragover', -5)
-    expect(tabAt(el, 2).classList.contains('tabbar__tab--insert-before')).toBe(true)
+    expect(tabAt(el, 2).classList.contains('tabbar__tab--gap-before')).toBe(true)
     fire(tabAt(el, 2), 'drop', -5)
     expect(onMove).toHaveBeenCalledWith(0, 1) // before c, after the grab point shifted one left
+  })
+
+  it('S89: the gap opens only where a drop would move the tab — not on either side of the grabbed tab — and the strip\'s tail after the "+" is the end slot too', () => {
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove, onNewTab: vi.fn(), ...noNav })
+    const gaps = () => [...el.querySelectorAll('.tabbar__tab--gap-before, .tabbar__tab--gap-after')].map((tab) => tab.textContent?.replace('✕', ''))
+    fire(tabAt(el, 1), 'dragstart')
+    fire(tabAt(el, 1), 'dragover', -5) // before itself
+    expect(gaps()).toEqual([])
+    fire(tabAt(el, 1), 'dragover', 5) // after itself
+    expect(gaps()).toEqual([])
+    fire(tabAt(el, 0), 'dragover', -5)
+    expect(gaps()).toEqual(['a'])
+    // The tail: the row's room after the "+", which a drag can drop on as on the strip's own end.
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    expect(tail.previousElementSibling?.getAttribute('aria-label')).toBe('New tab')
+    fire(tail, 'dragover')
+    expect(gaps()).toEqual(['c'])
+    fire(tail, 'drop')
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(1, 2) // b lands last: the same order the rule always gave
+    expect(gaps()).toEqual([])
   })
 
   it('dropping back on the grabbed slot is a no-op; dragend clears an abandoned drag', () => {
@@ -191,20 +254,89 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
       setData: vi.fn(),
     } as unknown as DataTransfer
     expect(fireData(tabAt(el, 1), 'dragover', data, -5).defaultPrevented).toBe(true)
-    expect(tabAt(el, 1).classList.contains('tabbar__tab--insert-before')).toBe(true)
+    expect(tabAt(el, 1).classList.contains('tabbar__tab--gap-before')).toBe(true)
     fireData(tabAt(el, 1), 'drop', data, -5)
     expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/right.md', owner: 'right' }, 1)
 
     fireData(tabAt(el, 2), 'dragover', data, 5)
-    expect(tabAt(el, 2).classList.contains('tabbar__tab--insert-after')).toBe(true)
+    expect(tabAt(el, 2).classList.contains('tabbar__tab--gap-after')).toBe(true)
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    expect(el.querySelector('.tabbar__tab--insert-after')).toBeNull()
+    expect(el.querySelector('.tabbar__tab--gap-after')).toBeNull()
     expect(onDropPage).toHaveBeenCalledTimes(1)
 
     const foreign = { ...data, types: ['text/plain'] } as unknown as DataTransfer
     expect(fireData(el.querySelector('.tabbar')!, 'dragover', foreign).defaultPrevented).toBe(false)
     fireData(el.querySelector('.tabbar')!, 'drop', foreign)
     expect(onDropPage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TabBar slide and room (YAZ-2656 D12)', () => {
+  const props = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+  const render = (next: Partial<TabBarProps> & Pick<TabBarProps, 'tabs' | 'active'>) => act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} {...props} {...next} />))
+  const sliding = (el: HTMLElement, cls: string) => [...el.querySelectorAll(`.tabbar__tab--${cls}`)].map((tab) => tab.textContent?.replace('✕', ''))
+  /** Motion is allowed (jsdom has no matchMedia, and there nothing slides shut). */
+  const allowMotion = () => Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).matchMedia
+    vi.useRealTimers()
+  })
+
+  it('S88: a tab that joins the strip slides open — not the tabs the strip starts with, and not a page that takes a tab\'s place; the blank tab slides open, and the page that fills it does not', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', ...props })
+    expect(sliding(el, 'in')).toEqual([])
+    // The preview tab shows another page: same count, a new element, no slide.
+    render({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/c.md' })
+    expect(sliding(el, 'in')).toEqual([])
+    render({ tabs: ['/v/a.md', '/v/c.md', '/v/d.md'], active: '/v/d.md' })
+    expect(sliding(el, 'in')).toEqual(['d'])
+    // It keeps the class while it stands, so a render in the middle of the slide does not cut it.
+    render({ tabs: ['/v/a.md', '/v/c.md', '/v/d.md'], active: '/v/a.md' })
+    expect(sliding(el, 'in')).toEqual(['d'])
+    render({ tabs: ['/v/a.md', '/v/c.md', '/v/d.md'], active: '/v/a.md', blank: true })
+    expect(sliding(el, 'in')).toEqual(['d', 'New tab'])
+    render({ tabs: ['/v/a.md', '/v/c.md', '/v/d.md', '/v/e.md'], active: '/v/e.md', blank: false })
+    expect(sliding(el, 'in')).toEqual(['d'])
+    // A tab that closes, or one that moves, builds no other tab again (YAZ-2657 A3): a later tab
+    // stays the SAME element, so its slide does not play a second time and it keeps hover and focus.
+    const tabOf = (name: string) => [...el.querySelectorAll('.tabbar__tab')].find((tab) => tab.textContent?.replace('✕', '') === name)
+    const [d, e] = [tabOf('d'), tabOf('e')]
+    render({ tabs: ['/v/a.md', '/v/d.md', '/v/e.md'], active: '/v/e.md', blank: false })
+    expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
+    render({ tabs: ['/v/e.md', '/v/a.md', '/v/d.md'], active: '/v/e.md', blank: false })
+    expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
+  })
+
+  it('S88: a closed tab slides shut where it stood — a ghost that is no tab, gone after the slide; with no motion asked for there is none', () => {
+    vi.useFakeTimers()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', ...props })
+    render({ tabs: ['/v/a.md', '/v/c.md'], active: '/v/a.md' })
+    expect(sliding(el, 'out')).toEqual([]) // no matchMedia: nothing slides
+
+    allowMotion()
+    render({ tabs: ['/v/c.md'], active: '/v/c.md' })
+    expect([...el.querySelectorAll('.tabbar__tab')].map((tab) => tab.textContent?.replace('✕', ''))).toEqual(['a', 'c'])
+    expect(sliding(el, 'out')).toEqual(['a'])
+    // The ghost is nothing to act on: no tab role, no ✕, hidden from a reader.
+    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(['c'])
+    expect(el.querySelector('.tabbar__tab--out')?.getAttribute('aria-hidden')).toBe('true')
+    expect(el.querySelector('.tabbar__tab--out button')).toBeNull()
+    // The ghost goes when the slide ends: the time the row hands the stylesheet is the timer's own (YAZ-2657 A19).
+    const ms = parseInt(el.querySelector<HTMLElement>('.tabbar-row')!.style.getPropertyValue('--tab-slide-ms'), 10)
+    act(() => void vi.advanceTimersByTime(ms - 1))
+    expect(sliding(el, 'out')).toEqual(['a'])
+    act(() => void vi.advanceTimersByTime(1))
+    expect(sliding(el, 'out')).toEqual([])
+    // A page that takes a tab's place closes nothing.
+    render({ tabs: ['/v/d.md'], active: '/v/d.md' })
+    expect(sliding(el, 'out')).toEqual([])
+  })
+
+  it('S93: with the right panel closed the row keeps room at its end for the "Show right panel" button', () => {
+    const el = mount({ tabs: ['/v/a.md'], active: '/v/a.md', reserveEnd: true, ...props })
+    expect(el.querySelector('.tabbar-row')?.className).toContain('tabbar-row--end')
+    render({ tabs: ['/v/a.md'], active: '/v/a.md', reserveEnd: false })
+    expect(el.querySelector('.tabbar-row')?.className).not.toContain('tabbar-row--end')
   })
 })
 
@@ -518,5 +650,21 @@ describe('tab menu OS actions (YAZ-963)', () => {
       await Promise.resolve()
     })
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t reveal "UP-001 - Abdul" — it is no longer there')
+  })
+})
+
+describe('the tab of the page the board highlights (YAZ-2648)', () => {
+  afterEach(() => setBoardHighlight(null))
+
+  it('wears the lit look while the board points at its page, the active tab too, and loses it when the board lets go', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), canBack: false, canForward: false, onBack: vi.fn(), onForward: vi.fn() })
+    const lit = () => [...el.querySelectorAll('.tabbar__tab--lit [role="tab"]')].map((tab) => tab.getAttribute('title'))
+    expect(lit()).toEqual([])
+    act(() => setBoardHighlight('/v/b.md'))
+    expect(lit()).toEqual(['/v/b.md'])
+    act(() => setBoardHighlight('/v/a.md'))
+    expect(lit()).toEqual(['/v/a.md'])
+    act(() => setBoardHighlight(null))
+    expect(lit()).toEqual([])
   })
 })

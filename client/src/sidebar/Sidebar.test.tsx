@@ -177,6 +177,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     width: 260,
     activeFile: null,
     onOpenFile: vi.fn(),
+    onKeepFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
     // A search row's tree-drawing menu items (🔒 D2, YAZ-2050): App flips to Files and issues the reveal request.
     onRevealInFiles: vi.fn(),
@@ -396,7 +397,7 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a double click on a FOLDER row opens the folder itself as a tab; a single click still only selects and folds (YAZ-2290 D3)', async () => {
+  it('a double click on a FOLDER row opens the folder itself as a KEPT tab (YAZ-2648 D2); a single click still only selects and folds (YAZ-2290 D3)', async () => {
     const { props, el } = await mount()
     const row = el.querySelector<HTMLButtonElement>('.tree__row--dir')!
     const open = row.parentElement!.getAttribute('aria-expanded')
@@ -405,8 +406,22 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     expect(row.className).toContain('tree__row--selected')
     expect(row.parentElement!.getAttribute('aria-expanded')).not.toBe(open)
     act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('a double click on a FILE row keeps the tab its first click previewed (YAZ-2648 D2); with shift or ⌘ it keeps nothing', async () => {
+    const { props, el } = await mount()
+    const row = fileRow(el)!
+    act(() => row.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(props.onKeepFile).not.toHaveBeenCalled()
+    act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, shiftKey: true })))
+    act(() => void row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, metaKey: true })))
+    expect(props.onKeepFile).toHaveBeenCalledTimes(1)
   })
 
   it('the folder row menu LEADS with "Open", which opens the folder as a tab; a file row and blank space have no such item (YAZ-2290 D3)', async () => {
@@ -414,7 +429,9 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el)[0]?.textContent).toBe('Open')
     act(() => itemByLabel(el, 'Open')?.click())
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    // As the row's double click opens it: a kept tab (YAZ-2648 D2).
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(el.querySelector('.ctx-menu')).toBeNull()
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(itemByLabel(el, 'Open')).toBeUndefined()
@@ -1484,7 +1501,7 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     return pm
   }
 
-  it('S22: Enter on the page ALREADY open commits the caret into it and never re-opens it; ⌘-Enter there is still a background tab (YAZ-961)', async () => {
+  it('S22: Enter on the page ALREADY open commits the caret into it, and asks for no other page; ⌘-Enter there is still a background tab (YAZ-961)', async () => {
     // The tree rows' rule (YAZ-921), on the search: the first Enter previews — focus stays in the
     // bar, so the walk continues — and the second is the deliberate "take me in".
     const pm = editorStub()
@@ -1496,7 +1513,8 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/Alpha.md`)
     expect(document.activeElement).not.toBe(pm)
     await press(input, 'Enter')
-    expect(props.onOpenFile).not.toHaveBeenCalled()
+    // The page is asked for again — nothing for the workspace to change, and App's cue to close the tab board (YAZ-2648 S46).
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Alpha.md`)
     expect(document.activeElement).toBe(pm)
     pm.remove()
   })
@@ -1517,7 +1535,7 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(cursor(el)).toEqual(['Plans'])
     expect(props.onOpenFile).toHaveBeenCalledTimes(1)
     act(() => void row(el, `${v}/Plans`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Plans`)
+    expect(props.onKeepFile).toHaveBeenLastCalledWith(`${v}/Plans`)
     // S28: a row inside an opened folder is no match — it opens as a tree row does, and the highlight stays.
     await type(input, 'archive')
     click(row(el, `${v}/Archive`))
@@ -2375,14 +2393,16 @@ describe('folder rows in search (YAZ-1491)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
     act(() => void dirResult(el)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
-  it('Enter on the folder whose page is already open hands focus to it, as on an open note — no second open', async () => {
+  it('Enter on the folder whose page is already open hands focus to it, as on an open note — no other page asked for', async () => {
     const { input, props } = await search('sub', { activeFile: '/v/sub' })
     await press(input, 'Enter')
-    expect(props.onOpenFile).not.toHaveBeenCalled()
+    // The page is asked for again: nothing for the workspace to change, and App's cue to close the tab board (YAZ-2648 S46).
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
   })
 
@@ -3088,6 +3108,20 @@ describe('favorites (YAZ-1766)', () => {
   /** What a drag draws: the line on a row's edge (a reorder), or the fill of a drop folder (a move on disk). */
   const marker = (el: HTMLElement) => el.querySelector('.tree__row--drop-before, .tree__row--drop-after, .tree__row--drop')
 
+  it('YAZ-2648 S5: a row of Favorites and a row of Focus open their page as a row of Files does: a click asks for it — the page ALREADY open too — and a double click keeps it', async () => {
+    for (const lens of ['favorites', 'focus'] as const) {
+      const { el, v, props, rerender } = await mountVault({ lens }, { favorites: ['/top.md'], focus: ['/top.md'] })
+      act(() => void rowByPath(el, `${v}/top.md`)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/top.md`)
+      await rerender({ activeFile: `${v}/top.md` })
+      act(() => void rowByPath(el, `${v}/top.md`)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+      expect(props.onOpenFile).toHaveBeenCalledTimes(2)
+      expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/top.md`)
+      act(() => void rowByPath(el, `${v}/top.md`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+      expect(props.onKeepFile).toHaveBeenCalledExactlyOnceWith(`${v}/top.md`)
+    }
+  })
+
   it('the tab is the last, right of Focus (YAZ-2619; Search is the second, YAZ-2638 D2), and starts on the empty hint', async () => {
     const { el } = await mountVault({ lens: 'favorites' })
     expect([...el.querySelectorAll('.sidebar__lenses [role="tab"]')].map((b) => b.textContent || b.getAttribute('aria-label'))).toEqual(['Files', 'Search', 'Focus', 'Favorites'])
@@ -3771,7 +3805,7 @@ describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
     expect(selectedPaths(el)).toEqual(['/v/c.md'])
   })
 
-  it('a MOUSE click on the file ALREADY open only selects it — no re-open, no caret jump into the editor (D11, YAZ-1674)', async () => {
+  it('a MOUSE click on the file ALREADY open only selects it — no other page asked for, no caret jump into the editor (D11, YAZ-1674)', async () => {
     // Click-then-⌘C must work on the open note too: YAZ-961's "take me in" is Enter's (detail 0), never the mouse's.
     const instance = document.createElement('div')
     instance.className = 'editor-instance'
@@ -3783,7 +3817,8 @@ describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
     document.body.appendChild(instance)
     const { el, props } = await mount({ activeFile: '/v/a.md' }, withMultiTree)
     act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
-    expect(props.onOpenFile).not.toHaveBeenCalled()
+    // The row asks for its own page: nothing for the workspace to change, and App's cue to close the tab board (YAZ-2648 S46).
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     expect(selectedPaths(el)).toEqual(['/v/a.md'])
     expect(document.activeElement).not.toBe(pm)
     act(() => void rowByPath(el, '/v/a.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })))

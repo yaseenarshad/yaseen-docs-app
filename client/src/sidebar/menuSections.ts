@@ -63,7 +63,7 @@ export type MenuSection = MenuItem[]
 export type MenuSectionTargets = MenuTargets & { clip: FileClipState }
 
 export interface MenuHandlers {
-  /** "Open" on a folder row (YAZ-2290 D3): the folder becomes the current tab, as a double click makes it. */
+  /** "Open" on a folder row (YAZ-2290 D3): the folder opens as a kept tab, as a double click opens it (YAZ-2648 D2). */
   onOpen: (path: string) => void
   /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
   onOpenInNewTabs: (paths: string[]) => void
