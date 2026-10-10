@@ -2023,6 +2023,24 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
+  it('YAZ-2663 D12: ↑ in the search bar, with the highlight on the first row or with no row, goes to the tab button of Search; with a row above the highlight it moves the highlight, as before', async () => {
+    const { el } = await open({ lens: 'search' })
+    const input = searchBar(el)!
+    const searchTab = el.querySelector<HTMLElement>('.sidebar__lens--active')
+    act(() => input.focus())
+    await press(input, 'ArrowUp') // no text, no row
+    expect(document.activeElement).toBe(searchTab)
+    act(() => input.focus())
+    await type(input, 'a')
+    const top = () => cursor(el)[0]
+    await press(input, 'ArrowDown')
+    const second = top()
+    await press(input, 'ArrowUp') // a row above the highlight: the highlight moves, and the caret stays in the bar
+    expect([document.activeElement, top() !== second]).toEqual([input, true])
+    for (let n = 0; n < 60 && document.activeElement === input; n++) await press(input, 'ArrowUp')
+    expect(document.activeElement).toBe(searchTab) // …and from the first row, to the tab button
+  })
+
   it('YAZ-2663 D10: with no page open Esc goes to the new tab page, when it shows and has a row; the search tab is left all the same', async () => {
     const onLeaveToPage = vi.fn(() => true)
     const { el, props } = await open({ lens: 'search', onLeaveToPage })
@@ -2081,14 +2099,15 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     }
   })
 
-  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, ↑, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663)', async () => {
+  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663); ↑ goes to the tabs of the panel (YAZ-2663 D12)', async () => {
     const { el } = await open({ lens: 'search' })
     const taken = (key: string) => {
       const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
       act(() => void searchBar(el)!.dispatchEvent(event))
       return event.defaultPrevented
     }
-    expect(['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(6).fill(false))
+    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(5).fill(false))
+    expect(taken('ArrowUp')).toBe(true)
   })
 
   it('S17, S19: the Search tab has no expand-all button and no blank-space menu — not even the OS one — with text or with none', async () => {
@@ -2304,7 +2323,9 @@ describe('the way from the empty search bar to the new tab page (YAZ-2663 D7)', 
     expect([press(input, 'ArrowRight').defaultPrevented, press(input, 'ArrowDown').defaultPrevented]).toEqual([true, true])
     expect(onLeaveToPage).toHaveBeenCalledTimes(2)
     // Other keys, and a → or ↓ with a modifier, do not ask.
-    for (const [key, init] of [['ArrowLeft', {}], ['ArrowUp', {}], ['Enter', {}], [' ', {}], ['ArrowRight', { metaKey: true }], ['ArrowDown', { shiftKey: true }], ['ArrowRight', { altKey: true }]] as const) expect([key, press(input, key, init).defaultPrevented]).toEqual([key, false])
+    for (const [key, init] of [['ArrowLeft', {}], ['Enter', {}], [' ', {}], ['ArrowRight', { metaKey: true }], ['ArrowDown', { shiftKey: true }], ['ArrowRight', { altKey: true }]] as const) expect([key, press(input, key, init).defaultPrevented]).toEqual([key, false])
+    // ↑ is the tabs' (YAZ-2663 D12): it is taken, and it does not ask for the page.
+    expect(press(input, 'ArrowUp').defaultPrevented).toBe(true)
     expect(onLeaveToPage).toHaveBeenCalledTimes(2)
     // No column of the page has a row: the page says no, and the key does nothing, as before.
     onLeaveToPage.mockReturnValue(false)
@@ -2313,7 +2334,7 @@ describe('the way from the empty search bar to the new tab page (YAZ-2663 D7)', 
     // No page shows: App hands no door.
     await rerender({ onLeaveToPage: undefined })
     expect([press(input, 'ArrowRight').defaultPrevented, press(input, 'ArrowDown').defaultPrevented]).toEqual([false, false])
-    expect(document.activeElement).toBe(document.body) // the harness gave the bar no focus, and no key moved one
+    expect(document.activeElement).toBe(el.querySelector('.sidebar__lens--active')) // the ↑ above went to the tab button of Search; → and ↓ moved no focus
   })
 
   it('S34: with text in the bar → and ↓ do what the search says, and the page is not asked', async () => {
@@ -2936,7 +2957,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect(document.activeElement).not.toBe(row(el, path))
   })
 
-  it.each(['files', 'focus', 'favorites'] as const)('S61, S63: on the %s tab ↓ moves the keyboard focus to the next row on show and ↑ to the row before; they stop at both ends, change no selection and open no page', async (lens) => {
+  it.each(['files', 'focus', 'favorites'] as const)('S61, S63: on the %s tab ↓ moves the keyboard focus to the next row on show and ↑ to the row before; ↓ stops at the last row, and they change no selection and open no page', async (lens) => {
     const { el, v, props, rerender } = await mountVault()
     await rerender({ lens })
     act(() => row(el, `${v}/Projects`)?.focus())
@@ -2944,9 +2965,13 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     const rows = labels(el)
     expect(rows).toEqual(lens === 'files' ? ['Projects', 'Alpha', 'plan', 'book.epub', 'top'] : ['Projects', 'Alpha', 'plan', 'top'])
     const walk = (name: string, times: number) => Array.from({ length: times }, () => [key(document.activeElement, name).defaultPrevented, focused()])
-    expect(walk('ArrowUp', 1)).toEqual([[true, 'Projects']]) // the first row: ↑ stops
-    expect(walk('ArrowDown', rows.length)).toEqual([...rows.slice(1), rows.at(-1)].map((label) => [true, label])) // …and ↓ stops on the last
-    expect(walk('ArrowUp', rows.length)).toEqual([...rows.slice(0, -1).reverse(), rows[0]].map((label) => [true, label]))
+    expect(walk('ArrowDown', rows.length)).toEqual([...rows.slice(1), rows.at(-1)].map((label) => [true, label])) // ↓ stops on the last row
+    expect(walk('ArrowUp', rows.length - 1)).toEqual(rows.slice(0, -1).reverse().map((label) => [true, label]))
+    // ↑ on the first row goes on to the tab button of the tab that shows (YAZ-2663 D12), and ↓ there comes back into the rows.
+    key(document.activeElement, 'ArrowUp')
+    expect(document.activeElement).toBe(el.querySelector('.sidebar__lens--active'))
+    key(document.activeElement, 'ArrowDown')
+    expect(focused()).toBe('Projects')
     expect(labels(el)).toEqual(rows) // ↓ and ↑ fold nothing
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
@@ -3007,9 +3032,11 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect(document.activeElement).toBe(document.body)
     expect([key(document.body, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'Projects'])
     act(() => (document.activeElement as HTMLElement).blur())
-    const tab = el.querySelector<HTMLElement>('.sidebar__lens')
+    const tab = el.querySelector<HTMLElement>('.sidebar__lens--active')
     act(() => tab?.focus())
-    expect([key(tab, 'ArrowUp').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    // On the tab button of the tab that shows, ↓ goes into its rows. ↑ has nowhere to go (D12).
+    expect([key(tab, 'ArrowUp').defaultPrevented, document.activeElement]).toEqual([true, tab])
+    expect([key(tab, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'Projects'])
     // → from nowhere goes to the page (D8's door). On a row, → is the row's.
     act(() => (document.activeElement as HTMLElement).blur())
     expect([key(document.body, 'ArrowRight').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
@@ -3029,11 +3056,43 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     }
   })
 
-  it('YAZ-2663 D10: on the Search tab the arrows from nowhere are not the tree\'s', async () => {
-    const { rerender } = await mountVault()
-    await rerender({ lens: 'search' })
-    expect([key(document.body, 'ArrowDown').defaultPrevented, document.activeElement]).toEqual([false, document.body])
+  it('YAZ-2663 D12: on the Search tab, with the keyboard on nothing, ↓ or ↑ puts the caret in the search bar, and → asks for the new tab page', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, rerender } = await mountVault()
+    await rerender({ lens: 'search', onLeaveToPage })
+    expect(document.activeElement).toBe(document.body)
+    expect([key(document.body, 'ArrowDown').defaultPrevented, document.activeElement]).toEqual([true, searchBar(el)])
+    act(() => searchBar(el)?.blur())
+    expect([key(document.body, 'ArrowUp').defaultPrevented, document.activeElement]).toEqual([true, searchBar(el)])
+    act(() => searchBar(el)?.blur())
+    expect([key(document.body, 'ArrowRight').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
   })
+
+  it('YAZ-2663 D12: the tabs of the sidebar from the keyboard — ↑ on the first row goes to the tab button of the tab that shows; ← and → move between the tab buttons and stop at both ends; ↓ on a tab that does not show asks for it, as Enter does', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ onLeaveToPage })
+    const tabs = [...el.querySelectorAll<HTMLElement>('.sidebar__lens')]
+    const onTab = () => tabs.indexOf(document.activeElement as HTMLElement)
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'ArrowUp')
+    expect(focused()).not.toBe('top') // a row above it: ↑ walks, as before
+    act(() => row(el, `${v}/Projects`)?.focus()) // the first row
+    expect([key(document.activeElement, 'ArrowUp').defaultPrevented, onTab()]).toEqual([true, 0]) // Files
+    // ← and → on the tab buttons: Files, Search, Focus, Favorites. → never goes to the page from here.
+    const walk = ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'].map((name) => [key(document.activeElement, name).defaultPrevented, onTab()])
+    expect(walk).toEqual([[true, 0], [true, 1], [true, 2], [true, 3], [true, 3]])
+    expect(onLeaveToPage).not.toHaveBeenCalled()
+    // ↓ on a tab that does not show: the tab is asked for, and the keyboard stays on its button.
+    vi.mocked(props.onLensChange).mockClear()
+    expect([key(document.activeElement, 'ArrowDown').defaultPrevented, onTab()]).toEqual([true, 3])
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('favorites')
+    await rerender({ lens: 'favorites' })
+    // It shows now: ↓ goes into its rows.
+    key(document.activeElement, 'ArrowDown')
+    expect(document.activeElement?.matches('.tree__row')).toBe(true)
+  })
+
 
   it('YAZ-2663 D10: Esc on a row with no selection goes to the page on show — the open page, else the new tab page; with a selection Esc ends the selection, as before', async () => {
     const onLeaveToPage = vi.fn(() => true)
@@ -3499,7 +3558,10 @@ describe('Space, → and ← on a folder of the search tree (YAZ-2662 D6, D7)', 
     }
     /** ↑ to the first stop, then ↓ to the row labelled `label`: the highlight is on it, moved by the keyboard. */
     const go = (label: string) => {
+      // ↑ on the first row goes on to the tab buttons of the panel (YAZ-2663 D12): the walk to the top keeps the focus where it was.
+      const held = document.activeElement
       for (let i = 0; i < 20; i++) press('ArrowUp')
+      if (held instanceof HTMLElement && document.activeElement !== held) act(() => held.focus())
       for (let i = 0; i < 20 && cursor()[0] !== label; i++) press('ArrowDown')
       expect(cursor()).toEqual([label])
     }

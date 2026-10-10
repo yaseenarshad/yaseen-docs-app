@@ -23,6 +23,9 @@ import { PREVIEW_FOLLOW_MS } from '../sidebar/hooks/useSidebarSearch'
 import { suggestFavorites } from './suggestFavorites'
 import './startPage.css'
 
+/** At this width of the page area, and under it, the columns stand one below the other: the `@container` rule of startPage.css. Keep the two the same. */
+const STACK_AT = 640
+
 /** "Recent" and "Favorites" show this many rows at most (YAZ-2663 D3). */
 const START_ROWS = 8
 
@@ -244,6 +247,10 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
       stopPreview()
       onBack()
     }
+    // The columns stand one below the other in a narrow page area (S23; `STACK_AT` is the width of
+    // startPage.css). ⌘+ makes the page area narrow too. With no layout (a test) the width reads 0: three columns.
+    const width = page.current?.clientWidth ?? 0
+    const stacked = width > 0 && width <= STACK_AT
     // The columns that have rows, in their order: ← and → go over a column with none (S36).
     const shown = COLUMNS.map((column) => column.col).filter((column) => columns[column].rows.length > 0)
     // A held Enter or Space acts ONE time, as on a search row (YAZ-2669): a repeat of the press is
@@ -258,15 +265,20 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
     // A key with ⌘, Ctrl or Alt is a shortcut of the window, not a key of the page.
     else if (e.metaKey || e.ctrlKey || e.altKey) return
-    // ↑ and ↓ walk the column and stop at both ends (S35).
+    // ↑ and ↓ walk the column and stop at both ends (S35). In ONE column (D12) they go on into the
+    // next column that has rows, and into the one before: the page is one list from top to bottom then.
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      const to = n + (e.key === 'ArrowDown' ? 1 : -1)
+      const down = e.key === 'ArrowDown'
+      const to = n + (down ? 1 : -1)
+      const next = stacked ? shown[shown.indexOf(col) + (down ? 1 : -1)] : undefined
       if (to >= 0 && to < columns[col].rows.length) go(col, to)
+      else if (next !== undefined) go(next, down ? 0 : columns[next].rows.length - 1)
     }
     // → and ← go to the neighbour column that has rows, at the same row number or at its last row.
     // → on the last one does nothing (S36); ← on the first one goes back to where the keyboard came from (S37, D8).
+    // In one column nothing is to the right or to the left of a row: → does nothing, and ← goes back.
     else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      const next = shown[shown.indexOf(col) + (e.key === 'ArrowRight' ? 1 : -1)]
+      const next = stacked ? undefined : shown[shown.indexOf(col) + (e.key === 'ArrowRight' ? 1 : -1)]
       if (next !== undefined) go(next, n)
       else if (e.key === 'ArrowLeft') back()
     }
