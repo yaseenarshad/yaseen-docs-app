@@ -38,6 +38,7 @@ let manager: {
   closeWindow: ReturnType<typeof vi.fn>
   handleFlushed: ReturnType<typeof vi.fn>
   handleLinkReady: ReturnType<typeof vi.fn>
+  vaultNotice: ReturnType<typeof vi.fn>
 }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
@@ -49,7 +50,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {

@@ -2,8 +2,9 @@ import { mkdir, stat } from 'node:fs/promises'
 import type { CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@shared/types'
 import { isMarkdown } from '@shared/fileKind'
 import { FrontmatterWriteError, setFrontmatterProperty } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
+import { NOTE_ID_KEY, isVaultNumberId } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
+import type { IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure, createDurable, createFolderSettings, fsCall, requireAbsPath } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -23,27 +24,38 @@ const noIds = (p: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', 'th
  * replaced. A seed whose frontmatter will not parse is created as given, without one: the id
  * never blocks a creation, and the index gives the note one once the YAML is fixed.
  *
+ * 🔒 The id is the vault's next number, from its door (`ids`, YAZ-2677 D4), taken — and saved —
+ * BEFORE the note is written (R18): a create that then fails leaves a gap (S31), never a number
+ * given two times. The caller's id is one it took from the same door (`fs:mint-note-id`), so it
+ * must be a number ID with the vault's current letters: nothing here writes an old ID (R3).
+ *
  * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding a fresh `id` and, when
  * the request carries one, the folder's `title` (YAZ-2420 🔒 D6): `createFolderSettings`. A folder
  * whose file could not be written stands without one, and the id sweep gives it one.
  *
- * 🔒 All of that only where the vault uses IDs (`ids`, YAZ-2523 V3). In a vault that does not, a
- * folder is the directory and a note the content it was given, as Finder would make them: no id is
- * written and the answer carries none.
+ * 🔒 All of that only where the vault uses IDs (`ids`, its door; YAZ-2523 V3). In a vault that does
+ * not (`null`), a folder is the directory and a note the content it was given, as Finder would make
+ * them: no id is written and the answer carries none.
  */
-export async function createDir(req: CreateDirRequest, ids: boolean): Promise<CreateDirResponse> {
+export async function createDir(req: CreateDirRequest, ids: IdDoor | null): Promise<CreateDirResponse> {
   const { path: raw, title } = requireRequest(req)
   const p = requireAbsPath(raw, 'path')
   if (title !== undefined && typeof title !== 'string') throw new BridgeFailure('BAD_REQUEST', "'title' must be a string", { path: p })
-  if (!ids && title !== undefined) throw noIds(p)
+  if (ids === null && title !== undefined) throw noIds(p)
   await fsCall(p, () => mkdir(p))
-  if (!ids) return { path: p }
-  const born = setFrontmatterProperty('', NOTE_ID_KEY, mintNoteId())
-  await createFolderSettings(p, title === undefined ? born : setFrontmatterProperty(born, TITLE_KEY, title)).catch(() => undefined)
+  if (ids === null) return { path: p }
+  // The folder stands either way: one whose number or file fails is given both by the sweep.
+  await ids
+    .mint(1)
+    .then(([id]) => {
+      const born = setFrontmatterProperty('', NOTE_ID_KEY, id)
+      return createFolderSettings(p, title === undefined ? born : setFrontmatterProperty(born, TITLE_KEY, title))
+    })
+    .catch(() => undefined)
   return { path: p }
 }
 
-export async function createFile(req: string | CreateFileRequest, ids: boolean): Promise<CreateFileResponse> {
+export async function createFile(req: string | CreateFileRequest, ids: IdDoor | null): Promise<CreateFileResponse> {
   // Crosses IPC from a sandboxed renderer: shape-checked like a request body (writeFile's posture).
   const raw: unknown = req
   const isReq = typeof raw === 'object' && raw !== null
@@ -52,9 +64,10 @@ export async function createFile(req: string | CreateFileRequest, ids: boolean):
   const content = isReq ? (raw as Record<string, unknown>).content : undefined
   if (content !== undefined && typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   const given = isReq ? (raw as Record<string, unknown>).id : undefined
-  if (given !== undefined && !isNoteId(given)) throw new BridgeFailure('BAD_REQUEST', "'id' must be a note id", { path: p })
-  if (!ids && given !== undefined) throw noIds(p)
-  const born = ids ? withNoteId(content ?? '', given ?? mintNoteId()) : { content: content ?? '', id: undefined }
+  if (given !== undefined && typeof given !== 'string') throw new BridgeFailure('BAD_REQUEST', "'id' must be a note id", { path: p })
+  if (ids === null && given !== undefined) throw noIds(p)
+  if (ids !== null && given !== undefined && !isVaultNumberId(given, ids.letters)) throw new BridgeFailure('BAD_REQUEST', "'id' must be a number ID of this vault", { path: p })
+  const born = ids === null ? { content: content ?? '', id: undefined } : withNoteId(content ?? '', given ?? (await ids.mint(1))[0])
   return fsCall(p, async () => {
     await createDurable(p, born.content)
     const st = await stat(p)

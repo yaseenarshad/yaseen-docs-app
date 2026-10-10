@@ -147,7 +147,7 @@ export interface TreeResponse {
 export interface IndexRecord {
   /** Absolute path. */
   path: string
-  /** Frontmatter `id` when it is a note id (`shared/noteId.ts`, YAZ-2293): the note's permanent identity. Absent when it has none. */
+  /** Frontmatter `id` when it is a note id (`shared/noteId.ts`, YAZ-2293): the note's permanent identity, as the app writes it (YAZ-2677 R2: `YAZ-12`, or an old 12-character ID). Absent when it has none. */
   id?: string
   /** File name with extension. */
   name: string
@@ -199,11 +199,19 @@ export interface IndexResponse {
    */
   ids: boolean
   /**
-   * Only while the vault has NOT answered: what a yes would write (🔒 V2). `notes` would be given an
-   * id, `foreign` of them over another tool's `id`; `folders` would be given a `.folder.md`, or an
-   * `id` in the one they have.
+   * Only when `ids`: the vault's ID letters (YAZ-2677 R9), the current ones first and then each it
+   * had before (`was`). Every record's `id` is an ID of THIS vault and, when it is a number ID,
+   * carries the current letters (R5); `vaultNoteId` reads a typed or linked ID with this list.
    */
-  ask?: { notes: number; folders: number; foreign: number }
+  letters?: string[]
+  /**
+   * Only while the vault's answer is not yes, so for one that said no too (YAZ-2677 🔒 D2): what a
+   * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
+   * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
+   */
+  ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
+  /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
+  unfinished?: true
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
@@ -415,6 +423,23 @@ export interface CreateFileResponse {
 export interface RenameFileRequest {
   oldPath: string
   newPath: string
+}
+
+/**
+ * What Settings shows about the IDs of a vault that uses them (YAZ-2677 🔒 D5, D6), counted by the
+ * main process from its index. A folder's settings file counts like a note.
+ */
+export interface IdsState {
+  /** The vault's ID letters now; the default of its folder's name while its `ids.json` holds none (R11). */
+  letters: string
+  /** Notes that hold a number ID: what "Change letters" changes (S80). */
+  notes: number
+  /** Notes that still have letters the vault had before, in their ID, in an ID they name or in their file name (S83). */
+  stale: number
+  /** Notes that hold an old 12-character ID (S88). */
+  old: number
+  /** A run of "Give old IDs numbers" stopped with files left (`IndexResponse.unfinished`, S90). */
+  unfinished: boolean
 }
 
 export interface RenameFileResponse {

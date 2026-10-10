@@ -62,6 +62,26 @@ describe('searchCandidates', () => {
     expect(elapsed).toBeLessThan(50)
   })
 
+  it('perf smoke: 10,000 notes with a number ID. A search by title, by a bare number and by an ID each cost one read of the query (YAZ-2677 D9, S78)', () => {
+    const records = Array.from({ length: 10000 }, (_, i) => ({ ...rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]), id: `YAZ-${i + 1}` }))
+    const candidates = searchCandidates(records, ['YAZ', 'OLD'])
+    const time = (query: string): { ms: number; first: string | undefined } => {
+      const start = performance.now()
+      let first: string | undefined
+      for (let i = 0; i < 10; i++) first = searchRows(candidates, query)[0]?.label
+      return { ms: (performance.now() - start) / 10, first }
+    }
+    const title = time('Note 49')
+    const number = time('4912')
+    const id = time('yaz 4912')
+    const was = time('old-4912')
+    expect(title.first).toBe('Note 49')
+    for (const run of [number, id, was]) expect(run.first).toBe('YAZ-4912 — Note 4911')
+    console.log(`search perf: 10000 notes with a number ID (20000 candidates), one search: by title ${title.ms.toFixed(2)} ms, by bare number ${number.ms.toFixed(2)} ms, by ID ${id.ms.toFixed(2)} ms, by letters of before ${was.ms.toFixed(2)} ms`)
+    // A search that holds an ID does the title scan too, so it may cost about two of them: never a parse for each note.
+    for (const run of [title, number, id, was]) expect(run.ms).toBeLessThan(25)
+  })
+
   // The two groups (YAZ-2662 D2, D4, R2): the same vault with pinned items. What a keystroke pays
   // is the ranking with one look in a set for each match, the cut of the pinned items, and the cut
   // of the tree without those that the top group draws; the set is built when a list or the tree changes (R1).

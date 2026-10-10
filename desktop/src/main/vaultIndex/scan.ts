@@ -3,7 +3,7 @@ import path from 'node:path'
 import { COMMENTS_KEY } from '@shared/comments'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
 import { titleOf } from '@shared/noteName'
 import { REVIEWS_KEY, reviewEntries, textFingerprint } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
@@ -187,8 +187,12 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   delete properties[REVIEWS_KEY] // the note's own review log (YAZ-2322), never a property
   record.properties = properties
   if (error !== undefined) record.frontmatterError = error
+  // The id as the file holds it, in the form the app writes (YAZ-2677 R2, S18): `yaz-12` is held as
+  // `YAZ-12`, and the file is not rewritten for the case alone. WHOSE id it is — this vault's, by
+  // its letters now or before (R5) — is said where the index is handed out and where it is swept:
+  // the letters can change after this record was scanned and cached.
   const id = properties[NOTE_ID_KEY]
-  if (isNoteId(id)) record.id = id
+  if (isNoteId(id)) record.id = canonicalNoteId(id)
   record.title = titleOf(properties, record.title)
   return { ...record, ...extractBody(properties, body), ...(reviews.length > 0 && { reviews }), text: textFingerprint(body) }
 }

@@ -126,6 +126,8 @@ export interface WindowManager extends WindowLookup {
   routeToFile(path: string, rootOverride?: string | null): void
   /** The unobtrusive can't-open surface (E1): un-minimize + focus a live window, send `link:notice`. Never a dialog. With no live window, the Welcome window opens and says it (YAZ-2589 A2). */
   linkNotice(message: string): void
+  /** A notice about ONE vault (YAZ-2677 S45): `link:notice` to each live window that shows `root`, held like any link push until its page listens. No window is raised, and none opens for it. */
+  vaultNotice(root: string, message: string): void
   /** `link:ready` arrived from this renderer (wired in `ipc/window.ts`): it listens now, so the link pushes held for it go out (YAZ-2589 A2). */
   handleLinkReady(sender: { id: number }): void
   /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`). */
@@ -135,7 +137,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -552,6 +554,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     linkNotice,
+
+    vaultNotice(root, message) {
+      for (const [id, win] of live) {
+        if (!win.isDestroyed() && entryOf(id)?.roots.includes(root) === true) sendLink(win, CONTRACT.link.onNotice.channel, message)
+      }
+    },
 
     handleLinkReady(sender) {
       for (const send of heldLinks.get(sender.id) ?? []) send()

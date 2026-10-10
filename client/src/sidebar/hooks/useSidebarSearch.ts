@@ -102,7 +102,11 @@ export function useSidebarSearch(
     return { top: top.nodes, rest: rest.nodes, open: new Set([...top.open, ...rest.open]), order: [...top.order, ...rest.order] }
   }, [tree, pinned, hits, full])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
-  const marks: TreeMarks = useMemo(() => ({ hits, needle: query.trim().toLowerCase() }), [hits, query])
+  // And the full ID of each row found by its number (YAZ-2677 S70): `searchRows` puts it in front of that row's label.
+  const marks: TreeMarks = useMemo(() => {
+    const ids = new Map(results.flatMap((r) => (r.id !== undefined && r.label.startsWith(`${r.id} — `) ? [[r.path, r.id] as const] : [])))
+    return { hits, needle: query.trim().toLowerCase(), ...(ids.size > 0 && { ids }) }
+  }, [hits, query, results])
   // A fold clicked during a search lasts as long as its query (S15, S16) and lives here alone (R4):
   // the Files tree's folds, and the store behind them, stay as they were (S17).
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(NO_FOLDS)

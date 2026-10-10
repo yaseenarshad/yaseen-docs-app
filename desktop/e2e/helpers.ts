@@ -205,8 +205,12 @@ export async function copyVault(src: string): Promise<string> {
 
 // ---------- a note on disk (YAZ-2420): the app builds its name as `<kebab-title>-<id>.md` ----------
 
-/** A note id as a pattern, for finding a file whose name the app built. */
-export const NOTE_ID = '[0-9a-hjkmnp-tv-z]{12}'
+/**
+ * A note id as a pattern, for finding a file whose name the app built: a number ID (YAZ-2677 D3 —
+ * `YAZ-12` in the note's `id:` line, `yaz-12` in its file name), or an old 12-character ID, which
+ * a note made before number IDs still holds.
+ */
+export const NOTE_ID = '(?:[A-Za-z]{2,5}-[1-9]\\d*|[0-9a-hjkmnp-tv-z]{12})'
 
 /** The one file in `dir` whose name matches, or '' while there is none or more than one. */
 export async function only(dir: string, pattern: RegExp): Promise<string> {

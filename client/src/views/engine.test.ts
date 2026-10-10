@@ -724,6 +724,64 @@ describe('makeResolver (GRO-2132)', () => {
   })
 })
 
+describe('makeResolver: number IDs (YAZ-2677 D3)', () => {
+  const note = (path: string, id?: string, title?: string): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const basename = name.replace(/\.md$/, '')
+    return { ...TEST_RECORDS[0], path, name, basename, title: title ?? basename, folder: '', aliases: [], ...(id === undefined ? { id: undefined } : { id }) }
+  }
+  // The vault `YAZ`, which was `OLD` before. Note 30 is only NAMED like an ID; an old ID lives beside the numbers.
+  const records = [note('/vault/plan-yaz-12.md', 'YAZ-12', 'Plan'), note('/vault/YAZ-7.md', 'YAZ-30'), note('/vault/home-k3m9x2pq7abc.md', 'k3m9x2pq7abc', 'Home'), note('/vault/GPT-4.md')]
+  const resolve = makeResolver(records.map((r) => new FileValue(r)), '/vault', { letters: ['YAZ', 'OLD'] })
+  const pathOf = (target: string) => resolve(target)?.record.path ?? null
+
+  it('S17: an ID resolves in any case, with `[[…]]`, `|alias` and `#heading` stripped', () => {
+    for (const target of ['YAZ-12', 'yaz-12', 'Yaz-12', '[[yaz-12]]', 'YAZ-12|the plan', 'yaz-12#Scope']) expect(pathOf(target)).toBe('/vault/plan-yaz-12.md')
+  })
+
+  it('S19: an old ID resolves as it always did', () => {
+    expect(pathOf('k3m9x2pq7abc')).toBe('/vault/home-k3m9x2pq7abc.md')
+    expect(pathOf('K3M9X2PQ7ABC')).toBe('/vault/home-k3m9x2pq7abc.md')
+  })
+
+  it('S82: letters the vault had before name the same number', () => {
+    expect(pathOf('OLD-12')).toBe('/vault/plan-yaz-12.md')
+    expect(pathOf('old-12#Scope')).toBe('/vault/plan-yaz-12.md')
+    expect(pathOf('OLD-99')).toBeNull()
+  })
+
+  it('S26: a target that is the ID of no note falls back to the name: `[[YAZ-7]]` opens the note named so', () => {
+    expect(pathOf('YAZ-7')).toBe('/vault/YAZ-7.md')
+    expect(pathOf('yaz-30')).toBe('/vault/YAZ-7.md') // and its own ID still reaches it
+  })
+
+  it('S21, S22: other LETTERS-NUMBER text is a name: it finds a note of that name, and never the note of that number', () => {
+    expect(pathOf('GPT-4')).toBe('/vault/GPT-4.md')
+    expect(pathOf('BUS-12')).toBeNull()
+    expect(pathOf('BUS-30')).toBeNull()
+  })
+
+  it('an ID wins over a note that is named like it', () => {
+    const both = [note('/vault/a/YAZ-12.md'), note('/vault/plan-yaz-12.md', 'YAZ-12', 'Plan')]
+    expect(makeResolver(both.map((r) => new FileValue(r)), '/vault')('yaz-12')?.record.path).toBe('/vault/plan-yaz-12.md')
+  })
+
+  it('with no letters given, an ID is found by the letters its record holds; with `ids: false`, never', () => {
+    const files = records.map((r) => new FileValue(r))
+    expect(makeResolver(files, '/vault')('yaz-12')?.record.path).toBe('/vault/plan-yaz-12.md')
+    expect(makeResolver(files, '/vault')('OLD-12')).toBeNull()
+    expect(makeResolver(files, '/vault', { ids: false })('YAZ-12')).toBeNull()
+  })
+
+  it('resolverFor keeps one resolver for each list of letters', () => {
+    const plain = resolverFor(records, '/vault')
+    const lettered = resolverFor(records, '/vault', { letters: ['YAZ', 'OLD'] })
+    expect(lettered).not.toBe(plain)
+    expect(resolverFor(records, '/vault', { letters: ['YAZ', 'OLD'] })).toBe(lettered)
+    expect(lettered('old-12')?.record.path).toBe('/vault/plan-yaz-12.md')
+  })
+})
+
 describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
   /** `Costs/Customer Acquisition Cost.md` answers to `CAC`; `Attribution.md` has none. */
   const aliased = (over: Partial<IndexRecord> = {}): IndexRecord => ({

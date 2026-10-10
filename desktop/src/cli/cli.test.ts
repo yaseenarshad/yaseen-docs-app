@@ -10,9 +10,10 @@ import path from 'node:path'
 import { readComments } from '@shared/comments'
 import { IDS_FILE, isNoteId } from '@shared/noteId'
 import { addReview } from '@shared/reviews'
-import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { createStore } from '../main/store'
 import { sweepIds } from '../main/vaultIndex/idSweep'
+import { macId } from '../main/vaultIndex/mint'
 import { scanFile } from '../main/vaultIndex/scan'
 import { HELP, USAGE, find, label, main, transformOnDisk } from './cli'
 
@@ -51,7 +52,8 @@ async function page(name: string, content: string): Promise<string> {
 async function vault(name: string, files: Record<string, string>, ids: boolean | null = true): Promise<string> {
   const root = path.join(dir, name)
   await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
-  if (ids !== null) await writeFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), JSON.stringify({ enabled: ids }))
+  // A vault that gives IDs has its letters (YAZ-2677 R9).
+  if (ids !== null) await writeFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), JSON.stringify(ids ? { enabled: true, letters: 'YAZ' } : { enabled: ids }))
   for (const [rel, content] of Object.entries(files)) {
     await mkdir(path.dirname(path.join(root, rel)), { recursive: true })
     await writeFile(path.join(root, rel), content, 'utf8')
@@ -344,50 +346,73 @@ describe('id (YAZ-2293)', () => {
     }
   })
 
-  it("a page with no id, in a vault that gives its notes IDs: is given the id the app's sweep would give it, and no other byte changes", async () => {
+  it('a page with no id, in a vault that gives its notes IDs: is given the vault\'s next number, and no other byte changes (YAZ-2677 S40)', async () => {
     const content = '---\ntitle: Kickoff # kept\n---\n# Kickoff\n'
     const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
-    const r = await run(['id', p])
-    const id = r.out.trimEnd()
-    expect(r).toEqual({ code: 0, out: `${id}\n`, err: '' })
-    expect(isNoteId(id)).toBe(true)
-    expect(await readFile(p, 'utf8')).toBe(`---\ntitle: Kickoff # kept\nid: ${id}\n---\n# Kickoff\n`)
-    expect((await run(['id', p])).out).toBe(`${id}\n`)
-    // The same note at the same place in another copy of the vault, met by the APP: the same id, so the two edits merge.
-    const theirs = await vault('theirs', { 'Projects/Kickoff.md': content })
-    const twin = path.join(theirs, 'Projects/Kickoff.md')
-    const record = await scanFile(theirs, twin)
-    await sweepIds(theirs, new Map([[twin, record]]), [record], () => undefined)
-    expect(await readFile(twin, 'utf8')).toBe(await readFile(p, 'utf8'))
+    expect(await run(['id', p])).toEqual({ code: 0, out: 'YAZ-1\n', err: '' })
+    expect(await readFile(p, 'utf8')).toBe('---\ntitle: Kickoff # kept\nid: YAZ-1\n---\n# Kickoff\n')
+    // Asked again, it prints the id the page holds and takes no number.
+    expect((await run(['id', p])).out).toBe('YAZ-1\n')
+    expect(await run(['id', path.join(path.dirname(p), '..', 'Projects', 'Kickoff.md')])).toMatchObject({ code: 0, out: 'YAZ-1\n' })
   })
 
-  it("`id <folder>/.folder.md` when the file is missing: the folder is given the settings file the app's sweep would give it, and its id printed; a folder that does not exist is not found", async () => {
-    const p = path.join(await vault('mine', {}), 'Projects', FOLDER_SETTINGS_FILE)
+  it('R20, S40: the command gives the number the app would give — the highest number in the vault plus 1 — and uses the one count file of this Mac, as the app does', async () => {
+    const root = await vault('shared', { 'held.md': '---\nid: YAZ-41\n---\n', 'old.md': '---\nid: k3m9x2pq7abc\n---\n', 'by-command.md': '# A\n', 'by-app.md': '# B\n', 'by-command-2.md': '# C\n' })
+    expect((await run(['id', path.join(root, 'by-command.md')])).out).toBe('YAZ-42\n')
+    // The app, on this Mac, meets another note of the same vault: its sweep takes the next number from the same door.
+    const file = path.join(root, 'by-app.md')
+    const records = new Map<string, IndexRecord>()
+    for (const name of ['held.md', 'old.md', 'by-command.md', 'by-app.md']) records.set(path.join(root, name), await scanFile(root, path.join(root, name)))
+    await sweepIds(root, records, [records.get(file)!], () => undefined)
+    expect(await readFile(file, 'utf8')).toBe('---\nid: YAZ-43\n---\n# B\n')
+    expect((await run(['id', path.join(root, 'by-command-2.md')])).out).toBe('YAZ-44\n')
+    // One count file: this Mac's. It holds what the command and the app gave.
+    const counts = await readdir(path.join(root, VAULT_CONFIG_DIR, 'ids'))
+    expect(counts).toEqual([`${await macId()}.json`])
+    const count = JSON.parse(await readFile(path.join(root, VAULT_CONFIG_DIR, 'ids', counts[0]), 'utf8')) as { last: number; made: { from: number; to: number }[] }
+    expect(count.last).toBe(44)
+    expect(count.made.map(({ from, to }) => [from, to])).toEqual([[42, 42], [43, 43], [44, 44]])
+  })
+
+  it('S28: a number that a deleted note had is not given again by the command', async () => {
+    const root = await vault('gone', { 'a.md': '# A\n', 'b.md': '# B\n' })
+    expect((await run(['id', path.join(root, 'a.md')])).out).toBe('YAZ-1\n')
+    await rm(path.join(root, 'a.md'))
+    expect((await run(['id', path.join(root, 'b.md')])).out).toBe('YAZ-2\n')
+  })
+
+  it('a vault that has no letters yet uses the default of its folder name, and the command saves it with the first number (R11)', async () => {
+    const root = path.join(dir, 'notebook')
+    await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), '{"enabled":true}')
+    await writeFile(path.join(root, 'a.md'), '# A\n')
+    expect((await run(['id', path.join(root, 'a.md')])).out).toBe('NOT-1\n')
+    expect(JSON.parse(await readFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), 'utf8'))).toEqual({ enabled: true, letters: 'NOT' })
+  })
+
+  it('a page that holds a number ID: printed as the app writes it, whatever its case in the file, and nothing is written (S18)', async () => {
+    const content = '---\nid: yaz-12\n---\n'
+    const p = path.join(await vault('cased', { 'a.md': content }), 'a.md')
+    expect(await run(['id', p])).toEqual({ code: 0, out: 'YAZ-12\n', err: '' })
+    expect(await readFile(p, 'utf8')).toBe(content)
+  })
+
+  it("`id <folder>/.folder.md` when the file is missing: the folder is given a settings file that holds only its id, the vault's next number, and the id is printed; a folder that does not exist is not found", async () => {
+    const root = await vault('mine', {})
+    const p = path.join(root, 'Projects', FOLDER_SETTINGS_FILE)
     await mkdir(path.dirname(p))
-    const r = await run(['id', p])
-    const id = r.out.trimEnd()
-    expect(r).toEqual({ code: 0, out: `${id}\n`, err: '' })
-    expect(await readFile(p, 'utf8')).toBe(`---\nid: ${id}\n---\n`)
-    const theirs = path.join(await vault('theirs', {}), 'Projects')
-    await mkdir(theirs)
-    await sweepIds(path.dirname(theirs), new Map(), [], () => undefined, [theirs])
-    expect(await readFile(path.join(theirs, FOLDER_SETTINGS_FILE), 'utf8')).toBe(await readFile(p, 'utf8'))
-    expect(await run(['id', path.join(path.dirname(theirs), 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
+    expect(await run(['id', p])).toEqual({ code: 0, out: 'YAZ-1\n', err: '' })
+    expect(await readFile(p, 'utf8')).toBe('---\nid: YAZ-1\n---\n')
+    expect(await run(['id', path.join(root, 'Gone', FOLDER_SETTINGS_FILE)])).toEqual({ code: 1, out: '', err: 'path does not exist\n' })
   })
 
-  it("a page whose `id` is another tool's (`id: 42`), in a vault that gives its notes IDs: the app's id is written over it, the one the app's sweep would write, and printed (YAZ-2420 D30)", async () => {
-    const content = '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n'
-    const p = path.join(await vault('mine', { 'Projects/Kickoff.md': content }), 'Projects/Kickoff.md')
-    const r = await run(['id', p])
-    const id = r.out.trimEnd()
-    expect(r).toEqual({ code: 0, out: `${id}\n`, err: '' })
-    expect(isNoteId(id)).toBe(true)
-    expect(await readFile(p, 'utf8')).toBe(`---\nid: ${id}\ntitle: Kickoff\n---\n# Kickoff\n`)
-    const theirs = await vault('theirs', { 'Projects/Kickoff.md': content })
-    const twin = path.join(theirs, 'Projects/Kickoff.md')
-    const record = await scanFile(theirs, twin)
-    await sweepIds(theirs, new Map([[twin, record]]), [record], () => undefined)
-    expect(await readFile(twin, 'utf8')).toBe(await readFile(p, 'utf8'))
+  it("a page whose `id` is another tool's (`id: 42`, or another vault's letters), in a vault that gives its notes IDs: the vault's next number is written over it, and printed (YAZ-2420 D30, YAZ-2677 R7)", async () => {
+    const root = await vault('mine', { 'Projects/Kickoff.md': '---\nid: 42\ntitle: Kickoff\n---\n# Kickoff\n', 'moved-in.md': '---\nid: BUS-12\n---\n' })
+    const p = path.join(root, 'Projects/Kickoff.md')
+    expect(await run(['id', p])).toEqual({ code: 0, out: 'YAZ-1\n', err: '' })
+    expect(await readFile(p, 'utf8')).toBe('---\nid: YAZ-1\ntitle: Kickoff\n---\n# Kickoff\n')
+    expect((await run(['id', path.join(root, 'moved-in.md')])).out).toBe('YAZ-2\n')
+    expect(await readFile(path.join(root, 'moved-in.md'), 'utf8')).toBe('---\nid: YAZ-2\n---\n')
   })
 
   it('a page whose properties block does not parse cannot take an id — exit 1, bytes untouched', async () => {
@@ -420,6 +445,24 @@ describe('links (YAZ-2293)', () => {
       code: 0,
       err: '',
       out: `${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\n${DEAD}  (missing)\n${FOLDER}  Areas  Areas/  (also in)\n`,
+    })
+  })
+
+  it('S92: lists number IDs and old IDs, each with the title and path it names now; a number ID is read in any case and with letters the vault had before, and other LETTERS-NUMBER text is a name (YAZ-2677 R5, R6)', async () => {
+    const root = await vault('numbers', {
+      'Home.md': `---\nalso_in:\n  - yaz-3\n---\nSee [[YAZ-12]], [[yaz-12|again]], [[OLD-7]], [[${NOTE}]], [[GPT-4]], [[BUS-12]] and [[YAZ-99]].\n`,
+      'plan-yaz-12.md': '---\nid: YAZ-12\ntitle: Plan\n---\n',
+      'before.md': '---\nid: OLD-7\ntitle: Before\n---\n',
+      'Projects/Alpha/Kickoff notes.md': `---\nid: ${NOTE}\n---\n`,
+      [`Areas/${FOLDER_SETTINGS_FILE}`]: '---\nid: YAZ-3\n---\n',
+      // A note NAMED like an ID of another vault: `[[GPT-4]]` is a name link to it, never an ID.
+      'GPT-4.md': '---\nid: YAZ-4\n---\n',
+    })
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, IDS_FILE), JSON.stringify({ enabled: true, letters: 'YAZ', was: ['OLD'] }))
+    expect(await run(['links', path.join(root, 'Home.md')])).toEqual({
+      code: 0,
+      err: '',
+      out: `YAZ-12  Plan  plan-yaz-12.md\nYAZ-7  Before  before.md\n${NOTE}  Kickoff notes  Projects/Alpha/Kickoff notes.md\nYAZ-99  (missing)\nYAZ-3  Areas  Areas/  (also in)\n`,
     })
   })
 

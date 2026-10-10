@@ -84,7 +84,7 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   const built = await builtNote(vault, 'handbook')
   const renamed = await readFile(path.join(vault, built), 'utf8')
   guideId = idOf(renamed)
-  expect(built).toBe(`handbook-${guideId}.md`)
+  expect(built).toBe(`handbook-${guideId.toLowerCase()}.md`)
   expect(titleOf(renamed)).toBe(RENAMED)
   expect(renamed).toContain(GUIDE_BODY)
   await expect(readFile(path.join(vault, 'Guide.md'), 'utf8')).rejects.toThrow()
@@ -118,10 +118,10 @@ test('step 2 — leaving the title commits (YAZ-1553): click away with a changed
   await expect(confirmSheet(win)).toHaveCount(0)
 
   // The same id under the new title's name.
-  const left = path.join(vault, `manual-${guideId}.md`)
+  const left = path.join(vault, `manual-${guideId.toLowerCase()}.md`)
   await expect.poll(() => readWhenReady(left)).toContain(GUIDE_BODY)
   expect(titleOf(await readFile(left, 'utf8'))).toBe(LEFT)
-  await expect(readFile(path.join(vault, `handbook-${guideId}.md`), 'utf8')).rejects.toThrow()
+  await expect(readFile(path.join(vault, `handbook-${guideId.toLowerCase()}.md`), 'utf8')).rejects.toThrow()
   await expect.poll(() => readWhenReady(path.join(vault, 'Index.md'))).toBe(`# Index\n\nSee [[${LEFT}]] here.\n`)
   await expect(title(win)).toHaveText(LEFT)
   await expect(activeTab(win)).toHaveText(LEFT)
@@ -136,7 +136,7 @@ test('step 3 — Escape is the only discard: no sheet, nothing on disk moves', a
   await expect(titleInput(win)).toHaveCount(0)
   await expect(confirmSheet(win)).toHaveCount(0)
   await expect(title(win)).toHaveText(LEFT)
-  expect(titleOf(await readFile(path.join(vault, `manual-${guideId}.md`), 'utf8'))).toBe(LEFT)
+  expect(titleOf(await readFile(path.join(vault, `manual-${guideId.toLowerCase()}.md`), 'utf8'))).toBe(LEFT)
 })
 
 test('step 4 — leaving with the UNCHANGED name is silent: the field closes and no sheet asks', async () => {

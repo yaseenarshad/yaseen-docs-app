@@ -17,7 +17,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { isNoteId } from '@shared/noteId'
+import { vaultNoteId } from '@shared/noteId'
 import { copyNoteId } from '../../lib/copyNoteId'
 import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
@@ -63,14 +63,16 @@ export function openIdMenu(parent: HTMLElement, x: number, y: number, name: stri
 
 /**
  * The id of the rendered (collapsed) id link under `target`, or null — `wikilinkClick`'s hit-test.
- * Where the vault does not use IDs (`ids`, YAZ-2523 🔒 V5) no link is one.
+ * Where the vault does not use IDs (`ids`, YAZ-2523 🔒 V5) no link is one; where it does, a link is
+ * one when its target is an ID of this vault (`letters`, YAZ-2677 R5): `[[GPT-4]]` is a name there (R6).
  */
-function idLinkAt(view: EditorView, target: EventTarget | null, ids: boolean): string | null {
+function idLinkAt(view: EditorView, target: EventTarget | null, { ids, letters }: Pick<WikilinkResolveSource, 'ids' | 'letters'>): string | null {
   if (!ids || !(target instanceof Element)) return null
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || !view.dom.contains(span)) return null
   const page = linkPageName(wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0)) ?? '')
-  return isNoteId(page) ? page : null
+  // As the app writes it, whatever the link's case or letters of before: what the menu shows and copies.
+  return vaultNoteId(page, letters) ?? null
 }
 
 export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkNav) {
@@ -82,12 +84,12 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
         handleDOMEvents: {
           mousedown: (view, event) => {
             // A Ctrl-click is macOS's other right-click, and arrives as a LEFT-button mousedown.
-            if (!(event.button === 2 || (event.button === 0 && event.ctrlKey)) || idLinkAt(view, event.target, source.ids) === null) return false
+            if (!(event.button === 2 || (event.button === 0 && event.ctrlKey)) || idLinkAt(view, event.target, source) === null) return false
             event.preventDefault()
             return true
           },
           contextmenu: (view, event) => {
-            const id = idLinkAt(view, event.target, source.ids)
+            const id = idLinkAt(view, event.target, source)
             const parent = view.dom.parentElement
             if (id === null || parent === null) return false
             event.preventDefault()
