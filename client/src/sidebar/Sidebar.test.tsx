@@ -3108,8 +3108,31 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
       expect([key(document.activeElement, 'Escape').defaultPrevented, panel(), focused(), onLeaveToPage.mock.calls.length]).toEqual([true, null, 'top', 0])
       key(document.activeElement, ' ')
       expect(panel()).toBe('/top.md')
-      act(() => row(el, `${v}/top.md`)?.click()) // Enter on a file row is the button's own click
+      key(document.activeElement, 'Enter')
+      act(() => row(el, `${v}/top.md`)?.click()) // Enter on a file row is the button's own click, which the key makes
       expect([panel(), vi.mocked(props.onOpenFile).mock.calls.length]).toEqual([null, 1])
+      // A click of the MOUSE on a row closes the panel too (the rule of YAZ-2662 S65).
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      expect(panel()).toBe('/top.md')
+      act(() => void row(el, `${v}/top.md`)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+      expect(panel()).toBeNull()
+    })
+
+    it('S65: Space on a folder row folds it and the preview stays on — the next file row shows the panel again', async () => {
+      const { el, v, panel, wait } = await walk()
+      const dir = `${v}/Projects`
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      act(() => row(el, dir)?.focus())
+      expect([panel(), isOpen(el, dir)]).toEqual([null, 'true'])
+      // Space on the folder: the key is the button's, and the click that it makes has no mouse in it (`detail` 0).
+      expect(key(document.activeElement, ' ').defaultPrevented).toBe(false)
+      act(() => void row(el, dir)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })))
+      expect(isOpen(el, dir)).toBe('false')
+      act(() => row(el, `${v}/top.md`)?.focus())
+      wait(120)
+      expect(panel()).toBe('/top.md')
     })
 
     it('S64: the panel closes when a different tab of the sidebar shows, and when the keyboard goes to the page', async () => {
