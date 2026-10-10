@@ -23,7 +23,7 @@ import { foldersByDir } from '../links/shortcuts'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {
-  /** What the row is: a note or another file (`file`), or a folder (`dir`). Activating a note or a folder OPENS its page. */
+  /** What the row is: a note or another file (`file`), or a folder (`dir`). Enter OPENS a file's page and shows a folder in Files (YAZ-2662 D1). */
   kind: 'file' | 'dir'
   /** The text the query matches: the note's title, one of its aliases, the folder's title, or another file's name. */
   name: string
@@ -98,9 +98,26 @@ export function fileCandidates(root: string, files: readonly string[]): SearchCa
   })
 }
 
-/** Rows matching `query`, ranked exact → prefix → substring by the shared matcher, capped at SEARCH_CAP. */
-export function searchTitles(candidates: readonly SearchCandidate[], query: string): SearchCandidate[] {
-  return matchLinkCandidates(candidates, query, SEARCH_CAP)
+const NO_PATHS: ReadonlySet<string> = new Set()
+
+/** `rows` with the rows at the paths of `first` before the others, each part in its own order: one look in the set for each row. */
+function firstRows(rows: SearchCandidate[], first: ReadonlySet<string>): SearchCandidate[] {
+  const top: SearchCandidate[] = []
+  const rest: SearchCandidate[] = []
+  for (const row of rows) (first.has(row.path) ? top : rest).push(row)
+  return [...top, ...rest]
+}
+
+/**
+ * Rows matching `query`, ranked exact → prefix → substring by the shared matcher, capped at SEARCH_CAP.
+ * `first` is the paths of the rows that are a pinned item or are inside one (YAZ-2662 D4): each
+ * match there goes before each other match, each part in its ranked order, and the cap cuts AFTER
+ * that, so it cuts no pinned match while another match shows. Without it — the shortcut picker's
+ * call — the ranking is the matcher's own.
+ */
+export function searchTitles(candidates: readonly SearchCandidate[], query: string, first: ReadonlySet<string> = NO_PATHS): SearchCandidate[] {
+  if (first.size === 0) return matchLinkCandidates(candidates, query, SEARCH_CAP)
+  return firstRows(matchLinkCandidates(candidates, query, candidates.length), first).slice(0, SEARCH_CAP)
 }
 
 /**
@@ -114,15 +131,18 @@ export function searchTitles(candidates: readonly SearchCandidate[], query: stri
  * The row of a number ID reads `YAZ-12 — Title`: the full id, which tells two vaults' note 12
  * apart. The row of an old ID reads as its title, as it always did.
  *
+ * The rows of `first` lead in each of the two parts (YAZ-2662 D4, S25): the pinned ID matches
+ * before the other ID matches, then the pinned title matches before the other title matches.
+ *
  * The query is read ONE time (`holdsId`), and a text that can hold no id — almost every one a
  * person types — costs the candidates nothing more than `searchTitles` (S78).
  */
-export function searchRows(candidates: readonly SearchCandidate[], query: string): SearchCandidate[] {
+export function searchRows(candidates: readonly SearchCandidate[], query: string, first: ReadonlySet<string> = NO_PATHS): SearchCandidate[] {
   const holds = holdsId(query)
-  if (holds === null) return searchTitles(candidates, query)
+  if (holds === null) return searchTitles(candidates, query, first)
   const held: SearchCandidate[] = []
   for (const c of candidates) if (c.id !== undefined && holds(c.id, c.was)) held.push(c.id.includes('-') ? { ...c, label: `${c.id} — ${c.label}` } : c)
-  if (held.length === 0) return searchTitles(candidates, query)
+  if (held.length === 0) return searchTitles(candidates, query, first)
   const shown = new Set(held.map((c) => c.path))
-  return [...held, ...searchTitles(candidates, query).filter((c) => !shown.has(c.path))].slice(0, SEARCH_CAP)
+  return [...firstRows(held, first), ...searchTitles(candidates, query, first).filter((c) => !shown.has(c.path))].slice(0, SEARCH_CAP)
 }

@@ -87,6 +87,50 @@ export function favoriteRoots(tree: readonly TreeNode[], favorites: readonly str
   return favorites.flatMap((p) => findNode(tree, p) ?? [])
 }
 
+/** `path` is one of `paths` or stands inside one, at any depth (YAZ-2662 D2): one look in the set for the path and for each folder above it, whatever the set holds. */
+export function atOrBelow(paths: ReadonlySet<string>, path: string): boolean {
+  for (let end = path.length; end > 0; end = path.lastIndexOf('/', end - 1)) if (paths.has(path.slice(0, end))) return true
+  return false
+}
+
+/**
+ * The top rows of the search's top group (YAZ-2662 D3), off the rows of the Focus tab followed by
+ * those of the Favorites tab: an item listed two times keeps its first place (S17), and an item
+ * inside a different listed folder is no top row — it shows inside that folder (S18).
+ */
+export function pinnedRoots(nodes: readonly TreeNode[]): TreeNode[] {
+  const paths = new Set(nodes.map((n) => n.path))
+  const seen = new Set<string>()
+  return nodes.filter((n) => {
+    if (seen.has(n.path)) return false
+    seen.add(n.path)
+    return !atOrBelow(paths, n.path.slice(0, n.path.lastIndexOf('/')))
+  })
+}
+
+/**
+ * `tree` without the nodes at `paths`, at any depth: what the search cuts "Everything else" from
+ * (YAZ-2662 S19) — `paths` are the pinned items that its top group draws. A folder that holds none
+ * of them is the tree's own node, and so is a tree that holds none. With no path — a search with
+ * no pinned match — nothing is walked (R1).
+ */
+export function withoutPaths(tree: readonly TreeNode[], paths: ReadonlySet<string>): readonly TreeNode[] {
+  if (paths.size === 0) return tree
+  let same = true
+  const kept = tree.flatMap((n): TreeNode[] => {
+    if (paths.has(n.path)) {
+      same = false
+      return []
+    }
+    if (n.type === 'file') return [n]
+    const children = withoutPaths(n.children, paths)
+    if (children === n.children) return [n]
+    same = false
+    return [{ ...n, children: [...children] }]
+  })
+  return same ? tree : kept
+}
+
 /**
  * The Favorites tab's paths (YAZ-2631 D1): ONE flat list across the vaults of the window. `order`
  * (the store's) says which VAULT has each place; each vault fills its places in its own file's

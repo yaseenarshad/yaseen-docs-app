@@ -42,6 +42,21 @@ describe('flashTreeRows (YAZ-1065)', () => {
     expect(second.classList.contains('tree__row--revealed')).toBe(false)
   })
 
+  it('with `focus` the first occurrence gets the keyboard focus too (YAZ-2662 D1, D8)', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div')
+    const first = row('/v/Note.md')
+    const second = row('/v/Note.md')
+    host.append(row('/v/Other.md'), first, second)
+    document.body.append(host)
+
+    const cleanup = flashTreeRows(host, '/v/Note.md', true)
+    expect(document.activeElement).toBe(first)
+    expect([first, second].map((item) => item.classList.contains('tree__row--revealed'))).toEqual([true, true])
+    cleanup?.()
+    expect(document.activeElement).toBe(first) // the flash ends; the focus stays where the keys are
+  })
+
   it('cleanup removes the class/timer, and a repeat starts a fresh full interval', () => {
     vi.useFakeTimers()
     const host = document.createElement('div')

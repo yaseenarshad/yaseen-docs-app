@@ -7,9 +7,11 @@
  * spliced in FIRST so a folder ranks above a note it ties with (tree order: dirs before files).
  * Since YAZ-2620 it carries the tree's files that are no notes as well (🔒 D3): `files` is the
  * Sidebar's `otherFiles` memo, spliced in LAST. Vault by vault, in the order of the window's
- * vaults. A query that holds an id is answered by it alone (`searchRows`, 🔒 D32); a folder's title
+ * vaults. A query that holds an id gets its ID matches first, then the title matches (`searchRows`,
+ * YAZ-2677 🔒 D9; 🔒 D32); a folder's title
  * (YAZ-2420 🔒 D14) and id are on the snapshot's `folders`. The rows come back RANKED; the sidebar
- * draws them as a tree (`searchTree`).
+ * draws them as a tree (`searchTree`). The matches that are a pinned item or are inside one lead the
+ * ranking (YAZ-2662 D4): `pinned` is the paths of the pinned items.
  *
  * The feed is LAZY (F1 finding 1, YAZ-808). The ALWAYS-ON per-window index feed is
  * WikilinkIndexBridge's; search must not duplicate it in every window for a bar nobody typed
@@ -20,6 +22,7 @@ import type { IndexRecord } from '@shared/types'
 import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
+import { atOrBelow } from '../lib/treeState'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
 
 /** One vault the search covers: its folder, its watcher, and its folders and its files that are no notes (the Sidebar's own `allDirs` and `otherFiles`). */
@@ -36,7 +39,7 @@ const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
 /** One vault's rows as they were last built, with what each part was built from. */
 type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; all: SearchCandidate[] }
 
-export function useSearchResults(vaults: readonly SearchVault[], query: string): SearchCandidate[] {
+export function useSearchResults(vaults: readonly SearchVault[], query: string, pinned: ReadonlySet<string>): SearchCandidate[] {
   // Each vault's index snapshot, by its root, once it has landed.
   const [snapshots, setSnapshots] = useState<ReadonlyMap<string, Snapshot>>(() => new Map())
   // Latched by the first non-empty query and never unlatched: after that the snapshots stay warm
@@ -127,7 +130,10 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string):
     const lists = [...next.values()].map((rows) => rows.all)
     return lists.length === 1 ? lists[0] : lists.flat()
   }, [vaults, snapshots])
+  // The rows that rank first (YAZ-2662 D4): the path of each row that is a pinned item or is inside
+  // one. Built when the rows or a list changes, so a keystroke pays one look in it for each match (R1).
+  const first = useMemo(() => (pinned.size === 0 ? pinned : new Set(candidates.flatMap((c) => (atOrBelow(pinned, c.path) ? [c.path] : [])))), [candidates, pinned])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the
   // no-query case is answered here rather than by the ranker.
-  return useMemo(() => (query.trim() === '' ? [] : searchRows(candidates, query)), [candidates, query])
+  return useMemo(() => (query.trim() === '' ? [] : searchRows(candidates, query, first)), [candidates, query, first])
 }
