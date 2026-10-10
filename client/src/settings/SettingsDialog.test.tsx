@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, type GithubSyncStatus, type SettingsState } from '@shared/types'
+import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
+import { idsAskMessage, idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -25,7 +26,7 @@ beforeEach(() => {
   scrollIntoView.mockClear()
 })
 
-function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean | undefined; held: boolean }, vaultName?: string) {
+function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string) {
   const onChange = vi.fn()
   const onClose = vi.fn()
   const setEnabled = vi.fn()
@@ -37,7 +38,17 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   // The same for Review: no settings handed over is no vault open, so no section.
   const review = reviewSettings === undefined ? undefined : { settings: reviewSettings, save }
   // And for the vault's IDs switch (YAZ-2523): no answer handed over is no vault open, so no row.
-  const ids = vaultIds === undefined ? undefined : { ...vaultIds, set: setIds }
+  // `letters` are the ID letters the vault's `ids.json` already holds (YAZ-2677 S9): they come with the snapshot's `ask`.
+  const ask = vaultIds?.ask === undefined ? undefined : { ...vaultIds.ask, ...(vaultIds.letters !== undefined && { letters: vaultIds.letters }) }
+  // "Check for duplicates" (YAZ-2677 S55): the main process answers with one line.
+  const checkIds = vi.fn(async () => 'No duplicates.')
+  // The rows "ID letters" and "Old IDs" (YAZ-2677 D5, D6): the main process answers with the state of the vault.
+  const STATE: IdsState = { letters: vaultIds?.letters ?? 'YAZ', notes: 3, stale: 0, old: vaultIds?.old ?? 0, unfinished: false, ...vaultIds?.state }
+  // It answers only where the test hands a `state` over: a row that no test looks at stays as it was mounted.
+  const idsState = vi.fn((): Promise<IdsState> => (vaultIds?.state === undefined ? new Promise(() => undefined) : Promise.resolve(STATE)))
+  const reletter = vi.fn(async (letters: string): Promise<IdsState> => ({ ...STATE, letters, stale: 0 }))
+  const backfill = vi.fn(async (): Promise<IdsState> => ({ ...STATE, old: 0 }))
+  const ids = vaultIds === undefined ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask, set: setIds, check: checkIds, old: vaultIds.old ?? 0, unfinished: vaultIds.unfinished ?? false, state: idsState, reletter, backfill }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -45,7 +56,7 @@ function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: G
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review, ids, vaultName }} onClose={onClose} />))
   /** The open dialog with the vault's review settings changed under it: a save shown at once. */
   const rerender = (next: ReviewSettings) => act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, sync, review: { settings: next, save } }} onClose={onClose} />))
-  return { onChange, onClose, setEnabled, save, setIds, rerender, el: container }
+  return { onChange, onClose, setEnabled, save, setIds, checkIds, idsState, reletter, backfill, rerender, el: container }
 }
 
 /** Upkeep turned on, the rest as a new vault has it. */
@@ -559,7 +570,7 @@ describe('SettingsDialog search (D6)', () => {
 
 describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () => {
   const OFF_TEXT = "This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
-  const withIds = (enabled: boolean | undefined, held = false) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
+  const withIds = (enabled: boolean, held = false) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
   const pressed = (el: HTMLElement) => rowButtons(el, 'ids').map((b) => b.getAttribute('aria-pressed'))
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
@@ -580,17 +591,10 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(rowButtons(el, 'ids').map((b) => b.textContent)).toEqual(['On', 'Off'])
   })
 
-  it("shows the vault's answer: On where it said yes, Off where it said no or has not answered", () => {
+  it("shows the vault's answer: On where it said yes, Off where it said no or has no answer", () => {
     expect(pressed(withIds(true, true).el)).toEqual(['true', 'false'])
     unmount()
     expect(pressed(withIds(false).el)).toEqual(['false', 'true'])
-  })
-
-  it('On writes yes at once', () => {
-    const { el, setIds } = withIds(false)
-    act(() => rowButtons(el, 'ids')[0].click())
-    expect(setIds).toHaveBeenCalledExactlyOnceWith(true)
-    expect(el.querySelector('.confirm')).toBeNull()
   })
 
   it('Off in a vault whose notes hold IDs asks first, in the locked words; Cancel and Esc leave it on and the dialog open', () => {
@@ -628,17 +632,335 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
     expect(off.el.querySelector('.confirm')).toBeNull()
   })
 
-  it('a vault that has not answered reads Off, and a click on Off saves no: the box does not have to come back for it', () => {
-    const { el, setIds } = withIds(undefined)
-    expect(pressed(el)).toEqual(['false', 'true'])
-    act(() => rowButtons(el, 'ids')[1].click())
-    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
-  })
-
   it('Off in a vault that holds no IDs writes no at once', () => {
     const { el, setIds } = withIds(true)
     act(() => rowButtons(el, 'ids')[1].click())
     expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
     expect(el.querySelector('.confirm')).toBeNull()
+  })
+})
+
+/**
+ * On asks first (YAZ-2677 🔒 D2): a box with what an ID is, the counts, how to undo, and a text field
+ * for the vault's ID letters. Nothing is written until the letters are valid and "Give IDs" is chosen.
+ */
+describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D2)', () => {
+  const ASK = { notes: 3, folders: 1, foreign: 0 }
+  const open = async (vaultIds: { ask?: IndexResponse['ask']; letters?: string } = { ask: ASK }, vaultName?: string) => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ...vaultIds }, vaultName)
+    await act(async () => rowButtons(mounted.el, 'ids')[0].click())
+    return mounted
+  }
+  /** On and Off: the row's first two buttons. An open box's buttons come after them. */
+  const pressed = (el: HTMLElement) => rowButtons(el, 'ids').slice(0, 2).map((b) => b.getAttribute('aria-pressed'))
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+
+  it('a click on On opens the box and writes nothing: what an ID is, the counts, how to undo, and a text field (S5, S12)', async () => {
+    const { el, setIds } = await open()
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage(ASK))
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk(undefined))
+    expect(field(el).value).toBe('')
+    expect(document.activeElement).toBe(field(el))
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Give IDs'])
+    expect(sheetBtn(el, 'Give IDs').disabled).toBe(true)
+    expect(setIds).not.toHaveBeenCalled()
+    expect(pressed(el)).toEqual(['false', 'true'])
+  })
+
+  it.each(['', 'Y', 'ABCDEF', 'YA1', '7', 'YA Z', ' YAZ', 'YAZ '])('with %j in the field, "Give IDs" and Enter do nothing (S6)', async (typed) => {
+    const { el, setIds } = await open()
+    type(field(el), typed)
+    expect(sheetBtn(el, 'Give IDs').disabled).toBe(true)
+    act(() => sheetBtn(el, 'Give IDs').click())
+    pressEnter(field(el))
+    expect(setIds).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).not.toBeNull()
+  })
+
+  it.each(['ya', 'yaz', 'Docs', 'ABCDE'])('%j, then "Give IDs", saves yes and the letters in capitals, and the box closes (S7)', async (typed) => {
+    const { el, setIds } = await open()
+    type(field(el), typed)
+    expect(sheetBtn(el, 'Give IDs').disabled).toBe(false)
+    act(() => sheetBtn(el, 'Give IDs').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, typed.toUpperCase())
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('Enter in the field with valid letters is "Give IDs", and the dialog under the box stays open (S7)', async () => {
+    const { el, setIds, onClose } = await open()
+    type(field(el), 'yaz')
+    pressEnter(field(el))
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAZ')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Cancel, Esc and a click outside close the box: nothing is written, the switch stays Off, and the dialog stays open (S8)', async () => {
+    const { el, setIds, onClose } = await open()
+    type(field(el), 'yaz')
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    await act(async () => rowButtons(el, 'ids')[0].click())
+    expect(field(el).value).toBe('')
+    type(field(el), 'yaz')
+    pressEscape(field(el))
+    expect(el.querySelector('.confirm')).toBeNull()
+    await act(async () => rowButtons(el, 'ids')[0].click())
+    type(field(el), 'yaz')
+    act(() => void el.querySelector('.confirm-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(pressed(el)).toEqual(['false', 'true'])
+  })
+
+  it('a vault that already has letters asks for those letters, and only those start "Give IDs" (S9)', async () => {
+    const { el, setIds } = await open({ ask: ASK, letters: 'YAZ' })
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk('YAZ'))
+    for (const typed of ['DOC', 'YA', 'YAZZ']) {
+      type(field(el), typed)
+      expect(sheetBtn(el, 'Give IDs').disabled).toBe(true)
+      pressEnter(field(el))
+    }
+    expect(setIds).not.toHaveBeenCalled()
+    type(field(el), 'yaz')
+    act(() => sheetBtn(el, 'Give IDs').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'YAZ')
+  })
+
+  it('a yes that would write nothing still opens the box, and it sets the letters (S10)', async () => {
+    const { el, setIds } = await open({ ask: { notes: 0, folders: 0, foreign: 0 } })
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage({ notes: 0, folders: 0, foreign: 0 }))
+    type(field(el), 'bus')
+    act(() => sheetBtn(el, 'Give IDs').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'BUS')
+  })
+
+  it('with two or more vaults in the window the box names the vault that it acts on (S13)', async () => {
+    const { el } = await open({ ask: ASK }, 'Work')
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(idsAskMessage(ASK, 'Work'))
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('Give the notes in Work IDs?')
+  })
+
+  it('Off in a vault whose notes hold IDs still asks first, and "Turn off" saves no with no letters handed over (S11)', async () => {
+    const { el, setIds } = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true })
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(el.querySelector('.confirm__input')).toBeNull()
+    expect(setIds).not.toHaveBeenCalled()
+    act(() => sheetBtn(el, 'Turn off').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+  })
+})
+
+describe('SettingsDialog: Duplicate IDs (YAZ-2677 D7, S55 to S57)', () => {
+  const withIds = (enabled: boolean) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled })
+  const button = (el: HTMLElement) => rowButtons(el, 'duplicates')[0]
+  const result = (el: HTMLElement) => row(el, 'duplicates')?.querySelector('[role="status"]')?.textContent
+
+  it('the row shows only while the vault uses IDs: under "This vault", after the switch, with one button', () => {
+    expect(row(withIds(false).el, 'duplicates')).toBeNull()
+    unmount()
+    expect(row(mount().el, 'duplicates')).toBeNull()
+    unmount()
+    const { el, checkIds } = withIds(true)
+    expect(row(el, 'duplicates')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'duplicates')?.querySelector('.setting__label')?.textContent).toBe('Duplicate IDs')
+    expect(rowButtons(el, 'duplicates').map((b) => b.textContent)).toEqual(['Check for duplicates'])
+    expect(result(el)).toBe('')
+    // Nothing runs until the user asks.
+    expect(checkIds).not.toHaveBeenCalled()
+    type(searchInput(el), 'duplicate')
+    expect(rowIds(el)).toEqual(['duplicates'])
+  })
+
+  it('S55: a click runs the check now and tells the result in one line', async () => {
+    const { el, checkIds } = withIds(true)
+    await act(async () => button(el).click())
+    expect(checkIds).toHaveBeenCalledExactlyOnceWith()
+    expect(result(el)).toBe('No duplicates.')
+  })
+
+  it('S56, S57: the line is what the main process answers, whatever it is', async () => {
+    const { el, checkIds } = withIds(true)
+    checkIds.mockResolvedValueOnce('YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.')
+    await act(async () => button(el).click())
+    expect(result(el)).toBe('YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.')
+    checkIds.mockResolvedValueOnce('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+    await act(async () => button(el).click())
+    expect(result(el)).toBe('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
+  })
+
+  it('while a check runs the button does nothing more, and a check that fails says why', async () => {
+    const { el, checkIds } = withIds(true)
+    let fail: (err: Error) => void = () => undefined
+    checkIds.mockReturnValueOnce(new Promise<string>((_, reject) => (fail = reject)))
+    act(() => button(el).click())
+    expect(button(el).disabled).toBe(true)
+    expect(result(el)).toBe('Checking…')
+    act(() => button(el).click())
+    expect(checkIds).toHaveBeenCalledTimes(1)
+    await act(async () => fail(new Error('the disk said no')))
+    expect(button(el).disabled).toBe(false)
+    expect(result(el)).toBe("Couldn't check: the disk said no")
+  })
+})
+
+describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
+  const withIds = async (enabled: boolean, state?: Partial<IdsState>, vaultName?: string) => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled, letters: 'YAZ', state: state ?? {} }, vaultName)
+    // The row reads the letters and the counts from the main process as it appears.
+    await act(async () => undefined)
+    return mounted
+  }
+  const buttons = (el: HTMLElement) => rowButtons(el, 'idLetters').filter((b) => !b.classList.contains('confirm__btn'))
+  const line = (el: HTMLElement) => row(el, 'idLetters')?.querySelector('[role="status"]')?.textContent
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+
+  it('S79: the row shows only while the vault uses IDs, with the letters and one button', async () => {
+    expect(row((await withIds(false)).el, 'idLetters')).toBeNull()
+    unmount()
+    expect(row(mount().el, 'idLetters')).toBeNull()
+    unmount()
+    const { el, idsState, reletter } = await withIds(true)
+    expect(row(el, 'idLetters')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
+    expect(row(el, 'idLetters')?.querySelector('.setting__label')?.textContent).toBe('ID letters')
+    expect(idsState).toHaveBeenCalledTimes(1)
+    expect(line(el)).toBe("This vault's ID letters are YAZ.")
+    expect(buttons(el).map((b) => b.textContent)).toEqual(['Change letters'])
+    expect(reletter).not.toHaveBeenCalled()
+  })
+
+  it('S80: "Change letters" opens a box with the count of notes and a text field, and writes nothing', async () => {
+    const { el, reletter } = await withIds(true, { notes: 745 }, 'Work')
+    act(() => buttons(el)[0].click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(lettersAskMessage({ letters: 'YAZ', notes: 745 }, 'Work'))
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('745 notes')
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(NEW_LETTERS_ASK)
+    expect(document.activeElement).toBe(field(el))
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Change letters'])
+    expect(sheetBtn(el, 'Change letters').disabled).toBe(true)
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(reletter).not.toHaveBeenCalled()
+  })
+
+  it.each(['', 'D', 'ABCDEF', 'DO1', 'DO C', 'yaz', 'YAZ'])('S80, S85: with %j in the field (bad input, or the letters the vault has), the button and Enter do nothing', async (typed) => {
+    const { el, reletter } = await withIds(true)
+    act(() => buttons(el)[0].click())
+    type(field(el), typed)
+    expect(sheetBtn(el, 'Change letters').disabled).toBe(true)
+    act(() => sheetBtn(el, 'Change letters').click())
+    pressEnter(field(el))
+    expect(reletter).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).not.toBeNull()
+  })
+
+  it('S81: valid new letters, then "Change letters": the main process changes them, in capitals, and the row shows the new letters', async () => {
+    const { el, reletter, onClose } = await withIds(true)
+    act(() => buttons(el)[0].click())
+    type(field(el), 'doc')
+    await act(async () => sheetBtn(el, 'Change letters').click())
+    expect(reletter).toHaveBeenCalledExactlyOnceWith('DOC')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(line(el)).toBe("This vault's ID letters are DOC.")
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('S83: a change that stopped: the row says how many notes still have the old letters, and "Finish" runs the same change again', async () => {
+    const { el, reletter } = await withIds(true, { letters: 'DOC', stale: 12 })
+    expect(line(el)).toBe(lettersLine({ letters: 'DOC', stale: 12 }))
+    expect(line(el)).toBe("This vault's ID letters are DOC. 12 notes still have the old letters.")
+    expect(buttons(el).map((b) => b.textContent)).toEqual(['Change letters', 'Finish'])
+    await act(async () => buttons(el)[1].click())
+    expect(reletter).toHaveBeenCalledExactlyOnceWith('DOC')
+    expect(line(el)).toBe("This vault's ID letters are DOC.")
+    expect(buttons(el).map((b) => b.textContent)).toEqual(['Change letters'])
+  })
+
+  it('a change that fails says why, and the row keeps the letters it had', async () => {
+    const { el, reletter } = await withIds(true)
+    reletter.mockRejectedValueOnce(new Error('ids.json is not valid JSON'))
+    act(() => buttons(el)[0].click())
+    type(field(el), 'doc')
+    await act(async () => sheetBtn(el, 'Change letters').click())
+    expect(line(el)).toBe("Couldn't change the letters: ids.json is not valid JSON")
+  })
+})
+
+describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
+  const withOld = async (old: number, enabled = true, vaultName?: string) => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled, letters: 'YAZ', old, state: {} }, vaultName)
+    await act(async () => undefined)
+    return mounted
+  }
+  const button = (el: HTMLElement) => rowButtons(el, 'oldIds')[0]
+  const line = (el: HTMLElement) => row(el, 'oldIds')?.querySelector('[role="status"]')?.textContent
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+
+  it('S88: the row shows only in a vault that uses IDs and has notes with an old ID: the count and one button', async () => {
+    expect(row((await withOld(0)).el, 'oldIds')).toBeNull()
+    unmount()
+    expect(row((await withOld(745, false)).el, 'oldIds')).toBeNull()
+    unmount()
+    const { el, backfill } = await withOld(745)
+    expect(row(el, 'oldIds')?.querySelector('.setting__label')?.textContent).toBe('Old IDs')
+    expect(line(el)).toBe(oldIdsLine(745))
+    expect(line(el)).toContain('745 notes')
+    expect(rowButtons(el, 'oldIds').map((b) => b.textContent)).toEqual(['Give them numbers'])
+    expect(backfill).not.toHaveBeenCalled()
+  })
+
+  it('S89, S91: the box says the count and to sync and close the other Mac first, and only the vault\'s letters start it', async () => {
+    const { el, backfill } = await withOld(745, true, 'Work')
+    await act(async () => button(el).click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(oldIdsAskMessage(745, 'Work'))
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('745 notes')
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('First sync this vault and close the app on your other Macs')
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk('YAZ'))
+    for (const typed of ['', 'DOC', 'YA', 'YAZZ']) {
+      type(field(el), typed)
+      expect(sheetBtn(el, 'Give them numbers').disabled).toBe(true)
+      pressEnter(field(el))
+    }
+    expect(backfill).not.toHaveBeenCalled()
+    type(field(el), 'yaz')
+    await act(async () => sheetBtn(el, 'Give them numbers').click())
+    expect(backfill).toHaveBeenCalledExactlyOnceWith()
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(line(el)).toBe('Each note has a number now.')
+  })
+
+  it('S90: a run that left notes says how many, and to run it again; Cancel writes nothing', async () => {
+    const { el, backfill } = await withOld(3)
+    await act(async () => button(el).click())
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(backfill).not.toHaveBeenCalled()
+    backfill.mockResolvedValueOnce({ letters: 'YAZ', notes: 5, stale: 0, old: 1, unfinished: true })
+    await act(async () => button(el).click())
+    type(field(el), 'YAZ')
+    await act(async () => sheetBtn(el, 'Give them numbers').click())
+    expect(line(el)).toBe('1 note has an old ID, like 6cbnmcq5n2sj. Run it again to finish.')
+  })
+
+  it('S90: a run that stopped with links left, after each note has its number: the row still shows, and a second run finishes it', async () => {
+    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true, letters: 'YAZ', old: 0, unfinished: true, state: {} })
+    await act(async () => undefined)
+    const { el, backfill } = mounted
+    expect(line(el)).toBe('Each note has a number, but some links still hold an old ID.')
+    await act(async () => button(el).click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(oldIdsAskMessage(0))
+    expect(el.querySelector('.confirm__text')?.textContent).toContain('Finish giving the old IDs in this vault numbers?')
+    backfill.mockResolvedValueOnce({ letters: 'YAZ', notes: 5, stale: 0, old: 0, unfinished: true })
+    type(field(el), 'YAZ')
+    await act(async () => sheetBtn(el, 'Give them numbers').click())
+    expect(line(el)).toBe('Each note has a number, but some links still hold an old ID. Run it again to finish.')
+    await act(async () => button(el).click())
+    type(field(el), 'YAZ')
+    await act(async () => sheetBtn(el, 'Give them numbers').click())
+    expect(backfill).toHaveBeenCalledTimes(2)
+    expect(line(el)).toBe('Each note has a number now.')
   })
 })

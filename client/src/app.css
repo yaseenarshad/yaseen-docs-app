@@ -1704,6 +1704,38 @@ button {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+/* A sheet that waits for input (YAZ-2677 D2): its confirm button does nothing yet. */
+.confirm__btn:disabled {
+  opacity: 0.45;
+  background: none;
+  cursor: default;
+}
+
+/* The box in Settings that asks before a vault's notes get IDs (YAZ-2677 D2): one line, and the
+   text field for the vault's ID letters under it. */
+.confirm__letters {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.confirm__input {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.confirm__input:focus {
+  border-color: var(--accent);
+}
+
 /* The shortcut picker (YAZ-2290 D2): the sheet's shell around the search bar and its result list,
    flush to the edges like the bar it borrows; a long list scrolls inside the sheet. */
 .shortcut-picker {

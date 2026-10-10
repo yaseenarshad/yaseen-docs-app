@@ -90,7 +90,7 @@ test('step 1 — a note made in the app is born with its id, its title and its b
   guide = await only(vault, new RegExp(`^guide-${ID}\\.md$`))
   const content = await read(path.join(vault, guide))
   guideId = idOf(content)
-  expect(guide).toBe(`guide-${guideId}.md`)
+  expect(guide).toBe(`guide-${guideId.toLowerCase()}.md`)
   expect(titleOf(content)).toBe('Guide')
 
   // Every screen shows the title, never the file name.
@@ -107,7 +107,7 @@ test('step 2 — a title edit from the page heading writes the title and renames
   await win.keyboard.press('Enter')
   await confirmIfAsked(win)
 
-  const built = `what-why-the-handbook-${guideId}.md`
+  const built = `what-why-the-handbook-${guideId.toLowerCase()}.md`
   await expect.poll(() => read(path.join(vault, built)).then(titleOf)).toContain('Handbook')
   expect(await only(vault, new RegExp(`${guideId}\\.md$`))).toBe(built)
   expect(idOf(await read(path.join(vault, built)))).toBe(guideId)
@@ -121,7 +121,7 @@ test('step 2 — a title edit from the page heading writes the title and renames
 
 test('step 3 — the sidebar rename edits the title', async () => {
   await renameRow(win, fileRow(win, 'What/Why: the "Handbook"\\?'), 'What/Why: the "Handbook"?', 'Handbook')
-  const built = `handbook-${guideId}.md`
+  const built = `handbook-${guideId.toLowerCase()}.md`
   await expect.poll(() => read(path.join(vault, built)).then(titleOf)).toBe('Handbook')
   await expect(fileRow(win, 'Handbook')).toBeVisible()
   guide = built
@@ -141,7 +141,7 @@ test('step 5 — a file made outside the app keeps its name until its title is e
   await expect(fileRow(win, 'Plan')).toBeVisible()
 
   await renameRow(win, fileRow(win, 'Plan'), 'Plan', 'The Plan')
-  const built = `the-plan-${planId}.md`
+  const built = `the-plan-${planId.toLowerCase()}.md`
   await expect.poll(() => read(path.join(vault, built)).then(titleOf)).toBe('The Plan')
   expect(await read(path.join(vault, 'Plan.md'))).toBe('')
   expect(await read(path.join(vault, built))).toContain('plan-body')
@@ -179,7 +179,7 @@ test('step 8 — a copy is its own note: a fresh id, its title with copy, its ow
   const content = await read(path.join(vault, copy))
   expect(titleOf(content)).toBe('Hand Edited copy')
   expect(idOf(content)).not.toBe(guideId)
-  expect(copy).toBe(`hand-edited-copy-${idOf(content)}.md`)
+  expect(copy).toBe(`hand-edited-copy-${idOf(content).toLowerCase()}.md`)
   await expect(fileRow(win, 'Hand Edited copy')).toBeVisible()
 })
 
@@ -189,7 +189,7 @@ test('step 9 — the search box finds a note by its id, and by an old path that 
   await searchBar(win).fill(guideId)
   await expect(results(win)).toHaveText(['Hand Edited'])
   // A path copied before the retitles: the file name is stale, the id in it is not.
-  await searchBar(win).fill(path.join(vault, `guide-${guideId}.md`))
+  await searchBar(win).fill(path.join(vault, `guide-${guideId.toLowerCase()}.md`))
   await expect(results(win)).toHaveText(['Hand Edited'])
   await searchBar(win).fill(guideId.slice(0, 5))
   await expect(results(win)).toHaveCount(0)

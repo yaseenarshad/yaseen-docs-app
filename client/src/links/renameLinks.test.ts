@@ -3,16 +3,8 @@ import type { IndexRecord } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from './viewOnlyCatalog'
-import {
-  countLinkReferences,
-  maskCode,
-  renamedTarget,
-  renameNotice,
-  rewriteBodyLinks,
-  rewriteInner,
-  rewriteNoteLinks,
-  updateLinksAfterRename,
-} from './renameLinks'
+import { maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks } from '@shared/linkRewrite'
+import { countLinkReferences, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
 
 const resolvesB = (t: string) => t.replace(/\.(md|markdown)$/i, '').replace(/^.*\//, '').toLowerCase() === 'b'
 const toC = (t: string) => renamedTarget(t, { newName: 'C.md', newRel: 'Sub/C.md' })

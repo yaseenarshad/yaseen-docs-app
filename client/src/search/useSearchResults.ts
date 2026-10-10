@@ -7,7 +7,8 @@
  * spliced in FIRST so a folder ranks above a note it ties with (tree order: dirs before files).
  * Since YAZ-2620 it carries the tree's files that are no notes as well (🔒 D3): `files` is the
  * Sidebar's `otherFiles` memo, spliced in LAST. Vault by vault, in the order of the window's
- * vaults. A query that holds an id is answered by it alone (`searchRows`, 🔒 D32); a folder's title
+ * vaults. A query that holds an id gets its ID matches first, then the title matches (`searchRows`,
+ * YAZ-2677 🔒 D9; 🔒 D32); a folder's title
  * (YAZ-2420 🔒 D14) and id are on the snapshot's `folders`. The rows come back RANKED; the sidebar
  * draws them as a tree (`searchTree`). The matches that are a pinned item or are inside one lead the
  * ranking (YAZ-2662 D4): `pinned` is the paths of the pinned items.
@@ -32,7 +33,7 @@ export interface SearchVault {
   files: readonly string[]
 }
 
-type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[] }>
+type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[]; letters?: readonly string[] }>
 const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
 
 /** One vault's rows as they were last built, with what each part was built from. */
@@ -74,7 +75,7 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string, 
         // here would shout about something the tree below is already showing fine.
         api.index(root).then(
           (res) => {
-            if (mine === generation) setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders }))
+            if (mine === generation) setSnapshots((prev) => new Map(prev).set(root, { records: res.records, folders: res.folders, letters: res.letters }))
           },
           () => undefined,
         )
@@ -116,10 +117,11 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string, 
   const candidates = useMemo(() => {
     const next = new Map<string, Rows>()
     for (const { root, dirs, files } of vaults) {
-      const { records, folders } = snapshots.get(root) ?? NO_SNAPSHOT
+      // `letters` arrive with the snapshot they belong to (YAZ-2677 D9, S77), so the rows built from it carry them.
+      const { records, folders, letters } = snapshots.get(root) ?? NO_SNAPSHOT
       const last = built.current.get(root)
-      const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders)
-      const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records)
+      const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders, letters)
+      const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records, letters)
       const fileRows = last !== undefined && last.files === files ? last.fileRows : fileCandidates(root, files)
       const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows
       next.set(root, { dirs, files, records, folders, folderRows, noteRows, fileRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows] })

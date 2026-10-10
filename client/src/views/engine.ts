@@ -1,3 +1,4 @@
+import { vaultNoteId } from '@shared/noteId'
 import { type IndexRecord, inFolder } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
@@ -127,6 +128,12 @@ export interface ResolverOptions {
    */
   ids?: boolean
   /**
+   * The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5): the current ones, then each it
+   * had before. Given, a target with letters of before finds the note of that number: `[[OLD-12]]`
+   * is `YAZ-12` (S82). Without them an id is found by the letters its record holds.
+   */
+  letters?: readonly string[]
+  /**
    * The snapshot's folder settings records (YAZ-2478). Given, a pathed target no file path answers
    * is read as a path of TITLES: `Sub/Page` is the note titled Page in the folder `Sub` names
    * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the note's id.
@@ -155,8 +162,19 @@ export function typedFolders(folders: readonly IndexRecord[]): (parent: string, 
 }
 
 /**
+ * A link target's key (`targetKey`) as the key an id is found under (YAZ-2677 R1, R5): an ID is read
+ * in any case, so the key is the id in lowercase; one with letters the vault had before is the key
+ * of the same number with the current letters. Any other key is itself.
+ */
+export function idKey(key: string, letters?: readonly string[]): string {
+  if (letters === undefined || letters.length < 2) return key
+  return vaultNoteId(key, letters)?.toLowerCase() ?? key
+}
+
+/**
  * Link target → note: the note's own id (YAZ-2293 — first, so a note merely NAMED like an id
- * never captures it), absolute path, root-relative path (with or without `.md` / leading slash),
+ * never captures it; a target that is the id of NO note falls through to the names below, so
+ * `[[YAZ-7]]` still opens a note that is only named so: YAZ-2677 R6, S26), absolute path, root-relative path (with or without `.md` / leading slash),
  * TITLE (YAZ-2420 🔒 D17 — a note with no `title:` is titled by its file name), bare basename —
  * duplicates of either resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
  * GRO-2190), equal depth to the first in the given (path-sorted) order — a pathed target as a
@@ -180,7 +198,9 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
   }
   for (const f of files) {
     const r = f.record
-    if (opts.ids !== false && r.id !== undefined && !byId.has(r.id)) byId.set(r.id, f)
+    // By the id in lowercase: a target is read in any case (YAZ-2677 R1, S17), and its key is lowercase.
+    const id = opts.ids === false ? undefined : r.id?.toLowerCase()
+    if (id !== undefined && !byId.has(id)) byId.set(id, f)
     byPath.set(r.path.toLowerCase(), f)
     const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
     if (!byRel.has(rel)) byRel.set(rel, f)
@@ -209,7 +229,7 @@ export function makeResolver(files: readonly FileValue[], root?: string, opts: R
     const key = targetKey(target)
     let found: FileValue | null = null
     if (key) {
-      found = byId.get(key) ?? byPath.get(key) ?? null
+      found = byId.get(idKey(key, opts.letters)) ?? byPath.get(key) ?? null
       if (!found) {
         const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
         found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)
@@ -248,7 +268,7 @@ export function resolverFor(records: readonly IndexRecord[], root?: string, opts
   if (byFolders === undefined) resolverCache.set(records, (byFolders = new WeakMap()))
   let byRoot = byFolders.get(folders)
   if (byRoot === undefined) byFolders.set(folders, (byRoot = new Map()))
-  const key = `${opts.aliases === false ? 'names:' : ''}${opts.ids === false ? 'noids:' : ''}${root ?? ''}`
+  const key = `${opts.aliases === false ? 'names:' : ''}${opts.ids === false ? 'noids:' : ''}${(opts.letters ?? []).join(',')}:${root ?? ''}`
   let resolver = byRoot.get(key)
   if (resolver === undefined) byRoot.set(key, (resolver = makeResolver(fileValuesFor(records), root, opts)))
   return resolver

@@ -18,7 +18,6 @@ import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
 import { LINK_NOTICE_MS, type Notice, type NoticeKind } from './lib/notice'
-import { ConfirmIds } from './components/ConfirmIds'
 import { NoticeIcon } from './components/NoticeIcon'
 import { dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -1086,8 +1085,6 @@ export function App() {
   // While a review is open (YAZ-2322) the main pane shows ITS note, not the active tab's page.
   // The tabs, their history and the right panel are not touched: closing the review uncovers them.
   const session = review.session
-  /** The vault whose IDs question is on show (YAZ-2602 S40): one box at a time, the first vault's that must answer. */
-  const asking = vaults.find((vault) => vault.idsAsk !== null)
   /** The first vault whose sync needs attention: one banner at a time. */
   const unsynced = vaults.find((vault) => vault.syncBanner !== null)
   const syncCopy = unsynced?.syncBanner ?? null
@@ -1390,9 +1387,6 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
-      {/* The box that asks whether a vault's notes get IDs (YAZ-2523 🔒 V2). Keyed apart from the sidebar, which the
-          first vault keys too; with two or more vaults it names the one it asks about (YAZ-2602 S40). */}
-      {asking !== undefined && asking.idsAsk !== null && <ConfirmIds key={`ids:${asking.root}`} ask={asking.idsAsk} vault={roots.length > 1 ? (asking.name ?? undefined) : undefined} onAnswer={asking.saveIds} onDismiss={asking.closeIdsAsk} />}
     </div>
   )
 }

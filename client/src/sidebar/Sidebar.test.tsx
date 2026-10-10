@@ -66,6 +66,7 @@ vi.mock('./folderShortcuts', async (importOriginal) => {
   return { ...real, folderShortcuts }
 })
 
+import { testDoor } from '../testNoteIds'
 import { PREVIEW_FOLLOW_MS } from './hooks/useSidebarSearch'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 
@@ -90,6 +91,8 @@ function installBridge() {
     // A note is born from its folder's hidden `.template.md` (YAZ-2290 E3): no folder has one by default.
     readFile: vi.fn((path: string): Promise<{ path: string; content: string; mtime: number; size: number }> => Promise.reject({ code: 'NOT_FOUND', message: `no such file: ${path}` })),
     createDir: vi.fn(async (req: { path: string; title?: string }) => ({ path: req.path })),
+    // The door (YAZ-2677 D4): a note's id is the vault's next number, taken before the note is made.
+    mintNoteId: testDoor(),
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
@@ -1617,6 +1620,18 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     await type(input, `see [[k3m9x2pq7abc]] in ${v}/Plans`)
     expect(shape(el)).toEqual(['Plans', '  Zed'])
     expect(cursor(el)).toEqual(['Zed'])
+  })
+
+  it('YAZ-2677 S70: the row of a note found by its number shows its full ID in front of its title; found by its title, it shows the title alone', async () => {
+    const { el, input, v } = await search('12', {}, {
+      records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {})),
+    })
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.textContent).toBe('YAZ-12 — Zed')
+    await type(input, 'yaz 12')
+    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    await type(input, 'zed')
+    expect(shape(el)).toEqual(['Plans', '  Zed'])
   })
 
   it('S37, S38, S40, S9, S10: a match shows the typed text bold where it first sits — whatever its case, spaces aside — and every other row steps back; a tree outside a search is drawn as ever (R7)', async () => {
@@ -4514,8 +4529,11 @@ describe('New note (GRO-2022)', () => {
   /** The one create the flow made: the note titled `Growth`, wherever it landed, born holding `properties` and then its title. */
   const growthIn = (bridge: Awaited<ReturnType<typeof mount>>['bridge'], dir: string, properties = '', body = '') => {
     const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `${dir}/growth-${id}.md`, content: `---\n${properties}title: Growth\n---\n${body}`, id })
-    return `${dir}/growth-${id}.md`
+    // The id is the vault's next number, from the door (YAZ-2677 D4); the file name holds it in lowercase (R8).
+    expect(id).toMatch(/^YAZ-[1-9]\d*$/)
+    const path = `${dir}/growth-${id.toLowerCase()}.md`
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: `---\n${properties}title: Growth\n---\n${body}`, id })
+    return path
   }
   /** Type a name into the open inline input and commit it with Enter. */
   const commit = async (el: HTMLElement, name: string) => {
@@ -4547,7 +4565,7 @@ describe('New note (GRO-2022)', () => {
     await commit(el, 'Growth')
     expect(bridge.readFile).toHaveBeenCalledExactlyOnceWith('/v/sub/.template.md')
     const path = growthIn(bridge, '/v/sub')
-    expect(path).toMatch(/^\/v\/sub\/growth-[0-9a-z]{12}\.md$/)
+    expect(path).toMatch(/^\/v\/sub\/growth-yaz-\d+\.md$/)
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
     expect(input(el)).toBeNull() // the input is done
   })
@@ -4624,7 +4642,7 @@ describe('New note (GRO-2022)', () => {
     await commit(el, '.a/b: "c"?')
     expect(errorText(el)).toBeNull()
     const born = bridge.createFile.mock.calls[0][0] as { path: string; content: string; id: string }
-    expect(born.path).toBe(`/v/sub/a-b-c-${born.id}.md`)
+    expect(born.path).toBe(`/v/sub/a-b-c-${born.id.toLowerCase()}.md`)
     expect(parseFrontmatter(born.content).properties).toEqual({ title: '.a/b: "c"?' })
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(born.path)
   })
@@ -4716,8 +4734,8 @@ describe('New dated note (YAZ-2242)', () => {
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
       const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
-      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id}.md`, content: '---\ntitle: 09_29- Launch\n---\n', id })
-      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id}.md`)
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id.toLowerCase()}.md`, content: '---\ntitle: 09_29- Launch\n---\n', id })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id.toLowerCase()}.md`)
     } finally {
       vi.useRealTimers()
     }
@@ -4738,8 +4756,8 @@ describe('New dated note (YAZ-2242)', () => {
         input(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       })
       const { id } = bridge.createFile.mock.calls[0][0] as { id: string }
-      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id}.md`, content: '---\nowner: me\ntitle: 09_29- Launch\n---\n## Notes\n', id })
-      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id}.md`)
+      expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: `/v/sub/09-29-launch-${id.toLowerCase()}.md`, content: '---\nowner: me\ntitle: 09_29- Launch\n---\n## Notes\n', id })
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`/v/sub/09-29-launch-${id.toLowerCase()}.md`)
     } finally {
       vi.useRealTimers()
     }

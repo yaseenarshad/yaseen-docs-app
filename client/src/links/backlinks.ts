@@ -25,7 +25,8 @@ import { pathTitles, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import { folderSettings } from '../views/folderSettings'
 import { parseOutline } from '../views/outlineDoc'
-import { maskCode, referenceTargets } from './renameLinks'
+import { maskCode } from '@shared/linkRewrite'
+import { referenceTargets } from './renameLinks'
 
 /**
  * Records whose links/embeds resolve to `path`, then the settings records of the folders whose

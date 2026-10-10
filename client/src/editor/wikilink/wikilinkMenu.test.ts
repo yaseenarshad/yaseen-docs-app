@@ -173,6 +173,37 @@ describe('right-click on a rendered id link', () => {
   })
 })
 
+describe('right-click on a number ID link (YAZ-2677 D3)', () => {
+  const NUMBERED = (target: string) => (target.toLowerCase() === 'yaz-12' || target.toLowerCase() === 'old-12' ? '/vault/Projects/Road Map.md' : null)
+  const feed = (source: MutableWikilinkResolveSource) => source.update(NUMBERED, undefined, undefined, true, ['YAZ', 'OLD'])
+
+  it('shows and copies the ID as the app writes it, whatever the case or the letters of before in the link', async () => {
+    for (const typed of ['YAZ-12', 'yaz-12', 'OLD-12']) {
+      const { root, view } = await mount(`pad [[${typed}]] tail\n`, true, feed)
+      expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
+      const rows = rowsOf(popupOf(view)!)
+      expect(rows.map((row) => row.textContent)).toEqual(['Road Map', 'YAZ-12', 'Copy ID'])
+      rows[2]!.click()
+      expect(writeText).toHaveBeenLastCalledWith('YAZ-12')
+    }
+  })
+
+  it('S21, S22: `[[GPT-4]]` and `[[BUS-12]]` are name links there: they keep the native menu', async () => {
+    const { root, view } = await mount('pad [[GPT-4]] and [[BUS-12]] tail\n', true, feed)
+    for (const shown of ['GPT-4', 'BUS-12']) {
+      expect(mouse(linkSpan(root, shown), 'mousedown').defaultPrevented).toBe(false)
+      expect(mouse(linkSpan(root, shown), 'contextmenu').defaultPrevented).toBe(false)
+    }
+    expect(popupOf(view)).toBeNull()
+  })
+
+  it('S25: a number ID no note has still offers its id and Copy ID, with no name row', async () => {
+    const { root, view } = await mount('pad [[yaz-99]] tail\n', true, feed)
+    expect(mouse(linkSpan(root, 'yaz-99'), 'contextmenu').defaultPrevented).toBe(true)
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(['YAZ-99', 'Copy ID'])
+  })
+})
+
 describe('what keeps the native menu', () => {
   it('a NAME link: neither the right mousedown nor the contextmenu is prevented, and nothing is drawn', async () => {
     const { root, view } = await mount('pad [[Known]] and [[Missing]] tail\n')
