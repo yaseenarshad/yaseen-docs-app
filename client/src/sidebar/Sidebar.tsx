@@ -23,7 +23,7 @@ import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
 import { Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
-import { useSidebarSearch } from './hooks/useSidebarSearch'
+import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
@@ -538,6 +538,47 @@ export function Sidebar({
     onLensChange(storage.getSidebarLens())
     toPage()
   }, [onLensChange, toPage])
+  // The preview panel from a row of Files, Focus or Favorites (YAZ-2663 D11): Space on a FILE row
+  // shows App's panel on it — the panel of the search (YAZ-2662 D5), by the same door — and no tab
+  // opens. Space looks, Enter opens, on every surface. With the panel on show it follows the
+  // keyboard focus, `PREVIEW_FOLLOW_MS` after its last move; on a folder row no panel is drawn, at
+  // once (`treeParked`: the preview is on with no panel). Space on a folder row still folds it.
+  const [treeParked, setTreeParked] = useState(false)
+  const treePreviewing = !searching && (previewPath !== null || treeParked)
+  const treeFollow = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const stopTreePreview = useCallback(() => {
+    clearTimeout(treeFollow.current)
+    setTreeParked(false)
+    onPreview(null)
+  }, [onPreview])
+  // A different tab of the panel shows, or the panel goes: the rows that drive the preview are gone, and the panel with it (S64).
+  // Read as it was on the tab that goes: the box is filled AFTER a commit, and the clean-up below
+  // runs before that, so a panel of the search is not closed a second time by the tab that comes.
+  const treePreview = useRef({ on: treePreviewing, stop: stopTreePreview })
+  useEffect(() => {
+    treePreview.current = { on: treePreviewing, stop: stopTreePreview }
+  })
+  useEffect(
+    () => () => {
+      if (treePreview.current.on) treePreview.current.stop()
+      clearTimeout(treeFollow.current)
+    },
+    [lens],
+  )
+  /** The panel follows the row that got the keyboard focus (S61). */
+  const followTreeRow = (row: HTMLElement): void => {
+    clearTimeout(treeFollow.current)
+    const path = row.dataset.path
+    if (path === undefined) return
+    if (!row.matches('.tree__row--file')) {
+      setTreeParked(true)
+      onPreview(null)
+    } else
+      treeFollow.current = setTimeout(() => {
+        setTreeParked(false)
+        onPreview(path)
+      }, PREVIEW_FOLLOW_MS)
+  }
   // The arrows from NOWHERE (YAZ-2663 D10): with the keyboard on nothing, or on a tab button of the
   // panel, ↓ or ↑ puts the focus on a row of Files, Focus or Favorites — the selected row, else the
   // row of the open page, else the first — and → goes to the new tab page. A field, a row, a key
@@ -1075,7 +1116,27 @@ export function Sidebar({
         // not also throw the selection the menu was about to act on.
         // (⌘C/⌘X/⌘V are App's window listener, D6 — see `clipboardRef`.)
         onKeyDown={(e) => {
+          const on = e.target instanceof HTMLElement && e.target.matches('.tree__row[data-path]') ? e.target : null
+          // Space on a file row shows the preview panel, and Space again closes it (YAZ-2663 D11).
+          // Taken here, so the button makes no click and the row does not open. A held Space acts one time.
+          if (e.key === ' ' && !searching && on?.matches('.tree__row--file') === true && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) {
+            e.preventDefault()
+            if (e.repeat) return
+            const path = on.dataset.path
+            if (treePreviewing) stopTreePreview()
+            else if (path !== undefined) onPreview(path)
+            return
+          }
+          // Enter on a row does its own work and closes the panel (the rule of YAZ-2662 S36).
+          if (e.key === 'Enter' && treePreviewing) stopTreePreview()
           if (e.key !== 'Escape' || menu !== null) return
+          // Esc with the panel on show closes the panel only, and the keyboard stays on the row (S63).
+          if (treePreviewing) {
+            e.preventDefault()
+            e.stopPropagation()
+            stopTreePreview()
+            return
+          }
           // With no selection, Esc on a row goes to the page on show (YAZ-2663 D10), as Esc in the
           // search bar does. A rename box and a create box are no rows: their Esc is their own.
           if (selectedPaths.size === 0) {
@@ -1091,6 +1152,19 @@ export function Sidebar({
         // clicks (a row click SELECTS, D9), and a right-click keeps the selection standing
         // (YAZ-1337: its menu is about the root, not a fresh pick; the menu's overlay lives
         // outside this body, so its own mousedown never arrives here).
+        // With the preview on (YAZ-2663 D11) the panel follows the row that gets the keyboard focus.
+        // A click on a row ends it (the rule of YAZ-2662 S65), and so does a focus that leaves the
+        // rows for a different part of the window — not for the panel itself, which the mouse can scroll.
+        onFocus={(e) => {
+          if (treePreviewing && e.target instanceof HTMLElement && e.target.matches('.tree__row[data-path]')) followTreeRow(e.target)
+        }}
+        onBlur={(e) => {
+          const to = e.relatedTarget
+          if (treePreviewing && to instanceof Element && !e.currentTarget.contains(to) && to.closest('.quicklook') === null) stopTreePreview()
+        }}
+        onClick={(e) => {
+          if (treePreviewing && e.target instanceof Element && e.target.closest('.tree__row') !== null) stopTreePreview()
+        }}
         onMouseDown={(e) => {
           if (e.button !== 0 || selectedPaths.size === 0) return
           if (e.target instanceof Element && e.target.closest('button, input, textarea, a, [role="treeitem"]') !== null) return
