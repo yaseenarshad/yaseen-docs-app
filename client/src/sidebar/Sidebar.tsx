@@ -166,6 +166,8 @@ interface SidebarProps {
    * edge case. With it false the caret stays where it is, also at a mount on the Search tab.
    */
   pendingSearchFocus: boolean
+  /** With the flag above: a new tab (⌘T) asks for a NEW search, and the bar is emptied (YAZ-2663 D10). ⌘K does not. */
+  pendingSearchClear?: boolean
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
   onSearchFocusHandled: () => void
   /**
@@ -428,6 +430,7 @@ export function Sidebar({
   onDeleteFile,
   onNotice,
   pendingSearchFocus,
+  pendingSearchClear = false,
   onSearchFocusHandled,
   onLeaveToPage,
   selectionRef,
@@ -526,15 +529,45 @@ export function Sidebar({
   const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
+  // The keyboard goes to the page on show: the caret into the open page (YAZ-2662 D9), else the
+  // focus onto the new tab page, when it shows and has a row (YAZ-2663 D10). With neither, nothing moves.
+  const toPage = useCallback(() => focusOpenDocument() || onLeaveToPage?.() === true, [onLeaveToPage])
   // The way out of the Search tab, for the search's Esc (`searchEsc`): back to the lens the window
-  // last showed, and the caret goes into the open page (YAZ-2662 D9). With no page open no caret moves.
+  // last showed, and the keyboard goes to the page on show.
   const leaveSearch = useCallback(() => {
     onLensChange(storage.getSidebarLens())
-    focusOpenDocument()
-  }, [onLensChange])
+    toPage()
+  }, [onLensChange, toPage])
+  // The arrows from NOWHERE (YAZ-2663 D10): with the keyboard on nothing, or on a tab button of the
+  // panel, ↓ or ↑ puts the focus on a row of Files, Focus or Favorites — the selected row, else the
+  // row of the open page, else the first — and → goes to the new tab page. A field, a row, a key
+  // with a modifier, an open menu or dialog, and the Search tab keep their keys. On the window: the
+  // focus is on the body then, and no panel hears the key.
+  const menuOpen = menu !== null
+  useEffect(() => {
+    if (searching || menuOpen) return
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowRight') return
+      const on = document.activeElement
+      const nowhere = on === null || on === document.body || (on.closest('.sidebar') !== null && !on.matches('.tree__row, input, textarea, select, [contenteditable]'))
+      if (!nowhere || document.querySelector('[aria-modal="true"]') !== null) return
+      if (e.key === 'ArrowRight') {
+        if (onLeaveToPage?.() === true) e.preventDefault()
+        return
+      }
+      const body = bodyRef.current
+      const row = body?.querySelector<HTMLElement>('.tree__row--selected') ?? body?.querySelector<HTMLElement>('.tree__row--active') ?? body?.querySelector<HTMLElement>('.tree__row[data-path]')
+      if (row == null) return
+      row.focus()
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [searching, menuOpen, onLeaveToPage])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
-  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview)
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, pendingSearchClear)
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null
@@ -1042,7 +1075,13 @@ export function Sidebar({
         // not also throw the selection the menu was about to act on.
         // (⌘C/⌘X/⌘V are App's window listener, D6 — see `clipboardRef`.)
         onKeyDown={(e) => {
-          if (e.key !== 'Escape' || selectedPaths.size === 0 || menu !== null) return
+          if (e.key !== 'Escape' || menu !== null) return
+          // With no selection, Esc on a row goes to the page on show (YAZ-2663 D10), as Esc in the
+          // search bar does. A rename box and a create box are no rows: their Esc is their own.
+          if (selectedPaths.size === 0) {
+            if (e.target instanceof Element && e.target.matches('.tree__row') && toPage()) e.preventDefault()
+            return
+          }
           e.preventDefault()
           e.stopPropagation()
           dispatchSelection({ type: 'clear' })

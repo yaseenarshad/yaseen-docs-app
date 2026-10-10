@@ -2023,6 +2023,38 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
+  it('YAZ-2663 D10: with no page open Esc goes to the new tab page, when it shows and has a row; the search tab is left all the same', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, props } = await open({ lens: 'search', onLeaveToPage })
+    await type(searchBar(el)!, 'no such row')
+    act(() => searchBar(el)!.focus())
+    await press(searchBar(el)!, 'Escape')
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-2663 D10: with a page open Esc puts the caret in it, and the new tab page is not asked', async () => {
+    const pm = editorStub()
+    const onLeaveToPage = vi.fn(() => true)
+    const { el } = await open({ lens: 'search', onLeaveToPage })
+    act(() => searchBar(el)!.focus())
+    await press(searchBar(el)!, 'Escape')
+    expect([document.activeElement, onLeaveToPage.mock.calls.length]).toEqual([pm, 0])
+    pm.remove()
+  })
+
+  it('YAZ-2663 D10: a new tab (⌘T) starts a new search — the bar is empty and has the caret; ⌘K keeps the text, selected (YAZ-2638 D2)', async () => {
+    const { el, rerender } = await open({ lens: 'search' })
+    await type(searchBar(el)!, 'anchor')
+    await rerender({ lens: 'files' })
+    await rerender({ lens: 'search', pendingSearchFocus: true })
+    expect([searchBar(el)?.value, document.activeElement]).toEqual(['anchor', searchBar(el)])
+    await rerender({ lens: 'files', pendingSearchFocus: false })
+    await rerender({ lens: 'search', pendingSearchFocus: true, pendingSearchClear: true })
+    expect([searchBar(el)?.value, document.activeElement]).toEqual(['', searchBar(el)])
+    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('Type to search every note and folder.')
+  })
+
   it('YAZ-2662 S59, S60: the empty Search tab shows its line and, below it, the keys of the search — in the keycap of the bar; with text typed the keys do not show', async () => {
     const { el } = await open({ lens: 'search' })
     /** Each row of the list: its keycaps, and what they do. */
@@ -2966,6 +2998,59 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     await rerender({ onLeaveToPage: undefined })
     key(document.activeElement, 'ArrowRight')
     expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([3, 'top'])
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D10: on the %s tab, with the keyboard on nothing or on a tab button of the sidebar, ↓ or ↑ puts the focus on a row, and → asks for the new tab page; a field, a modifier and a row keep their keys', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, rerender } = await mountVault()
+    await rerender({ lens, onLeaveToPage })
+    expect(document.activeElement).toBe(document.body)
+    expect([key(document.body, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    act(() => (document.activeElement as HTMLElement).blur())
+    const tab = el.querySelector<HTMLElement>('.sidebar__lens')
+    act(() => tab?.focus())
+    expect([key(tab, 'ArrowUp').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    // → from nowhere goes to the page (D8's door). On a row, → is the row's.
+    act(() => (document.activeElement as HTMLElement).blur())
+    expect([key(document.body, 'ArrowRight').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
+    onLeaveToPage.mockReturnValue(false)
+    expect(key(document.body, 'ArrowRight').defaultPrevented).toBe(false)
+    // A key with a modifier, and a key in a field, are not the sidebar's.
+    expect(key(document.body, 'ArrowDown', { metaKey: true }).defaultPrevented).toBe(false)
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.focus()
+    expect([key(field, 'ArrowDown').defaultPrevented, document.activeElement]).toEqual([false, field])
+    field.remove()
+    // With the row of the open page on show, the keyboard starts there.
+    if (lens === 'files') {
+      await rerender({ activeFile: `${v}/top.md` })
+      expect([key(document.body, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'top'])
+    }
+  })
+
+  it('YAZ-2663 D10: on the Search tab the arrows from nowhere are not the tree\'s', async () => {
+    const { rerender } = await mountVault()
+    await rerender({ lens: 'search' })
+    expect([key(document.body, 'ArrowDown').defaultPrevented, document.activeElement]).toEqual([false, document.body])
+  })
+
+  it('YAZ-2663 D10: Esc on a row with no selection goes to the page on show — the open page, else the new tab page; with a selection Esc ends the selection, as before', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, rerender } = await mountVault()
+    await rerender({ onLeaveToPage })
+    act(() => row(el, `${v}/top.md`)?.focus())
+    expect([key(document.activeElement, 'Escape').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
+    const pm = editorStub()
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'Escape')
+    expect([document.activeElement, onLeaveToPage.mock.calls.length]).toEqual([pm, 1])
+    pm.remove()
+    // A click selects the row (D9): the first Esc ends the selection and the keyboard stays.
+    act(() => row(el, `${v}/top.md`)?.click())
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'Escape')
+    expect([el.querySelectorAll('.tree__row--selected').length, onLeaveToPage.mock.calls.length, focused()]).toEqual([0, 1, 'top'])
   })
 
   it('S63: Enter and Space on a row do what they did before — the arrows\' handler takes neither key', async () => {

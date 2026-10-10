@@ -200,7 +200,12 @@ export function App() {
   // collapsed case, which un-collapses and mounts the sidebar with the flag already true; the
   // sidebar focuses its input and clears it through the callback.
   const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
-  const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
+  // With the flag: a new tab (⌘T) asks for a NEW search, so the bar is emptied (YAZ-2663 D10). ⌘K keeps its text.
+  const [pendingSearchClear, setPendingSearchClear] = useState(false)
+  const searchFocusHandled = useCallback(() => {
+    setPendingSearchFocus(false)
+    setPendingSearchClear(false)
+  }, [])
 
   // Settings and sidebar width are global. Visibility (YAZ-1280) and the lens (YAZ-1628) are
   // window identity and never follow another renderer's `state:changed` broadcast.
@@ -670,6 +675,7 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     openBlank()
     openSearch()
+    setPendingSearchClear(true)
   }, [openBlank, openSearch])
   /**
    * A page's ✕, an island's ✕, a tab's ✕ under the board: the tabs close as ⌘W closes each, in ONE
@@ -1257,6 +1263,7 @@ export function App() {
           // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
           clipboardRef={sidebarClipboard}
           pendingSearchFocus={pendingSearchFocus}
+          pendingSearchClear={pendingSearchClear}
           onSearchFocusHandled={searchFocusHandled}
           onLeaveToPage={leaveToPage}
           // ⌘O (YAZ-1767 D8): only a request made on THIS sidebar counts; any other reads as none.
