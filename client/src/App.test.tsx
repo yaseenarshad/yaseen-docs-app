@@ -50,6 +50,7 @@ interface SidebarStubProps {
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
   pendingSearchFocus: boolean
+  pendingSearchClear: boolean
   /** The sidebar put the caret in the bar (YAZ-801): App lowers the flag. */
   onSearchFocusHandled: () => void
   /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
@@ -1061,6 +1062,17 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
     expect(captured.sidebar?.lens).toBe('search') // S3 (YAZ-2638): the sidebar shows first, and it mounts on the Search tab
+  })
+
+  it('YAZ-2663 D10: a new tab asks for a NEW search — the bar is emptied — and ⌘K does not', async () => {
+    const { emitSearch, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitSearch())
+    expect([captured.sidebar?.pendingSearchFocus, captured.sidebar?.pendingSearchClear]).toEqual([true, false])
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    act(() => emitNewTab())
+    expect([captured.sidebar?.pendingSearchFocus, captured.sidebar?.pendingSearchClear]).toEqual([true, true])
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    expect([captured.sidebar?.pendingSearchFocus, captured.sidebar?.pendingSearchClear]).toEqual([false, false])
   })
 
   it('with the sidebar already open it shows the Search tab and raises the focus flag (YAZ-2638 S2)', async () => {
