@@ -3053,13 +3053,91 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect([el.querySelectorAll('.tree__row--selected').length, onLeaveToPage.mock.calls.length, focused()]).toEqual([0, 1, 'top'])
   })
 
-  it('S63: Enter and Space on a row do what they did before — the arrows\' handler takes neither key', async () => {
+  describe('Space on a file row of a sidebar tree shows the preview panel (YAZ-2663 D11)', () => {
+    afterEach(() => vi.useRealTimers())
+    const walk = async (lens: 'files' | 'focus' | 'favorites' = 'files') => {
+      const m = await mountVault()
+      await m.rerender({ lens })
+      act(() => row(m.el, `${m.v}/Projects`)?.focus())
+      key(document.activeElement, 'ArrowRight') // the rows inside the folder are on show
+      const onPreview = vi.mocked(m.props.onPreview)
+      onPreview.mockClear()
+      vi.useFakeTimers()
+      return { ...m, onPreview, wait: (ms: number) => act(() => void vi.advanceTimersByTime(ms)), panel: () => previewPanel?.path?.slice(m.v.length) ?? null, opened: () => [m.props.onOpenFile, m.props.onKeepFile, m.props.onOpenFileBackground].reduce((n, door) => n + vi.mocked(door).mock.calls.length, 0) }
+    }
+
+    it.each(['files', 'focus', 'favorites'] as const)('S59, S60: on the %s tab Space on a file row shows the panel on that file, at once, and opens no tab; Space again closes it; a held Space acts one time', async (lens) => {
+      const { el, v, panel, opened } = await walk(lens)
+      act(() => row(el, `${v}/top.md`)?.focus())
+      expect([key(document.activeElement, ' ').defaultPrevented, panel(), opened(), focused()]).toEqual([true, '/top.md', 0, 'top'])
+      expect([key(document.activeElement, ' ', { repeat: true }).defaultPrevented, panel()]).toEqual([true, '/top.md'])
+      key(document.activeElement, ' ')
+      expect([panel(), opened()]).toEqual([null, 0])
+    })
+
+    it('S61: with the panel on show it follows the keyboard focus 120 ms after its last move; on a folder row no panel is drawn, at once, and it comes back on the next file', async () => {
+      const { el, v, panel, wait } = await walk()
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      key(document.activeElement, 'ArrowUp') // book.epub or plan: the row before, a file
+      const before = focused()
+      wait(119)
+      expect(panel()).toBe('/top.md') // the earlier file stays until the wait is over
+      wait(1)
+      expect(panel()).not.toBe('/top.md')
+      expect(panel()).not.toBeNull()
+      act(() => row(el, `${v}/Projects`)?.focus())
+      expect(panel()).toBeNull() // a folder: no panel, at once
+      act(() => row(el, `${v}/top.md`)?.focus())
+      wait(120)
+      expect([panel(), before === 'top']).toEqual(['/top.md', false])
+    })
+
+    it('S62: Space on a folder row folds it, as before, and shows no panel', async () => {
+      const { el, v, onPreview } = await walk()
+      act(() => row(el, `${v}/Projects`)?.focus())
+      expect([key(document.activeElement, ' ').defaultPrevented, onPreview.mock.calls]).toEqual([false, []])
+    })
+
+    it('S63: Esc with the panel on show closes the panel only, and the keyboard stays on the row; Enter on a row opens it and closes the panel; a click on a row closes the panel', async () => {
+      const onLeaveToPage = vi.fn(() => true)
+      const { el, v, panel, rerender, props } = await walk()
+      await rerender({ onLeaveToPage })
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      expect([key(document.activeElement, 'Escape').defaultPrevented, panel(), focused(), onLeaveToPage.mock.calls.length]).toEqual([true, null, 'top', 0])
+      key(document.activeElement, ' ')
+      expect(panel()).toBe('/top.md')
+      act(() => row(el, `${v}/top.md`)?.click()) // Enter on a file row is the button's own click
+      expect([panel(), vi.mocked(props.onOpenFile).mock.calls.length]).toEqual([null, 1])
+    })
+
+    it('S64: the panel closes when a different tab of the sidebar shows, and when the keyboard goes to the page', async () => {
+      const { el, v, panel, rerender } = await walk()
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      await rerender({ lens: 'favorites' })
+      expect(panel()).toBeNull()
+      await rerender({ lens: 'files' })
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      expect(panel()).toBe('/top.md')
+      const outside = document.createElement('button')
+      document.body.append(outside)
+      act(() => outside.focus())
+      expect(panel()).toBeNull()
+      outside.remove()
+    })
+  })
+
+  it('S63: Enter on a row, and Space on a folder row, do what they did before — the arrows\' handler takes neither key; Space on a FILE row is the preview\'s now (YAZ-2663 D11)', async () => {
     const { el, v, props } = await mountVault()
     // Enter on a folder row opens its page (YAZ-2290 D3): the row's own key.
     expect(key(row(el, `${v}/Projects`), 'Enter').defaultPrevented).toBe(true)
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Projects`)
-    // Space on a folder row, and Enter and Space on a file row, are the button's own click.
-    expect([key(row(el, `${v}/Projects`), ' '), key(row(el, `${v}/top.md`), 'Enter'), key(row(el, `${v}/top.md`), ' ')].map((event) => event.defaultPrevented)).toEqual([false, false, false])
+    // Space on a folder row, and Enter on a file row, are the button's own click. Space on a file row is taken: it shows the preview panel.
+    expect([key(row(el, `${v}/Projects`), ' '), key(row(el, `${v}/top.md`), 'Enter'), key(row(el, `${v}/top.md`), ' ')].map((event) => event.defaultPrevented)).toEqual([false, false, true])
+    expect(props.onOpenFile).toHaveBeenCalledTimes(1) // Space opened no page
   })
 
   it('D1, D8: a held Enter on a row does nothing — Enter and Shift+Enter in the search bar put the keyboard focus on a row of Files, and the repeats of that press arrive there: a folder row and a file row, with Shift and without, open no page, fold nothing and select nothing', async () => {
