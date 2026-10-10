@@ -523,7 +523,7 @@ describe('StartPage', () => {
     expect(told).toEqual([`${v}/a.md`])
     wait(1)
     expect([told, at()]).toEqual([[`${v}/a.md`, `${v}/c.md`], 'recent 2'])
-    // → to a folder row: no panel is drawn, at once. Space there does nothing (S40). Back on a file the panel shows again.
+    // → to a folder row: no panel is drawn, at once. Space there is the folder's (D13: it opens it, and this one holds nothing), and the preview stays on. Back on a file the panel shows again.
     press('ArrowRight')
     expect([told.at(-1), at()]).toEqual([null, 'favorites 0'])
     press(' ')
@@ -566,7 +566,7 @@ describe('StartPage', () => {
     expect(told.at(-1)).toBeNull()
   })
 
-  it('S39, S40: with no door to a preview panel Space on a file does nothing, and the button is not clicked; Space on a folder does nothing', async () => {
+  it('S39, S40: with no door to a preview panel Space on a file does nothing, and the button is not clicked; Space on a folder is taken too, and asks no door (D13: it opens the folder here)', async () => {
     const v = vault()
     const { el, props } = await mount({ trees: { [v]: [dir(`${v}/Projects`), file(`${v}/a.md`)] }, opens: { [v]: { [`${v}/a.md`]: used(1) } }, favorites: { [v]: [`${v}/Projects`] } })
     for (const path of [`${v}/a.md`, `${v}/Projects`]) {
@@ -574,6 +574,62 @@ describe('StartPage', () => {
       expect([path, press(' ').defaultPrevented]).toEqual([path, true])
     }
     expect([props.onOpen, props.onShowInFiles, props.onBack, props.onBackToSearch].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0, 0, 0])
+  })
+
+  it('YAZ-2663 D13: Space on a folder row opens the folder in its column — each row that it holds, one step in, with no folder text beside it; Space again closes it. A folder inside it opens the same way; the rows inside are rows like the others; a click on the chevron does what Space does', async () => {
+    const v = vault()
+    const { el, props } = await mount({
+      trees: { [v]: [dir(`${v}/Log`, [dir(`${v}/Log/Week`, [file(`${v}/Log/Week/mon.md`)]), file(`${v}/Log/daily.md`), file(`${v}/Log/open.md`)]), file(`${v}/a.md`)] },
+      opens: { [v]: { [`${v}/a.md`]: used(1) } },
+      favorites: { [v]: [`${v}/Log`, `${v}/a.md`] },
+    })
+    const fav = () => paths(el, 'favorites').map((path) => path?.slice(v.length))
+    const open = (path: string) => row(el, path).getAttribute('aria-expanded')
+    expect([fav(), open(`${v}/Log`)]).toEqual([['/Log', '/a.md'], 'false'])
+    act(() => row(el, `${v}/Log`).focus())
+    expect(press(' ').defaultPrevented).toBe(true)
+    // The folder is open: its rows stand below it, as the Files tree holds them, and the keyboard stays on the folder row.
+    expect([fav(), open(`${v}/Log`), document.activeElement === row(el, `${v}/Log`)]).toEqual([['/Log', '/Log/Week', '/Log/daily.md', '/Log/open.md', '/a.md'], 'true', true])
+    expect(row(el, `${v}/Log/daily.md`).querySelector('.start__where')).toBeNull()
+    expect(vi.mocked(props.onShowInFiles)).not.toHaveBeenCalled() // Space opens it HERE: Files is not asked
+    // ↓ walks into it. Space on a folder inside opens that folder too.
+    press('ArrowDown')
+    expect(document.activeElement).toBe(row(el, `${v}/Log/Week`))
+    press(' ')
+    expect(fav()).toEqual(['/Log', '/Log/Week', '/Log/Week/mon.md', '/Log/daily.md', '/Log/open.md', '/a.md'])
+    // A row inside is a row like the others: Enter opens a file, and Enter on a folder shows it in Files.
+    press('ArrowDown')
+    press('Enter')
+    expect(vi.mocked(props.onOpen).mock.calls).toEqual([[`${v}/Log/Week/mon.md`]])
+    act(() => row(el, `${v}/Log/Week`).focus())
+    press('Enter')
+    expect(vi.mocked(props.onShowInFiles).mock.calls).toEqual([[`${v}/Log/Week`]])
+    // Space again closes the folder, and the folders inside it stay as they were for the next time.
+    act(() => row(el, `${v}/Log`).focus())
+    press(' ')
+    expect([fav(), open(`${v}/Log`)]).toEqual([['/Log', '/a.md'], 'false'])
+    // The mouse: a click on the chevron opens and closes, and opens no page and shows nothing in Files.
+    const asked = vi.mocked(props.onShowInFiles).mock.calls.length
+    act(() => void row(el, `${v}/Log`).querySelector('.tree__chevron')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect([fav().length, vi.mocked(props.onShowInFiles).mock.calls.length]).toEqual([6, asked])
+  })
+
+  it('YAZ-2663 D13: a folder is open in ONE column — the same folder in a different column stays closed; the arrows between the columns go by the rows on show', async () => {
+    const v = vault()
+    const { el } = await mount({
+      trees: { [v]: [dir(`${v}/Log`, [file(`${v}/Log/daily.md`), file(`${v}/Log/open.md`)]), file(`${v}/a.md`)] },
+      opens: { [v]: { [`${v}/Log`]: used(1), [`${v}/a.md`]: used(1, 1000) } },
+      favorites: { [v]: [`${v}/Log`] },
+    })
+    expect([paths(el, 'recent').length, paths(el, 'favorites').length]).toEqual([2, 1])
+    act(() => cell(el, 'favorites', 0).focus())
+    press(' ')
+    expect([paths(el, 'recent').length, paths(el, 'favorites').length]).toEqual([2, 3])
+    press('ArrowDown')
+    press('ArrowDown')
+    expect(at()).toBe('favorites 2')
+    press('ArrowLeft') // "Recent" has two rows: its last one
+    expect(at()).toBe('recent 1')
   })
 
   it('S41: a letter typed on a row asks for the caret in the search bar and leaves the key to the browser, which types it there; a key with ⌘, Ctrl or Alt is no letter', async () => {
