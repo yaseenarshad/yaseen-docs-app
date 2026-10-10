@@ -29,12 +29,17 @@ and `npm run perf:budget:ci` pass, the hand walk passed, and the branch is merge
   - [x] Issues 7+8 (change letters, backfill, S70) `8858555`
   - [x] Issue 9: audit A1–A24 posted and applied `ed4b467`
   - [x] Issue 10, the agent's part: docs, `desktop/e2e/ids.spec.ts` (typechecked, never run), case list, gates, ceilings `ccb4d8c`, pull request open
-- Now: [→] WAITING for Yaseen: the hand walk on the pull request, and his answers below
-- Next: merge after he says the walk passed; then move YAZ-2678..YAZ-2687 and YAZ-2677 to Done; closeout
-- Remaining:
-  - [ ] Hand walk (demo setup: `node node_modules/.verify/yaz-2677-demo.mjs`, needs his OK; it writes `~/Desktop/yaz-2677-demo`)
-  - [ ] Merge to `main` (reconcile `client/src/search/` and `client/src/sidebar/` with YAZ-2662 / YAZ-2663 if they land first)
-  - [ ] A separate issue for audit finding A6 (a folder copied in Finder can lose `.folder.md` under load; on `main` too)
+- CLOSED OUT 2026-10-09. Merged to `main` by pull request #106 after Yaseen's hand walk ("Yes, merge it"). No release: Yaseen adds more to this one first.
+  The full handoff is the comment "Handoff — number IDs are on `main`" on Linear YAZ-2677; read that first.
+  - [x] `main` (YAZ-2662 search keys, #104) merged into the branch `6832285`: search keeps both rules, four ceilings re-measured
+  - [x] Hand walk on the demo vaults; the demo folder is in the Trash; the worktree and the branch are removed
+- Not verified (none blocks anything):
+  - `desktop/e2e/ids.spec.ts` is typechecked only; it was never run (no Playwright, by instruction).
+  - The backfill never ran on a real vault; its time for 745 notes is not measured.
+  - The packaged size ceilings (asar, app, dmg) are not measured.
+  - The agent did not see the app; it does not know which of the eight hand-walk steps Yaseen did.
+- Next (Yaseen): set the letters of `yaseen-docs-vault` with "Change letters" on one Mac and sync; then "Old IDs", "Give them numbers".
+- Separate bug, on `main` before this work too: YAZ-2688 (a folder copied in Finder can lose `.folder.md` under load).
 
 ## Open Questions
 - UNCONFIRMED (Yaseen): a vault that uses IDs and has no count file has no first Mac, so each Mac waits 10 minutes for an outside file (`sweepWaits`, one line). Recorded on YAZ-2683.
@@ -46,7 +51,8 @@ and `npm run perf:budget:ci` pass, the hand walk passed, and the branch is merge
 - Agent-set details Yaseen has not seen as decisions: R11 default letters, the "Finish" button (S83), the backfill as a Settings row by file creation time, the plan file `.yaseendocs/ids-backfill.json`.
 
 ## Working Set
-- Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2677`, branch `yaz-2677-id-numbers`, from `main` at `dd8d89b`
+- Worktree and branch: removed at closeout; start a new branch from `main`
 - Gates at the start commit: typecheck green; 306 files / 5952 tests green; budget PASS (eager JS 2.01 MB, CSS 0.15 MB, total 13.15 MB, main 0.53 MB — each equal to its ceiling)
 - Linear helper: scratchpad `lin.py` (get / comment / create / move), key in `~/Desktop/growprofit-ai.env`
 - Gates at the end: typecheck green; 312 files / 6228 tests green; build green; budget PASS after four ceilings were raised to the measured numbers
+- Gates at the merge: typecheck green; 314 files / 6333 tests green; build green; budget PASS (eager JS 2021610, CSS 151349, total 13164826, main 583224)
