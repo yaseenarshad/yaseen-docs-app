@@ -17,12 +17,13 @@ import type { WatchSource } from '../hooks/useWatch'
  * What the hook asks of `searchCandidates.ts`, counted (YAZ-2602 R2): the REAL functions behind
  * recording wrappers, so a test can say what a keystroke, a snapshot and a tree each cost.
  */
-const asked = vi.hoisted(() => ({ ranked: [] as number[], notes: [] as unknown[], folders: [] as string[], files: [] as string[] }))
+const asked = vi.hoisted(() => ({ ranked: [] as number[], first: [] as (ReadonlySet<string> | undefined)[], notes: [] as unknown[], folders: [] as string[], files: [] as string[] }))
 vi.mock('./searchCandidates', async (importOriginal) => {
   const real = await importOriginal<typeof import('./searchCandidates')>()
-  const searchRows: typeof real.searchRows = (candidates, query) => {
+  const searchRows: typeof real.searchRows = (candidates, query, first) => {
     asked.ranked.push(candidates.length)
-    return real.searchRows(candidates, query)
+    asked.first.push(first)
+    return real.searchRows(candidates, query, first)
   }
   const searchCandidates: typeof real.searchCandidates = (records) => {
     asked.notes.push(records)
@@ -75,10 +76,12 @@ const labels = () => (container?.textContent === '' ? [] : (container?.textConte
 const NO_DIRS: readonly string[] = []
 /** The Sidebar's own `files` (🔒 D3, YAZ-2620): the tree's files that are no notes, and no index read either. */
 const NO_FILES: readonly string[] = []
+/** No pinned item (YAZ-2662 D4): the ranking of before. */
+const NO_PINNED: ReadonlySet<string> = new Set()
 
 function Harness({ watch, query, dirs = NO_DIRS, files = NO_FILES }: { watch: WatchSource; query: string; dirs?: readonly string[]; files?: readonly string[] }) {
   // The window's one vault, as the Sidebar hands it: the same list while nothing in it changed.
-  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs, files }], [watch, dirs, files]), query)
+  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs, files }], [watch, dirs, files]), query, NO_PINNED)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
@@ -252,10 +255,44 @@ describe('useSearchResults (YAZ-803)', () => {
  * The search over every vault of the window (YAZ-2602 R2, S38): one list, one ranking per
  * keystroke however many vaults, and each vault read and rebuilt on its own.
  */
+describe('useSearchResults with pinned items (YAZ-2662 D4, R1)', () => {
+  const DIRS: readonly string[] = ['/v/Pinned', '/v/Pinned/Sub']
+  const WATCH: WatchSource = { subscribe: () => () => undefined }
+  function Pinned({ query, pinned }: { query: string; pinned: ReadonlySet<string> }) {
+    const results = useSearchResults(useMemo(() => [{ root: '/v', watch: WATCH, dirs: DIRS, files: NO_FILES }], []), query, pinned)
+    return <>{results.map((r) => `${r.label}|`)}</>
+  }
+
+  it('the matches that are a pinned item or are inside one lead the ranking; the set of those rows is built when the rows or the pinned paths change, and never on a keystroke', async () => {
+    installBridge([rec('Plan'), rec('Old plan', 'Pinned'), rec('Plan deep', 'Pinned/Sub')], [])
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    reactRoot = createRoot(container)
+    const render = (query: string, pinned: ReadonlySet<string>) => act(async () => reactRoot?.render(<StrictMode><Pinned query={query} pinned={pinned} /></StrictMode>))
+    const folder = new Set(['/v/Pinned'])
+    await render('plan', folder)
+    expect(labels()).toEqual(['Plan deep', 'Old plan', 'Plan']) // `Plan` is the exact name, and is not pinned
+    // The rows of the top group: the pinned folder, and each folder and note inside it.
+    const first = asked.first.at(-1)
+    expect(first).toEqual(new Set(['/v/Pinned', '/v/Pinned/Sub', '/v/Pinned/Old plan.md', '/v/Pinned/Sub/Plan deep.md']))
+    asked.first.length = 0
+    await render('pla', folder)
+    await render('pl', folder)
+    expect(asked.first.length).toBeGreaterThan(0)
+    expect(asked.first.every((set) => set === first)).toBe(true)
+    // A list changed: a new set. No pinned item: nothing to look in, and the ranking of before.
+    await render('pl', new Set(['/v/Plan.md']))
+    expect(asked.first.at(-1)).toEqual(new Set(['/v/Plan.md']))
+    await render('plan', new Set())
+    expect(asked.first.at(-1)?.size).toBe(0)
+    expect(labels()).toEqual(['Plan', 'Plan deep', 'Old plan'])
+  })
+})
+
 describe('useSearchResults over several vaults (YAZ-2602 R2)', () => {
   const at = (root: string, basename: string): IndexRecord => ({ ...rec(basename), path: `${root}/${basename}.md` })
   function Many({ vaults, query }: { vaults: readonly SearchVault[]; query: string }) {
-    const results = useSearchResults(vaults, query)
+    const results = useSearchResults(vaults, query, NO_PINNED)
     return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.path}|`)}</>
   }
   /** A vault with its own fan-out watcher, so a test can say which vault's watcher spoke and which subscriptions ended. */

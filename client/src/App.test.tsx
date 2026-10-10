@@ -58,10 +58,13 @@ interface SidebarStubProps {
   lens: SidebarTab
   onLensChange: (lens: SidebarTab) => void
   onCollapse: () => void
-  revealRequest?: { id: number; path: string }
+  revealRequest?: { id: number; path: string; focus?: boolean }
   onRevealConsumed?: (id: number) => void
-  /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir. */
-  onRevealInFiles?: (path: string) => void
+  /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir — with `focus` when the keyboard asked (YAZ-2662 D1, D8). */
+  onRevealInFiles?: (path: string, focus?: boolean) => void
+  /** The preview panel of the search (YAZ-2662 D5): the path that App draws, and the one door that names it or clears it. */
+  previewPath: string | null
+  onPreview: (path: string | null) => void
   /** The sidebar's own width in px (YAZ-738), applied to its aside only (YAZ-2194). */
   width: number
   /** The aside itself, which a resize drag writes its live width to (YAZ-2239). */
@@ -948,6 +951,21 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md' })
   })
 
+  it('Enter on a folder of the search tree, and Shift+Enter on a row, ask with `focus`: the request says so, and one from a menu does not (YAZ-2662 D1, D8, S12)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => captured.sidebar?.onLensChange('search'))
+    act(() => captured.sidebar?.onRevealInFiles?.('/v/sub', true))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/sub', focus: true })
+    // S12: "Show in sidebar" — of a row, and of a tab — asks for the row alone.
+    act(() => captured.sidebar?.onRevealInFiles?.('/v/sub'))
+    expect(captured.sidebar?.revealRequest).toStrictEqual({ id: 2, path: '/v/sub', focus: undefined })
+    rightClick(el.querySelector('.tabbar__tab')!)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest).toStrictEqual({ id: 3, path: '/v/a.md' })
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('a') // no tab opened
+  })
+
   it('consumes handled work without replaying it after collapse/reopen, while later gestures keep monotonic IDs', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     rightClick(el.querySelector('.tabbar__tab')!)
@@ -1309,6 +1327,73 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
     act(() => emitCloseTab())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
+  })
+
+  it('the preview panel of the search (YAZ-2662 S31, S43): the path that the sidebar names shows in a panel over the page area, the last of the stack and no layer of it — no tab opens, no page changes and nothing is stored; the ✕ closes it, and the sidebar reads that', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const before = { strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }
+    expect([captured.sidebar?.previewPath, el.querySelector('.quicklook')]).toEqual([null, null])
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    const panel = el.querySelector('.tabstack > .quicklook')
+    expect(panel).toBe(el.querySelector('.tabstack')?.lastElementChild)
+    expect([panel?.querySelector('.quicklook__title')?.textContent, panel?.querySelector('.quicklook__body')?.textContent]).toEqual(['archive.zip', 'No preview for this file.'])
+    expect(captured.sidebar?.previewPath).toBe('/v/archive.zip')
+    expect({ strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }).toEqual(before)
+    expect([activeLabel(el), captured.sidebar?.activeFile, el.querySelector('.tabbar__tab--preview')]).toEqual(['a', '/v/a.md', null])
+    // The panel follows the highlight: the next path takes its place.
+    act(() => captured.sidebar?.onPreview('/v/book.epub'))
+    expect([...el.querySelectorAll('.quicklook__title')].map((t) => t.textContent)).toEqual(['book.epub'])
+    act(() => el.querySelector<HTMLButtonElement>('.quicklook button[aria-label="Close preview"]')?.click())
+    expect([el.querySelector('.quicklook'), captured.sidebar?.previewPath]).toEqual([null, null])
+    expect({ strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }).toEqual(before)
+  })
+
+  it('the preview panel over the blank tab (YAZ-2662 S45): it shows over the empty page, and the blank tab stays', async () => {
+    const { el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitNewTab())
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(el.querySelector('.tabstack > .quicklook .quicklook__title')?.textContent).toBe('archive.zip')
+    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'New tab'], 'New tab'])
+    act(() => captured.sidebar?.onPreview(null))
+    expect(el.querySelector('.quicklook')).toBeNull()
+    expect(activeLabel(el)).toBe('New tab')
+  })
+
+  it('the preview panel gives way to the tab board (YAZ-2662 S67): the board closes the panel, the sidebar reads that, a path named under the board shows no panel, and none comes back when the board closes', async () => {
+    const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const shown = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, el.querySelector('.taboverview') !== null]
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([true, '/v/archive.zip', false])
+    await act(async () => emitTabOverview())
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => emitTabOverview())
+    expect(shown()).toEqual([false, null, false])
+    // With the board closed the door is the door again.
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([true, '/v/archive.zip', false])
+  })
+
+  it('Esc with the keyboard focus inside the preview panel (YAZ-2662 S66): the panel closes and the caret is asked back into the search bar, by the door of ⌘K; the ✕ with the caret outside the panel moves no caret', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const show = () => {
+      act(() => captured.sidebar?.onLensChange('search'))
+      act(() => captured.sidebar?.onSearchFocusHandled())
+      act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+      return el.querySelector<HTMLElement>('.quicklook')!
+    }
+    const state = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]
+    show()
+    expect(state()).toEqual([true, '/v/archive.zip', 'search', false])
+    act(() => el.querySelector<HTMLButtonElement>('.quicklook button[aria-label="Close preview"]')?.click())
+    expect(state()).toEqual([false, null, 'search', false])
+    // A click in the panel left the keyboard focus on it.
+    const panel = show()
+    act(() => panel.focus())
+    act(() => void panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(state()).toEqual([false, null, 'search', true])
   })
 
   it('the strip\'s slide (YAZ-2656 S88) is the strip\'s own: a closed tab slides shut as a ghost and no editor renders for it; with the right panel closed the row keeps its end free (S93)', async () => {
@@ -2603,6 +2688,19 @@ describe('App upkeep review (YAZ-2322)', () => {
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
     expect(el.querySelector('.taboverview')).toBeNull()
     expect(el.querySelector('.review-bar')).not.toBeNull()
+  })
+
+  it('YAZ-2662 S67: a review that starts closes the preview panel of the search, and no panel shows during a review or comes back when it closes', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('y')))
+    const shown = () => [el.querySelector('.quicklook') !== null, captured.sidebar?.previewPath, el.querySelector('.review-bar') !== null]
+    act(() => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([true, '/v/archive.zip', false])
+    openInbox()
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => captured.sidebar?.onPreview('/v/archive.zip'))
+    expect(shown()).toEqual([false, null, true])
+    await act(async () => button(el, 'Close review')?.click())
+    expect(shown()).toEqual([false, null, false])
   })
 
   it('⌘T during a review does nothing (YAZ-2655 S82)', async () => {

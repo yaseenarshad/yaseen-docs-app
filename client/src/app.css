@@ -1295,6 +1295,21 @@ button {
   color: var(--fg);
 }
 
+/* The labels of the search's two groups (YAZ-2662 D2): quiet, in the family of the Focus tab's line.
+   The line above "Everything else" is the hairline of a label that follows a tree. */
+.sidebar__group {
+  margin: 0;
+  padding: 4px 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.tree + .sidebar__group {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
 /* The search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
    tabs above it. It is on the Search tab only (YAZ-2638 D2); the shortcut picker draws the same row. */
 .sidebar__search {
@@ -1328,12 +1343,15 @@ button {
 }
 
 /* The way out of the Search tab (YAZ-2638 D2): a keycap that names the key, and is the key on a
-   click — back to the lens the window last showed. Always in the bar. */
-.sidebar__search-back {
+   click — back to the lens the window last showed. Always in the bar. The keys that the empty
+   Search tab lists wear the same keycap (YAZ-2662 D10), in the font of the bar: a `kbd` has its own. */
+.sidebar__search-back,
+.sidebar__keys kbd {
   flex: none;
   padding: 0 5px;
   border: 1px solid var(--border);
   border-radius: 4px;
+  font-family: inherit;
   font-size: 10px;
   line-height: 1.5;
   background: var(--bg);
@@ -1359,6 +1377,27 @@ button {
 
 .sidebar__msg--error {
   color: var(--danger);
+}
+
+/* The keys of the search, below the line of the empty Search tab (YAZ-2662 D10): quiet, in two
+   columns — the keycaps of a row, and what they do. */
+.sidebar__keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin: 0 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.sidebar__keys dt {
+  display: flex;
+  gap: 3px;
+}
+
+.sidebar__keys dd {
+  margin: 0;
 }
 
 /* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and

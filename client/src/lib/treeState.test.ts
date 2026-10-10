@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, favoriteOrder, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, atOrBelow, favoriteOrder, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, pinnedRoots, treeHasFile, treeHasPath, treeReducer, withoutPaths } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -225,5 +225,41 @@ describe('otherFiles (YAZ-2620 D3)', () => {
   it('every file that is no note, at any depth, in tree order — one the app can show and one it cannot alike; never a note, never a folder', () => {
     expect(otherFiles(tree)).toEqual(['/r/skills/get-transcript.py', '/r/scan.pdf'])
     expect(otherFiles([])).toEqual([])
+  })
+})
+
+describe('the pinned items of the search (YAZ-2662 D3)', () => {
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  const a = file('/v/Projects/Alpha/a.md')
+  const alpha = dir('/v/Projects/Alpha', [a])
+  const projects = dir('/v/Projects', [alpha, file('/v/Projects/p.md')])
+  const archive = dir('/v/Projects-Archive', [file('/v/Projects-Archive/old.md')])
+  const top = file('/v/top.md')
+  const tree = [projects, archive, top]
+
+  it('atOrBelow: a path is one of the paths or stands inside one, at any depth; a name that only starts the same is not inside', () => {
+    const paths = new Set(['/v/Projects', '/v/top.md'])
+    expect(['/v/Projects', '/v/Projects/p.md', '/v/Projects/Alpha/a.md', '/v/top.md'].map((path) => atOrBelow(paths, path))).toEqual([true, true, true, true])
+    expect(['/v', '/v/Projects-Archive', '/v/Projects-Archive/old.md', '/v/top.md.bak', '/v/other.md'].map((path) => atOrBelow(paths, path))).toEqual([false, false, false, false, false])
+    expect(atOrBelow(new Set(), '/v/top.md')).toBe(false)
+  })
+
+  it('pinnedRoots, S17: an item listed two times shows one time, at its first place — the focus list is handed in first', () => {
+    expect(pinnedRoots([top, archive, archive, top])).toEqual([top, archive])
+  })
+
+  it('pinnedRoots, S18: an item inside a different pinned folder is no top row, at any depth and wherever the folder is listed; a folder of a name that starts the same is not inside', () => {
+    expect(pinnedRoots([a, alpha, top, projects, archive])).toEqual([top, projects, archive])
+    expect(pinnedRoots([])).toEqual([])
+  })
+
+  it('withoutPaths, S19: the tree with no node at the paths, at any depth; a folder that holds none of them is the tree\'s own node, and so is the tree with no path at all', () => {
+    const cut = withoutPaths(tree, new Set(['/v/Projects/Alpha', '/v/top.md']))
+    expect(cut).toEqual([dir('/v/Projects', [file('/v/Projects/p.md')]), archive])
+    expect(cut[1]).toBe(archive)
+    expect(withoutPaths(tree, new Set())).toBe(tree)
+    expect(withoutPaths(tree, new Set(['/v/Gone.md']))).toBe(tree)
+    expect(projects.type === 'dir' && projects.children).toHaveLength(2) // the tree itself is never cut
   })
 })
