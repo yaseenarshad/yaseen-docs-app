@@ -506,10 +506,24 @@ export function App() {
     if (sidebarCollapsed) toggleSidebar()
     revealInFiles(path, true)
   }, [sidebarCollapsed, toggleSidebar, revealInFiles])
-  // The way in to the new tab page from the empty search bar (YAZ-2663 D7, S33): the page fills
-  // this box with its door while it shows, so with no page the answer is no and the key stays the bar's.
+  // The way in to the new tab page from the sidebar (YAZ-2663 D7, S33): the page fills this box
+  // with its door while it shows, so with no page the answer is no and the key stays the sidebar's.
+  // The way back (D8) is to where the keyboard came from: a row of Files, Focus or Favorites is
+  // kept for ONE trip back; from the search bar, and with that row gone, back is the search bar.
   const startPageFocus = useRef<(() => boolean) | null>(null)
-  const leaveSearchToPage = useCallback(() => startPageFocus.current?.() ?? false, [])
+  const startPageFrom = useRef<HTMLElement | null>(null)
+  const leaveToPage = useCallback(() => {
+    const from = document.activeElement
+    const went = startPageFocus.current?.() ?? false
+    if (went) startPageFrom.current = from instanceof HTMLElement && from.matches('.tree__row') ? from : null
+    return went
+  }, [])
+  const backFromPage = useCallback(() => {
+    const row = startPageFrom.current
+    startPageFrom.current = null
+    if (row?.isConnected === true) row.focus()
+    else openSearch()
+  }, [openSearch])
 
   const consumeSidebarReveal = useCallback((id: number) => {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
@@ -1240,7 +1254,7 @@ export function App() {
           clipboardRef={sidebarClipboard}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
-          onLeaveToPage={leaveSearchToPage}
+          onLeaveToPage={leaveToPage}
           // ⌘O (YAZ-1767 D8): only a request made on THIS sidebar counts; any other reads as none.
           switcherOpenRequest={switcherRequest.key === sidebarKey.current ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
@@ -1307,7 +1321,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css

@@ -2940,6 +2940,34 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
   })
 
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D8: on the %s tab → on a row that has nothing to open — a file row, an open folder row — asks for the new tab page; a closed folder still opens and does not ask, and ← never asks; when the page says no, and with no page, the key does what it did', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, rerender } = await mountVault()
+    await rerender({ lens, onLeaveToPage })
+    const dir = `${v}/Projects`
+    act(() => row(el, dir)?.focus())
+    key(document.activeElement, 'ArrowRight') // closed: it opens, and the page is not asked
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 0])
+    expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true) // open already: nothing to open
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 1])
+    key(document.activeElement, 'ArrowLeft')
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['false', 1])
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'ArrowLeft')
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
+    key(document.activeElement, 'ArrowRight')
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // A → with a modifier is a shortcut of the window: the page is not asked.
+    key(document.activeElement, 'ArrowRight', { metaKey: true })
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // The page says no (no column has a row), and then no page shows: the focus stays on the row (S62).
+    onLeaveToPage.mockReturnValue(false)
+    key(document.activeElement, 'ArrowRight')
+    await rerender({ onLeaveToPage: undefined })
+    key(document.activeElement, 'ArrowRight')
+    expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([3, 'top'])
+  })
+
   it('S63: Enter and Space on a row do what they did before — the arrows\' handler takes neither key', async () => {
     const { el, v, props } = await mountVault()
     // Enter on a folder row opens its page (YAZ-2290 D3): the row's own key.

@@ -66,7 +66,9 @@ export interface StartPageProps {
   onShowInFiles: (path: string) => void
   /** A right-click on a row (YAZ-2663 D6): App asks the sidebar for its own row menu of that path, at the mouse. The page has no menu. */
   onRowMenu: (path: string, x: number, y: number) => void
-  /** ← on the first column that has rows, Esc, and a typed letter (S37, S41): App puts the caret in the search bar. */
+  /** ← on the first column that has rows, and Esc (S37, D8): the keyboard goes back to where it came from — a row of a sidebar tree, else the search bar. */
+  onBack: () => void
+  /** A typed letter (S41): App puts the caret in the search bar. */
   onBackToSearch: () => void
   /**
    * The way in from the empty search bar (S33): the page fills this box with its door — the
@@ -84,7 +86,7 @@ export interface StartPageProps {
   onNotice: (message: string, kind?: NoticeKind) => void
 }
 
-export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice }: StartPageProps) {
+export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice }: StartPageProps) {
   // What is on the disk (S18) is the Files tree's to say: it alone knows a folder from a file, and
   // holds the pages that are no notes. The window's one feed keeps the newest tree of each vault
   // with the sidebar hidden too, but then nothing reads a new one when a note goes. So the page
@@ -240,7 +242,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
     const back = (): void => {
       stopPreview()
-      onBackToSearch()
+      onBack()
     }
     // The columns that have rows, in their order: ← and → go over a column with none (S36).
     const shown = COLUMNS.map((column) => column.col).filter((column) => columns[column].rows.length > 0)
@@ -262,13 +264,13 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
       if (to >= 0 && to < columns[col].rows.length) go(col, to)
     }
     // → and ← go to the neighbour column that has rows, at the same row number or at its last row.
-    // → on the last one does nothing (S36); ← on the first one goes back to the search bar (S37).
+    // → on the last one does nothing (S36); ← on the first one goes back to where the keyboard came from (S37, D8).
     else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       const next = shown[shown.indexOf(col) + (e.key === 'ArrowRight' ? 1 : -1)]
       if (next !== undefined) go(next, n)
       else if (e.key === 'ArrowLeft') back()
     }
-    // Esc with a panel on show closes the panel only. With none — the keyboard on a folder too — it goes back to the search bar (S37, S39).
+    // Esc with a panel on show closes the panel only. With none — the keyboard on a folder too — it goes back, as ← does (S37, S39).
     else if (e.key === 'Escape') {
       e.stopPropagation()
       if (onPreview !== undefined && previewPath !== null) stopPreview()
@@ -283,7 +285,10 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
     // A typed letter is the search's (S41): the caret goes to the search bar, and the key is NOT
     // taken, so the browser types it there. React commits what a key asks before the key's text arrives.
-    else if (e.key.length === 1) return back()
+    else if (e.key.length === 1) {
+      stopPreview()
+      return onBackToSearch()
+    }
     else return
     // Taken from the browser: no scroll under an arrow, and no click of the button under Enter or Space.
     e.preventDefault()

@@ -169,9 +169,10 @@ interface SidebarProps {
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
   onSearchFocusHandled: () => void
   /**
-   * The way out of the EMPTY search bar (YAZ-2663 D7, S33): → or ↓ there asks App to put the
-   * keyboard focus on the new tab page, and App says whether a row took it. Absent, or answered
-   * `false` — no page shows, or no column of it has a row — the key is the bar's as before.
+   * The way to the new tab page: → or ↓ in the EMPTY search bar (YAZ-2663 D7, S33), and → on a
+   * row of Files, Focus or Favorites that has nothing to open (D8). It asks App to put the keyboard
+   * focus on the page, and App says whether a row took it. Absent, or answered `false` — no page
+   * shows, or no column of it has a row — the key does what it did before.
    */
   onLeaveToPage?: () => boolean
   /**
@@ -873,6 +874,7 @@ export function Sidebar({
     selection,
     shortcuts,
     titles,
+    onLeaveToPage,
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
   const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks }
