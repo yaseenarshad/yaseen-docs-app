@@ -14,7 +14,7 @@
  *
  * The ⌘K KEY itself is NOT pressed here: a native menu accelerator cannot be fired from Playwright
  * (`keyboard.press('Meta+K')` silently does nothing), so the key is pinned by
- * `desktop/src/main/menu.test.ts` and a recorded human check on YAZ-804. Steps 1 and 7 click the
+ * `desktop/src/main/menu.test.ts` and a recorded human check on YAZ-804. Steps 1, 7 and 9 click the
  * menu item the key belongs to, by its id (`menu.file.search`, the `clickMenuItem` idiom): the same
  * handler, the same message to the renderer. Every other step shows the Search tab by a click on it.
  *
@@ -24,14 +24,22 @@
  * focus" on a result stays on the Search tab; "Show in sidebar" leads the menu of a row of Search,
  * Focus and Favorites.
  *
+ * Since YAZ-2662 the search is driven from the keyboard, and step 9 walks that flow: the matches
+ * of the pinned items — the focus list and the favorites — show first, in a group of their own;
+ * Space on a folder shows all that it holds; Space on a file shows the preview panel, which is no
+ * tab; Esc closes the panel, and then puts the caret in the open page; Enter on a folder shows it
+ * in Files with the keyboard focus on its row (before, it opened the folder's page). The empty
+ * Search tab lists those keys (step 1).
+ *
  * Serial by design (the suite's idiom): each step continues the previous state, and steps 1 to 7
  * start from `reset` — no tab, an empty query, the Files tab — so the one before cannot colour them.
+ * Step 8 ends with the quit, so step 9 starts the app again, on a seed of its own.
  */
 // Rewritten for YAZ-2290 (folders are the pages), for YAZ-2620 (the results are a tree) and for YAZ-2638 (Search
-// is a tab). Not yet run: Playwright was off limits each time, so every selector here was read from the source,
-// not observed. Run it once and fix what it finds.
+// is a tab), and given step 9 for YAZ-2662 (the search from the keyboard). Not yet run: Playwright was off limits
+// each time, so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, launchApp, lensTab, menuItem, quitApp, readState, previewTab, searchBar, searchTab, seededState, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
@@ -49,6 +57,7 @@ const ALIAS = 'Zephyr Codename'
 /** Bodies of the fixture pages the steps land on. */
 const SEQUENCING_BODY = 'Contacts stall between'
 const CEO_BODY = 'Signs off on anything'
+const LEAD_GEN_BODY = 'Everything that turns strangers into known contacts'
 
 let userData: string
 let vault: string
@@ -78,6 +87,14 @@ const matchLabels = (w: Page) => w.locator('.sidebar__body .tree__row:not(.tree_
 const parentLabels = (w: Page) => w.locator('.sidebar__body .tree__row--context .tree__label')
 /** The typed text, bold where it sits in a match. */
 const marks = (w: Page) => w.locator('.sidebar__body .tree__mark')
+/** What the keys of the search do, as the empty Search tab lists them below its line (YAZ-2662 D10). */
+const keyHints = (w: Page) => w.locator('.sidebar__body .sidebar__keys dd')
+/** The labels of the search's two groups (YAZ-2662 D2): "Favorites and focus", then "Everything else". */
+const groupLabels = (w: Page) => w.locator('.sidebar__body > p.sidebar__group')
+/** The trees of the search, in the order drawn: with a pinned match the top group's is first. */
+const searchTrees = (w: Page) => w.locator('.sidebar__body > ul[role="tree"]')
+/** The preview panel of the search (YAZ-2662 D5): over the page area, and no layer of the tab stack. */
+const quickLook = (w: Page) => w.locator('.tabstack > .quicklook')
 
 // ---------- gestures ----------
 
@@ -140,6 +157,8 @@ async function expectHighlight(w: Page, label: string): Promise<void> {
 
 /** "Nurture", as the tree draws its three matches: `Funnel Stages/`, `Problems/`, then the root. */
 const NURTURE = ['Lead Nurture', 'Nurture Sequencing', 'Nurture']
+/** The same three once step 8 pinned two of them (YAZ-2662 D3): the focus item, then the favorite, then the match that is no pinned item. */
+const PINNED_NURTURE = ['Nurture Sequencing', 'Lead Nurture', 'Nurture']
 
 /** The window's stored tab and focus list — window identity, in `yaseendocs.json`. */
 const windowOnDisk = async () => (await readState(userData)).windows[0]
@@ -168,7 +187,7 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- YAZ-802 / 803 / 2620: find and open
 
-test('step 1 — ⌘K shows the Search tab, its bar and one line of help; a typed title cuts the tree down to the matches and their parents; Enter opens the BEST match in the PREVIEW tab', async () => {
+test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the keys of the search; a typed title cuts the tree down to the matches and their parents; Enter opens the BEST match in the PREVIEW tab', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
@@ -188,10 +207,18 @@ test('step 1 — ⌘K shows the Search tab, its bar and one line of help; a type
   await expect(bodyMsg(win)).toHaveText('Type to search every note and folder.')
   await expect(treeRows(win)).toHaveCount(0)
   await expect(keycap(win)).toBeVisible()
+  // Below the line, the keys of the search (YAZ-2662 S59): seven rows, each key in a keycap.
+  await expect(keyHints(win)).toHaveText(['Move', 'Open', 'Open in a background tab', 'Show in Files', 'Preview a file or open a folder, after ↑ or ↓', 'Open or close a folder, after ↑ or ↓', 'Back to the page'])
+  await expect(win.locator('.sidebar__body .sidebar__keys kbd')).toHaveText(['↑', '↓', '↵', '⌘↵', '⇧↵', 'space', '→', '←', 'esc'])
   await shoot(win, 'search-00-empty-tab')
 
-  // Each match keeps its place: below its folder, which is open and dim. Nothing else shows.
+  // Each match keeps its place: below its folder, which is open and dim. Nothing else shows —
+  // the keys are gone with the first letter (YAZ-2662 S60).
   await search(win, 'Nurture', NURTURE)
+  await expect(keyHints(win)).toHaveCount(0)
+  // No match is a pinned item, so there is no group label and no line: one tree (YAZ-2662 S21).
+  await expect(groupLabels(win)).toHaveCount(0)
+  await expect(searchTrees(win)).toHaveCount(1)
   await expect(parentLabels(win)).toHaveText(['Funnel Stages', 'Problems'])
   await expect(treeRows(win)).toHaveCount(5)
   await expect(marks(win)).toHaveText(['Nurture', 'Nurture', 'Nurture']) // the typed text, bold in each match
@@ -306,7 +333,8 @@ test('step 5 — a fold in the search lasts as long as its query; a matched fold
 
   // Esc goes back to the lens the window last showed — Files — and the text STAYS (YAZ-2638 S12;
   // before, Esc emptied the query). The Files tree is there with its own folds: the swap is a
-  // conditional render, never a teardown.
+  // conditional render, never a teardown. The caret leaves the bar with the tab (YAZ-2662 D9: it
+  // goes into the open page; step 9 reads it on a note).
   await searchBar(win).press('Escape')
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveCount(0)
@@ -395,7 +423,7 @@ test('step 7 — ⌘K, a query, a right-click on a result: "Show in sidebar" is 
   await expectHighlight(win, 'Nurture Sequencing')
 })
 
-test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the Search tab; on a Focus row and on a Favorites row "Show in sidebar" is the FIRST item and shows the row in Files, and neither list changes; a Files row has no such item', async () => {
+test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the Search tab and move the result to the top group; on a Focus row and on a Favorites row "Show in sidebar" is the FIRST item and shows the row in Files, and neither list changes; a Files row has no such item', async () => {
   // Continues step 7: the Search tab, with "Nurture" typed.
   const sequencing = path.join(vault, 'Problems', 'Nurture Sequencing.md')
   const funnel = path.join(vault, 'Funnel Stages')
@@ -412,7 +440,13 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
   await expect(toast(win)).toHaveText('Added to favorites')
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveValue('Nurture')
-  await expect(matchLabels(win)).toHaveText(NURTURE)
+  // Each add moved its result to the top group at once (YAZ-2662 S27): the focus item, then the
+  // favorite — each a top row, with no folder above it — and the one match that is no pinned item
+  // below the line. Before YAZ-2662 the three stayed in one tree, in the order of `NURTURE`.
+  await expect(groupLabels(win)).toHaveText(['Favorites and focus', 'Everything else'])
+  await expect(searchTrees(win).nth(0).locator('.tree__row .tree__label')).toHaveText(PINNED_NURTURE.slice(0, 2))
+  await expect(matchLabels(win)).toHaveText(PINNED_NURTURE)
+  await expect(parentLabels(win)).toHaveCount(0)
   await expect.poll(async () => (await windowOnDisk())?.focusList).toEqual([sequencing])
   await expect.poll(favoritesOnDisk).toEqual(['Funnel Stages/Lead Nurture.md'])
 
@@ -454,11 +488,134 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
   await win.keyboard.press('Escape')
   await expect(rowMenuItems(win)).toHaveCount(0)
 
-  // The Search tab still has the text.
+  // The Search tab still has the text, and the two groups.
   await searchTab(win).click()
   await expect(searchBar(win)).toHaveValue('Nurture')
-  await expect(matchLabels(win)).toHaveText(NURTURE)
+  await expect(matchLabels(win)).toHaveText(PINNED_NURTURE)
   // Search is never stored (S15): the window quits on the Search tab, and the tab on disk is the last LENS.
   await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
   expect((await windowOnDisk())?.sidebarLens).toBe('files')
+})
+
+// ---------------------------------------------------------------- YAZ-2662: the search from the keyboard
+
+test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under "Favorites and focus", and the highlight starts there; Space on the folder shows all that it holds; Space on a file shows the preview panel and opens no tab; Esc closes the panel only; Enter on the folder shows it in Files, open and flashing, with the keyboard focus on its row', async () => {
+  // Step 8 quit the app. This step starts it again on a seed of its own: ONE pinned folder,
+  // `Funnel Stages`, in the favorites (the vault's file) AND in the focus list (the window's
+  // entry) — an item of both lists shows one time (S17). The S-numbers are the cases on YAZ-2662.
+  const funnel = path.join(vault, 'Funnel Stages')
+  await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
+  await writeFile(path.join(vault, '.yaseendocs', 'favorites.json'), JSON.stringify({ version: 1, favorites: ['Funnel Stages'] }))
+  const seed = seededState(vault, path.join(vault, 'Roles', 'CEO.md'))
+  seed.windows = seed.windows.map((entry) => ({ ...entry, focusList: [funnel] }))
+  app = await launchApp({ userData, seedState: seed })
+  win = await appWindow(app, 'w1')
+  await expect(editorOf(win)).toContainText(CEO_BODY)
+  await expect(tabsOf(win)).toHaveText(['CEO'])
+  // A launch opens no folder (YAZ-1642), so the reveal at the end has a folder to open.
+  await expect(dirRow(win, 'Funnel Stages')).toBeVisible()
+  await expect(dirItem(win, funnel)).toHaveAttribute('aria-expanded', 'false')
+
+  // ⌘K, then the query. "Stage" finds the folder `Funnel Stages`, which CONTAINS it, and the note
+  // `Stage Accuracy` in `Problems/`, which STARTS with it — the better rank.
+  await clickMenuItem(app, 'menu.file.search', 'w1')
+  await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
+  await expect(searchBar(win)).toBeFocused()
+  await search(win, 'Stage', ['Funnel Stages', 'Stage Accuracy'])
+
+  // The two groups (D2): the label, then the pinned folder as the ONE top row of the first tree —
+  // closed, with no match inside it (S13) — then the label of the line, and the other match below
+  // its folder. No row shows two times.
+  await expect(groupLabels(win)).toHaveText(['Favorites and focus', 'Everything else'])
+  await expect(searchTrees(win)).toHaveCount(2)
+  await expect(searchTrees(win).nth(0).locator('.tree__row .tree__label')).toHaveText(['Funnel Stages'])
+  await expect(searchTrees(win).nth(1).locator('.tree__row .tree__label')).toHaveText(['Problems', 'Stage Accuracy'])
+  // The pinned match ranks first (D4), so the highlight starts in the top group (S23) — though
+  // `Stage Accuracy` is the better match of the text.
+  await expect(searchTrees(win).nth(0).locator('.tree__row--selected .tree__label')).toHaveText(['Funnel Stages'])
+  await expectHighlight(win, 'Funnel Stages')
+  await shoot(win, 'search-10-two-groups')
+
+  // ↓ walks from the top group into "Everything else" (S22), and ↑ comes back. Space, → and ← act
+  // on the highlight only after ↑ or ↓ (D7): until then they are keys of the text.
+  await searchBar(win).press('ArrowDown')
+  await expectHighlight(win, 'Stage Accuracy')
+  await searchBar(win).press('ArrowUp')
+  await expectHighlight(win, 'Funnel Stages')
+
+  // Space on the folder (D6): it opens in the search tree with ALL that it holds. None of its rows
+  // is a match, so each is dim (S46) — and the key typed no space into the bar.
+  await searchBar(win).press('Space')
+  await expect(searchTrees(win).nth(0).locator('.tree__row--context .tree__label')).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion'])
+  await expect(matchLabels(win)).toHaveText(['Funnel Stages', 'Stage Accuracy'])
+  await expect(searchBar(win)).toHaveValue('Stage')
+  await shoot(win, 'search-11-folder-shows-all')
+
+  // ↓ now stops on a row inside the folder, a match or not (S48).
+  await searchBar(win).press('ArrowDown')
+  await expectHighlight(win, 'Lead Gen')
+
+  // Space on the file (D5): the preview panel shows over the page area, with the file's name and
+  // its text, read only.
+  await searchBar(win).press('Space')
+  await expect(quickLook(win)).toBeVisible()
+  await expect(quickLook(win).locator('.quicklook__title')).toHaveText('Lead Gen')
+  await expect(quickLook(win).locator('.ProseMirror')).toContainText(LEAD_GEN_BODY)
+  await expect(quickLook(win).locator('.ProseMirror')).toHaveAttribute('contenteditable', 'false')
+  // It is no tab and no page (S31): the strip, the page on show, the caret and the text are as they were.
+  await expect(tabsOf(win)).toHaveText(['CEO'])
+  await expect(previewTab(win)).toHaveCount(0)
+  await expect(editorOf(win)).toContainText(CEO_BODY)
+  await expect(searchBar(win)).toBeFocused()
+  await expect(searchBar(win)).toHaveValue('Stage')
+  await shoot(win, 'search-12-preview-panel')
+  // The panel follows the highlight (S32).
+  await searchBar(win).press('ArrowDown')
+  await expectHighlight(win, 'Lead Nurture')
+  await expect(quickLook(win).locator('.quicklook__title')).toHaveText('Lead Nurture')
+
+  // Esc closes the panel ONLY (S34): the Search tab still shows, with its text and the caret in its bar.
+  await searchBar(win).press('Escape')
+  await expect(quickLook(win)).toHaveCount(0)
+  await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
+  await expect(searchBar(win)).toBeFocused()
+  await expect(searchBar(win)).toHaveValue('Stage')
+  await expect(tabsOf(win)).toHaveText(['CEO'])
+
+  // Back up onto the folder, and Enter (D1; before YAZ-2662 Enter opened the folder's page): the
+  // Files tab shows, the folder is open, and its row wears the flash and has the keyboard focus (S1).
+  // The flash lasts 3 seconds (`SIDEBAR_REVEAL_MS`), so it is read first.
+  await searchBar(win).press('ArrowUp')
+  await searchBar(win).press('ArrowUp')
+  await expectHighlight(win, 'Funnel Stages')
+  await searchBar(win).press('Enter')
+  const funnelRow = win.locator(`.tree__row--dir[data-path="${funnel}"]`)
+  await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
+  await expect(funnelRow).toHaveClass(/tree__row--revealed/)
+  await expect(funnelRow).toBeFocused()
+  await expect(dirItem(win, funnel)).toHaveAttribute('aria-expanded', 'true')
+  await expect(fileRow(win, 'Lead Gen')).toBeVisible()
+  await expect(searchBar(win)).toHaveCount(0)
+  await shoot(win, 'search-13-folder-in-files')
+  // It opened no tab, and the page on show is the same.
+  await expect(tabsOf(win)).toHaveText(['CEO'])
+  await expect(activeTab(win)).toHaveText('CEO')
+  await expect(editorOf(win)).toContainText(CEO_BODY)
+
+  // From that row the arrows walk the rows of Files (D11, S61): ↓ goes into the folder.
+  await win.keyboard.press('ArrowDown')
+  await expect(fileRow(win, 'Lead Gen')).toBeFocused()
+
+  // ⌘K again (S2): the Search tab has the same text and the same tree — the folder still shows all.
+  await clickMenuItem(app, 'menu.file.search', 'w1')
+  await expect(searchBar(win)).toBeFocused()
+  await expect(searchBar(win)).toHaveValue('Stage')
+  await expect(groupLabels(win)).toHaveText(['Favorites and focus', 'Everything else'])
+  await expect(fileRow(win, 'Lead Gen')).toHaveClass(/tree__row--context/)
+  // Esc with no panel on show (D9, S56): back to the lens the window last showed, Files, and the
+  // caret is in the open page — before YAZ-2662 the focus was given up.
+  await searchBar(win).press('Escape')
+  await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
+  await expect(searchBar(win)).toHaveCount(0)
+  await expect(editorOf(win)).toBeFocused()
 })

@@ -174,6 +174,43 @@ describe('searchTitles', () => {
   })
 })
 
+describe('searchTitles with pinned rows first (YAZ-2662 D4)', () => {
+  const candidates = [
+    ...folderCandidates('/vault', ['/vault/Pinned', '/vault/Pinned/CAC deep'], []),
+    ...searchCandidates([rec('/vault/Big CAC story.md'), rec('/vault/CAC.md'), rec('/vault/Pinned/CAC Model.md'), rec('/vault/Pinned/Ideas.md', ['my cac']), rec('/vault/Pinned/Other.md')]),
+  ]
+  /** The paths of the candidates that are a pinned item or are inside one: `Pinned/` is the pinned item. */
+  const first = new Set(candidates.map((c) => c.path).filter((path) => path.startsWith('/vault/Pinned')))
+
+  it('each pinned match goes before each other match; inside each part the order stays exact → starts with → contains, input order in a rank', () => {
+    expect(searchTitles(candidates, 'cac', first).map((c) => c.label)).toEqual(['CAC deep', 'CAC Model', 'my cac — Ideas', 'CAC', 'Big CAC story'])
+    expect(searchTitles(candidates, 'cac').map((c) => c.label)).toEqual(['CAC', 'CAC deep', 'CAC Model', 'Big CAC story', 'my cac — Ideas'])
+  })
+
+  it('S24: the limit cuts AFTER the pinned matches went first — 60 other matches and 3 pinned keep the 3 and the best 47 of the others', () => {
+    const many = searchCandidates([...Array.from({ length: 60 }, (_, i) => rec(`/vault/Note ${String(i).padStart(2, '0')}.md`)), ...Array.from({ length: 3 }, (_, i) => rec(`/vault/Pinned/A note ${i}.md`))])
+    const pinned = new Set(many.slice(60).map((c) => c.path))
+    const matched = searchTitles(many, 'note', pinned)
+    expect(matched).toHaveLength(SEARCH_CAP)
+    expect(matched.slice(0, 3).map((c) => c.label)).toEqual(['A note 0', 'A note 1', 'A note 2']) // they only CONTAIN the text; the 60 start with it
+    expect(matched.slice(3)).toEqual(many.slice(0, 47))
+    expect(searchTitles(many, 'note').some((c) => pinned.has(c.path))).toBe(false) // with no pinned row the limit cuts them, as before
+  })
+
+  it('no pinned row, or no pinned match, is the ranking as it was: what the note-shortcut picker asks for (R7)', () => {
+    expect(searchTitles(candidates, 'cac', new Set())).toEqual(searchTitles(candidates, 'cac'))
+    expect(searchTitles(candidates, 'big', first).map((c) => c.label)).toEqual(['Big CAC story'])
+  })
+
+  it('S25: the rows that an id finds put the pinned ones first too', () => {
+    const rows = searchCandidates([{ ...rec('/vault/plan-7tq2m8vd4xhn.md', [], 'Plan'), id: '7tq2m8vd4xhn' }, { ...rec('/vault/Pinned/abdul-k3m9x2pq7abc.md', [], 'Abdul'), id: 'k3m9x2pq7abc' }])
+    const both = '[[7tq2m8vd4xhn]] and [[k3m9x2pq7abc]]'
+    expect(searchRows(rows, both).map((c) => c.label)).toEqual(['Plan', 'Abdul'])
+    expect(searchRows(rows, both, new Set(['/vault/Pinned/abdul-k3m9x2pq7abc.md'])).map((c) => c.label)).toEqual(['Abdul', 'Plan'])
+    expect(searchRows(rows, 'abdul', new Set(['/vault/Pinned/abdul-k3m9x2pq7abc.md'])).map((c) => c.label)).toEqual(['Abdul'])
+  })
+})
+
 describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   const ID = 'k3m9x2pq7abc'
   const ABDUL = `/vault/candidates/up-001-abdul-${ID}.md`
@@ -307,6 +344,12 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
 
   it('S78: a text that can hold no ID is the title search itself, row for row', () => {
     for (const typed of ['plan', 'the', 'q3', 'a-1']) expect(searchRows(rows, typed)).toEqual(searchTitles(rows, typed))
+  })
+
+  it('with pinned rows (YAZ-2662 D4, S25): the ID matches stay first, the pinned one before the other, then the title matches, the pinned one before the others', () => {
+    const first = new Set(['/bus/trip-bus-12.md', '/yaz/fix-yaz-8.md'])
+    expect(searchRows(rows, '12', first).map((c) => c.label)).toEqual(['BUS-12 — Trip', 'YAZ-12 — Plan', 'Fix for YAZ-12', '12 stops', 'Chapter 12', 'no id 12'])
+    expect(searchRows(rows, 'plan', first)).toEqual(searchTitles(rows, 'plan', first))
   })
 
   it('the rows are capped as the title search is, ID rows first', () => {

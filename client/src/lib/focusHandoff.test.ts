@@ -53,6 +53,21 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(outline)
   })
 
+  it('YAZ-2662 R4: the preview panel of the search is no page — its note is skipped for the open document, and with no page open the call declines', () => {
+    // The panel renders a note through the hover card's read-only renderer, which wears `.editor-instance`.
+    const panel = document.createElement('div')
+    panel.className = 'quicklook'
+    document.body.appendChild(panel)
+    const previewed = editor(true)
+    panel.appendChild(previewed.parentElement!)
+    expect(focusOpenDocument()).toBe(false)
+    expect(document.activeElement).toBe(document.body)
+    // The page stands AFTER the panel here: it is found by what it is, not by its place.
+    const page = editor(true)
+    expect(focusOpenDocument()).toBe(true)
+    expect(document.activeElement).toBe(page)
+  })
+
   it('declines when every document is hidden, and when there is none at all', () => {
     editor(false)
     expect(focusOpenDocument()).toBe(false)

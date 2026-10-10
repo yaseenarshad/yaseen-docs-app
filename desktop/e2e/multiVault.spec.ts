@@ -5,7 +5,9 @@
  * vault, and the window title follows the vault of the tab in front → a folder of each vault on the
  * Focus tab, each with its vault's name → a favorite in each vault, both in the one flat list of the
  * ♥ tab, each with its vault's name (YAZ-2631 D1) → a search, on the Search tab (YAZ-2638 D2), that
- * finds a note of the same name in both, each under its vault's row → "Save as workspace…" from the header → "Remove from this
+ * finds a note of the same name in both — a match of a pinned item in the top group, under a top
+ * row that names its vault (YAZ-2662 D2), every other match under its vault's row →
+ * "Save as workspace…" from the header → "Remove from this
  * window" on Beta's row → the workspace opened from the ⌘O list, in a NEW window with both vaults →
  * `yaseendocs.json` holds `roots` of two vaults and one `vaultSets` entry. The drag of a favorite
  * across vaults and the drag of a vault row are `sidebarOrder.spec.ts`.
@@ -72,6 +74,8 @@ const heartTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-labe
 const countLine = (w: Page) => w.locator('.sidebar__body .sidebar__focus-bar span')
 /** A search result is a tree row (YAZ-2620): a MATCH, or — dim — a row that only gives a match its place. */
 const matchRows = (w: Page) => w.locator('.sidebar__body .tree__row:not(.tree__row--context)')
+/** The labels of the search's two groups (YAZ-2662 D2): "Favorites and focus", then "Everything else". */
+const groupNames = (w: Page) => w.locator('.sidebar__body > p.sidebar__group')
 /** App's one passive toast (`.link-notice`) — its text. */
 const toast = (w: Page) => w.locator('.link-notice__text')
 /** A tab's button: its `title` is the page's path. */
@@ -261,7 +265,7 @@ test('step 4 — a favorite in each vault is written to THAT vault\'s favorites.
 
 // ---------------------------------------------------------------- search across vaults
 
-test('step 5 — a search finds the note of the same name in both vaults, each match under its vault\'s row; Esc goes back to Files', async () => {
+test('step 5 — a search finds the note of the same name in both vaults: a match inside a pinned folder in the top group, each top row with its vault\'s name, and a match that is no pinned item under its vault\'s row; Esc goes back to Files', async () => {
   await lensTab(win, 'Files').click()
   // The bar is on the Search tab only (YAZ-2638 D2): show the tab, then type.
   await showSearchTab(win)
@@ -270,9 +274,29 @@ test('step 5 — a search finds the note of the same name in both vaults, each m
     await searchBar(win).fill('Roadmap')
     expect(await matchRows(win).evaluateAll((rows) => rows.map((row) => row.getAttribute('data-path')))).toEqual([path.join(vaultA, 'Projects', 'Roadmap.md'), path.join(vaultB, 'Projects', 'Roadmap.md')])
   }).toPass({ timeout: 15_000 })
-  // The tree that is cut is the forest (A9): a vault's row is a parent row, never a match.
-  await expect(win.locator('.sidebar__body .tree__row--vault.tree__row--context .tree__label')).toHaveText([ALPHA, BETA])
+  // `Projects` of each vault is in the focus list since step 3, so both matches are in the TOP
+  // GROUP (YAZ-2662 D2): under "Favorites and focus", each below its pinned folder — a top row that
+  // names its vault, as on the Focus tab (YAZ-2662 S26), in the order of the focus list. With each
+  // match pinned there is no "Everything else" and no vault row (S20). Before YAZ-2662 each match
+  // stood under its vault's row.
+  await expect(groupNames(win)).toHaveText(['Favorites and focus'])
+  await expect(topLabels(win)).toHaveText(['Projects', 'Projects'])
+  await expect(vaultTags(win)).toHaveText([ALPHA, BETA])
+  await expect(vaultRows(win)).toHaveCount(0)
   await shoot(win, 'multi-vault-06-search-two-vaults')
+
+  // A match that is no pinned item keeps its vault's row. `Ideas` of Alpha is a favorite since
+  // step 4: a top row of the top group. `Ideas` of Beta is not, so it stands in "Everything else",
+  // where the tree that is cut is the forest (A9): a vault's row is a parent row, never a match.
+  // Alpha has a pinned match only, so it has no row there (YAZ-2662 S26).
+  await expect(async () => {
+    await searchBar(win).fill('Ideas')
+    expect(await matchRows(win).evaluateAll((rows) => rows.map((row) => row.getAttribute('data-path')))).toEqual([path.join(vaultA, 'Ideas.md'), path.join(vaultB, 'Ideas.md')])
+  }).toPass({ timeout: 15_000 })
+  await expect(groupNames(win)).toHaveText(['Favorites and focus', 'Everything else'])
+  await expect(vaultTags(win)).toHaveText([ALPHA])
+  await expect(win.locator('.sidebar__body .tree__row--vault.tree__row--context .tree__label')).toHaveText([BETA])
+  await shoot(win, 'multi-vault-06b-search-everything-else')
   // Esc goes back to the lens the window last showed, Files, and keeps the text in the Search tab
   // (YAZ-2638 S12; before, the query was emptied to bring the Files tree back).
   await searchBar(win).press('Escape')

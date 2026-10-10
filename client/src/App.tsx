@@ -34,6 +34,7 @@ import { flushWindow } from './lib/windowFlush'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
+import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { plainEntryName } from './sidebar/createEntry'
 import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
@@ -124,6 +125,10 @@ export function App() {
   const sidebarClipboard = useRef<SidebarClipboard | null>(null)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
+  // The preview panel of the search (YAZ-2662 D5): the file that it draws over the page area, or
+  // null with no panel on show. It is no tab — the preview TAB is the workspace's `preview` — and
+  // nothing of it is stored. The sidebar names the file and reads it back; the panel's ✕ clears it.
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
@@ -473,9 +478,11 @@ export function App() {
   // A search row's menu item that draws into the tree (🔒 D2, YAZ-2050), and "Show in sidebar" on a
   // row of Search, Focus or Favorites (YAZ-2638 D1, D3): always the FILES lens, whichever tab was
   // showing. The sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
-  const revealInFiles = useCallback((path: string) => {
+  // Enter on a folder of the search tree, and Shift+Enter on a row, ask with `focus` (YAZ-2662 D1, D8):
+  // the row gets the keyboard focus too.
+  const revealInFiles = useCallback((path: string, focus?: boolean) => {
     changeLens('files')
-    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, focus })
   }, [changeLens])
 
   const consumeSidebarReveal = useCallback((id: number) => {
@@ -542,6 +549,20 @@ export function App() {
     if (ownChange.current) ownChange.current = false
     else setOverview(OVERVIEW_CLOSED)
   }, [file, inReview])
+  // The preview panel of the search gives way to the board and to a review (YAZ-2662 S67): each
+  // stands in the page area, and the panel is a look at a file over a PAGE. `previewShown` is the
+  // path that is drawn and that the sidebar reads. A path that is named while one of them shows is
+  // dropped, so no panel comes back when it closes.
+  const previewShown = overview.phase === 'closed' && !inReview ? previewPath : null
+  useEffect(() => {
+    if (previewShown === null) setPreviewPath(null)
+  }, [previewShown, previewPath])
+  // The panel's ✕, and Esc with the keyboard focus inside the panel (S66): the panel closes, and a
+  // focus that was inside it goes back to the search bar, by the door of ⌘K.
+  const closePreview = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest('.quicklook') !== null) openSearch()
+    setPreviewPath(null)
+  }, [openSearch])
   /** Leave the board for `path`'s page — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
   const leaveOverview = useCallback((path: string | null) => {
     const { file: open, tabs: all } = now.current
@@ -1150,6 +1171,8 @@ export function App() {
           onKeepFile={openKeptPage}
           onOpenFileBackground={openBackground}
           onRevealInFiles={revealInFiles}
+          previewPath={previewShown}
+          onPreview={setPreviewPath}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
@@ -1299,6 +1322,8 @@ export function App() {
                 onSetReview={setReview}
               />
             )}
+            {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
+            {previewShown !== null && <QuickLook path={previewShown} title={nameOf(previewShown)} watch={scopeOf(previewShown).watch} wikilinks={scopeOf(previewShown).wikilinks} onClose={closePreview} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
