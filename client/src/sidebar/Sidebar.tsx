@@ -1153,7 +1153,7 @@ export function Sidebar({
         // (YAZ-1337: its menu is about the root, not a fresh pick; the menu's overlay lives
         // outside this body, so its own mousedown never arrives here).
         // With the preview on (YAZ-2663 D11) the panel follows the row that gets the keyboard focus.
-        // A click on a row ends it (the rule of YAZ-2662 S65), and so does a focus that leaves the
+        // A click of the mouse on a row ends it (the rule of YAZ-2662 S65), and so does a focus that leaves the
         // rows for a different part of the window — not for the panel itself, which the mouse can scroll.
         onFocus={(e) => {
           if (treePreviewing && e.target instanceof HTMLElement && e.target.matches('.tree__row[data-path]')) followTreeRow(e.target)
@@ -1163,7 +1163,9 @@ export function Sidebar({
           if (treePreviewing && to instanceof Element && !e.currentTarget.contains(to) && to.closest('.quicklook') === null) stopTreePreview()
         }}
         onClick={(e) => {
-          if (treePreviewing && e.target instanceof Element && e.target.closest('.tree__row') !== null) stopTreePreview()
+          // A click of the MOUSE (`detail` counts its presses). The click that Space makes on a folder
+          // row has none: the folder folds and the preview stays on, so the next file shows the panel (S65).
+          if (treePreviewing && e.detail > 0 && e.target instanceof Element && e.target.closest('.tree__row') !== null) stopTreePreview()
         }}
         onMouseDown={(e) => {
           if (e.button !== 0 || selectedPaths.size === 0) return
