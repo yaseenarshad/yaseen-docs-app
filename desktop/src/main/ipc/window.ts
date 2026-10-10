@@ -117,6 +117,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const nextTabs = normalizeTabs(tabs ?? entry.tabs, nextFile)
     // `root` alone keeps the list when it names the vault the window is already on, and is the whole list otherwise (YAZ-2602 A10).
     const roots = patchRoots ?? (root === undefined || root === entry.root ? entry.roots : [])
+    // A page comes on show (YAZ-2663 D1): `file` is in the patch, names a page, and is not the page the window had.
+    // The store adds the use in the commit of the window (R2). A restored window sends no patch at its start, so a launch adds none (S10).
+    const opened = file != null && file !== entry.file ? file : null
     store.upsertWindow({
       ...entry,
       ...(root !== undefined ? { root } : {}),
@@ -127,7 +130,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
       file: nextFile,
       tabs: nextTabs,
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),
-    })
+    }, opened)
   })
 
   // `window:close-self` (GRO-2232): the REAL close on the caller's own window, so the

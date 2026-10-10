@@ -1,0 +1,117 @@
+/* The new tab page (YAZ-2663 D3): three columns of rows in the page area of a new tab and of a
+   window with no tabs. The rows read as the rows of the sidebar tree do — its sizes, its washes,
+   its tokens, and its own chevron and vault tag (`.tree__chevron`, `.tree__vault` in app.css) — so
+   the page adds no colour and no mark of its own. Not `.tree__row` itself: the sidebar finds its
+   rows by that class. */
+
+/* The scroller. It is a container: the columns below follow ITS width, not the window's, because
+   the sidebar and the right panel make the page area narrow too. */
+.start {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+.start__columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 32px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 48px 32px 64px;
+}
+
+/* A narrow page area (S23): the columns stand one below the other. */
+@container (max-width: 640px) {
+  .start__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The name of a column: quiet, and in line with the names of the rows below it. */
+.start__heading {
+  margin: 0 0 6px;
+  padding-left: 26px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.start__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* `.tree__row`'s box. The chevron of a folder row stands in the gutter, so every name starts on one line. */
+.start__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 8px 3px 26px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  border-radius: 4px;
+  color: var(--fg);
+}
+
+.start__row--dir {
+  padding-left: 8px;
+  color: var(--fg-dir);
+}
+
+.start__row:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.start__row:hover {
+  background: var(--bg-hover-row);
+}
+
+/* The name keeps its room: the folder beside it gives way first, down to nothing. */
+.start__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start__where {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* How long ago, at the right edge of a "Recent" row. */
+.start__when {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* After the vault tag, the time stands beside it, not at a second edge. */
+.tree__vault + .start__when {
+  margin-left: 0;
+}
+
+/* The one grey line of a column with no rows (S19): `.sidebar__msg`'s size, in line with the heading. */
+.start__empty {
+  margin: 0;
+  padding: 3px 8px 3px 26px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}

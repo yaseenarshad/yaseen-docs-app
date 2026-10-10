@@ -61,7 +61,7 @@ const MemoReviewsSection = memo(ReviewsSection)
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
   root: string
-  path: string | null
+  path: string
   watch: WatchSource
   /** A folder's views open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
@@ -120,13 +120,6 @@ interface EditorProps {
 
 export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps) {
   const inTree = useTreeKind(root, path)
-  if (path === null) {
-    return (
-      <section className="editor">
-        <p className="editor-msg">Select a file from the sidebar.</p>
-      </section>
-    )
-  }
   // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
   // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
   const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`)
@@ -175,7 +168,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps & { path: string }) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null

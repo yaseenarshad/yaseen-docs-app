@@ -50,6 +50,7 @@ interface SidebarStubProps {
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteFile: (path: string) => Promise<void>
   pendingSearchFocus: boolean
+  pendingSearchClear: boolean
   /** The sidebar put the caret in the bar (YAZ-801): App lowers the flag. */
   onSearchFocusHandled: () => void
   /** ⌘O (YAZ-1767 D8): a counter, bumped per request; 0 = none pending for this root. */
@@ -60,6 +61,11 @@ interface SidebarStubProps {
   onCollapse: () => void
   revealRequest?: { id: number; path: string; focus?: boolean }
   onRevealConsumed?: (id: number) => void
+  /** The row menu a row of the new tab page asked for (YAZ-2663 D6): the Sidebar opens its own menu for the path, at the point. */
+  menuRequest?: { id: number; path: string; x: number; y: number } | null
+  onMenuConsumed?: (id: number) => void
+  /** The way out of the empty search bar (YAZ-2663 D7, S33): the keyboard focus goes to the new tab page, when one shows and has a row. */
+  onLeaveToPage?: () => boolean
   /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir — with `focus` when the keyboard asked (YAZ-2662 D1, D8). */
   onRevealInFiles?: (path: string, focus?: boolean) => void
   /** The preview panel of the search (YAZ-2662 D5): the path that App draws, and the one door that names it or clears it. */
@@ -104,6 +110,10 @@ const captured = vi.hoisted(() => ({
   /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
+  /** The new tab page (YAZ-2663 D3), as App last handed it its doors; null while it does not show. */
+  startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowInFiles: (path: string) => void; onBack: () => void; onRowMenu: (path: string, x: number, y: number) => void; onBackToSearch: () => void; focusRef: { current: (() => boolean) | null }; previewPath?: string | null; onPreview?: (path: string | null) => void } | null,
+  /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
+  startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder. */
   editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void }[],
 }))
@@ -122,6 +132,25 @@ vi.mock('./editor/Editor', () => ({
     )
   },
 }))
+// The new tab page reads the favorites and the trees itself (StartPage.test.tsx): here it is a stub that shows whether App mounts it.
+vi.mock('./workspace/StartPage', async () => {
+  const { useEffect } = await import('react')
+  return {
+    StartPage: (props: NonNullable<typeof captured.startPage>) => {
+      // In an effect, each render: StrictMode runs the clean-up of a mount one time before the page stays.
+      useEffect(() => {
+        captured.startPage = props
+        // The page fills App's box with its way in, and empties it when it goes (YAZ-2663 S33).
+        props.focusRef.current = captured.startPageFocus
+        return () => {
+          captured.startPage = null
+          props.focusRef.current = null
+        }
+      })
+      return <div data-start-page data-roots={props.roots.join(' ')} />
+    },
+  }
+})
 vi.mock('./sidebar/Sidebar', () => ({
   Sidebar: (props: Omit<SidebarStubProps, 'root' | 'upkeep' | 'dueCount' | 'reviewing' | 'onOpenInbox'>) => {
     // The first vault's own, as a window with one vault reads them: its folder and its Inbox row (YAZ-2602 R5).
@@ -340,6 +369,7 @@ afterEach(() => {
   container?.remove()
   container = null
   captured.sidebar = null
+  captured.startPage = null
   captured.editorOpeners = []
   captured.viewOnlyLinks = []
   captured.editors = []
@@ -421,6 +451,33 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/notes/b.md\n/v/c.md')
     await act(async () => {})
     expect(el.querySelector('.link-notice')?.textContent).toBe('Copied 2 paths')
+  })
+
+  it('YAZ-2663 D9: with the keyboard focus on a row of the new tab page it copies the path of THAT row — no page is on show there — and a selection of the sidebar does not win over it', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const row = document.createElement('button')
+    row.className = 'start__row'
+    row.dataset.path = '/v/Projects/Plan.md'
+    el.querySelector('[data-start-page]')?.append(row)
+    row.focus()
+    const event = chord()
+    act(() => void row.dispatchEvent(event))
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/Projects/Plan.md')
+    expect(event.defaultPrevented).toBe(true)
+    await act(async () => {})
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
+    // The row that the keyboard is on is what the user looks at: it is copied, not the rows selected in the sidebar.
+    const ref = captured.sidebar?.selectionRef
+    act(() => {
+      if (ref) ref.current = new Set(['/v/notes/b.md', '/v/c.md'])
+    })
+    act(() => void row.dispatchEvent(chord()))
+    expect(writeText).toHaveBeenLastCalledWith('/v/Projects/Plan.md')
+    // The focus is off the page: the selection of the sidebar is copied, as before.
+    row.blur()
+    act(() => void el.querySelector('.app')?.dispatchEvent(chord()))
+    expect(writeText).toHaveBeenLastCalledWith('/v/notes/b.md\n/v/c.md')
   })
 
   it('with nothing selected and nothing open it does nothing and leaves the key alone', async () => {
@@ -603,7 +660,8 @@ describe('App openRoot from Welcome (C3, GRO-2165; YAZ-1914 D1)', () => {
   it('switching to a folder with no remembered last file leaves no file open', async () => {
     const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/w')
     expect(location.hash).toBe('')
     expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] }]])
   })
@@ -1006,6 +1064,17 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(captured.sidebar?.lens).toBe('search') // S3 (YAZ-2638): the sidebar shows first, and it mounts on the Search tab
   })
 
+  it('YAZ-2663 D10: a new tab asks for a NEW search — the bar is emptied — and ⌘K does not', async () => {
+    const { emitSearch, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitSearch())
+    expect([captured.sidebar?.pendingSearchFocus, captured.sidebar?.pendingSearchClear]).toEqual([true, false])
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    act(() => emitNewTab())
+    expect([captured.sidebar?.pendingSearchFocus, captured.sidebar?.pendingSearchClear]).toEqual([true, true])
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    expect([captured.sidebar?.pendingSearchFocus, captured.sidebar?.pendingSearchClear]).toEqual([false, false])
+  })
+
   it('with the sidebar already open it shows the Search tab and raises the focus flag (YAZ-2638 S2)', async () => {
     const { bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(captured.sidebar?.pendingSearchFocus).toBe(false)
@@ -1181,7 +1250,8 @@ describe('App tabs (I2, GRO-2234)', () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('.tabbar')).not.toBeNull()
     expect(stripLabels(el)).toEqual([])
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
   })
 
   it('the sidebar ⌘-click path (I3, GRO-2235) opens a BACKGROUND tab: appended, not activated, not mounted', async () => {
@@ -1246,8 +1316,8 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitNewTab())
     expect(stripLabels(el)).toEqual(['a', 'b', 'New tab'])
     expect(activeLabel(el)).toBe('New tab')
-    // The empty page a window with no tabs has; a's editor stays mounted, hidden behind it.
-    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    // The new tab page a window with no tabs has (YAZ-2663 S11); a's editor stays mounted, hidden behind it.
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
     expect(layers(el)).toEqual([['/v/a.md', true]])
     // D11: the Search tab, with its bar asked to take the caret. The sidebar highlights no row: every row opens.
     expect(captured.sidebar?.lens).toBe('search')
@@ -1273,7 +1343,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
     expect(activeLabel(el)).toBe('c')
     expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
-    expect(el.querySelector('.tabstack > [data-editor]')).toBeNull()
+    expect(el.querySelector('.tabstack > [data-start-page]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], file: '/v/c.md', rightPanel: defaultRightPanelIdentity() })
     expect(document.title).toBe('v — c')
@@ -1329,6 +1399,156 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1)
   })
 
+  it('the new tab page (YAZ-2663 D3) shows under the blank tab and in a window with no tabs, and only then (S11, R1); a click on a file row fills the blank tab as a KEPT tab, and ⌘-click opens a background tab and the page stays (S21)', async () => {
+    const { el, emitNewTab, emitCloseTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    // A tab shows: the page is not mounted.
+    expect(captured.startPage).toBeNull()
+    act(() => emitNewTab())
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+    act(() => captured.startPage?.onOpenBackground('/v/c.md'))
+    expect(stripLabels(el)).toEqual(['a', 'c', 'New tab'])
+    expect(activeLabel(el)).toBe('New tab')
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+    act(() => captured.startPage?.onOpen('/v/b.md'))
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b'])
+    expect(activeLabel(el)).toBe('b')
+    expect(el.querySelector('.tabbar__tab--preview')).toBeNull()
+    expect(el.querySelector('[data-start-page]')).toBeNull()
+    expect(captured.startPage).toBeNull()
+    // The last tab closes: the window with no tabs shows the same page.
+    for (let left = 3; left > 0; left--) act(() => emitCloseTab())
+    expect(stripLabels(el)).toEqual([])
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+  })
+
+  it('a folder row of the new tab page shows the folder in Files, open, with the keyboard focus on its row — the sidebar shows first when it is hidden — and opens no tab (YAZ-2663 S22)', async () => {
+    const { el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' })
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => captured.startPage?.onShowInFiles('/v/Projects'))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toMatchObject({ path: '/v/Projects', focus: true })
+    expect(stripLabels(el)).toEqual([])
+    // From the blank tab, where ⌘T put the Search tab on show: Files again, a new request, and the blank tab stays.
+    const first = captured.sidebar?.revealRequest?.id
+    act(() => emitNewTab())
+    expect(captured.sidebar?.lens).toBe('search')
+    act(() => captured.startPage?.onShowInFiles('/v/Projects/Alpha'))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toMatchObject({ path: '/v/Projects/Alpha', focus: true })
+    expect(captured.sidebar?.revealRequest?.id).not.toBe(first)
+    expect(stripLabels(el)).toEqual(['New tab'])
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
+  })
+
+  it('the keys of the new tab page (YAZ-2663 D7): from the empty search bar the sidebar asks the page for the focus, and only a page that shows answers (S33); ← on the first column, Esc and a typed letter put the caret in the search bar (S37, S41); Shift+Enter shows a file in Files with the keyboard focus on its row (S38)', async () => {
+    const { el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'files' })
+    captured.startPageFocus.mockClear()
+    // A tab shows, and no page: the way out of the bar leads nowhere, and the key stays the bar's.
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(false)
+    act(() => emitNewTab())
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(true)
+    expect(captured.startPageFocus).toHaveBeenCalledTimes(1)
+    captured.startPageFocus.mockReturnValueOnce(false) // no column has a row
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(false)
+
+    // The way back, from any tab of the sidebar and from a hidden sidebar: the Search tab, and the caret in its bar.
+    act(() => captured.sidebar?.onLensChange('favorites'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    act(() => captured.sidebar?.onCollapse())
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => captured.startPage?.onBackToSearch())
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+
+    // The way back is to where the keyboard came from (YAZ-2663 D8). From a row of a sidebar tree — → on a
+    // file row of Files, Focus or Favorites — ← and Esc put the focus on that row again, and the tab of the sidebar stays.
+    act(() => captured.sidebar?.onLensChange('favorites'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    const treeRow = document.createElement('button')
+    treeRow.className = 'tree__row'
+    el.querySelector('[data-sidebar]')?.append(treeRow)
+    treeRow.focus()
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(true)
+    act(() => (document.activeElement as HTMLElement).blur()) // the page took the focus
+    act(() => captured.startPage?.onBack())
+    expect([document.activeElement, captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual([treeRow, 'favorites', false])
+    // That is one trip: with no way in since, back is the search bar. So it is when the row is gone, and when the keyboard came from the bar.
+    act(() => captured.startPage?.onBack())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    act(() => captured.sidebar?.onLensChange('favorites'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    treeRow.focus()
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(true)
+    treeRow.remove()
+    act(() => captured.startPage?.onBack())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    // A typed letter is the search's, wherever the keyboard came from.
+    act(() => captured.sidebar?.onLensChange('files'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    act(() => captured.startPage?.onBackToSearch())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+
+    // Shift+Enter on a file row: the door of the folder row (S22), with the keyboard focus on the row. The blank tab stays.
+    act(() => captured.startPage?.onShowInFiles('/v/b.md'))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toMatchObject({ path: '/v/b.md', focus: true })
+    expect(stripLabels(el)).toEqual(['a', 'New tab'])
+    // Space on a file of the page shows the preview panel of the search (S39; YAZ-2662 D5) on the page's own path:
+    // the search follows its own highlight, so the two do not share one. The ✕ of the panel clears it.
+    expect([captured.startPage?.previewPath, el.querySelector('.quicklook')]).toEqual([null, null])
+    act(() => captured.startPage?.onPreview?.('/v/archive.zip'))
+    expect([captured.startPage?.previewPath, captured.sidebar?.previewPath]).toEqual(['/v/archive.zip', null])
+    expect(el.querySelector('.tabstack > .quicklook .quicklook__title')?.textContent).toBe('archive.zip')
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull() // S26: the panel is over the page, which stays
+    act(() => el.querySelector<HTMLButtonElement>('.quicklook button')?.click())
+    expect([captured.startPage?.previewPath, el.querySelector('.quicklook')]).toEqual([null, null])
+  })
+
+  it('the preview panel draws the file of the LAST one that asked (YAZ-2663 S39): the search names a file while the panel shows a row of the new tab page — the panel is the search\'s, and the page reads that its own is gone; the panel of the page writes nothing of the window (S5)', async () => {
+    const { bridge, el, emitNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitNewTab())
+    const writes = bridge.window.setIdentity.mock.calls.length
+    const drawn = () => [...el.querySelectorAll('.quicklook__title')].map((t) => t.textContent)
+    act(() => captured.startPage?.onPreview?.('/v/archive.zip'))
+    expect(drawn()).toEqual(['archive.zip'])
+    // ⌘K, a word, ↓ and Space: the search asks for its file. Its Esc then closes the panel.
+    act(() => captured.sidebar?.onPreview('/v/book.epub'))
+    expect(drawn()).toEqual(['book.epub'])
+    expect([captured.startPage?.previewPath, captured.sidebar?.previewPath]).toEqual([null, '/v/book.epub'])
+    act(() => captured.sidebar?.onPreview(null))
+    expect(drawn()).toEqual([])
+    // The other way: the page asks while the search holds a file. The panel is the page's until the page lets it go.
+    act(() => captured.sidebar?.onPreview('/v/book.epub'))
+    act(() => captured.startPage?.onPreview?.('/v/archive.zip'))
+    expect(drawn()).toEqual(['archive.zip'])
+    act(() => captured.startPage?.onPreview?.(null))
+    expect(drawn()).toEqual(['book.epub'])
+    // S5: a panel is no page on show. Nothing went to the window identity, so the record got no use.
+    expect(bridge.window.setIdentity.mock.calls.length).toBe(writes)
+  })
+
+  it('a right-click on a row of the new tab page asks the sidebar for its row menu of that path at the mouse; the sidebar shows first when it is hidden, and a consumed request does not replay (YAZ-2663 S27, S31)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' })
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => captured.startPage?.onRowMenu('/v/a.md', 412, 96))
+    // S31: the sidebar mounts with the request already set, on the tab it had: a row menu changes no tab.
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.menuRequest).toMatchObject({ path: '/v/a.md', x: 412, y: 96 })
+    expect(captured.sidebar?.revealRequest ?? null).toBeNull()
+    const first = captured.sidebar!.menuRequest!.id
+    act(() => captured.sidebar?.onMenuConsumed?.(first))
+    expect(captured.sidebar?.menuRequest).toBeNull()
+    // The same row again is a new request; the answer to the old one does not take it away.
+    act(() => captured.startPage?.onRowMenu('/v/a.md', 10, 20))
+    expect(captured.sidebar?.menuRequest).toMatchObject({ path: '/v/a.md', x: 10, y: 20 })
+    expect(captured.sidebar?.menuRequest?.id).not.toBe(first)
+    act(() => captured.sidebar?.onMenuConsumed?.(first))
+    expect(captured.sidebar?.menuRequest).not.toBeNull()
+    expect(stripLabels(el)).toEqual([])
+  })
+
   it('the preview panel of the search (YAZ-2662 S31, S43): the path that the sidebar names shows in a panel over the page area, the last of the stack and no layer of it — no tab opens, no page changes and nothing is stored; the ✕ closes it, and the sidebar reads that', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     const before = { strip: stripLabels(el), layers: layers(el), writes: bridge.window.setIdentity.mock.calls.length }
@@ -1353,7 +1573,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitNewTab())
     act(() => captured.sidebar?.onPreview('/v/archive.zip'))
     expect(el.querySelector('.tabstack > .quicklook .quicklook__title')?.textContent).toBe('archive.zip')
-    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull() // the empty page is the new tab page (YAZ-2663 D3, S26)
     expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'New tab'], 'New tab'])
     act(() => captured.sidebar?.onPreview(null))
     expect(el.querySelector('.quicklook')).toBeNull()
@@ -1512,7 +1732,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.taboverview__page .taboverview__close')?.click())
     expect(board()).toBeNull()
     expect(stripLabels(el)).toEqual([])
-    expect(el.querySelector('.tabstack > [data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(el.querySelector('.tabstack > [data-start-page]')).not.toBeNull()
   })
 
   it('S11: a link in a page opens in THAT tab — a kept tab too — and makes no tab; Back returns (the page\'s door is `navigate`, not the sidebar\'s)', async () => {
@@ -1612,7 +1832,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('a') // c had nothing to its right: left neighbour
     act(() => emitCloseTab())
     expect(stripLabels(el)).toEqual([])
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('') // empty state renders
+    expect(el.querySelector('[data-start-page]')).not.toBeNull() // the new tab page shows
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.closeSelf).not.toHaveBeenCalled() // the window stays alive
     act(() => emitCloseTab())
@@ -2230,7 +2450,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
     })
 
     it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {
-      const { bridge, el } = await mount(askOff(), identity(), {}, feedPlain)
+      // A tab is open: the editor of a page hands in the title typed on it (the new tab page has no title to edit).
+      const { bridge, el } = await mount(askOff(), { ...identity(), file: '/v/B.md', tabs: ['/v/B.md'] }, {}, feedPlain)
       await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'B.md', 'file'))
       expect(el.querySelector('.link-notice')).toBeNull()
       await act(async () => await captured.sidebar?.onRetitle('/v/B.md', 'a/b', 'file'))
@@ -2688,6 +2909,17 @@ describe('App upkeep review (YAZ-2322)', () => {
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.click())
     expect(el.querySelector('.taboverview')).toBeNull()
     expect(el.querySelector('.review-bar')).not.toBeNull()
+  })
+
+  it('the new tab page does not show while a review is open, and shows again when it closes (YAZ-2663 S25)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, upkeepOn(due('x')))
+    expect(el.querySelector('[data-start-page]')).not.toBeNull()
+    openInbox()
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    expect(el.querySelector('[data-start-page]')).toBeNull()
+    act(() => button(el, 'Close review')?.click())
+    expect(el.querySelector('.review-bar')).toBeNull()
+    expect(el.querySelector('[data-start-page]')).not.toBeNull()
   })
 
   it('YAZ-2662 S67: a review that starts closes the preview panel of the search, and no panel shows during a review or comes back when it closes', async () => {
@@ -3197,10 +3429,10 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(document.title).toBe('Work — Bee')
   })
 
-  it('with no tab open the window is the first vault\'s: its name in the title, its scope under the empty page', async () => {
+  it('with no tab open the window is the first vault\'s by its name in the title, and the new tab page is handed every vault (YAZ-2663 S12)', async () => {
     const { el } = await mount(defaultAppState(), { ...TWO, file: null, tabs: [] })
     expect(document.title).toBe('v')
-    expect(el.querySelector('[data-editor]')?.getAttribute('data-root')).toBe('/v')
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/v /w')
   })
 
   it('a new note made from a page goes to the folder of that page, in that page\'s vault (S37)', async () => {
@@ -3676,7 +3908,8 @@ describe('App adds and removes a vault (YAZ-2602 D2, D7)', () => {
     const { el } = await mount(defaultAppState(), { ...TWO, tabs: ['/w/b.md'] })
     act(() => captured.sidebar?.onRemoveVault('/w'))
     expect(stripLabels(el)).toEqual([])
-    expect([...el.querySelectorAll('[data-editor]')].map((e) => [e.getAttribute('data-root'), e.getAttribute('data-path')])).toEqual([['/v', '']])
+    expect(el.querySelector('[data-editor]')).toBeNull()
+    expect(el.querySelector('[data-start-page]')?.getAttribute('data-roots')).toBe('/v')
   })
 
   it('removing the first vault makes the next one the window\'s root, and that vault is not reloaded (S52)', async () => {

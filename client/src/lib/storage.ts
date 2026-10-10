@@ -16,6 +16,7 @@ import {
   type AppState,
   type FolderState,
   type KeyedVault,
+  type OpenStat,
   type RecentRoots,
   type RightPanelIdentity,
   type SettingsState,
@@ -196,6 +197,9 @@ export const storage = {
   getRightPanel: (): RightPanelIdentity => ({ ...identity.rightPanel, items: [...identity.rightPanel.items] }),
 
   getLastFile: (root: string): string | null => folderOf(root).lastFile,
+
+  /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */
+  getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
 
   /** One durable mirror for the complete main/right workspace identity. */
   setWorkspace(root: string | null, tabs: readonly string[], file: string | null, rightPanel: RightPanelIdentity): void {

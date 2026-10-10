@@ -38,7 +38,7 @@ import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { plainEntryName } from './sidebar/createEntry'
-import { type SidebarClipboard, Sidebar } from './sidebar/Sidebar'
+import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { TabOverview } from './tabs/TabOverview'
@@ -46,6 +46,7 @@ import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
+import { StartPage } from './workspace/StartPage'
 import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
@@ -126,10 +127,21 @@ export function App() {
   const sidebarClipboard = useRef<SidebarClipboard | null>(null)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
+  // The row menu a row of the new tab page asked for (YAZ-2663 D6): the reveal request's idiom.
+  const sidebarMenuId = useRef(0)
+  const [sidebarMenuRequest, setSidebarMenuRequest] = useState<SidebarMenuRequest | null>(null)
   // The preview panel of the search (YAZ-2662 D5): the file that it draws over the page area, or
   // null with no panel on show. It is no tab — the preview TAB is the workspace's `preview` — and
   // nothing of it is stored. The sidebar names the file and reads it back; the panel's ✕ clears it.
   const [previewPath, setPreviewPath] = useState<string | null>(null)
+  // The same panel for a row of the new tab page (YAZ-2663 S39), on a path of its own: the search
+  // follows its own highlight, and with one shared path it takes the panel back from the page.
+  const [pagePreviewPath, setPagePreviewPath] = useState<string | null>(null)
+  // The panel draws the file of the LAST one that asked: when the search names a file — ⌘K from a
+  // row of the page, a word, Space — the path of the page goes, and the page reads that its panel is gone.
+  useEffect(() => {
+    if (previewPath !== null) setPagePreviewPath(null)
+  }, [previewPath])
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
@@ -188,7 +200,12 @@ export function App() {
   // collapsed case, which un-collapses and mounts the sidebar with the flag already true; the
   // sidebar focuses its input and clears it through the callback.
   const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
-  const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
+  // With the flag: a new tab (⌘T) asks for a NEW search, so the bar is emptied (YAZ-2663 D10). ⌘K keeps its text.
+  const [pendingSearchClear, setPendingSearchClear] = useState(false)
+  const searchFocusHandled = useCallback(() => {
+    setPendingSearchFocus(false)
+    setPendingSearchClear(false)
+  }, [])
 
   // Settings and sidebar width are global. Visibility (YAZ-1280) and the lens (YAZ-1628) are
   // window identity and never follow another renderer's `state:changed` broadcast.
@@ -486,8 +503,46 @@ export function App() {
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, focus })
   }, [changeLens])
 
+  // A folder row of the new tab page (YAZ-2663 S22), and Shift+Enter on any of its rows (S38): the
+  // row shows in Files — a folder open — with the keyboard focus on it, as Enter on a folder and
+  // Shift+Enter do in the search tree (YAZ-2662 D1, D8). The page shows with the sidebar hidden too,
+  // so the sidebar shows first.
+  const showRowInFiles = useCallback((path: string) => {
+    if (sidebarCollapsed) toggleSidebar()
+    revealInFiles(path, true)
+  }, [sidebarCollapsed, toggleSidebar, revealInFiles])
+  // The way in to the new tab page from the sidebar (YAZ-2663 D7, S33): the page fills this box
+  // with its door while it shows, so with no page the answer is no and the key stays the sidebar's.
+  // The way back (D8) is to where the keyboard came from: a row of Files, Focus or Favorites is
+  // kept for ONE trip back; from the search bar, and with that row gone, back is the search bar.
+  const startPageFocus = useRef<(() => boolean) | null>(null)
+  const startPageFrom = useRef<HTMLElement | null>(null)
+  const leaveToPage = useCallback(() => {
+    const from = document.activeElement
+    const went = startPageFocus.current?.() ?? false
+    if (went) startPageFrom.current = from instanceof HTMLElement && from.matches('.tree__row') ? from : null
+    return went
+  }, [])
+  const backFromPage = useCallback(() => {
+    const row = startPageFrom.current
+    startPageFrom.current = null
+    if (row?.isConnected === true) row.focus()
+    else openSearch()
+  }, [openSearch])
+
   const consumeSidebarReveal = useCallback((id: number) => {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
+  }, [])
+
+  // A right-click on a row of the new tab page (YAZ-2663 D6): the sidebar opens its OWN row menu
+  // for that path at the mouse, so the page has no menu and no rule is written twice. With the
+  // sidebar hidden it shows first, and it mounts with the request already set (S31).
+  const showRowMenu = useCallback((path: string, x: number, y: number) => {
+    if (sidebarCollapsed) toggleSidebar()
+    setSidebarMenuRequest({ id: ++sidebarMenuId.current, path, x, y })
+  }, [sidebarCollapsed, toggleSidebar])
+  const consumeSidebarMenu = useCallback((id: number) => {
+    setSidebarMenuRequest((request) => request?.id === id ? null : request)
   }, [])
 
   // The settings dialog (YAZ-1679) is App's so the sidebar cog, ⌘, and the app menu's Settings…
@@ -563,7 +618,10 @@ export function App() {
   const closePreview = useCallback(() => {
     if (document.activeElement instanceof HTMLElement && document.activeElement.closest('.quicklook') !== null) openSearch()
     setPreviewPath(null)
+    setPagePreviewPath(null)
   }, [openSearch])
+  // What the panel draws: the file of a row of the new tab page (YAZ-2663 S39), else the file of the search.
+  const panelPath = pagePreviewPath ?? previewShown
   /** Leave the board for `path`'s page — a page of the board, a tab of the strip — or, with null, for the page that is open (Esc, the button, ⌘⇧M). */
   const leaveOverview = useCallback((path: string | null) => {
     const { file: open, tabs: all } = now.current
@@ -617,6 +675,7 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     openBlank()
     openSearch()
+    setPendingSearchClear(true)
   }, [openBlank, openSearch])
   /**
    * A page's ✕, an island's ✕, a tab's ✕ under the board: the tabs close as ⌘W closes each, in ONE
@@ -658,7 +717,8 @@ export function App() {
   useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onZoom: requestZoom })
 
   /**
-   * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
+   * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the row of the new tab page that the keyboard is on
+   * (YAZ-2663 D9), else the multi-selection when one is standing, else the file
    * you are looking at, so the chord answers with the sidebar collapsed too. The listener is
    * App's for the same reason ⌘B's is (YAZ-1280): the Sidebar unmounts while hidden, and a window
    * shortcut cannot live in a panel that comes and goes. It reads the selection through
@@ -676,7 +736,10 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!ownsCopyPathHotkey(event)) return
       const selected = sidebarSelection.current
-      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow
+      // A row of the new tab page that has the keyboard focus is what the user looks at (YAZ-2663 D9):
+      // no page is on show there, and the page has no selection of its own, so that row is the answer first.
+      const onPage = document.activeElement instanceof HTMLElement ? (document.activeElement.closest<HTMLElement>('.start__row')?.dataset.path ?? null) : null
+      const text = onPage ?? (selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow)
       if (text === null) return
       event.preventDefault()
       // BOTH outcomes speak through the window's one passive notice (YAZ-1341): the user cannot
@@ -1057,11 +1120,11 @@ export function App() {
 
   /**
    * What every editor of the window is handed, from the scope of the vault that holds its page
-   * (YAZ-2602 S30); the empty page (`null`) stands on the active vault. Each value is the scope's
-   * own stable one, so a change in one vault renders no editor of another: `RetainedEditor` is memo.
+   * (YAZ-2602 S30). Each value is the scope's own stable one, so a change in one vault renders no
+   * editor of another: `RetainedEditor` is memo.
    */
-  const editorPropsFor = (path: string | null) => {
-    const scope = path === null ? active : scopeOf(path)
+  const editorPropsFor = (path: string) => {
+    const scope = scopeOf(path)
     return {
       root: scope.root ?? '',
       watch: scope.watch,
@@ -1183,6 +1246,8 @@ export function App() {
           lens={sidebarLens}
           revealRequest={sidebarRevealRequest}
           onRevealConsumed={consumeSidebarReveal}
+          menuRequest={sidebarMenuRequest}
+          onMenuConsumed={consumeSidebarMenu}
           onLensChange={changeLens}
           settings={settings}
           onChangeSettings={changeSettings}
@@ -1198,7 +1263,9 @@ export function App() {
           // ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): the panel fills it, the listener above asks it.
           clipboardRef={sidebarClipboard}
           pendingSearchFocus={pendingSearchFocus}
+          pendingSearchClear={pendingSearchClear}
           onSearchFocusHandled={searchFocusHandled}
+          onLeaveToPage={leaveToPage}
           // ⌘O (YAZ-1767 D8): only a request made on THIS sidebar counts; any other reads as none.
           switcherOpenRequest={switcherRequest.key === sidebarKey.current ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
@@ -1264,8 +1331,8 @@ export function App() {
             />
           )}
           <div className="tabstack">
-            {/* The empty page: of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. */}
-            {(mounted.length === 0 || blank) && session === null && <RetainedEditor {...editorPropsFor(null)} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+            {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
@@ -1326,7 +1393,7 @@ export function App() {
               />
             )}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
-            {previewShown !== null && <QuickLook path={previewShown} title={nameOf(previewShown)} watch={scopeOf(previewShown).watch} wikilinks={scopeOf(previewShown).wikilinks} onClose={closePreview} />}
+            {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} onClose={closePreview} />}
           </div>
           {session !== null && session.path !== null && <ReviewAnswers onKeep={review.keep} onSkip={review.skip} />}
         </div>
