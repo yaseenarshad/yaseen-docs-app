@@ -1,9 +1,9 @@
 /**
  * THE FOCUS HANDOFF (YAZ-961) — the keyboard loop's two half-steps, in ONE place because two
  * surfaces perform them: the Files rows and the search list both hand focus INTO
- * the open document (a second Enter, the "take me in"), and `createCrepe`'s Escape hands it back
- * OUT to whichever sidebar the walk came from. Both answer a boolean so a caller that is a
- * ProseMirror command can decline honestly and let the key fall through.
+ * the open document (a second Enter, the "take me in"; Esc in the search bar, YAZ-2662 D9), and
+ * `createCrepe`'s Escape hands it back OUT to whichever sidebar the walk came from. Both answer a
+ * boolean so a caller that is a ProseMirror command can decline honestly and let the key fall through.
  *
  * They read the DOM rather than taking a ref: the two ends live in different React trees (the
  * sidebar's and the editor's), and the alternative — threading a focus handle from App through
@@ -13,11 +13,13 @@
 /**
  * Focus the document on screen. The VISIBLE one, never the first in the DOM: every visited tab
  * keeps its editor mounted and hidden, and a folder's outline is an editor too. `offsetParent` is
- * the cheap "actually rendered" question — null for a `display: none` subtree.
+ * the cheap "actually rendered" question — null for a `display: none` subtree. The note in the
+ * preview panel of the search is no page (YAZ-2662 R4): it wears the editor's class for its
+ * stylesheets, and the caret never goes into it.
  */
 export function focusOpenDocument(): boolean {
   const doc = Array.from(document.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).find(
-    (el) => el.offsetParent !== null,
+    (el) => el.offsetParent !== null && el.closest('.quicklook') === null,
   )
   if (doc === undefined) return false
   doc.focus()

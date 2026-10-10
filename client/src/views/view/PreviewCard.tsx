@@ -13,28 +13,21 @@
  * invalidated by `mtime`, so re-hovering the same row costs nothing; a REJECTED read is dropped
  * from the cache so the next hover retries instead of re-serving the failure.
  *
- * The instance is a real Crepe with BlockEdit and the Toolbar off and no find/drawing/link-click
- * options — the plugins that exist to EDIT are simply never registered — then `setReadonly(true)`.
- * It does take the window's wikilink resolve source (YAZ-2293): a `[[<id>]]` link has no readable
- * text of its own, so without the source a preview would show bare ids where the note shows titles.
+ * The body is drawn by `useReadOnlyNote`, the one read-only render of a note, which the preview
+ * panel of the search shares (YAZ-2662 D5).
  */
 import { type CSSProperties, type MouseEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { CrepeFeature } from '../../editor/crepe'
 import type { FileResponse, IndexRecord } from '@shared/types'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../../api'
-import { createCrepe } from '../../editor/createCrepe'
+import { useReadOnlyNote } from '../../editor/useReadOnlyNote'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
-import { features } from '../../editor/featureConfig'
 import './previewCard.css'
 
 /** Hover intent: the cursor must rest this long before anything opens or is read. */
 export const OPEN_DELAY_MS = 300
 /** The window after leaving in which the cursor may land on the card and keep it alive. */
 export const CLOSE_GRACE_MS = 200
-
-/** The note editor's features minus the two that exist to edit blocks. */
-const previewFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
 
 interface CacheEntry {
   mtime: number
@@ -107,22 +100,7 @@ function PreviewCard({ record, anchor, wikilinks, onEnter, onLeave }: CardProps)
     })
   }, [anchor])
 
-  useEffect(() => {
-    const host = hostRef.current
-    if (content.kind !== 'body' || host === null) return
-    // Own wrapper per effect run (StrictMode mounts twice) wearing the note editor's class, so the
-    // editor stylesheets apply to the preview unchanged.
-    const el = document.createElement('div')
-    el.className = 'editor-instance'
-    host.appendChild(el)
-    // No `image` options (YAZ-1656): the card knows the record's path but not the vault root, and a
-    // vault-relative src has nothing to resolve against without it — images stay Crepe's stock `<img>`.
-    const crepe = createCrepe({ root: el, defaultValue: content.body, features: previewFeatures, wikilinks })
-    const ready = crepe.create().then(() => crepe.setReadonly(true))
-    return () => {
-      void ready.then(() => crepe.destroy()).finally(() => el.remove())
-    }
-  }, [content, wikilinks])
+  useReadOnlyNote(hostRef, content.kind === 'body' ? content.body : null, wikilinks)
 
   return (
     <div ref={ref} className="view-preview" style={pos} onMouseEnter={onEnter} onMouseLeave={onLeave}>
