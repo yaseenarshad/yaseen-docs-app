@@ -79,7 +79,7 @@ function installBridge({ trees, opens = {}, favorites = {}, favoritesOrder = [] 
 }
 
 /** The doors of App, each a spy; `focusRef` is the box that the page fills with its way in (S33). */
-const doors = (roots: readonly string[]): StartPageProps => ({ roots, titles: new Map(), onOpen: vi.fn(), onOpenBackground: vi.fn(), onShowInFiles: vi.fn(), onRowMenu: vi.fn(), onBackToSearch: vi.fn(), focusRef: { current: null }, onNotice: vi.fn() })
+const doors = (roots: readonly string[]): StartPageProps => ({ roots, titles: new Map(), onOpen: vi.fn(), onOpenBackground: vi.fn(), onShowInFiles: vi.fn(), onRowMenu: vi.fn(), onBack: vi.fn(), onBackToSearch: vi.fn(), focusRef: { current: null }, onNotice: vi.fn() })
 
 /** `Page` is what draws the page: the page itself, or a part that holds state for it, as App does. */
 async function mount(fixture: Fixture, over: Partial<StartPageProps> = {}, Page: (props: StartPageProps) => ReactNode = StartPage) {
@@ -399,13 +399,15 @@ describe('StartPage', () => {
     // "Favorites" has no row: the key goes over it. The third column has two rows: its last one.
     const walk = ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].map((key) => (press(key), at()))
     expect(walk).toEqual(['suggested 1', 'suggested 1', 'recent 1', 'recent 0', 'suggested 0'])
-    expect(props.onBackToSearch).not.toHaveBeenCalled()
+    expect(props.onBack).not.toHaveBeenCalled()
     press('ArrowLeft')
     expect(at()).toBe('recent 0')
     press('ArrowLeft')
-    expect(props.onBackToSearch).toHaveBeenCalledTimes(1)
+    expect(props.onBack).toHaveBeenCalledTimes(1)
     const esc = press('Escape')
-    expect([vi.mocked(props.onBackToSearch).mock.calls.length, esc.defaultPrevented]).toEqual([2, true])
+    expect([vi.mocked(props.onBack).mock.calls.length, esc.defaultPrevented]).toEqual([2, true])
+    // The way back is to where the keyboard came from (YAZ-2663 D8): App's door, not always the search bar.
+    expect(props.onBackToSearch).not.toHaveBeenCalled()
     // A key with ⌘, Ctrl or Alt is not the page's: a shortcut of the window stays one.
     const chord = press('ArrowDown', { metaKey: true, altKey: true })
     expect([chord.defaultPrevented, at()]).toEqual([false, 'recent 0'])
@@ -515,9 +517,9 @@ describe('StartPage', () => {
     expect([told.at(-1), at()]).toEqual([`${v}/a.md`, 'recent 0'])
     // Esc with the panel on show closes the panel only; the next Esc goes back to the search bar.
     press('Escape')
-    expect([told.at(-1), vi.mocked(props.onBackToSearch).mock.calls.length, at()]).toEqual([null, 0, 'recent 0'])
+    expect([told.at(-1), vi.mocked(props.onBack).mock.calls.length, at()]).toEqual([null, 0, 'recent 0'])
     press('Escape')
-    expect(props.onBackToSearch).toHaveBeenCalledTimes(1)
+    expect(props.onBack).toHaveBeenCalledTimes(1)
     // Space shows, and Space again closes. A move after that tells the panel nothing.
     press(' ')
     press(' ')
@@ -554,7 +556,7 @@ describe('StartPage', () => {
       act(() => row(el, path).focus())
       expect([path, press(' ').defaultPrevented]).toEqual([path, true])
     }
-    expect([props.onOpen, props.onShowInFiles, props.onBackToSearch].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0, 0])
+    expect([props.onOpen, props.onShowInFiles, props.onBack, props.onBackToSearch].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0, 0, 0])
   })
 
   it('S41: a letter typed on a row asks for the caret in the search bar and leaves the key to the browser, which types it there; a key with ⌘, Ctrl or Alt is no letter', async () => {
@@ -569,6 +571,7 @@ describe('StartPage', () => {
     expect(props.onBackToSearch).toHaveBeenCalledTimes(3)
     // Not taken from the browser: the text input of this key goes to what has the focus by then.
     expect(typed.map((event) => event.defaultPrevented)).toEqual([false, false, false])
+    expect(props.onBack).not.toHaveBeenCalled() // a letter is the search's, wherever the keyboard came from (D8)
   })
 
   it('the page goes while the keyboard is on one of its rows (Enter opened a page that a tab holds already): the caret goes into the page on show, not to nothing', async () => {

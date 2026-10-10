@@ -611,13 +611,14 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | Keys | Where | Does |
 |---|---|---|
 | `ArrowRight` / `ArrowDown` | the EMPTY search bar, while the page shows | the keyboard focus goes to the first row of the first column that has rows, and the key is taken (S33). With text in the bar (one space is text), with a modifier, with no page on show or with no row on it, the key is the search's as before (S34) |
+| `ArrowRight` | a row of Files, Focus or Favorites that has nothing to open (a file row, an open folder row), while the page shows | the same way in (D8): the `rowArrows` of `client/src/sidebar/Tree.tsx` asks the same door, `onLeaveToPage`. A closed folder row still opens and does not ask. With no page on show or with no row on it, the key does nothing, as before (YAZ-2662 S62) |
 | `ArrowUp` / `ArrowDown` | a row | walk the rows of the column, and stop at both ends (S35) |
-| `ArrowRight` / `ArrowLeft` | a row | go to the next column that HAS rows, at the same row number or at its last row. `ArrowRight` on the last one does nothing (S36); `ArrowLeft` on the first one puts the caret in the search bar (S37) |
+| `ArrowRight` / `ArrowLeft` | a row | go to the next column that HAS rows, at the same row number or at its last row. `ArrowRight` on the last one does nothing (S36); `ArrowLeft` on the first one goes back to where the keyboard came from (S37, D8): the row of the sidebar tree that `ArrowRight` left, for ONE trip, else the search bar (from the bar, and when that row is gone) |
 | `Enter` | a row | a file opens and fills the blank tab; a folder shows in Files, open, with the keyboard focus on its row; a file with no viewer in the app opens in its default app (S38). Taken on `keydown`, so the button makes no click of its own |
 | `Mod-Enter` | a row | a background tab — of a folder's page too — and the page stays. ⌘ is read before Shift |
 | `Shift-Enter` | a row | the row shows in Files, with the keyboard focus on it |
 | `Space` | a file row | the preview panel shows on it, at once, and `Space` again closes it. While it is on, the panel follows the arrows 120 ms after the last move, and on a folder row no panel is drawn (S39). On a folder row `Space` does nothing (S40) |
-| `Escape` | a row | with a panel on show, the panel closes and the focus stays; with none — on a folder row too — the caret goes to the search bar (S37, S39) |
+| `Escape` | a row | with a panel on show, the panel closes and the focus stays; with none — on a folder row too — the keyboard goes back, as `ArrowLeft` on the first column does (S37, S39, D8) |
 | one typed character | a row | the caret goes to the search bar and the key is NOT taken, so the browser types the character there (S41). The bar selects its text first, as after ⌘K |
 | a HELD `Enter` or `Space` | a row | acts one time: each repeat of the press is taken and does nothing (the rule of YAZ-2669 for the search). A held arrow walks on |
 

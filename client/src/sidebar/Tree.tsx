@@ -88,7 +88,7 @@ const edgeOf = (e: React.DragEvent): 'before' | 'after' => {
  * and ← closes an open one. They read the rows as drawn, select nothing and open no page. A rename
  * box or a create box is no row, so its arrows stay its own (S64).
  */
-function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) => void): void {
+function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) => void, onLeaveToPage?: () => boolean): void {
   const row = e.target instanceof HTMLElement && e.target.matches('.tree__row') ? e.target : null
   const path = row?.dataset.path
   if (row === null || path === undefined) return
@@ -98,6 +98,9 @@ function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) 
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     // A folder's item says whether it is open; a file's says nothing, so neither key acts on it.
     if (row.closest('[role="treeitem"]')?.getAttribute('aria-expanded') === String(e.key === 'ArrowLeft')) onToggle(path)
+    // → with nothing to open — a file row, a folder that is open — goes to the new tab page, when
+    // it shows and has a row (YAZ-2663 D8). With no such page the key does nothing, as before (S62).
+    else if (e.key === 'ArrowRight' && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) onLeaveToPage?.()
   } else return
   e.preventDefault()
 }
@@ -190,6 +193,8 @@ interface TreeProps {
    * matched folder — is drawn dim. Without it a tree draws, and re-renders, exactly as before.
    */
   marks?: TreeMarks
+  /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a row that has nothing to open asks it. The top level's alone. */
+  onLeaveToPage?: () => boolean
   depth?: number
 }
 
@@ -213,6 +218,7 @@ function TreeLevel({
   titles,
   reorder,
   marks,
+  onLeaveToPage,
   depth = 0,
 }: TreeProps) {
   const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks }
@@ -236,7 +242,7 @@ function TreeLevel({
   return (
     // The arrows are the whole tree's, taken once at its top (YAZ-2662 D11) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
-    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle) : undefined}>
+    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
       {pending !== null && pending.parentDir === dirPath && (
         <li>
           <CreateInline

@@ -110,7 +110,7 @@ const captured = vi.hoisted(() => ({
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
   /** The new tab page (YAZ-2663 D3), as App last handed it its doors; null while it does not show. */
-  startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowInFiles: (path: string) => void; onRowMenu: (path: string, x: number, y: number) => void; onBackToSearch: () => void; focusRef: { current: (() => boolean) | null }; previewPath?: string | null; onPreview?: (path: string | null) => void } | null,
+  startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowInFiles: (path: string) => void; onBack: () => void; onRowMenu: (path: string, x: number, y: number) => void; onBackToSearch: () => void; focusRef: { current: (() => boolean) | null }; previewPath?: string | null; onPreview?: (path: string | null) => void } | null,
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder. */
@@ -1420,6 +1420,34 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     act(() => captured.startPage?.onBackToSearch())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+
+    // The way back is to where the keyboard came from (YAZ-2663 D8). From a row of a sidebar tree — → on a
+    // file row of Files, Focus or Favorites — ← and Esc put the focus on that row again, and the tab of the sidebar stays.
+    act(() => captured.sidebar?.onLensChange('favorites'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    const treeRow = document.createElement('button')
+    treeRow.className = 'tree__row'
+    el.querySelector('[data-sidebar]')?.append(treeRow)
+    treeRow.focus()
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(true)
+    act(() => (document.activeElement as HTMLElement).blur()) // the page took the focus
+    act(() => captured.startPage?.onBack())
+    expect([document.activeElement, captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual([treeRow, 'favorites', false])
+    // That is one trip: with no way in since, back is the search bar. So it is when the row is gone, and when the keyboard came from the bar.
+    act(() => captured.startPage?.onBack())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    act(() => captured.sidebar?.onLensChange('favorites'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    treeRow.focus()
+    expect(captured.sidebar?.onLeaveToPage?.()).toBe(true)
+    treeRow.remove()
+    act(() => captured.startPage?.onBack())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    // A typed letter is the search's, wherever the keyboard came from.
+    act(() => captured.sidebar?.onLensChange('files'))
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    act(() => captured.startPage?.onBackToSearch())
     expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
 
     // Shift+Enter on a file row: the door of the folder row (S22), with the keyboard focus on the row. The blank tab stays.
