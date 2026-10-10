@@ -289,5 +289,9 @@ export function useSidebarSearch(
     else if (!listKey(e)) onKeys(e)
   }
 
-  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc }
+  // ↑ has no row to go to (YAZ-2663 D12): no row is on show, or the keys already moved the highlight
+  // and it is on the first row. The bar then hands ↑ to the tabs of the panel. The FIRST ↑ on a
+  // highlight that nobody moved is still the search's: it makes the list keys work (YAZ-2662 D7).
+  const atTop = rows.length === 0 || (picked !== null && sel === 0)
+  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
 }

@@ -413,6 +413,23 @@ describe('StartPage', () => {
     expect([chord.defaultPrevented, at()]).toEqual([false, 'recent 0'])
   })
 
+  it('YAZ-2663 D12: in a narrow page area the columns are ONE column (S23), so ↓ on the last row of a column goes on to the first row of the next one that has rows, and ↑ on the first row to the last row of the one before; ← goes back from each of them, and → does nothing', async () => {
+    const v = vault()
+    const { el, props } = await mount(keysFixture(v))
+    // The page area after ⌘+ a few times, or in a narrow window: at or under the width where the columns stack.
+    Object.defineProperty(el.querySelector('.start'), 'clientWidth', { value: 600, configurable: true })
+    act(() => cell(el, 'recent', 1).focus())
+    const walk = ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp'].map((key) => (press(key), at()))
+    expect(walk).toEqual(['recent 2', 'suggested 0', 'suggested 1', 'suggested 1', 'suggested 0', 'recent 2'])
+    expect([press('ArrowRight').defaultPrevented, at()]).toEqual([true, 'recent 2'])
+    act(() => cell(el, 'suggested', 0).focus())
+    press('ArrowLeft')
+    expect(props.onBack).toHaveBeenCalledTimes(1)
+    act(() => cell(el, 'recent', 0).focus())
+    press('ArrowUp')
+    expect(at()).toBe('recent 0') // the first row of the page: ↑ stops
+  })
+
   it('S38: Enter on a file opens it, ⌘Enter opens it in a background tab, and Shift+Enter shows the row in Files; Enter on a folder shows it in Files; ⌘ is read before Shift', async () => {
     const v = vault()
     const { el, props, bridge } = await mount({
