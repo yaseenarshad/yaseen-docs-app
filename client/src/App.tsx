@@ -711,7 +711,8 @@ export function App() {
   useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onZoom: requestZoom })
 
   /**
-   * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
+   * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the row of the new tab page that the keyboard is on
+   * (YAZ-2663 D9), else the multi-selection when one is standing, else the file
    * you are looking at, so the chord answers with the sidebar collapsed too. The listener is
    * App's for the same reason ⌘B's is (YAZ-1280): the Sidebar unmounts while hidden, and a window
    * shortcut cannot live in a panel that comes and goes. It reads the selection through
@@ -729,7 +730,10 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!ownsCopyPathHotkey(event)) return
       const selected = sidebarSelection.current
-      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow
+      // A row of the new tab page that has the keyboard focus is what the user looks at (YAZ-2663 D9):
+      // no page is on show there, and the page has no selection of its own, so that row is the answer first.
+      const onPage = document.activeElement instanceof HTMLElement ? (document.activeElement.closest<HTMLElement>('.start__row')?.dataset.path ?? null) : null
+      const text = onPage ?? (selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow)
       if (text === null) return
       event.preventDefault()
       // BOTH outcomes speak through the window's one passive notice (YAZ-1341): the user cannot

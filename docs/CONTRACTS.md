@@ -619,6 +619,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Shift-Enter` | a row | the row shows in Files, with the keyboard focus on it |
 | `Space` | a file row | the preview panel shows on it, at once, and `Space` again closes it. While it is on, the panel follows the arrows 120 ms after the last move, and on a folder row no panel is drawn (S39). On a folder row `Space` does nothing (S40) |
 | `Escape` | a row | with a panel on show, the panel closes and the focus stays; with none — on a folder row too — the keyboard goes back, as `ArrowLeft` on the first column does (S37, S39, D8) |
+| `Mod-Shift-c` | a row | App's window chord (YAZ-1338) copies the path of THAT row (D9): no page is on show there, and the page has no selection. It reads the row before the selection of the sidebar and before the page on show |
 | one typed character | a row | the caret goes to the search bar and the key is NOT taken, so the browser types the character there (S41). The bar selects its text first, as after ⌘K |
 | a HELD `Enter` or `Space` | a row | acts one time: each repeat of the press is taken and does nothing (the rule of YAZ-2669 for the search). A held arrow walks on |
 

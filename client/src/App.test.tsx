@@ -452,6 +452,33 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
     expect(el.querySelector('.link-notice')?.textContent).toBe('Copied 2 paths')
   })
 
+  it('YAZ-2663 D9: with the keyboard focus on a row of the new tab page it copies the path of THAT row — no page is on show there — and a selection of the sidebar does not win over it', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const row = document.createElement('button')
+    row.className = 'start__row'
+    row.dataset.path = '/v/Projects/Plan.md'
+    el.querySelector('[data-start-page]')?.append(row)
+    row.focus()
+    const event = chord()
+    act(() => void row.dispatchEvent(event))
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/Projects/Plan.md')
+    expect(event.defaultPrevented).toBe(true)
+    await act(async () => {})
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
+    // The row that the keyboard is on is what the user looks at: it is copied, not the rows selected in the sidebar.
+    const ref = captured.sidebar?.selectionRef
+    act(() => {
+      if (ref) ref.current = new Set(['/v/notes/b.md', '/v/c.md'])
+    })
+    act(() => void row.dispatchEvent(chord()))
+    expect(writeText).toHaveBeenLastCalledWith('/v/Projects/Plan.md')
+    // The focus is off the page: the selection of the sidebar is copied, as before.
+    row.blur()
+    act(() => void el.querySelector('.app')?.dispatchEvent(chord()))
+    expect(writeText).toHaveBeenLastCalledWith('/v/notes/b.md\n/v/c.md')
+  })
+
   it('with nothing selected and nothing open it does nothing and leaves the key alone', async () => {
     const writeText = installClipboard()
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
