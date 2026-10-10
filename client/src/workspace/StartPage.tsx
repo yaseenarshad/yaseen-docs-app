@@ -55,7 +55,12 @@ interface Row {
   node: TreeNode
   vault: VaultRecord
   last?: number
+  /** How many folders of the page it stands inside (YAZ-2663 D13): 0 for a row of a column's own list. */
+  depth: number
 }
+
+/** No folder of the page is open. */
+const NO_DIRS: ReadonlySet<string> = new Set()
 
 export interface StartPageProps {
   /** The window's vaults, in the window's order (YAZ-2602 D1). */
@@ -134,13 +139,13 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
 
   // The columns are cut when what they read changes (R5), not on each render: App renders on each
   // broadcast of the app state, on each resize of the window and through a drag of the sidebar edge.
-  const columns = useMemo((): Record<(typeof COLUMNS)[number]['col'], { rows: Row[]; read: boolean }> => {
+  const lists = useMemo((): Record<(typeof COLUMNS)[number]['col'], { rows: Row[]; read: boolean }> => {
     /** `path` as the tree of its vault holds it; no row when that tree has not landed, or does not hold it. */
     const rowsOf = (list: readonly { path: string; last?: number }[]): Row[] =>
       list.flatMap(({ path, last }) => {
         const at = roots.indexOf(rootOfPath(roots, path) ?? '')
         const node = trees[at] == null ? null : findNode(trees[at].tree, path)
-        return node === null ? [] : [{ path, node, vault: records[at], last }]
+        return node === null ? [] : [{ path, node, vault: records[at], last, depth: 0 }]
       })
     // A column says it is empty only when what it reads has answered: no line for a list nobody has read yet.
     const treesLanded = trees.every((tree) => tree !== null)
@@ -158,6 +163,31 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
       suggested: { rows: favoritesRead ? rowsOf(suggestFavorites(records, favoritePaths, Date.now(), (path) => rowsOf([{ path }])[0]?.node.type ?? null)) : [], read: favoritesRead },
     }
   }, [roots, trees, records, favoritesByRoot, favoritesOrder])
+
+  // A folder row opens IN its column (YAZ-2663 D13): Space, or a click on its chevron, puts each
+  // row that the folder holds below it, one step in, as the Files tree holds them — and a folder
+  // inside opens the same way. The page's own: Files keeps its folds, and a folder that stands in
+  // two columns is open in the one where it was opened (`<col> <path>`). It lasts as long as the page.
+  const [openDirs, setOpenDirs] = useState(NO_DIRS)
+  const toggleDir = (col: string, path: string): void =>
+    setOpenDirs((held) => {
+      const next = new Set(held)
+      if (!next.delete(`${col} ${path}`)) next.add(`${col} ${path}`)
+      return next
+    })
+  // What each column draws: its own rows, and below each open folder the rows inside it. The keys walk these.
+  const columns = useMemo(() => {
+    const inside = (col: string, rows: readonly Row[]): Row[] =>
+      rows.flatMap((row) => {
+        if (row.node.type !== 'dir' || !openDirs.has(`${col} ${row.path}`)) return [row]
+        return [row, ...inside(col, row.node.children.map((node) => ({ path: node.path, node, vault: row.vault, depth: row.depth + 1 })))]
+      })
+    return {
+      recent: { rows: inside('recent', lists.recent.rows), read: lists.recent.read },
+      favorites: { rows: inside('favorites', lists.favorites.rows), read: lists.favorites.read },
+      suggested: { rows: inside('suggested', lists.suggested.rows), read: lists.suggested.read },
+    }
+  }, [lists, openDirs])
 
   // The preview panel (S39), as the search drives it (YAZ-2662 D5): "a panel is on show" is
   // `previewPath`, App's alone, so the keys here and the ✕ there cannot disagree. `parked` is what
@@ -288,9 +318,11 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
       if (onPreview !== undefined && previewPath !== null) stopPreview()
       else back()
     }
-    // Space on a file shows the preview panel on it, at once, and Space again closes it (S39). On a folder it does nothing (S40).
+    // Space on a file shows the preview panel on it, at once, and Space again closes it (S39). On a
+    // folder it opens the folder in its column, and Space again closes it (D13); the preview stays on.
     else if (e.key === ' ') {
-      if (row.node.type === 'file' && onPreview !== undefined) {
+      if (row.node.type === 'dir') toggleDir(col, row.path)
+      else if (onPreview !== undefined) {
         if (previewing) stopPreview()
         else onPreview(row.path)
       }
@@ -322,16 +354,20 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
                   const vault = row.vault.root
                   const folder = row.node.type === 'dir'
                   const dir = dirname(row.path)
+                  const open = folder && openDirs.has(`${col} ${row.path}`)
+                  // A row inside an open folder (D13) stands one step in for each folder above it, and says no more than its name: where it is shows.
+                  const top = row.depth === 0
                   return (
-                    <li key={row.path}>
+                    <li key={`${row.depth} ${row.path}`}>
                       {/* `data-col` and `data-row` say where the row stands: the arrow keys walk by them (YAZ-2674). */}
-                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} data-path={row.path} data-col={col} data-row={at} title={row.path} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
-                        {folder && <span className="tree__chevron" />}
+                      <button type="button" className={`start__row${folder ? ' start__row--dir' : ''}`} style={top ? undefined : { paddingLeft: (folder ? 8 : 26) + row.depth * 14 }} aria-expanded={folder ? open : undefined} data-path={row.path} data-col={col} data-row={at} title={row.path} onClick={(e) => activate(row, e.metaKey)} onContextMenu={(e) => (e.preventDefault(), onRowMenu(row.path, e.clientX, e.clientY))}>
+                        {/* The chevron is the mouse's Space (D13): it opens and closes the folder here, and the row's own click — the folder in Files — does not follow. */}
+                        {folder && <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} onClick={(e) => (e.stopPropagation(), toggleDir(col, row.path))} />}
                         <span className="start__name">{pageLabel(row.path, folder, titles)}</span>
                         {/* The folder the row is in, as the tab board names it; a row at the top of its vault names none. */}
-                        {dir !== stripSlash(vault) && <span className="start__where">{relTo(vault, dir).split('/').join(' / ')}</span>}
+                        {top && dir !== stripSlash(vault) && <span className="start__where">{relTo(vault, dir).split('/').join(' / ')}</span>}
                         {/* S20: the tag of a top row of the Favorites tab (YAZ-2631 D4), by what the app calls the vault. */}
-                        {roots.length > 1 && <span className="tree__vault">{row.vault.name}</span>}
+                        {top && roots.length > 1 && <span className="tree__vault">{row.vault.name}</span>}
                         {row.last !== undefined && <span className="start__when">{relativeTime(row.last, now)}</span>}
                       </button>
                     </li>
