@@ -38,10 +38,12 @@
   - [x] YAZ-2675: 5- Polish and anti-slop (`c31242b`): the audit (19 items) and its result are comments on the issue
   - [x] The branch of YAZ-2662 is merged in, to its pull request #104 (`cc39f97`). The panel draws `pagePreviewPath ?? previewShown`; `closePreview` clears both paths.
   - [x] The four size ceilings (`e5672b3`), with Yasin's OK
-- Now: [→] YAZ-2676: 6- Verify and deliver. The gates are green on the merged branch: 310 test files, 6,110 passed, 2 skipped; the size gate passes. The pull request is open, stacked on `yaz-2662-search-keys`. The issues are In Review.
-- Next: Yasin's hand walk (W13 of `docs/REGRESSION.md`; the steps and the commands are a comment on YAZ-2676). Then the merge, after the pull request #104 of YAZ-2662.
+  - [x] D8, from Yasin's hand walk (`5fe0968`): `→` on a row of Files, Focus or Favorites that has nothing to open goes to the page; `←` on the first column and Esc go back to that row
+  - [x] The pull request #104 of YAZ-2662 is merged (`e3b6d31`). The pull request #105 now has `main` as its base, and `origin/main` is merged in. The branch `yaz-2662-search-keys` is gone: merge `origin/main` from now on.
+- Now: [→] YAZ-2676: 6- Verify and deliver. Yasin does the hand walk on the dev app (started 2026-10-09, the profile `one-vault` of the hand-walk folder). He gives changes live; the app has hot reload. The gates are green at `5fe0968`: 310 test files, 6,113 passed, 2 skipped; the size gate passes.
+- Next: Yasin says "passed", or gives the next change. Then the merge of #105.
 - Remaining:
-  - [ ] Yasin: the hand walk, and his word on the decisions that he has not seen (the pull request lists them)
+  - [ ] Yasin: the rest of the hand walk, and his word on the decisions that he has not seen (the pull request lists them)
   - [ ] The merge, then the issues go to Done, the worktree and the hand-walk folder are removed
 
 ## Key Decisions of YAZ-2673 and YAZ-2674
@@ -55,6 +57,13 @@
 - S41 is built: a typed letter calls `onBackToSearch` and the key is not taken. The hand walk must prove that the letter is in the bar.
 - The page goes while a row has the keyboard focus: the caret goes into the page on show in the tab stack (`focusOpenDocument(stack)`), never into the right panel (YAZ-2675).
 - The preview of S39: App holds `pagePreviewPath` for the page and draws `pagePreviewPath ?? previewPath`. The ✕ clears both.
+
+## D8 (Yasin, in the hand walk)
+
+- Yasin: "can we make it so that if a new tab is what is whowing on the right side even on \"files\" or fav or focus mode u can go > right to go there?"
+- `rowArrows` in `client/src/sidebar/Tree.tsx` asks `onLeaveToPage` on `→` when the row has nothing to open: a file row, or a folder row that is open. A closed folder row still opens (YAZ-2662 S62). The search tree does not ask: its `→` is the search's.
+- App keeps the row that the keyboard left (`startPageFrom`) for ONE trip back. `StartPage` has two doors: `onBack` (`←` on the first column, Esc) and `onBackToSearch` (a typed letter).
+- S37 changed: the way back is to where the keyboard came from, not always the search bar.
 
 ## Key Decisions of YAZ-2675
 
@@ -81,5 +90,5 @@
 - Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2663`, branch `yaz-2663-new-tab-page`, from `yaz-2662-search-keys` at `8425e13` (`main` is `dd8d89b`, 1.0.0).
 - The other worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2662`. Do not edit it.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skills at `~/Documents/GitHub/skills-growprofit-eng/yaseen-skills-and-prompts/2-yaseen-linear-master-skill`.
-- A cron job in the coordinating session checks the branch of YAZ-2662 each hour at :23.
+- The hand-walk folder: `/private/tmp/claude-501/-Users-yasin-Documents-GitHub-yaseen-docs-app/4e827981-6a6b-4a13-8a5a-ea27d70e7eff/scratchpad/handwalk` (`make.ts` builds `out/vaults` and `out/profiles`).
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. Local Node is v26.5.0; CI uses Node 22.
