@@ -92,7 +92,7 @@
   cursor: default;
 }
 
-/* Overflow (I3): tabs shrink to their floor first, then the strip scrolls; TabBar scrolls the
+/* Overflow (I3, YAZ-2689 D2): the tabs that are not the active one shrink to their floor first, then the strip scrolls; TabBar scrolls the
    ACTIVE tab into view. The scrolling itself — no scrollbar, an edge fade — is `.scroll-strip`
    (app.css). The tablist is as wide as its tabs, so the "+" stands right after the last one and
    stays on show when the strip scrolls (S87); the tail takes the rest of the row. */
@@ -112,7 +112,7 @@
   min-width: 8px;
 }
 
-/* A tab: a pill 200px wide, 140px at the least. Its fill is the pseudo-element, so the border —
+/* A tab: a pill as wide as its name, from 72px to 200px (YAZ-2689). Its fill is the pseudo-element, so the border —
    the gap of a drag, below — widens the tab's own box and leaves the pill whole. */
 .tabbar__tab {
   position: relative;
@@ -120,8 +120,13 @@
   box-sizing: content-box;
   display: flex;
   align-items: center;
-  flex: 0 1 200px;
-  min-width: 140px;
+  /* As wide as its name (YAZ-2689 D1): 200px at the most, 72px at the least. NO flex basis and no
+     container query: the strip is as wide as what its tabs hold, so with either one a tab is cut
+     while the row has room. When the row is full the tabs shrink to 72px, and only then the strip
+     scrolls (D2). */
+  flex: 0 1 auto;
+  min-width: 72px;
+  max-width: 200px;
   height: 32px;
   overflow: hidden;
   border: 0 solid transparent;
@@ -201,7 +206,8 @@
 
 @keyframes tab-in {
   from {
-    flex-basis: 0;
+    /* The width of a tab is its name's (YAZ-2689 D1), so the slide runs on the most that it can be. */
+    max-width: 0;
     min-width: 0;
     opacity: 0;
   }
@@ -230,17 +236,23 @@
   min-width: 0;
   overflow: hidden;
   text-align: left;
+  /* Room after the name for the fade and for the ✕, which stands over it (YAZ-2689 D4). A short name is clear of both. */
+  padding-right: 18px;
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
-/* Shown on hover and on the active tab; visibility (not display), so the label never moves when the ✕ appears. */
+/* Shown on hover and on the active tab. */
 .tabbar__close {
-  flex: none;
+  /* Over the end of the tab, not beside the name (YAZ-2689 D4). It takes no width, so a tab is
+     as wide as its name alone, and a tab under the mouse does not grow. */
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
   display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
-  margin-right: 7px;
   font-size: 10px;
   line-height: 1;
   color: var(--fg-muted);
@@ -256,6 +268,11 @@
 .tabbar__close:hover {
   color: var(--fg);
   background: color-mix(in srgb, var(--fg) 14%, transparent);
+}
+
+/* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open. */
+.tabbar__tab--active {
+  flex-shrink: 0;
 }
 
 /* One layer per VISITED tab, all mounted, only the active one visible (GRO-2234 rule 6).

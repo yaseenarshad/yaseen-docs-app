@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabBar, type TabBarProps } from './TabBar'
+import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
 
@@ -666,5 +667,37 @@ describe('the tab of the page the board highlights (YAZ-2648)', () => {
     expect(lit()).toEqual(['/v/a.md'])
     act(() => setBoardHighlight(null))
     expect(lit()).toEqual([])
+  })
+})
+
+/**
+ * The widths of the tabs (YAZ-2689) are CSS alone, and jsdom lays nothing out: the rules are read
+ * as written. What they do on a screen — S1 to S9 of the issue — is the hand scenario W14.
+ */
+describe('the widths of the tabs (YAZ-2689)', () => {
+  /** The declarations of the ONE rule whose selector is exactly `selector`. */
+  const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
+
+  it('D1, D2: a tab is as wide as its name, from 72px to 200px, and it can shrink — with no flex basis and no container query, which make the strip cut a tab while the row has room', () => {
+    const tab = rule('.tabbar__tab')
+    expect(tab).toMatch(/flex:\s*0 1 auto;/)
+    expect(tab).toMatch(/min-width:\s*72px;/)
+    expect(tab).toMatch(/max-width:\s*200px;/)
+    expect(tab).not.toMatch(/(?:^|[;\s])width:|container-type/)
+  })
+
+  it('D3: the active tab never shrinks', () => {
+    expect(rule('.tabbar__tab--active')).toMatch(/flex-shrink:\s*0;/)
+  })
+
+  it('D4: the ✕ stands over the end of the tab and takes no width; the name keeps room for it and for its fade', () => {
+    expect(rule('.tabbar__close')).toMatch(/position:\s*absolute;/)
+    expect(rule('.tabbar__close')).not.toMatch(/margin-right|flex:/)
+    expect(rule('.tabbar__label')).toMatch(/padding-right:\s*18px;/)
+  })
+
+  it('S9: a tab slides open and shut on the most that it can be wide, since its width is its name\'s', () => {
+    expect(tabsCss).toMatch(/@keyframes tab-in\s*\{\s*from\s*\{[^}]*max-width:\s*0;/)
+    expect(tabsCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/flex-basis/)
   })
 })
