@@ -51,10 +51,11 @@ const SHEETS: Array<[string, () => ReactElement]> = [
 ]
 
 describe('the confirm sheets (YAZ-2201)', () => {
-  it.each(SHEETS)('%s: markup pinned, focus on Cancel', (_name, sheet) => {
+  it.each(SHEETS)('%s: markup pinned, focus on Cancel', (name, sheet) => {
     const el = render(sheet())
     expect(el.innerHTML).toMatchSnapshot()
-    expect(document.activeElement?.textContent).toBe('Cancel')
+    // The rename sheet destroys nothing: its focus is on Rename, which is what Enter does (YAZ-2690 D1).
+    expect(document.activeElement?.textContent).toBe(name === 'ConfirmRename' ? 'Rename' : 'Cancel')
   })
 
   it.each(SHEETS)('%s: Esc cancels, Enter confirms, click-away cancels, a click inside does nothing — heard where it always was', (name, sheet) => {

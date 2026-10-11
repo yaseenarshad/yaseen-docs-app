@@ -349,6 +349,7 @@ The dev app (`npm run dev`) will do, on an isolated profile (`YASEEN_DOCS_USER_D
 10. Two vaults. Right-click the blank space of Files → "Add vault to this window ▸" → B, and open a note of B. Press `⌘T`: "Recent" holds pages of both vaults, the newest first, and each row of each column ends with its vault's name, small and light. Remove B from the window: no row names a vault.
 11. A narrow window. With the page on show, drag the window's edge until the page area is about 600 px wide, or widen the sidebar and open the right panel: the three columns stand one below the other, and no name is cut where there is room. Make it wide again: three columns. Look at the page in the light theme and in the dark theme.
 12. Quit with `⌘Q` and start the app again. Press `⌘T`: "Recent" is in the order it had before the quit. The note the window opened on did not move up.
+13. The rename sheet (YAZ-2690). Rename a note in Files (right-click › Rename, type a new name, `⏎`): the sheet shows with the ring on **Rename**, and a box "Don't ask me again", not ticked. `⏎` renames. Rename again and hold `⏎` as you commit the name: the sheet stays up until you let go and press `⏎` again. Rename again, press Esc: nothing is renamed. Rename again, tick the box, `⏎`: the note is renamed, and the next rename shows no sheet. Settings › Ask before renaming is off; turn it on, and the sheet shows again. A delete still shows its sheet with the ring on **Cancel**.
 
 ### W5 What a launch brings back
 

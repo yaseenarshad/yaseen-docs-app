@@ -995,7 +995,9 @@ export function App() {
     [requestRename, scopeOf, notify],
   )
 
-  const confirmRename = useCallback(() => {
+  // `dontAskAgain` is the box of the rename sheet (YAZ-2690 D2): the rename runs, and "Ask before
+  // renaming" goes off. The move sheet has no box and passes nothing.
+  const confirmRename = useCallback((dontAskAgain = false) => {
     if (pendingRename === null) return
     if (pendingRename.root !== scopeOf(pendingRename.oldPath).root) {
       setPendingRename(null)
@@ -1003,8 +1005,9 @@ export function App() {
     }
     const { oldPath, to, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
+    if (dontAskAgain) changeSettings({ ...settings, confirmRename: false })
     void renameFile(oldPath, to, viewOnlyCatalog)
-  }, [scopeOf, pendingRename, renameFile])
+  }, [scopeOf, pendingRename, renameFile, changeSettings, settings])
 
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
@@ -1445,7 +1448,7 @@ export function App() {
           that would clear a folder's values asks through its own sheet (D21). */}
       {pendingRename !== null &&
         ('lost' in pendingRename ? (
-          <ConfirmMove moves={[{ oldPath: pendingRename.oldPath, newPath: pendingRename.to.newPath, kind: pendingRename.kind }]} lost={pendingRename.lost} titles={titles} onConfirm={confirmRename} onCancel={() => setPendingRename(null)} />
+          <ConfirmMove moves={[{ oldPath: pendingRename.oldPath, newPath: pendingRename.to.newPath, kind: pendingRename.kind }]} lost={pendingRename.lost} titles={titles} onConfirm={() => confirmRename()} onCancel={() => setPendingRename(null)} />
         ) : (
           <ConfirmRename
             oldPath={pendingRename.oldPath}

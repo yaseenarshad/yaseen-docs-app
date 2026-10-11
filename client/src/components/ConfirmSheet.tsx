@@ -2,8 +2,8 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type React
 
 /**
  * THE CONFIRM SHEET (YAZ-2201): the app's own sheet, never a native dialog — the confirm
- * dialogs each carried a copy of this shell. Initial focus on CANCEL, so a stray Enter arriving
- * from the tree or an input confirms nothing; Esc cancels, Enter confirms, click-away cancels;
+ * dialogs each carried a copy of this shell. Initial focus on CANCEL — on the confirm button for a
+ * sheet that destroys nothing (`focusConfirm`, YAZ-2690); Esc cancels, Enter confirms, click-away cancels;
  * `role="dialog"` + `aria-modal` labelled by its own text. The confirm button is `--danger` only
  * when something is destroyed. When the sheet goes, focus goes back to where it was.
  *
@@ -32,18 +32,25 @@ export interface ConfirmSheetProps {
    * holds the focus itself: on a button, a Space typed as the sheet appears would press an answer.
    */
   onDismiss?: () => void
-  /** Extra controls between the text and the buttons (the delete sheet's "Don't ask me again"). */
+  /** Extra controls between the text and the buttons (the "Don't ask me again" of the delete sheet and of the rename sheet). */
   children?: ReactNode
+  /**
+   * The keyboard focus is on the CONFIRM button when the sheet shows (YAZ-2690 D1), for a sheet
+   * that destroys nothing: the rename sheet. Enter confirms on each button of a sheet, so the
+   * focus then says what Enter does. Not given, the focus is on Cancel.
+   */
+  focusConfirm?: boolean
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, cancelLabel = 'Cancel', onDismiss, children }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, cancelLabel = 'Cancel', onDismiss, children, focusConfirm = false }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
   const dismiss = onDismiss ?? onCancel
 
   useEffect(() => {
     const before = document.activeElement
-    ;(onDismiss === undefined ? cancelRef : sheetRef).current?.focus()
+    ;(onDismiss !== undefined ? sheetRef : focusConfirm ? confirmRef : cancelRef).current?.focus()
     return () => {
       if (before instanceof HTMLElement && before.isConnected) before.focus()
     }
@@ -54,6 +61,9 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
     if (e.key !== 'Escape' && e.key !== 'Enter') return
     e.preventDefault()
     if (keys === 'contained') e.stopPropagation()
+    // A held Enter is no answer (YAZ-2690 S3; the rule of YAZ-2669): the repeats of the press that
+    // opened a sheet arrive inside it, and would confirm it before a word of it is read.
+    if (e.key === 'Enter' && e.repeat) return
     if (e.key === 'Escape') dismiss()
     else if (onDismiss === undefined) onConfirm()
   }
@@ -82,7 +92,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
           <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
             {cancelLabel}
           </button>
-          <button type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onConfirm}>
+          <button ref={confirmRef} type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>
