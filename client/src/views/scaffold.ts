@@ -1,5 +1,4 @@
 import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { mintNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
@@ -25,22 +24,42 @@ async function readTemplate(path: string): Promise<string> {
  *
  * It is born titled (YAZ-2420 🔒 D20): `title` is free text and is the note's `title`, whatever the
  * template or the seed says, and its file name is built from it and the note's id (`noteFileName`).
- * `id` is for a caller that has already written a link to the note (YAZ-2293); else one is made
- * here. Resolves the note's path.
+ * The id is the vault's next number, taken from the door BEFORE the note is made (`takeNoteId`,
+ * YAZ-2677 D4, R18): the name needs it. `id` is for a caller that has already taken it, and
+ * written a link to the note (YAZ-2293). Resolves the note's path.
  *
  * All of that where the vault uses IDs (`ids`). In a vault that does not use IDs (YAZ-2523 🔒 V3)
  * `title` is the file's name (`plainEntryName`) and nothing is written about the note inside it:
  * with no seed it is the template as it is, and with one, what the seed returns and the template's body.
  */
-export async function createNote(dir: string, title: string, ids: boolean, seed?: (template: Record<string, unknown>) => Record<string, unknown>, id = mintNoteId()): Promise<string> {
-  const path = `${dir}/${ids ? noteFileName(title, id) : plainEntryName(title, 'file')}`
+export async function createNote(dir: string, title: string, ids: boolean, seed?: (template: Record<string, unknown>) => Record<string, unknown>, id?: string): Promise<string> {
+  // A name a file cannot hold is refused before anything is read or made.
+  const plain = ids ? undefined : `${dir}/${plainEntryName(title, 'file')}`
   const template = await readTemplate(`${dir}/.template.md`)
   const { frontmatter, body } = splitFrontmatter(template)
   const { properties } = parseFrontmatter(frontmatter)
   const seeded = seed === undefined ? properties : seed(properties)
-  if (ids) await api.createFile({ path, content: buildFrontmatter({ ...seeded, [TITLE_KEY]: title }) + body, id })
-  else await api.createFile({ path, content: seed === undefined ? template : buildFrontmatter(seeded) + body })
+  if (plain !== undefined) {
+    await api.createFile({ path: plain, content: seed === undefined ? template : buildFrontmatter(seeded) + body })
+    return plain
+  }
+  // The number LAST before the create: a template that cannot be read costs none.
+  const born = id ?? (await takeNoteId(dir))
+  const path = `${dir}/${noteFileName(title, born)}`
+  await api.createFile({ path, content: buildFrontmatter({ ...seeded, [TITLE_KEY]: title }) + body, id: born })
   return path
+}
+
+/**
+ * The next ID of the vault that holds `path`, from the door in the main process (`fs:mint-note-id`,
+ * YAZ-2677 🔒 D4): the ONE way the front end gets an ID. The number is saved before it comes back,
+ * so one that is then not used is a gap. Refused where the vault does not use IDs: a window one
+ * answer behind makes nothing.
+ */
+export async function takeNoteId(path: string): Promise<string> {
+  const id = await api.mintNoteId(path)
+  if (id === null) throw new Error('this vault does not use IDs')
+  return id
 }
 
 /**

@@ -8,7 +8,7 @@ import { readAsset, writeAsset } from '../fs/assets'
 import { copyEntry, pasteEntries } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
-import { BridgeFailure } from '../fs/fsUtils'
+import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { readHeads } from '../fs/heads'
 import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
@@ -21,9 +21,10 @@ import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
-import { getColdStartDiff, getIndex } from '../vaultIndex'
+import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
-import type { WindowLookup } from '../windows'
+import { doorOf, type IdDoor } from '../vaultIndex/mint'
+import type { WindowManager } from '../windows'
 import { broadcastAll, rootsOf } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
 
@@ -35,7 +36,7 @@ import { handle, handleWithEvent } from './envelope'
 const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[favorites] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
-export function registerFsIpc(store: Store, windows: WindowLookup): void {
+export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
   handle(CONTRACT.tree, tree)
   handle(CONTRACT.readFile, readFile)
   // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
@@ -47,15 +48,21 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => store.get().windows.find((w) => w.id === windows.idFor(e.sender))?.roots ?? []
   /**
    * Does what `req` names get IDs (YAZ-2523 🔒 V5)? Only when a vault of the calling window holds
-   * the path (YAZ-2602 S78) and that vault said yes. A create, a title edit and a paste each ask once, here.
+   * the path (YAZ-2602 S78) and that vault said yes: then this is that vault's door, which gives each
+   * new ID (YAZ-2677 D4), and else null. A create and a paste each ask once, here.
    */
-  const usesIds = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<boolean> => {
+  const doorFor = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<IdDoor | null> => {
     const p = typeof req === 'string' ? req : (req as Record<string, unknown> | null)?.[key]
     const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
-    return root !== null && givesIds(root)
+    return root === null ? null : doorOf(root)
   }
-  handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await usesIds(e, req)))
-  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await usesIds(e, req)))
+  handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await doorFor(e, req)))
+  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await doorFor(e, req)))
+  // The door, for the front end (YAZ-2677 R17): the next ID of the vault that holds `path`, saved
+  // before it is answered (R18). The caller needs it BEFORE its note exists — the note's file name
+  // holds it, and so does a link the `[[` picker writes — and hands it back in `createFile`'s `id`.
+  // Null where no vault of the window holds the path, or that vault does not use IDs.
+  handleWithEvent(CONTRACT.mintNoteId, async (e, p: unknown) => (await (await doorFor(e, requireAbsPath(p, 'path')))?.mint(1))?.[0] ?? null)
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle
@@ -114,6 +121,35 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     if (!(await givesIds(root))) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs')
     const res = await retitle(root, req)
     return res.newPath === res.oldPath ? res : afterRename(res)
+  })
+  // A vault's IDs (YAZ-2677). Both doors act on a vault OF THE CALLING WINDOW (YAZ-2602 S78): any other folder is refused.
+  const ownVault = (e: IpcMainInvokeEvent, root: unknown): string => {
+    if (typeof root !== 'string' || !rootsOfSender(e).includes(root)) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window is that folder')
+    return root
+  }
+  // The switch in Settings (🔒 D2): the answer is saved here, in main, where one save waits for the
+  // one before it. A yes is the user asking on THIS Mac, so the numbers come now (R32, S64) — not
+  // awaited: a vault of many notes must not hold the switch. A Mac that sees the yes arrive waits (S65).
+  handleWithEvent(CONTRACT.ids.set, async (e, root: unknown, enabled: unknown, letters: unknown) => {
+    const vault = ownVault(e, root)
+    await saveIdsAnswer(vault, enabled, letters)
+    if (enabled === true) void giveIdsNow(vault)
+  })
+  // "Check for duplicates" (🔒 D7, S55 to S57): one line for the row in Settings.
+  handleWithEvent(CONTRACT.ids.check, async (e, root: unknown) => checkDuplicates(ownVault(e, root)))
+  // The rows "ID letters" and "Old IDs" (🔒 D5, D6): what they show, and the two changes of every ID
+  // in the vault. A file that takes a new name takes the rename handler's downstream AT ONCE, so its
+  // open tab, its favorite and its stored paths follow (S86) — also when the change stops later.
+  const followed = (res: RenameFileResponse): Promise<unknown> => afterRename(res).catch(() => undefined)
+  handleWithEvent(CONTRACT.ids.state, async (e, root: unknown) => idsState(ownVault(e, root)))
+  handleWithEvent(CONTRACT.ids.reletter, async (e, root: unknown, letters: unknown) => changeLetters(ownVault(e, root), letters, followed))
+  handleWithEvent(CONTRACT.ids.backfill, async (e, root: unknown) => giveOldIdsNumbers(ownVault(e, root), followed))
+  // A clash this Mac fixed (S45): a note whose file name followed its new ID (R26) takes the rename
+  // handler's downstream, so its open tab, its favorite and its stored paths follow; then ONE
+  // notice in each window that shows the vault. Set once: `registerFsIpc` runs once.
+  onIdFixes((root, fixes, notice) => {
+    for (const fix of fixes) if (fix.renamedFrom !== undefined) void afterRename({ oldPath: fix.renamedFrom, newPath: fix.path, kind: 'file' }).catch(() => undefined)
+    if (notice !== null) windows.vaultNotice(root, notice)
   })
   // In-app delete (GRO-2272). Deliberately the SAME shape as the rename handler above —
   // fs work, then `store.removePath` repair, then one broadcast to every window — with two
@@ -187,7 +223,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handleWithEvent(CONTRACT.file.paste, async (e, req: unknown) => {
     const clip = fileClip.get()
     if (clip === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
-    const ids = await usesIds(e, req, 'targetDir')
+    const ids = await doorFor(e, req, 'targetDir')
     const res = await pasteEntries(clip, req, {
       copy: (from, toDir) => copyEntry(from, toDir, ids),
       move: async (from, to) => {

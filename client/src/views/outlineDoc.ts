@@ -17,24 +17,16 @@
  * text (`isExactWikilink`) — the index's own frontmatter-link rule (`vaultIndex/scan.ts`).
  */
 
-/** Exactly a wikilink, nothing around it. */
-const EXACT_WIKILINK_RE = /^\[\[[^[\]]*\]\]$/
+import { BULLET_LINE } from '@shared/folderSettingsLinks'
 
-/** THE LINK RULE: decided on spelling alone, long before anything resolves the line (YAZ-900). */
-const isExactWikilink = (text: string): boolean => EXACT_WIKILINK_RE.test(text.trim())
+// The line rule (`isExactWikilink`), the bullet line and the rename's walk into an outline are in
+// `@shared/folderSettingsLinks`: the main process's ID rewrite reads the same lines (YAZ-2677).
 
 /** One bullet: its nesting level (0 = top) and its text — everything after the marker, untouched but for the padding. */
 export interface OutlineLine {
   depth: number
   text: string
 }
-
-/**
- * A bullet line as three pieces: the whole prefix (so a rewrite can splice by offset), the
- * indentation alone (depth) and the text, trimmed of the trailing whitespace and any `\r`. A bare
- * marker is an empty line; `-foo`, with no gap, is not a bullet at all (nor is it to CommonMark).
- */
-const BULLET_LINE = /^(([ \t]*)[-*+](?:[ \t]+|(?=\r?$)))(.*?)[ \t]*\r?$/
 
 /** The canonical spelling written back — one level of nesting. */
 const INDENT = '    '
@@ -98,27 +90,4 @@ export function escapeOutlineMarkdown(markdown: string): string {
       return raw.slice(0, lead) + escapeBlockStart(match[3]) + raw.slice(lead + match[3].length)
     })
     .join('\n')
-}
-
-/**
- * A rename walking INTO the outline (YAZ-900): every LINE that is exactly a wikilink is offered to
- * `map`, `undefined` meaning leave it — the same leaf contract `mapFolderSettingsLinks` uses
- * for an `order` entry, so an outline link and an order entry cannot spell themselves differently.
- * A wikilink inside prose is NOT a leaf and is never touched. Undefined when no line changed;
- * every other byte — markers, indentation, blank lines, prose — survives, since only the link text
- * is spliced.
- */
-export function mapOutlineLinks(outline: string, map: (link: string) => string | undefined): string | undefined {
-  let changed = false
-  const out = outline.split('\n').map((raw) => {
-    const match = BULLET_LINE.exec(raw)
-    if (match === null || !isExactWikilink(match[3])) return raw
-    const next = map(match[3])
-    if (next === undefined) return raw
-    changed = true
-    // Splice the link text alone: the marker, the indentation and any trailing bytes stay as written.
-    const lead = match[1].length
-    return raw.slice(0, lead) + next + raw.slice(lead + match[3].length)
-  })
-  return changed ? out.join('\n') : undefined
 }

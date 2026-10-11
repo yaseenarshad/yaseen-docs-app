@@ -35,7 +35,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
-import { isNoteId } from '@shared/noteId'
+import { vaultNoteId } from '@shared/noteId'
 import { createFromLink } from './createFromLink'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
@@ -136,7 +136,11 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               if (path !== null) {
                 making.delete(page)
                 open(path)
-              } else if (isNoteId(page)) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
+              }
+              // An ID of THIS vault that no note has is a deleted note's (YAZ-2677 S25): nothing is
+              // created under an ID. Other `LETTERS-NUMBER` text is a name, created like any name
+              // (R6, S21, S22); a vault that does not use IDs has no letters, so only an old ID is one there.
+              else if (vaultNoteId(page, source.letters) !== undefined) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
               else if (made === undefined) {
                 making.set(page, null)
                 void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {

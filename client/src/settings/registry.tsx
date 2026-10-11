@@ -17,15 +17,20 @@
  * its rows call `review.save` — never `onChange`. Its switch is the one row while upkeep is off.
  *
  * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
- * row is `available` only with a vault open and calls `ids.set`.
+ * row is `available` only with a vault open and calls `ids.set`. On asks first (YAZ-2677 🔒 D2).
+ * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
+ * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
 import { useState, type ReactNode } from 'react'
+import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
-import type { GithubSyncStatus, SettingsState } from '@shared/types'
+import type { GithubSyncStatus, IdsState, IndexResponse, SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 import { Segmented } from './controls'
 import { HOTKEY_GROUPS, type HotkeyEntry } from './hotkeys'
+import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
+import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, STARTUP_WINDOWS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
@@ -36,8 +41,28 @@ export interface SettingsCtx {
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
   /** This vault's review settings (YAZ-2322); absent with no vault open. */
   review?: ReviewSettingsState
-  /** This vault's answer on IDs (YAZ-2523 🔒 V4; undefined: it has not answered), whether any note holds one, and the switch; absent until a vault's index has loaded. */
-  ids?: { enabled: boolean | undefined; held: boolean; set: (enabled: boolean) => void }
+  /**
+   * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
+   * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
+   * while the answer is not yes, with the ID letters the vault already has (none: it has none
+   * yet). `set` saves the answer, and with a yes the ID letters (YAZ-2677 🔒 D2). `check` settles the notes that share an ID now, and resolves to
+   * the result in one line (🔒 D7, S55 to S57). `old`: how many notes and folders hold an old
+   * 12-character ID; `unfinished`: a run of "Give old IDs numbers" stopped with links left to change. `state` asks the main process for the letters and the counts; `reletter` is
+   * "Change letters" and `backfill` "Give old IDs numbers" (🔒 D5, D6): each resolves, when the
+   * change is done, to the state after it.
+   */
+  ids?: {
+    enabled: boolean
+    held: boolean
+    ask: IndexResponse['ask']
+    set: (enabled: boolean, letters?: string) => void
+    check: () => Promise<string>
+    old: number
+    unfinished: boolean
+    state: () => Promise<IdsState>
+    reletter: (letters: string) => Promise<IdsState>
+    backfill: () => Promise<IdsState>
+  }
   /**
    * What the app calls the vault the three above are of (YAZ-2602 R10): the active tab's. Handed
    * over only where the window has two or more vaults, and each per-vault page then says which one
@@ -115,36 +140,86 @@ const reviewNumber = (field: ReviewNumberField, label: string, unit: string): Se
   render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} />,
 })
 
+/** The counts of a vault whose snapshot carries none: a yes there writes into no note and no folder. */
+const NOTHING_TO_WRITE = { notes: 0, folders: 0, foreign: 0 }
+
 /**
- * The vault's IDs switch. Only a CHANGE writes: a click on the answer the vault gave is nothing. A
- * vault that has not answered reads Off, and either click is its answer. Off in a vault whose notes
- * hold IDs asks first (🔒 V13); the sheet's keys stay inside it, so the dialog under it does not close.
+ * The box that On opens before anything is written (YAZ-2677 🔒 D2): what an ID is, what a yes would
+ * write, how to undo it, and a text field. The user types the vault's ID letters: any 2 to 5 letters
+ * for a vault that has none, and exactly its own letters, in any case, for one that has them (S9).
+ * "Give IDs" and Enter do nothing until then. The box is the one typed-confirm piece (`TypedConfirmSheet`).
  */
-function IdsControl({ ids }: { ids: NonNullable<SettingsCtx['ids']> }) {
-  const [asking, setAsking] = useState(false)
+function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const valid = (typed: string): boolean => (letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters)
+  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+}
+
+/**
+ * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the main process settles the notes that share
+ * an ID now, and its answer is the one line under the button — "No duplicates.", what was fixed, or
+ * which ID another Mac must fix. Nothing runs until the click, and one check runs at a time.
+ */
+function DuplicatesControl({ check }: { check: () => Promise<string> }) {
+  const { busy, line, run } = useRun()
+  // The row is `wide`: the button keeps its own width, and the line under it has the row's width to wrap in.
+  return (
+    <>
+      <div className="settings__options">
+        <button type="button" className="settings__option" disabled={busy} onClick={() => run('Checking…', () => check().catch((err: unknown) => `Couldn't check: ${said(err)}`))}>
+          Check for duplicates
+        </button>
+      </div>
+      <p className="setting__hint" role="status">
+        {line}
+      </p>
+    </>
+  )
+}
+
+/**
+ * The vault's IDs switch. Only a CHANGE writes: a click on the answer the row shows is nothing, and a
+ * vault with no answer reads Off. On opens the box with the typed ID letters and writes nothing
+ * before it is confirmed (YAZ-2677 🔒 D2); the letters the vault already has come with the index (`ask.letters`). Off in a vault
+ * whose notes hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
+ */
+function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
+  const [asking, setAsking] = useState<'off' | 'on' | null>(null)
   return (
     <>
       <Segmented
         options={ON_OFF_OPTIONS}
-        value={ids.enabled === true}
+        value={ids.enabled}
         onChange={(on) => {
           if (on === ids.enabled) return
-          if (!on && ids.held) setAsking(true)
-          else ids.set(on)
+          if (on) setAsking('on')
+          else if (ids.held) setAsking('off')
+          else ids.set(false)
         }}
         ariaLabel="Give this vault's notes IDs"
       />
-      {asking && (
+      {asking === 'off' && (
         <ConfirmSheet
           labelId="confirm-ids-off-text"
           text="This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
           confirmLabel="Turn off"
           keys="contained"
           onConfirm={() => {
-            setAsking(false)
+            setAsking(null)
             ids.set(false)
           }}
-          onCancel={() => setAsking(false)}
+          onCancel={() => setAsking(null)}
+        />
+      )}
+      {asking === 'on' && (
+        <GiveIdsSheet
+          ask={ids.ask ?? NOTHING_TO_WRITE}
+          vault={vault}
+          letters={ids.ask?.letters}
+          onConfirm={(letters) => {
+            setAsking(null)
+            ids.set(true, letters)
+          }}
+          onCancel={() => setAsking(null)}
         />
       )}
     </>
@@ -323,7 +398,34 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: "Give this vault's notes IDs",
             hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
-            render: ({ ids }) => ids && <IdsControl ids={ids} />,
+            render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
+          },
+          {
+            id: 'duplicates',
+            label: 'Duplicate IDs',
+            hint: 'Two Macs that sync this vault can give two notes one ID. The app fixes that by itself; this checks now.',
+            keywords: ['duplicate', 'clash', 'ids', 'check', 'fix'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true,
+            render: ({ ids }) => ids && <DuplicatesControl check={ids.check} />,
+          },
+          {
+            id: 'idLetters',
+            label: 'ID letters',
+            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches every note, link and file name.',
+            keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true,
+            render: ({ ids, vaultName }) => ids && <IdLettersControl ids={ids} vault={vaultName} />,
+          },
+          {
+            id: 'oldIds',
+            label: 'Old IDs',
+            hint: 'Notes from before numbers have an ID of 12 characters. It still works; this gives each one a number.',
+            keywords: ['old', 'ids', 'numbers', 'backfill', 'migrate'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true && (ctx.ids.old > 0 || ctx.ids.unfinished),
+            render: ({ ids, vaultName }) => ids && <OldIdsControl ids={ids} vault={vaultName} />,
           },
         ],
       },

@@ -20,9 +20,10 @@ import { api, BridgeRequestError } from '../../api'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
-  api: { createFile: vi.fn(), readFile: vi.fn() },
+  api: { createFile: vi.fn(), readFile: vi.fn(), mintNoteId: vi.fn() },
 }))
 const createFile = vi.mocked(api.createFile)
+const mintNoteId = vi.mocked(api.mintNoteId)
 import { linkCandidates, nameCandidate } from '../../links/completion'
 import { folderLinkCandidates, linkResolver } from '../../links/folderLinks'
 import { resolverFor } from '../../views/engine'
@@ -272,25 +273,39 @@ describe('wikilink picker: navigate / insert', () => {
 describe('wikilink picker: create-new row', () => {
   beforeEach(() => {
     createFile.mockReset()
+    mintNoteId.mockReset()
     vi.mocked(api.readFile).mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no template'))
   })
 
   /** The index snapshot the editor reads the vault's kind off (YAZ-2523): one that uses IDs, or one that does not. */
   const vault = (ids: boolean): WikilinkResolveSource => {
     const links = createWikilinkResolveSource()
-    links.update(() => null, undefined, undefined, ids)
+    links.update(() => null, undefined, undefined, ids, ids ? ['YAZ'] : [])
     return links
   }
 
-  /** The id the Create row linked by (YAZ-2293): the document is `X[[<id>]]` and nothing else. */
-  const linkedId = (crepe: Crepe): string => {
-    const id = /^X\[\[(.*)\]\]\n$/.exec(getMarkdownForSave(crepe))?.[1] ?? ''
-    expect(isNoteId(id)).toBe(true)
-    return id
+  /** The door in the main process (YAZ-2677 D4), which answers when the test says: `give` is its answer to the oldest request. */
+  const door = () => {
+    const asked: { resolve: (id: string | null) => void; reject: (err: unknown) => void }[] = []
+    mintNoteId.mockImplementation(() => new Promise<string | null>((resolve, reject) => asked.push({ resolve, reject })))
+    const settle = async (act: (request: (typeof asked)[number]) => void) => {
+      act(asked.shift()!)
+      // The number, the link, the template read and the create: each is one turn of the loop at most.
+      for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0))
+    }
+    return { asked, give: (id: string | null) => settle((request) => request.resolve(id)), fail: (err: unknown) => settle((request) => request.reject(err)) }
+  }
+  /** A vault that uses IDs, the caret after `X`, and `typed` picked as the Create row with Enter. */
+  const picked = async (typed: string, n = nav()) => {
+    const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, `[[${typed}`)
+    press(crepe, 'Enter')
+    return { crepe, n }
   }
 
-  it('B: nothing matching offers one Create row: Enter inserts the link BY ID and makes the page titled by the typed text, with that id, staying put (YAZ-1357, 🔒 D3 revised; YAZ-2293; YAZ-2420 D20)', async () => {
-    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+  it('B, S35: nothing matching offers one Create row. Enter takes the NUMBER first, then puts the link by that ID where the typed text was, then makes the page titled by the typed text, with that id, staying put (YAZ-1357, 🔒 D3 revised; YAZ-2293; YAZ-2420 D20; YAZ-2677 D4)', async () => {
+    const main = door()
     const n = nav()
     const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
@@ -299,60 +314,172 @@ describe('wikilink picker: create-new row', () => {
     expect(rows()).toEqual(['Create "New Page"'])
     expect(create?.getAttribute('aria-selected')).toBe('true')
     press(crepe, 'Enter')
-    const id = linkedId(crepe)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/new-page-${id}.md`, content: '---\ntitle: New Page\n---\n', id })
-    expect(linkedId(crepe)).toBe(id) // created: the id link stays
+    // At once: the brackets are closed around the typed name, the picker is shut, and the door is asked, one time, for the vault's next ID.
+    expect(getMarkdownForSave(crepe)).toBe('X[[New Page]]\n')
+    expect(rows()).toEqual([])
+    expect(mintNoteId).toHaveBeenCalledExactlyOnceWith('/vault')
+    expect(createFile).not.toHaveBeenCalled()
+    // The note is made only once the link holds its id.
+    let linkAtCreate = ''
+    createFile.mockImplementation(async () => ((linkAtCreate = getMarkdownForSave(crepe)), { path: '', mtime: 1, size: 0 }))
+    await main.give('YAZ-43')
+    expect(linkAtCreate).toBe('X[[YAZ-43]]\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/new-page-yaz-43.md', content: '---\ntitle: New Page\n---\n', id: 'YAZ-43' })
+    expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43]]\n') // created: the id link stays
     expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
     expect(n.openCurrent).not.toHaveBeenCalled()
     expect(n.openBackground).not.toHaveBeenCalled()
   })
 
-  it('a `#heading` typed with the name rides on the id link, and comes back with the name on a failure', async () => {
-    createFile.mockResolvedValueOnce({ path: '', mtime: 1, size: 0 })
-    const { crepe } = await mount('X\n', source('Alpha'), nav(), vault(true))
-    caret(crepe, posOf(crepe, 'X', 1))
-    type(crepe, '[[Page#Section')
+  it('S36: what the user types during the wait for the number is not lost, and the link goes where the `[[` text was', async () => {
+    const main = door()
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const { crepe } = await picked('New Page')
+    // The caret is after the link: typing goes on behind it…
+    type(crepe, ' and more')
+    // …and an edit in front of it moves it.
+    caret(crepe, posOf(crepe, 'X'))
+    type(crepe, 'Before ')
+    expect(getMarkdownForSave(crepe)).toBe('Before X[[New Page]] and more\n')
+    await main.give('YAZ-43')
+    expect(getMarkdownForSave(crepe)).toBe('Before X[[YAZ-43]] and more\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/new-page-yaz-43.md', content: '---\ntitle: New Page\n---\n', id: 'YAZ-43' })
+    // The caret stayed where the user put it: the next character lands there.
+    type(crepe, '!')
+    expect(getMarkdownForSave(crepe)).toBe('Before !X[[YAZ-43]] and more\n')
+  })
+
+  it('S36: a second link created during the wait of the first: each gets its own number, in its own place', async () => {
+    const main = door()
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const { crepe } = await picked('First')
+    type(crepe, ' [[Second')
     press(crepe, 'Enter')
-    const [, id, heading] = /^X\[\[([^#]*)(#Section)\]\]\n$/.exec(getMarkdownForSave(crepe)) ?? []
-    expect(isNoteId(id)).toBe(true)
-    expect(heading).toBe('#Section')
-    await new Promise((r) => setTimeout(r, 0))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/page-${id}.md`, content: '---\ntitle: Page\n---\n', id })
+    expect(getMarkdownForSave(crepe)).toBe('X[[First]] [[Second]]\n')
+    expect(main.asked).toHaveLength(2)
+    await main.give('YAZ-43')
+    expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43]] [[Second]]\n')
+    await main.give('YAZ-44')
+    expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43]] [[YAZ-44]]\n')
+    expect(createFile.mock.calls.map(([req]) => req)).toEqual([
+      { path: '/vault/first-yaz-43.md', content: '---\ntitle: First\n---\n', id: 'YAZ-43' },
+      { path: '/vault/second-yaz-44.md', content: '---\ntitle: Second\n---\n', id: 'YAZ-44' },
+    ])
+  })
+
+  it('a `#heading` typed with the name rides on the id link, and comes back with the name on a failure', async () => {
+    const main = door()
+    createFile.mockResolvedValueOnce({ path: '', mtime: 1, size: 0 })
+    const { crepe } = await picked('Page#Section')
+    expect(getMarkdownForSave(crepe)).toBe('X[[Page#Section]]\n')
+    await main.give('YAZ-43')
+    expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43#Section]]\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/page-yaz-43.md', content: '---\ntitle: Page\n---\n', id: 'YAZ-43' })
 
     createFile.mockReset()
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
-    const doomed = await mount('X\n', source('Alpha'), nav(), vault(true))
-    caret(doomed.crepe, posOf(doomed.crepe, 'X', 1))
-    type(doomed.crepe, '[[Doomed#Section')
-    press(doomed.crepe, 'Enter')
-    await new Promise((r) => setTimeout(r, 0))
+    const doomed = await picked('Doomed#Section')
+    await main.give('YAZ-44')
     expect(getMarkdownForSave(doomed.crepe)).toBe('X[[Doomed#Section]]\n')
   })
 
   it('a click on the Create row does the same', async () => {
+    const main = door()
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const n = nav()
     const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[Clicked')
     document.querySelector<HTMLElement>(`.${WIKILINK_PICKER_CREATE_CLASS}`)?.click()
-    await new Promise((r) => setTimeout(r, 0))
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/clicked-${linkedId(crepe)}.md`, content: '---\ntitle: Clicked\n---\n', id: linkedId(crepe) })
+    expect(getMarkdownForSave(crepe)).toBe('X[[Clicked]]\n')
+    await main.give('YAZ-43')
+    expect(getMarkdownForSave(crepe)).toBe('X[[YAZ-43]]\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/clicked-yaz-43.md', content: '---\ntitle: Clicked\n---\n', id: 'YAZ-43' })
   })
 
-  it('a create failure is SAID through the notice, and the id link falls back to the typed text — no page was born with that id', async () => {
+  it('S35: a create failure is SAID through the notice, and the id link goes back to the typed text — no page was born with that id', async () => {
+    const main = door()
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
-    const n = nav()
-    const { crepe } = await mount('X\n', source('Alpha'), n, vault(true))
-    caret(crepe, posOf(crepe, 'X', 1))
-    type(crepe, '[[Doomed')
-    press(crepe, 'Enter')
-    linkedId(crepe)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(getMarkdownForSave(crepe)).toBe('X[[Doomed]]\n')
-    await vi.waitFor(() => expect(n.onNotice).toHaveBeenCalledWith('Can\'t create "Doomed": disk full'))
+    const { crepe, n } = await picked('Doomed')
+    type(crepe, ' after')
+    await main.give('YAZ-43')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/doomed-yaz-43.md', content: '---\ntitle: Doomed\n---\n', id: 'YAZ-43' })
+    expect(getMarkdownForSave(crepe)).toBe('X[[Doomed]] after\n')
+    await vi.waitFor(() => expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t create "Doomed": disk full'))
     expect(n.openCurrent).not.toHaveBeenCalled()
+  })
+
+  it('the door gives no number: nothing is made, the link stays the typed text, and the failure is said', async () => {
+    const main = door()
+    const { crepe, n } = await picked('No Number')
+    await main.fail(new BridgeRequestError('IO_ERROR', 'the count file cannot be written'))
+    expect(getMarkdownForSave(crepe)).toBe('X[[No Number]]\n')
+    expect(createFile).not.toHaveBeenCalled()
+    expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t create "No Number": the count file cannot be written')
+  })
+
+  it('the vault stopped using IDs after the pick (the door answers null): the page is made the plain way, and the link holds its name', async () => {
+    const main = door()
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const { crepe, n } = await picked('New Page')
+    await main.give(null)
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/New Page.md', content: '' })
+    expect(getMarkdownForSave(crepe)).toBe('X[[New Page]]\n')
+    expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
+  })
+
+  it('the user changes the text in the brackets during the wait: the link is theirs and stays as they left it, and the note is still made, with its number', async () => {
+    const main = door()
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const { crepe, n } = await picked('Plan')
+    caret(crepe, posOf(crepe, 'Plan', 4))
+    type(crepe, 's')
+    await main.give('YAZ-43')
+    expect(getMarkdownForSave(crepe)).toBe('X[[Plans]]\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/plan-yaz-43.md', content: '---\ntitle: Plan\n---\n', id: 'YAZ-43' })
+    expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "Plan"')
+    // And a create that fails then has no id in the text to take back.
+    createFile.mockReset()
+    createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
+    const other = await picked('Draft')
+    caret(other.crepe, posOf(other.crepe, 'Draft'))
+    type(other.crepe, 'My ')
+    await main.give('YAZ-44')
+    expect(getMarkdownForSave(other.crepe)).toBe('X[[My Draft]]\n')
+  })
+
+  it('the user deletes the link during the wait: nothing is put back in the text, and the note is still made', async () => {
+    const main = door()
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const { crepe } = await picked('Gone')
+    const view = viewOf(crepe)
+    view.dispatch(view.state.tr.delete(posOf(crepe, '[[Gone]]'), posOf(crepe, '[[Gone]]', 8)))
+    type(crepe, ' typed on')
+    await main.give('YAZ-43')
+    expect(getMarkdownForSave(crepe)).toBe('X typed on\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/gone-yaz-43.md', content: '---\ntitle: Gone\n---\n', id: 'YAZ-43' })
+  })
+
+  it('the editor closes during the wait (the tab was closed): nothing throws, and the note is still made', async () => {
+    const main = door()
+    createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+    const { crepe, n } = await picked('Left')
+    const at = mounted.findIndex((m) => m.crepe === crepe)
+    const [gone] = mounted.splice(at, 1)
+    await gone.crepe.destroy()
+    gone.root.remove()
+    await main.give('YAZ-43')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/left-yaz-43.md', content: '---\ntitle: Left\n---\n', id: 'YAZ-43' })
+    expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "Left"')
+  })
+
+  it('a link with no page name (`[[#heading]]` picked as Create) makes no page and asks for no number', async () => {
+    door()
+    const { crepe } = await picked('#Section')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getMarkdownForSave(crepe)).toBe('X[[#Section]]\n')
+    expect(mintNoteId).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
   })
 
   it('in a vault that does not use IDs the Create row inserts the typed name and makes `<typed>.md`, empty: no id is minted, sent or inserted (YAZ-2523 V3)', async () => {
@@ -367,6 +494,7 @@ describe('wikilink picker: create-new row', () => {
     expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/New Page.md', content: '' })
     expect(getMarkdownForSave(crepe)).toBe('X[[New Page#Section]]\n')
     expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
+    expect(mintNoteId).not.toHaveBeenCalled()
   })
 
   it('there a click on the Create row does the same, and a failure is said through the notice with the link left as typed', async () => {

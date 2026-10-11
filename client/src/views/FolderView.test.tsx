@@ -24,7 +24,7 @@ import { click, flush, press, q, rec, renderFolderView, setValue, unmountFolderV
 vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn(), writeFolderValues: vi.fn(), transformFile: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), tree: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintNoteId: vi.fn(), tree: vi.fn() },
 }))
 /** The real pane, wrapped, so a test can reach the host's bundle directly. */
 const captured = vi.hoisted(() => ({ folder: null as FolderHost | null }))
@@ -45,6 +45,7 @@ vi.mock('./view/OutlineEditor', () => ({
 }))
 
 import { api, BridgeRequestError } from '../api'
+import { testDoor } from '../testNoteIds'
 import type { FolderHost, ViewsPaneProps } from './ViewsPane'
 import { transformFile, writeFolderValues, writeProperties, writeProperty } from './writeProperty'
 
@@ -138,6 +139,8 @@ beforeEach(async () => {
   transform.mockResolvedValue({ mtime: 2, content: '' })
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist')) // no template
   createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
+  // The door in the main process (YAZ-2677 D4): a new note's id is the vault's next number.
+  vi.mocked(api.mintNoteId).mockImplementation(testDoor())
 })
 
 afterEach(() => {
@@ -1045,7 +1048,7 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     expect(readFile.mock.calls).toEqual([[SETTINGS_FILE], ['/vault/stages/.template.md']]) // the page's own bytes (D9), then E3: the folder's own hidden template
     expect(createFile).toHaveBeenCalledTimes(1)
     expect(created(0)).toEqual(born(0, '/vault/stages'))
-    expect(created(0).path).toMatch(/^\/vault\/stages\/untitled-[0-9a-z]{12}\.md$/)
+    expect(created(0).path).toMatch(/^\/vault\/stages\/untitled-yaz-\d+\.md$/)
     expect(onOpenFile).toHaveBeenCalledWith(created(0).path)
   })
 
@@ -1124,12 +1127,12 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     const paths = [await captured.folder!.create({ properties: {} }, 'Ship it'), await captured.folder!.create({ properties: {} }, 'Lead Gen')]
     expect([created(0), created(1)]).toEqual([born(0, '/vault/stages', '', 'Ship it'), born(1, '/vault/stages', '', 'Lead Gen')])
     expect(paths).toEqual([created(0).path, created(1).path])
-    expect(paths[1]).toMatch(/^\/vault\/stages\/lead-gen-[0-9a-z]{12}\.md$/)
+    expect(paths[1]).toMatch(/^\/vault\/stages\/lead-gen-yaz-\d+\.md$/)
   })
 
   it('B: a typed title keeps its `/` — it is text, not a path; whitespace-only falls back to Untitled (YAZ-2420 D20)', async () => {
     await mount()
-    expect(await captured.folder!.create({ properties: {} }, 'a/b')).toBe(`/vault/stages/a-b-${created(0).id}.md`)
+    expect(await captured.folder!.create({ properties: {} }, 'a/b')).toBe(`/vault/stages/a-b-${created(0).id?.toLowerCase()}.md`)
     expect(created(0).content).toBe('---\ntitle: a/b\n---\n')
     expect(await captured.folder!.create({ properties: {} }, '   ')).toBe(born(1, '/vault/stages').path)
   })

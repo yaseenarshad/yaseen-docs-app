@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -44,6 +44,13 @@ export const CONTRACT = {
   writeFile: invoke<[req: FileWriteRequest], FileWriteResponse>('fs:write', 1),
   createDir: invoke<[req: CreateDirRequest], CreateDirResponse>('fs:create-dir', 1),
   createFile: invoke<[req: string | CreateFileRequest], CreateFileResponse>('fs:create-file', 1),
+  /**
+   * The door (YAZ-2677 🔒 D4, R17): the next ID of the vault that holds `path`, for a caller that
+   * must know it before its note exists (`CreateFileRequest.id`). The number is saved before it is
+   * answered, so one that is never used is a gap and no ID is given two times. Null where the vault
+   * does not use IDs.
+   */
+  mintNoteId: invoke<[path: string], string | null>('fs:mint-note-id', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first `index(root)` build. Read it AFTER the first index snapshot. */
@@ -180,6 +187,40 @@ export const CONTRACT = {
     write: invoke<[root: string, name: string, value: unknown], void>('vaultConfig:write', 3),
     /** Fired in every window after any vault's config change. */
     onChange: push<VaultConfigChange>('vaultConfig:changed'),
+  },
+  /** A vault's IDs (YAZ-2677), each for a vault of the calling window: the switch in Settings and the duplicate check. */
+  ids: {
+    /**
+     * Save the vault's answer in its `ids.json`, and with a yes its ID letters, in capitals (🔒 D2).
+     * Every other key of the file stays (R10, R12), and the read and the write are one step in main,
+     * so two windows that save at one moment each keep the other's change. A yes gives every note
+     * and folder its number NOW, on this Mac (R32, S64); a Mac that only sees the yes arrive by the
+     * sync waits (S65). A file that is not valid JSON is not written over (`INVALID_CONFIG`).
+     */
+    set: invoke<[root: string, enabled: boolean, letters?: string], void>('ids:set', 3),
+    /**
+     * "Check for duplicates" (🔒 D7, S55 to S57): the notes that share an ID are settled now, on this
+     * Mac (R32), and the answer tells the result in one line: `No duplicates.`, what was fixed, or
+     * which ID another Mac must fix (then nothing was written).
+     */
+    check: invoke<[root: string], string>('ids:check', 1),
+    /** What the rows "ID letters" and "Old IDs" show (🔒 D5, D6): the letters and the counts, from main's index. A vault that does not use IDs → `BAD_REQUEST`. */
+    state: invoke<[root: string], IdsState>('ids:state', 1),
+    /**
+     * "Change letters" (🔒 D5, S79 to S87): main FIRST saves `letters` and puts the letters of before
+     * into `was`, THEN changes each `id:` line, link, `also_in` entry, folder-value key and built
+     * file name. A number never changes, and an old ID is not touched. The letters the vault has
+     * now are "Finish": only the files a stopped change left are written. Resolves when it is done,
+     * to the state after it.
+     */
+    reletter: invoke<[root: string, letters: string], IdsState>('ids:reletter', 2),
+    /**
+     * "Give old IDs numbers" (🔒 D6, S88 to S90): each note and folder with an old 12-character ID
+     * takes the vault's next number, oldest file first, and each link, `also_in` entry, folder-value
+     * key and built file name follows. A second run finishes one that stopped, with the same numbers.
+     * Resolves when it is done, to the state after it.
+     */
+    backfill: invoke<[root: string], IdsState>('ids:backfill', 1),
   },
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835): targeted, serialised mutators; a corrupt file rejects every write `INVALID_CONFIG`. */
   properties: {
