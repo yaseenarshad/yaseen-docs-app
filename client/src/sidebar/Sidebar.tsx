@@ -10,7 +10,7 @@ import { relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind } from '../links/shortcuts'
-import { ancestorDirs, findDirNode, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, findDirNode, findNode, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
@@ -23,7 +23,7 @@ import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
 import { Tree, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
-import { useSidebarSearch } from './hooks/useSidebarSearch'
+import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import { useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
@@ -120,6 +120,15 @@ interface SidebarProps {
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
   onRevealConsumed: (id: number) => void
   /**
+   * One row menu asked from outside the panel (YAZ-2663 D6): a right-click on a row of the new tab
+   * page. The panel opens its OWN row menu for that path at the point, one time. Set at MOUNT is
+   * the right-click with the sidebar hidden (S31): App shows the sidebar, and the menu opens when
+   * the tree lands.
+   */
+  menuRequest: SidebarMenuRequest | null
+  /** The request was acted on, or its path is not in the tree: it must not replay after a remount. */
+  onMenuConsumed: (id: number) => void
+  /**
    * The settings (GRO-2024); App owns and applies them. The sidebar no longer edits them (the
    * dialog does, YAZ-1679) but still READS `confirmDelete` and writes it back through the
    * delete sheet's "Don't ask me again" (GRO-2272).
@@ -157,8 +166,17 @@ interface SidebarProps {
    * edge case. With it false the caret stays where it is, also at a mount on the Search tab.
    */
   pendingSearchFocus: boolean
+  /** With the flag above: a new tab (⌘T) asks for a NEW search, and the bar is emptied (YAZ-2663 D10). ⌘K does not. */
+  pendingSearchClear?: boolean
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
   onSearchFocusHandled: () => void
+  /**
+   * The way to the new tab page: → or ↓ in the EMPTY search bar (YAZ-2663 D7, S33), and → on a
+   * row of Files, Focus or Favorites that has nothing to open (D8). It asks App to put the keyboard
+   * focus on the page, and App says whether a row took it. Absent, or answered `false` — no page
+   * shows, or no column of it has a row — the key does what it did before.
+   */
+  onLeaveToPage?: () => boolean
   /**
    * ⌘⇧C's read-only window onto the multi-selection (🔒 D4, YAZ-1338). The state stays HERE
    * (🔒 D1) — it is per root and dies with the panel — but the CHORD is App's: this component is
@@ -186,6 +204,14 @@ interface SidebarProps {
   onSetReview: (path: string, on: boolean) => void
   /** An Inbox row was clicked (YAZ-2602 R5): App opens the review of THAT vault, or closes it when it is the one open. */
   onInbox: (root: string) => void
+}
+
+/** One "open the row menu of this path at this point" gesture (YAZ-2663 D6): the reveal request's idiom. */
+export interface SidebarMenuRequest {
+  id: number
+  path: string
+  x: number
+  y: number
 }
 
 /** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
@@ -392,6 +418,8 @@ export function Sidebar({
   onLensChange,
   revealRequest,
   onRevealConsumed,
+  menuRequest,
+  onMenuConsumed,
   settings,
   onChangeSettings,
   onOpenSettings,
@@ -402,7 +430,9 @@ export function Sidebar({
   onDeleteFile,
   onNotice,
   pendingSearchFocus,
+  pendingSearchClear = false,
   onSearchFocusHandled,
+  onLeaveToPage,
   selectionRef,
   clipboardRef,
   onReviewFolder,
@@ -499,15 +529,88 @@ export function Sidebar({
   const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
+  // The keyboard goes to the page on show: the caret into the open page (YAZ-2662 D9), else the
+  // focus onto the new tab page, when it shows and has a row (YAZ-2663 D10). With neither, nothing moves.
+  const toPage = useCallback(() => focusOpenDocument() || onLeaveToPage?.() === true, [onLeaveToPage])
   // The way out of the Search tab, for the search's Esc (`searchEsc`): back to the lens the window
-  // last showed, and the caret goes into the open page (YAZ-2662 D9). With no page open no caret moves.
+  // last showed, and the keyboard goes to the page on show.
   const leaveSearch = useCallback(() => {
     onLensChange(storage.getSidebarLens())
-    focusOpenDocument()
-  }, [onLensChange])
+    toPage()
+  }, [onLensChange, toPage])
+  // The preview panel from a row of Files, Focus or Favorites (YAZ-2663 D11): Space on a FILE row
+  // shows App's panel on it — the panel of the search (YAZ-2662 D5), by the same door — and no tab
+  // opens. Space looks, Enter opens, on every surface. With the panel on show it follows the
+  // keyboard focus, `PREVIEW_FOLLOW_MS` after its last move; on a folder row no panel is drawn, at
+  // once (`treeParked`: the preview is on with no panel). Space on a folder row still folds it.
+  const [treeParked, setTreeParked] = useState(false)
+  const treePreviewing = !searching && (previewPath !== null || treeParked)
+  const treeFollow = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const stopTreePreview = useCallback(() => {
+    clearTimeout(treeFollow.current)
+    setTreeParked(false)
+    onPreview(null)
+  }, [onPreview])
+  // A different tab of the panel shows, or the panel goes: the rows that drive the preview are gone, and the panel with it (S64).
+  // Read as it was on the tab that goes: the box is filled AFTER a commit, and the clean-up below
+  // runs before that, so a panel of the search is not closed a second time by the tab that comes.
+  const treePreview = useRef({ on: treePreviewing, stop: stopTreePreview })
+  useEffect(() => {
+    treePreview.current = { on: treePreviewing, stop: stopTreePreview }
+  })
+  useEffect(
+    () => () => {
+      if (treePreview.current.on) treePreview.current.stop()
+      clearTimeout(treeFollow.current)
+    },
+    [lens],
+  )
+  /** The panel follows the row that got the keyboard focus (S61). */
+  const followTreeRow = (row: HTMLElement): void => {
+    clearTimeout(treeFollow.current)
+    const path = row.dataset.path
+    if (path === undefined) return
+    if (!row.matches('.tree__row--file')) {
+      setTreeParked(true)
+      onPreview(null)
+    } else
+      treeFollow.current = setTimeout(() => {
+        setTreeParked(false)
+        onPreview(path)
+      }, PREVIEW_FOLLOW_MS)
+  }
+  // The arrows from NOWHERE (YAZ-2663 D10): with the keyboard on nothing, or on a tab button of the
+  // panel, ↓ or ↑ puts the focus on a row of Files, Focus or Favorites — the selected row, else the
+  // row of the open page, else the first — and → goes to the new tab page. A field, a row, a key
+  // with a modifier, an open menu or dialog, and the Search tab keep their keys. On the window: the
+  // focus is on the body then, and no panel hears the key.
+  // On the Search tab the bar is the walk (D12): ↓ or ↑ from nowhere puts the caret in it.
+  const menuOpen = menu !== null
+  useEffect(() => {
+    if (menuOpen) return
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowRight') return
+      // Where the key was pressed: nowhere is the body, or a part of the panel that is no row and no field.
+      const on = e.target instanceof Element ? e.target : null
+      const nowhere = on === null || on === document.body || on === document.documentElement || (on.closest('.sidebar') !== null && !on.matches('.tree__row, input, textarea, select, [contenteditable]'))
+      if (!nowhere || document.querySelector('[aria-modal="true"]') !== null) return
+      if (e.key === 'ArrowRight') {
+        if (onLeaveToPage?.() === true) e.preventDefault()
+        return
+      }
+      const body = bodyRef.current
+      const row = searching ? document.querySelector<HTMLElement>('.sidebar__search-input') : (body?.querySelector<HTMLElement>('.tree__row--selected') ?? body?.querySelector<HTMLElement>('.tree__row--active') ?? body?.querySelector<HTMLElement>('.tree__row[data-path]'))
+      if (row == null) return
+      row.focus()
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [searching, menuOpen, onLeaveToPage])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
-  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview)
+  const { searchInput, query, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, pendingSearchClear)
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
   const menuRow = menu?.leaveSearchTo ?? null
@@ -579,10 +682,13 @@ export function Sidebar({
 
   // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
 
-  const openMenu = useCallback(
-    (node: MenuRow | null, e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
+  // The ONE builder of the row menu, by the row and the point: a right-click in the panel
+  // (`openMenu`) and a menu request (YAZ-2663 D6). `outside` is a row that is not the panel's — a
+  // row of the new tab page. It is a row like a search row: a disk row, with "Show in sidebar"
+  // first, whose tree-drawing items show it in Files first (S27, S30). It is no pick and no
+  // highlight of the panel, and its menu is the menu of one row (S32).
+  const openMenuAt = useCallback(
+    (node: MenuRow | null, x: number, y: number, outside = false) => {
       const filePath = node?.type === 'file' ? node.path : null
       // A right-click on a row the selection does NOT hold is a fresh target, so the selection
       // becomes THAT row (D9, YAZ-1674 — the Finder rule; it used to merely clear), which keeps
@@ -590,14 +696,14 @@ export function Sidebar({
       // BLANK SPACE is not a row and never touches it (YAZ-1337): its menu is about the vault
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
-      if (node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
+      if (!outside && node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) dispatchSelection({ type: 'set', path: node.path })
       // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
-      if (searching && node !== null) searchCursor.set(node.path)
+      if (!outside && searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
       // other target this menu pins.
-      const plural = node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      const plural = !outside && node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       // A VAULT row (YAZ-2602 D3) is its own kind: a folder that is a vault, with that vault's root.
       // It creates and pastes like a folder; it is not opened, clipped, renamed, deleted, favorited,
       // reviewed or put in the focus list (S13, A2). A selection that holds one has no plural item (A3).
@@ -610,16 +716,17 @@ export function Sidebar({
       // App's answer for the row (YAZ-2322), asked ONCE here like every other target this menu pins.
       const inReview = filePath === null ? null : reviewState(filePath)
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
-      const menuLens: SidebarLens = searching ? 'files' : lens
+      const asSearch = searching || outside
+      const menuLens: SidebarLens = asSearch ? 'files' : lens
       // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       setMenu({
-        x: e.clientX,
-        y: e.clientY,
+        x,
+        y,
         lens: menuLens,
-        leaveSearchTo: searching ? (node?.path ?? null) : null,
+        leaveSearchTo: asSearch ? (node?.path ?? null) : null,
         // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
-        showPath: lens !== 'files' && plural === null ? (node?.path ?? null) : null,
+        showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
         targetDir: node === null && multi ? null : targetDirFor(node, root),
         rowKind: node?.type ?? null,
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
@@ -665,6 +772,28 @@ export function Sidebar({
     },
     [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
   )
+  const openMenu = useCallback(
+    (node: MenuRow | null, e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      openMenuAt(node, e.clientX, e.clientY)
+    },
+    [openMenuAt],
+  )
+  // A menu request (YAZ-2663 D6) is acted on one time, when the panel can say what the path is: a
+  // request that is set when the panel mounts waits for the tree of its vault, and for the
+  // favorites of that vault, which the menu reads as it opens (S31). A path the tree does not hold
+  // opens nothing.
+  const seenMenuId = useRef<number | null>(null)
+  useEffect(() => {
+    if (menuRequest === null || seenMenuId.current === menuRequest.id) return
+    const vault = rootOf(menuRequest.path)
+    if (forest === null || !trees.has(vault) || favoritesByRoot[vault] === undefined) return
+    seenMenuId.current = menuRequest.id
+    onMenuConsumed(menuRequest.id)
+    const node = findNode(forest, menuRequest.path)
+    if (node !== null) openMenuAt(node, menuRequest.x, menuRequest.y, true)
+  }, [menuRequest, forest, trees, favoritesByRoot, rootOf, onMenuConsumed, openMenuAt])
 
   const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste } = useFileClipboard(root, vaultOf, vaultRows, menu, selectedPaths, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice)
 
@@ -821,6 +950,7 @@ export function Sidebar({
     selection,
     shortcuts,
     titles,
+    onLeaveToPage,
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
   const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks }
@@ -903,7 +1033,25 @@ export function Sidebar({
           Focus, Favorites. Search is a tab of its own, and switching tabs never touches its query.
           `role="tab"` + `aria-selected` only — no `aria-controls`/`tabpanel`: the one body below is
           every tab's. */}
-      <div className="sidebar__lenses" role="tablist" aria-label="Sidebar lens">
+      <div
+        className="sidebar__lenses"
+        role="tablist"
+        aria-label="Sidebar lens"
+        // The tabs from the keyboard (YAZ-2663 D12): ← and → move between the tab buttons and stop at
+        // both ends; Enter shows the tab (the button's own click), and ↓ on a tab that does not show
+        // asks for it too. ↓ on the tab that shows goes into its rows, or into the search bar: that is
+        // the window's listener above. ↑ has nowhere to go. The keys are taken, so → goes to no page from here.
+        onKeyDown={(e) => {
+          const tab = e.target instanceof HTMLElement && e.target.matches('.sidebar__lens') ? e.target : null
+          if (tab === null || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('.sidebar__lens')]
+            tabs[tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1)]?.focus()
+          } else if (e.key === 'ArrowDown' && tab.getAttribute('aria-selected') !== 'true') tab.click()
+          else if (e.key !== 'ArrowUp') return
+          e.preventDefault()
+        }}
+      >
         {SIDEBAR_TABS.map((id) => (
           <button
             key={id}
@@ -954,7 +1102,19 @@ export function Sidebar({
             aria-label="Search notes"
             value={query}
             onChange={changeQuery}
-            onKeyDown={searchKeyDown}
+            // With no text → and ↓ have nothing to do in the bar: they go to the first row of the
+            // new tab page, when it shows and has one (YAZ-2663 D7, S33). With text, and with no
+            // such row, every key is the search's as before (S34).
+            onKeyDown={(e) => {
+              const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
+              const out = query === '' && (e.key === 'ArrowRight' || e.key === 'ArrowDown') && plain
+              if (out && onLeaveToPage?.() === true) e.preventDefault()
+              // ↑ with no row above the highlight goes to the tab button of Search (D12): from there ← and → reach Files, Focus and Favorites.
+              else if (e.key === 'ArrowUp' && plain && atTop) {
+                e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__lens--active')?.focus()
+                e.preventDefault()
+              } else searchKeyDown(e)
+            }}
           />
           {/* The way out, in sight (YAZ-2638 D2): Esc goes back to the lens the window last showed,
               keeps the text and puts the caret in the open page (YAZ-2662 D9), and this keycap —
@@ -981,7 +1141,40 @@ export function Sidebar({
         // not also throw the selection the menu was about to act on.
         // (⌘C/⌘X/⌘V are App's window listener, D6 — see `clipboardRef`.)
         onKeyDown={(e) => {
-          if (e.key !== 'Escape' || selectedPaths.size === 0 || menu !== null) return
+          const on = e.target instanceof HTMLElement && e.target.matches('.tree__row[data-path]') ? e.target : null
+          // Space on a file row shows the preview panel, and Space again closes it (YAZ-2663 D11).
+          // Taken here, so the button makes no click and the row does not open. A held Space acts one time.
+          if (e.key === ' ' && !searching && on?.matches('.tree__row--file') === true && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) {
+            e.preventDefault()
+            if (e.repeat) return
+            const path = on.dataset.path
+            if (treePreviewing) stopTreePreview()
+            else if (path !== undefined) onPreview(path)
+            return
+          }
+          // ↑ on the FIRST row goes to the tab button of the tab that shows (YAZ-2663 D12). The tree
+          // took the key already and had no row above to go to, so the focus is still on this row.
+          if (e.key === 'ArrowUp' && !searching && on !== null && document.activeElement === on && on === e.currentTarget.querySelector('.tree__row[data-path]') && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)) {
+            e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>('.sidebar__lens--active')?.focus()
+            e.preventDefault()
+            return
+          }
+          // Enter on a row does its own work and closes the panel (the rule of YAZ-2662 S36).
+          if (e.key === 'Enter' && treePreviewing) stopTreePreview()
+          if (e.key !== 'Escape' || menu !== null) return
+          // Esc with the panel on show closes the panel only, and the keyboard stays on the row (S63).
+          if (treePreviewing) {
+            e.preventDefault()
+            e.stopPropagation()
+            stopTreePreview()
+            return
+          }
+          // With no selection, Esc on a row goes to the page on show (YAZ-2663 D10), as Esc in the
+          // search bar does. A rename box and a create box are no rows: their Esc is their own.
+          if (selectedPaths.size === 0) {
+            if (e.target instanceof Element && e.target.matches('.tree__row') && toPage()) e.preventDefault()
+            return
+          }
           e.preventDefault()
           e.stopPropagation()
           dispatchSelection({ type: 'clear' })
@@ -991,6 +1184,21 @@ export function Sidebar({
         // clicks (a row click SELECTS, D9), and a right-click keeps the selection standing
         // (YAZ-1337: its menu is about the root, not a fresh pick; the menu's overlay lives
         // outside this body, so its own mousedown never arrives here).
+        // With the preview on (YAZ-2663 D11) the panel follows the row that gets the keyboard focus.
+        // A click of the mouse on a row ends it (the rule of YAZ-2662 S65), and so does a focus that leaves the
+        // rows for a different part of the window — not for the panel itself, which the mouse can scroll.
+        onFocus={(e) => {
+          if (treePreviewing && e.target instanceof HTMLElement && e.target.matches('.tree__row[data-path]')) followTreeRow(e.target)
+        }}
+        onBlur={(e) => {
+          const to = e.relatedTarget
+          if (treePreviewing && to instanceof Element && !e.currentTarget.contains(to) && to.closest('.quicklook') === null) stopTreePreview()
+        }}
+        onClick={(e) => {
+          // A click of the MOUSE (`detail` counts its presses). The click that Space makes on a folder
+          // row has none: the folder folds and the preview stays on, so the next file shows the panel (S65).
+          if (treePreviewing && e.detail > 0 && e.target instanceof Element && e.target.closest('.tree__row') !== null) stopTreePreview()
+        }}
         onMouseDown={(e) => {
           if (e.button !== 0 || selectedPaths.size === 0) return
           if (e.target instanceof Element && e.target.closest('button, input, textarea, a, [role="treeitem"]') !== null) return

@@ -143,7 +143,7 @@ test('step 3 — a .png opens as one decoded canvas frame at the image\'s real s
 test('step 4 — closing the viewer tab writes nothing: every fixture is byte-identical', async () => {
   await win.locator('.tabbar__close').click()
   await expect(tabsOf(win)).toHaveCount(0)
-  await expect(win.locator('.editor-msg')).toHaveText('Select a file from the sidebar.')
+  await expect(win.locator('.start')).toBeVisible() // the new tab page (YAZ-2663 D3)
   expect(await snapshot()).toEqual(baseline)
   expect((await readdir(vault)).sort()).toEqual(rootListing) // no sidecar, no temp file, nothing born
   await shoot(win, 'viewers-04-closed')

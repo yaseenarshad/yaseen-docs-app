@@ -50,7 +50,7 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘K', label: 'Search the vault' },
   { keys: '⌘,', label: 'Settings' },
   { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
-  { keys: '⌘⇧C', label: 'Copy path — the sidebar selection when one is standing, else the open file' },
+  { keys: '⌘⇧C', label: 'Copy path — the row of the new tab page that the keyboard is on, else the sidebar selection when one is standing, else the open file' },
   // The file clipboard (YAZ-1674, D6): the sidebar's own chords, beside ⌘⇧C and like it about the
   // selection. One clipboard for every window, so a copy here pastes into another vault's window.
   { keys: '⌘X / ⌘C', label: 'Cut / copy the selected files and folders — pastes in any window, on any vault' },

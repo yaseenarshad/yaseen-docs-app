@@ -218,6 +218,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onLensChange: vi.fn(),
     revealRequest: null,
     onRevealConsumed: vi.fn(),
+    // A row menu asked from the new tab page (YAZ-2663 D6): none unless a test makes the request.
+    menuRequest: null,
+    onMenuConsumed: vi.fn(),
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
     onOpenSettings: vi.fn(),
@@ -2035,6 +2038,56 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
+  it('YAZ-2663 D12: ↑ in the search bar, with the highlight on the first row or with no row, goes to the tab button of Search; with a row above the highlight it moves the highlight, as before', async () => {
+    const { el } = await open({ lens: 'search' })
+    const input = searchBar(el)!
+    const searchTab = el.querySelector<HTMLElement>('.sidebar__lens--active')
+    act(() => input.focus())
+    await press(input, 'ArrowUp') // no text, no row
+    expect(document.activeElement).toBe(searchTab)
+    act(() => input.focus())
+    await type(input, 'a')
+    const top = () => cursor(el)[0]
+    await press(input, 'ArrowDown')
+    const second = top()
+    await press(input, 'ArrowUp') // a row above the highlight: the highlight moves, and the caret stays in the bar
+    expect([document.activeElement, top() !== second]).toEqual([input, true])
+    for (let n = 0; n < 60 && document.activeElement === input; n++) await press(input, 'ArrowUp')
+    expect(document.activeElement).toBe(searchTab) // …and from the first row, to the tab button
+  })
+
+  it('YAZ-2663 D10: with no page open Esc goes to the new tab page, when it shows and has a row; the search tab is left all the same', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, props } = await open({ lens: 'search', onLeaveToPage })
+    await type(searchBar(el)!, 'no such row')
+    act(() => searchBar(el)!.focus())
+    await press(searchBar(el)!, 'Escape')
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-2663 D10: with a page open Esc puts the caret in it, and the new tab page is not asked', async () => {
+    const pm = editorStub()
+    const onLeaveToPage = vi.fn(() => true)
+    const { el } = await open({ lens: 'search', onLeaveToPage })
+    act(() => searchBar(el)!.focus())
+    await press(searchBar(el)!, 'Escape')
+    expect([document.activeElement, onLeaveToPage.mock.calls.length]).toEqual([pm, 0])
+    pm.remove()
+  })
+
+  it('YAZ-2663 D10: a new tab (⌘T) starts a new search — the bar is empty and has the caret; ⌘K keeps the text, selected (YAZ-2638 D2)', async () => {
+    const { el, rerender } = await open({ lens: 'search' })
+    await type(searchBar(el)!, 'anchor')
+    await rerender({ lens: 'files' })
+    await rerender({ lens: 'search', pendingSearchFocus: true })
+    expect([searchBar(el)?.value, document.activeElement]).toEqual(['anchor', searchBar(el)])
+    await rerender({ lens: 'files', pendingSearchFocus: false })
+    await rerender({ lens: 'search', pendingSearchFocus: true, pendingSearchClear: true })
+    expect([searchBar(el)?.value, document.activeElement]).toEqual(['', searchBar(el)])
+    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('Type to search every note and folder.')
+  })
+
   it('YAZ-2662 S59, S60: the empty Search tab shows its line and, below it, the keys of the search — in the keycap of the bar; with text typed the keys do not show', async () => {
     const { el } = await open({ lens: 'search' })
     /** Each row of the list: its keycaps, and what they do. */
@@ -2061,14 +2114,15 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     }
   })
 
-  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, ↑, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663)', async () => {
+  it('YAZ-2662: with the bar empty no key of the list is taken — ↓, →, ←, Space and Enter are left for what stands beside the bar (the page of a new tab, YAZ-2663); ↑ goes to the tabs of the panel (YAZ-2663 D12)', async () => {
     const { el } = await open({ lens: 'search' })
     const taken = (key: string) => {
       const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
       act(() => void searchBar(el)!.dispatchEvent(event))
       return event.defaultPrevented
     }
-    expect(['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(6).fill(false))
+    expect(['ArrowDown', 'ArrowRight', 'ArrowLeft', ' ', 'Enter'].map(taken)).toEqual(Array(5).fill(false))
+    expect(taken('ArrowUp')).toBe(true)
   })
 
   it('S17, S19: the Search tab has no expand-all button and no blank-space menu — not even the OS one — with text or with none', async () => {
@@ -2262,6 +2316,201 @@ describe('search-row context menu (YAZ-2050)', () => {
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(input.value).toBe('a')
     expect(result(el)?.classList.contains('tree__row--selected')).toBe(true) // still the search: its highlight is on the row
+  })
+})
+
+/**
+ * The way out of the EMPTY search bar to the new tab page (YAZ-2663 D7): → and ↓ have nothing to do
+ * in a bar with no text, so they ask App for the page. With text they are the search's (YAZ-2662).
+ */
+describe('the way from the empty search bar to the new tab page (YAZ-2663 D7)', () => {
+  const press = (input: HTMLInputElement, key: string, init: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    act(() => void input.dispatchEvent(event))
+    return event
+  }
+  const highlighted = (el: HTMLElement) => el.querySelector<HTMLElement>('.tree__row--selected')?.dataset.path
+
+  it('S33: with no text → and ↓ ask for the page, and the key is taken when the page took the focus; when the page says no, when no page is there, and with a modifier, the key is the bar\'s as before', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, rerender } = await mount({ lens: 'search', onLeaveToPage })
+    const input = searchBar(el)!
+    expect([press(input, 'ArrowRight').defaultPrevented, press(input, 'ArrowDown').defaultPrevented]).toEqual([true, true])
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // Other keys, and a → or ↓ with a modifier, do not ask.
+    for (const [key, init] of [['ArrowLeft', {}], ['Enter', {}], [' ', {}], ['ArrowRight', { metaKey: true }], ['ArrowDown', { shiftKey: true }], ['ArrowRight', { altKey: true }]] as const) expect([key, press(input, key, init).defaultPrevented]).toEqual([key, false])
+    // ↑ is the tabs' (YAZ-2663 D12): it is taken, and it does not ask for the page.
+    expect(press(input, 'ArrowUp').defaultPrevented).toBe(true)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // No column of the page has a row: the page says no, and the key does nothing, as before.
+    onLeaveToPage.mockReturnValue(false)
+    expect(press(input, 'ArrowDown').defaultPrevented).toBe(false)
+    expect(onLeaveToPage).toHaveBeenCalledTimes(3)
+    // No page shows: App hands no door.
+    await rerender({ onLeaveToPage: undefined })
+    expect([press(input, 'ArrowRight').defaultPrevented, press(input, 'ArrowDown').defaultPrevented]).toEqual([false, false])
+    expect(document.activeElement).toBe(el.querySelector('.sidebar__lens--active')) // the ↑ above went to the tab button of Search; → and ↓ moved no focus
+  })
+
+  it('S34: with text in the bar → and ↓ do what the search says, and the page is not asked', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const records = ['/v/a.md', '/v/zed/ab.md'].map(indexRecord)
+    const tree: TreeNode[] = [TREE[1], { type: 'dir', name: 'zed', path: '/v/zed', children: [{ type: 'file', name: 'ab.md', path: '/v/zed/ab.md', size: 1, mtime: 1, kind: 'markdown' }] }]
+    const { el } = await mount({ lens: 'search', onLeaveToPage }, (b) => {
+      b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
+      b.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
+    })
+    const input = searchBar(el)!
+    await type(input, 'a')
+    expect(highlighted(el)).toBe('/v/a.md')
+    // ↓ moves the highlight (YAZ-803), and → is the text's key: the caret moves (YAZ-2662 S50).
+    expect(press(input, 'ArrowDown').defaultPrevented).toBe(true)
+    expect(highlighted(el)).toBe('/v/zed/ab.md')
+    expect(press(input, 'ArrowRight').defaultPrevented).toBe(false)
+    // A bar that holds only a space is not empty: → moves the caret over the space.
+    await type(input, ' ')
+    expect(press(input, 'ArrowRight').defaultPrevented).toBe(false)
+    expect(onLeaveToPage).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A row menu asked from outside the panel (YAZ-2663 D6): a right-click on a row of the new tab page
+ * makes App's `menuRequest`, and the Sidebar opens its OWN row menu for that path at the mouse. The
+ * page row is a row like a search row: "Show in sidebar" first, and an item that draws INTO the
+ * tree shows the row in Files first. It is no row of the sidebar, so no selection follows it.
+ */
+describe('a row menu asked for a path: the rows of the new tab page (YAZ-2663 D6)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  /** Projects/ holding a note, and a note at the top. */
+  const VAULT = (v: string): TreeNode[] => [folder(`${v}/Projects`, [note(`${v}/Projects/plan.md`)]), note(`${v}/top.md`)]
+  const ITEM = 'Show in sidebar'
+  const POINT = { x: 300, y: 200 }
+
+  let vaults = 0
+  const freshVault = () => `/v-ask-${++vaults}`
+  /** A fresh vault and a fresh window per mount; `over` is handed the vault, so a request can be set at the mount. */
+  const mountVault = async (over: (v: string) => Partial<SidebarProps> = () => ({}), tweak?: (bridge: ReturnType<typeof installBridge>, v: string) => void) => {
+    const v = freshVault()
+    const m = await mount({ root: v, ...over(v) }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })
+      tweak?.(b, v)
+      await storage.init()
+    })
+    return { ...m, v }
+  }
+  const row = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${path}"]`)
+  const click = (target: Element | null, init: MouseEventInit = {}) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init })))
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+  const closeMenu = (el: HTMLElement) => act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  const labels = (el: HTMLElement) => menuItems(el).map((b) => b.textContent)
+  const selected = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((r) => r.dataset.path)
+  /** The menu of a row of the Files tab, top level, in order; the menu is closed again. */
+  const menuOf = (el: HTMLElement, target: Element | null) => {
+    rightClick(target)
+    const out = labels(el)
+    closeMenu(el)
+    return out
+  }
+
+  it.each(['files', 'focus'] as const)('S27: with the %s tab on show a request opens the menu of that row at the point, "Show in sidebar" first and then the menu of its row in Files, for a file and for a folder; the request is consumed one time and no selection changes', async (lens) => {
+    const { el, v, props, rerender } = await mountVault(() => ({ onMenuConsumed: vi.fn() }))
+    const inFiles = Object.fromEntries(['/Projects', '/top.md'].map((rel) => [rel, menuOf(el, row(el, `${v}${rel}`))]))
+    expect(inFiles['/top.md']).not.toContain(ITEM)
+    // One row of the sidebar is selected, and it is not the row of the request.
+    click(row(el, `${v}/top.md`))
+    await rerender({ lens })
+    const before = selected(el)
+
+    await rerender({ menuRequest: { id: 1, path: `${v}/Projects`, ...POINT } })
+    expect(labels(el)).toEqual([ITEM, ...inFiles['/Projects']])
+    const menu = el.querySelector<HTMLElement>('.ctx-menu')!
+    expect([menu.style.left, menu.style.top]).toEqual(['300px', '200px'])
+    expect(props.onMenuConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    expect(selected(el)).toEqual(before)
+    // The same request again is no new request: a closed menu stays closed.
+    closeMenu(el)
+    await rerender({ menuRequest: { id: 1, path: `${v}/Projects`, ...POINT } })
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    await rerender({ menuRequest: { id: 2, path: `${v}/top.md`, ...POINT } })
+    expect(labels(el)).toEqual([ITEM, ...inFiles['/top.md']])
+    act(() => itemByLabel(el, ITEM)?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(`${v}/top.md`)
+    expect(selected(el)).toEqual(before)
+  })
+
+  it('S27: with text in the Search tab a request moves no highlight of the search', async () => {
+    const { el, v, rerender } = await mountVault(
+      () => ({ lens: 'search' }),
+      (b, vault) => b.index.mockResolvedValue({ root: vault, records: ['/Projects/plan.md', '/top.md'].map((rel) => ({ ...indexRecord(`${vault}${rel}`), folder: rel.slice(1, Math.max(1, rel.lastIndexOf('/'))) })), folders: [], generatedAt: 1, ids: true } as never),
+    )
+    await type(searchBar(el)!, 'p') // `top` and `plan` both match
+    const before = selected(el)
+    expect(before).toHaveLength(1)
+    const other = [`${v}/top.md`, `${v}/Projects/plan.md`].find((path) => path !== before[0])!
+    await rerender({ menuRequest: { id: 1, path: other, ...POINT } })
+    expect(labels(el)[0]).toBe(ITEM)
+    closeMenu(el)
+    expect(selected(el)).toEqual(before)
+  })
+
+  it('S30: Rename and New note on that menu show the row in Files first, as on a search row; the input then stands on the row', async () => {
+    const { el, v, props, rerender } = await mountVault()
+    const path = `${v}/Projects/plan.md` // inside a closed folder: Files does not draw the row yet
+    expect(row(el, path)).toBeNull()
+    await rerender({ menuRequest: { id: 1, path, ...POINT } })
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(path)
+    // What App does with that door: the Files tab, and the reveal.
+    await rerender({ lens: 'files', menuRequest: null, revealRequest: { id: 1, path } })
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('plan')
+
+    await rerender({ menuRequest: { id: 2, path: `${v}/Projects`, ...POINT }, revealRequest: null })
+    act(() => itemByLabel(el, 'New note')?.click())
+    expect(vi.mocked(props.onRevealInFiles).mock.calls).toEqual([[path], [`${v}/Projects`]])
+  })
+
+  it('S32: the menu is always the menu of ONE row: a request for a row inside a selection of two rows has no item that counts, and the selection stays', async () => {
+    const { el, v, rerender } = await mountVault()
+    click(row(el, `${v}/Projects`))
+    click(row(el, `${v}/top.md`), { shiftKey: true })
+    expect(selected(el)).toHaveLength(2)
+    expect(menuOf(el, row(el, `${v}/top.md`))[0]).toBe('Open 2 in new tabs') // the sidebar's own right-click counts the selection
+    await rerender({ menuRequest: { id: 1, path: `${v}/top.md`, ...POINT } })
+    expect(labels(el)[0]).toBe(ITEM)
+    expect(labels(el).filter((label) => /\d/.test(label ?? ''))).toEqual([])
+    expect(labels(el)).toEqual(expect.arrayContaining(['Cut', 'Copy', 'Add to favorites', 'Rename']))
+    expect(selected(el)).toHaveLength(2)
+  })
+
+  it('a path the tree does not hold opens nothing and says nothing; the request is consumed', async () => {
+    const { el, props } = await mountVault((vault) => ({ onMenuConsumed: vi.fn(), menuRequest: { id: 1, path: `${vault}/gone.md`, ...POINT } }))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onMenuConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('S31, S29: the sidebar was hidden. A request that is set when the panel mounts waits for the tree and for the favorites of its vault, then opens the menu one time: a favorite row says "Remove from favorites"', async () => {
+    let land: () => void = () => undefined
+    let list: () => void = () => undefined
+    const { el, props } = await mountVault(
+      (vault) => ({ onMenuConsumed: vi.fn(), menuRequest: { id: 1, path: `${vault}/top.md`, ...POINT } }),
+      (b, vault) => {
+        b.tree.mockImplementation((r: string) => new Promise((resolve) => (land = () => resolve({ root: r, tree: VAULT(vault), generatedAt: 1 }))))
+        b.favorites.get.mockImplementation(() => new Promise((resolve) => (list = () => resolve([`${vault}/top.md`]))))
+      },
+    )
+    await act(async () => land())
+    // The tree is here and the favorites are not: a menu now would say "Add to favorites" of a favorite.
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onMenuConsumed).not.toHaveBeenCalled()
+    await act(async () => list())
+    expect(labels(el)[0]).toBe(ITEM)
+    expect(labels(el)).toContain('Remove from favorites')
+    expect(props.onMenuConsumed).toHaveBeenCalledExactlyOnceWith(1)
   })
 })
 
@@ -2723,7 +2972,7 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     expect(document.activeElement).not.toBe(row(el, path))
   })
 
-  it.each(['files', 'focus', 'favorites'] as const)('S61, S63: on the %s tab ↓ moves the keyboard focus to the next row on show and ↑ to the row before; they stop at both ends, change no selection and open no page', async (lens) => {
+  it.each(['files', 'focus', 'favorites'] as const)('S61, S63: on the %s tab ↓ moves the keyboard focus to the next row on show and ↑ to the row before; ↓ stops at the last row, and they change no selection and open no page', async (lens) => {
     const { el, v, props, rerender } = await mountVault()
     await rerender({ lens })
     act(() => row(el, `${v}/Projects`)?.focus())
@@ -2731,9 +2980,13 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     const rows = labels(el)
     expect(rows).toEqual(lens === 'files' ? ['Projects', 'Alpha', 'plan', 'book.epub', 'top'] : ['Projects', 'Alpha', 'plan', 'top'])
     const walk = (name: string, times: number) => Array.from({ length: times }, () => [key(document.activeElement, name).defaultPrevented, focused()])
-    expect(walk('ArrowUp', 1)).toEqual([[true, 'Projects']]) // the first row: ↑ stops
-    expect(walk('ArrowDown', rows.length)).toEqual([...rows.slice(1), rows.at(-1)].map((label) => [true, label])) // …and ↓ stops on the last
-    expect(walk('ArrowUp', rows.length)).toEqual([...rows.slice(0, -1).reverse(), rows[0]].map((label) => [true, label]))
+    expect(walk('ArrowDown', rows.length)).toEqual([...rows.slice(1), rows.at(-1)].map((label) => [true, label])) // ↓ stops on the last row
+    expect(walk('ArrowUp', rows.length - 1)).toEqual(rows.slice(0, -1).reverse().map((label) => [true, label]))
+    // ↑ on the first row goes on to the tab button of the tab that shows (YAZ-2663 D12), and ↓ there comes back into the rows.
+    key(document.activeElement, 'ArrowUp')
+    expect(document.activeElement).toBe(el.querySelector('.sidebar__lens--active'))
+    key(document.activeElement, 'ArrowDown')
+    expect(focused()).toBe('Projects')
     expect(labels(el)).toEqual(rows) // ↓ and ↑ fold nothing
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
@@ -2759,13 +3012,229 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
     for (const open of [props.onOpenFile, props.onOpenFileBackground, props.onKeepFile]) expect(open).not.toHaveBeenCalled()
   })
 
-  it('S63: Enter and Space on a row do what they did before — the arrows\' handler takes neither key', async () => {
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D8: on the %s tab → on a row that has nothing to open — a file row, an open folder row — asks for the new tab page; a closed folder still opens and does not ask, and ← never asks; when the page says no, and with no page, the key does what it did', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, rerender } = await mountVault()
+    await rerender({ lens, onLeaveToPage })
+    const dir = `${v}/Projects`
+    act(() => row(el, dir)?.focus())
+    key(document.activeElement, 'ArrowRight') // closed: it opens, and the page is not asked
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 0])
+    expect(key(document.activeElement, 'ArrowRight').defaultPrevented).toBe(true) // open already: nothing to open
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['true', 1])
+    key(document.activeElement, 'ArrowLeft')
+    expect([isOpen(el, dir), onLeaveToPage.mock.calls.length]).toEqual(['false', 1])
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'ArrowLeft')
+    expect(onLeaveToPage).toHaveBeenCalledTimes(1)
+    key(document.activeElement, 'ArrowRight')
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // A → with a modifier is a shortcut of the window: the page is not asked.
+    key(document.activeElement, 'ArrowRight', { metaKey: true })
+    expect(onLeaveToPage).toHaveBeenCalledTimes(2)
+    // The page says no (no column has a row), and then no page shows: the focus stays on the row (S62).
+    onLeaveToPage.mockReturnValue(false)
+    key(document.activeElement, 'ArrowRight')
+    await rerender({ onLeaveToPage: undefined })
+    key(document.activeElement, 'ArrowRight')
+    expect([onLeaveToPage.mock.calls.length, focused()]).toEqual([3, 'top'])
+  })
+
+  it.each(['files', 'focus', 'favorites'] as const)('YAZ-2663 D10: on the %s tab, with the keyboard on nothing or on a tab button of the sidebar, ↓ or ↑ puts the focus on a row, and → asks for the new tab page; a field, a modifier and a row keep their keys', async (lens) => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, rerender } = await mountVault()
+    await rerender({ lens, onLeaveToPage })
+    expect(document.activeElement).toBe(document.body)
+    expect([key(document.body, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    act(() => (document.activeElement as HTMLElement).blur())
+    const tab = el.querySelector<HTMLElement>('.sidebar__lens--active')
+    act(() => tab?.focus())
+    // On the tab button of the tab that shows, ↓ goes into its rows. ↑ has nowhere to go (D12).
+    expect([key(tab, 'ArrowUp').defaultPrevented, document.activeElement]).toEqual([true, tab])
+    expect([key(tab, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'Projects'])
+    // → from nowhere goes to the page (D8's door). On a row, → is the row's.
+    act(() => (document.activeElement as HTMLElement).blur())
+    expect([key(document.body, 'ArrowRight').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
+    onLeaveToPage.mockReturnValue(false)
+    expect(key(document.body, 'ArrowRight').defaultPrevented).toBe(false)
+    // A key with a modifier, and a key in a field, are not the sidebar's.
+    expect(key(document.body, 'ArrowDown', { metaKey: true }).defaultPrevented).toBe(false)
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.focus()
+    expect([key(field, 'ArrowDown').defaultPrevented, document.activeElement]).toEqual([false, field])
+    field.remove()
+    // With the row of the open page on show, the keyboard starts there.
+    if (lens === 'files') {
+      await rerender({ activeFile: `${v}/top.md` })
+      expect([key(document.body, 'ArrowDown').defaultPrevented, focused()]).toEqual([true, 'top'])
+    }
+  })
+
+  it('YAZ-2663 D12: on the Search tab, with the keyboard on nothing, ↓ or ↑ puts the caret in the search bar, and → asks for the new tab page', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, rerender } = await mountVault()
+    await rerender({ lens: 'search', onLeaveToPage })
+    expect(document.activeElement).toBe(document.body)
+    expect([key(document.body, 'ArrowDown').defaultPrevented, document.activeElement]).toEqual([true, searchBar(el)])
+    act(() => searchBar(el)?.blur())
+    expect([key(document.body, 'ArrowUp').defaultPrevented, document.activeElement]).toEqual([true, searchBar(el)])
+    act(() => searchBar(el)?.blur())
+    expect([key(document.body, 'ArrowRight').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
+  })
+
+  it('YAZ-2663 D12: the tabs of the sidebar from the keyboard — ↑ on the first row goes to the tab button of the tab that shows; ← and → move between the tab buttons and stop at both ends; ↓ on a tab that does not show asks for it, as Enter does', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, props, rerender } = await mountVault()
+    await rerender({ onLeaveToPage })
+    const tabs = [...el.querySelectorAll<HTMLElement>('.sidebar__lens')]
+    const onTab = () => tabs.indexOf(document.activeElement as HTMLElement)
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'ArrowUp')
+    expect(focused()).not.toBe('top') // a row above it: ↑ walks, as before
+    act(() => row(el, `${v}/Projects`)?.focus()) // the first row
+    expect([key(document.activeElement, 'ArrowUp').defaultPrevented, onTab()]).toEqual([true, 0]) // Files
+    // ← and → on the tab buttons: Files, Search, Focus, Favorites. → never goes to the page from here.
+    const walk = ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'].map((name) => [key(document.activeElement, name).defaultPrevented, onTab()])
+    expect(walk).toEqual([[true, 0], [true, 1], [true, 2], [true, 3], [true, 3]])
+    expect(onLeaveToPage).not.toHaveBeenCalled()
+    // ↓ on a tab that does not show: the tab is asked for, and the keyboard stays on its button.
+    vi.mocked(props.onLensChange).mockClear()
+    expect([key(document.activeElement, 'ArrowDown').defaultPrevented, onTab()]).toEqual([true, 3])
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('favorites')
+    await rerender({ lens: 'favorites' })
+    // It shows now: ↓ goes into its rows.
+    key(document.activeElement, 'ArrowDown')
+    expect(document.activeElement?.matches('.tree__row')).toBe(true)
+  })
+
+
+  it('YAZ-2663 D10: Esc on a row with no selection goes to the page on show — the open page, else the new tab page; with a selection Esc ends the selection, as before', async () => {
+    const onLeaveToPage = vi.fn(() => true)
+    const { el, v, rerender } = await mountVault()
+    await rerender({ onLeaveToPage })
+    act(() => row(el, `${v}/top.md`)?.focus())
+    expect([key(document.activeElement, 'Escape').defaultPrevented, onLeaveToPage.mock.calls.length]).toEqual([true, 1])
+    const pm = editorStub()
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'Escape')
+    expect([document.activeElement, onLeaveToPage.mock.calls.length]).toEqual([pm, 1])
+    pm.remove()
+    // A click selects the row (D9): the first Esc ends the selection and the keyboard stays.
+    act(() => row(el, `${v}/top.md`)?.click())
+    act(() => row(el, `${v}/top.md`)?.focus())
+    key(document.activeElement, 'Escape')
+    expect([el.querySelectorAll('.tree__row--selected').length, onLeaveToPage.mock.calls.length, focused()]).toEqual([0, 1, 'top'])
+  })
+
+  describe('Space on a file row of a sidebar tree shows the preview panel (YAZ-2663 D11)', () => {
+    afterEach(() => vi.useRealTimers())
+    const walk = async (lens: 'files' | 'focus' | 'favorites' = 'files') => {
+      const m = await mountVault()
+      await m.rerender({ lens })
+      act(() => row(m.el, `${m.v}/Projects`)?.focus())
+      key(document.activeElement, 'ArrowRight') // the rows inside the folder are on show
+      const onPreview = vi.mocked(m.props.onPreview)
+      onPreview.mockClear()
+      vi.useFakeTimers()
+      return { ...m, onPreview, wait: (ms: number) => act(() => void vi.advanceTimersByTime(ms)), panel: () => previewPanel?.path?.slice(m.v.length) ?? null, opened: () => [m.props.onOpenFile, m.props.onKeepFile, m.props.onOpenFileBackground].reduce((n, door) => n + vi.mocked(door).mock.calls.length, 0) }
+    }
+
+    it.each(['files', 'focus', 'favorites'] as const)('S59, S60: on the %s tab Space on a file row shows the panel on that file, at once, and opens no tab; Space again closes it; a held Space acts one time', async (lens) => {
+      const { el, v, panel, opened } = await walk(lens)
+      act(() => row(el, `${v}/top.md`)?.focus())
+      expect([key(document.activeElement, ' ').defaultPrevented, panel(), opened(), focused()]).toEqual([true, '/top.md', 0, 'top'])
+      expect([key(document.activeElement, ' ', { repeat: true }).defaultPrevented, panel()]).toEqual([true, '/top.md'])
+      key(document.activeElement, ' ')
+      expect([panel(), opened()]).toEqual([null, 0])
+    })
+
+    it('S61: with the panel on show it follows the keyboard focus 120 ms after its last move; on a folder row no panel is drawn, at once, and it comes back on the next file', async () => {
+      const { el, v, panel, wait } = await walk()
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      key(document.activeElement, 'ArrowUp') // book.epub or plan: the row before, a file
+      const before = focused()
+      wait(119)
+      expect(panel()).toBe('/top.md') // the earlier file stays until the wait is over
+      wait(1)
+      expect(panel()).not.toBe('/top.md')
+      expect(panel()).not.toBeNull()
+      act(() => row(el, `${v}/Projects`)?.focus())
+      expect(panel()).toBeNull() // a folder: no panel, at once
+      act(() => row(el, `${v}/top.md`)?.focus())
+      wait(120)
+      expect([panel(), before === 'top']).toEqual(['/top.md', false])
+    })
+
+    it('S62: Space on a folder row folds it, as before, and shows no panel', async () => {
+      const { el, v, onPreview } = await walk()
+      act(() => row(el, `${v}/Projects`)?.focus())
+      expect([key(document.activeElement, ' ').defaultPrevented, onPreview.mock.calls]).toEqual([false, []])
+    })
+
+    it('S63: Esc with the panel on show closes the panel only, and the keyboard stays on the row; Enter on a row opens it and closes the panel; a click on a row closes the panel', async () => {
+      const onLeaveToPage = vi.fn(() => true)
+      const { el, v, panel, rerender, props } = await walk()
+      await rerender({ onLeaveToPage })
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      expect([key(document.activeElement, 'Escape').defaultPrevented, panel(), focused(), onLeaveToPage.mock.calls.length]).toEqual([true, null, 'top', 0])
+      key(document.activeElement, ' ')
+      expect(panel()).toBe('/top.md')
+      key(document.activeElement, 'Enter')
+      act(() => row(el, `${v}/top.md`)?.click()) // Enter on a file row is the button's own click, which the key makes
+      expect([panel(), vi.mocked(props.onOpenFile).mock.calls.length]).toEqual([null, 1])
+      // A click of the MOUSE on a row closes the panel too (the rule of YAZ-2662 S65).
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      expect(panel()).toBe('/top.md')
+      act(() => void row(el, `${v}/top.md`)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+      expect(panel()).toBeNull()
+    })
+
+    it('S65: Space on a folder row folds it and the preview stays on — the next file row shows the panel again', async () => {
+      const { el, v, panel, wait } = await walk()
+      const dir = `${v}/Projects`
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      act(() => row(el, dir)?.focus())
+      expect([panel(), isOpen(el, dir)]).toEqual([null, 'true'])
+      // Space on the folder: the key is the button's, and the click that it makes has no mouse in it (`detail` 0).
+      expect(key(document.activeElement, ' ').defaultPrevented).toBe(false)
+      act(() => void row(el, dir)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })))
+      expect(isOpen(el, dir)).toBe('false')
+      act(() => row(el, `${v}/top.md`)?.focus())
+      wait(120)
+      expect(panel()).toBe('/top.md')
+    })
+
+    it('S64: the panel closes when a different tab of the sidebar shows, and when the keyboard goes to the page', async () => {
+      const { el, v, panel, rerender } = await walk()
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      await rerender({ lens: 'favorites' })
+      expect(panel()).toBeNull()
+      await rerender({ lens: 'files' })
+      act(() => row(el, `${v}/top.md`)?.focus())
+      key(document.activeElement, ' ')
+      expect(panel()).toBe('/top.md')
+      const outside = document.createElement('button')
+      document.body.append(outside)
+      act(() => outside.focus())
+      expect(panel()).toBeNull()
+      outside.remove()
+    })
+  })
+
+  it('S63: Enter on a row, and Space on a folder row, do what they did before — the arrows\' handler takes neither key; Space on a FILE row is the preview\'s now (YAZ-2663 D11)', async () => {
     const { el, v, props } = await mountVault()
     // Enter on a folder row opens its page (YAZ-2290 D3): the row's own key.
     expect(key(row(el, `${v}/Projects`), 'Enter').defaultPrevented).toBe(true)
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Projects`)
-    // Space on a folder row, and Enter and Space on a file row, are the button's own click.
-    expect([key(row(el, `${v}/Projects`), ' '), key(row(el, `${v}/top.md`), 'Enter'), key(row(el, `${v}/top.md`), ' ')].map((event) => event.defaultPrevented)).toEqual([false, false, false])
+    // Space on a folder row, and Enter on a file row, are the button's own click. Space on a file row is taken: it shows the preview panel.
+    expect([key(row(el, `${v}/Projects`), ' '), key(row(el, `${v}/top.md`), 'Enter'), key(row(el, `${v}/top.md`), ' ')].map((event) => event.defaultPrevented)).toEqual([false, false, true])
+    expect(props.onOpenFile).toHaveBeenCalledTimes(1) // Space opened no page
   })
 
   it('D1, D8: a held Enter on a row does nothing — Enter and Shift+Enter in the search bar put the keyboard focus on a row of Files, and the repeats of that press arrive there: a folder row and a file row, with Shift and without, open no page, fold nothing and select nothing', async () => {
@@ -3104,7 +3573,10 @@ describe('Space, → and ← on a folder of the search tree (YAZ-2662 D6, D7)', 
     }
     /** ↑ to the first stop, then ↓ to the row labelled `label`: the highlight is on it, moved by the keyboard. */
     const go = (label: string) => {
+      // ↑ on the first row goes on to the tab buttons of the panel (YAZ-2663 D12): the walk to the top keeps the focus where it was.
+      const held = document.activeElement
       for (let i = 0; i < 20; i++) press('ArrowUp')
+      if (held instanceof HTMLElement && document.activeElement !== held) act(() => held.focus())
       for (let i = 0; i < 20 && cursor()[0] !== label; i++) press('ArrowDown')
       expect(cursor()).toEqual([label])
     }

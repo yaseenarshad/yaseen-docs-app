@@ -6,6 +6,7 @@
  * asks through `ConfirmMove` (D21). The sheet itself lands with YAZ-888; the
  * LOCKED copy lives here first, `deleteConfirmMessage`'s idiom, so the component stays trivial.
  */
+import { useCallback, useRef } from 'react'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -40,35 +41,45 @@ type ConfirmRenameProps = {
   count: number
   /** The window's titles (YAZ-2420 🔒 D14): what the copy names, it names by title. */
   titles: PathTitles
-  onConfirm: () => void
+  /** `dontAskAgain` is the box of the sheet (YAZ-2690 D2): App then turns "Ask before renaming" off. */
+  onConfirm: (dontAskAgain: boolean) => void
   onCancel: () => void
 } & RenameTo
 
 /**
- * In-app confirm sheet for a NAME change (⚡ YAZ-888), on `ConfirmSheet`, so the behaviour is the
- * one users already know: initial focus on CANCEL so a stray Enter arriving from the tree or the
- * title input renames nothing.
+ * In-app confirm sheet for a NAME change (⚡ YAZ-888), on `ConfirmSheet`. The keyboard focus is on
+ * RENAME when it shows (YAZ-2690 D1): a rename destroys nothing, Enter inside a sheet confirms on
+ * each button, and the focus on Cancel said the opposite of what Enter did. The confirm button is
+ * NOT `--danger`: the copy promises that the links follow.
  *
- * The same two omissions as the turn-back sheet, for the same reasons: the confirm button is NOT
- * `--danger` (nothing is destroyed — the copy promises the links follow), and there is no "Don't
- * ask me again" (a rename that silently rewrites N notes is exactly the gesture that earns a beat).
+ * "Don't ask me again" (YAZ-2690 D2, overturning the omission of YAZ-888): the box of the delete
+ * sheet. Ticked, a confirmed rename turns off the setting "Ask before renaming"; Settings turns it on again.
  *
  * ONE deliberate departure from its siblings, and it is load-bearing: the keys are bound to the
  * sheet (`keys="sheet"`), not to `window`. This is the first sheet a KEYSTROKE can open — Enter in the title
  * input, Enter in the sidebar's inline rename — and React flushes this component's effects inside
  * that very keydown's dispatch, so a window listener hears the Enter that opened the sheet and
  * confirms before the user has read a word (the e2e caught exactly that). Bound here, the sheet
- * only ever hears keys from inside itself, which is where focus is: Cancel takes it on mount.
+ * only ever hears keys from inside itself, which is where focus is. A HELD Enter arrives there
+ * too: `ConfirmSheet` takes no repeat of a key for an answer.
  */
 export function ConfirmRename({ oldPath, kind, count, titles, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
+  const dontAskRef = useRef<HTMLInputElement>(null)
+  const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])
   return (
     <ConfirmSheet
       labelId="confirm-rename-text"
       text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count, to.title !== undefined)}
       confirmLabel="Rename"
       keys="sheet"
-      onConfirm={onConfirm}
+      focusConfirm
+      onConfirm={confirm}
       onCancel={onCancel}
-    />
+    >
+      <label className="confirm__ask">
+        <input ref={dontAskRef} type="checkbox" />
+        Don&apos;t ask me again
+      </label>
+    </ConfirmSheet>
   )
 }
