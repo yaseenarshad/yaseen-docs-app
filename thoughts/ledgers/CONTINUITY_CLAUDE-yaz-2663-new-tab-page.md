@@ -40,7 +40,9 @@
   - [x] The four size ceilings (`e5672b3`), with Yasin's OK
   - [x] D8, from Yasin's hand walk (`5fe0968`): `→` on a row of Files, Focus or Favorites that has nothing to open goes to the page; `←` on the first column and Esc go back to that row
   - [x] The pull request #104 of YAZ-2662 is merged (`e3b6d31`). The pull request #105 now has `main` as its base, and `origin/main` is merged in. The branch `yaz-2662-search-keys` is gone: merge `origin/main` from now on.
-- Now: [→] YAZ-2676: 6- Verify and deliver. Yasin does the hand walk on the dev app (started 2026-10-09, the profile `one-vault` of the hand-walk folder). He gives changes live; the app has hot reload. The gates are green at `5fe0968`: 310 test files, 6,113 passed, 2 skipped; the size gate passes.
+  - [x] D9 to D13, from Yasin's hand walk (each is a comment on YAZ-2663): ⌘⇧C on a row of the page; a new tab starts a new search, Esc goes to the page, the arrows from nowhere; Space on a file row of the sidebar shows the preview panel; the tabs of the sidebar from the keyboard, and one column after a zoom; Space on a folder row of the page opens it in its column
+  - [x] YAZ-2689: 7- A tab is as wide as its name (72px to 200px), and the tabs shrink before the strip scrolls. CSS in `client/src/tabs/tabs.css`; D1 to D4 and the dropped trials are comments on the issue.
+- Now: [→] YAZ-2676: 6- Verify and deliver. Yasin does the hand walk on the dev app (started 2026-10-09, the profile `one-vault` of the hand-walk folder). He gives changes live; the app has hot reload. The gates are green with YAZ-2689 in: 310 test files, 6,140 passed, 2 skipped; the size gate passes.
 - Next: Yasin says "passed", or gives the next change. Then the merge of #105.
 - Remaining:
   - [ ] Yasin: the rest of the hand walk, and his word on the decisions that he has not seen (the pull request lists them)
