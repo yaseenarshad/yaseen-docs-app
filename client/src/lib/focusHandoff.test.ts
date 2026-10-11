@@ -53,6 +53,18 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(outline)
   })
 
+  it('an editor that cannot take the focus is no page on show: the layer of a tab under the blank tab is hidden by `visibility`, which `offsetParent` does not see — the call declines, so the caller can go to the new tab page', () => {
+    // A hidden layer: laid out (`offsetParent` answers), and not focusable, as an element under `visibility: hidden` is in a browser.
+    const hidden = editor(true)
+    hidden.removeAttribute('tabindex')
+    expect(focusOpenDocument()).toBe(false)
+    expect(document.activeElement).toBe(document.body)
+    // With a page on show after it, that page takes the caret.
+    const page = editor(true)
+    expect(focusOpenDocument()).toBe(true)
+    expect(document.activeElement).toBe(page)
+  })
+
   it('YAZ-2662 R4: the preview panel of the search is no page — its note is skipped for the open document, and with no page open the call declines', () => {
     // The panel renders a note through the hover card's read-only renderer, which wears `.editor-instance`.
     const panel = document.createElement('div')
