@@ -632,6 +632,25 @@ describe('StartPage', () => {
     expect(at()).toBe('recent 1')
   })
 
+  it('Esc with the row menu open is the menu\'s: the page does not take the key and does not go back, so the menu closes', async () => {
+    const v = vault()
+    const { el, props } = await mount(keysFixture(v))
+    act(() => cell(el, 'recent', 0).focus())
+    // The row menu of the sidebar, open over the page: it closes on an Escape that reaches the window.
+    const menu = document.createElement('div')
+    menu.className = 'ctx-menu'
+    document.body.append(menu)
+    const heard = vi.fn()
+    window.addEventListener('keydown', heard)
+    const esc = press('Escape')
+    window.removeEventListener('keydown', heard)
+    menu.remove()
+    expect([esc.defaultPrevented, heard.mock.calls.length, vi.mocked(props.onBack).mock.calls.length]).toEqual([false, 1, 0])
+    // With no menu, Esc goes back, as before.
+    press('Escape')
+    expect(props.onBack).toHaveBeenCalledTimes(1)
+  })
+
   it('S41: a letter typed on a row asks for the caret in the search bar and leaves the key to the browser, which types it there; a key with ⌘, Ctrl or Alt is no letter', async () => {
     const v = vault()
     const { el, props } = await mount(keysFixture(v))

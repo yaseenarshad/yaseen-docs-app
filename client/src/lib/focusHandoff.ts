@@ -19,12 +19,17 @@
  * for the tab stack alone (YAZ-2663), so the caret does not go into a note of the right panel.
  */
 export function focusOpenDocument(within: ParentNode = document): boolean {
-  const doc = Array.from(within.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).find(
+  const docs = Array.from(within.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).filter(
     (el) => el.offsetParent !== null && el.closest('.quicklook') === null,
   )
-  if (doc === undefined) return false
-  doc.focus()
-  return true
+  // The layer of a tab under the blank tab is hidden by `visibility`, which `offsetParent` does not
+  // see. It cannot take the focus, so the answer is what the focus did: the caller of the search
+  // bar's Esc then goes to the new tab page and not to nothing.
+  for (const doc of docs) {
+    doc.focus()
+    if (doc.ownerDocument.activeElement === doc) return true
+  }
+  return false
 }
 
 /**

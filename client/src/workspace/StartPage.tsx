@@ -314,6 +314,8 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
     }
     // Esc with a panel on show closes the panel only. With none — the keyboard on a folder too — it goes back, as ← does (S37, S39).
     else if (e.key === 'Escape') {
+      // The row menu of the sidebar is open over the page: the key is the menu's, which closes on an Escape that reaches the window.
+      if (document.querySelector('.ctx-menu') !== null) return
       e.stopPropagation()
       if (onPreview !== undefined && previewPath !== null) stopPreview()
       else back()
