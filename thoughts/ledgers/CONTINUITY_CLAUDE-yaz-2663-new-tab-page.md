@@ -42,11 +42,12 @@
   - [x] The pull request #104 of YAZ-2662 is merged (`e3b6d31`). The pull request #105 now has `main` as its base, and `origin/main` is merged in. The branch `yaz-2662-search-keys` is gone: merge `origin/main` from now on.
   - [x] D9 to D13, from Yasin's hand walk (each is a comment on YAZ-2663): ⌘⇧C on a row of the page; a new tab starts a new search, Esc goes to the page, the arrows from nowhere; Space on a file row of the sidebar shows the preview panel; the tabs of the sidebar from the keyboard, and one column after a zoom; Space on a folder row of the page opens it in its column
   - [x] YAZ-2689: 7- A tab is as wide as its name (72px to 200px), and the tabs shrink before the strip scrolls. CSS in `client/src/tabs/tabs.css`; D1 to D4 and the dropped trials are comments on the issue.
-- Now: [→] YAZ-2676: 6- Verify and deliver. Yasin does the hand walk on the dev app (started 2026-10-09, the profile `one-vault` of the hand-walk folder). He gives changes live; the app has hot reload. The gates are green with YAZ-2689 in: 310 test files, 6,140 passed, 2 skipped; the size gate passes.
-- Next: Yasin says "passed", or gives the next change. Then the merge of #105.
-- Remaining:
-  - [ ] Yasin: the rest of the hand walk, and his word on the decisions that he has not seen (the pull request lists them)
-  - [ ] The merge, then the issues go to Done, the worktree and the hand-walk folder are removed
+  - [x] YAZ-2690: 8- The rename sheet: the focus on "Rename", and "Don't ask me again" (`c8d36fa`)
+  - [x] `main` at `9f2d642` (the pull request #106 of YAZ-2677) merged in (`4265db4`); `ConfirmSheet.tsx` is the file of `main` with `focusConfirm` and the held-Enter rule
+  - [x] Yasin's hand walk passed ("ok this is all perfect"); merged by the pull request #105 as `7fc37df`
+  - [x] Closeout: the handoff is on YAZ-2663 and on each subissue; the nine issues are Done
+- Now: CLOSED 2026-10-10. Merged by the pull request #105 as `7fc37df`. The Linear record on YAZ-2663 is the source of truth.
+- Next: nothing. The release that holds this work is cut in a separate step.
 
 ## Key Decisions of YAZ-2673 and YAZ-2674
 
@@ -84,13 +85,11 @@
 
 ## Open Questions
 
-- UNCONFIRMED: S41 in the app. jsdom cannot show that the browser types the letter in the bar. Hand walk.
-- UNCONFIRMED: Enter and Space on a row in the app make no second click of the button (`preventDefault` on keydown). Hand walk.
+- None is required. For a later visit: no screen says that `→` or `↓` in the empty search bar goes to the page; why the keyboard focus was on nothing after ⌘+ was not found; Yasin has not said a word on the slide of a tab that opens or closes; `desktop/e2e/startPage.spec.ts` has never run.
 
 ## Working Set
 
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2663`, branch `yaz-2663-new-tab-page`, from `yaz-2662-search-keys` at `8425e13` (`main` is `dd8d89b`, 1.0.0).
-- The other worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-2662`. Do not edit it.
+- The worktree `../yaseen-docs-app-yaz-2663` and the branch `yaz-2663-new-tab-page` are removed after the merge.
 - Linear: key `LINEAR_GROWPROFIT_API_KEY` in `~/Desktop/growprofit-ai.env`; skills at `~/Documents/GitHub/skills-growprofit-eng/yaseen-skills-and-prompts/2-yaseen-linear-master-skill`.
-- The hand-walk folder: `/private/tmp/claude-501/-Users-yasin-Documents-GitHub-yaseen-docs-app/4e827981-6a6b-4a13-8a5a-ea27d70e7eff/scratchpad/handwalk` (`make.ts` builds `out/vaults` and `out/profiles`).
+- The test vaults and the app profiles of the hand walk were in a temp folder of the session. They are removed.
 - Gates: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`. Local Node is v26.5.0; CI uses Node 22.
