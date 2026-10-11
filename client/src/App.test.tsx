@@ -2150,6 +2150,26 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
+  it('YAZ-2690 D2: Rename with "Don\'t ask me again" ticked renames and turns "Ask before renaming" off — the next rename asks nothing; Cancel with it ticked changes no setting', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
+    const tick = () => act(() => el.querySelector<HTMLInputElement>('.confirm__ask input')?.click())
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+    tick()
+    await act(async () => sheetBtn(el, 'Cancel')?.click())
+    expect([bridge.file.rename.mock.calls.length, bridge.state.setSettings.mock.calls.length]).toEqual([0, 0])
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+    expect(el.querySelector<HTMLInputElement>('.confirm__ask input')?.checked).toBe(false) // a new sheet: not ticked
+    tick()
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ confirmRename: false }))
+    // The next rename asks nothing.
+    await act(async () => await captured.sidebar?.onRenameFile('/v/C.md', '/v/C2.md', 'file'))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/C.md', newPath: '/v/C2.md' })
+  })
+
   it('"Ask before renaming" off: a file rename runs with no sheet, and the links still follow with their notice (YAZ-2420 3C1)', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(askOff(), identity(), files, feed)

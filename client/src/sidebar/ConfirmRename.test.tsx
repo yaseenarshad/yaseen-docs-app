@@ -89,9 +89,30 @@ describe('ConfirmRename', () => {
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Rename'])
   })
 
-  it('focuses CANCEL, not Rename — a stray Enter from the tree or the title input must rename nothing', () => {
-    const { el } = mount(0)
-    expect(document.activeElement).toBe(btn(el, 'Cancel'))
+  it('YAZ-2690 D1: the keyboard focus is on RENAME when the sheet shows — Enter accepts, and the focus says so', () => {
+    const { el, onConfirm } = mount(0)
+    expect(document.activeElement).toBe(btn(el, 'Rename'))
+    act(() => void btn(el, 'Rename')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('YAZ-2690 S3: a held Enter is no answer — the repeats of the press that opened the sheet arrive inside it, and rename nothing', () => {
+    const { el, onConfirm } = mount(0)
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
+    act(() => void btn(el, 'Rename')?.dispatchEvent(held))
+    // Taken, so the focused button makes no click of its own; and nothing is confirmed.
+    expect([held.defaultPrevented, onConfirm.mock.calls.length]).toEqual([true, 0])
+  })
+
+  it('YAZ-2690 D2: "Don\'t ask me again" is in the sheet, not ticked; Rename with it ticked says so, and Cancel says nothing', () => {
+    const { el, onConfirm, onCancel } = mount(1)
+    const box = el.querySelector<HTMLInputElement>('.confirm__ask input[type="checkbox"]')
+    expect([el.querySelector('.confirm__ask')?.textContent, box?.checked]).toEqual(["Don't ask me again", false])
+    act(() => box?.click())
+    act(() => btn(el, 'Cancel')?.click())
+    expect([onCancel.mock.calls.length, onConfirm.mock.calls.length]).toEqual([1, 0])
+    act(() => btn(el, 'Rename')?.click())
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith(true)
   })
 
   it('Escape cancels and renames nothing', () => {
@@ -149,10 +170,8 @@ describe('ConfirmRename', () => {
     expect(el.querySelector('#confirm-rename-text')?.textContent).toContain('Links in 3 notes will be updated.')
   })
 
-  it('carries NO "Don\'t ask me again" checkbox and no danger styling — nothing is destroyed here', () => {
+  it('has no danger styling — nothing is destroyed here', () => {
     const { el } = mount(0)
-    expect(el.querySelector('.confirm__ask')).toBeNull()
-    expect(el.querySelector('input[type="checkbox"]')).toBeNull()
     expect(el.querySelector('.confirm__btn--danger')).toBeNull()
   })
 })
