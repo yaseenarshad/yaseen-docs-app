@@ -70,6 +70,8 @@ export function useSidebarSearch(
   previewPath: string | null,
   /** The one door of the preview panel: the file to draw, or `null` for no panel. */
   onPreview: (path: string | null) => void,
+  /** With the focus flag: a NEW search (YAZ-2663 D10). A new tab (⌘T) asks it, and the bar is emptied; ⌘K does not, and keeps its text. */
+  pendingSearchClear = false,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -202,19 +204,27 @@ export function useSidebarSearch(
   // (YAZ-2638 D2). Firing on MOUNT is deliberate, not a side effect to guard against: ⌘K with the
   // sidebar collapsed un-collapses it, so the sidebar mounts with the flag already true (0- re-scope
   // on YAZ-800). A mount on the Search tab with the flag false moves no caret.
+  // A new tab (⌘T) starts a NEW search (YAZ-2663 D10): the text of an earlier search goes, so → and ↓
+  // in the bar lead to the new tab page at once. Read through a ref: the flag alone starts the effect.
+  const fresh = useRef(() => undefined as void)
   useEffect(() => {
     if (!pendingSearchFocus) return
+    if (pendingSearchClear) fresh.current()
     searchInput.current?.focus()
     searchInput.current?.select()
     onSearchFocusHandled()
-  }, [pendingSearchFocus, onSearchFocusHandled])
+  }, [pendingSearchFocus, pendingSearchClear, onSearchFocusHandled])
 
-  const changeQuery = (e: ChangeEvent<HTMLInputElement>) => {
-    setQuery(e.target.value)
+  const setText = (text: string): void => {
+    setQuery(text)
     setPicked(null) // a new query is a new ranking: the best match is the highlight again
     setFlipped(NO_FOLDS) // and a new tree: its folds are the search's own again (S16)
     setFull(NO_FOLDS) // and no folder shows all (YAZ-2662 S53)
     if (previewing) stopPreview() // and no preview: Space is the text's again (S35)
+  }
+  const changeQuery = (e: ChangeEvent<HTMLInputElement>) => setText(e.target.value)
+  fresh.current = () => {
+    if (query !== '') setText('')
   }
 
   // The keys of the bar, which keeps the focus while the tree is driven from it (YAZ-803): ↑, ↓ and
@@ -283,5 +293,9 @@ export function useSidebarSearch(
     else if (!listKey(e)) onKeys(e)
   }
 
-  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc }
+  // ↑ has no row to go to (YAZ-2663 D12): no row is on show, or the keys already moved the highlight
+  // and it is on the first row. The bar then hands ↑ to the tabs of the panel. The FIRST ↑ on a
+  // highlight that nobody moved is still the search's: it makes the list keys work (YAZ-2662 D7).
+  const atTop = rows.length === 0 || (picked !== null && sel === 0)
+  return { query, searchInput, results, typed, found, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
 }

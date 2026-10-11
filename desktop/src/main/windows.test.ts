@@ -175,6 +175,17 @@ describe('createWindowManager: restore', () => {
     expect(next.created.map((c) => c.entry.roots)).toEqual([['/a', '/b']])
   })
 
+  it('S10 (YAZ-2663): a launch that restores windows adds no use to the open history — also for a window that the launch moves back onto a display, which is a write of that window', () => {
+    const shown = { tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [] }
+    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', ...shown, bounds: { x: 10, y: 10, width: 800, height: 600 } }, '/v/a.md', 1000)
+    store.upsertWindow({ id: 'w2', root: '/v', file: '/v/a.md', ...shown, bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    createWindowManager(store, host).restore('all')
+    expect(created.map((c) => c.entry.file)).toEqual(['/v/a.md', '/v/a.md'])
+    expect(store.get().windows[1].bounds).toEqual({ x: 640, y: 300, width: 800, height: 600 }) // the launch did write `w2`
+    expect(store.get().folders['/v'].opens).toEqual({ '/v/a.md': { score: 1, last: 1000 } })
+  })
+
   it('registers every window it creates so IPC can resolve its caller', () => {
     const { manager, w1 } = seedTwo()
     expect(manager.idFor(w1.webContents)).toBe('w1')

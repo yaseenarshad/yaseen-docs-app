@@ -178,11 +178,11 @@ test('step 3b — the tab board: the grid button and ⌘⇧M open it, each folde
 })
 
 test('step 3c — ⌘T shows the blank tab with the caret in the search bar; the result chosen fills it as a KEPT tab; "+" shows it again and ⌘W closes it alone', async () => {
-  // ⌘T — File › New Tab, by its menu id (YAZ-2655 D10, D11): "New tab", last and active, over the empty page.
+  // ⌘T — File › New Tab, by its menu id (YAZ-2655 D10, D11): "New tab", last and active, over the new tab page (YAZ-2663 D3).
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
   await expect(tabsOf(win)).toHaveText(['Welcome note', 'Roadmap', 'Ideas', 'New tab'])
   await expect(activeTab(win)).toHaveText('New tab')
-  await expect(win.locator('.editor-msg')).toHaveText('Select a file from the sidebar.')
+  await expect(win.locator('.start__heading')).toHaveText(['Recent', 'Favorites', 'Used a lot, not a favorite yet'])
   await expect(searchBar(win)).toBeFocused()
   await shoot(win, 'i3-03c-blank-tab')
 
@@ -259,8 +259,8 @@ test('step 5 — the ⌘W ladder: tabs → empty state with the window ALIVE →
     await clickMenuItem(app, 'menu.file.close-tab', dupId)
     await expect(tabsOf(dup)).toHaveCount(left)
   }
-  // Zero tabs: the empty state renders and the window is still ALIVE (rule 7).
-  await expect(dup.locator('.editor-msg')).toHaveText('Select a file from the sidebar.')
+  // Zero tabs: the new tab page shows (YAZ-2663 D3) and the window is still ALIVE (rule 7).
+  await expect(dup.locator('.start')).toBeVisible()
   expect(await windowCount(app)).toBe(2)
   await shoot(dup, 'i3-05a-empty-state-window-alive')
 
