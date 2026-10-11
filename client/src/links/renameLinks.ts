@@ -13,7 +13,7 @@
  * file (someone is actively writing it — their unsaved changes win over our link fix; the
  * link shows as unresolved until fixed by hand).
  *
- * Body rewriting is a string-level scan with the shared regex semantics: only matches whose
+ * Body rewriting (`@shared/linkRewrite`, YAZ-2677) is a string-level scan with the shared regex semantics: only matches whose
  * `linkPageName` resolves to the old path are touched; fenced code blocks and inline code
  * spans are skipped via a LENGTH-PRESERVING mirror of the index's `stripCode` discipline
  * (`maskCode` — same fence/span rules, offsets intact so the splice edits the original
@@ -31,7 +31,7 @@
  * top-level entry does, through the same `resolves` / `newTarget` pair, so their spelling rules
  * cannot drift from anyone else's.
  * The key's own module owns both the key name and the list of link-bearing leaves
- * (`views/folderSettings.ts` `mapFolderSettingsLinks`) — this engine never re-parses it.
+ * (`@shared/folderSettingsLinks` `mapFolderSettingsLinks`) — this engine never re-parses it.
  * The referencing-set probe learned the same leaves, because a page whose ONLY reference lives
  * in there has no `links` entry to be found by: one construction, never two truths.
  *
@@ -49,7 +49,7 @@
  *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a note through its frontmatter
  *    `aliases` is NEVER rewritten — the alias travels with the file, so it still resolves
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
- *  - ID-form links (YAZ-2293 D5): `[[k3m9x2pq7abc]]` is NEVER rewritten either, for the same
+ *  - ID-form links (YAZ-2293 D5): `[[YAZ-12]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
  *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the note whose `title:` that is, or
  *    to the folder whose `.folder.md` holds it — the same again. A page with no `title:` is
@@ -61,70 +61,21 @@
  *  - A PATH OF TITLES (YAZ-2478): `[[Candidates/Abdul]]`, the note titled Abdul in the folder
  *    titled Candidates, is rewritten to the note's id, since either title may be the one that changed.
  */
-import { FOLDER_VALUES_KEY, folderBlocks } from '@shared/folderValues'
-import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { isViewOnly } from '@shared/fileKind'
+import { folderSettingsLinks } from '@shared/folderSettingsLinks'
+import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld } from '@shared/linkRewrite'
 import { titleOf } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { resolverFor, targetBasename, targetKey } from '../views/engine'
-import { folderSettingsLinks, mapFolderSettingsLinks } from '../views/folderSettings'
-import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
 import { folderRecord, foldersByDir } from './shortcuts'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
-/** Does this raw link target point at the renamed file? (Wired to THE shared resolver.) */
-export type ResolvesToOld = (target: string) => boolean
-
-/** Raw target text → its replacement (form-preserving; see `renamedTarget`). */
-export type NewTarget = (target: string) => string
-
-const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
-const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
-
-/**
- * The index's `stripCode` (desktop/src/main/vaultIndex/scan.ts) mirrored LENGTH-PRESERVING:
- * every character inside a fenced block (``` / ~~~, fence lines included) or an inline code
- * span becomes a space, so match offsets over the mask address the original body directly.
- */
-export function maskCode(body: string): string {
-  const lines = body.split('\n')
-  let fence: string | null = null
-  for (let i = 0; i < lines.length; i++) {
-    const m = FENCE_RE.exec(lines[i])
-    if (fence === null) {
-      if (m) fence = m[1]
-    } else if (m && m[1][0] === fence[0] && m[1].length >= fence.length && lines[i].trim() === m[1]) {
-      fence = null
-    }
-    if (fence !== null || m) lines[i] = ' '.repeat(lines[i].length)
-  }
-  return lines.join('\n').replace(CODE_SPAN_RE, (span) => ' '.repeat(span.length))
-}
-
-/**
- * `[[inner]]` → the rewritten inner, or null when this match is not the renamed file.
- * The target part (before the first `#` or `|`) is replaced; `#heading`/`#^block` and
- * `|alias` ride along untouched. Surrounding whitespace inside the target is dropped
- * (`[[ B ]]` → `[[C]]`), matching how the resolver reads it anyway — EXCEPT when the
- * target text would not change at all (E1b: a bare link kept across a move), where the
- * match is left untouched so the link stays byte-identical, padding included.
- */
-export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
-  const pipe = inner.indexOf('|')
-  const head = pipe >= 0 ? inner.slice(0, pipe) : inner
-  const alias = pipe >= 0 ? inner.slice(pipe) : ''
-  const hash = head.indexOf('#')
-  const target = (hash >= 0 ? head.slice(0, hash) : head).trim()
-  const suffix = hash >= 0 ? head.slice(hash) : ''
-  if (target === '' || !resolves(target)) return null
-  const next = newTarget(target)
-  if (next === target) return null
-  return next + suffix + alias
-}
+// The rewrite of ONE file's text is in `@shared/linkRewrite` (YAZ-2677): the main process changes
+// an ID to a new ID with the same parser. What a rename MOVED is decided here and handed to it.
 
 /**
  * Form preservation for one matched target: bare stays bare (the new basename), pathed
@@ -134,89 +85,6 @@ export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: 
 export function renamedTarget(target: string, opts: { newName: string; newRel: string }): string {
   const withExt = target.includes('/') ? opts.newRel : opts.newName
   return /\.(md|markdown)$/i.test(target) ? withExt : stripExt(withExt)
-}
-
-/** Body `[[links]]` and `![[embeds]]` outside code, spliced in place; the input when nothing matched. */
-export function rewriteBodyLinks(body: string, resolves: ResolvesToOld, newTarget: NewTarget): string {
-  const masked = maskCode(body)
-  let out = ''
-  let last = 0
-  for (const m of masked.matchAll(WIKILINK_RE)) {
-    const replaced = rewriteInner(m[2], resolves, newTarget)
-    if (replaced === null) continue
-    const innerStart = m.index + m[1].length + 2 // after `[[` / `![[`
-    out += body.slice(last, innerStart) + replaced
-    last = innerStart + m[2].length
-  }
-  return out + body.slice(last)
-}
-
-const EXACT_WIKILINK_RE = /^\[\[([^[\]]+)\]\]$/
-
-/** A frontmatter string that is exactly `[[…]]` → its rewrite, else undefined. */
-function rewriteExactLink(value: string, resolves: ResolvesToOld, newTarget: NewTarget): string | undefined {
-  const m = EXACT_WIKILINK_RE.exec(value.trim())
-  if (m === null) return undefined
-  const inner = rewriteInner(m[1], resolves, newTarget)
-  return inner === null ? undefined : `[[${inner}]]`
-}
-
-/** A frontmatter VALUE — a whole-value link, or a list holding some — rewritten, else undefined. */
-function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: NewTarget): unknown {
-  if (typeof value === 'string') return rewriteExactLink(value, resolves, newTarget)
-  if (!Array.isArray(value)) return undefined
-  let changed = false
-  const next = value.map((item: unknown) => {
-    const r = typeof item === 'string' ? rewriteExactLink(item, resolves, newTarget) : undefined
-    if (r !== undefined) changed = true
-    return r ?? item
-  })
-  return changed ? next : undefined
-}
-
-/**
- * The same string's TARGET (`|alias` / `#heading` stripped), or null — what `rewriteInner`
- * decides on, exposed for the probe. The probe asks `resolves`, not "would this be rewritten":
- * a bare link that stays bare still makes its note part of the referencing set, exactly as a
- * top-level `links` entry does.
- */
-function exactLinkTarget(value: string): string | null {
-  const m = EXACT_WIKILINK_RE.exec(value.trim())
-  if (m === null) return null
-  const target = m[1].split('|')[0].split('#')[0].trim()
-  return target === '' ? null : target
-}
-
-/**
- * One note's full rewrite: body scan + frontmatter whole-value links (through
- * `setFrontmatterProperty`, one key at a time) + the ONE reserved key's nested links
- * (YAZ-864 — see the module doc). Null when nothing changed — the caller never writes an
- * unchanged file, so a page carrying settings that reference nobody stays byte-identical.
- */
-export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
-  const { frontmatter, body } = splitFrontmatter(content)
-  let out = frontmatter + rewriteBodyLinks(body, resolves, newTarget)
-  if (frontmatter !== '') {
-    const { properties, error } = parseFrontmatter(frontmatter)
-    if (error === undefined) {
-      for (const [key, value] of Object.entries(properties)) {
-        const next = rewriteLinkValue(value, resolves, newTarget)
-        if (next !== undefined) out = setFrontmatterProperty(out, key, next)
-      }
-      // A folder's values (D19): each block's links by the same rule, each written where it stands.
-      for (const [id, block] of folderBlocks(properties)) {
-        for (const [key, value] of Object.entries(block)) {
-          const next = rewriteLinkValue(value, resolves, newTarget)
-          if (next !== undefined) out = setFrontmatterIn(out, [FOLDER_VALUES_KEY, id, key], next)
-        }
-      }
-      // The nested leaves go back as the WHOLE key — the one door's own write shape
-      // (`writeFolderSettings`), so nothing about that block is serialised two ways.
-      const settings = mapFolderSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))
-      if (settings !== null) out = setFrontmatterProperty(out, settings.key, settings.value)
-    }
-  }
-  return out === content ? null : out
 }
 
 /** Every target a note links to: index links and embeds, then the nested settings leaves (lazily). */
@@ -305,7 +173,7 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
   // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
   // in that file's own frontmatter and travels with it, so it keeps pointing there. Building
   // the probe without the alias map keeps the dry-run count and the rewrite agreeing on that.
-  // An ID-form link (`[[k3m9x2pq7abc]]`, YAZ-2293) is the same story told by the id: it names
+  // An ID-form link (`[[YAZ-12]]`, YAZ-2293) is the same story told by the id: it names
   // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
   const resolver = resolverFor(records, root, { aliases: false, ids: false, folders })
   // A path of titles (YAZ-2478) is the target only the folders answer; it is rewritten to the note's id.

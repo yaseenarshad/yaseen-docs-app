@@ -20,7 +20,8 @@ vi.mock('../api', async (importOriginal) => {
   const { propertiesStub } = await import('../views/propertiesStub')
   return {
     ...(await importOriginal<typeof import('../api')>()),
-    api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), properties: propertiesStub },
+    // `mintNoteId` is the door in the main process (YAZ-2677 D4): the vault's next number.
+    api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintNoteId: (await import('../testNoteIds')).testDoor(), properties: propertiesStub },
   }
 })
 
@@ -301,7 +302,7 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
 
     // The whole of what the panel asks of the bridge: this mock has no rename and no retitle to call.
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: MESSY.replace('title: "Deep   Work"', 'title: Shallow Work'), expectedMtime: 100 })
-    expect(Object.keys(api)).toEqual(['readFile', 'writeFile', 'createFile', 'properties'])
+    expect(Object.keys(api)).toEqual(['readFile', 'writeFile', 'createFile', 'mintNoteId', 'properties'])
   })
 
   it('a Save in flight joins the close/quit flush: the flush settles only once its write has landed (YAZ-2174)', async () => {

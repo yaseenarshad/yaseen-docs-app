@@ -12,9 +12,10 @@
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { FOLDER_VALUES_KEY, withoutStaleFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId, mintNoteId } from '@shared/noteId'
+import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
 import { folderSettingsPath, inFolder, type IndexRecord } from '@shared/types'
 import { basename, dirname, relTo } from '../lib/paths'
+import { takeNoteId } from '../views/scaffold'
 import { transformFile, type ContentTransform } from '../views/writeProperty'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
@@ -103,15 +104,25 @@ const propertiesOf = (content: string): Record<string, unknown> => parseFrontmat
  * The id of the folder at `dir`, for its first shortcut or the first value written for it (D19): a
  * folder with no `.folder.md` gets one holding just its id (that write creates the file,
  * `readForWrite`), and a file with no id, or another tool's (YAZ-2420 🔒 D30), is given a fresh one.
- * Asked of the file's own bytes, never the index: a snapshot one write behind would mint a second
+ * Asked of the file's own bytes, never the index: a snapshot one write behind would give a second
  * id over the first, and every shortcut and value naming the first would be lost.
+ *
+ * The fresh id is the vault's next number, from the door (YAZ-2677 D4), taken only when the file
+ * is seen to hold none: a folder that has its id costs no number. Returned as the index holds it (R2).
  */
 export async function folderId(dir: string): Promise<string> {
-  const fresh = mintNoteId()
-  const { content } = await transformFile(folderSettingsPath(dir), (bytes) =>
-    isNoteId(propertiesOf(bytes)[NOTE_ID_KEY]) ? bytes : setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh),
-  )
-  return propertiesOf(content)[NOTE_ID_KEY] as string
+  const file = folderSettingsPath(dir)
+  const held = (bytes: string): string | undefined => {
+    const id = propertiesOf(bytes)[NOTE_ID_KEY]
+    return isNoteId(id) ? canonicalNoteId(id) : undefined
+  }
+  // A transform that changes nothing is a read: it writes nothing, and makes no file where there is none.
+  const there = held((await transformFile(file, (bytes) => bytes)).content)
+  if (there !== undefined) return there
+  const fresh = await takeNoteId(dir)
+  // Written against the file's bytes as they are now: an id that arrived since the read above stays.
+  const { content } = await transformFile(file, (bytes) => (held(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes))
+  return held(content) ?? fresh
 }
 
 /**
@@ -122,9 +133,12 @@ export async function addShortcut(dir: string, path: string): Promise<void> {
   const id = await folderId(dir)
   await transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
-    return list.includes(id) ? content : setFrontmatterProperty(content, ALSO_IN_KEY, [...list, id])
+    return list.some((entry) => asId(entry) === id) ? content : setFrontmatterProperty(content, ALSO_IN_KEY, [...list, id])
   })
 }
+
+/** An `also_in` entry as the id it names (`alsoIn`'s reading, YAZ-2677 R2: `yaz-12` names `YAZ-12`); any other entry as it is. */
+const asId = (entry: unknown): unknown => (isNoteId(entry) ? canonicalNoteId(entry) : entry)
 
 /** The ids of the folder at `dir` and of every folder under it. */
 const idsUnder = (folders: readonly IndexRecord[], dir: string): Set<unknown> => new Set(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
@@ -140,7 +154,7 @@ export function removeShortcut(dir: string, path: string, folders: readonly Inde
   const tidy = dropStaleFolderValues(root, path, folders)
   return transformFile(path, (content) => {
     const list = alsoInEntries(propertiesOf(content))
-    const kept = list.filter((entry) => !ids.has(entry))
+    const kept = list.filter((entry) => !ids.has(asId(entry)))
     return kept.length === list.length ? content : tidy(setFrontmatterProperty(content, ALSO_IN_KEY, kept.length === 0 ? undefined : kept))
   })
 }

@@ -59,4 +59,9 @@ describe("a note's file name (YAZ-2420 D3)", () => {
   it('is the id alone when the title has no letter or digit', () => {
     expect(noteFileName('—', 'k3m9x2pq7abc')).toBe('k3m9x2pq7abc.md')
   })
+
+  it('holds a number ID in lowercase (YAZ-2677 R8, S14)', () => {
+    expect(noteFileName('My note', 'YAZ-12')).toBe('my-note-yaz-12.md')
+    expect(noteFileName('—', 'YAZ-12')).toBe('yaz-12.md')
+  })
 })

@@ -116,7 +116,7 @@ test('step 1 — Copy in window A (vault A) pastes into a folder of window B (va
   const [pasted] = await copies()
   const copy = await readFile(pasted, 'utf8')
   expect(titleOf(copy)).toBe('Ideas copy')
-  expect(path.basename(pasted)).toBe(`ideas-copy-${idOf(copy)}.md`)
+  expect(path.basename(pasted)).toBe(`ideas-copy-${idOf(copy).toLowerCase()}.md`)
   expect(copy).toContain('# Ideas\n\nsynthetic-idea-body\n')
   expect(await exists(path.join(vaultA, 'Ideas.md'))).toBe(true) // a copy leaves the source alone
   // The paste opens its target folder and refreshes the tree: the new row is on screen.

@@ -136,7 +136,7 @@ test('step 5 — click an UNRESOLVED link: the note is created beside the hub (a
   const fresh = await builtNote(vault, 'fresh-note')
   const born = await readFile(path.join(vault, fresh), 'utf8')
   expect(born).toMatch(new RegExp(`^---\\ntitle: ${FRESH}\\nid: ${NOTE_ID}\\n---\\n$`))
-  expect(fresh).toBe(`fresh-note-${idOf(born)}.md`)
+  expect(fresh).toBe(`fresh-note-${idOf(born).toLowerCase()}.md`)
   await shoot(win, 'links-05-create-on-click')
 })
 
@@ -166,7 +166,7 @@ test('step 7 — the picker suggests the page by alias and links it by its id on
   await win.keyboard.press('Enter')
   // The alias is only how the page was FOUND: the link is the plain id, with no label.
   const metricsId = /^id: (.+)$/m.exec(await readFile(path.join(vault, METRICS_FILE), 'utf8'))?.[1]
-  expect(metricsId).toMatch(/^[0-9a-hjkmnp-tv-z]{12}$/)
+  expect(metricsId).toMatch(new RegExp(`^${NOTE_ID}$`))
   await expect
     .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`[[${metricsId}]]`), { timeout: 10_000 })
     .toBe(true)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { IDS_FILE } from '@shared/noteId'
-import type { IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
+import { isOldId } from '@shared/noteId'
+import type { IdsState, IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
@@ -14,8 +14,6 @@ import { useExternalRenames, type ExternalRenames } from '../links/useExternalRe
 import { useReview, type ReviewApi } from '../review/useReview'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useProperties } from '../views/useProperties'
-
-type IdsAsk = NonNullable<IndexResponse['ask']>
 
 /**
  * Everything the window holds ONCE PER VAULT (YAZ-2602 D1): a note's links, properties, sync,
@@ -42,14 +40,29 @@ export interface VaultScope {
   reviewSettings: ReviewSettingsState
   review: ReviewApi
   renames: ExternalRenames
-  /** The vault's answer on IDs as its last snapshot said it (YAZ-2523 🔒 V5), and the switch; undefined until its index has loaded. */
-  ids: { enabled: boolean | undefined; held: boolean; ask: IndexResponse['ask']; set: (enabled: boolean) => void } | undefined
-  /** What a yes would write, while the box that asks is to show (🔒 V2); null once answered or closed. */
-  idsAsk: IdsAsk | null
-  saveIds: (enabled: boolean) => void
-  closeIdsAsk: () => void
+  /**
+   * The vault's IDs as its last snapshot said them (YAZ-2523 🔒 V5),
+   * the switch (YAZ-2677 🔒 D2), the duplicate check (🔒 D7), and the two changes of
+   * every ID with what Settings shows about them (🔒 D5, D6); undefined until its index has loaded.
+   */
+  ids:
+    | {
+        enabled: boolean
+        held: boolean
+        ask: IndexResponse['ask']
+        set: (enabled: boolean, letters?: string) => void
+        check: () => Promise<string>
+        /** How many notes and folders of the snapshot hold an old 12-character ID (S88). */
+        old: number
+        /** A run of "Give old IDs numbers" stopped with links left to change (S90). */
+        unfinished: boolean
+        state: () => Promise<IdsState>
+        reletter: (letters: string) => Promise<IdsState>
+        backfill: () => Promise<IdsState>
+      }
+    | undefined
   /** Every READY index snapshot of this vault, from its `WikilinkIndexBridge`. */
-  onSnapshot: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => void
+  onSnapshot: (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask'], unfinished: boolean) => void
 }
 
 /** `root` is nullable because `App` calls this for every slot: with no vault there is no bridge call. */
@@ -107,27 +120,39 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
 
   // The vault's answer on IDs as the last snapshot said it (YAZ-2523 🔒 V5), with the root it is of:
   // one of another vault says nothing here, so the Settings switch never shows an answer this vault
-  // did not give. `enabled` is undefined while the vault has not answered, and `ask` is then what a
-  // yes would write: the box that asks (🔒 V2). `held` says a note holds an ID, which is true only
-  // while the vault uses IDs (a plain vault's records carry none). An answer, or Esc, closes the box
-  // for that root: later snapshots still carry `ask` and must not reopen it. Leaving the vault forgets that.
-  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean | undefined; held: boolean; ask: IndexResponse['ask'] } | null>(null)
-  const [idsAskClosed, setIdsAskClosed] = useState<string | null>(null)
-  if (idsAskClosed !== null && idsAskClosed !== root) setIdsAskClosed(null)
+  // did not give. `enabled` is the snapshot's `ids`: no answer reads as no, and nothing asks when a
+  // vault opens (YAZ-2677 🔒 D1). `ask` is what a yes would write, while the answer is not yes: the
+  // counts of the box in Settings, and the letters the vault already has (🔒 D2). `held` says a note
+  // holds an ID, which is true only while the vault uses IDs (a plain vault's records carry none).
+  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
   const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
   const onSnapshot = useCallback(
-    (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask']) => {
+    (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask'], unfinished: boolean) => {
       onIndexSnapshot(records, folders, ids)
-      setIdsSnapshot({ root, enabled: ask === undefined ? ids : undefined, held: records.some((record) => record.id !== undefined), ask })
+      // The row "Old IDs" shows while a note or a folder holds an old ID (YAZ-2677 R3, S88), or a run that stopped left links to change (S90).
+      const old = [...records, ...folders].filter((record) => isOldId(record.id)).length
+      setIdsSnapshot({ root, enabled: ids, held: records.some((record) => record.id !== undefined), old, unfinished, ask })
     },
     [root, onIndexSnapshot],
   )
-  /** Save the vault's answer in its `ids.json` (🔒 V1), from the box or from Settings; the index refetches off the write. */
-  const saveIds = (enabled: boolean): void => {
+  const said = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+  /**
+   * Save the vault's answer (🔒 V1), from Settings, and with a yes its ID letters (YAZ-2677 🔒 D2).
+   * The main process does the save (`ids:set`): it reads and writes `ids.json` as one step, so each
+   * key that the save does not change stays (R10, R12) and two windows that save at one moment each
+   * keep the other's change; and a yes gives the numbers now, on this Mac (R32, S64). The index
+   * refetches off the write. A file that cannot be read is not written over.
+   */
+  const saveIds = (enabled: boolean, letters?: string): void => {
     if (root === null) return
-    api.vaultConfig.write(root, IDS_FILE, { enabled }).then(() => setIdsAskClosed(root), (err: unknown) => notify(`Couldn't save this vault's answer: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+    api.ids.set(root, enabled, letters).catch((err: unknown) => notify(`Couldn't save this vault's answer: ${said(err)}`, 'error'))
   }
-  const closeIdsAsk = (): void => setIdsAskClosed(root)
+  /** "Check for duplicates" (YAZ-2677 🔒 D7): the result in one line, for the row in Settings. */
+  const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))
+  // The rows "ID letters" and "Old IDs" (YAZ-2677 🔒 D5, D6): the main process counts and changes. Stable, so a row reads the state one time.
+  const idsState = useCallback((): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.state(root)), [root])
+  const reletter = (letters: string): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.reletter(root, letters))
+  const backfill = (): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.backfill(root))
 
   return {
     root,
@@ -143,10 +168,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     reviewSettings,
     review,
     renames,
-    ids: vaultIds === null ? undefined : { ...vaultIds, set: saveIds },
-    idsAsk: vaultIds?.ask !== undefined && idsAskClosed !== root ? vaultIds.ask : null,
-    saveIds,
-    closeIdsAsk,
+    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill },
     onSnapshot,
   }
 }
