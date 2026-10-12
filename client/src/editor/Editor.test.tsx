@@ -78,6 +78,10 @@ vi.mock('./lineNumbers/lineNumbers', async () => {
   return { requestBlockLines: vi.fn(async (text: string) => blockLines(text)), showLineNumbers: vi.fn() }
 })
 
+// Section indent (YAZ-2709): the fake Crepe has no view to send the switch to. The real plugin is
+// covered by outline/sectionIndent.test.ts; what the host SENDS is the thing under test here.
+vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
+
 // External edits apply as diffs (YAZ-1347): the fake lands the body the way the real apply would.
 vi.mock('./external/applyExternalMarkdown', () => ({
   applyExternalMarkdown: vi.fn((crepe: { md: string }, md: string) => {
@@ -93,6 +97,7 @@ import { createCrepe, getPlainText, setMarkdown, type CreateCrepeOptions } from 
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
+import { showSectionIndent } from './outline/sectionIndent'
 
 interface FakeCrepe {
   md: string
@@ -1368,5 +1373,66 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
     expect(showLineNumbersMock).toHaveBeenCalledTimes(2)
     expect(showLineNumbersMock).toHaveBeenLastCalledWith(second, { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+  })
+})
+
+describe('section indent is the page’s own switch (YAZ-2709)', () => {
+  const showSectionIndentMock = vi.mocked(showSectionIndent)
+  /** The cog's second switch, through the real menu. */
+  function switchSectionIndent(host: ParentNode): void {
+    clickCog(host)
+    act(() => host.querySelectorAll<HTMLButtonElement>('.page-settings__menu button[aria-pressed]')[1].click())
+    clickCog(host)
+  }
+  const indented = (host: ParentNode): boolean => host.querySelector('.editor-host')!.hasAttribute('data-section-indent')
+
+  beforeEach(() => localStorage.clear())
+  afterEach(() => localStorage.clear())
+
+  it('is off on a page that never turned it on, and the editor is told nothing', async () => {
+    const el = await mount(BODY)
+    expect(indented(el)).toBe(false)
+    expect(showSectionIndentMock).not.toHaveBeenCalled()
+  })
+
+  it('on tells the editor once; off tells it off; the note is never written', async () => {
+    const el = await mount(BODY)
+    switchSectionIndent(el)
+    expect(indented(el)).toBe(true)
+    expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
+    switchSectionIndent(el)
+    expect(indented(el)).toBe(false)
+    expect(showSectionIndentMock).toHaveBeenCalledTimes(2)
+    expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), false)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('is remembered for the page: the next mount of it starts on, and another page stays off', async () => {
+    const first = await mount(BODY)
+    switchSectionIndent(first)
+    act(() => root?.unmount())
+    first.remove()
+    showSectionIndentMock.mockClear()
+    const again = await mount(BODY)
+    expect(indented(again)).toBe(true)
+    expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
+    act(() => root?.unmount())
+    again.remove()
+    const other = await mount(BODY, 1, { path: '/vault/other.md' })
+    expect(indented(other)).toBe(false)
+  })
+
+  it('an outside change that lands tells the editor again: a rebuilt editor state starts off', async () => {
+    const el = await mount(FM + BODY)
+    switchSectionIndent(el)
+    expect(showSectionIndentMock).toHaveBeenCalledTimes(1)
+    diskHas(FM + '# Hello\n\nchanged outside\n', 2)
+    diskHas(FM + '# Hello\n\nchanged outside\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    await settle()
+    expect(applyExternalMock).toHaveBeenCalledTimes(1)
+    expect(showSectionIndentMock).toHaveBeenCalledTimes(2)
+    expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), true)
   })
 })

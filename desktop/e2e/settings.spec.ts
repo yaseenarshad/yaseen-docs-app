@@ -1,8 +1,9 @@
 /**
  * The settings DIALOG itself (YAZ-1679, spec'd in YAZ-1689): the three ways in (cog, ⌘, via the
  * app menu, and the menu with the sidebar collapsed — when there is no cog to click), the nav's
- * order and its divider, search narrowing the page to hits under breadcrumbs, the two-stage
- * Escape, the three ways out, the Hotkeys page swap, and a change surviving close → reopen.
+ * order and its divider, one section to a page (YAZ-2709) with a nav click swapping it, search
+ * narrowing the pane to hits under breadcrumbs, the two-stage Escape, the three ways out, and a
+ * change surviving close → reopen.
  * theme.spec.ts / contentWidth.spec.ts each prove ONE setting's effect on the app;
  * this spec proves the frame those rows sit in. Same harness as smoke.spec.ts: temp
  * `--user-data-dir`, a COPY of a generated fixture vault, `settings-` step screenshots. Serial:
@@ -16,7 +17,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 
 test.describe.configure({ mode: 'serial' })
 
-/** The nav as the registry orders it (registry.tsx): five scroll sections, a divider, the one standalone page. */
+/** The nav as the registry orders it (registry.tsx): five settings pages, a divider, the Hotkeys reference page. */
 const NAV_ORDER = ['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
@@ -64,7 +65,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — the sidebar cog opens the dialog at the top: nav in registry order, divider before Hotkeys, Appearance current', async () => {
+test('step 1 — the sidebar cog opens the dialog on the Appearance page: nav in registry order, divider before Hotkeys, Appearance current', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.ProseMirror')).toBeVisible() // the seeded note is open; the app is up
@@ -73,19 +74,19 @@ test('step 1 — the sidebar cog opens the dialog at the top: nav in registry or
   await expect(dialog(win)).toBeVisible()
   await expect(search(win)).toBeFocused() // focus lands in the search box on open
 
-  // The nav lists exactly the registry's sections, in its order, with the standalone page walled
+  // The nav lists exactly the registry's sections, in its order, with the reference page walled
   // off under the divider — Sync is there because App always hands the engine over.
   await expect.poll(() => navSequence(win)).toEqual([...NAV_ORDER])
 
-  // Opening always starts at the top: the pane is unscrolled, so the scrollspy names Appearance —
-  // a `location` (where you are in the scrolled page), never `page` (that is the Hotkeys kind).
+  // Opening always starts at the first page, at its top: Appearance is the one current nav item,
+  // and it is a `page` — the section the pane shows — like every item of the nav.
   expect(await paneScrollTop(win)).toBe(0)
-  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'location')
+  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'page')
   await expect(dialog(win).locator('.settings-nav__item[aria-current]')).toHaveCount(1)
-  // ONE page, every section on it: the first heading is Appearance and the Sync row is already in the DOM.
-  await expect(headings(win).first()).toHaveText('Appearance')
+  // ONE section to a page: the only heading is Appearance, and a row of a later section (Sync's) is not in the DOM.
+  await expect(headings(win)).toHaveText(['Appearance'])
   await expect(row(win, 'theme')).toBeVisible()
-  await expect(row(win, 'githubSync')).toBeAttached()
+  await expect(row(win, 'githubSync')).toHaveCount(0)
   await shoot(win, 'settings-01-open-from-cog')
 
   await win.keyboard.press('Escape')
@@ -96,7 +97,7 @@ test('step 2 — Settings… in the app menu (⌘,) opens the same dialog, with 
   // The REAL menu path: the item by its stable id, focused on w1 so main's focused-window send lands here.
   await clickMenuItem(app, 'menu.app.settings', 'w1')
   await expect(dialog(win)).toBeVisible()
-  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'location')
+  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'page')
   await shoot(win, 'settings-02-open-from-menu')
   await win.keyboard.press('Escape')
   await expect(dialog(win)).toHaveCount(0)
@@ -133,13 +134,17 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
   await expect(row(win, 'theme').getByRole('button', { name: 'Dark', exact: true })).toHaveClass(/settings__option--active/)
   await expect.poll(async () => (await readState(userData)).settings.theme).toBe('dark')
 
-  // "threading" matches on the GROUP title: its three rows, under "section › group".
+  // "threading" matches on the GROUP title: its three rows, under "section › group". It matches
+  // the next group's hint too, which names Bullet threading (YAZ-2709): that group's two rows
+  // follow under their own breadcrumb.
   await search(win).fill('threading')
-  await expect(headings(win)).toHaveText(['Editor › Bullet threading'])
-  await expect(rows(win)).toHaveCount(3)
+  await expect(headings(win)).toHaveText(['Editor › Bullet threading', 'Editor › Section indent'])
+  await expect(rows(win)).toHaveCount(5)
   await expect(row(win, 'bulletThreading')).toBeVisible()
   await expect(row(win, 'threadWidth')).toBeVisible()
   await expect(row(win, 'threadColor')).toBeVisible()
+  await expect(row(win, 'sectionStep')).toBeVisible()
+  await expect(row(win, 'sectionLines')).toBeVisible()
   await shoot(win, 'settings-05-search-threading')
 
   // Nothing matches: the empty state, no rows, no headings.
@@ -155,11 +160,11 @@ test('step 4 — Escape is two-stage (clear the search, then close); the × and 
   await expect(dialog(win)).toBeVisible()
   await expect(search(win)).toHaveValue('zzz')
 
-  // First Escape: the query goes, the dialog stays, the full page is back.
+  // First Escape: the query goes, the dialog stays, the page that was showing is back.
   await win.keyboard.press('Escape')
   await expect(dialog(win)).toBeVisible()
   await expect(search(win)).toHaveValue('')
-  await expect(headings(win).first()).toHaveText('Appearance')
+  await expect(headings(win)).toHaveText(['Appearance'])
   await expect(row(win, 'theme')).toBeVisible()
   await shoot(win, 'settings-07-escape-cleared-search')
 
@@ -182,23 +187,33 @@ test('step 4 — Escape is two-stage (clear the search, then close); the × and 
   await shoot(win, 'settings-08-closed-by-overlay')
 })
 
-test('step 5 — Hotkeys is its own page inside the dialog; Appearance brings the settings page back', async () => {
+test('step 5 — a nav click swaps the page: Sync, then Hotkeys under the divider, then Appearance again', async () => {
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
 
+  // A later settings page: its one heading and its row, nothing of Appearance, from the top.
+  await navItem(win, 'Sync').click()
+  await expect(navItem(win, 'Sync')).toHaveAttribute('aria-current', 'page')
+  await expect(dialog(win).locator('.settings-nav__item[aria-current]')).toHaveCount(1)
+  await expect(headings(win)).toHaveText(['Sync'])
+  await expect(row(win, 'githubSync')).toBeVisible()
+  await expect(row(win, 'theme')).toHaveCount(0)
+  expect(await paneScrollTop(win)).toBe(0)
+
   await navItem(win, 'Hotkeys').click()
-  await expect(navItem(win, 'Hotkeys')).toHaveAttribute('aria-current', 'page') // a page, not a location
+  await expect(navItem(win, 'Hotkeys')).toHaveAttribute('aria-current', 'page') // a page like the others
   await expect(dialog(win).locator('.settings-nav__item[aria-current]')).toHaveCount(1)
   // A page swap, not a scroll: the one heading is Hotkeys and the settings rows are gone from the DOM.
   await expect(headings(win)).toHaveText(['Hotkeys'])
   await expect(row(win, 'theme')).toHaveCount(0)
+  await expect(row(win, 'githubSync')).toHaveCount(0)
   await expect(row(win, 'hotkeys-keyboard')).toBeVisible()
   await expect(dialog(win).locator('.hotkeys__row').first()).toBeVisible()
   await shoot(win, 'settings-09-hotkeys-page')
 
   await navItem(win, 'Appearance').click()
-  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'location')
-  await expect(headings(win).first()).toHaveText('Appearance')
+  await expect(navItem(win, 'Appearance')).toHaveAttribute('aria-current', 'page')
+  await expect(headings(win)).toHaveText(['Appearance'])
   await expect(row(win, 'theme')).toBeVisible()
   await expect(row(win, 'hotkeys-keyboard')).toHaveCount(0)
   await shoot(win, 'settings-10-back-to-settings-page')

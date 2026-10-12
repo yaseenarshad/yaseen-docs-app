@@ -198,6 +198,26 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
   })
 
+  it('section indent: a file from before YAZ-2709 sanitizes to 30px, always; every listed value survives; junk falls back', async () => {
+    const { sectionStep: _step, sectionLines: _lines, ...legacySettings } = DEFAULT_SETTINGS
+    const defaults = { sectionStep: 30, sectionLines: 'always' }
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject(defaults)
+
+    const listed = { sectionStep: [24, 30, 36], sectionLines: ['always', 'hover'] }
+    for (const [field, values] of Object.entries(listed)) {
+      for (const value of values) {
+        await seed(valid({ settings: { ...DEFAULT_SETTINGS, [field]: value } }))
+        expect(createStore(file).get().settings).toMatchObject({ [field]: value })
+      }
+    }
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sectionStep: 18, sectionLines: 'never' } }))
+    expect(createStore(file).get().settings).toMatchObject(defaults)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, sectionStep: '30' } }))
+    expect(createStore(file).get().settings).toMatchObject(defaults)
+  })
+
   it('startupWindows: an older file without the key sanitizes to last; the three values survive; junk falls back (YAZ-2589 D2, S16, S17)', async () => {
     const { startupWindows: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

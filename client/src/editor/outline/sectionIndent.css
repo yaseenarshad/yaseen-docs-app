@@ -1,0 +1,182 @@
+/* Section indent (YAZ-2709). A top-level block inside a section carries `data-sd`, its depth (1-6),
+   and on the way to the caret `data-sp`, how many of its lines are purple (sectionIndent.ts).
+   Everything here is drawing. The page switch is `data-section-indent` on `.editor-host`, but no
+   rule needs it: a page that is off has no `data-sd` at all.
+
+   THE INDENT is a transparent `border-left` on the block, `--sd` steps wide, and THE LINES are a
+   `border-image` gradient inside that border: line k stands one third into step k. One rule for
+   every kind of block, and no pseudo-element: line numbers already take `::after` and the table's
+   `::before` (app.css), and a pseudo-element is clipped by the `overflow` of a table or a code
+   block, which a block's own border image is not. The block's box still starts at the column's
+   edge, so what hangs off its padding box moves in with the text and needs no rule: the heading
+   fold chevron (headingFolding.css, `left: -18px`), a quote's bar, the line numbers
+   (`right: calc(100cqw + …)`, the right edge does not move).
+
+   The custom properties of one block are registered as NOT inherited. A change of the path, or of
+   the hover in "Only near the mouse", then restyles the top-level blocks and never their content
+   (a list of a thousand bullets is one block). */
+@property --sd {
+  syntax: '<integer>';
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --section-line {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --l1 { syntax: '<color>'; inherits: false; initial-value: transparent; }
+@property --l2 { syntax: '<color>'; inherits: false; initial-value: transparent; }
+@property --l3 { syntax: '<color>'; inherits: false; initial-value: transparent; }
+@property --l4 { syntax: '<color>'; inherits: false; initial-value: transparent; }
+@property --l5 { syntax: '<color>'; inherits: false; initial-value: transparent; }
+@property --l6 { syntax: '<color>'; inherits: false; initial-value: transparent; }
+@property --w1 { syntax: '<length>'; inherits: false; initial-value: 1px; }
+@property --w2 { syntax: '<length>'; inherits: false; initial-value: 1px; }
+@property --w3 { syntax: '<length>'; inherits: false; initial-value: 1px; }
+@property --w4 { syntax: '<length>'; inherits: false; initial-value: 1px; }
+@property --w5 { syntax: '<length>'; inherits: false; initial-value: 1px; }
+@property --w6 { syntax: '<length>'; inherits: false; initial-value: 1px; }
+
+/* One step: the setting (24 | 30 | 36, App.tsx `--section-step-setting`), or 18px when the note
+   column is 480px or less. A plain number, because `border-image-slice` takes numbers; the query
+   container is `.milkdown`, the parent, since an element cannot query itself. It does not zoom
+   (app.css puts the zoom on `.ProseMirror`), so 480px is the width on screen. */
+.editor-host[data-section-indent] .editor-instance .milkdown {
+  container: note / inline-size;
+}
+
+.editor-instance .milkdown > .ProseMirror {
+  --section-step-n: var(--section-step-setting, 30);
+}
+
+@container note (max-width: 480px) {
+  .editor-instance .milkdown > .ProseMirror {
+    --section-step-n: 18;
+  }
+}
+
+/* The grey is OPAQUE on purpose (the same 14% as a list guide line, mixed into the page instead of
+   into nothing): the outsets below can lie over a neighbour's, and two see-through lines would
+   add up to a darker dash. `--bg` is the note's own surface in both themes (app.css). */
+.editor-instance .milkdown > .ProseMirror > [data-sd] {
+  --step: calc(var(--section-step-n) * 1px);
+  --section-line: color-mix(in srgb, currentColor 14%, var(--bg));
+  --l1: var(--section-line);
+  --l2: var(--section-line);
+  --l3: var(--section-line);
+  --l4: var(--section-line);
+  --l5: var(--section-line);
+  --l6: var(--section-line);
+  --w1: 1px;
+  --w2: 1px;
+  --w3: 1px;
+  --w4: 1px;
+  --w5: 1px;
+  --w6: 1px;
+  border-left: calc(var(--sd) * var(--step)) solid transparent;
+  /* Line k is centred at `step * (k - 1) + step / 3`. A stop written `colour 0 end` starts where
+     the stop before it ended, so every edge is hard. The slice keeps the first `--sd` steps of the
+     picture: the lines of deeper columns are in the gradient and never in the border. */
+  border-image-source: linear-gradient(
+    to right,
+    transparent calc(var(--step) * 1 / 3 - var(--w1) / 2),
+    var(--l1) 0 calc(var(--step) * 1 / 3 + var(--w1) / 2),
+    transparent 0 calc(var(--step) * 4 / 3 - var(--w2) / 2),
+    var(--l2) 0 calc(var(--step) * 4 / 3 + var(--w2) / 2),
+    transparent 0 calc(var(--step) * 7 / 3 - var(--w3) / 2),
+    var(--l3) 0 calc(var(--step) * 7 / 3 + var(--w3) / 2),
+    transparent 0 calc(var(--step) * 10 / 3 - var(--w4) / 2),
+    var(--l4) 0 calc(var(--step) * 10 / 3 + var(--w4) / 2),
+    transparent 0 calc(var(--step) * 13 / 3 - var(--w5) / 2),
+    var(--l5) 0 calc(var(--step) * 13 / 3 + var(--w5) / 2),
+    transparent 0 calc(var(--step) * 16 / 3 - var(--w6) / 2),
+    var(--l6) 0 calc(var(--step) * 16 / 3 + var(--w6) / 2),
+    transparent 0
+  );
+  border-image-slice: 0 0 0 calc(var(--sd) * var(--section-step-n));
+}
+
+.editor-instance .milkdown > .ProseMirror > [data-sd='1'] { --sd: 1; }
+.editor-instance .milkdown > .ProseMirror > [data-sd='2'] { --sd: 2; }
+.editor-instance .milkdown > .ProseMirror > [data-sd='3'] { --sd: 3; }
+.editor-instance .milkdown > .ProseMirror > [data-sd='4'] { --sd: 4; }
+.editor-instance .milkdown > .ProseMirror > [data-sd='5'] { --sd: 5; }
+.editor-instance .milkdown > .ProseMirror > [data-sd='6'] { --sd: 6; }
+
+/* The lines cross the gap above a block: the outset is that block's own margin. A heading's is
+   app.css's `--edit-block-gap` × 7/6/5/4/4 for h2…h6 (an h1 is never inside a section); Crepe gives
+   a code block, a table and a quote `4px 0`. A paragraph, a list and a rule have none. */
+.editor-instance .milkdown > .ProseMirror > h2[data-sd] {
+  border-image-outset: calc(var(--edit-block-gap, 4px) * 7) 0 0;
+}
+
+.editor-instance .milkdown > .ProseMirror > h3[data-sd] {
+  border-image-outset: calc(var(--edit-block-gap, 4px) * 6) 0 0;
+}
+
+.editor-instance .milkdown > .ProseMirror > h4[data-sd] {
+  border-image-outset: calc(var(--edit-block-gap, 4px) * 5) 0 0;
+}
+
+.editor-instance .milkdown > .ProseMirror > :is(h5, h6)[data-sd] {
+  border-image-outset: calc(var(--edit-block-gap, 4px) * 4) 0 0;
+}
+
+.editor-instance .milkdown > .ProseMirror > :is(.milkdown-code-block, .milkdown-table-block, blockquote)[data-sd] {
+  border-image-outset: 4px 0;
+}
+
+/* A code block's own colour stops at its text column: a background runs under a border. */
+.editor-instance .milkdown > .ProseMirror > .milkdown-code-block[data-sd] {
+  background-clip: padding-box;
+}
+
+/* The path: the first `data-sp` lines of a block take bullet threading's colour and width, and
+   only while bullet threading is on (Settings › Editor › Bullet threading). */
+.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > [data-sp] {
+  --l1: var(--thread-color, var(--accent));
+  --w1: var(--thread-width, 2px);
+}
+
+.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='2'], [data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']) {
+  --l2: var(--thread-color, var(--accent));
+  --w2: var(--thread-width, 2px);
+}
+
+.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']) {
+  --l3: var(--thread-color, var(--accent));
+  --w3: var(--thread-width, 2px);
+}
+
+.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='4'], [data-sp='5'], [data-sp='6']) {
+  --l4: var(--thread-color, var(--accent));
+  --w4: var(--thread-width, 2px);
+}
+
+.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='5'], [data-sp='6']) {
+  --l5: var(--thread-color, var(--accent));
+  --w5: var(--thread-width, 2px);
+}
+
+.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > [data-sp='6'] {
+  --l6: var(--thread-color, var(--accent));
+  --w6: var(--thread-width, 2px);
+}
+
+/* "Only near the mouse" (Settings › Editor › Section indent › Grey lines): the grey lines show
+   while the pointer is over the note. The purple path does not ask the pointer. */
+.app[data-section-lines='hover'] .editor-instance .milkdown > .ProseMirror > [data-sd] {
+  transition: --section-line 0.12s;
+}
+
+.app[data-section-lines='hover'] .editor-instance .milkdown > .ProseMirror:not(:hover) > [data-sd] {
+  --section-line: transparent;
+}
+
+/* Over the band of a line a click folds (sectionIndent.ts puts the class on the page). */
+.editor-instance .milkdown > .ProseMirror.section-line-hover > [data-sd] {
+  cursor: pointer;
+}

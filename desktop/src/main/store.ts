@@ -16,6 +16,8 @@ import {
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
+  SECTION_LINES,
+  SECTION_STEPS,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
@@ -45,6 +47,7 @@ import {
   type OpenStat,
   type RecentRoots,
   type RightPanelIdentity,
+  type SectionLines,
   type SettingsState,
   type SidebarLens,
   type StartupWindows,
@@ -156,6 +159,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
+  sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
+  sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

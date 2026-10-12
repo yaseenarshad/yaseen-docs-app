@@ -338,11 +338,14 @@ export function App() {
   }, [theme])
 
   // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
-  // Bullet threading and content width are CSS gates too — no editor remount.
+  // Bullet threading and content width are CSS gates too — no editor remount. So are section
+  // indent's grey lines (YAZ-2709, `data-section-lines`).
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
     '--thread-width': `${settings.threadWidth}px`,
+    // Section indent (YAZ-2709): a plain number, sectionIndent.css needs it as one (`border-image-slice`).
+    '--section-step-setting': settings.sectionStep,
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
   } as CSSProperties
@@ -1172,7 +1175,7 @@ export function App() {
   }
 
   return (
-    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth}>
+    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines}>
       {notice !== null && (
         // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
         <div className="link-notice" role="status" data-icon={notice.icon}>
