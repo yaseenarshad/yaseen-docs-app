@@ -35,7 +35,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AppState } from '../../shared/types'
-import { activeTab, appWindow, buildFixtureVault, clickMenuItem, editorOf, extraWindow, launchApp, lensTab, menuItem, quitApp, readState, searchBar, SEED_BODY, SEED_FILE, seededState, shoot, showSearchTab, tabsOf, topLabels, windowCount, winParam } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, clickMenuItem, editorOf, extraWindow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, searchBar, SEED_BODY, SEED_FILE, seededState, shoot, showSearchTab, tabsOf, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -217,7 +217,7 @@ test('step 2 — a tab of each vault: the switch shows each note, and the window
 
 // ---------------------------------------------------------------- focus across vaults
 
-test('step 3 — "Add to focus" on a folder of each vault: the Focus tab lists both in the order added, each with its vault\'s name', async () => {
+test('step 3 — "Add to focus" on a folder of each vault: each goes to the focus file of its own vault, and the Focus tab lists both, each with its vault\'s name', async () => {
   const projectsA = path.join(vaultA, 'Projects')
   const projectsB = path.join(vaultB, 'Projects')
   await pickFromRowMenu(dirAt(win, projectsA), 'Add to focus')
@@ -229,11 +229,15 @@ test('step 3 — "Add to focus" on a folder of each vault: the Focus tab lists b
   await lensTab(win, 'Files').click()
   await pickFromRowMenu(dirAt(win, projectsB), 'Add to focus')
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
-  // ONE list for the window, across its vaults (A1): the order ADDED, and each top row says whose it is.
+  // ONE flat list on the tab, across the vaults (A1): no drag gave an order across vaults, so the rows
+  // follow the vaults (YAZ-2702 Decision 3), and each top row says whose it is.
   await expect(topLabels(win)).toHaveText(['Projects', 'Projects'])
   await expect(vaultTags(win)).toHaveText([ALPHA, BETA])
   await expect(countLine(win)).toHaveText('2 in focus')
-  await expect.poll(async () => (await readState(userData)).windows[0]?.focusList).toEqual([projectsA, projectsB])
+  // Each vault holds its own list, in the vault (YAZ-2702 S1, S2); the window's state entry holds none.
+  await expect.poll(() => focusOnDisk(vaultA)).toEqual(['Projects'])
+  await expect.poll(() => focusOnDisk(vaultB)).toEqual(['Projects'])
+  expect((await readState(userData)).windows[0]).not.toHaveProperty('focusList')
   await shoot(win, 'multi-vault-04-focus-two-vaults')
 })
 
@@ -331,7 +335,7 @@ test('step 6 — "Save as workspace…" on the header saves the window\'s vaults
 
 // ---------------------------------------------------------------- remove a vault
 
-test('step 7 — "Remove from this window" on a vault row closes that vault\'s tab and drops its focus item; one vault is left, with no vault row, and nothing on disk changes', async () => {
+test('step 7 — "Remove from this window" on a vault row closes that vault\'s tab and takes its rows off the Focus tab; one vault is left, with no vault row, and nothing on disk changes', async () => {
   const betaRow = win.locator(`.sidebar__body .tree__row--vault[data-path="${vaultB}"]`)
   await betaRow.click({ button: 'right' })
   // A vault row is a folder that is a vault (S13, A2): it creates and pastes; it is not renamed, deleted, favorited or put in focus.
@@ -347,9 +351,11 @@ test('step 7 — "Remove from this window" on a vault row closes that vault\'s t
   await expect(fileAt(win, path.join(vaultA, 'Ideas.md'))).toBeVisible()
   await expect(headerName(win)).toHaveText(ALPHA)
   await expect.poll(async () => (await readState(userData)).windows[0]?.roots).toEqual([vaultA])
-  // Its focus item left with it (A5); the workspace is a COPY, so it still holds both vaults (S69).
-  await expect.poll(async () => (await readState(userData)).windows[0]?.focusList).toEqual([path.join(vaultA, 'Projects')])
+  // The workspace is a COPY, so it still holds both vaults (S69).
   expect((await readState(userData)).vaultSets.map((set) => set.roots)).toEqual([[vaultA, vaultB]])
+  // The focus list of the vault that left is the vault's (YAZ-2702 S9, which overturns A5): its file is as it was.
+  expect(await focusOnDisk(vaultB)).toEqual(['Projects'])
+  expect(await focusOnDisk(vaultA)).toEqual(['Projects'])
   // Nothing on disk changed (S50): the vault's own favorites are as they were.
   expect(await favoritesOf(vaultB)).toEqual([SEED_FILE])
   await shoot(win, 'multi-vault-08-vault-removed')

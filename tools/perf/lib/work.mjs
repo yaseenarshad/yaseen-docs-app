@@ -53,7 +53,6 @@ export function writeState(profile, wins) {
       rightPanel: { open: false, width: 420, items: [], expanded: null },
       sidebarCollapsed: false,
       sidebarLens: 'files',
-      focusList: [],
       bounds: { x: 40 + i * 40, y: 40 + i * 30, width: 1280, height: 860 },
     })),
     folders: Object.fromEntries(wins.map((w) => [w.root, { expanded: [], lastFile: w.tabs[0] ?? null, folds: {}, baseGroups: {}, name: null }])),

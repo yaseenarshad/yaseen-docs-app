@@ -42,7 +42,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, launchApp, lensTab, menuItem, quitApp, readState, previewTab, searchBar, searchTab, seededState, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
+import { activeTab, appWindow, clickMenuItem, copyVault, dirRow, editorOf, expandDirs, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, previewTab, searchBar, searchTab, seedFocus, seededState, shoot, showSearchTab, tabsOf, topLabels } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -425,7 +425,6 @@ test('step 7 — ⌘K, a query, a right-click on a result: "Show in sidebar" is 
 
 test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the Search tab and move the result to the top group; on a Focus row and on a Favorites row "Show in sidebar" is the FIRST item and shows the row in Files, and neither list changes; a Files row has no such item', async () => {
   // Continues step 7: the Search tab, with "Nurture" typed.
-  const sequencing = path.join(vault, 'Problems', 'Nurture Sequencing.md')
   const funnel = path.join(vault, 'Funnel Stages')
   await expect(matchLabels(win)).toHaveText(NURTURE)
 
@@ -447,7 +446,7 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
   await expect(searchTrees(win).nth(0).locator('.tree__row .tree__label')).toHaveText(PINNED_NURTURE.slice(0, 2))
   await expect(matchLabels(win)).toHaveText(PINNED_NURTURE)
   await expect(parentLabels(win)).toHaveCount(0)
-  await expect.poll(async () => (await windowOnDisk())?.focusList).toEqual([sequencing])
+  await expect.poll(() => focusOnDisk(vault)).toEqual(['Problems/Nurture Sequencing.md'])
   await expect.poll(favoritesOnDisk).toEqual(['Funnel Stages/Lead Nurture.md'])
 
   // The Focus tab: no bar (S6), the item as its one top row, and "Show in sidebar" first in its menu (S34).
@@ -463,7 +462,7 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
   // The row shows in Files, and the focus list is as it was (S36).
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(fileRow(win, 'Nurture Sequencing')).toHaveClass(/tree__row--revealed/)
-  expect((await windowOnDisk())?.focusList).toEqual([sequencing])
+  expect(await focusOnDisk(vault)).toEqual(['Problems/Nurture Sequencing.md'])
 
   // The Favorites tab: the same item, first, and the click opens the folder above the row in Files.
   await collapseDir(win, funnel)
@@ -501,14 +500,14 @@ test('step 8 — "Add to focus" and "Add to favorites" on a result stay on the S
 
 test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under "Favorites and focus", and the highlight starts there; Space on the folder shows all that it holds; Space on a file shows the preview panel and opens no tab; Esc closes the panel only; Enter on the folder shows it in Files, open and flashing, with the keyboard focus on its row', async () => {
   // Step 8 quit the app. This step starts it again on a seed of its own: ONE pinned folder,
-  // `Funnel Stages`, in the favorites (the vault's file) AND in the focus list (the window's
-  // entry) — an item of both lists shows one time (S17). The S-numbers are the cases on YAZ-2662.
+  // `Funnel Stages`, in the favorites AND in the focus list — each the vault's own file (focus since
+  // YAZ-2702; the seed is the newest focus file, so it is the list and step 8's item is not in it) —
+  // an item of both lists shows one time (S17). The S-numbers are the cases on YAZ-2662.
   const funnel = path.join(vault, 'Funnel Stages')
   await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
   await writeFile(path.join(vault, '.yaseendocs', 'favorites.json'), JSON.stringify({ version: 1, favorites: ['Funnel Stages'] }))
-  const seed = seededState(vault, path.join(vault, 'Roles', 'CEO.md'))
-  seed.windows = seed.windows.map((entry) => ({ ...entry, focusList: [funnel] }))
-  app = await launchApp({ userData, seedState: seed })
+  await seedFocus(vault, ['Funnel Stages'])
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Roles', 'CEO.md')) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(CEO_BODY)
   await expect(tabsOf(win)).toHaveText(['CEO'])

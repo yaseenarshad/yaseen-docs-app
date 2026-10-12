@@ -37,9 +37,31 @@ import { basename } from './paths'
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] }
+let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
+
+/**
+ * The two orders across vaults, each with its mutator on the bridge: the Favorites order (YAZ-2631
+ * D1) and the focus order (YAZ-2702 Decision 3). One rule and one merge (`mergeFavoritesOrder`) for the two.
+ */
+const ORDER_SETTERS = { favoritesOrder: 'setFavoritesOrder', focusOrder: 'setFocusOrder' } as const
+type OrderKey = keyof typeof ORDER_SETTERS
+const ORDER_KEYS = Object.keys(ORDER_SETTERS) as OrderKey[]
+
+/**
+ * What this window hands in for the vaults `roots`, into one of the two orders. The cache merges it
+ * as main does (`mergeFavoritesOrder`, YAZ-2631 R5) and wakes `subscribe` at once, so the list never
+ * shows the old order while main answers; main's broadcast of the same order then changes nothing.
+ */
+function setOrder(key: OrderKey, roots: readonly string[], paths: readonly string[]): void {
+  const setter = ORDER_SETTERS[key]
+  const next = mergeFavoritesOrder(state[key], roots, paths)
+  const moved = next !== state[key]
+  state = { ...state, [key]: next }
+  send(`state.${setter}`, () => api.state[setter](roots, paths))
+  if (moved) listeners.forEach((l) => l())
+}
 
 /**
  * Issues one bridge call at once without awaiting it; a rejection is logged, never thrown. The
@@ -71,15 +93,19 @@ export const storage = {
     identity = id
     unsubscribe?.()
     unsubscribe = api.state.onChange((next) => {
-      // Each broadcast is a new copy. The Favorites order keeps its identity while it holds the same
-      // paths (YAZ-2631 D1), so what reads it draws again only when the order changed.
-      const held = state.favoritesOrder
-      state = held.length === next.favoritesOrder.length && held.every((path, at) => path === next.favoritesOrder[at]) ? { ...next, favoritesOrder: held } : next
+      // Each broadcast is a new copy. The Favorites order and the focus order each keep their identity
+      // while they hold the same paths (YAZ-2631 D1, YAZ-2702 Decision 3): each is a
+      // `useSyncExternalStore` snapshot, so what reads it draws again only when the order changed.
+      const held = state
+      state = next
+      for (const key of ORDER_KEYS) {
+        if (held[key].length === next[key].length && held[key].every((path, at) => path === next[key][at])) state = { ...state, [key]: held[key] }
+      }
       listeners.forEach((l) => l())
     })
   },
 
-  /** Called after a change made in ANY window landed in the cache — never for this window's own optimistic writes, but the one of the Favorites order (`setFavoritesOrder`). */
+  /** Called after a change made in ANY window landed in the cache — never for this window's own optimistic writes, but the ones of the two orders across vaults (`setFavoritesOrder`, `setFocusOrder`). */
   subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => {
@@ -89,14 +115,15 @@ export const storage = {
 
   getRoot: (): string | null => identity.root,
   /**
-   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and its
-   * focus list (YAZ-1628, YAZ-2619), and lands the lens on Files (🔒 D2, YAZ-1846),
-   * in the same write; re-setting the same root keeps them.
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and lands the
+   * lens on Files (🔒 D2, YAZ-1846), in the same write; re-setting the same root keeps them. The
+   * focus list is not here to clear (YAZ-2702 Decision 1): it is the vault's, in the vault, so it
+   * is there again when the window comes back to the vault (S8).
    */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [] as string[] }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), sidebarLens: DEFAULT_SIDEBAR_LENS }
     // The window is on that ONE vault (YAZ-2602 S61). The patch names `root` alone: main makes the list from it (S76).
     identity = { ...identity, ...patch, ...(root === identity.root ? {} : { roots: normalizeRoots([], root) }) }
     send('window.setIdentity', () => api.window.setIdentity(patch))
@@ -105,16 +132,14 @@ export const storage = {
   /** Every vault this window shows, `root` first (YAZ-2602 D1). */
   getRoots: (): string[] => identity.roots,
   /**
-   * Add or remove a vault (YAZ-2602 D2, D7). Unlike `setRoot`, this keeps the tabs, the lens and
-   * the focus list: the caller closes a removed vault's tabs first. `root` follows `roots[0]`.
-   * A vault that leaves takes its focus items with it, in the same write (A5).
+   * Add or remove a vault (YAZ-2602 D2, D7). Unlike `setRoot`, this keeps the tabs and the lens:
+   * the caller closes a removed vault's tabs first. `root` follows `roots[0]`. A vault that leaves
+   * takes its rows off the Focus tab and keeps its focus list, which is in the vault (YAZ-2702 S9).
    */
   setRoots(roots: readonly string[]): void {
     const next = normalizeRoots(roots, roots[0] ?? null)
-    const focusList = identity.focusList.filter((path) => rootOfPath(next, path) !== null)
-    const patch = focusList.length === identity.focusList.length ? { roots: next } : { roots: next, focusList }
-    identity = { ...identity, ...patch, root: next[0] ?? null }
-    send('window.setIdentity', () => api.window.setIdentity(patch))
+    identity = { ...identity, roots: next, root: next[0] ?? null }
+    send('window.setIdentity', () => api.window.setIdentity({ roots: next }))
   },
   /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. */
   mirrorRoots(roots: readonly string[]): void {
@@ -171,20 +196,6 @@ export const storage = {
   setExpanded(root: string, dirs: string[]): void {
     patchFolder(root, { expanded: dirs })
     send('state.setFolder', () => api.state.setFolder(root, { expanded: dirs }))
-  },
-
-  /**
-   * The focus list (YAZ-2619): files and folders in the order added, or the order a drag gave
-   * them (YAZ-2631 D3); empty when there is none.
-   * Window identity since YAZ-1628, like `sidebarCollapsed` below — no root argument, and a global
-   * state broadcast never follows another window's list into this one; a root change clears it (`setRoot`),
-   * and a vault that leaves the window takes its items (`setRoots`).
-   */
-  getFocusList: (): string[] => identity.focusList,
-  setFocusList(paths: readonly string[]): void {
-    const focusList = [...paths]
-    identity = { ...identity, focusList }
-    send('window.setIdentity', () => api.window.setIdentity({ focusList }))
   },
 
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */
@@ -247,17 +258,18 @@ export const storage = {
   getFavoritesOrder: (): string[] => state.favoritesOrder,
   /**
    * What this window hands in for the vaults `roots`: after a drag, its favorites in the new order;
-   * after a remove, the stored order without the removed paths (YAZ-2631 R23). The cache
-   * merges it as main does (`mergeFavoritesOrder`, R5) and wakes `subscribe` at once, so the list
-   * never shows the old order while main answers; main's broadcast of the same order then changes nothing.
+   * after a remove, the stored order without the removed paths (YAZ-2631 R23). Merged and shown at once (`setOrder`).
    */
-  setFavoritesOrder(roots: readonly string[], paths: readonly string[]): void {
-    const favoritesOrder = mergeFavoritesOrder(state.favoritesOrder, roots, paths)
-    const moved = favoritesOrder !== state.favoritesOrder
-    state = { ...state, favoritesOrder }
-    send('state.setFavoritesOrder', () => api.state.setFavoritesOrder(roots, paths))
-    if (moved) listeners.forEach((l) => l())
-  },
+  setFavoritesOrder: (roots: readonly string[], paths: readonly string[]): void => setOrder('favoritesOrder', roots, paths),
+
+  /**
+   * The focus order across vaults (YAZ-2702 Decision 3), by the rule of the Favorites order above:
+   * app-wide and per machine, and the same list until the order changes. The focus LIST itself is
+   * not in this cache: each vault keeps its own in the vault, read through `api.focus` (`useVaultTree`).
+   */
+  getFocusOrder: (): string[] => state.focusOrder,
+  /** What this window hands in for the vaults `roots`: after a drag, its focus items in the new order; after a remove or a clear, the stored order without those paths (S3, S4). */
+  setFocusOrder: (roots: readonly string[], paths: readonly string[]): void => setOrder('focusOrder', roots, paths),
 
   /**
    * The active sidebar lens (YAZ-847): chrome, not per-folder view state, so no root argument
