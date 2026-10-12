@@ -1154,6 +1154,19 @@ export interface FavoritesConfig {
   favorites: string[]
 }
 
+// ---------- Focus (`<root>/.yaseendocs/focus.<mac id>.json` — YAZ-2702, Decisions 1 and 2) ----------
+
+/**
+ * One Mac's focus file on disk: VAULT-RELATIVE POSIX paths in the user's order (`MAX_FOCUS` at
+ * most), and `at`, the ISO time of the write. Each Mac writes only its own file, so a sync cannot
+ * conflict; the file with the latest `at` is the vault's list.
+ */
+export interface FocusConfig {
+  version: 1
+  at: string
+  focus: string[]
+}
+
 // ---------- Bridge payloads: `window.yaseenDocs` itself is `CONTRACT` in shared/ipc.ts (GRO-2153, YAZ-2200) ----------
 
 /**

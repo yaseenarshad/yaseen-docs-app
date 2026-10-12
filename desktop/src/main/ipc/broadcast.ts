@@ -21,7 +21,7 @@ export function rootsOf(state: AppState): string[] {
 
 /**
  * Main's own `subscribe(root)` per open-vault root, one each, dropped when the last window on that
- * root goes (YAZ-2201 6B; vaultConfig, favorites and properties).
+ * root goes (YAZ-2201 6B; vaultConfig, favorites, focus and properties).
  */
 export function syncPerRoot(store: Store, subscribe: (root: string) => () => void): void {
   const subs = new Map<string, () => void>()

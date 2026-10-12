@@ -241,6 +241,18 @@ export const CONTRACT = {
     /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('favorites:changed'),
   },
+  /**
+   * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each
+   * Mac, `.yaseendocs/focus.<mac id>.json`; the newest file is the list. Absolute paths in the user's order.
+   */
+  focus: {
+    /** Absolute paths in stored order, from the newest valid file; `[]` when there is none. Never creates anything. */
+    get: invoke<[root: string], string[]>('focus:get', 1),
+    /** Replace the list; every path must be inside `root` (→ `BAD_REQUEST`). Writes this Mac's file only, and nothing when the list did not change. */
+    set: invoke<[root: string, paths: readonly string[]], void>('focus:set', 2),
+    /** Fired in every window after any change to a focus file of a vault, an own write or another Mac's file from a sync; filter by `root`. */
+    onChanged: push<{ root: string }>('focus:changed'),
+  },
   /** Per-vault GitHub sync, off by default (YAZ-1081); every call answers the same status the push carries. */
   github: {
     /** This root's current status, from the manager's last broadcast; for a root whose sync is OFF, a read-only inspection (remote + branch). Never a failure. */
