@@ -27,14 +27,15 @@
   - [x] 2 (YAZ-2694) gates, e2e step, check in the real app (before: 3,600 px off; after: 0 px off)
   - [x] 2A (YAZ-2697) the zoom caret (before: 5,160 px off; after: 0 px off)
   - [x] 3 (YAZ-2695) polish: `docs/CONTRACTS.md` zoom line, one simpler condition
-- Now: [→] 4 (YAZ-2696) merge, release 1.0.3, release notes
-- Next: closeout handoff on YAZ-2692
+  - [x] 4 (YAZ-2696) merged to `main` by pull request #108 (`665eac4`); release 1.0.3 is the commit after this one
+- Now: closed. The handoff is on YAZ-2692.
+- Next: nothing. YAZ-2698 (a one-letter query on a very large note) is in the Backlog.
 
 ## Open Questions
 - UNCONFIRMED: a match inside a CodeMirror code block paints no highlight. The fallback to the block covers both cases.
 
 ## Working Set
-- Branch `fix/yaz-2691-find-jump`, worktree `../yaseen-docs-app-yaz-2691`, from `main` at `301eec4`.
+- Branch `fix/yaz-2691-find-jump` from `main` at `301eec4`, merged by #108. The worktree is removed.
 - `client/src/editor/find/findInPage.ts` (`textRuns`, `scrollToActive`), `client/src/editor/find/findInPage.test.ts`
 - `client/src/editor/Editor.tsx` (the zoom layout effect), `client/src/editor/Editor.test.tsx`
 - `desktop/e2e/findInPage.spec.ts` (the tall-paragraph step, not run), `docs/CONTRACTS.md`
