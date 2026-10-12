@@ -87,6 +87,13 @@
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
+ *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H3 outside lists,
+ *    or its bullets three levels deep when it has fewer than two of those, or what the reader
+ *    chose for this note (the channel's source, D14: every heading, or the bullets) — scanned at
+ *    view creation, 150 ms after the last document change and at once when the source changes,
+ *    published through the `TocChannel` the host also gives `toc/TableOfContents.tsx`; the same
+ *    channel carries the jump and the scroll spy. No state field, no decorations. Registered
+ *    only when `opts.toc` supplies that channel.
  *  - Heading folding (YAZ-1140, `outline/headingFolding.ts` + `.css`): an H1-H3 chevron collapses
  *    the heading's section — its following sibling blocks up to the next same-or-shallower heading
  *    — through widget + node decorations only; metadata-only transactions, markdown untouched.
@@ -145,6 +152,8 @@ import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
 import { createImageView } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
+import type { TocChannel } from './toc/tocChannel'
+import { createTableOfContents } from './toc/tocPlugin'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
 import {
@@ -167,6 +176,7 @@ import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
 import { headingHotkeys } from './outline/headingHotkeys'
+import { headingLevelTag } from './outline/headingLevelTag'
 import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
@@ -193,6 +203,8 @@ export interface CreateCrepeOptions {
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
   find?: FindChannel
+  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the headings are never scanned. */
+  toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
   /** Navigation-only view-file resolver; never carries semantic records. */
@@ -228,6 +240,8 @@ interface ToolbarGroup {
 interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
   getGroup: (key: string) => ToolbarGroup
+  /** The builder's OWN list of groups, in strip order (Crepe's `GroupBuilder.build` hands back the array itself, not a copy). */
+  build: () => unknown[]
 }
 
 /** A colour dot for the toolbar; the fill IS the wash token, so the button previews the real colour. */
@@ -280,6 +294,14 @@ function buildToolbar(builder: ToolbarBuilder): void {
     active: (ctx) => blockAt(ctx).type.name === 'paragraph',
     onRun: (ctx) => ctx.get(commandsCtx).call(turnIntoTextCommand.key),
   })
+  // The Heading group LEADS the strip (YAZ-2700): the toolbar opens over the start of the
+  // selection, so its first buttons are the ones under the hand after a double click — and
+  // H1/H2/H3/T are pressed far more than Bold. `addGroup` can only append and the builder has no
+  // way to reorder, so the group just added is moved to the front of the builder's own list;
+  // the strip, its dividers and the tab order all follow from that one order.
+  const groups = builder.build()
+  const heading = groups.pop()
+  if (heading !== undefined) groups.unshift(heading)
 }
 
 /**
@@ -342,7 +364,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(breakMarks)
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
+  crepe.editor.use(headingLevelTag)
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
+  if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled', title: () => 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)

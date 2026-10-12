@@ -33,6 +33,7 @@ describe('settingCandidates', () => {
       'bulletThreading',
       'threadWidth',
       'threadColor',
+      'tableOfContents',
       'commentsOrder',
       'confirmDelete',
       'confirmRename',
@@ -97,6 +98,11 @@ describe('searchSettings', () => {
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
+  })
+
+  it('"toc" and "jump" find the table of contents row; its own name finds the ⌘J line of the Hotkeys table too (YAZ-2700)', () => {
+    for (const query of ['toc', 'jump']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tableOfContents'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tableOfContents', 'hotkeys-keyboard'])
   })
 
   it('matches on the group title: "threading" finds the three threading rows', () => {

@@ -2,7 +2,7 @@
  * Hotkey reference (GRO-2067 Q4; a Settings page since YAZ-1679): the single source-of-truth list
  * every binding is read from — Settings › Hotkeys renders it, and the settings search indexes every
  * label and key so "close tab" finds the page. When a keymap changes anywhere (editor/outline/hotkeys.ts,
- * foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, marks/highlight.ts,
+ * foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, toc/TableOfContents.tsx, marks/underline.ts, marks/highlight.ts,
  * listCommands.ts, lineSelection.ts, views/view/*, the application menu in desktop/src/main/menu.ts), update HOTKEYS
  * (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it — `VIEW_HOTKEYS` is the folder view surface's own
  * set (table / cards / outline bindings); it was `BASES_HOTKEYS` under the heading "Bases" until
@@ -22,6 +22,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧Z', label: 'Redo' },
   { keys: '⌘.', label: 'Zoom into the bullet at the caret' },
   { keys: '⌘⇧.', label: 'Zoom out one level' },
+  { keys: '⌘J', label: 'Table of contents: ↑ ↓ pick a heading, ⏎ goes to it, Esc closes' },
   { keys: '⌘+ / ⌘− / ⌘0', label: 'Zoom this note in / out (25 at a time above 200%) / back to 100% — outside a note, the whole app' },
   { keys: '⌘⏎', label: 'Cycle bullet → task → done' },
   { keys: '⌘U', label: 'Underline' },

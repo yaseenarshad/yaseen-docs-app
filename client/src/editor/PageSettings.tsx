@@ -1,13 +1,34 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import type { TocSource } from '@shared/types'
 import { CogIcon } from '../settings/SettingsButton'
+
+/** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a note has until the reader chooses. */
+const CONTENTS_FROM: readonly { label: string; value: TocSource | null }[] = [
+  { label: 'Auto', value: null },
+  { label: 'Headings', value: 'headings' },
+  { label: 'Bullets', value: 'bullets' },
+]
 
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
- * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab.
+ * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
+ * all but "TOC made from", which the host saves with the note (YAZ-2700 D14).
  */
-export function PageSettings({ lineNumbers, onToggleLineNumbers, readText }: {
+export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, contentsFrom = null, onChangeContentsFrom, readText }: {
   lineNumbers: boolean
   onToggleLineNumbers: () => void
+  /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
+  headingLevels?: boolean
+  /** Absent → the menu has no "Heading levels" row. */
+  onToggleHeadingLevels?: () => void
+  /** This page shows its table of contents (YAZ-2700). On unless the reader turns it off for this page. */
+  tableOfContents?: boolean
+  /** Absent → the menu has no "Table of contents" row (the app-wide setting is Off: there is nothing to turn off here). */
+  onToggleTableOfContents?: () => void
+  /** What this page's table of contents is built from (YAZ-2700 D14): its headings, its bullets, or `null` — Auto, the page's own structure decides. */
+  contentsFrom?: TocSource | null
+  /** Absent → the menu has no "TOC made from" choice (this page shows no table of contents: there is nothing to build). */
+  onChangeContentsFrom?: (source: TocSource | null) => void
   /** The page's plain text. Read once when the menu opens, never while it is closed. */
   readText: () => string
 }) {
@@ -18,6 +39,9 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, readText }: {
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuId = useId()
+  const tipId = useId()
+  // The explanation behind the small "i" beside "TOC made from": shown while the mouse or the keyboard is on it.
+  const [info, setInfo] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -45,9 +69,46 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, readText }: {
         <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
         </button>
+        {onToggleHeadingLevels !== undefined && <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
+          <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>
+        </button>}
+        {onToggleTableOfContents !== undefined && <button type="button" aria-pressed={tableOfContents} onClick={onToggleTableOfContents}>
+          <span>Table of contents</span><span aria-hidden="true">{tableOfContents ? '✓' : ''}</span>
+        </button>}
+        {/* Three choices that read as ONE control: a label, then the group. All three stay in sight, so a source that gives no list can be changed back. */}
+        {onChangeContentsFrom !== undefined && <>
+          <p className="page-settings__label">
+            TOC made from:
+            <button type="button" className="page-settings__info" aria-label="About “TOC made from”" aria-describedby={info ? tipId : undefined}
+              onMouseEnter={() => setInfo(true)} onMouseLeave={() => setInfo(false)} onFocus={() => setInfo(true)} onBlur={() => setInfo(false)}>
+              <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" aria-hidden>
+                <circle cx="8" cy="8" r="6.3" /><path d="M8 7.4v3.4M8 5v.2" />
+              </svg>
+            </button>
+          </p>
+          <div className="page-settings__choices" role="group" aria-label="TOC made from">
+            {CONTENTS_FROM.map(({ label, value }) => (
+              <button key={label} type="button" aria-pressed={value === contentsFrom} onClick={() => onChangeContentsFrom(value)}>{label}</button>
+            ))}
+          </div>
+        </>}
         <div className="page-settings__divider" aria-hidden="true" />
         <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>
         <p>{text.length.toLocaleString()} characters</p>
+      </div>}
+      {/* BESIDE the menu, not in it: the menu scrolls and is 172px wide, and this is a short text to read. */}
+      {open && info && <div id={tipId} role="tooltip" className="page-settings__tip">
+        <p>This sets what the table of contents of this page shows.</p>
+        <dl>
+          <dt>Auto</dt>
+          <dd>The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.</dd>
+          <dt>Headings</dt>
+          <dd>Shows each H1, H2 and H3. This includes the headings that are in bullets.</dd>
+          <dt>Bullets</dt>
+          <dd>Shows the bullets, to three levels.</dd>
+        </dl>
+        <p>If a selection finds less than two lines, no table of contents shows. Select Auto to get it back.</p>
+        <p>The app saves the selection for this page.</p>
       </div>}
     </div>
   )

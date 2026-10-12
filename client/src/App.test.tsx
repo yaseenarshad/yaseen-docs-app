@@ -225,6 +225,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
+      setTocSource: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)

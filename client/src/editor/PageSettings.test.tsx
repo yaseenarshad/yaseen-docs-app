@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { TocSource } from '@shared/types'
 import { PageSettings } from './PageSettings'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -117,5 +118,76 @@ describe('PageSettings', () => {
     click(cog())
     click(cog())
     expect(readText).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * "TOC made from" (YAZ-2700 D14): what this page's table of contents is built from. One label and
+ * three choices that are one control; the host keeps the choice (and saves it), the menu shows it.
+ */
+describe('PageSettings: TOC made from', () => {
+  let changed: ReturnType<typeof vi.fn<(source: TocSource | null) => void>>
+
+  function mountWith(initial: TocSource | null, shown = true) {
+    readText = vi.fn(() => 'text')
+    changed = vi.fn()
+    function Harness() {
+      const [source, setSource] = useState<TocSource | null>(initial)
+      const onChange = (next: TocSource | null) => {
+        changed(next)
+        setSource(next)
+      }
+      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} contentsFrom={source} onChangeContentsFrom={shown ? onChange : undefined} readText={readText} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+  }
+
+  const group = () => menu()!.querySelector<HTMLElement>('[role="group"][aria-label="TOC made from"]')
+  const choices = () => [...group()!.querySelectorAll<HTMLButtonElement>('button')]
+  const pressed = () => choices().map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
+
+  it('a mount that passes no handler has no such control: the menu is as it was', () => {
+    mount()
+    click(cog())
+    expect(menu()!.textContent).not.toContain('TOC made from')
+    expect(menu()!.querySelector('.page-settings__choices')).toBeNull()
+  })
+
+  it('shows a label and three choices in one group, after "Table of contents" and above the counts; Auto is pressed for a note with no choice', () => {
+    mountWith(null)
+    expect(menu()!.querySelector('.page-settings__label')?.textContent).toBe('TOC made from:')
+    expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
+    const order = [...menu()!.children].map((child) => child.className || child.textContent)
+    expect(order).toEqual(['Line numbers', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
+  })
+
+  it('shows the saved choice pressed, and that one alone', () => {
+    mountWith('bullets')
+    expect(pressed()).toEqual(['Auto:false', 'Headings:false', 'Bullets:true'])
+  })
+
+  it('a click hands the host that source — null for Auto — and leaves the menu open with every choice still there', () => {
+    mountWith(null)
+    click(choices()[1])
+    expect(changed).toHaveBeenLastCalledWith('headings')
+    expect(pressed()).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
+    click(choices()[2])
+    expect(changed).toHaveBeenLastCalledWith('bullets')
+    expect(pressed()).toEqual(['Auto:false', 'Headings:false', 'Bullets:true'])
+    click(choices()[0])
+    expect(changed).toHaveBeenLastCalledWith(null)
+    expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
+    expect(changed).toHaveBeenCalledTimes(3)
+    expect(menu()).not.toBeNull()
+  })
+
+  it('is gone when the host passes no handler, though a source is saved: this page shows no table of contents', () => {
+    mountWith('headings', false)
+    expect(group()).toBeNull()
+    expect(menu()!.textContent).not.toContain('TOC made from')
   })
 })

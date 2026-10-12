@@ -1,0 +1,59 @@
+/* The heading level tag (YAZ-2700): "H2", small and quiet, after the text of the heading the
+   caret is in (`data-heading-caret`, headingLevelTag.ts) and of a heading under the mouse — and of
+   EVERY heading while the page's own switch is on (the cog › "Heading levels", which stamps
+   `data-heading-levels` on the scroller).
+
+   It shows at once, with no fade: it answers a question the reader is asking right now.
+
+   AFTER the text, not in the left gutter: the gutter already holds the fold chevron and the drag
+   handle, and a third thing there would sit under one of them. An `::after` is not a DOM node, so
+   it is never text, never selected, never saved. Its size is in px, so it reads the same at H1 and
+   at H6; the document zoom scales it with the text it belongs to.
+
+   Line numbers put a block's number in the same `::after` (app.css), and a heading has only one:
+   while they are on, the numbers have it and no tag shows. */
+.editor-host:not([data-line-numbers]) .ProseMirror :is(h1, h2, h3, h4, h5, h6)::after {
+  margin-left: 0.6em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  vertical-align: 0.35em;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror h1::after {
+  content: 'H1';
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror h2::after {
+  content: 'H2';
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror h3::after {
+  content: 'H3';
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror h4::after {
+  content: 'H4';
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror h5::after {
+  content: 'H5';
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror h6::after {
+  content: 'H6';
+}
+
+/* The page's switch: every heading says its level, a little quieter than the one in hand. */
+.editor-host[data-heading-levels]:not([data-line-numbers]) .ProseMirror :is(h1, h2, h3, h4, h5, h6)::after {
+  opacity: 0.55;
+}
+
+.editor-host:not([data-line-numbers]) .ProseMirror :is(h1, h2, h3, h4, h5, h6):hover::after,
+.editor-host:not([data-line-numbers]) .ProseMirror :is(h1, h2, h3, h4, h5, h6)[data-heading-caret]::after {
+  opacity: 0.85;
+}

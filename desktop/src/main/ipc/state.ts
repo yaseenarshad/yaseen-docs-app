@@ -1,4 +1,4 @@
-import type { FolderPatch } from '@shared/types'
+import { isTocSource, type FolderPatch } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -56,6 +56,13 @@ export function registerStateIpc(store: Store): void {
     const r = requireAbsPath(root, 'root')
     const f = requireAbsPath(file, 'file')
     store.setFolds(r, f, requireStringArray(keys, 'keys'))
+  })
+  handle(CONTRACT.state.setTocSource, async (root: unknown, file: unknown, source: unknown) => {
+    const r = requireAbsPath(root, 'root')
+    const f = requireAbsPath(file, 'file')
+    // `null` is Auto. Any other word — `auto` itself among them — is no source.
+    if (source !== null && !isTocSource(source)) throw new BridgeFailure('BAD_REQUEST', "'source' must be 'headings', 'bullets' or null")
+    store.setTocSource(r, f, source)
   })
   handle(CONTRACT.state.setBaseGroups, async (root: unknown, key: unknown, collapsed: unknown) => {
     const r = requireAbsPath(root, 'root')
