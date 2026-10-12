@@ -178,7 +178,7 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
   it('group titles and hints render under their section; untitled groups are plain rows', () => {
     const { el } = mount()
     expect(groupTitles(el)).toEqual(['Spacing', 'Bullet threading', 'Table of contents', 'Comments', 'When the app starts'])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['Guide lines that connect nested bullets.', 'The headings of a note, at its right edge.'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['Guide lines that connect nested bullets.', 'The headings or the bullets of a note, at its right edge.'])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(row(el, 'bulletThreading')?.querySelector('.setting__label')?.textContent).toBe('Show')
     expect(row(el, 'threadWidth')?.querySelector('.setting__label')?.textContent).toBe('Line width')
@@ -315,7 +315,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(el, 'tableOfContents')?.closest('[data-section]')?.id).toBe('settings-editor')
     const group = row(el, 'tableOfContents')?.closest('.settings-group')
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Table of contents')
-    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe('The headings of a note, at its right edge.')
+    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe('The headings or the bullets of a note, at its right edge.')
     expect([...el.querySelectorAll('#settings-editor .settings-group__title')].map((t) => t.textContent)).toEqual(['Bullet threading', 'Table of contents', 'Comments'])
     expect(row(el, 'tableOfContents')?.querySelector('.setting__label')?.textContent).toBe('Show the names')
     expect(rowButtons(el, 'tableOfContents').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['When there is room', 'true'], ['Always', 'false'], ['Off', 'false']])
@@ -525,11 +525,12 @@ describe('SettingsDialog search (D6)', () => {
 
   it('hits from several groups stack under their own breadcrumbs, in registry order', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    // "bullet": the threading group (by its hint and title) and, on the standalone Hotkeys page,
-    // the two tables whose labels name a bullet — three breadcrumbs, registry order, never rank.
+    // "bullet": the threading group (by its hint and title), the table of contents group (by its
+    // hint: a note of bullets has one too, YAZ-2700 D14) and, on the standalone Hotkeys page, the
+    // two tables whose labels name a bullet — four breadcrumbs, registry order, never rank.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'hotkeys-keyboard', 'hotkeys-mouse'])
+    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
+    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'tableOfContents', 'hotkeys-keyboard', 'hotkeys-mouse'])
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])

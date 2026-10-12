@@ -3,7 +3,7 @@ import type { TocSource } from '@shared/types'
 import { CogIcon } from '../settings/SettingsButton'
 
 /** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a note has until the reader chooses. */
-const CONTENTS_FROM: readonly { label: string; value: TocSource | null }[] = [
+const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] = [
   { label: 'Auto', value: null },
   { label: 'Headings', value: 'headings' },
   { label: 'Bullets', value: 'bullets' },
@@ -14,7 +14,7 @@ const CONTENTS_FROM: readonly { label: string; value: TocSource | null }[] = [
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
  * all but "TOC made from", which the host saves with the note (YAZ-2700 D14).
  */
-export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, contentsFrom = null, onChangeContentsFrom, readText }: {
+export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
   lineNumbers: boolean
   onToggleLineNumbers: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
@@ -26,22 +26,27 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels =
   /** Absent → the menu has no "Table of contents" row (the app-wide setting is Off: there is nothing to turn off here). */
   onToggleTableOfContents?: () => void
   /** What this page's table of contents is built from (YAZ-2700 D14): its headings, its bullets, or `null` — Auto, the page's own structure decides. */
-  contentsFrom?: TocSource | null
+  tocSource?: TocSource | null
   /** Absent → the menu has no "TOC made from" choice (this page shows no table of contents: there is nothing to build). */
-  onChangeContentsFrom?: (source: TocSource | null) => void
+  onChangeTocSource?: (source: TocSource | null) => void
   /** The page's plain text. Read once when the menu opens, never while it is closed. */
   readText: () => string
 }) {
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   const [text, setText] = useState<string | null>(null)
   const open = text !== null
-  const setOpen = (next: boolean) => setText(next ? readText() : null)
+  // The explanation behind the small "i" beside "TOC made from": shown while the mouse or the keyboard is on it.
+  const [info, setInfo] = useState(false)
+  const setOpen = (next: boolean) => {
+    setText(next ? readText() : null)
+    // The explanation goes with the menu: a menu that closes under a mouse at rest sends the "i" no
+    // `mouseleave`, and the text would stand there, unasked, at the next open.
+    if (!next) setInfo(false)
+  }
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuId = useId()
   const tipId = useId()
-  // The explanation behind the small "i" beside "TOC made from": shown while the mouse or the keyboard is on it.
-  const [info, setInfo] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -76,7 +81,7 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels =
           <span>Table of contents</span><span aria-hidden="true">{tableOfContents ? '✓' : ''}</span>
         </button>}
         {/* Three choices that read as ONE control: a label, then the group. All three stay in sight, so a source that gives no list can be changed back. */}
-        {onChangeContentsFrom !== undefined && <>
+        {onChangeTocSource !== undefined && <>
           <p className="page-settings__label">
             TOC made from:
             <button type="button" className="page-settings__info" aria-label="About “TOC made from”" aria-describedby={info ? tipId : undefined}
@@ -87,8 +92,8 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels =
             </button>
           </p>
           <div className="page-settings__choices" role="group" aria-label="TOC made from">
-            {CONTENTS_FROM.map(({ label, value }) => (
-              <button key={label} type="button" aria-pressed={value === contentsFrom} onClick={() => onChangeContentsFrom(value)}>{label}</button>
+            {TOC_SOURCE_CHOICES.map(({ label, value }) => (
+              <button key={label} type="button" aria-pressed={value === tocSource} onClick={() => onChangeTocSource(value)}>{label}</button>
             ))}
           </div>
         </>}

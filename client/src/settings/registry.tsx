@@ -325,9 +325,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-2700: one row, and the same field the table of contents' own "Keep open" button writes.
+        // YAZ-2700: one row, and the same field the table of contents' own "Pin" and "Unpin" buttons write.
         title: 'Table of contents',
-        hint: 'The headings of a note, at its right edge.',
+        hint: 'The headings or the bullets of a note, at its right edge.',
         items: [
           {
             id: 'tableOfContents',

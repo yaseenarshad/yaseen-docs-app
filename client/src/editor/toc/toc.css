@@ -1,4 +1,5 @@
-/* The table of contents (YAZ-2700): a note's headings at its right edge — TableOfContents.tsx.
+/* The table of contents (YAZ-2700): a note's rows — its headings, or its bullets — at its right
+   edge: TableOfContents.tsx. "Heading" below is the name of a row, whichever it stands for.
 
    It is CHROME, like the find bar: a sibling of the scroller inside `section.editor` (the
    positioned ancestor), so it holds its place while the note scrolls under it and the document
@@ -178,7 +179,7 @@
   background: var(--bg-hover);
 }
 
-/* "Stop keeping open", at the top of the pinned column: as wide as its words, on the names' left edge. */
+/* "Unpin", at the top of the pinned column: as wide as its word, on the names' left edge. */
 .toc__keep--stop {
   align-self: flex-start;
   margin: 0 0 8px 6px;
@@ -246,8 +247,8 @@
 
 /* The card: the find bar's surface. It shrinks before the rail does, so a 320px panel still fits
    both. It is never taller than 440px: a card as tall as the window is a wall, and the list
-   inside already brings the current heading to its middle. It comes in from the rail's side and
-   leaves the same way (`data-leaving`, for the component's `EXIT_MS`). */
+   inside moves in step with the note, so the current heading is always in it. It comes in from
+   the rail's side and leaves the same way (`data-leaving`, for the component's `EXIT_MS`). */
 .toc__card {
   display: flex;
   flex: 0 1 240px;

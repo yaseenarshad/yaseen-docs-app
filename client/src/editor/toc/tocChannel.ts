@@ -37,8 +37,9 @@ export interface TocHeading {
 
 export interface TocSnapshot {
   /**
-   * The note's rows in document order: every H1-H3 outside lists, or the bullets of a note with
-   * fewer than two of those. The component decides which of them it shows.
+   * The note's rows in document order, by the source: on Auto every H1-H3 outside lists, or the
+   * bullets of a note with fewer than two of those; else what the reader chose — every H1-H3 of
+   * the note, or its bullets. The component decides which of them it shows.
    */
   headings: readonly TocHeading[]
   /** True while a bullet zoom is active: the note shows one bullet's subtree, not its structure. */

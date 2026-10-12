@@ -325,7 +325,7 @@ export function App() {
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
   const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newNoteFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
-  // The table of contents' "Keep open" / "Stop keeping open" (YAZ-2700): the same stable door.
+  // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.

@@ -457,6 +457,108 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
   })
 })
 
+/**
+ * The two page switches of YAZ-2700 in the cog: "Heading levels" (D12) and "Table of contents"
+ * (D15). Both are "Line numbers" again — this page's, kept by CrepeHost for as long as its editor
+ * lives, and stored nowhere.
+ */
+describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, D15)', () => {
+  const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
+    const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
+    if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
+    return toc
+  }
+  const TWO = [
+    { level: 1, text: 'Hello' },
+    { level: 2, text: 'More' },
+  ] as const
+  const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
+  const row = (el: HTMLElement, name: string): HTMLButtonElement => {
+    const found = rows(el).find((button) => button.textContent?.startsWith(name))
+    if (found === undefined) throw new Error(`no "${name}" row`)
+    return found
+  }
+  /** Every `set…` door of the app state and the browser's own store, as the line-numbers case spies them. */
+  const watchStores = () => {
+    const spies = [...(Object.keys(storage) as Array<keyof typeof storage>).filter((key) => key.startsWith('set')).map((key) => vi.spyOn(storage, key)), vi.spyOn(Storage.prototype, 'setItem')]
+    return {
+      untouched: () => {
+        for (const spy of spies) expect(spy, spy.getMockName()).not.toHaveBeenCalled()
+      },
+      restore: () => spies.forEach((spy) => spy.mockRestore()),
+    }
+  }
+  /** The note opens again under a new path: a new editor, as after a rename or a closed tab. */
+  const reopen = async (props: Partial<Parameters<typeof Editor>[0]> = {}): Promise<void> => {
+    const renamed = '/vault/renamed.md'
+    readFile.mockResolvedValueOnce({ path: renamed, content: BODY, mtime: 1, size: BODY.length })
+    act(() => root!.render(<Editor root="/vault" path={renamed} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} {...props} />))
+    await settle()
+    await settle()
+  }
+  const pressCmdJ = (): KeyboardEvent => {
+    const event = new KeyboardEvent('keydown', { key: 'j', metaKey: true, bubbles: true, cancelable: true })
+    act(() => void document.body.dispatchEvent(event))
+    return event
+  }
+
+  it('"Heading levels" sets `data-heading-levels` on the scroller and clears it again, beside "Line numbers" and apart from it; nothing is stored, the Crepe is never recreated, and the note opened again starts with it off (D12)', async () => {
+    const el = await mount(BODY)
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    const built = createCrepeMock.mock.calls.length
+    const stores = watchStores()
+    clickCog(el)
+    expect(row(el, 'Heading levels').getAttribute('aria-pressed')).toBe('false')
+    expect(host.hasAttribute('data-heading-levels')).toBe(false)
+    act(() => row(el, 'Heading levels').click())
+    expect(host.hasAttribute('data-heading-levels')).toBe(true)
+    expect(row(el, 'Heading levels').getAttribute('aria-pressed')).toBe('true')
+    expect(host.hasAttribute('data-line-numbers')).toBe(false)
+    act(() => row(el, 'Heading levels').click())
+    expect(host.hasAttribute('data-heading-levels')).toBe(false)
+    act(() => row(el, 'Heading levels').click())
+    stores.untouched()
+    stores.restore()
+    expect(createCrepeMock).toHaveBeenCalledTimes(built)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+    await reopen()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('renamed')
+    expect(el.querySelector('.editor-host')!.hasAttribute('data-heading-levels')).toBe(false)
+  })
+
+  it('"Table of contents" is on for a page until the reader turns THIS page’s off: then no lines, no names and no ⌘J; nothing is stored, and the note opened again shows it again (D15)', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).not.toBeNull()
+    expect(pressCmdJ().defaultPrevented).toBe(true)
+    const stores = watchStores()
+    clickCog(el)
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Line numbers:false', 'Heading levels:false', 'Table of contents✓:true'])
+    act(() => row(el, 'Table of contents').click())
+    expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+    expect(el.querySelector('nav.toc')).toBeNull()
+    expect(pressCmdJ().defaultPrevented).toBe(false)
+    // On again: the same list, from the same channel — the editor was never told.
+    act(() => row(el, 'Table of contents').click())
+    expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
+    act(() => row(el, 'Table of contents').click())
+    expect(el.querySelector('nav.toc')).toBeNull()
+    stores.untouched()
+    stores.restore()
+    await reopen({ tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).not.toBeNull()
+  })
+
+  it('with the app-wide setting Off the cog has no "Table of contents" row — there is nothing to turn off — and "Heading levels" is still there', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'off' })
+    clickCog(el)
+    expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Heading levels'])
+    expect(el.querySelector('.page-settings__choices')).toBeNull()
+  })
+})
+
 describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
   it('absorbs a property write while clean: no reload, no conflict bar, next save carries the new frontmatter and mtime', async () => {
     const el = await mount(FM + BODY)

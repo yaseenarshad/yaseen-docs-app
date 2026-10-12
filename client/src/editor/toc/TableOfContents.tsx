@@ -45,7 +45,7 @@ import './toc.css'
 
 /** Width of the names column, px. toc.css's `--toc-width` is the same number. */
 export const TOC_WIDTH = 200
-/** A note narrower than this shows lines even when the names are kept open. */
+/** A note narrower than this shows lines even when the names are pinned. */
 export const NAMES_FLOOR = 700
 /** The widest the text column gets per content width: app.css's `--content-max-width` rules on `.app`. */
 export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: 1040, medium: 1440, full: Infinity }
@@ -67,8 +67,9 @@ export interface TocRow extends TocHeading {
 }
 
 /**
- * The headings a note shows: all of H1-H3 when that is `MAX_ROWS` or fewer, else H1-H2, else H1
- * only (its first `MAX_ROWS`). A row remembers where it stands in the full list.
+ * The rows a note shows: all three levels (H1-H3, or three depths of bullets) when that is
+ * `MAX_ROWS` or fewer, else levels 1-2, else level 1 only (its first `MAX_ROWS`). A row remembers
+ * where it stands in the full list.
  */
 export const shownHeadings = (all: readonly TocHeading[]): TocRow[] => {
   const rows = all.map((heading, index) => ({ ...heading, index }))
@@ -462,7 +463,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
             <div className="toc__card" data-leaving={open ? undefined : ''}>
               <div className="toc__header">
                 <span className="toc__title">Table of contents</span>
-                {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when kept open. */}
+                {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when pinned. */}
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
                   <button type="button" className="toc__keep" title="Pin: keep the table of contents open beside the note" onClick={() => onChangeMode('pinned')}>
                     <PinIcon />
