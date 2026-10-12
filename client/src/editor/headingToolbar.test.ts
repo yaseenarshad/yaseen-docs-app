@@ -4,8 +4,11 @@
  *
  * Tested through a REAL Crepe (the `wikilinkPicker.test.ts` mount idiom), not a stub builder:
  * the group is wired via `featureConfigs[CrepeFeature.Toolbar].buildToolbar`, so mounting is the
- * only thing that proves the wiring, the group is APPENDED (stock Bold/Italic/… survive), and
- * `active`/`onRun` run against a real `Ctx` — real selection, real commands, real markdown out.
+ * only thing that proves the wiring, that the group is ADDED and LEADS the strip (YAZ-2700 D13 —
+ * stock Bold/Italic/… survive, after it), and that `active`/`onRun` run against a real `Ctx` —
+ * real selection, real commands, real markdown out. The order is read off the real strip because
+ * the move to the front counts on Crepe's `GroupBuilder.build()` handing back its own array: a
+ * Crepe that copied it would leave the group last, with no error.
  *
  * NB: Crepe's toolbar items fire on POINTERDOWN, not click (a click never reaches them because
  * the button must act before the editor's selection is torn down) — hence `press()` below.
@@ -99,7 +102,7 @@ function order(): Array<string | undefined> {
 const litDots = (): Array<(typeof SWATCHES)[number]> => SWATCHES.filter((key) => must(key).classList.contains('active'))
 
 describe('Heading toolbar group (YAZ-923)', () => {
-  it('appends H1/H2/H3/T to the selection toolbar — labelled, glyph-iconed, stock items untouched', async () => {
+  it('H1/H2/H3/T lead the selection toolbar — labelled, glyph-iconed — and every stock item is still there, after them, in one tab order', async () => {
     const { view } = await mount('# One\n\nplain\n')
     await select(view, 'plain')
 
@@ -118,6 +121,14 @@ describe('Heading toolbar group (YAZ-923)', () => {
     )
     expect(order.slice(0, 4)).toEqual(['h1', 'h2', 'h3', 'text'])
     expect(order.indexOf('text')).toBeLessThan(order.indexOf('bold'))
+
+    // The WHOLE strip (D13), dividers too: the Heading group, Crepe's Formatting group with the
+    // four swatches, then its code and link — one divider between two groups, none at an end.
+    const strip = [...document.querySelector('.milkdown-toolbar')!.children].map((el) => (el as HTMLElement).dataset.toolbarItem ?? (el.classList.contains('divider') ? '|' : el.tagName))
+    expect(strip).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|', 'code', 'link'])
+    // The tab order is that order: every item is a button where it stands, and none jumps the queue or leaves it.
+    const items = [...document.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')]
+    expect(items.every((button) => button.tagName === 'BUTTON' && button.tabIndex === 0)).toBe(true)
   })
 
   it('lights exactly the block\'s own level — the invisible ## made visible', async () => {

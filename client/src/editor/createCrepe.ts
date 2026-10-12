@@ -97,6 +97,11 @@
  *  - Heading folding (YAZ-1140, `outline/headingFolding.ts` + `.css`): an H1-H3 chevron collapses
  *    the heading's section — its following sibling blocks up to the next same-or-shallower heading
  *    — through widget + node decorations only; metadata-only transactions, markdown untouched.
+ *  - Heading level tag (YAZ-2700 D12, `outline/headingLevelTag.ts` + `.css`): ONE node decoration,
+ *    `data-heading-caret`, on the heading that holds the caret (H1-H6, in a bullet too). The "H2"
+ *    itself is a CSS `::after` on that heading, on the one under the mouse and — with the page
+ *    cog's "Heading levels" on — on every heading: never text, never selected, never saved. A
+ *    caret move inside one heading or outside headings keeps the same plugin state.
  *  - Outline paste (YAZ-937, `outlinePaste.ts`): a pasted Slack/Docs outline of `•`/`◦`/`■` glyphs
  *    is translated to real markdown before it lands, so it arrives as a nested list instead of a
  *    column of paragraphs. Registered as a DIRECT `handlePaste` prop — direct props run before
@@ -249,7 +254,11 @@ const swatchIcon = (color: HighlightColor): string =>
   `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="7" fill="var(${color ? `--mark-bg-${color}` : '--mark-bg'})" stroke="currentColor" stroke-opacity="0.35" stroke-width="1"/></svg>`
 
 /**
- * The selection toolbar (YAZ-923 + YAZ-1480).
+ * The selection toolbar (YAZ-923 + YAZ-1480 + YAZ-2700 D13).
+ *
+ * THE STRIP, left to right: the Heading group (H1, H2, H3, T), then Crepe's own Formatting group
+ * (Bold, Italic, Strikethrough, the four swatches), then Crepe's code and link. The tab order is
+ * that same order.
  *
  * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
  * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
@@ -259,10 +268,19 @@ const swatchIcon = (color: HighlightColor): string =>
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
  * disk; a colour is `<mark class="highlight-<name>">`.
  *
- * Then the Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what
- * block is this?" — the invisible `##` made visible — and whose click switches it, through the
- * same commands the typed markdown runs. `T` is the way back to plain text without backspacing
- * hashes you cannot see.
+ * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
+ * this?" — the invisible `##` made visible — and whose click switches it, through the same
+ * commands the typed markdown runs. `T` is the way back to plain text without backspacing hashes
+ * you cannot see. It is ADDED last, the only place `addGroup` can put it, and then moved to the
+ * FRONT of the builder's list (YAZ-2700 D13, the last lines below).
+ *
+ * 🔒 That move counts on `builder.build()` handing back the builder's OWN array and not a copy.
+ * It does in the Crepe this app installs (`@milkdown/crepe` 7.22.1, from the registry — the
+ * tarballs in `client/vendor` patch `@milkdown/components` and `@milkdown/plugin-tooltip`, not
+ * Crepe): `utils/group-builder.ts` is `build = () => this.#groups`, and the toolbar reads its
+ * groups through that same call right after this function returns. A Crepe whose `build()`
+ * copied would leave the Heading group last and raise nothing; `headingToolbar.test.ts` reads
+ * the strip of a real editor and fails on it.
  */
 function buildToolbar(builder: ToolbarBuilder): void {
   const formatting = builder.getGroup('formatting')

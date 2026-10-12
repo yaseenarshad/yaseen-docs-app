@@ -32,8 +32,9 @@ export const COMMENTS_ORDER_OPTIONS: readonly Option<CommentsOrder>[] = [
 ]
 
 /**
- * A note's table of contents (YAZ-2700): the heading names beside the text when the window has
- * room for them, always, or nothing. The editor owns what "room" means (`namesShow`, editor/toc).
+ * A note's table of contents (YAZ-2700): the names of its rows (headings, or bullets) beside the
+ * text when the window has room for them, always, or nothing. The editor owns what "room" means
+ * (`namesShow`, editor/toc).
  */
 export const TABLE_OF_CONTENTS_OPTIONS: readonly Option<TableOfContents>[] = [
   { label: 'When there is room', value: 'auto' },

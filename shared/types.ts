@@ -798,8 +798,9 @@ export type StartupWindows = 'all' | 'last' | 'none'
 export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
 
 /**
- * A note's table of contents (YAZ-2700): `auto` shows the heading names when the window has room
- * beside the text and small lines when it has not, `pinned` keeps the names open, `off` shows nothing.
+ * A note's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
+ * bullets (`TocSource`) — when the window has room beside the text and small lines when it has
+ * not, `pinned` keeps the names open, `off` shows nothing.
  */
 export type TableOfContents = 'auto' | 'pinned' | 'off'
 export const TABLE_OF_CONTENTS: readonly TableOfContents[] = ['auto', 'pinned', 'off']

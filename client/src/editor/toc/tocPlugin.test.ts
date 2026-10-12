@@ -624,6 +624,17 @@ describe('the jump', () => {
     expect(view.state.selection.from).toBe(before)
   })
 
+  it('two headings with the same name are two rows, and each goes to its own heading', async () => {
+    const { view, channel } = await mountToc(`# Notes\n\nFirst.\n\n# Notes\n\nSecond.\n`)
+    expect(texts(channel.getState().headings)).toEqual(['1 Notes', '1 Notes'])
+    const [first, second] = scanHeadings(view.state.doc).map(({ pos }) => pos)
+    expect(second).toBeGreaterThan(first)
+    channel.jump(1)
+    expect(view.state.selection.from).toBe(second + 1)
+    channel.jump(0)
+    expect(view.state.selection.from).toBe(first + 1)
+  })
+
   it('never reaches the save path: no markdownUpdated, markdown unchanged', async () => {
     const onMarkdownUpdated = vi.fn()
     const { crepe, view, channel } = await mountToc(DOC, { onMarkdownUpdated })
@@ -750,6 +761,156 @@ describe('the jump', () => {
         expect(landing.animate).not.toHaveBeenCalled()
       } finally {
         delete (window as unknown as Record<string, unknown>).matchMedia
+        landing.restore()
+      }
+    })
+  })
+
+  describe('the glide', () => {
+    /**
+     * The note's own scroller, 500px tall with its top edge at y=100, and the frames in the test's
+     * hand. Each heading is given a place in the note (`tops`, px from the note's start), and its
+     * box follows the scroller as a laid-out one does: the engine measures the row when the glide
+     * starts and once more when it lands.
+     */
+    const glideHost = (view: EditorView, root: HTMLElement, tops: readonly number[], scrollHeight = 3000) => {
+      root.classList.add('editor-host')
+      root.getBoundingClientRect = () => new DOMRect(0, 100, 800, 500)
+      Object.defineProperties(root, { scrollTop: { value: 0, writable: true }, clientHeight: { value: 500 }, scrollHeight: { value: scrollHeight } })
+      scanHeadings(view.state.doc).forEach(({ pos }, i) => {
+        ;(view.nodeDOM(pos) as HTMLElement).getBoundingClientRect = () => new DOMRect(0, 100 + tops[i] - root.scrollTop, 600, 30)
+      })
+      let clock = 1000
+      const waiting = new Map<number, FrameRequestCallback>()
+      let ids = 0
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        waiting.set(++ids, callback)
+        return ids
+      })
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => waiting.delete(id))
+      vi.spyOn(performance, 'now').mockImplementation(() => clock)
+      return {
+        /** Paint the frame that comes `ms` after the last one. */
+        after: (ms: number): void => {
+          clock += ms
+          const frames = [...waiting.values()]
+          waiting.clear()
+          frames.forEach((frame) => frame(clock))
+        },
+      }
+    }
+    /** Part 1, Section A, Deep dive, Section B, Part 2: where each stands in the note. */
+    const TOPS = [24, 224, 424, 624, 724]
+
+    it('takes 420 ms for a row far off and for one close by, leaves and settles gently, and lands 24px under the edge with its one flash at the end', async () => {
+      const { view, root, channel } = await mountToc(DOC)
+      const landing = stubLanding()
+      try {
+        const frames = glideHost(view, root, TOPS)
+        channel.jump(3)
+        // Nothing has moved yet: the first frame is still to come.
+        expect(root.scrollTop).toBe(0)
+        // Section B, 600px down. A quarter of the time is a sixteenth of the way; the half is the half.
+        frames.after(105)
+        expect(root.scrollTop).toBe(37.5)
+        frames.after(105)
+        expect(root.scrollTop).toBe(300)
+        frames.after(105)
+        expect(root.scrollTop).toBe(562.5)
+        expect(landing.animate).not.toHaveBeenCalled()
+        frames.after(105)
+        expect(root.scrollTop).toBe(600)
+        expect(landing.animate).toHaveBeenCalledTimes(1)
+        expect(landing.animate).toHaveBeenCalledWith(...FLASH)
+        expect((landing.animate.mock.contexts[0] as HTMLElement).textContent).toContain('Section B')
+        // The glide placed the row itself: no `scrollIntoView` beside it.
+        expect(landing.scrollIntoView).not.toHaveBeenCalled()
+        // Part 2, 100px further: the same 420 ms, not a sixth of it.
+        channel.jump(4)
+        frames.after(210)
+        expect(root.scrollTop).toBe(650)
+        expect(landing.animate).toHaveBeenCalledTimes(1)
+        frames.after(210)
+        expect(root.scrollTop).toBe(700)
+        expect(landing.animate).toHaveBeenCalledTimes(2)
+        // Over: a later frame moves nothing.
+        frames.after(210)
+        expect(root.scrollTop).toBe(700)
+      } finally {
+        vi.unstubAllGlobals()
+        landing.restore()
+      }
+    })
+
+    it('a row more than three windows away starts the glide three windows from it, down and up', async () => {
+      const { view, root, channel } = await mountToc(DOC)
+      const landing = stubLanding()
+      try {
+        const frames = glideHost(view, root, [24, 224, 424, 624, 2424], 5000)
+        channel.jump(4)
+        // 2400px to go and a window of 500: the note stands 1500px short of the row before a frame is painted.
+        expect(root.scrollTop).toBe(900)
+        frames.after(210)
+        expect(root.scrollTop).toBe(1650)
+        frames.after(210)
+        expect(root.scrollTop).toBe(2400)
+        channel.jump(0)
+        expect(root.scrollTop).toBe(1500)
+        frames.after(420)
+        expect(root.scrollTop).toBe(0)
+      } finally {
+        vi.unstubAllGlobals()
+        landing.restore()
+      }
+    })
+
+    it.each(['wheel', 'pointerdown', 'keydown'])('the reader’s own %s in the note stops it where it is: no landing, no flash', async (type) => {
+      const { view, root, channel } = await mountToc(DOC)
+      const landing = stubLanding()
+      try {
+        const frames = glideHost(view, root, TOPS)
+        channel.jump(3)
+        frames.after(210)
+        expect(root.scrollTop).toBe(300)
+        root.dispatchEvent(new Event(type, { bubbles: true }))
+        frames.after(210)
+        frames.after(210)
+        expect(root.scrollTop).toBe(300)
+        expect(landing.animate).not.toHaveBeenCalled()
+        // The caret went to the row when the jump was asked for; stopping the glide leaves it there.
+        expect(view.state.selection.from).toBe(scanHeadings(view.state.doc)[3].pos + 1)
+      } finally {
+        vi.unstubAllGlobals()
+        landing.restore()
+      }
+    })
+
+    it('a second jump takes over from where the first one is, and a destroyed editor glides no more', async () => {
+      const { crepe, view, root, channel } = await mountToc(DOC)
+      const landing = stubLanding()
+      try {
+        const frames = glideHost(view, root, TOPS)
+        channel.jump(3)
+        frames.after(210)
+        expect(root.scrollTop).toBe(300)
+        // Part 2 from 300: half of the 400px left after half the time, and only its own flash.
+        channel.jump(4)
+        frames.after(210)
+        expect(root.scrollTop).toBe(500)
+        frames.after(210)
+        expect(root.scrollTop).toBe(700)
+        expect(landing.animate).toHaveBeenCalledTimes(1)
+        expect((landing.animate.mock.contexts[0] as HTMLElement).textContent).toContain('Part 2')
+        channel.jump(0)
+        frames.after(210)
+        expect(root.scrollTop).toBe(350)
+        await crepe.destroy()
+        mounted.pop()?.root.remove()
+        frames.after(210)
+        expect(root.scrollTop).toBe(350)
+        expect(landing.animate).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.unstubAllGlobals()
         landing.restore()
       }
     })
@@ -923,6 +1084,26 @@ describe('the scroll spy', () => {
     const { view, channel } = await mountToc(DOC)
     layOut(view, [null, null, null, null, null])
     expect(channel.current(ALL, scrollerAt(0))).toBe(-1)
+  })
+
+  it('trusts a remembered position only while its node is an h1-h3: a heading made an H4, not yet scanned, is no row', async () => {
+    const { view, channel } = await mountToc(DOC)
+    layOut(view, [-400, -50, 140, 141, 900])
+    expect(channel.current(ALL, scrollerAt(700))).toBe(2)
+    vi.useFakeTimers()
+    // "Deep dive" becomes an H4 where it stands: its remembered position still starts a node, and
+    // that node is given the very box the H3 had, so only the guard can refuse it.
+    const deepDive = scanHeadings(view.state.doc)[2].pos
+    view.dispatch(view.state.tr.setNodeMarkup(deepDive, undefined, { ...view.state.doc.nodeAt(deepDive)?.attrs, level: 4 }))
+    const h4 = view.nodeDOM(deepDive) as HTMLElement
+    expect(h4.tagName).toBe('H4')
+    Object.defineProperty(h4, 'offsetParent', { configurable: true, get: () => document.body })
+    h4.getBoundingClientRect = () => new DOMRect(0, 140, 600, 30)
+    // Section A, the row above it, is the last one that is still a heading of the list.
+    expect(channel.current(ALL, scrollerAt(700))).toBe(1)
+    // The scan that follows the edit drops the row.
+    vi.advanceTimersByTime(SCAN_DELAY_MS)
+    expect(texts(channel.getState().headings)).toEqual(['1 Part 1', '2 Section A', '2 Section B', '1 Part 2'])
   })
 
   describe('in a bullet note', () => {
