@@ -14,13 +14,12 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
  * all but "TOC made from", which the host saves with the note (YAZ-2700 D14).
  */
-export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
+export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
   lineNumbers: boolean
   onToggleLineNumbers: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
-  headingLevels?: boolean
-  /** Absent → the menu has no "Heading levels" row. */
-  onToggleHeadingLevels?: () => void
+  headingLevels: boolean
+  onToggleHeadingLevels: () => void
   /** This page shows its table of contents (YAZ-2700). On unless the reader turns it off for this page. */
   tableOfContents?: boolean
   /** Absent → the menu has no "Table of contents" row (the app-wide setting is Off: there is nothing to turn off here). */
@@ -74,9 +73,9 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels =
         <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
         </button>
-        {onToggleHeadingLevels !== undefined && <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
+        <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
           <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>
-        </button>}
+        </button>
         {onToggleTableOfContents !== undefined && <button type="button" aria-pressed={tableOfContents} onClick={onToggleTableOfContents}>
           <span>Table of contents</span><span aria-hidden="true">{tableOfContents ? '✓' : ''}</span>
         </button>}

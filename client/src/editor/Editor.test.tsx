@@ -303,22 +303,24 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
   })
 })
 
+/** The table of contents channel the host handed the faked `createCrepe` (YAZ-2700): the seam to the engine in the three suites below. */
+const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
+  const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
+  if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
+  return toc
+}
+/** Two rows, as the real engine would publish them (toc/tocPlugin.test.ts): enough for a table of contents. */
+const TWO = [
+  { level: 1, text: 'Hello' },
+  { level: 2, text: 'More' },
+] as const
+
 /**
  * The table of contents (YAZ-2700) is wired by CrepeHost: ONE channel goes to `createCrepe` and to
  * the component mounted beside the scroller, and the setting comes down as a prop. The fake Crepe
- * has no engine, so the test publishes the headings the real one would (toc/tocPlugin.test.ts).
+ * has no engine, so the test publishes the rows the real one would.
  */
 describe('CrepeHost table of contents (YAZ-2700)', () => {
-  const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
-    const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
-    if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
-    return toc
-  }
-  const TWO = [
-    { level: 1, text: 'Hello' },
-    { level: 2, text: 'More' },
-  ] as const
-
   it('hands createCrepe its channel, and draws that channel\'s headings beside the scroller, after the find bar', async () => {
     const el = await mount(BODY, 1, { tableOfContents: 'auto' })
     expect(el.querySelector('nav.toc')).toBeNull() // one heading so far: nothing to show
@@ -370,11 +372,6 @@ describe('CrepeHost table of contents (YAZ-2700)', () => {
  * to the engine is the channel the faked `createCrepe` was handed.
  */
 describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
-  const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
-    const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
-    if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
-    return toc
-  }
   let saved: TocSource | null
 
   beforeEach(() => {
@@ -463,15 +460,6 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
  * lives, and stored nowhere.
  */
 describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, D15)', () => {
-  const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
-    const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
-    if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
-    return toc
-  }
-  const TWO = [
-    { level: 1, text: 'Hello' },
-    { level: 2, text: 'More' },
-  ] as const
   const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
   const row = (el: HTMLElement, name: string): HTMLButtonElement => {
     const found = rows(el).find((button) => button.textContent?.startsWith(name))

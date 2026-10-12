@@ -1,5 +1,5 @@
 /**
- * The table of contents (YAZ-2700): its three pure rules — `namesShow`, `shownHeadings`,
+ * The table of contents (YAZ-2700): its three pure rules — `namesShow`, `shownRows`,
  * `railPitch` — and the component, driven through a real `TocChannel` with a stand-in engine
  * (tocPlugin.test.ts proves the engine; this file proves what is drawn and what the mouse and the
  * keyboard do).
@@ -12,9 +12,9 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ContentWidth, TableOfContents as TableOfContentsMode } from '@shared/types'
 import appCss from '../../app.css?inline'
-import { COLUMN_MAX, MAX_ROWS, namesShow, NAMES_FLOOR, railPitch, shownHeadings, TableOfContents, TOC_WIDTH } from './TableOfContents'
+import { COLUMN_MAX, MAX_ROWS, namesShow, NAMES_FLOOR, railPitch, shownRows, TableOfContents, TOC_WIDTH } from './TableOfContents'
 import tocCss from './toc.css?inline'
-import { createTocChannel, type TocChannel, type TocHeading } from './tocChannel'
+import { createTocChannel, type TocChannel, type TocRow } from './tocChannel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -44,49 +44,57 @@ describe('namesShow: names or lines', () => {
     expect(namesShow('off', 5000, 1040)).toBe(false)
   })
 
-  it('the column widths are app.css\'s --content-max-width values', () => {
-    expect(COLUMN_MAX).toEqual({ narrow: 1040, medium: 1440, full: Infinity })
-    expect(TOC_WIDTH).toBe(200)
-    expect(NAMES_FLOOR).toBe(700)
+  it('the column widths are app.css\'s --content-max-width values: a width that changes there must change here', () => {
+    /** What the `.app` rule for one content width gives the text column: its px, or Infinity for `none`. */
+    const columnMax = (selector: string): number => {
+      const value = appCss.match(new RegExp(`${selector.replace(/[.[\]]/g, '\\$&')}\\s*\\{[^}]*--content-max-width:\\s*([^;]+);`, 's'))?.[1].trim()
+      if (value === undefined) throw new Error(`no --content-max-width in ${selector}`)
+      return value === 'none' ? Infinity : Number(value.replace(/px$/, ''))
+    }
+    expect(COLUMN_MAX).toEqual({
+      narrow: columnMax('.app'),
+      medium: columnMax(".app[data-content-width='medium']"),
+      full: columnMax(".app[data-content-width='full']"),
+    })
   })
 })
 
-describe('shownHeadings: which rows, and where each stands in the full list', () => {
-  const many = (level: 1 | 2 | 3, count: number, name: string): TocHeading[] => Array.from({ length: count }, (_, i) => ({ level, text: `${name} ${i}` }))
+describe('shownRows: which rows, and where each stands in the full list', () => {
+  const many = (level: 1 | 2 | 3, count: number, name: string): TocRow[] => Array.from({ length: count }, (_, i) => ({ level, text: `${name} ${i}` }))
 
   it('200 or fewer: all of H1-H3, each with its own index', () => {
-    const all: TocHeading[] = [
+    const all: TocRow[] = [
       { level: 1, text: 'One' },
       { level: 2, text: 'Two' },
       { level: 3, text: 'Three' },
     ]
-    expect(shownHeadings(all)).toEqual([
+    expect(shownRows(all)).toEqual([
       { level: 1, text: 'One', index: 0 },
       { level: 2, text: 'Two', index: 1 },
       { level: 3, text: 'Three', index: 2 },
     ])
-    expect(shownHeadings([...many(1, 50, 'a'), ...many(2, 50, 'b'), ...many(3, 100, 'c')])).toHaveLength(MAX_ROWS)
-    expect(shownHeadings([])).toEqual([])
+    expect(shownRows([...many(1, 50, 'a'), ...many(2, 50, 'b'), ...many(3, 100, 'c')])).toHaveLength(MAX_ROWS)
+    expect(shownRows([])).toEqual([])
   })
 
   it('more than 200: H1-H2, and a row keeps its index in the FULL list', () => {
-    const all = [{ level: 1, text: 'One' } as TocHeading, ...many(3, 201, 'deep'), { level: 2, text: 'Two' } as TocHeading]
-    expect(shownHeadings(all)).toEqual([
+    const all = [{ level: 1, text: 'One' } as TocRow, ...many(3, 201, 'deep'), { level: 2, text: 'Two' } as TocRow]
+    expect(shownRows(all)).toEqual([
       { level: 1, text: 'One', index: 0 },
       { level: 2, text: 'Two', index: 202 },
     ])
   })
 
   it('H1-H2 still more than 200: H1 only', () => {
-    const all = [...many(2, 201, 'two'), { level: 1, text: 'One' } as TocHeading, ...many(3, 5, 'three'), { level: 1, text: 'Other' } as TocHeading]
-    expect(shownHeadings(all)).toEqual([
+    const all = [...many(2, 201, 'two'), { level: 1, text: 'One' } as TocRow, ...many(3, 5, 'three'), { level: 1, text: 'Other' } as TocRow]
+    expect(shownRows(all)).toEqual([
       { level: 1, text: 'One', index: 201 },
       { level: 1, text: 'Other', index: 207 },
     ])
   })
 
   it('never more than 200 rows, even of H1 alone', () => {
-    const rows = shownHeadings(many(1, 250, 'one'))
+    const rows = shownRows(many(1, 250, 'one'))
     expect(rows).toHaveLength(MAX_ROWS)
     expect(rows[MAX_ROWS - 1].index).toBe(MAX_ROWS - 1)
   })
@@ -111,7 +119,7 @@ describe('railPitch: the rail must fit', () => {
 
 // ---------- the component ----------
 
-const HEADINGS: TocHeading[] = [
+const HEADINGS: TocRow[] = [
   { level: 1, text: 'Part 1' },
   { level: 2, text: 'Section A' },
   { level: 3, text: 'Deep dive' },
@@ -135,7 +143,7 @@ interface Mounted {
 const mounts: Mounted[] = []
 
 /** CrepeHost's DOM: `section.editor` > `.editor-host` > `.editor-mount`, the table of contents beside the scroller. */
-function mount(mode: TableOfContentsMode, headings: readonly TocHeading[] = HEADINGS, width = 0): Mounted {
+function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0): Mounted {
   const section = document.createElement('section')
   section.className = 'editor'
   const scroller = document.createElement('div')
@@ -527,7 +535,7 @@ describe('names: the column', () => {
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
     expect(names(m).map((name) => name.textContent)).toEqual(['Part 1', 'Section A', 'Deep dive', 'Section B', 'Part 2'])
     expect(lines(m)).toHaveLength(0)
-    expect(m.section.querySelector('.toc__keep')).toBeNull()
+    expect(m.section.querySelector('.toc__pin')).toBeNull()
   })
 
   it('auto one pixel short of that: lines', () => {
@@ -575,7 +583,7 @@ describe('names: the column', () => {
   })
 
   it('the spy is asked about the shown rows by their index in the full list', async () => {
-    const deep: TocHeading[] = Array.from({ length: 201 }, (_, i) => ({ level: 3, text: `Deep ${i}` }))
+    const deep: TocRow[] = Array.from({ length: 201 }, (_, i) => ({ level: 3, text: `Deep ${i}` }))
     const m = mount('pinned', [HEADINGS[0], ...deep, HEADINGS[4]], 900)
     await scrollFrame(m)
     expect(m.current).toHaveBeenLastCalledWith([0, 202], m.scroller)
@@ -658,7 +666,7 @@ describe('where the reader is: the marker, and a long list in step with the note
         else Object.defineProperty(HTMLElement.prototype, key, was)
       })
   }
-  const TEN: TocHeading[] = Array.from({ length: 10 }, (_, i) => ({ level: 1, text: `Part ${i}` }))
+  const TEN: TocRow[] = Array.from({ length: 10 }, (_, i) => ({ level: 1, text: `Part ${i}` }))
   const list = (m: Mounted): HTMLElement => m.section.querySelector<HTMLElement>('.toc__names')!
   const marker = (m: Mounted): HTMLElement => m.section.querySelector<HTMLElement>('.toc__marker')!
   const goTo = async (m: Mounted, row: number): Promise<void> => {
@@ -718,6 +726,31 @@ describe('where the reader is: the marker, and a long list in step with the note
     }
   })
 
+  it('under "Reduce Motion" the long list is placed in step, never glided, and toc.css stops every transition of the table of contents', async () => {
+    const undo = layOutNames(120)
+    const scrollTo = vi.fn()
+    Object.assign(HTMLElement.prototype, { scrollTo })
+    ;(window as unknown as Record<string, unknown>).matchMedia = (query: string) => ({ matches: query.includes('prefers-reduced-motion') })
+    try {
+      const m = mount('pinned', TEN, 900)
+      await goTo(m, 9)
+      expect(list(m).scrollTop).toBe(120)
+      await goTo(m, 3)
+      expect(list(m).scrollTop).toBe(40)
+      expect(scrollTo).not.toHaveBeenCalled()
+      const reduced = tocCss.match(/@media \(prefers-reduced-motion: reduce\)\s*\{(.*)\}\s*$/s)?.[1] ?? ''
+      expect(reduced).toMatch(/\.toc\[data-names\],\s*\.toc__card\s*\{\s*animation:\s*none;/)
+      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__pin,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
+      // Every rule of the sheet that eases is one of those five.
+      const eased = [...tocCss.replace(/@media.*$/s, '').matchAll(/([^{}]+)\{[^{}]*transition:/g)].map(([, selector]) => selector.replace(/\/\*.*?\*\//gs, '').trim())
+      expect(eased).toEqual(['.toc__name', '.toc__marker[data-placed]', '.toc__pin', '.toc__line', '.toc__card'])
+    } finally {
+      delete (window as unknown as Record<string, unknown>).matchMedia
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
+      undo()
+    }
+  })
+
   it('a rail too long for the window is clipped and keeps the same step: the current line as far down it as it is down the list', async () => {
     const m = mount('auto')
     const track = m.section.querySelector<HTMLElement>('.toc__track')!
@@ -767,7 +800,9 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
 
   it('the row under the mouse is the soft accent, the current one stays the accent; the current line is 5px longer; the card is 440px tall at most', () => {
     expect(rule(tocCss, '.toc__name:hover')).toMatch(/background:\s*var\(--accent-soft\);/)
-    expect(rule(tocCss, ".toc__name[aria-current='true']:hover")).toMatch(/color:\s*var\(--accent\);/)
+    // One rule keeps the current name the accent under the mouse too: three parts outweigh `.toc__name:hover`.
+    expect(rule(tocCss, ".toc__names .toc__name[aria-current='true']")).toMatch(/color:\s*var\(--accent\);/)
+    expect(tocCss).not.toMatch(/\.toc__name\[aria-current='true'\]:hover/)
     expect(rule(tocCss, '.toc__line[data-current]')).toMatch(/width:\s*calc\(var\(--toc-w\) \+ 5px\);/)
     expect(rule(tocCss, '.toc__card')).toMatch(/max-height:\s*min\([^;]*440px\);/)
   })
@@ -775,7 +810,7 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
 
 describe('click = jump', () => {
   it('a click on a name calls jump with the index in the FULL list, not the row', () => {
-    const deep: TocHeading[] = Array.from({ length: 201 }, (_, i) => ({ level: 3, text: `Deep ${i}` }))
+    const deep: TocRow[] = Array.from({ length: 201 }, (_, i) => ({ level: 3, text: `Deep ${i}` }))
     const m = mount('pinned', [HEADINGS[0], ...deep, { level: 2, text: 'Far' }, HEADINGS[4]], 900)
     expect(names(m).map((name) => name.textContent)).toEqual(['Part 1', 'Far', 'Part 2'])
     click(names(m)[1])

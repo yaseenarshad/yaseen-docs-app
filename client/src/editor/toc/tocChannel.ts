@@ -9,9 +9,9 @@
  * is hidden. Row POSITIONS stay in the engine: they move on every edit above a row, and a
  * snapshot that carried them would re-render the list on every one of those edits.
  *
- * The rows are the note's headings, or — in a note with fewer than two of them — its bullets
- * (`tocPlugin.ts` decides). Nothing here says which: a bullet row is a `TocHeading` like any other,
- * its level its depth in the list, and the component draws, jumps and spies by index alone.
+ * A ROW is a heading of the note, or — in a note with fewer than two headings — a bullet
+ * (`tocPlugin.ts` decides). Nothing here says which: a bullet is a `TocRow` like a heading, its
+ * level its depth in the list, and the component draws, jumps and spies by index alone.
  *
  * THE SOURCE (YAZ-2700 D14) is the reader's own answer to that question for this note, from the
  * page cog: `headings`, `bullets`, or `null` — Auto, the rule above. The host hands it in, the
@@ -29,7 +29,10 @@ import type { TocSource } from '@shared/types'
  */
 export type TocLevel = 1 | 2 | 3
 
-export interface TocHeading {
+/** The table of contents draws nothing under this many rows, and Auto reads a note by its headings only when it has this many. */
+export const ENOUGH_ROWS = 2
+
+export interface TocRow {
   level: TocLevel
   /** The heading's text, trimmed, `Untitled heading` for an empty one; or a bullet's label. */
   text: string
@@ -41,18 +44,18 @@ export interface TocSnapshot {
    * bullets of a note with fewer than two of those; else what the reader chose — every H1-H3 of
    * the note, or its bullets. The component decides which of them it shows.
    */
-  headings: readonly TocHeading[]
+  rows: readonly TocRow[]
   /** True while a bullet zoom is active: the note shows one bullet's subtree, not its structure. */
   hidden: boolean
 }
 
 /** The engine behind the commands: the plugin binds one per editor view. */
 export interface TocController {
-  /** Go to the row at `index` of `headings`: unfold what hides it and its own fold, caret, scroll, one flash. */
+  /** Go to the row at `index` of `rows`: unfold what hides it and its own fold, caret, scroll, one flash. */
   jump(index: number): void
   /**
    * Which of the shown rows the reader is in. `indices` are the shown rows as indexes into
-   * `headings`; the answer is an index into `indices`, −1 when none of them is on screen at all.
+   * `rows`; the answer is an index into `indices`, −1 when none of them is on screen at all.
    * Reads layout and writes nothing.
    */
   current(indices: readonly number[], scroller: HTMLElement): number
@@ -76,17 +79,17 @@ export interface TocChannel {
   /** Engine side: bind at view creation, call the returned unbind on destroy. */
   bind(controller: TocController): () => void
   /** Engine side: the rows of the scan just made. */
-  publish(headings: readonly TocHeading[]): void
+  publish(rows: readonly TocRow[]): void
   /** Engine side: a bullet zoom started or ended. */
   setHidden(hidden: boolean): void
 }
 
-const sameHeadings = (a: readonly TocHeading[], b: readonly TocHeading[]): boolean =>
-  a.length === b.length && a.every((heading, i) => heading.level === b[i].level && heading.text === b[i].text)
+const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
+  a.length === b.length && a.every((row, i) => row.level === b[i].level && row.text === b[i].text)
 
 export function createTocChannel(): TocChannel {
   let controller: TocController | null = null
-  let snapshot: TocSnapshot = { headings: [], hidden: false }
+  let snapshot: TocSnapshot = { rows: [], hidden: false }
   let source: TocSource | null = null
   const listeners = new Set<() => void>()
 
@@ -99,8 +102,8 @@ export function createTocChannel(): TocChannel {
     // While unbound (no editor yet, or one already destroyed) the commands are no-ops.
     jump: (index) => controller?.jump(index),
     current: (indices, scroller) => controller?.current(indices, scroller) ?? -1,
-    publish(headings) {
-      if (!sameHeadings(headings, snapshot.headings)) set({ ...snapshot, headings })
+    publish(rows) {
+      if (!sameRows(rows, snapshot.rows)) set({ ...snapshot, rows })
     },
     setHidden(hidden) {
       if (hidden !== snapshot.hidden) set({ ...snapshot, hidden })

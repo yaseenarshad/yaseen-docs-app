@@ -1,5 +1,5 @@
 /* The table of contents (YAZ-2700): a note's rows — its headings, or its bullets — at its right
-   edge: TableOfContents.tsx. "Heading" below is the name of a row, whichever it stands for.
+   edge: TableOfContents.tsx.
 
    It is CHROME, like the find bar: a sibling of the scroller inside `section.editor` (the
    positioned ancestor), so it holds its place while the note scrolls under it and the document
@@ -9,7 +9,7 @@
    scrollbar (0 when the system overlays it). Colours are app.css's tokens, so both themes follow.
 
    ONE scrollbar: the note's. The lists here scroll (the wheel, the arrow keys, and they follow the
-   current heading by themselves) but show no bar of their own — a soft fade at an edge says there
+   current row by themselves) but show no bar of their own — a soft fade at an edge says there
    is more behind it. */
 :root {
   /* TOC_WIDTH in TableOfContents.tsx is the same number: `namesShow` counts with it. */
@@ -25,8 +25,8 @@
   bottom: 0;
   left: 0;
   /* Above the note, BELOW the status chips (app.css: z-index 2): their menus — the page cog's, the
-     zoom pill's — drop down over this corner, and at the same level the later sibling won and the
-     names were drawn through the open menu. */
+     zoom pill's — drop down over this corner. At the same level this element, the later sibling,
+     would be drawn over an open menu. */
   z-index: 1;
   display: flex;
   align-items: center;
@@ -51,11 +51,11 @@
 }
 
 .editor:has(> .toc[data-names]) > .editor-host {
-  padding-right: var(--toc-width, 200px);
+  padding-right: var(--toc-width);
 }
 
 .editor:has(> .toc[data-names]) > .find-bar-dock--note {
-  right: var(--toc-width, 200px);
+  right: var(--toc-width);
 }
 
 .toc__names {
@@ -106,7 +106,7 @@
   transition: color 80ms ease, background-color 80ms ease;
 }
 
-/* The level reads from the indent and the weight, never from a size: 12px per level below H1. */
+/* The level reads from the indent and the weight, never from a size: 12px per level below the first. */
 .toc__name[data-level='1'] {
   font-weight: 500;
 }
@@ -127,12 +127,9 @@
   background: var(--accent-soft);
 }
 
-/* The current name keeps its accent under the mouse: the wash says "here", the colour says "you are here". */
-.toc__name[aria-current='true']:hover {
-  color: var(--accent);
-}
-
-.toc__name[aria-current='true'] {
+/* The current name is the accent, and keeps it under the mouse — the wash says "here", the colour
+   says "you are here". ONE rule for both: `.toc__names` in the selector outweighs `:hover` above. */
+.toc__names .toc__name[aria-current='true'] {
   color: var(--accent);
 }
 
@@ -155,13 +152,13 @@
 }
 
 .toc__name:focus-visible,
-.toc__keep:focus-visible,
+.toc__pin:focus-visible,
 .toc__rail:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.toc__keep {
+.toc__pin {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -174,13 +171,13 @@
   transition: color 160ms ease, background-color 160ms ease;
 }
 
-.toc__keep:hover {
+.toc__pin:hover {
   color: var(--fg);
   background: var(--bg-hover);
 }
 
 /* "Unpin", at the top of the pinned column: as wide as its word, on the names' left edge. */
-.toc__keep--stop {
+.toc__pin--off {
   align-self: flex-start;
   margin: 0 0 8px 6px;
 }
@@ -214,7 +211,7 @@
   overflow: hidden;
 }
 
-/* One line per heading, `--toc-pitch` apart centre to centre: 18 / 12 / 7 px for H1 / H2 / H3.
+/* One line per row, `--toc-pitch` apart centre to centre: 18 / 12 / 7 px for level 1 / 2 / 3.
    The current one is the accent and a little longer, and it grows into that. */
 .toc__line {
   --toc-w: 18px;
@@ -235,7 +232,7 @@
   --toc-w: 7px;
 }
 
-/* Reading progress: what is above the current heading is read. */
+/* Reading progress: what is above the current row is read. */
 .toc__line[data-read] {
   background: var(--fg-muted);
 }
@@ -247,7 +244,7 @@
 
 /* The card: the find bar's surface. It shrinks before the rail does, so a 320px panel still fits
    both. It is never taller than 440px: a card as tall as the window is a wall, and the list
-   inside moves in step with the note, so the current heading is always in it. It comes in from
+   inside moves in step with the note, so the current row is always in it. It comes in from
    the rail's side and leaves the same way (`data-leaving`, for the component's `EXIT_MS`). */
 .toc__card {
   display: flex;
@@ -311,18 +308,8 @@
   .toc__card,
   .toc__line,
   .toc__name,
+  .toc__pin,
   .toc__marker[data-placed] {
     transition: none;
   }
-}
-
-/* ---------- the jump's landing ---------- */
-
-/* Where a jump has no scroller of its own to move (a host that is not the note's), it lands its
-   heading with `scrollIntoView({ block: 'start' })` and this keeps it a little below the edge.
-   Inside the note the engine places the row itself, at the same 24px (`LANDING_PX`, tocPlugin.ts)
-   — a bullet row is no h1-h3 and this rule never reaches it. ProseMirror's own caret scrolling
-   does not read it. */
-.editor-instance .ProseMirror :is(h1, h2, h3) {
-  scroll-margin-top: 24px;
 }

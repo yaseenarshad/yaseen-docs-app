@@ -2224,7 +2224,8 @@ button {
 }
 
 /* What the "i" says: a panel LEFT of the menu, on the menu's own surface. The menu scrolls, so a
-   panel inside it would be cut; here it is free, and wide enough to read. */
+   panel inside it would be cut; here it is free, and wide enough to read. `172px` in its `right`
+   is the menu's width (`.page-settings__menu`, above): the panel starts 8px left of the menu. */
 .page-settings__tip {
   position: absolute;
   top: calc(100% + 6px);
