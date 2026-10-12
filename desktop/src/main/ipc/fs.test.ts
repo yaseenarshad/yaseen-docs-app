@@ -10,6 +10,7 @@ import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
 import { fileClip } from '../fileClip'
 import * as favorites from '../favorites'
+import * as focus from '../focus'
 import { registerFsIpc } from './fs'
 
 vi.mock('electron', () => ({
@@ -23,6 +24,9 @@ vi.mock('electron', () => ({
 // The favorites.json repair (YAZ-1766 6A, D13) rides the rename/delete handlers; `favorites.test.ts`
 // owns its disk behaviour, so here it is a mock whose failure must never fail the file op.
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
+// The focus list's repair (YAZ-2702 R10, R11) rides the same handlers, by the same rule; `focus.test.ts`
+// owns its disk behaviour. Mocked like favorites — the real module imports from the one mocked above.
+vi.mock('../focus', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Envelope<unknown>>
 
@@ -703,6 +707,57 @@ describe('registerFsIpc', () => {
       expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'))
       store.removeWindow('w-fav')
+    })
+  })
+
+  describe('focus list repair (YAZ-2702 R10, R11)', () => {
+    const entry = { id: 'w-focus', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+
+    it('fs:rename, file:repair-rename and a paste of a cut hand the open roots + paths to focus.renamePath; a repair failure is warned and the op still answers and broadcasts', async () => {
+      const oldPath = path.join(root, 'focus-a.md')
+      const newPath = path.join(root, 'focus-b.md')
+      await writeFile(oldPath, '# focus\n')
+      store.upsertWindow({ ...entry, root })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      vi.mocked(focus.renamePath).mockClear()
+      vi.mocked(focus.renamePath).mockRejectedValueOnce(new Error('the focus file is read-only'))
+      senderWinId = undefined
+      expect(await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath, newPath })).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
+      expect(vi.mocked(focus.renamePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), oldPath, newPath)
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath, newPath, kind: 'file' })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('the focus file is read-only'))
+      // The already-moved repair path takes the same road.
+      await rename(newPath, oldPath)
+      vi.mocked(focus.renamePath).mockClear()
+      expect(await registered(CONTRACT.file.repairRename.channel)({ sender: {} }, { oldPath: newPath, newPath: oldPath })).toEqual({ ok: true, value: { oldPath: newPath, newPath: oldPath, kind: 'file' } })
+      expect(vi.mocked(focus.renamePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), newPath, oldPath)
+      // And so does a cut that is pasted: one repair for each entry that moved.
+      const dir = path.join(root, 'focus-target')
+      await mkdir(dir)
+      fileClip.set({ op: 'cut', paths: [oldPath] })
+      vi.mocked(focus.renamePath).mockClear()
+      expect(await registered(CONTRACT.file.paste.channel)({ sender: {} }, { targetDir: dir })).toMatchObject({ ok: true, value: { pasted: [{ from: oldPath, to: path.join(dir, 'focus-a.md') }] } })
+      expect(vi.mocked(focus.renamePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), oldPath, path.join(dir, 'focus-a.md'))
+      store.removeWindow('w-focus')
+    })
+
+    it('fs:delete hands the open roots + path to focus.removePath; a repair failure is warned and the delete still answers and broadcasts', async () => {
+      const target = path.join(root, 'focus-gone.md')
+      await writeFile(target, '# gone\n')
+      store.upsertWindow({ ...entry, root })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      vi.mocked(focus.removePath).mockClear()
+      vi.mocked(focus.removePath).mockRejectedValueOnce(new Error('focus boom'))
+      senderWinId = undefined
+      expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: target })).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      expect(vi.mocked(focus.removePath)).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([root]), target)
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onDeleted.channel, { path: target, kind: 'file' })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('focus boom'))
+      store.removeWindow('w-focus')
     })
   })
 
