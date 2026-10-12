@@ -20,7 +20,7 @@
 // Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
 // so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -132,6 +132,53 @@ test.describe('note page: highlights, cycling, fold reveal, untouched disk', () 
   test('the whole session left the note byte-identical on disk (proven after a real quit)', async () => {
     await quitApp(app)
     expect(await md5(path.join(vault, SEED_FILE))).toBe(seedBefore)
+  })
+})
+
+// YAZ-2691. Like the rest of this file, written from the source and not yet run here (Playwright takes over the screen).
+test.describe('a paragraph taller than the window: the jump lands on the match', () => {
+  /** One paragraph of 600 soft-wrapped lines, many windows tall. "zebra" stands on two late lines; a line end splits "zebra quartz". */
+  const TALL_FILE = 'Tall paragraph.md'
+  let userData: string
+  let vault: string
+  let app: ElectronApplication
+  let win: Page
+
+  test.beforeAll(async () => {
+    userData = await mkdtemp(path.join(tmpdir(), 'find-e2e-tall-'))
+    vault = await copyVault(await buildFixtureVault())
+    const lines = Array.from({ length: 600 }, (_, i) =>
+      i === 480 ? 'the price of zebra' : i === 481 ? 'quartz went down' : i === 560 ? 'and zebra again' : `filler line number ${i}`,
+    )
+    await writeFile(path.join(vault, TALL_FILE), `# Tall\n\n${lines.join('\n')}\n`)
+    app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, TALL_FILE)) })
+    win = await appWindow(app, 'w1')
+    await expect(win.locator('.editor-mount .ProseMirror')).toBeVisible()
+  })
+
+  test.afterAll(async () => {
+    await quitApp(app)
+    await rm(userData, { recursive: true, force: true })
+    await rm(vault, { recursive: true, force: true })
+  })
+
+  test('each match is in the window after the query and after Enter, and a phrase is found across a line end', async () => {
+    await win.keyboard.press('Meta+f')
+    await input(win).fill('zebra')
+    await expect(counter(win)).toHaveText('1 of 2')
+    // Before the fix the window stopped at the middle of the paragraph, ~line 300, with both matches far below it.
+    await expect(active(win)).toBeInViewport()
+    await win.keyboard.press('Enter')
+    await expect(counter(win)).toHaveText('2 of 2')
+    await expect(active(win)).toBeInViewport()
+
+    // A soft line end reads as one space; the highlight is painted in parts, around the break.
+    await input(win).fill('zebra quartz')
+    await expect(counter(win)).toHaveText('1 of 1')
+    await expect(active(win).first()).toBeInViewport()
+    await shoot(win, 'find-tall-paragraph')
+    await win.keyboard.press('Escape')
+    await expect(bar(win)).toHaveCount(0)
   })
 })
 
