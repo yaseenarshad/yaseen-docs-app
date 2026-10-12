@@ -858,9 +858,6 @@ describe('document magnification (YAZ-1410)', () => {
     let offScreen = false
     const originalRange = Range.prototype.getBoundingClientRect
     Range.prototype.getBoundingClientRect = () => ({ top: offScreen ? 900 : 100 * zoomOf(), height: 20 } as DOMRect)
-    const proto = HTMLElement.prototype as unknown as Record<string, unknown>
-    const centered: [Element, unknown][] = []
-    proto.scrollIntoView = function (this: Element, opts: unknown) { centered.push([this, opts]) }
     const step = (from: Element) => act(() => { from.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 1, bubbles: true, cancelable: true })) })
     const caretIn = (p: HTMLParagraphElement) => {
       const range = document.createRange()
@@ -879,24 +876,22 @@ describe('document magnification (YAZ-1410)', () => {
       step(line) // 100 → 125: the line would move from 100 to 125 on screen; the scroller absorbs the 25
       expect(scroller.style.getPropertyValue('--document-zoom')).toBe('1.25')
       expect(scroller.scrollTop).toBe(65)
-      expect(centered).toEqual([])
 
       offScreen = true
-      step(line) // 125 → 150 with the caret below the fold: centered, scroll left alone
-      expect(centered).toEqual([[line, { block: 'center' }]])
-      expect(scroller.scrollTop).toBe(65)
+      // 125 → 150 with the caret below the fold, at 900: the CARET comes to the middle of the 500px
+      // window, at (500 − 20) / 2 = 240 — not its block, which can be many windows tall (YAZ-2691).
+      step(line)
+      expect(scroller.scrollTop).toBe(65 + 900 - 240)
 
       const outside = document.createElement('p')
       outside.textContent = 'elsewhere'
       document.body.append(outside)
       caretIn(outside)
       step(el.querySelector('.editor-mount')!) // this note zooms, but the caret is not its business
-      expect(centered).toHaveLength(1)
-      expect(scroller.scrollTop).toBe(65)
+      expect(scroller.scrollTop).toBe(65 + 900 - 240)
       outside.remove()
     } finally {
       Range.prototype.getBoundingClientRect = originalRange
-      delete proto.scrollIntoView
     }
   })
 

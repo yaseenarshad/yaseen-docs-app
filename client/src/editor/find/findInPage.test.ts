@@ -4,9 +4,11 @@
  * the REAL `createCrepe()` editor (the outlineFolding.test.ts idiom).
  *
  * The contract under test (locked in YAZ-967's confirmed-contract comment):
- *  - case-insensitive literal matching, per-textblock, so marks never split a match;
+ *  - case-insensitive literal matching, per-textblock, so marks never split a match; a soft line
+ *    break reads as one space, a hard break is a gap (YAZ-2691);
  *  - all matches carry FIND_MATCH_CLASS, exactly one carries FIND_ACTIVE_CLASS too;
- *  - next/prev wrap; the first active match is the first at/after the selection;
+ *  - next/prev wrap; the first active match is the first at/after the selection; the active
+ *    HIGHLIGHT is what scrolls into view, not its block (YAZ-2691);
  *  - collapsed folds hiding a match expand SILENTLY (⌘Z panic-undo untouched) and re-collapse
  *    when the query stops matching inside them;
  *  - close restores search-revealed folds EXCEPT those hiding the active match (the landing),
@@ -113,6 +115,23 @@ describe('matching and decorations', () => {
     expect(matchEls(root).map((el) => el.textContent).join('')).toBe('world')
   })
 
+  it('matches a phrase across a soft line break, which reads as one space — but never across a hard break (YAZ-2691)', async () => {
+    const soft = await mountFind('one technology\nis deflationary now')
+    soft.channel.open()
+    soft.channel.setQuery('technology is deflationary')
+    expect(soft.channel.getState().total).toBe(1)
+    expect(matchEls(soft.root).map((el) => el.textContent).join('')).toBe('technology is deflationary')
+    soft.channel.setQuery('technologyis')
+    expect(soft.channel.getState().total).toBe(0)
+
+    const hard = await mountFind('one technology\\\nis deflationary now')
+    hard.channel.open()
+    hard.channel.setQuery('technology is deflationary')
+    expect(hard.channel.getState().total).toBe(0)
+    hard.channel.setQuery('deflationary')
+    expect(hard.channel.getState().total).toBe(1)
+  })
+
   it('recomputes matches when the document changes mid-search', async () => {
     const { view, channel } = await mountFind('apple banana')
     channel.open()
@@ -137,6 +156,26 @@ describe('cycling', () => {
     expect(channel.getState().activeIndex).toBe(0)
     channel.prev()
     expect(channel.getState().activeIndex).toBe(2)
+  })
+
+  it('scrolls the active HIGHLIGHT, not the block that holds it — a block can be taller than the window (YAZ-2691)', async () => {
+    // jsdom has no scrollIntoView: the engine's optional call lands on this recorder, then it is removed again.
+    const scrolled: Element[] = []
+    const proto = Element.prototype as { scrollIntoView?: () => void }
+    proto.scrollIntoView = function (this: Element) {
+      scrolled.push(this)
+    }
+    try {
+      const { channel } = await mountFind('apple one apple two')
+      channel.open()
+      channel.setQuery('apple')
+      channel.next()
+      expect(scrolled).toHaveLength(2)
+      for (const el of scrolled) expect(el.classList.contains(FIND_ACTIVE_CLASS)).toBe(true)
+      expect(scrolled[0]).not.toBe(scrolled[1])
+    } finally {
+      delete proto.scrollIntoView
+    }
   })
 })
 
