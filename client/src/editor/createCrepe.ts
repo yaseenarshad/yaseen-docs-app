@@ -118,6 +118,16 @@
  *    A code block's OWN gutter counts in lines of the file too (D8, `lineNumbers/codeLines.ts`):
  *    one shared CodeMirror compartment in this file's CodeMirror extensions, empty until a build
  *    gives the block `data-line-code`; setting it is an effects-only CodeMirror transaction.
+ *  - Section indent (YAZ-2709, `outline/sectionIndent.ts` + `.css`): each top-level block inside a
+ *    heading's section stands one step in for each section that holds it, as a `data-sd` node
+ *    decoration (and `data-sp` on the caret's path) that the CSS draws as a left border with the
+ *    section lines in it. Steps count by nesting, all six levels; folds stay H1-H3. View state
+ *    only: the host sends the page's switch in a metadata-only transaction (never
+ *    `markdownUpdated`, never history). The set is rebuilt on a document change and handed to
+ *    ProseMirror's own `DecorationSet` constructor, never `DecorationSet.create` / `set.map`
+ *    (measured: 23.6 ms per key at 2,500 blocks against 0.19 ms), and its `forChild` answers
+ *    "nothing inside a block" without ProseMirror's scan of every root decoration (16.5 ms per
+ *    key). A click on a line folds the sections beside it (meta-only, through heading folding).
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -146,6 +156,7 @@ import { createImageView } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
 import { bulletThreading } from './outline/bulletThreading'
+import { sectionIndent } from './outline/sectionIndent'
 import { features } from './featureConfig'
 import {
   listItemRoundTrip,
@@ -346,6 +357,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled', title: () => 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
+  crepe.editor.use(sectionIndent)
   crepe.editor.use(lineNumbers)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()

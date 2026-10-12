@@ -17,8 +17,9 @@ function mount(text = 'one two  three\nfour') {
   readText = vi.fn(() => text)
   function Harness() {
     const [on, setOn] = useState(false)
+    const [indent, setIndent] = useState(false)
     return <>
-      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} readText={readText} />
+      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} sectionIndent={indent} onToggleSectionIndent={() => setIndent((value) => !value)} readText={readText} />
       <button data-outside>Outside</button>
     </>
   }
@@ -36,6 +37,8 @@ afterEach(() => {
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
 const menu = () => container.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
 const toggle = () => menu()!.querySelector<HTMLButtonElement>('button[aria-pressed]')!
+/** The second switch (YAZ-2709). */
+const indentToggle = () => menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')[1]
 const click = (element: Element) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
 describe('PageSettings', () => {
@@ -72,10 +75,10 @@ describe('PageSettings', () => {
     expect(beyond).not.toHaveBeenCalled()
   })
 
-  it('has ONE switch, "Line numbers", which flips the host state and leaves the menu open (S5, S6)', () => {
+  it('has "Line numbers" first, which flips the host state and leaves the menu open (S5, S6)', () => {
     mount()
     click(cog())
-    expect(menu()!.querySelectorAll('button')).toHaveLength(1)
+    expect([...menu()!.querySelectorAll('button')].map((button) => button.querySelector('span')?.textContent)).toEqual(['Line numbers', 'Section indent'])
     expect(toggle().textContent).toContain('Line numbers')
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
     click(toggle())
@@ -84,6 +87,19 @@ describe('PageSettings', () => {
     expect(toggle().textContent).toContain('✓')
     click(toggle())
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('has "Section indent" under it: its own switch, which leaves "Line numbers" and the open menu alone (YAZ-2709)', () => {
+    mount()
+    click(cog())
+    expect(indentToggle().getAttribute('aria-pressed')).toBe('false')
+    click(indentToggle())
+    expect(menu()).not.toBeNull()
+    expect(indentToggle().getAttribute('aria-pressed')).toBe('true')
+    expect(indentToggle().textContent).toContain('✓')
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+    click(indentToggle())
+    expect(indentToggle().getAttribute('aria-pressed')).toBe('false')
   })
 
   it('shows the words and the characters of the text (S13, S17, S18)', () => {

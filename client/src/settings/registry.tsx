@@ -33,7 +33,7 @@ import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, STARTUP_WINDOWS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -270,6 +270,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // How you READ a note, like the rows above; the Editor page keeps to a note's structure (YAZ-2709).
+        title: 'Comments',
+        items: [
+          {
+            id: 'commentsOrder',
+            label: 'Order',
+            keywords: ['comments order', 'sort'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={COMMENTS_ORDER_OPTIONS} value={settings.commentsOrder} onChange={(commentsOrder) => onChange({ ...settings, commentsOrder })} ariaLabel="Comments order" />
+            ),
+          },
+        ],
+      },
     ],
   },
   {
@@ -277,6 +291,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Editor',
     groups: [
       {
+        // These three rows also draw the path through heading sections (YAZ-2709): one look for both.
         title: 'Bullet threading',
         hint: 'Guide lines that connect nested bullets.',
         items: [
@@ -325,14 +340,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        title: 'Comments',
+        // Section indent (YAZ-2709). On or off is a switch of each note (the page cog); these rows
+        // are how it looks in every note. The purple path has no rows here: it takes the Bullet
+        // threading rows above (show, width, colour).
+        title: 'Section indent',
+        hint: 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.',
         items: [
           {
-            id: 'commentsOrder',
-            label: 'Order',
-            keywords: ['comments order', 'sort'],
+            id: 'sectionStep',
+            label: 'Step width',
+            keywords: ['heading', 'indentation', 'nesting'],
             render: ({ settings, onChange }) => (
-              <Segmented options={COMMENTS_ORDER_OPTIONS} value={settings.commentsOrder} onChange={(commentsOrder) => onChange({ ...settings, commentsOrder })} ariaLabel="Comments order" />
+              <Segmented options={SECTION_STEP_OPTIONS} value={settings.sectionStep} onChange={(sectionStep) => onChange({ ...settings, sectionStep })} ariaLabel="Step width" />
+            ),
+          },
+          {
+            id: 'sectionLines',
+            label: 'Grey lines',
+            keywords: ['heading', 'hover', 'guide'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SECTION_LINES_OPTIONS} value={settings.sectionLines} onChange={(sectionLines) => onChange({ ...settings, sectionLines })} ariaLabel="Grey lines" />
             ),
           },
         ],

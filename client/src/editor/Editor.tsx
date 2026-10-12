@@ -25,6 +25,7 @@ import './outline/bullets.css'
 import './outline/zoom.css'
 import './outline/guideLines.css'
 import './outline/bulletThreading.css'
+import './outline/sectionIndent.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
@@ -33,6 +34,8 @@ import { PageSettings } from './PageSettings'
 import { ZOOM_EVENT } from './zoomRequest'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
+import { showSectionIndent } from './outline/sectionIndent'
+import { useSectionIndent } from './outline/useSectionIndent'
 import type { ZoomStep } from '@shared/types'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
@@ -233,6 +236,8 @@ function CrepeHost({
   documentZoomRef.current = documentZoom
   // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
+  // Per page and remembered for it (YAZ-2709): the page cog's "Section indent".
+  const [sectionIndentOn, toggleSectionIndent] = useSectionIndent(root, file.path)
   const hostRef = useRef<HTMLDivElement>(null)
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
@@ -531,11 +536,27 @@ function CrepeHost({
     }
   }, [lineNumbersOn, readyCrepe])
 
+  // Section indent (YAZ-2709) reads only the page itself, so the editor is told once: when the
+  // switch turns on, when a recreated editor is ready. An outside change that lands can rebuild
+  // the whole editor state (`setMarkdown`), which starts off again, so each landing says it once
+  // more. Off is said by the second effect, as line numbers do.
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (sectionIndentOn && crepe !== null && crepeRef.current === crepe) showSectionIndent(crepe, true)
+  }, [sectionIndentOn, readyCrepe, diskLandings])
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (!sectionIndentOn || crepe === null) return
+    return () => {
+      if (crepeRef.current === crepe) showSectionIndent(crepe, false)
+    }
+  }, [sectionIndentOn, readyCrepe])
+
   return (
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
@@ -558,7 +579,7 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">

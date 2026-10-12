@@ -3,11 +3,15 @@ import { CogIcon } from '../settings/SettingsButton'
 
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
- * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab.
+ * Nothing here is stored. The host editor keeps the state: line numbers last as long as the tab,
+ * and section indent (YAZ-2709) is remembered for the page.
  */
-export function PageSettings({ lineNumbers, onToggleLineNumbers, readText }: {
+export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, onToggleSectionIndent, readText }: {
   lineNumbers: boolean
   onToggleLineNumbers: () => void
+  /** This page's text stands below its headings (YAZ-2709); how it looks is in Settings › Editor › Section indent. */
+  sectionIndent: boolean
+  onToggleSectionIndent: () => void
   /** The page's plain text. Read once when the menu opens, never while it is closed. */
   readText: () => string
 }) {
@@ -44,6 +48,9 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, readText }: {
       {text !== null && <div id={menuId} className="page-settings__menu" role="group" aria-label="Page settings">
         <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
+        </button>
+        <button type="button" aria-pressed={sectionIndent} onClick={onToggleSectionIndent}>
+          <span>Section indent</span><span aria-hidden="true">{sectionIndent ? '✓' : ''}</span>
         </button>
         <div className="page-settings__divider" aria-hidden="true" />
         <p>{(text.match(/\S+/g)?.length ?? 0).toLocaleString()} words</p>

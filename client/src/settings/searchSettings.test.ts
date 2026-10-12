@@ -30,10 +30,12 @@ describe('settingCandidates', () => {
       'contentWidth',
       'lineSpacing',
       'blockGap',
+      'commentsOrder',
       'bulletThreading',
       'threadWidth',
       'threadColor',
-      'commentsOrder',
+      'sectionStep',
+      'sectionLines',
       'confirmDelete',
       'confirmRename',
       'newNoteLocation',
@@ -67,6 +69,10 @@ describe('settingCandidates', () => {
     const width = settingCandidates(ctx()).find((h) => h.item.id === 'threadWidth')
     expect(width?.name).toBe('Line width thread width Bullet threading Guide lines that connect nested bullets. Editor')
     expect(width?.group.title).toBe('Bullet threading')
+    // Comments is a group of Appearance (YAZ-2709): its row says so to search.
+    const order = settingCandidates(ctx()).find((h) => h.item.id === 'commentsOrder')
+    expect(order?.name).toBe('Order comments order sort Comments Appearance')
+    expect(order?.section.id).toBe('appearance')
   })
 
   it('the sync hint is the live repo fact, so a remote URL is searchable', () => {
@@ -99,8 +105,14 @@ describe('searchSettings', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
   })
 
-  it('matches on the group title: "threading" finds the three threading rows', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'threading'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor'])
+  it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap'])
+  })
+
+  it('matches on the group hint too: "guide lines" finds the three threading rows; "threading" finds them and the two Section indent rows, whose hint names Bullet threading', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide lines'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'threading'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
   })
 
   it('the pre-redesign labels still match as keywords: "thread width", "comments order"', () => {

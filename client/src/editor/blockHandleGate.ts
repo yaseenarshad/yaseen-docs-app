@@ -3,7 +3,8 @@
  * spike — Crepe's `blockHandle.shouldShow` is dead upstream config, so this is done at the
  * view layer). While the pointer sits in an affordance band — a guide-line strip (geometry
  * shared with guideLines.ts) or a fold chevron's box — the handle gets HANDLE_MUTED_CLASS
- * (CSS: pointer-events none + invisible), so line and chevron clicks land. Everywhere else
+ * (CSS: pointer-events none + invisible), so line and chevron clicks land. A section line's band
+ * (YAZ-2709, geometry shared with sectionIndent.ts) is such a band too. Everywhere else
  * the handle stays visible and grabbable, and muting pauses while a drag is in progress.
  * elementsFromPoint keeps working through the muted handle: pointer-events: none removes it
  * from the stack, so the bands beneath stay detectable and the mute holds until the pointer
@@ -15,6 +16,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { inStripBand, isGuideStripHit } from './outline/guideLines'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
+import { sectionLineAt } from './outline/sectionIndent'
 
 export const HANDLE_MUTED_CLASS = 'mdapp-handle-muted'
 
@@ -32,6 +34,9 @@ function overAffordance(view: EditorView, x: number, stack: readonly Element[]):
     ) {
       if (isGuideStripHit(x, el)) return true
     }
+    // A section line (YAZ-2709): the indent is the top-level block's own border, so the block is in the stack.
+    // The handle of a bullet stands left of the bullet's box, which is inside its list's indent: on the list's inner lines.
+    if (el.parentElement === view.dom && sectionLineAt(x, el) !== null) return true
   }
   return false
 }
