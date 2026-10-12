@@ -4,20 +4,20 @@
  *
  * The rule under test: a subscriber hears a change ONLY when the list of (level, text) changes or
  * the hidden flag flips. The engine publishes after every scan, and a scan that found the same
- * headings must render nothing. The source (YAZ-2700 D14) is the host's word to the engine and no
+ * rows must render nothing. The source (YAZ-2700 D14) is the host's word to the engine and no
  * part of that: a subscriber hears of it only through the list the engine then publishes.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { createTocChannel, type TocController, type TocHeading } from './tocChannel'
+import { createTocChannel, type TocController, type TocRow } from './tocChannel'
 
-const LIST: TocHeading[] = [
+const LIST: TocRow[] = [
   { level: 1, text: 'Part 1' },
   { level: 2, text: 'Section A' },
 ]
 
 describe('publishing', () => {
   it('starts empty and shown', () => {
-    expect(createTocChannel().getState()).toEqual({ headings: [], hidden: false })
+    expect(createTocChannel().getState()).toEqual({ rows: [], hidden: false })
   })
 
   it('a new list reaches the subscribers once; the same list again, as a new array, does not', () => {
@@ -27,15 +27,15 @@ describe('publishing', () => {
     channel.publish(LIST)
     expect(listener).toHaveBeenCalledTimes(1)
     const first = channel.getState()
-    expect(first.headings).toEqual(LIST)
+    expect(first.rows).toEqual(LIST)
 
-    channel.publish(LIST.map((heading) => ({ ...heading })))
+    channel.publish(LIST.map((row) => ({ ...row })))
     expect(listener).toHaveBeenCalledTimes(1)
     // The snapshot keeps its identity, so `useSyncExternalStore` sees no change either.
     expect(channel.getState()).toBe(first)
   })
 
-  it('a changed text, a changed level, one more and one fewer heading each reach them', () => {
+  it('a changed text, a changed level, one more and one fewer row each reach them', () => {
     const channel = createTocChannel()
     const listener = vi.fn()
     channel.publish(LIST)
@@ -45,10 +45,10 @@ describe('publishing', () => {
     channel.publish([LIST[0], { level: 3, text: 'Section B' }, { level: 1, text: 'Part 2' }])
     channel.publish([LIST[0]])
     expect(listener).toHaveBeenCalledTimes(4)
-    expect(channel.getState().headings).toEqual([LIST[0]])
+    expect(channel.getState().rows).toEqual([LIST[0]])
   })
 
-  it('the hidden flag reaches them when it flips, and only then; the headings stay', () => {
+  it('the hidden flag reaches them when it flips, and only then; the rows stay', () => {
     const channel = createTocChannel()
     const listener = vi.fn()
     channel.publish(LIST)
@@ -58,7 +58,7 @@ describe('publishing', () => {
     channel.setHidden(true)
     channel.setHidden(true)
     expect(listener).toHaveBeenCalledTimes(1)
-    expect(channel.getState()).toEqual({ headings: LIST, hidden: true })
+    expect(channel.getState()).toEqual({ rows: LIST, hidden: true })
     channel.setHidden(false)
     expect(listener).toHaveBeenCalledTimes(2)
   })
@@ -126,7 +126,7 @@ describe('the source (YAZ-2700 D14)', () => {
     channel.setSource('bullets')
     expect(listener).not.toHaveBeenCalled()
     expect(channel.getState()).toBe(before)
-    expect(channel.getState()).toEqual({ headings: LIST, hidden: false })
+    expect(channel.getState()).toEqual({ rows: LIST, hidden: false })
   })
 })
 

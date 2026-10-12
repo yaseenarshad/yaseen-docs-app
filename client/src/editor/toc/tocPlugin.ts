@@ -49,10 +49,10 @@ import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, DEEPEST_FOLDABLE_LEVEL, headingLevel, isHeadingCollapsed, isWalkableContainer, setHeadingFoldSet } from '../outline/headingFolding'
-import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES } from '../outline/listNodes'
+import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
-import type { TocChannel, TocController, TocHeading, TocLevel } from './tocChannel'
+import { ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
 
 /** How long the document must rest before it is scanned again. */
 export const SCAN_DELAY_MS = 150
@@ -60,7 +60,7 @@ export const SCAN_DELAY_MS = 150
 const GLIDE_MS = 420
 /** A glide never crosses more than this many windows of the note. */
 const GLIDE_SCREENS = 3
-/** Where a row lands below the scroller's top edge: the same distance as toc.css's `scroll-margin-top` on h1-h3. */
+/** Where a row lands below the scroller's top edge. */
 const LANDING_PX = 24
 
 /** A row is current once its top is this far below the scroller's top, or higher. */
@@ -90,16 +90,12 @@ const REVEAL_STAGGERED = 8
 /** No more blocks than this are eased: the rest of a long section is far off screen. */
 const REVEAL_MOST = 60
 
-/** The table of contents draws nothing under this many rows (`TableOfContents.tsx`), so fewer of one kind is no structure. */
-const ENOUGH_ROWS = 2
 /** A bullet deeper than this is not a row: the channel has three levels, whichever structure fills them. */
 const DEEPEST_BULLET_LEVEL = 3
-/** What `itemLabelText` calls a bullet with no label. Here such a bullet is no row at all. */
-const EMPTY_LABEL = 'Untitled item'
 /** The element Crepe's node view gives a `list_item` — what `view.nodeDOM` answers for one; the `<li>` is its child. */
 const LIST_ITEM_CLASS = 'milkdown-list-item-block'
 
-export interface ScannedHeading extends TocHeading {
+export interface ScannedRow extends TocRow {
   /** Document position of the row's node — the heading, or in a bullet note the list item — as the document stood at the scan. */
   pos: number
 }
@@ -107,14 +103,14 @@ export interface ScannedHeading extends TocHeading {
 export interface ScannedNote {
   /** True when the rows are the note's bullets (`pos` is a list item's), false when they are its headings. */
   bullets: boolean
-  rows: ScannedHeading[]
+  rows: ScannedRow[]
 }
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const tocKey = new PluginKey('mdapp-table-of-contents')
 
 /** Headings inside ONE block container, appended in document order (`contentStart`: position of its first child). */
-const collectHeadings = (parent: ProseNode, contentStart: number, found: ScannedHeading[]): void => {
+const collectHeadings = (parent: ProseNode, contentStart: number, found: ScannedRow[]): void => {
   parent.forEach((child, offset) => {
     const pos = contentStart + offset
     const level = headingLevel(child)
@@ -128,8 +124,8 @@ const collectHeadings = (parent: ProseNode, contentStart: number, found: Scanned
 }
 
 /** Every H1-H3 outside lists, in document order. */
-export const scanHeadings = (doc: ProseNode): ScannedHeading[] => {
-  const found: ScannedHeading[] = []
+export const scanHeadings = (doc: ProseNode): ScannedRow[] => {
+  const found: ScannedRow[] = []
   collectHeadings(doc, 0, found)
   return found
 }
@@ -139,13 +135,14 @@ export const scanHeadings = (doc: ProseNode): ScannedHeading[] => {
  * position of the list's first item). An unlabelled bullet is passed over and its children kept:
  * they are places to go, at the depth they are drawn at.
  */
-const collectBullets = (list: ProseNode, contentStart: number, level: TocLevel, found: ScannedHeading[]): void => {
+const collectBullets = (list: ProseNode, contentStart: number, level: TocLevel, found: ScannedRow[]): void => {
   list.forEach((item, offset) => {
     if (!isListItem(item)) return
     const pos = contentStart + offset
     const text = itemLabelText(item)
-    // A bullet that really reads "Untitled item" is a row like any other.
-    if (text !== EMPTY_LABEL || item.firstChild?.textContent.trim() === EMPTY_LABEL) found.push({ level, text, pos })
+    // `UNTITLED_ITEM` is `itemLabelText`'s word for no label, and such a bullet is no row. One
+    // that really reads "Untitled item" is a row like any other.
+    if (text !== UNTITLED_ITEM || item.firstChild?.textContent.trim() === UNTITLED_ITEM) found.push({ level, text, pos })
     if (level === DEEPEST_BULLET_LEVEL) return
     // `pos + 1 + nested.offset` is the nested list; its first item starts one further in.
     for (const nested of findNestedLists(item)) collectBullets(nested.list, pos + nested.offset + 2, (level + 1) as TocLevel, found)
@@ -153,8 +150,8 @@ const collectBullets = (list: ProseNode, contentStart: number, level: TocLevel, 
 }
 
 /** Every labelled bullet of the document's own lists, three levels deep, in document order. */
-export const scanBullets = (doc: ProseNode): ScannedHeading[] => {
-  const found: ScannedHeading[] = []
+export const scanBullets = (doc: ProseNode): ScannedRow[] => {
+  const found: ScannedRow[] = []
   doc.forEach((block, offset) => {
     if (LIST_NODE_NAMES.has(block.type.name)) collectBullets(block, offset + 1, 1, found)
   })
@@ -165,8 +162,8 @@ export const scanBullets = (doc: ProseNode): ScannedHeading[] => {
  * Every H1-H3 of the note, in document order: the ones outside lists, in blockquotes, and inside
  * list items at any depth. Every block is visited and no textblock is entered.
  */
-export const scanAllHeadings = (doc: ProseNode): ScannedHeading[] => {
-  const found: ScannedHeading[] = []
+export const scanAllHeadings = (doc: ProseNode): ScannedRow[] => {
+  const found: ScannedRow[] = []
   doc.descendants((node, pos) => {
     const level = headingLevel(node)
     if (level !== null && level <= DEEPEST_FOLDABLE_LEVEL) found.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
@@ -265,16 +262,14 @@ export const createTableOfContents = (channel: TocChannel) =>
           let stopGlide: (() => void) | null = null
 
           /**
-           * The landing: exactly on the row, then one flash — a band that holds, then fades. With
-           * the note's scroller in hand the engine places the row itself, `LANDING_PX` below the
-           * edge: toc.css's `scroll-margin-top` is on h1-h3 only, and `scrollIntoView` would pull
-           * a bullet flush against the edge at the end of its glide. Without one (a host that is
-           * not the note's, jsdom) `scrollIntoView` is all there is.
+           * The landing: exactly on the row, then one flash — a band that holds, then fades. The
+           * engine places the row itself, `LANDING_PX` below the scroller's edge, by its own
+           * arithmetic: `scrollIntoView` would pull the row flush against the edge. An editor
+           * that is not inside a note's scroller (the unit tests) has nothing to scroll.
            */
           const land = (element: HTMLElement, scroller: HTMLElement | null): void => {
             if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
-            // jsdom has neither `scrollIntoView` nor `animate`.
-            else element.scrollIntoView?.({ block: 'start' })
+            // jsdom has no `animate`.
             if (typeof element.animate === 'function' && !reducedMotion())
               element.animate([{ ...FLASH_ON, offset: 0 }, { ...FLASH_ON, offset: FLASH_HOLD }, { ...FLASH_OFF, offset: 1 }], { duration: FLASH_MS, easing: 'ease-out' })
           }
@@ -301,8 +296,8 @@ export const createTableOfContents = (channel: TocChannel) =>
            * away and one at the far end, so a long note is never a long wait. A row further than
            * `GLIDE_SCREENS` windows away starts the move that far from it — the reader sees the
            * arrival, and the note in between is never painted on the way. The reader's own wheel,
-           * press or key takes the note back at once. Without a scroller to move (a host that is
-           * not the note's, jsdom) or under reduced motion it lands directly.
+           * press or key takes the note back at once. Without a scroller to move (the unit tests) or
+           * under reduced motion it lands directly.
            */
           const glide = (element: HTMLElement): void => {
             stopGlide?.()
@@ -350,10 +345,10 @@ export const createTableOfContents = (channel: TocChannel) =>
               const target = note.rows[index]
               if (target === undefined) return
               // The reader asked for THIS section: every fold that hides its heading opens, and so
-              // does its own — a jump to a folded heading that left it folded showed one line and
-              // none of what was asked for. Declines an empty set, so a heading that nothing
-              // hides and that is open itself costs no transaction. A heading folded over a list
-              // hides a bullet of it, and a heading inside one, the same way and opens the same way.
+              // does its own — a folded heading is one line, and the reader asked for what is under
+              // it. Declines an empty set, so a heading that nothing hides and that is open itself
+              // costs no transaction. A heading folded over a list hides a bullet of it, and a
+              // heading inside one, the same way and opens the same way.
               const folded = collapsedHeadingsHiding(view.state, target.pos)
               if (!note.bullets && isHeadingCollapsed(view.state, target.pos)) folded.push(target.pos)
               setHeadingFoldSet(folded, false)(view.state, view.dispatch)

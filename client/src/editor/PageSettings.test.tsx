@@ -19,7 +19,7 @@ function mount(text = 'one two  three\nfour') {
   function Harness() {
     const [on, setOn] = useState(false)
     return <>
-      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} readText={readText} />
+      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
       <button data-outside>Outside</button>
     </>
   }
@@ -73,10 +73,11 @@ describe('PageSettings', () => {
     expect(beyond).not.toHaveBeenCalled()
   })
 
-  it('has ONE switch, "Line numbers", which flips the host state and leaves the menu open (S5, S6)', () => {
+  it('"Line numbers" is the first switch: it flips the host state and leaves the menu open (S5, S6)', () => {
     mount()
     click(cog())
-    expect(menu()!.querySelectorAll('button')).toHaveLength(1)
+    // This host hands no table of contents handler, as the app does with the setting Off: two switches.
+    expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Line numbers', 'Heading levels'])
     expect(toggle().textContent).toContain('Line numbers')
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
     click(toggle())
@@ -137,7 +138,7 @@ describe('PageSettings: TOC made from', () => {
         changed(next)
         setSource(next)
       }
-      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
+      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
     }
     container = document.createElement('div')
     document.body.append(container)
@@ -150,7 +151,7 @@ describe('PageSettings: TOC made from', () => {
   const choices = () => [...group()!.querySelectorAll<HTMLButtonElement>('button')]
   const pressed = () => choices().map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
 
-  it('a mount that passes no handler has no such control: the menu is as it was', () => {
+  it('a mount that passes no handler has no such control', () => {
     mount()
     click(cog())
     expect(menu()!.textContent).not.toContain('TOC made from')
@@ -162,7 +163,7 @@ describe('PageSettings: TOC made from', () => {
     expect(menu()!.querySelector('.page-settings__label')?.textContent).toBe('TOC made from:')
     expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
     const order = [...menu()!.children].map((child) => child.className || child.textContent)
-    expect(order).toEqual(['Line numbers', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
+    expect(order).toEqual(['Line numbers', 'Heading levels', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
   })
 
   it('shows the saved choice pressed, and that one alone', () => {
@@ -262,17 +263,17 @@ describe('PageSettings: TOC made from', () => {
 /**
  * The two page switches of YAZ-2700: "Heading levels" (D12) and "Table of contents" (D15). Like
  * "Line numbers", each shows what the host keeps and asks the host to flip it; a host that hands no
- * handler gets no row.
+ * handler for "Table of contents" gets no row for it.
  */
 describe('PageSettings: Heading levels and Table of contents', () => {
-  function mountSwitches(rows: { headingLevels?: boolean; tableOfContents?: boolean } = { headingLevels: true, tableOfContents: true }) {
+  function mountSwitches(tableOfContentsRow = true) {
     readText = vi.fn(() => 'text')
     function Harness() {
       const [levels, setLevels] = useState(false)
       const [contents, setContents] = useState(true)
       return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined}
-        headingLevels={levels} onToggleHeadingLevels={rows.headingLevels ? () => setLevels((on) => !on) : undefined}
-        tableOfContents={contents} onToggleTableOfContents={rows.tableOfContents ? () => setContents((on) => !on) : undefined}
+        headingLevels={levels} onToggleHeadingLevels={() => setLevels((on) => !on)}
+        tableOfContents={contents} onToggleTableOfContents={tableOfContentsRow ? () => setContents((on) => !on) : undefined}
         readText={readText} />
     }
     container = document.createElement('div')
@@ -302,8 +303,8 @@ describe('PageSettings: Heading levels and Table of contents', () => {
     expect(menu()).not.toBeNull()
   })
 
-  it('a host that hands no handler for one gets no row for it: the app-wide setting is Off, so there is nothing to turn off here', () => {
-    mountSwitches({ headingLevels: true, tableOfContents: false })
+  it('a host that hands no handler for "Table of contents" gets no row for it: the app-wide setting is Off, so there is nothing to turn off here', () => {
+    mountSwitches(false)
     expect(state()).toEqual(['Line numbers:false', 'Heading levels:false'])
   })
 })

@@ -208,7 +208,7 @@ export interface CreateCrepeOptions {
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
   find?: FindChannel
-  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the headings are never scanned. */
+  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the note is never scanned. */
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource

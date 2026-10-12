@@ -6,13 +6,12 @@
  *
  * A ROW is a `{ level, text }` and nothing more. The engine decides what the rows are — the
  * note's H1-H3, or the bullets of a note that has no headings to speak of, or what the reader
- * chose for this note in the page cog (D14) — and this component is never told which: "heading"
- * below is the name of a row, whatever it stands for in the note.
+ * chose for this note in the page cog (D14) — and this component is never told which.
  *
  * TWO LOOKS, one `<nav>`:
- *  - NAMES (`data-names`): a quiet column of heading names beside the text. toc.css gives the
- *    scroller a right margin of the column's width, so the names never cover the note.
- *  - LINES: a rail of small lines, one per heading, in the page's right gutter. The mouse on the
+ *  - NAMES (`data-names`): a quiet column of the rows' names beside the text. toc.css pads the
+ *    scroller on the right by the column's width, so the names never cover the note.
+ *  - LINES: a rail of small lines, one per row, in the page's right gutter. The mouse on the
  *    rail, a click on it, a turn of the wheel over the note, or ⌘J opens a card with the same
  *    names ON TOP of the text.
  * `namesShow` picks between them from the setting and the width of this editor's `section.editor`
@@ -22,15 +21,16 @@
  * and while a bullet zoom is active (the channel's `hidden`). Then it also holds no listener.
  *
  * WHERE THE READER IS: on the scroller's `scroll` (passive, one read per animation frame) the
- * channel answers which shown heading is current. Lines above it are read, the line itself is the
+ * channel answers which shown row is current. Lines above it are read, the line itself is the
  * accent. State is set only when that index changes, so a scroll inside one section renders nothing.
- * A JUMP names its own heading current and holds it until the reader's next wheel, press or key in
- * the note: the last headings of a note can never reach the top of the scroller, and without the
- * hold a click on one of them would light the heading below it.
+ * A JUMP names its own row current and holds it until the reader's next wheel, press or key in
+ * the note: the last rows of a note can never reach the top of the scroller, and without the
+ * hold a click on one of them would light the row below it.
  *
  * The card opens on `wheel`, NOT on `scroll`: typing at the bottom of the window and a jump both
- * scroll the note, and neither is the reader asking where they are. A wheel over the card itself
- * goes on to the note once the card's own list has nowhere left to go.
+ * scroll the note, and neither is the reader asking where they are. A wheel over the table of
+ * contents moves ONE thing: a list longer than its box, which stops at its ends, or else the note
+ * (`onWheelOverToc`).
  *
  * 🔒 ⌘J is a WINDOW CAPTURE listener, one per table of contents and with no coordinator between
  * them (the find bar's idiom, `FindBar.tsx`): it claims the key while focus stands inside its own
@@ -40,7 +40,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
 import type { ContentWidth, TableOfContents as TableOfContentsMode } from '@shared/types'
-import type { TocChannel, TocHeading } from './tocChannel'
+import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
 import './toc.css'
 
 /** Width of the names column, px. toc.css's `--toc-width` is the same number. */
@@ -61,7 +61,7 @@ export const namesShow = (mode: TableOfContentsMode, noteWidth: number, columnMa
 /** The most rows a table of contents draws, and the most the scroll spy reads per frame. */
 export const MAX_ROWS = 200
 
-export interface TocRow extends TocHeading {
+export interface ShownRow extends TocRow {
   /** Index in the channel's full list: what `jump` takes. */
   index: number
 }
@@ -71,8 +71,8 @@ export interface TocRow extends TocHeading {
  * `MAX_ROWS` or fewer, else levels 1-2, else level 1 only (its first `MAX_ROWS`). A row remembers
  * where it stands in the full list.
  */
-export const shownHeadings = (all: readonly TocHeading[]): TocRow[] => {
-  const rows = all.map((heading, index) => ({ ...heading, index }))
+export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
+  const rows = all.map((row, index) => ({ ...row, index }))
   for (const deepest of [3, 2]) {
     const kept = rows.filter(({ level }) => level <= deepest)
     if (kept.length <= MAX_ROWS) return kept
@@ -95,8 +95,10 @@ const GRACE_MS = 200
 const WHEEL_LINGER_MS = 1500
 /** A click on the rail right after the mouse opened the card does not close it again. */
 const CLICK_GUARD_MS = 300
-/** Room the card keeps clear above and below itself; the rail has its own 8px padding on top of it. */
+/** Room the card keeps clear above and below itself. */
 const EDGE_PX = 16
+/** What the rail's lines give up of the height that is left, for the rail's own padding. */
+const RAIL_PADDING_PX = 16
 /** A closed card stays mounted this long, so toc.css can fade it out (`data-leaving`). */
 const EXIT_MS = 140
 /** The wheel opens the card only after this much travel: a nudge of the trackpad is not reading down the note. */
@@ -136,16 +138,17 @@ export interface TableOfContentsProps {
 }
 
 export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hostRef, onReturnFocus }: TableOfContentsProps) {
-  const { headings, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
-  const rows = useMemo(() => shownHeadings(headings), [headings])
-  const shows = mode !== 'off' && !hidden && rows.length >= 2
+  const { rows: all, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
+  const rows = useMemo(() => shownRows(all), [all])
+  const shows = mode !== 'off' && !hidden && rows.length >= ENOUGH_ROWS
 
   const [box, setBox] = useState(NO_BOX)
   const [current, setCurrent] = useState(0)
-  // Mirror for the scroll reader, which sets state only when the index is a new one.
+  // Mirror for the scroll spy, which sets state only when the index is a new one.
   const currentRef = useRef(0)
   const [open, setOpen] = useState(false)
-  const names = shows && namesShow(mode, box.width, COLUMN_MAX[contentWidth])
+  const columnMax = COLUMN_MAX[contentWidth]
+  const names = shows && namesShow(mode, box.width, columnMax)
   const at = Math.min(current, rows.length - 1)
 
   const navRef = useRef<HTMLElement>(null)
@@ -249,8 +252,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     return () => observer.disconnect()
   }, [shows, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
-  // The scroll spy. At most `MAX_ROWS` headings are read per frame and nothing is written. A new
-  // list of rows, a new measure (a resize moves every heading) and a change of look (the names
+  // The scroll spy. At most `MAX_ROWS` rows are read per frame and nothing is written. A new
+  // list of rows, a new measure (a resize moves every row) and a change of look (the names
   // column narrows the text) are each read once without a scroll.
   useEffect(() => {
     if (!shows) return
@@ -262,7 +265,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
       frame = 0
       if (lock.current !== null) return
       const next = channel.current(indices, scroller)
-      // −1: none of the headings is on screen at all. The last answer stands.
+      // −1: none of the rows is on screen at all. The last answer stands.
       if (next < 0 || next === currentRef.current) return
       currentRef.current = next
       setCurrent(next)
@@ -270,7 +273,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     const onScroll = (): void => {
       if (frame === 0) frame = requestAnimationFrame(read)
     }
-    // The held row may be another heading, or somewhere else, now.
+    // The list or the layout is a new one: the row a jump held may stand somewhere else now.
     lock.current = null
     if (shown(scroller)) read()
     scroller.addEventListener('scroll', onScroll, { passive: true })
@@ -352,14 +355,14 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
   useEffect(() => cancelGrace, []) // eslint-disable-line react-hooks/exhaustive-deps -- on unmount; it reads a ref
 
   const card = shows && !names && open
-  // A closed card stays for `EXIT_MS` as `data-leaving`, so it fades out instead of vanishing.
-  const [leaving, setLeaving] = useState(false)
+  // A closed card stays in the page for `EXIT_MS` as `data-leaving`, so it fades out instead of vanishing.
+  const [lingers, setLingers] = useState(false)
   useEffect(() => {
     if (card) {
-      setLeaving(true)
+      setLingers(true)
       return
     }
-    const timer = setTimeout(() => setLeaving(false), EXIT_MS)
+    const timer = setTimeout(() => setLingers(false), EXIT_MS)
     return () => clearTimeout(timer)
   }, [card])
   useLayoutEffect(() => {
@@ -368,14 +371,16 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     focusCurrent()
   }, [card]) // eslint-disable-line react-hooks/exhaustive-deps -- `focusCurrent` reads a ref
 
-  const { pitch, fits } = railPitch(box.height - 2 * EDGE_PX - 16, rows.length)
+  /** The height the rail's lines may take. */
+  const railRoom = box.height - 2 * EDGE_PX - RAIL_PADDING_PX
+  const { pitch, fits } = railPitch(railRoom, rows.length)
   // A rail too long for the window is clipped, and follows the current line.
   useLayoutEffect(() => {
     const track = trackRef.current
     if (track === null || fits) return
     // In step with the note, as the names are: the current line is as far down the rail as it is down the list.
     track.scrollTop = rows.length > 1 ? (at / (rows.length - 1)) * (track.scrollHeight - track.clientHeight) : 0
-  }, [at, pitch, fits, shows, names])
+  }, [at, rows.length, pitch, fits, shows, names])
 
   if (!shows) return null
 
@@ -400,14 +405,14 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
   /**
    * The wheel over the table of contents moves ONE thing, never one and then the other:
    *  - a list that is longer than its box scrolls itself, and STOPS at its ends (toc.css:
-   *    `overscroll-behavior`). It used to hand the wheel on to the note there, and the note
-   *    jumped under a reader who was only looking through the names;
+   *    `overscroll-behavior`): the note must not move under a reader who is only looking
+   *    through the names;
    *  - a list that fits has nothing to scroll, so the note moves — no dead strip beside the text;
    *  - a card that is FOLLOWING (above) lets the note move: it opened under the mouse because of
    *    that very scroll, and must not stop it.
    * (`section.editor` does not scroll, so nothing else answers a wheel here.)
    */
-  const onWheelOverCard = (event: ReactWheelEvent<HTMLElement>): void => {
+  const onWheelOverToc = (event: ReactWheelEvent<HTMLElement>): void => {
     const scroller = scrollerOf()
     if (scroller === null || event.deltaY === 0 || event.ctrlKey) return
     const list = event.target instanceof Element ? event.target.closest('.toc__names') : null
@@ -428,7 +433,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
       style={{ top: box.top, '--toc-height': `${box.height}px`, '--toc-gutter': `${box.gutter}px` } as CSSProperties}
       onKeyDown={onKeyDown}
       // The names column lies over the scroller's own padding: a wheel there still moves the note.
-      onWheel={names ? onWheelOverCard : undefined}
+      onWheel={names ? onWheelOverToc : undefined}
       onBlur={(event) => {
         if (!names && !event.currentTarget.contains(event.relatedTarget)) closeSoon()
       }}
@@ -436,8 +441,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
       {names ? (
         <>
           {/* Offered only where it does something: where there is room for the names anyway, an unpin would change nothing the reader can see. */}
-          {mode === 'pinned' && !namesShow('auto', box.width, COLUMN_MAX[contentWidth]) && (
-            <button type="button" className="toc__keep toc__keep--stop" title="Unpin: go back to the small lines" onClick={() => onChangeMode('auto')}>
+          {mode === 'pinned' && !namesShow('auto', box.width, columnMax) && (
+            <button type="button" className="toc__pin toc__pin--off" title="Unpin: go back to the small lines" onClick={() => onChangeMode('auto')}>
               <PinIcon off />
               <span>Unpin</span>
             </button>
@@ -457,15 +462,15 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
             if (following.current && (event.movementX !== 0 || event.movementY !== 0)) follow(false)
           }}
           onMouseLeave={closeSoon}
-          onWheel={onWheelOverCard}
+          onWheel={onWheelOverToc}
         >
-          {(open || leaving) && (
+          {(open || lingers) && (
             <div className="toc__card" data-leaving={open ? undefined : ''}>
               <div className="toc__header">
                 <span className="toc__title">Table of contents</span>
                 {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when pinned. */}
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
-                  <button type="button" className="toc__keep" title="Pin: keep the table of contents open beside the note" onClick={() => onChangeMode('pinned')}>
+                  <button type="button" className="toc__pin" title="Pin: keep the table of contents open beside the note" onClick={() => onChangeMode('pinned')}>
                     <PinIcon />
                     <span>Pin</span>
                   </button>
@@ -487,7 +492,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
             <span
               ref={trackRef}
               className="toc__track"
-              style={{ '--toc-pitch': `${pitch}px`, '--toc-line': `${pitch < 7 ? 2 : 3}px`, maxHeight: fits ? undefined : Math.max(pitch, box.height - 2 * EDGE_PX - 16) } as CSSProperties}
+              style={{ '--toc-pitch': `${pitch}px`, '--toc-line': `${pitch < 7 ? 2 : 3}px`, maxHeight: fits ? undefined : Math.max(pitch, railRoom) } as CSSProperties}
             >
               {rows.map((row, i) => (
                 <span key={row.index} className="toc__line" data-level={row.level} data-read={i < at ? '' : undefined} data-current={i === at ? '' : undefined} />
@@ -514,7 +519,7 @@ const PinIcon = ({ off = false }: { off?: boolean }) => (
  * list fades at an edge that has more behind it — its own scrollbar is hidden, so the fade is
  * what says "there is more".
  */
-function Names({ rows, at, onPick }: { rows: readonly TocRow[]; at: number; onPick: (row: number) => void }) {
+function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; onPick: (row: number) => void }) {
   const listRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
   const placed = useRef(false)
@@ -534,14 +539,16 @@ function Names({ rows, at, onPick }: { rows: readonly TocRow[]; at: number; onPi
     marker.style.transform = `translateY(${name.offsetTop}px)`
     marker.style.height = `${name.offsetHeight}px`
     // A list longer than its box moves WITH the note, like a scrollbar's thumb: the current name
-    // stands as far down the box as it is down the list — at the top on the first heading, at the
+    // stands as far down the box as it is down the list — at the top on the first row, at the
     // bottom on the last, and in step in between. So the marker only ever travels one way while the
-    // reader does, and the eye can find it without reading. (The first placement does not glide.)
+    // reader does, and the eye can find it without reading. The first placement does not glide,
+    // and under "Reduce Motion" none does: toc.css stops the marker's slide the same way.
     const range = list.scrollHeight - list.clientHeight
     const span = list.scrollHeight - name.offsetHeight
     if (range > 0 && span > 0) {
       const top = (name.offsetTop / span) * range
-      if (placed.current && typeof list.scrollTo === 'function') list.scrollTo({ top, behavior: 'smooth' })
+      const glides = placed.current && typeof list.scrollTo === 'function' && !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+      if (glides) list.scrollTo({ top, behavior: 'smooth' })
       else list.scrollTop = top
     }
     if (!placed.current) {

@@ -389,16 +389,18 @@ function CrepeHost({
   const findChannel = useMemo(() => createFindChannel(), [])
   /**
    * The table of contents wiring (YAZ-2700), ONE per host on the same terms: the engine publishes
-   * the note's rows (its headings or its bullets) to this channel and answers its jump and scroll spy; the table of contents
-   * below draws them. Stable identity, for the find channel's reason.
+   * the note's rows (its headings or its bullets) to this channel and answers its jump and its
+   * scroll spy; the table of contents below draws them. Stable identity, for the find channel's
+   * reason.
    */
   const tocChannel = useMemo(() => {
     const channel = createTocChannel()
-    // The saved source is in the channel BEFORE the editor exists, so the engine's first scan is
-    // already by it: a note saved as Bullets never shows its Auto list first.
-    channel.setSource(storage.getTocSource(root, file.path))
+    // The saved source (the state above, as it was read at this mount) is in the channel BEFORE
+    // the editor exists, so the engine's first scan is already by it: a note saved as Bullets
+    // never shows its Auto list first.
+    channel.setSource(tocSource)
     return channel
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once per mount; a later choice goes through `changeTocSource`
   /** The reader chose in the cog: this page's state, the app state file, and the engine, which scans again at once. */
   const changeTocSource = (source: TocSource | null): void => {
     setTocSource(source)
@@ -645,7 +647,8 @@ function CrepeHost({
       <FindBar channel={findChannel} scope="note" hostRef={hostRef} />
       {/* The table of contents (YAZ-2700) floats beside that scroller the same way: at the
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note
-          with fewer than two rows (its headings or its bullets), with the setting off, and while a bullet is zoomed. */}
+          with fewer than two rows (its headings or its bullets), with the setting off, and while
+          a bullet is zoomed. */}
       <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} hostRef={hostRef} onReturnFocus={focusNote} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the

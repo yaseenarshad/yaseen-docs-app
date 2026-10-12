@@ -17,7 +17,8 @@
  *    only restarts the timer, a caret move starts none;
  *  - the channel says hidden while a bullet zoom is active;
  *  - a jump unfolds what hides its row and the row's own fold, puts the caret at the start of its
- *    text, focuses the note and scrolls the row to the top — and never reaches `markdownUpdated`;
+ *    text, focuses the note, glides to the row and lands it 24px under the scroller's edge — and
+ *    never reaches `markdownUpdated`;
  *  - the scroll spy: the last shown row at or above the scroller's top + 40px, the first when
  *    none is, the last one in view at the very bottom; a row inside a fold is skipped, and a
  *    remembered position is trusted only while its node is still a row's own element.
@@ -79,7 +80,7 @@ const posOfText = (doc: ProseNode, needle: string): number => {
   return found
 }
 
-const texts = (headings: readonly { level: number; text: string }[]): string[] => headings.map(({ level, text }) => `${level} ${text}`)
+const texts = (rows: readonly { level: number; text: string }[]): string[] => rows.map(({ level, text }) => `${level} ${text}`)
 
 const DOC = `# Part 1
 
@@ -254,7 +255,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 
   it('Headings on a note that is all bullets: exactly the bullets the reader made into headings', async () => {
     const { channel } = await mountToc(TOPICS, {}, from('headings'))
-    expect(channel.getState().headings).toEqual([
+    expect(channel.getState().rows).toEqual([
       { level: 1, text: 'Topic one' },
       { level: 2, text: 'Topic two' },
     ])
@@ -263,30 +264,30 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
   it('Bullets: the bullets of the note, though it has two headings and more', async () => {
     const { view, channel } = await mountToc(MIXED, {}, from('bullets'))
     expect(scanNote(view.state.doc, 'bullets').bullets).toBe(true)
-    expect(texts(channel.getState().headings)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
+    expect(texts(channel.getState().rows)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
   })
 
   it('a chosen source with under two rows publishes those: it never falls back to the other', async () => {
     // Auto would give this note its seven bullets.
     const noHeadings = await mountToc(BULLETS, {}, from('headings'))
-    expect(noHeadings.channel.getState().headings).toEqual([])
+    expect(noHeadings.channel.getState().rows).toEqual([])
     // Auto would give this one its five headings.
     const noBullets = await mountToc(DOC, {}, from('bullets'))
-    expect(noBullets.channel.getState().headings).toEqual([])
+    expect(noBullets.channel.getState().rows).toEqual([])
     const oneBullet = await mountToc(`# Top\n\n* Only bullet\n\n## After\n`, {}, from('bullets'))
-    expect(oneBullet.channel.getState().headings).toEqual([{ level: 1, text: 'Only bullet' }])
+    expect(oneBullet.channel.getState().rows).toEqual([{ level: 1, text: 'Only bullet' }])
     const oneHeading = await mountToc(`* Alpha\n* # Only topic\n* Beta\n`, {}, from('headings'))
-    expect(oneHeading.channel.getState().headings).toEqual([{ level: 1, text: 'Only topic' }])
+    expect(oneHeading.channel.getState().rows).toEqual([{ level: 1, text: 'Only topic' }])
   })
 
   it('a source set before the editor exists is what the FIRST scan goes by: the Auto list is never published', async () => {
     const published: string[][] = []
     const { channel } = await mountToc(MIXED, {}, (early) => {
       early.setSource('bullets')
-      early.subscribe(() => published.push(texts(early.getState().headings)))
+      early.subscribe(() => published.push(texts(early.getState().rows)))
     })
     expect(published).toEqual([['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet']])
-    expect(texts(channel.getState().headings)).toEqual(published[0])
+    expect(texts(channel.getState().rows)).toEqual(published[0])
   })
 
   it('a change of source is scanned AT ONCE, with no 150 ms wait; the same source again scans nothing', async () => {
@@ -294,11 +295,11 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     const publish = vi.spyOn(channel, 'publish')
     vi.useFakeTimers()
     channel.setSource('headings')
-    expect(texts(channel.getState().headings)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '2 Quoted', '2 After'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '2 Quoted', '2 After'])
     channel.setSource('bullets')
-    expect(texts(channel.getState().headings)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
+    expect(texts(channel.getState().rows)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
     channel.setSource(null)
-    expect(texts(channel.getState().headings)).toEqual(['1 Top', '2 Quoted', '2 After'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Quoted', '2 After'])
     expect(publish).toHaveBeenCalledTimes(3)
     channel.setSource(null)
     expect(publish).toHaveBeenCalledTimes(3)
@@ -315,7 +316,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     vi.advanceTimersByTime(SCAN_DELAY_MS - 1)
     expect(publish).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(texts(channel.getState().headings)).toEqual(['1 Topic one', '2 Topic two!'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Topic one', '2 Topic two!'])
   })
 
   describe('the jump and the scroll spy under Headings', () => {
@@ -329,7 +330,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 `
     it('a heading inside folded bullets: every bullet above it opens, and the bullet it is the label of — and no other; the caret is in the heading', async () => {
       const { view, channel } = await mountToc(NESTED, {}, from('headings'))
-      expect(texts(channel.getState().headings)).toEqual(['2 Deep topic', '1 Beta topic'])
+      expect(texts(channel.getState().rows)).toEqual(['2 Deep topic', '1 Beta topic'])
       // "Under deep" is a fourth level and no bullet row, so the fourth row is "Beta topic".
       const [alpha, inner, deepTopic, betaTopic] = scanBullets(view.state.doc).map(({ pos }) => pos)
       setOutlineFoldSet([alpha, inner, deepTopic, betaTopic], true)(view.state, view.dispatch)
@@ -347,7 +348,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 
     it('a heading in a bullet under a folded heading section: the section opens too', async () => {
       const { view, channel } = await mountToc(`# Part\n\n* Alpha\n  * ## Inside\n\n# Other\n`, {}, from('headings'))
-      expect(texts(channel.getState().headings)).toEqual(['1 Part', '2 Inside', '1 Other'])
+      expect(texts(channel.getState().rows)).toEqual(['1 Part', '2 Inside', '1 Other'])
       const [alpha] = scanBullets(view.state.doc).map(({ pos }) => pos)
       setHeadingFoldSet([0], true)(view.state, view.dispatch)
       setOutlineFoldSet([alpha], true)(view.state, view.dispatch)
@@ -357,20 +358,17 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
       expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'Inside'))
     })
 
-    it('lands and flashes the heading element itself, not the bullet around it', async () => {
+    it('flashes the heading element itself, not the bullet around it', async () => {
       const { view, channel } = await mountToc(NESTED, {}, from('headings'))
-      const scrollIntoView = vi.fn()
       const animate = vi.fn()
-      Object.assign(HTMLElement.prototype, { scrollIntoView, animate })
+      Object.assign(HTMLElement.prototype, { animate })
       try {
         channel.jump(0)
         const heading = view.nodeDOM(scanAllHeadings(view.state.doc)[0].pos) as HTMLElement
         expect(heading.tagName).toBe('H2')
-        expect(scrollIntoView.mock.contexts).toEqual([heading])
         expect(animate.mock.contexts).toEqual([heading])
         expect(animate).toHaveBeenCalledWith(...FLASH)
       } finally {
-        delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
         delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
       }
     })
@@ -416,7 +414,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 describe('when it scans', () => {
   it('publishes the headings at view creation, without positions', async () => {
     const { channel } = await mountToc(DOC)
-    expect(channel.getState().headings).toEqual([
+    expect(channel.getState().rows).toEqual([
       { level: 1, text: 'Part 1' },
       { level: 2, text: 'Section A' },
       { level: 3, text: 'Deep dive' },
@@ -427,7 +425,7 @@ describe('when it scans', () => {
 
   it('publishes a bullet note in the same shape: nothing in it says the rows are bullets', async () => {
     const { channel } = await mountToc(`* Alpha\n  * # Child\n* Beta\n`)
-    expect(channel.getState().headings).toEqual([
+    expect(channel.getState().rows).toEqual([
       { level: 1, text: 'Alpha' },
       { level: 2, text: 'Child' },
       { level: 1, text: 'Beta' },
@@ -436,14 +434,14 @@ describe('when it scans', () => {
 
   it('a second heading turns a bullet note into a note of headings, 150 ms after it', async () => {
     const { view, channel } = await mountToc(`# Title\n\n* Alpha\n* Beta\n`)
-    expect(texts(channel.getState().headings)).toEqual(['1 Alpha', '1 Beta'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Alpha', '1 Beta'])
     vi.useFakeTimers()
     const { heading } = view.state.schema.nodes
     view.dispatch(view.state.tr.insert(view.state.doc.content.size, heading.create({ level: 2 }, view.state.schema.text('Second'))))
     vi.advanceTimersByTime(SCAN_DELAY_MS - 1)
-    expect(texts(channel.getState().headings)).toEqual(['1 Alpha', '1 Beta'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Alpha', '1 Beta'])
     vi.advanceTimersByTime(1)
-    expect(texts(channel.getState().headings)).toEqual(['1 Title', '2 Second'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Title', '2 Second'])
   })
 
   it('an edit is published 150 ms after it, not before', async () => {
@@ -451,9 +449,9 @@ describe('when it scans', () => {
     vi.useFakeTimers()
     view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'Section A') + 'Section A'.length))
     vi.advanceTimersByTime(SCAN_DELAY_MS - 1)
-    expect(channel.getState().headings[1].text).toBe('Section A')
+    expect(channel.getState().rows[1].text).toBe('Section A')
     vi.advanceTimersByTime(1)
-    expect(channel.getState().headings[1].text).toBe('Section A!')
+    expect(channel.getState().rows[1].text).toBe('Section A!')
   })
 
   it('a keystroke only restarts the timer: three edits 100 ms apart make ONE scan, 150 ms after the last', async () => {
@@ -468,7 +466,7 @@ describe('when it scans', () => {
     vi.advanceTimersByTime(SCAN_DELAY_MS - 100)
     expect(publish).toHaveBeenCalledTimes(1)
     // Each letter went in right after "Part 2", so the last one typed stands first.
-    expect(channel.getState().headings[4].text).toBe('Part 2zyx')
+    expect(channel.getState().rows[4].text).toBe('Part 2zyx')
   })
 
   it('a caret move starts no scan', async () => {
@@ -518,7 +516,7 @@ describe('hidden while a bullet is zoomed', () => {
     expect(getZoomedItemPos(view.state)).not.toBeNull()
     expect(channel.getState().hidden).toBe(true)
     // The headings are still the note's: only the flag moved.
-    expect(texts(channel.getState().headings)).toEqual(['1 Top', '2 Under'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
     pressZoom(view, true)
     expect(getZoomedItemPos(view.state)).toBeNull()
     expect(channel.getState().hidden).toBe(false)
@@ -526,22 +524,19 @@ describe('hidden while a bullet is zoomed', () => {
 })
 
 describe('the jump', () => {
-  /** jsdom has neither; the engine calls both only when they exist. */
+  /** jsdom has no `animate`; the engine calls it only where it exists. The flash and the ease of a jump are read off this one. */
   const stubLanding = () => {
-    const scrollIntoView = vi.fn()
     const animate = vi.fn()
-    Object.assign(HTMLElement.prototype, { scrollIntoView, animate })
+    Object.assign(HTMLElement.prototype, { animate })
     return {
-      scrollIntoView,
       animate,
       restore: () => {
-        delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
         delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
       },
     }
   }
 
-  it('puts the caret at the start of the heading text, focuses the note, scrolls the heading to the top and flashes it once', async () => {
+  it('puts the caret at the start of the heading text, focuses the note and flashes the heading once', async () => {
     const { view, channel } = await mountToc(DOC)
     const landing = stubLanding()
     try {
@@ -551,19 +546,17 @@ describe('the jump', () => {
       expect(view.state.selection.from).toBe(target.pos + 1)
       expect(view.state.selection.empty).toBe(true)
       expect(view.hasFocus()).toBe(true)
-      expect(landing.scrollIntoView).toHaveBeenCalledTimes(1)
-      expect(landing.scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
-      const landed = landing.scrollIntoView.mock.contexts[0] as HTMLElement
-      expect(landed.tagName).toBe('H2')
-      expect(landed.textContent).toContain('Section B')
       expect(landing.animate).toHaveBeenCalledTimes(1)
       expect(landing.animate).toHaveBeenCalledWith(...FLASH)
+      const landed = landing.animate.mock.contexts[0] as HTMLElement
+      expect(landed.tagName).toBe('H2')
+      expect(landed.textContent).toContain('Section B')
     } finally {
       landing.restore()
     }
   })
 
-  it('skips the flash under prefers-reduced-motion, and still lands', async () => {
+  it('skips the flash under prefers-reduced-motion; the caret still goes to the row', async () => {
     const { view, channel } = await mountToc(DOC)
     const landing = stubLanding()
     const matchMedia = vi.fn((query: string) => ({ matches: query.includes('prefers-reduced-motion') }))
@@ -571,7 +564,6 @@ describe('the jump', () => {
     try {
       channel.jump(1)
       expect(view.state.selection.from).toBe(scanHeadings(view.state.doc)[1].pos + 1)
-      expect(landing.scrollIntoView).toHaveBeenCalledTimes(1)
       expect(landing.animate).not.toHaveBeenCalled()
     } finally {
       delete (window as unknown as Record<string, unknown>).matchMedia
@@ -579,7 +571,7 @@ describe('the jump', () => {
     }
   })
 
-  it('works where the DOM has neither scrollIntoView nor animate (jsdom as it comes)', async () => {
+  it('works where the DOM cannot animate (jsdom as it comes)', async () => {
     const { view, channel } = await mountToc(DOC)
     expect(() => channel.jump(4)).not.toThrow()
     expect(view.state.selection.from).toBe(scanHeadings(view.state.doc)[4].pos + 1)
@@ -626,7 +618,7 @@ describe('the jump', () => {
 
   it('two headings with the same name are two rows, and each goes to its own heading', async () => {
     const { view, channel } = await mountToc(`# Notes\n\nFirst.\n\n# Notes\n\nSecond.\n`)
-    expect(texts(channel.getState().headings)).toEqual(['1 Notes', '1 Notes'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Notes', '1 Notes'])
     const [first, second] = scanHeadings(view.state.doc).map(({ pos }) => pos)
     expect(second).toBeGreaterThan(first)
     channel.jump(1)
@@ -823,8 +815,6 @@ describe('the jump', () => {
         expect(landing.animate).toHaveBeenCalledTimes(1)
         expect(landing.animate).toHaveBeenCalledWith(...FLASH)
         expect((landing.animate.mock.contexts[0] as HTMLElement).textContent).toContain('Section B')
-        // The glide placed the row itself: no `scrollIntoView` beside it.
-        expect(landing.scrollIntoView).not.toHaveBeenCalled()
         // Part 2, 100px further: the same 420 ms, not a sixth of it.
         channel.jump(4)
         frames.after(210)
@@ -917,7 +907,7 @@ describe('the jump', () => {
   })
 
   describe('in a bullet note', () => {
-    it('puts the caret at the start of the bullet label, focuses the note, scrolls the list item to the top and flashes it once', async () => {
+    it('puts the caret at the start of the bullet label, focuses the note and flashes the list item once', async () => {
       const { view, channel } = await mountToc(BULLETS)
       const landing = stubLanding()
       try {
@@ -929,9 +919,6 @@ describe('the jump', () => {
         expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'Beta one'))
         expect(view.state.selection.empty).toBe(true)
         expect(view.hasFocus()).toBe(true)
-        expect(landing.scrollIntoView).toHaveBeenCalledTimes(1)
-        expect(landing.scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
-        expect(landing.scrollIntoView.mock.contexts[0]).toBe(view.nodeDOM(target.pos))
         expect(landing.animate).toHaveBeenCalledTimes(1)
         expect(landing.animate).toHaveBeenCalledWith(...FLASH)
         expect(landing.animate.mock.contexts[0]).toBe(view.nodeDOM(target.pos))
@@ -978,7 +965,7 @@ describe('the jump', () => {
       expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'Gamma'))
     })
 
-    it('lands 24px below the edge of the note’s own scroller by its own arithmetic: no stylesheet margin covers a list item', async () => {
+    it('lands 24px below the edge of the note’s own scroller, by the engine’s own arithmetic', async () => {
       const { view, root, channel } = await mountToc(BULLETS)
       const landing = stubLanding()
       // Reduced motion: the landing without the glide's frames.
@@ -992,7 +979,6 @@ describe('the jump', () => {
         channel.jump(4)
         // 600px below the scroller's top now; 24px below it after: 200 + 600 − 24.
         expect(root.scrollTop).toBe(776)
-        expect(landing.scrollIntoView).not.toHaveBeenCalled()
       } finally {
         delete (window as unknown as Record<string, unknown>).matchMedia
         landing.restore()
@@ -1103,7 +1089,7 @@ describe('the scroll spy', () => {
     expect(channel.current(ALL, scrollerAt(700))).toBe(1)
     // The scan that follows the edit drops the row.
     vi.advanceTimersByTime(SCAN_DELAY_MS)
-    expect(texts(channel.getState().headings)).toEqual(['1 Part 1', '2 Section A', '2 Section B', '1 Part 2'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Part 1', '2 Section A', '2 Section B', '1 Part 2'])
   })
 
   describe('in a bullet note', () => {
