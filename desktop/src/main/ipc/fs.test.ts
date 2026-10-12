@@ -182,7 +182,7 @@ describe('registerFsIpc', () => {
     const newPath = path.join(root, 'ext2.md')
     await writeFile(oldPath, '# ext\n')
     await rename(oldPath, newPath) // the EXTERNAL mover already moved it — no fs work left
-    store.upsertWindow({ id: 'w-ext', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w-ext', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const res = await registered(CONTRACT.file.repairRename.channel)({ sender: {} }, { oldPath, newPath })
@@ -210,7 +210,7 @@ describe('registerFsIpc', () => {
   it('fs:rename renames on disk, repairs the store and broadcasts file:renamed to every window (Links E1, GRO-2194)', async () => {
     const oldPath = path.join(root, 'b.md')
     const newPath = path.join(root, 'bee.md')
-    store.upsertWindow({ id: 'w1', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root, file: oldPath, tabs: [oldPath], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
     store.setFolder(root, { lastFile: oldPath })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
@@ -226,7 +226,7 @@ describe('registerFsIpc', () => {
 
   it('fs:rename refuses the calling window\'s own vault root (E1b, GRO-2241) but allows another window\'s subfolder root', async () => {
     const sub = path.join(root, 'Zeta')
-    store.upsertWindow({ id: 'w-sub', root: sub, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w-sub', root: sub, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     // The caller's OWN root: refused, nothing moves, nothing broadcast.
@@ -263,7 +263,7 @@ describe('registerFsIpc', () => {
   describe('fs:retitle (YAZ-2420 🔒 D16)', () => {
     const NOTE = '---\nid: k3m9x2pq7abc\n---\n'
     const windowOn = (id: string) => {
-      store.upsertWindow({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       senderWinId = id
     }
 
@@ -320,7 +320,7 @@ describe('registerFsIpc', () => {
         await mkdir(path.join(plain, 'Made in Finder'))
         await writeFile(path.join(plain, 'from an agent.md'), 'body\n')
         await registered(CONTRACT.index.channel)({ sender: {} }, plain) // the window has opened
-        store.upsertWindow({ id: 'w-plain', root: plain, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        store.upsertWindow({ id: 'w-plain', root: plain, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
         senderWinId = 'w-plain'
         expect(await registered(CONTRACT.createFile.channel)({ sender: {} }, path.join(plain, 'First.md'))).toMatchObject({ ok: true })
         expect(await registered(CONTRACT.createDir.channel)({ sender: {} }, { path: path.join(plain, 'First') })).toEqual({ ok: true, value: { path: path.join(plain, 'First') } })
@@ -349,7 +349,7 @@ describe('registerFsIpc', () => {
         // A vault that said yes has its letters (YAZ-2677 R9).
         await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify(answer ? { enabled: true, letters: 'YAZ' } : { enabled: answer }))
       }
-      store.upsertWindow({ id: 'w-kind', root: vault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-kind', root: vault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       senderWinId = 'w-kind'
       return vault
     }
@@ -498,7 +498,7 @@ describe('registerFsIpc', () => {
         await writeFile(at(`old-${ID}.md`), `---\nid: ${ID}\ntitle: Old\n---\n[[YAZ-1]]\n`)
         await writeFile(at('Plans', 'Name.md'), '---\nid: YAZ-2\n---\nbody\n')
         await writeFile(at('Plans', '.folder.md'), '---\nid: YAZ-3\n---\n')
-        store.upsertWindow({ id: 'w-kind', root: vault, file: at('foo-yaz-1.md'), tabs: [at('foo-yaz-1.md'), at(`old-${ID}.md`)], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        store.upsertWindow({ id: 'w-kind', root: vault, file: at('foo-yaz-1.md'), tabs: [at('foo-yaz-1.md'), at(`old-${ID}.md`)], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
         const w = fakeWindow()
         vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
         vi.mocked(favorites.renamePath).mockClear()
@@ -534,7 +534,7 @@ describe('registerFsIpc', () => {
       const yes = await open(true)
       const no = await open(false)
       const roots = order(yes, no)
-      store.upsertWindow({ id: 'w-kind', root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-kind', root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       try {
         const inYes = (...p: string[]) => path.join(yes, ...p)
         const inNo = (...p: string[]) => path.join(no, ...p)
@@ -579,7 +579,7 @@ describe('registerFsIpc', () => {
     it('trashes the file, repairs the store and pushes file:deleted to every window', async () => {
       const target = path.join(root, 'delete-me.md')
       await writeFile(target, '# gone\n')
-      store.upsertWindow({ id: 'wd', root, file: target, tabs: [target, path.join(root, 'A.md')], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'wd', root, file: target, tabs: [target, path.join(root, 'A.md')], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
@@ -594,7 +594,7 @@ describe('registerFsIpc', () => {
     it("refuses the calling window's own vault root: nothing trashed, nothing broadcast", async () => {
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      store.upsertWindow({ id: 'w-own', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-own', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       senderWinId = 'w-own'
       expect(await registered(CONTRACT.file.delete.channel)({ sender: {} }, { path: root })).toEqual({
         ok: false,
@@ -609,7 +609,7 @@ describe('registerFsIpc', () => {
       const sub = path.join(root, 'DeleteMeDir')
       await mkdir(sub, { recursive: true })
       await writeFile(path.join(sub, 'inner.md'), 'inner')
-      store.upsertWindow({ id: 'w-other', root: sub, file: path.join(sub, 'inner.md'), tabs: [path.join(sub, 'inner.md')], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-other', root: sub, file: path.join(sub, 'inner.md'), tabs: [path.join(sub, 'inner.md')], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       senderWinId = undefined
@@ -639,7 +639,7 @@ describe('registerFsIpc', () => {
       const moved = path.join(parent, 'Moved')
       await mkdir(first)
       await mkdir(second, { recursive: true })
-      const entry = { file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+      const entry = { file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } }
       store.upsertWindow({ ...entry, id: 'w-two', root: first, roots: [first, second] })
       store.upsertWindow({ ...entry, id: 'w-parent', root: parent })
       const rootsOfTwo = () => store.get().windows.find((win) => win.id === 'w-two')?.roots
@@ -675,7 +675,7 @@ describe('registerFsIpc', () => {
       const oldPath = path.join(root, 'fav-a.md')
       const newPath = path.join(root, 'fav-b.md')
       await writeFile(oldPath, '# fav\n')
-      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -696,7 +696,7 @@ describe('registerFsIpc', () => {
     it('fs:delete hands the open roots + path to favorites.removePath; a repair failure is warned and the delete still answers and broadcasts', async () => {
       const target = path.join(root, 'fav-gone.md')
       await writeFile(target, '# gone\n')
-      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id: 'w-fav', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -711,7 +711,7 @@ describe('registerFsIpc', () => {
   })
 
   describe('focus list repair (YAZ-2702 R10, R11)', () => {
-    const entry = { id: 'w-focus', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+    const entry = { id: 'w-focus', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
     it('fs:rename, file:repair-rename and a paste of a cut hand the open roots + paths to focus.renamePath; a repair failure is warned and the op still answers and broadcasts', async () => {
       const oldPath = path.join(root, 'focus-a.md')
@@ -763,7 +763,7 @@ describe('registerFsIpc', () => {
 
   describe('fs:clip / fs:paste (YAZ-1674)', () => {
     const win = (id: string, file: string | null) =>
-      store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      store.upsertWindow({ id, root, file, tabs: file === null ? [] : [file], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
 
     it('fs:clip stores the ordered selection and pushes clip:changed (count, op and the paths) to EVERY window (D1)', async () => {
       fileClip.clear()

@@ -31,14 +31,6 @@ function optionalRoots(raw: Record<string, unknown>): string[] | undefined {
   return v.map((r, i) => requireAbsPath(r, `roots[${i}]`))
 }
 
-/** `focusList` in the patch (YAZ-1628, YAZ-2619): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
-function optionalFocusList(raw: Record<string, unknown>): string[] | undefined {
-  const v = raw.focusList
-  if (v === undefined) return undefined
-  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'focusList' must be an array of absolute paths`)
-  return v.map((p, i) => requireAbsPath(p, `focusList[${i}]`))
-}
-
 /** `rightPanel` is an all-or-nothing identity patch; store normalization repairs its invariants. */
 function optionalRightPanel(raw: Record<string, unknown>): RightPanelIdentity | undefined {
   const value = raw.rightPanel
@@ -95,8 +87,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusList } = entryFor(e)
-    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusList: [...focusList] }
+    const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
+    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -109,7 +101,6 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
-    const focusList = optionalFocusList(patch)
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
@@ -126,7 +117,6 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
       roots,
       ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       ...(sidebarLens !== undefined ? { sidebarLens } : {}),
-      ...(focusList !== undefined ? { focusList } : {}),
       file: nextFile,
       tabs: nextTabs,
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),

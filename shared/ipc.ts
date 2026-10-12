@@ -69,6 +69,8 @@ export const CONTRACT = {
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
     setFavoritesOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-favorites-order', 2),
+    /** The focus order of the window's vaults (YAZ-2702 Decision 3); main merges it into the one list, as it does the Favorites order. */
+    setFocusOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-focus-order', 2),
     /** Prepend to recents (de-duplicated, capped). */
     pushRecent: invoke<[path: string], void>('state:push-recent', 1),
     /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */

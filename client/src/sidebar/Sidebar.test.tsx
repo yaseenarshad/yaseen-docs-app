@@ -93,11 +93,10 @@ function installBridge() {
     createDir: vi.fn(async (req: { path: string; title?: string }) => ({ path: req.path })),
     // The door (YAZ-2677 D4): a note's id is the vault's next number, taken before the note is made.
     mintNoteId: testDoor(),
-    state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
+    state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), setFocusOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
-      // The focus list is window identity (YAZ-1628): `storage.init()` boots from `identity`, writes go to `setIdentity`.
-      identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })),
       setIdentity: vi.fn(async () => undefined),
     },
     // The file clipboard (YAZ-1674, 🔒 D1) lives in main behind `file.*`: two invokes and the
@@ -113,6 +112,13 @@ function installBridge() {
     // The Favorites list (YAZ-1766 6A): `.yaseendocs/favorites.json` behind main; absolute paths both ways.
     // Empty by default; the favorites block seeds `get` and captures the `onChanged` listener.
     favorites: {
+      get: vi.fn(async (_root: string): Promise<string[]> => []),
+      set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
+      onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
+    },
+    // A vault's focus list (YAZ-2702): `.yaseendocs/focus.<mac id>.json` behind main; absolute paths both ways,
+    // the same three calls as `favorites`. Empty by default; the focus blocks seed `get` and capture the `onChanged` listener.
+    focus: {
       get: vi.fn(async (_root: string): Promise<string[]> => []),
       set: vi.fn(async (_root: string, _paths: readonly string[]) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string }) => void) => () => undefined),
@@ -2395,7 +2401,7 @@ describe('a row menu asked for a path: the rows of the new tab page (YAZ-2663 D6
     const v = freshVault()
     const m = await mount({ root: v, ...over(v) }, async (b) => {
       b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
       tweak?.(b, v)
       await storage.init()
     })
@@ -2539,7 +2545,8 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
       b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
       b.favorites.get.mockResolvedValue(listed)
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: listed })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      b.focus.get.mockResolvedValue(listed)
       await storage.init()
     })
     return { ...m, v }
@@ -2624,7 +2631,7 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
     expect(props.onLensChange).not.toHaveBeenCalled() // the Files tab is App's to show, through the reveal door
     // S36: the focus list and the favorites stay as they were.
     expect(bridge.favorites.set).not.toHaveBeenCalled()
-    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ focusList: expect.anything() }))
+    expect(bridge.focus.set).not.toHaveBeenCalled()
     // What App does with the request: the Files tab, and the reveal. The parent folder is closed there.
     click(row(el, `${v}/Projects`))
     expect(isOpen(el, `${v}/Projects`)).toBe('false')
@@ -2846,7 +2853,8 @@ describe('Enter and Shift+Enter show a row in Files; the arrows walk a sidebar t
       b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records, folders: [], generatedAt: 1, ids: true } as never)
       b.favorites.get.mockResolvedValue(listed)
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: listed })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      b.focus.get.mockResolvedValue(listed)
       await storage.init()
     })
     return { ...m, v }
@@ -3345,7 +3353,8 @@ describe('the matches of the pinned items show first (YAZ-2662 D2, D3, D4)', () 
       b.tree.mockResolvedValue({ root: v, tree: nodes, generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records: opts.records?.(v) ?? notePaths(nodes).map((path) => record(v, path)), folders: [], generatedAt: 1, ids: true } as never)
       b.favorites.get.mockResolvedValue((opts.favorites ?? FAVORITES).map((rel) => `${v}${rel}`))
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: (opts.focus ?? FOCUS).map((rel) => `${v}${rel}`) })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      b.focus.get.mockResolvedValue((opts.focus ?? FOCUS).map((rel) => `${v}${rel}`))
       await storage.init()
     })
     const input = searchBar(m.el)!
@@ -3552,7 +3561,8 @@ describe('Space, → and ← on a folder of the search tree (YAZ-2662 D6, D7)', 
       b.tree.mockResolvedValue({ root: v, tree: VAULT(v), generatedAt: 1 })
       b.index.mockResolvedValue({ root: v, records: notePaths(VAULT(v)).map((path) => ({ ...indexRecord(path), folder: path.slice(v.length + 1, Math.max(v.length + 1, path.lastIndexOf('/'))) })), folders: [], generatedAt: 1, ids: true } as never)
       b.favorites.get.mockResolvedValue([`${v}/Area/Work log/Readme.md`, `${v}/Area/Work log/Team log.md`])
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [`${v}/Log book`] })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      b.focus.get.mockResolvedValue([`${v}/Log book`])
       await storage.init()
     })
     const input = searchBar(m.el)!
@@ -4212,11 +4222,12 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
 
 /**
  * The Focus tab (YAZ-2619): the lens between Files and the heart, listing the files and folders the
- * user added from any row's menu, in the order added, each a full tree row (D2). The list is this
- * WINDOW's (`focusList` in its identity, never the vault bucket), so — exactly as above — every
- * mount here opens its OWN vault and its own window. The lens itself is App's: an add reports
- * `onLensChange('focus')`, and the test hands the new lens back down as App does. Each title names
- * the cases of the scenario record it proves.
+ * user added from any row's menu, in the order added, each a full tree row (D2). The list is the
+ * VAULT's, kept in the vault (YAZ-2702 Decision 1): read through `focus.get`, written through
+ * `focus.set`, and read again on `focus.onChanged` — never the window's identity, never the vault
+ * bucket of the app state. Every mount here opens its OWN vault. The lens itself is App's: an add
+ * reports `onLensChange('focus')`, and the test hands the new lens back down as App does. Each
+ * title names the cases of the scenario record it proves; a YAZ-2702 case says so.
  */
 describe('focus tab (YAZ-2619)', () => {
   const note = (path: string, name: string): TreeNode => ({ type: 'file', name, path, size: 1, mtime: 1, kind: 'markdown' })
@@ -4242,17 +4253,24 @@ describe('focus tab (YAZ-2619)', () => {
   let vaults = 0
   /**
    * One fresh vault AND one fresh WINDOW per mount (`storage.init()` against this mount's bridge).
-   * `focus` seeds a PERSISTED list the way main hands it over at boot — in the window's identity
-   * (YAZ-1628), never the vault bucket — so the Sidebar restores it through the real storage module.
+   * `focus` seeds the list the VAULT holds, the way main reads it from the vault's focus file
+   * (YAZ-2702): what `focus.get` answers. `emitFocus` is main's push that a focus file changed.
    */
-  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { nodes?: (v: string) => TreeNode[]; focus?: string[] } = {}) => {
+  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { nodes?: (v: string) => TreeNode[]; focus?: string[] } = {}, tweak?: (bridge: ReturnType<typeof installBridge>) => void) => {
     const v = `/v-focus-${++vaults}`
+    const held: { emit: ((change: { root: string }) => void) | null } = { emit: null }
     const m = await mount({ root: v, ...over }, async (b) => {
       b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FOCUS)(v), generatedAt: 1 } as never)
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: (opts.focus ?? []).map((p) => `${v}${p}`) })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      b.focus.get.mockResolvedValue((opts.focus ?? []).map((p) => `${v}${p}`))
+      b.focus.onChanged.mockImplementation((listener) => {
+        held.emit = listener
+        return () => undefined
+      })
+      tweak?.(b)
       await storage.init()
     })
-    return { ...m, v }
+    return { ...m, v, emitFocus: (root: string) => act(async () => held.emit?.({ root })) }
   }
 
   const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
@@ -4294,13 +4312,13 @@ describe('focus tab (YAZ-2619)', () => {
   it('S1, S2, S40, R3, R4: "Add to focus" on a folder, then on a file — the list grows in the order added, each add shows the Focus tab, the folder is open, and Files still shows the full vault', async () => {
     const { el, v, bridge, props, rerender } = await mountVault()
     await pick(el, `${v}/Projects`, 'Add to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`] })
-    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, expect.objectContaining({ focusList: expect.anything() })) // never the vault bucket (YAZ-1628)
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // the list is the vault's (YAZ-2702 S1): the window's identity holds none
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
     expect(props.onNotice).toHaveBeenLastCalledWith('Added to focus')
     expect(topLabels(el)).toEqual(EVERY_TOP_ROW) // App has not handed the lens back yet: this is still Files, and it is not narrowed
     await pick(el, `${v}/top.md`, 'Add to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`, `${v}/top.md`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/top.md`])
     expect(storage.getExpanded(v)).toEqual([`${v}/Projects`]) // the folder opened; the file opened nothing
     await rerender({ lens: 'focus' })
     expect(topLabels(el)).toEqual(['Projects', 'top'])
@@ -4316,7 +4334,7 @@ describe('focus tab (YAZ-2619)', () => {
     shiftClickRow(rowByPath(el, `${v}/Projects`))
     shiftClickRow(rowByPath(el, `${v}/Notes`))
     await pick(el, `${v}/Notes`, 'Add 3 to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`] }) // …panel order in
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`]) // …panel order in
     expect(props.onNotice).toHaveBeenLastCalledWith('Added 3 to focus')
     // The tab change an add asks for ends the selection, as every tab change does (R12).
     expect(el.querySelectorAll('.tree__row--selected')).not.toHaveLength(0)
@@ -4328,14 +4346,14 @@ describe('focus tab (YAZ-2619)', () => {
     rightClick(rowByPath(el, `${v}/Projects`))
     expect(focusLabels(el)).toEqual(['Add 2 to focus'])
     await act(async () => itemByLabel(el, 'Add 2 to focus')?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`, `${v}/Projects-Archive`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Notes`, `${v}/Projects`, `${v}/top.md`, `${v}/Projects-Archive`])
     dropSelection(el)
     vi.mocked(props.onLensChange).mockClear()
     shiftClickRow(rowByPath(el, `${v}/Notes`))
     shiftClickRow(rowByPath(el, `${v}/Projects`))
     shiftClickRow(rowByPath(el, `${v}/top.md`))
     await pick(el, `${v}/top.md`, 'Remove 3 from focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects-Archive`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects-Archive`])
     expect(props.onNotice).toHaveBeenLastCalledWith('Removed 3 from focus')
     expect(props.onLensChange).not.toHaveBeenCalled()
   })
@@ -4343,7 +4361,7 @@ describe('focus tab (YAZ-2619)', () => {
   it('S5, S14, S16, S9, S7, S13, S15: Remove reads on an item from any tab and keeps the tab; a row inside a focused folder reads Add and becomes a top row too; removing the last item shows the empty message', async () => {
     const { el, v, bridge, props, rerender } = await mountVault({}, { focus: ['/Projects', '/top.md'] })
     await pick(el, `${v}/top.md`, 'Remove from focus') // on Files (S5, S14)
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`])
     expect(props.onNotice).toHaveBeenLastCalledWith('Removed from focus')
     expect(props.onLensChange).not.toHaveBeenCalled()
     await rerender({ lens: 'focus' })
@@ -4356,7 +4374,7 @@ describe('focus tab (YAZ-2619)', () => {
     rightClick(rowByPath(el, `${v}/Projects/Alpha`))
     expect(focusLabels(el)).toEqual(['Add to focus']) // inside a focused folder, not in the list itself (S16)
     await act(async () => itemByLabel(el, 'Add to focus')?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`, `${v}/Projects/Alpha`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/Projects/Alpha`])
     expect(props.onLensChange).not.toHaveBeenCalled() // already the Focus tab (S9)
     expect(topLabels(el)).toEqual(['Projects', 'Alpha'])
     expect(rowsByPath(el, `${v}/Projects/Alpha`)).toHaveLength(2) // a top row AND still inside its parent (S7)
@@ -4364,7 +4382,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(topLabels(el)).toEqual(['Alpha'])
     expect(countLine(el)).toBe('1 in focus')
     await pick(el, `${v}/Projects/Alpha`, 'Remove from focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [])
     expect(bodyMsg(el)).toBe(EMPTY)
     expect(countLine(el)).toBeNull()
     expect(props.onLensChange).not.toHaveBeenCalled()
@@ -4378,19 +4396,19 @@ describe('focus tab (YAZ-2619)', () => {
     expect(rowsByPath(el, `${v}/Notes/n.md`)).toHaveLength(2)
   })
 
-  it('S12, R2: an add past the limit keeps the first 500 and says so; at 500, one more changes nothing', async () => {
+  it('S12, R2; YAZ-2702 S5: an add past the limit keeps the first 500 of the vault and says so; at 500, one more changes nothing', async () => {
     const many = (v: string) => Array.from({ length: MAX_FOCUS + 1 }, (_, i) => note(`${v}/n${String(i).padStart(3, '0')}.md`, `n${String(i).padStart(3, '0')}.md`))
     const seeded = Array.from({ length: MAX_FOCUS - 1 }, (_, i) => `/n${String(i).padStart(3, '0')}.md`)
     const { el, v, bridge, props } = await mountVault({}, { nodes: many, focus: seeded })
     shiftClickRow(rowByPath(el, `${v}/n499.md`))
     shiftClickRow(rowByPath(el, `${v}/n500.md`))
     await pick(el, `${v}/n500.md`, 'Add 2 to focus')
-    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ focusList: [...seeded.map((p) => `${v}${p}`), `${v}/n499.md`] })
+    expect(bridge.focus.set).toHaveBeenCalledExactlyOnceWith(v, [...seeded.map((p) => `${v}${p}`), `${v}/n499.md`])
     expect(props.onNotice).toHaveBeenLastCalledWith(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
     vi.mocked(props.onNotice).mockClear()
     dropSelection(el)
     await pick(el, `${v}/n500.md`, 'Add to focus')
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1) // the list did not change, so nothing was written
+    expect(bridge.focus.set).toHaveBeenCalledTimes(1) // the list did not change, so nothing was written
     expect(props.onNotice).toHaveBeenCalledExactlyOnceWith(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
   })
 
@@ -4413,7 +4431,7 @@ describe('focus tab (YAZ-2619)', () => {
 
   it('S17, S21, R5, R10, R11: the count is the top rows; the chevrons act on the tab\'s folders only and are gone when it shows none; "Clear" empties the list and keeps the tab', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md'] })
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // a restored list is never written back — the file in it included (R13)
+    expect(bridge.focus.set).not.toHaveBeenCalled() // a list that was read is never written back
     expect(countLine(el)).toBe('2 in focus')
     expect(allButton(el)?.getAttribute('aria-label')).toBe('Expand all')
     act(() => allButton(el)?.click())
@@ -4424,7 +4442,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(topLabels(el)).toEqual(['top'])
     expect(allButton(el)).toBeNull() // a file is no folder to unfold (S21)
     await act(async () => clearButton(el)?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [])
     expect(bodyMsg(el)).toBe(EMPTY)
     expect(countLine(el)).toBeNull()
     expect(props.onLensChange).not.toHaveBeenCalled()
@@ -4440,7 +4458,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(countLine(el)).toBeNull()
     rightClick(result)
     await act(async () => itemByLabel(el, 'Add to focus')?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`, `${v}/Notes`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/Notes`])
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(props.onLensChange).not.toHaveBeenCalled() // YAZ-2638 S20: no jump to the Focus tab
     expect(input.value).toBe('Notes')
@@ -4453,20 +4471,50 @@ describe('focus tab (YAZ-2619)', () => {
     expect(countLine(el)).toBe('2 in focus')
   })
 
-  it('S31, R13: an item that leaves the vault from outside drops from the list at the tree refresh — a file as a folder — and the last one leaves the empty message', async () => {
+  it('YAZ-2702 S13 (overturns S31, R13): an item whose file is not on this Mac draws no row and STAYS in the list — at the first tree and at a tree refresh that loses one — and no write prunes it; the next write of the user still holds it', async () => {
     const { watch, fire: emit } = withWatcher()
-    const { el, v, bridge } = await mountVault({ lens: 'focus', watch }, { focus: ['/Projects', '/top.md'] })
+    const { el, v, bridge } = await mountVault({ lens: 'focus', watch }, { focus: ['/Projects', '/not-synced-yet.md', '/top.md'] })
     expect(topLabels(el)).toEqual(['Projects', 'top'])
+    expect(countLine(el)).toBe('2 in focus')
     bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/top.md`), generatedAt: 2 } as never)
     await act(async () => emit({ type: 'unlink', path: `${v}/top.md` }))
     await afterQuiet()
     expect(topLabels(el)).toEqual(['Projects'])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`] })
-    bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.type === 'dir' && n.path !== `${v}/Projects`), generatedAt: 3 } as never)
-    await act(async () => emit({ type: 'unlinkDir', path: `${v}/Projects` }))
-    await afterQuiet()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [] })
-    expect(bodyMsg(el)).toBe(EMPTY)
+    expect(bridge.focus.set).not.toHaveBeenCalled()
+    await pick(el, `${v}/Projects`, 'Remove from focus')
+    expect(bridge.focus.set.mock.calls).toEqual([[v, [`${v}/not-synced-yet.md`, `${v}/top.md`]]])
+    expect(bodyMsg(el)).toBe(EMPTY) // two items, no row
+  })
+
+  it('YAZ-2702 S7, S12: `focus:changed` for the vault of the window reads its list again and draws it at once — another window\'s change, or a file that a sync brought; one for a different vault reads nothing; the read writes nothing back', async () => {
+    const { el, v, bridge, emitFocus } = await mountVault({ lens: 'focus' }, { focus: ['/Projects'] })
+    expect(topLabels(el)).toEqual(['Projects'])
+    bridge.focus.get.mockClear() // the read of the mount (StrictMode mounts twice)
+    bridge.focus.get.mockResolvedValue([`${v}/top.md`, `${v}/Projects`, `${v}/Notes`])
+    await emitFocus('/some/other/vault')
+    expect(bridge.focus.get).not.toHaveBeenCalled()
+    expect(topLabels(el)).toEqual(['Projects'])
+    await emitFocus(v)
+    expect(bridge.focus.get.mock.calls).toEqual([[v]])
+    expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
+    expect(countLine(el)).toBe('3 in focus')
+    expect(bridge.focus.set).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-2702 S6, S14: an add before the vault\'s list has been read writes nothing and says so; a write that main refuses puts the list back and says why', async () => {
+    let answer: ((list: string[]) => void) | undefined
+    const { el, v, bridge, props, rerender } = await mountVault({}, {}, (b) => b.focus.get.mockImplementation(() => new Promise((resolve) => (answer = resolve))))
+    await pick(el, `${v}/top.md`, 'Add to focus')
+    expect(bridge.focus.set).not.toHaveBeenCalled() // the list on disk is not known yet: a write would replace it
+    expect(props.onNotice).toHaveBeenLastCalledWith('Focus is still loading. Try again.', 'error')
+    await act(async () => answer?.([`${v}/Projects`]))
+    bridge.focus.set.mockRejectedValueOnce(new Error('the focus file is read-only'))
+    await pick(el, `${v}/top.md`, 'Add to focus')
+    expect(bridge.focus.set).toHaveBeenCalledExactlyOnceWith(v, [`${v}/Projects`, `${v}/top.md`])
+    expect(props.onNotice).toHaveBeenLastCalledWith("Can't save focus: the focus file is read-only", 'error')
+    await rerender({ lens: 'focus' })
+    expect(topLabels(el)).toEqual(['Projects'])
+    expect(countLine(el)).toBe('1 in focus')
   })
 
   it('S34, S40: a restored list never narrows Files, and "Show in sidebar" shows a row outside the list there without changing the list', async () => {
@@ -4475,7 +4523,7 @@ describe('focus tab (YAZ-2619)', () => {
     await rerender({ lens: 'files', revealRequest: { id: 1, path: `${v}/Notes/n.md` } })
     expect(topLabels(el)).toEqual(EVERY_TOP_ROW)
     expect(rowByPath(el, `${v}/Notes/n.md`)?.classList.contains('tree__row--revealed')).toBe(true)
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(bridge.focus.set).not.toHaveBeenCalled()
     await rerender({ lens: 'focus' })
     expect(topLabels(el)).toEqual(['Projects'])
   })
@@ -4514,7 +4562,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('top')
   })
 
-  it('YAZ-2631 S26, S27, S29, S35, S40: a top row, a file or a folder, drags to a new place — a line on the hovered edge, never the fill of a drop folder; the new order is the window\'s, and nothing moves on disk; a drop on itself and a drag that ends elsewhere change nothing', async () => {
+  it('YAZ-2631 S26, S27, S29, S35, S40; YAZ-2702 S11: a top row, a file or a folder, drags to a new place — a line on the hovered edge, never the fill of a drop folder; the new order is the vault\'s, written to its focus file and to no order across vaults, and nothing moves on disk; a drop on itself and a drag that ends elsewhere change nothing', async () => {
     const { el, v, bridge, props, rerender } = await mountVault({ lens: 'focus' }, { focus: ['/Projects', '/top.md', '/Notes'] })
     const [projects, top, notes] = [`${v}/Projects`, `${v}/top.md`, `${v}/Notes`]
     expect([projects, top].map((path) => rowByPath(el, path)?.draggable)).toEqual([true, true])
@@ -4525,7 +4573,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(el.querySelector('.tree__row--drop')).toBeNull()
     drag(rowByPath(el, projects), 'drop')
     expect(topLabels(el)).toEqual(['top', 'Projects', 'Notes'])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [top, projects, notes] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [top, projects, notes])
     expect(marker(el)).toBeNull()
     // A FOLDER row over the bottom half of a FILE row.
     drag(rowByPath(el, notes), 'dragstart')
@@ -4533,7 +4581,7 @@ describe('focus tab (YAZ-2619)', () => {
     expect(rowByPath(el, top)?.classList.contains('tree__row--drop-after')).toBe(true)
     drag(rowByPath(el, top), 'drop')
     expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [top, projects, notes] }], [{ focusList: [top, notes, projects] }]])
+    expect(bridge.focus.set.mock.calls).toEqual([[v, [top, projects, notes]], [v, [top, notes, projects]]])
     // S27: the order is the list's own, so another tab and back shows it as it was left.
     await rerender({ lens: 'files' })
     await rerender({ lens: 'focus' })
@@ -4549,7 +4597,8 @@ describe('focus tab (YAZ-2619)', () => {
     expect(marker(el)).toBeNull()
     drag(rowByPath(el, projects), 'drop')
     expect(topLabels(el)).toEqual(['top', 'Notes', 'Projects'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
+    expect(bridge.focus.set).toHaveBeenCalledTimes(2)
+    expect(bridge.state.setFocusOrder).not.toHaveBeenCalled() // one vault: its file holds the order
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
@@ -4578,14 +4627,14 @@ describe('focus tab (YAZ-2619)', () => {
     drag(rowByPath(el, top), 'drop')
     drag(twice()[0], 'dragend')
     expect(props.onRenameFile).toHaveBeenCalledTimes(2)
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(bridge.focus.set).not.toHaveBeenCalled()
     // S39: its top row takes a new place in the list.
     drag(twice()[1], 'dragstart')
     drag(rowByPath(el, notes), 'dragover', 1)
     expect(rowByPath(el, notes)?.classList.contains('tree__row--drop-after')).toBe(true)
     drag(rowByPath(el, notes), 'drop')
     expect(topLabels(el)).toEqual(['Projects', 'Notes', 'p', 'top'])
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [projects, notes, p, top] }]])
+    expect(bridge.focus.set.mock.calls).toEqual([[v, [projects, notes, p, top]]])
     // S34: a reorder drag over a deeper row, a folder or a file: no line, no fill, and a drop there changes nothing.
     for (const deeper of [() => rowByPath(el, alpha), () => twice()[0]]) {
       drag(rowByPath(el, top), 'dragstart')
@@ -4595,7 +4644,7 @@ describe('focus tab (YAZ-2619)', () => {
       drag(rowByPath(el, top), 'dragend')
     }
     expect(topLabels(el)).toEqual(['Projects', 'Notes', 'p', 'top'])
-    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    expect(bridge.focus.set).toHaveBeenCalledTimes(1)
     expect(props.onRenameFile).toHaveBeenCalledTimes(2)
   })
 })
@@ -4632,7 +4681,8 @@ describe('favorites (YAZ-1766)', () => {
         emit = l
         return () => undefined
       })
-      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: (opts.focus ?? []).map((p) => `${v}${p}`) })
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, roots: [v], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
+      b.focus.get.mockResolvedValue((opts.focus ?? []).map((p) => `${v}${p}`))
       await storage.init()
     })
     return { ...m, v, emit: (c: { root: string }) => emit?.(c) }
@@ -4701,7 +4751,7 @@ describe('favorites (YAZ-1766)', () => {
     expect(props.onNotice).toHaveBeenCalledWith('Added to favorites', 'favorite')
     expect(bridge.favorites.set).toHaveBeenCalledWith(v, [`${v}/Projects`])
     expect(bridge.state.setFolder).not.toHaveBeenCalled() // vault content, not app state (D15)
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // nor window identity
+    expect(bridge.focus.set).not.toHaveBeenCalled() // nor window identity
     await rerender({ lens: 'favorites' })
     expect(topLabels(el)).toEqual(['Projects'])
     // The pinned row now reads Remove, on the Favorites tab and back on Files alike.
@@ -4803,7 +4853,7 @@ describe('favorites (YAZ-1766)', () => {
   it('S10, S11, S39; YAZ-2638 S20: "Add to focus" on the heart tab — on a row, then on a search result — writes THIS window\'s focus list, never the vault file; from the row it shows the Focus tab, from the search result the Search tab stays; the heart tab is not narrowed and the search stays', async () => {
     const { el, v, bridge, props } = await mountVault({ lens: 'favorites' }, { favorites: ['/Notes', '/Projects', '/top.md'] })
     await pick(el, `${v}/Projects`, 'Add to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`])
     expect(bridge.favorites.set).not.toHaveBeenCalled() // the fold it opened is the other write, and that is app state
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
     expect(topLabels(el)).toEqual(['Notes', 'Projects', 'top']) // until App hands the lens back, still every favorite
@@ -4812,7 +4862,7 @@ describe('favorites (YAZ-1766)', () => {
     await type(input, 'Alpha')
     rightClick(rowByPath(el, `${v}/Projects/Alpha`))
     await act(async () => itemByLabel(el, 'Add to focus')?.click())
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${v}/Projects`, `${v}/Projects/Alpha`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/Projects/Alpha`])
     expect(props.onLensChange).toHaveBeenCalledTimes(1) // the add from the Search tab asks for no tab
     expect(props.onRevealInFiles).not.toHaveBeenCalled()
     expect(input.value).toBe('Alpha')
@@ -4902,7 +4952,7 @@ describe('favorites (YAZ-1766)', () => {
     drag(rowByPath(el, `${v}/Notes`), 'drop')
     expect(topLabels(el)).toEqual(['Projects', 'Notes'])
     expect(bridge.favorites.set).toHaveBeenLastCalledWith(v, [`${v}/Projects`, `${v}/Notes`])
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled() // the restored list is never written back
+    expect(bridge.focus.set).not.toHaveBeenCalled() // the restored list is never written back
   })
 
   it('another window\'s — or a synced — write lands through favorites:changed for THIS root: re-read, never re-written', async () => {
@@ -6393,10 +6443,10 @@ describe('note shortcuts (YAZ-2290 D2)', () => {
       const { el, bridge } = await mountLinked([PROJECTS_ID])
       rightClick(shortcutRow(el))
       await act(async () => itemByLabel(el, 'Add to focus')?.click())
-      expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [HEALTH] })
+      expect(bridge.focus.set).toHaveBeenLastCalledWith('/v', [HEALTH])
       rightClick(shortcutRow(el))
       await act(async () => itemByLabel(el, 'Remove from focus')?.click())
-      expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [] })
+      expect(bridge.focus.set).toHaveBeenLastCalledWith('/v', [])
     })
 
     it('renaming the note from its real row puts ONE input there; the shortcut row stays a row', async () => {
@@ -6841,7 +6891,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const mountVaults = async (vaults: Vault[], over: Partial<SidebarProps> = {}, tweak?: (bridge: Bridge) => unknown) =>
     mount({ vaults, ...over }, async (bridge) => {
       bridge.tree.mockImplementation(async (root: string) => ({ root, tree: treeOf(root), generatedAt: 1 }))
-      bridge.window.identity.mockResolvedValue({ id: 'w1', root: vaults[0].root, roots: vaults.map((v) => v.root), file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })
+      bridge.window.identity.mockResolvedValue({ id: 'w1', root: vaults[0].root, roots: vaults.map((v) => v.root), file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })
       await tweak?.(bridge)
       await storage.init()
     })
@@ -6887,10 +6937,15 @@ describe('several vaults in one window (YAZ-2602)', () => {
   const countLine = (el: HTMLElement) => el.querySelector('.sidebar__focus-bar span')?.textContent ?? null
   /** The focus items of the open menu: none, or the one toggle. */
   const focusItems = (el: HTMLElement) => topItems(el).filter((label) => label?.endsWith('focus'))
-  /** A focus list restored at launch: in the window's identity, as main hands it over (YAZ-1628). */
-  const withFocus = (...focusList: string[]) => async (bridge: Bridge) => {
-    const identity = await bridge.window.identity()
-    bridge.window.identity.mockResolvedValue({ ...identity, focusList })
+  /**
+   * The focus lists as the vaults hold them (YAZ-2702): each path is in the list of the vault that
+   * holds it, in the order given. The same order is this Mac's order across vaults (`focusOrder`,
+   * Decision 3), so the tab shows the paths as they are given here.
+   */
+  const withFocus = (...paths: string[]) => async (bridge: Bridge) => {
+    bridge.focus.get.mockImplementation(async (root: string) => paths.filter((path) => path.startsWith(`${root}/`)))
+    const state = await bridge.state.get()
+    bridge.state.get.mockResolvedValue({ ...state, focusOrder: paths })
   }
   const bodyMsg = (el: HTMLElement) => el.querySelector('.sidebar__body .sidebar__msg')?.textContent ?? null
   const choose = (el: HTMLElement, label: string) => act(async () => itemByLabel(el, label)?.click())
@@ -7236,7 +7291,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const header = () => el.querySelector('.sidebar__root-name')?.textContent
     const selected = () => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((row) => row.dataset.path)
     expect([vaultRowLabels(el), header(), selected()]).toEqual([['Notes', 'Work'], 'notes + work', [sub, bMd]])
-    const quiet = [bridge.tree, bridge.index, bridge.favorites.get, bridge.favorites.set, bridge.state.setFavoritesOrder, bridge.state.setFolder, bridge.window.setIdentity]
+    const quiet = [bridge.tree, bridge.index, bridge.favorites.get, bridge.favorites.set, bridge.focus.get, bridge.focus.set, bridge.state.setFavoritesOrder, bridge.state.setFocusOrder, bridge.state.setFolder, bridge.window.setIdentity]
     for (const spy of quiet) spy.mockClear()
     const watched = JSON.stringify([first.counts, second.counts])
 
@@ -7391,30 +7446,45 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(bridge.state.setFolder).not.toHaveBeenCalled()
   })
 
-  it('a vault that leaves takes its focus items and the selection with it; a tree that has not landed yet prunes nothing of its own vault (S50, A5)', async () => {
+  it('a vault that leaves takes its rows off the Focus tab, and the selection with it, and its focus file is not written; when it comes back its list is read again and its rows are there (S50; YAZ-2702 S8, S9, which overturn A5); the items of a vault whose tree has not landed yet have no row yet', async () => {
     const at = pair()
     let land: (() => void) | undefined
     const both = [vault(at.a, 'Notes'), vault(at.b, 'Work')]
-    const { el, bridge, rerender } = await mountVaults(both, { lens: 'focus' }, async (bridge) => {
+    const { el, bridge, props, rerender } = await mountVaults(both, { lens: 'focus' }, async (bridge) => {
       await withFocus(`${at.b}/docs`, `${at.a}/sub`, `${at.b}/b.md`)(bridge)
       bridge.tree.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (land = () => resolve({ root, tree: treeOf(root), generatedAt: 1 }))) : Promise.resolve({ root, tree: treeOf(root), generatedAt: 1 })))
     })
-    // Vault `b` is still loading: its items have no row yet, and are NOT dropped from the list.
+    // Vault `b` is still loading: its items have no row yet.
     expect(topLabels(el)).toEqual(['sub'])
     expect(bodyMsg(el)).toBeNull()
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
     await act(async () => land?.())
     expect(topLabels(el)).toEqual(['docs', 'sub', 'b'])
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
 
     shiftClick(rowByPath(el, `${at.a}/sub`))
     shiftClick(rowByPath(el, `${at.b}/docs`))
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
+    bridge.focus.get.mockClear()
     await rerender({ vaults: [both[0]] })
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [`${at.a}/sub`] }]])
     expect(topLabels(el)).toEqual(['sub'])
     expect(countLine(el)).toBe('1 in focus')
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    // The vault comes back: one read of ITS list, none of the list of the vault that stayed. It took its
+    // list with it, so its rows wait for that read — and a toggle before it writes nothing (S6).
+    let answer: ((paths: string[]) => void) | undefined
+    bridge.focus.get.mockImplementation((root: string) => (root === at.b ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([`${at.a}/sub`])))
+    bridge.tree.mockImplementation(async (root: string) => ({ root, tree: treeOf(root), generatedAt: 2 }))
+    await rerender({ vaults: both })
+    expect(topLabels(el)).toEqual(['sub'])
+    await rerender({ vaults: both, lens: 'files' })
+    rightClick(rowByPath(el, `${at.b}/b.md`))
+    await choose(el, 'Add to focus')
+    expect(props.onNotice).toHaveBeenLastCalledWith('Focus is still loading. Try again.', 'error')
+    await act(async () => answer?.([`${at.b}/docs`, `${at.b}/b.md`]))
+    await rerender({ vaults: both, lens: 'focus' })
+    expect(topLabels(el)).toEqual(['docs', 'sub', 'b'])
+    expect(bridge.focus.get.mock.calls).toEqual([[at.b]])
+    expect(bridge.focus.set).not.toHaveBeenCalled()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
   })
 
   it('a vault whose folder is gone is reported by its own root, and the other vault still shows (S53)', async () => {
@@ -7457,22 +7527,24 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(errors(el)).toEqual(['watcher stopped'])
   })
 
-  it('"Add to focus" on a file of the second vault, then on a folder of the first: the one list holds both in the order added, each add asks for the Focus tab, and each top row there, file or folder, names its vault, as each top row of the Favorites tab does; Files names none and is not narrowed (A1, A4, A7; YAZ-2631 S41, S43)', async () => {
+  it('"Add to focus" on a file of the second vault, then on a folder of the first: each goes to the list of the vault that holds it (YAZ-2702 S1), each add asks for the Focus tab, and each top row there, file or folder, names its vault, as each top row of the Favorites tab does; an add writes no order across vaults, so the rows follow the vaults; Files names none and is not narrowed (A1, A4, A7; YAZ-2631 S41, S43)', async () => {
     const { el, a, b, bridge, props, rerender } = await two({}, (bridge, at) => void favoritesOf(bridge, { [at.a]: [`${at.a}/sub`] }))
     rightClick(rowByPath(el, `${b}/b.md`))
     await choose(el, 'Add to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${b}/b.md`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(b, [`${b}/b.md`])
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
     rightClick(rowByPath(el, `${a}/sub`))
     await choose(el, 'Add to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${b}/b.md`, `${a}/sub`] })
+    expect(bridge.focus.set.mock.calls).toEqual([[b, [`${b}/b.md`]], [a, [`${a}/sub`]]])
+    // With two vaults each add also gives the order across vaults, so a new item goes LAST on the tab (YAZ-2619 D1: the order added).
+    expect(bridge.state.setFocusOrder.mock.calls).toEqual([[[a, b], [`${b}/b.md`]], [[a, b], [`${b}/b.md`, `${a}/sub`]]])
     expect(props.onNotice).toHaveBeenLastCalledWith('Added to focus')
     // App has not handed the lens back yet: this is still Files — every vault, whole, and no row names a vault.
     expect(topLabels(el)).toEqual(['Notes', 'Work'])
     expect(el.querySelector('.tree__vault')).toBeNull()
 
     await rerender({ lens: 'focus' })
-    // The order ADDED, never the vaults' order.
+    // The order added, not the order of the vaults: the file of the second vault came first.
     expect(topLabels(el)).toEqual(['b', 'sub'])
     expect([tag(el, `${b}/b.md`), tag(el, `${a}/sub`)]).toEqual(['Work', 'Notes'])
     expect(el.querySelector('.tree__row--vault')).toBeNull()
@@ -7519,7 +7591,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${b}/docs`))
     expect(focusItems(el)).toEqual(['Add 2 to focus'])
     await choose(el, 'Add 2 to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${a}/a.md`, `${b}/docs`] })
+    // YAZ-2702 S2: one write for each vault, each with its own part of the selection.
+    expect(bridge.focus.set.mock.calls).toEqual([[a, [`${a}/a.md`]], [b, [`${b}/docs`]]])
     expect(props.onNotice).toHaveBeenLastCalledWith('Added 2 to focus')
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('focus')
     // The folder opened in ITS vault, the second: its open folders are stored under that vault (YAZ-2619 R4).
@@ -7529,7 +7602,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${b}/docs`))
     expect(focusItems(el)).toEqual(['Remove from focus'])
     await choose(el, 'Remove from focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${a}/a.md`] })
+    expect(bridge.focus.set).toHaveBeenLastCalledWith(b, [])
     expect(props.onNotice).toHaveBeenLastCalledWith('Removed from focus')
     expect(props.onLensChange).toHaveBeenCalledTimes(1) // a remove keeps the tab (YAZ-2619 R5)
 
@@ -7537,7 +7610,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     rightClick(rowByPath(el, `${a}/a.md`))
     expect(focusItems(el)).toEqual(['Add 2 to focus']) // one of the two is missing (R9)
     await choose(el, 'Add 2 to focus')
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${a}/a.md`, `${b}/docs`] })
+    // The vault whose list holds its part already is not written again.
+    expect(bridge.focus.set.mock.calls.slice(3)).toEqual([[b, [`${b}/docs`]]])
     rightClick(rowByPath(el, `${a}/a.md`))
     expect(focusItems(el)).toEqual(['Remove 2 from focus'])
     escape()
@@ -7555,34 +7629,32 @@ describe('several vaults in one window (YAZ-2602)', () => {
     await act(async () => land?.())
     expect(bodyMsg(el)).toBeNull()
     expect(topLabels(el)).toEqual(['docs'])
-    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(bridge.focus.set).not.toHaveBeenCalled()
   })
 
-  it('a vault that leaves takes its focus items; when they were the only ones the Focus tab shows the empty text, and the tab stays (S21, A5)', async () => {
+  it('a vault that leaves takes its rows; when they were the only ones the Focus tab shows the empty text, and the tab stays; nothing is written (S21; YAZ-2702 S9)', async () => {
     const at = pair()
     const both = [vault(at.a, 'Notes'), vault(at.b, 'Work')]
     const { el, bridge, props, rerender } = await mountVaults(both, { lens: 'focus' }, withFocus(`${at.b}/docs`, `${at.b}/b.md`))
     expect(topLabels(el)).toEqual(['docs', 'b'])
     expect([tag(el, `${at.b}/docs`), tag(el, `${at.b}/b.md`)]).toEqual(['Work', 'Work'])
     await rerender({ vaults: [both[0]] })
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [] }]])
+    expect(bridge.focus.set).not.toHaveBeenCalled()
     expect(bodyMsg(el)).toBe('Nothing in focus. Right-click a file or folder → Add to focus.')
     expect(countLine(el)).toBeNull()
     expect(props.onLensChange).not.toHaveBeenCalled()
   })
 
-  it('a focus item that leaves its vault\'s tree — deleted, or renamed to another path — drops out, and the other vault\'s items stay; a vault\'s own root in the list is no item and drops too (S22, A2)', async () => {
+  it('a focus item that leaves its vault\'s tree from outside — deleted, or renamed to another path — loses its row, and the rows of the other vault stay; the list is not written here (S22; YAZ-2702 S13)', async () => {
     const at = pair()
     const work = watcher()
-    const { el, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { watch: work.watch })], { lens: 'focus' }, withFocus(`${at.a}/sub`, at.b, `${at.b}/docs`, `${at.b}/b.md`))
-    // The vault's root was never a row of this tab, and it left the list as its tree landed.
+    const { el, bridge } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work', { watch: work.watch })], { lens: 'focus' }, withFocus(`${at.a}/sub`, `${at.b}/docs`, `${at.b}/b.md`))
     expect(topLabels(el)).toEqual(['sub', 'docs', 'b'])
     expect(el.querySelector('.tree__row--vault')).toBeNull()
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [`${at.a}/sub`, `${at.b}/docs`, `${at.b}/b.md`] }]])
     bridge.tree.mockImplementation(async (root: string) => ({ root, tree: root === at.b ? [{ type: 'dir', name: 'docs2', path: `${at.b}/docs2`, children: [] }, file(`${at.b}/b.md`)] : treeOf(root), generatedAt: 2 }))
     await act(async () => work.fire({ type: 'unlinkDir', path: `${at.b}/docs` } as WatchEvent))
     await afterQuiet()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: [`${at.a}/sub`, `${at.b}/b.md`] })
+    expect(bridge.focus.set).not.toHaveBeenCalled()
     expect(topLabels(el)).toEqual(['sub', 'b'])
     expect([tag(el, `${at.a}/sub`), tag(el, `${at.b}/b.md`)]).toEqual(['Notes', 'Work'])
   })
@@ -7874,7 +7946,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(marker(el)).toBeNull()
   })
 
-  it('YAZ-2631 S28, S31: with two vaults a top row of the Focus tab drags to any place, between the rows of either vault; a file inside a folder, dropped on a folder of a different vault, is refused with the notice — on Focus as on Favorites', async () => {
+  it('YAZ-2631 S28, S31; YAZ-2702 S3, S4, S11: with two vaults a top row of the Focus tab drags to any place, between the rows of either vault — each vault\'s file gets its own part when that part changed, and the order across vaults goes to this Mac\'s store; "Remove from focus" takes the item out of its vault\'s list and out of that order; "Clear" empties the list of each vault and their places in that order; a file inside a folder, dropped on a folder of a different vault, is refused with the notice — on Focus as on Favorites', async () => {
     const at = pair()
     const [sub, a, docs, b] = [`${at.a}/sub`, `${at.a}/a.md`, `${at.b}/docs`, `${at.b}/b.md`]
     const { el, bridge, props } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens: 'focus' }, withFocus(sub, a, docs, b))
@@ -7888,8 +7960,23 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(rowByPath(el, docs)?.classList.contains('tree__row--drop-after')).toBe(true)
     drag(rowByPath(el, docs), 'drop')
     expect(allRows(el)).toEqual([b, a, docs, sub])
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ focusList: [sub, b, a, docs] }], [{ focusList: [b, a, docs, sub] }]])
+    // S11: the first drag moved a row of `b` alone, the second a row of `a` alone; each wrote the order across the two.
+    expect(bridge.focus.set.mock.calls).toEqual([[at.b, [b, docs]], [at.a, [a, sub]]])
+    expect(bridge.state.setFocusOrder.mock.calls).toEqual([[[at.a, at.b], [sub, b, a, docs]], [[at.a, at.b], [b, a, docs, sub]]])
+    expect(storage.getFocusOrder()).toEqual([b, a, docs, sub])
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
     expect(props.onRenameFile).not.toHaveBeenCalled()
+    // S3: a remove is a write of the item's vault alone, and the path leaves the order across vaults.
+    rightClick(rowByPath(el, docs))
+    await choose(el, 'Remove from focus')
+    expect(bridge.focus.set.mock.calls.slice(2)).toEqual([[at.b, [b]]])
+    expect(storage.getFocusOrder()).toEqual([b, a, sub])
+    expect(allRows(el)).toEqual([b, a, sub])
+    // S4: "Clear" is one write for each vault that has items, and those vaults leave the order.
+    await act(async () => el.querySelector<HTMLButtonElement>('.sidebar__focus-clear')?.click())
+    expect(bridge.focus.set.mock.calls.slice(3)).toEqual([[at.a, []], [at.b, []]])
+    expect(storage.getFocusOrder()).toEqual([])
+    expect(bodyMsg(el)).toBe('Nothing in focus. Right-click a file or folder → Add to focus.')
     act(() => root?.unmount())
     container?.remove()
 

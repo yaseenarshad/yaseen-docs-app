@@ -40,9 +40,12 @@ export function registerStateIpc(store: Store): void {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
     store.setSidebarWidth(width)
   })
-  handle(CONTRACT.state.setFavoritesOrder, async (roots: unknown, paths: unknown) => {
-    store.setFavoritesOrder(requireStringArray(roots, 'roots').map((root) => requireAbsPath(root, 'root')), requireStringArray(paths, 'paths').map((path) => requireAbsPath(path, 'path')))
-  })
+  // The two orders across vaults take the same arguments by the same rule (YAZ-2631 D1; focus: YAZ-2702 Decision 3).
+  for (const order of ['setFavoritesOrder', 'setFocusOrder'] as const) {
+    handle(CONTRACT.state[order], async (roots: unknown, paths: unknown) => {
+      store[order](requireStringArray(roots, 'roots').map((root) => requireAbsPath(root, 'root')), requireStringArray(paths, 'paths').map((path) => requireAbsPath(path, 'path')))
+    })
+  }
   handle(CONTRACT.state.pushRecent, async (path: unknown) => {
     store.pushRecent(requireAbsPath(path, 'path'))
   })
