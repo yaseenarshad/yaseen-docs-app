@@ -1,18 +1,19 @@
 /**
  * THE FOCUS TAB, END TO END (S12 of YAZ-2171 — YAZ-2619, which replaces the Focus Mode of
- * YAZ-1605 / 1628): right-click a folder or a file → "Add to focus" puts it in the window's focus
- * list and shows the Focus tab (the eye, between the Search tab and the heart), where each item is a top
- * row in the order added. The Files tab is never narrowed. "Remove from focus" takes one item
- * out, and "Clear" — on the line above the list — empties it.
+ * YAZ-1605 / 1628): right-click a folder or a file → "Add to focus" puts it in the focus list of
+ * its vault and shows the Focus tab (the eye, between the Search tab and the heart), where each item
+ * is a top row in the order added. The Files tab is never narrowed. "Remove from focus" takes one
+ * item out, and "Clear" — on the line above the list — empties it.
  *
- * What only the real app can prove is WHERE the list lives: it is WINDOW identity
- * (`WindowEntry.focusList`, next to the lens), written to `yaseendocs.json` through main and
- * restored from it — so quit → relaunch comes back on the Focus tab with the same rows, on a tree
- * that is otherwise folded (expansion is session state, YAZ-1642: a focused folder's row is there,
- * its children are not).
+ * What only the real app can prove is WHERE the list lives: IN THE VAULT (YAZ-2702 Decisions 1 and
+ * 2), in `<vault>/.yaseendocs/focus.<mac id>.json`, written through main — never in the window's
+ * entry of `yaseendocs.json`, which keeps the active tab alone. So quit → relaunch comes back on
+ * the Focus tab with the same rows (S8), a second window on the vault shows the same list and
+ * follows a change made in the first (S7, S10), and the tree is otherwise folded (expansion is
+ * session state, YAZ-1642: a focused folder's row is there, its children are not).
  *
  * The unit tests (client/src/sidebar/Sidebar.test.tsx, `focus tab (YAZ-2619)`) fake the bridge and
- * pin the labels, the notices and every case S1 to S40 that needs no real window.
+ * pin the labels, the notices and every case that needs no real window.
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a COPY of the generated fixture,
  * `focus-` step screenshots, serial.
@@ -21,7 +22,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, dirRow, fileRow, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels } from './helpers'
+import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, copyVault, dirRow, extraWindow, fileRow, focusOnDisk, launchApp, lensTab, menuItem, quitApp, readState, SEED_FILE, seededState, shoot, topLabels, windowCount, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -43,8 +44,8 @@ const bodyMsg = (w: Page) => w.locator('.sidebar__body .sidebar__msg')
 const toast = (w: Page) => w.locator('.link-notice__text')
 const openDirs = (w: Page) => w.locator('.sidebar__body li[role="treeitem"][aria-expanded="true"]')
 
-/** The window's stored list — window identity (YAZ-1628): the window's entry, never the vault bucket. */
-const focusListOnDisk = async (): Promise<string[] | undefined> => (await readState(userData)).windows[0]?.focusList
+/** The vault's stored list (YAZ-2702): its focus file, vault-RELATIVE paths; null while the vault has none. */
+const focusListOnDisk = (): Promise<string[] | null> => focusOnDisk(vault)
 
 /** Right-click `row` and take the menu's `label` — the only way in for the add and the remove. */
 async function pickFromRowMenu(row: Locator, label: 'Add to focus' | 'Remove from focus'): Promise<void> {
@@ -68,10 +69,11 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- add a folder
 
-test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder as an open top row, leaves the Files tab whole and writes `focusList` to the window\'s state entry', async () => {
+test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder as an open top row, leaves the Files tab whole and writes the list to the VAULT\'s focus file, not to the state file', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
+  expect(await focusListOnDisk()).toBeNull() // a read creates nothing (YAZ-2702 R6): no focus file until the first add
   await expect(dirRow(win, 'Projects')).toBeVisible()
   // The tab row reads Files, magnifier, eye, heart (S18; the Search tab since YAZ-2638 D2) — and no eye button stands at its far end.
   await expect(win.locator('.sidebar__lenses [role="tab"]')).toHaveCount(4)
@@ -86,7 +88,9 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
   await expect(dirRow(win, 'archive')).toBeVisible()
   await expect(fileRow(win, 'Ideas')).toHaveCount(0)
   await expect(countLine(win)).toHaveText('1 in focus')
-  await expect.poll(focusListOnDisk).toEqual([path.join(vault, 'Projects')])
+  await expect.poll(focusListOnDisk).toEqual(['Projects'])
+  // The state file holds no focus list (YAZ-2702 Decision 1): not on the window's entry, not in the vault bucket.
+  expect((await readState(userData)).windows[0]).not.toHaveProperty('focusList')
   expect((await readState(userData)).folders[vault]).not.toHaveProperty('focusList')
   await shoot(win, 'focus-01-folder-added')
 
@@ -111,17 +115,18 @@ test('step 2 — "Add to focus" on a file, from the Files tab, puts it at the en
   // The order ADDED, never the tree's (D2): the folder first, then the file.
   await expect(topLabels(win)).toHaveText(['Projects', 'Ideas'])
   await expect(countLine(win)).toHaveText('2 in focus')
-  await expect.poll(focusListOnDisk).toEqual([path.join(vault, 'Projects'), path.join(vault, 'Ideas.md')])
+  await expect.poll(focusListOnDisk).toEqual(['Projects', 'Ideas.md'])
   await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('focus')
   await shoot(win, 'focus-03-file-added')
 })
 
 // ---------------------------------------------------------------- the relaunch
 
-test('step 3 — the list and the active tab survive quit → relaunch: the Focus tab comes back with both rows, the folder folded', async () => {
+test('step 3 — the list and the active tab survive quit → relaunch: the list is the vault\'s file, the tab the window\'s, and the Focus tab comes back with both rows, the folder folded (YAZ-2702 S8)', async () => {
   await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
-  expect(await focusListOnDisk()).toEqual([path.join(vault, 'Projects'), path.join(vault, 'Ideas.md')])
+  expect(await focusListOnDisk()).toEqual(['Projects', 'Ideas.md'])
   expect((await readState(userData)).windows[0]?.sidebarLens).toBe('focus')
+  expect((await readState(userData)).windows[0]).not.toHaveProperty('focusList')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
@@ -134,21 +139,40 @@ test('step 3 — the list and the active tab survive quit → relaunch: the Focu
   await shoot(win, 'focus-04-restored-folded')
 })
 
-// ---------------------------------------------------------------- remove one
+// ---------------------------------------------------------------- a second window, and remove one
 
-test('step 4 — "Remove from focus" on one item takes that row out and keeps the tab', async () => {
+test('step 4 — a second window on the vault shows the same list (YAZ-2702 S7, S10); "Remove from focus" in the first takes that row out of both and keeps the tab', async () => {
+  // ⌘⇧N (menu.file.new-window) duplicates the window — lens included, so the copy opens on the Focus
+  // tab. It was handed no list: it read the vault's, as each window does (S10).
+  await clickMenuItem(app, 'menu.file.new-window', 'w1')
+  const dup = await extraWindow(app, ['w1'])
+  const dupId = winParam(dup)!
+  expect(await windowCount(app)).toBe(2)
+  await expect(focusTab(dup)).toHaveAttribute('aria-selected', 'true')
+  await expect(topLabels(dup)).toHaveText(['Projects', 'Ideas'])
+  await expect(countLine(dup)).toHaveText('2 in focus')
+
+  // Remove in the FIRST window: the toast, the file, and the OTHER window's rows — which it can
+  // only know through main's `focus:changed` off the file it just wrote (S7).
   await pickFromRowMenu(fileRow(win, 'Ideas'), 'Remove from focus')
   await expect(toast(win)).toHaveText('Removed from focus')
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true') // a remove keeps the tab (R5)
   await expect(topLabels(win)).toHaveText(['Projects'])
   await expect(countLine(win)).toHaveText('1 in focus')
-  await expect.poll(focusListOnDisk).toEqual([path.join(vault, 'Projects')])
-  await shoot(win, 'focus-05-one-removed')
+  await expect.poll(focusListOnDisk).toEqual(['Projects'])
+  await expect(topLabels(dup)).toHaveText(['Projects'])
+  await expect(countLine(dup)).toHaveText('1 in focus')
+  await shoot(dup, 'focus-05-second-window')
+
+  // The window closes and is forgotten; the list is the vault's, so it stays (S8).
+  await closeWindow(app, dupId)
+  await expect.poll(() => windowCount(app)).toBe(1)
+  expect(await focusListOnDisk()).toEqual(['Projects'])
 })
 
 // ---------------------------------------------------------------- clear
 
-test('step 5 — "Clear" empties the list: the empty message shows, the count line goes, the tab stays, `focusList` is empty', async () => {
+test('step 5 — "Clear" empties the list: the empty message shows, the count line goes, the tab stays, and the vault\'s focus file holds an empty list', async () => {
   await clearButton(win).click()
   await expect(bodyMsg(win)).toHaveText('Nothing in focus. Right-click a file or folder → Add to focus.')
   await expect(countLine(win)).toHaveCount(0)

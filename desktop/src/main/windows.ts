@@ -369,7 +369,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const openWindow = (opts: OpenWindowOptions): void => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
     noteUsed(opts.root)
-    open({ id: randomUUID(), root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, focusList: [], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -498,7 +498,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       duplicateWindow(from) {
         const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
         // Clone every ordered path list so the new window's durable identity cannot alias the source;
-        // sidebar visibility, the lens and the focus list (YAZ-1628, YAZ-2619) are copied by value and then persist independently.
+        // sidebar visibility and the lens (YAZ-1628) are copied by value and then persist independently. The focus
+        // list is not the window's to copy (YAZ-2702 Decision 1): the new window reads it from the vault, as each window does (S10).
         open({
           id: randomUUID(),
           root: from.root,
@@ -508,7 +509,6 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           rightPanel: { ...from.rightPanel, items: [...from.rightPanel.items] },
           sidebarCollapsed: from.sidebarCollapsed,
           sidebarLens: from.sidebarLens,
-          focusList: [...from.focusList],
           bounds: clampBounds(cascaded, host.workAreas()),
         })
     },

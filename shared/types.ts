@@ -657,9 +657,12 @@ export function keyedVaults(folders: Readonly<Record<string, FolderState>>): Key
 
 /** Entries in a vault's `.yaseendocs/favorites.json` (YAZ-1766 D2, in the vault since 6A/D11) are capped at this many on read and write. */
 export const MAX_FAVORITES = 500
-/** A window's focus list (YAZ-2619) holds at most this many paths. */
+/** A vault's focus list (YAZ-2619; in the vault since YAZ-2702) holds at most this many paths, on read and write. */
 export const MAX_FOCUS = 500
-/** The Favorites order across vaults (YAZ-2631 D1) holds at most this many paths: MAX_FAVORITES for each of MAX_WINDOW_ROOTS vaults. */
+/**
+ * The Favorites order across vaults (YAZ-2631 D1) holds at most this many paths: MAX_FAVORITES for each of MAX_WINDOW_ROOTS vaults.
+ * The focus order across vaults (`AppState.focusOrder`, YAZ-2702 Decision 3) has the same limit: MAX_FOCUS is MAX_FAVORITES.
+ */
 export const MAX_FAVORITES_ORDER = 4000
 
 /**
@@ -668,7 +671,8 @@ export const MAX_FAVORITES_ORDER = 4000
  * after a remove, the stored order without the removed paths (R23). The paths take the places the
  * entries of `roots` held, a path with no place goes last, and an entry of a vault that is not in
  * `roots` keeps its place. Main merges with it and the renderer's cache does too, so both hold one
- * answer. `stored` itself when nothing changes.
+ * answer. `stored` itself when nothing changes. The focus order across vaults (`AppState.focusOrder`,
+ * YAZ-2702 Decision 3) is merged by this same function: one rule for the two lists.
  */
 export function mergeFavoritesOrder(stored: string[], roots: readonly string[], paths: readonly string[]): string[] {
   const mine = new Set(paths)
@@ -682,8 +686,8 @@ export function mergeFavoritesOrder(stored: string[], roots: readonly string[], 
 
 /**
  * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
- * `files` (the file explorer), `focus` (this window's focus list, YAZ-2619 — the tab between
- * the two) or `favorites` (the pinned files and folders, YAZ-1766 D1).
+ * `files` (the file explorer), `focus` (the focus lists of the window's vaults, YAZ-2619, in the
+ * vault since YAZ-2702 — the tab between the two) or `favorites` (the pinned files and folders, YAZ-1766 D1).
  * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
  * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
  * and no `FolderState` entry. Default `DEFAULT_SIDEBAR_LENS` (`files` since YAZ-1846) — a
@@ -862,17 +866,9 @@ export interface WindowEntry {
    * file's retired global value seeds every window that has none of its own.
    */
   sidebarLens: SidebarLens
-  /**
-   * The focus list (YAZ-2619 D1): the files AND folders THIS window's Focus tab shows, in the
-   * order added, or the order a drag gave them (YAZ-2631 D3), `MAX_FOCUS` at most — or empty; of
-   * every vault of the window (YAZ-2602 A1).
-   * Window identity like `sidebarCollapsed`, so a second window on the same vault keeps a list of
-   * its own: a duplicate (⌘⇧N) inherits the list by value and then diverges, a root change clears
-   * it, and a vault that leaves the window takes its items (A5). A flat list of absolute paths, so
-   * `store.renamePath` / `store.removePath` repair it as they repair `tabs` — a renamed item
-   * follows its path, a deleted one drops out.
-   */
-  focusList: string[]
+  // No focus list (YAZ-2702 Decision 1): a vault's focus list is in the vault (`FocusConfig`), not on
+  // the window. A file of an older build still holds `focusList` here; the loader does not read it
+  // (Decision 4: no migration), so the next write drops the key.
   bounds: WindowBounds
 }
 
@@ -980,11 +976,18 @@ export interface AppState {
   vaultSets: VaultSet[]
   /** The Favorites tab's order ACROSS vaults (YAZ-2631 D1): absolute paths, MAX_FAVORITES_ORDER at most. Per machine. A file without it loads as `[]`. */
   favoritesOrder: string[]
+  /**
+   * The Focus tab's order ACROSS vaults (YAZ-2702 Decision 3), by the rule of `favoritesOrder`: it
+   * says which VAULT has each place of the flat list, and each vault's own focus file (`FocusConfig`)
+   * gives the order inside that vault. Absolute paths, MAX_FAVORITES_ORDER at most. Per machine: the
+   * mix of two vaults does not travel, the order inside each vault does. A file without it loads as `[]`.
+   */
+  focusOrder: string[]
 }
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [] }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [] }
 }
 
 export function defaultFolderState(): FolderState {
@@ -1154,6 +1157,19 @@ export interface FavoritesConfig {
   favorites: string[]
 }
 
+// ---------- Focus (`<root>/.yaseendocs/focus.<mac id>.json` — YAZ-2702, Decisions 1 and 2) ----------
+
+/**
+ * One Mac's focus file on disk: VAULT-RELATIVE POSIX paths in the user's order (`MAX_FOCUS` at
+ * most), and `at`, the ISO time of the write. Each Mac writes only its own file, so a sync cannot
+ * conflict; the file with the latest `at` is the vault's list.
+ */
+export interface FocusConfig {
+  version: 1
+  at: string
+  focus: string[]
+}
+
 // ---------- Bridge payloads: `window.yaseenDocs` itself is `CONTRACT` in shared/ipc.ts (GRO-2153, YAZ-2200) ----------
 
 /**
@@ -1215,8 +1231,6 @@ export interface WindowIdentity {
   sidebarCollapsed: boolean
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
-  /** The focus list (YAZ-2619; per window, as focus is since YAZ-1628): the same one as `WindowEntry`'s. */
-  focusList: string[]
 }
 
 export interface OpenWindowOptions {

@@ -64,7 +64,7 @@ function installBridge({ trees, opens = {}, favorites = {}, favoritesOrder = [] 
         return () => stateChanged.delete(listener)
       }),
     },
-    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: roots[0], roots, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [] })) },
+    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: roots[0], roots, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
