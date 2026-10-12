@@ -8,7 +8,8 @@
  *
  * Matching is case-insensitive and literal, per TEXTBLOCK: a block's adjacent text nodes are
  * concatenated with their absolute start, so a match crosses mark boundaries (`say wo**rld**` finds
- * `world`) but never a block boundary. While zoomed (zoom.ts) only the zoomed subtree counts.
+ * `world`) and a soft line break, which reads as the one space it is drawn as (YAZ-2691) — but never
+ * a hard break or a block boundary. While zoomed (zoom.ts) only the zoomed subtree counts.
  *
  * Folds and the search (the part with a memory): a collapsed item hiding a match is expanded
  * SILENTLY — `setOutlineFoldSet(..., { silent: true })`, which leaves ⌘Z panic-undo pointing at
@@ -61,17 +62,20 @@ const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: ne
 
 /**
  * The block's text as runs of ADJACENT text nodes, each with its absolute start. Marks split text
- * nodes but not positions, so one run spans them and a match may too; a non-text inline node
- * (hard_break, image) is a real gap and starts a new run.
+ * nodes but not positions, so one run spans them and a match may too. A SOFT line break (a line
+ * ending inside a paragraph, drawn as one space) reads as one space and is one position wide, so
+ * the run carries on through it (YAZ-2691); any other non-text inline node (a real hard break,
+ * an image) is a real gap and starts a new run.
  */
 const textRuns = (block: ProseNode, blockPos: number): { text: string; start: number }[] => {
   const runs: { text: string; start: number }[] = []
   let end = -1
   block.forEach((child, offset) => {
-    if (!child.isText || child.text === undefined) return
+    const text = child.isText ? child.text : child.type.name === 'hardbreak' && child.attrs.isInline ? ' ' : undefined
+    if (text === undefined) return
     const start = blockPos + 1 + offset
-    if (start === end) runs[runs.length - 1].text += child.text
-    else runs.push({ text: child.text, start })
+    if (start === end) runs[runs.length - 1].text += text
+    else runs.push({ text, start })
     end = start + child.nodeSize
   })
   return runs
@@ -174,12 +178,17 @@ const createController = (view: EditorView): FindController => {
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
   }
-  /** jsdom has no `scrollIntoView` and the contract runs there, so the call stays optional. */
+  /**
+   * Centres the active HIGHLIGHT, not its block: a block can be many windows tall (one 4.5k-line
+   * transcript paragraph, YAZ-2691), and its centre is nowhere near the match. With no highlight
+   * in the DOM, the block is still the target.
+   * jsdom has no `scrollIntoView` and the contract runs there, so the call stays optional.
+   */
   const scrollToActive = (): void => {
     const match = activeMatch()
     if (match === null) return
     const { node } = view.domAtPos(match.from)
-    const element = node instanceof Element ? node : node.parentElement
+    const element = view.dom.querySelector(`.${FIND_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
     element?.scrollIntoView?.({ block: 'center' })
   }
   return {
