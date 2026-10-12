@@ -416,7 +416,7 @@ export function App() {
 
   /**
    * "Add vault to this window" (YAZ-2602 D2): `path` becomes the window's last vault, with its row
-   * open, and goes to the top of the recents (S2). The tabs, the lens and the focus list stay: the
+   * open, and goes to the top of the recents (S2). The tabs and the lens stay: the
    * list of vaults is the only identity write. A folder the window cannot take is refused with a
    * notice and nothing changes — one that is in the window (S4), one inside a vault of the window
    * or around one (R8, by path segment), one that is gone on disk, which also leaves the recents

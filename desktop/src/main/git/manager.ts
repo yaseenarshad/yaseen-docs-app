@@ -17,6 +17,11 @@ import { isRecord } from '@shared/guards'
  *     (`quietMs`, default 30 s) waits for the user to stop typing before committing. Same idiom
  *     as the index cache's persist debounce, `.unref()` included: a timer must never be the reason
  *     the app won't quit; `flushForQuit` is what guarantees the last write lands.
+ *   - LIST FILES count as edits (YAZ-2702, Decision 5). A change of a config file in
+ *     `.yaseendocs/` — a favorite, a focus item — marks the root `pending` and arms the same
+ *     debounce. The vault watcher skips every dot-entry, so before this a list changed on one Mac
+ *     reached GitHub only with the next note edit. `github.json` is the one exception: it is the
+ *     switch, and a change of it only re-reads the switch.
  *   - OFFLINE waits patiently. A pass that comes back `pending` arms exactly one retry
  *     (`retryMs`, default 2 min). No backoff ladder, no jitter: this is a text editor, not a
  *     replication service, and `notifyWake`/`notifyFocus` already cover the common "laptop came
@@ -276,10 +281,12 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
 
   // ---------- triggers ----------
 
-  function onVaultEvent(root: string, ev: WatchEvent): void {
-    // `ready` is the watcher announcing itself and `error` is about the watcher, not the vault —
-    // neither means a byte changed on disk.
-    if (ev.type === 'ready' || ev.type === 'error') return
+  /**
+   * Something in the vault changed and is not on GitHub yet: say so now, commit after the quiet
+   * period. The one road for a note edit and for a list file (YAZ-2702). An unmanaged root has no
+   * entry, so a vault with sync off stays silent here too.
+   */
+  function markPending(root: string): void {
     const entry = entries.get(root)
     if (entry === undefined) return
     // The first event of a burst is what the UI needs to hear; the other forty-nine say the same thing.
@@ -291,14 +298,23 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     })
   }
 
+  function onVaultEvent(root: string, ev: WatchEvent): void {
+    // `ready` is the watcher announcing itself and `error` is about the watcher, not the vault —
+    // neither means a byte changed on disk.
+    if (ev.type === 'ready' || ev.type === 'error') return
+    markPending(root)
+  }
+
   function ensureOpen(root: string): void {
     if (openRoots.has(root)) return
     openRoots.add(root)
     configSubs.set(
       root,
       host.subscribeConfig(root, (change) => {
-        if (change.name !== GITHUB_SYNC_FILE) return
-        void evaluate(root)
+        // The switch re-reads the switch and starts no quiet period; every other config file is
+        // vault content that must travel — Favorites, a Mac's focus file (YAZ-2702, Decision 5).
+        if (change.name === GITHUB_SYNC_FILE) void evaluate(root)
+        else markPending(root)
       }),
     )
   }
