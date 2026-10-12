@@ -855,8 +855,9 @@ table). **Caret anchor (D11):** every zoom change — keys or pill — goes thro
 `changeZoom` in `Editor.tsx`, which snapshots the caret's offset inside the scroller BEFORE the zoom
 (when the selection is inside this note's section and visible); a `useLayoutEffect` then scrolls
 by exactly what the zoom moved it, so the line being edited does not budge on screen, like a design
-tool zooming around the cursor. A caret that was off screen, or none in this note, is brought to
-`scrollIntoView({ block: 'center' })`. **Sideways slack (D15):** the scroller is `overflow-x: auto`
+tool zooming around the cursor. A caret that was off screen comes to the middle of the scroller by
+the same scroll math — the caret itself, not its block, which can be many windows tall (YAZ-2691);
+with no caret in this note nothing scrolls. **Sideways slack (D15):** the scroller is `overflow-x: auto`
 with a zero-height `::after` runner `calc(100% + var(--zoom-slack))`; `Editor.tsx` MEASURES
 `--zoom-slack` = the deepest bullet's indent at this zoom minus the same at 100% (over
 `.list-item > .children`, on every zoom change and on a `ResizeObserver` of the body), so a full
