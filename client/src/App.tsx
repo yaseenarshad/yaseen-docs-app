@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type SettingsState, type SidebarTab, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -325,6 +325,8 @@ export function App() {
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
   const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newNoteFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
+  // The table of contents' "Keep open" / "Stop keeping open" (YAZ-2700): the same stable door.
+  const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
@@ -1143,6 +1145,10 @@ export function App() {
       // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
       commentsOrder: settings.commentsOrder,
       onChangeCommentsOrder: changeCommentsOrder,
+      // YAZ-2700: the table of contents is a SETTING too, and whether its names fit depends on the content width.
+      tableOfContents: settings.tableOfContents,
+      contentWidth: settings.contentWidth,
+      onChangeTableOfContents: changeTableOfContents,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }

@@ -12,7 +12,7 @@ import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
-import type { FileResponse, IndexRecord, TreeNode, WatchEvent } from '@shared/types'
+import type { FileResponse, IndexRecord, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
@@ -89,7 +89,7 @@ vi.mock('./external/applyExternalMarkdown', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, getPlainText, setMarkdown, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, focusEditor, getPlainText, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
@@ -136,14 +136,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} />))
   await settle()
   await settle()
   return container
@@ -300,6 +300,160 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(flushListeners).toHaveLength(0)
     expect(el.querySelector('canvas.image-viewer__canvas')).not.toBeNull()
     expect(el.querySelector('.page-title, .frontmatter-panel, .folder-view, .backlinks')).toBeNull()
+  })
+})
+
+/**
+ * The table of contents (YAZ-2700) is wired by CrepeHost: ONE channel goes to `createCrepe` and to
+ * the component mounted beside the scroller, and the setting comes down as a prop. The fake Crepe
+ * has no engine, so the test publishes the headings the real one would (toc/tocPlugin.test.ts).
+ */
+describe('CrepeHost table of contents (YAZ-2700)', () => {
+  const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
+    const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
+    if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
+    return toc
+  }
+  const TWO = [
+    { level: 1, text: 'Hello' },
+    { level: 2, text: 'More' },
+  ] as const
+
+  it('hands createCrepe its channel, and draws that channel\'s headings beside the scroller, after the find bar', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    expect(el.querySelector('nav.toc')).toBeNull() // one heading so far: nothing to show
+    act(() => tocOf().publish(TWO))
+    const section = el.querySelector('section.editor')
+    expect([...(section?.children ?? [])].map((c) => c.className)).toEqual(['status-chips', 'editor-host', 'find-bar-dock find-bar-dock--note', 'toc'])
+    expect(el.querySelector('nav.toc')?.getAttribute('aria-label')).toBe('Table of contents')
+    expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
+    // Chrome, not content: outside the scroller, so the document zoom never reaches it.
+    expect(el.querySelector('.editor-host nav.toc')).toBeNull()
+  })
+
+  it('a mount that threads no setting shows none (the default is off)', async () => {
+    const el = await mount(BODY)
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).toBeNull()
+  })
+
+  it('Esc inside it hands the caret back to THIS note\'s editor', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    act(() => el.querySelector<HTMLButtonElement>('.toc__rail')?.click())
+    const name = el.querySelector<HTMLButtonElement>('.toc__name')
+    if (name === null) throw new Error('the card did not open')
+    vi.mocked(focusEditor).mockClear()
+    act(() => {
+      name.focus()
+      name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+    expect(vi.mocked(focusEditor)).toHaveBeenCalledExactlyOnceWith(crepe())
+    // A closed card stays mounted for its fade-out (`data-leaving`): no OPEN card is left.
+    expect(el.querySelector('.toc__card:not([data-leaving])')).toBeNull()
+  })
+
+  it('the channel keeps its identity across a save cycle: the editor is not built again', async () => {
+    await mount(BODY, 1, { tableOfContents: 'auto' })
+    const before = tocOf()
+    const built = createCrepeMock.mock.calls.length
+    type(BODY + 'more\n')
+    await pastDebounce()
+    expect(createCrepeMock.mock.calls.length).toBe(built)
+    expect(tocOf()).toBe(before)
+  })
+})
+
+/**
+ * "TOC made from" (YAZ-2700 D14): what THIS note's table of contents is built from, saved with the
+ * note in the app state as its folds are. `storage` is spied, as in the fold tests below; the seam
+ * to the engine is the channel the faked `createCrepe` was handed.
+ */
+describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
+  const tocOf = (): NonNullable<CreateCrepeOptions['toc']> => {
+    const toc = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.toc
+    if (toc === undefined) throw new Error('no table of contents channel was handed to createCrepe')
+    return toc
+  }
+  let saved: TocSource | null
+
+  beforeEach(() => {
+    saved = null
+    vi.spyOn(storage, 'getTocSource').mockImplementation(() => saved)
+    vi.spyOn(storage, 'setTocSource').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.mocked(storage.getTocSource).mockRestore()
+    vi.mocked(storage.setTocSource).mockRestore()
+  })
+
+  const choices = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__choices button')]
+  const pressed = (el: HTMLElement) => choices(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
+
+  it('seeds from the app state: the saved source is in the channel when createCrepe gets it, before any scan, and pressed in the cog', async () => {
+    saved = 'bullets'
+    let atCreate: TocSource | null | undefined
+    // The module fake's own editor, with one look at the channel at the moment the host hands it over.
+    createCrepeMock.mockImplementationOnce((options) => {
+      atCreate = options.toc?.getSource()
+      return { md: options.defaultValue ?? '', onMarkdownUpdated: options.onMarkdownUpdated, create: () => Promise.resolve(), destroy: () => Promise.resolve() } as never
+    })
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    expect(storage.getTocSource).toHaveBeenCalledWith('/vault', PATH)
+    expect(atCreate).toBe('bullets')
+    expect(tocOf().getSource()).toBe('bullets')
+    clickCog(el)
+    expect(pressed(el)).toEqual(['Auto:false', 'Headings:false', 'Bullets:true'])
+    expect(storage.setTocSource).not.toHaveBeenCalled()
+  })
+
+  it('a note with no saved source is on Auto', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    expect(tocOf().getSource()).toBeNull()
+    clickCog(el)
+    expect(pressed(el)).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
+  })
+
+  it('a choice is written for THIS note and handed to the engine at once; Auto is written as null; the editor is not built again', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    const built = createCrepeMock.mock.calls.length
+    const rescan = vi.fn()
+    tocOf().bind({ jump: vi.fn(), current: vi.fn(() => -1), rescan })
+    clickCog(el)
+    act(() => choices(el)[1].click())
+    expect(storage.setTocSource).toHaveBeenLastCalledWith('/vault', PATH, 'headings')
+    expect(tocOf().getSource()).toBe('headings')
+    expect(rescan).toHaveBeenCalledTimes(1)
+    expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
+    act(() => choices(el)[0].click())
+    expect(storage.setTocSource).toHaveBeenLastCalledWith('/vault', PATH, null)
+    expect(tocOf().getSource()).toBeNull()
+    expect(rescan).toHaveBeenCalledTimes(2)
+    expect(createCrepeMock.mock.calls.length).toBe(built)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled() // the note's own file never hears of it
+  })
+
+  it('the control shows only where this page shows a table of contents: not with the app setting off, and not once the page turned its own off', async () => {
+    saved = 'headings'
+    const off = await mount(BODY)
+    clickCog(off)
+    expect(off.querySelector('.page-settings__menu')).not.toBeNull()
+    expect(off.querySelector('.page-settings__choices')).toBeNull()
+    act(() => root?.unmount())
+    container?.remove()
+    const el = await mount(BODY, 1, { tableOfContents: 'pinned' })
+    clickCog(el)
+    expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
+    const row = [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((button) => button.textContent?.includes('Table of contents'))
+    if (row === undefined) throw new Error('no "Table of contents" row')
+    act(() => row.click())
+    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    // Back on: the choice is still the saved one — hiding the control changed nothing.
+    act(() => row.click())
+    expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
+    expect(storage.setTocSource).not.toHaveBeenCalled()
   })
 })
 

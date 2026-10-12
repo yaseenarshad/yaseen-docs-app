@@ -1,6 +1,6 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
+import type { CommentsOrder, ContentWidth, FileResponse, GithubSyncStatus, PropertiesResponse, TableOfContents as TableOfContentsMode, TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -14,6 +14,8 @@ import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, setMarkdown
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
+import { TableOfContents } from './toc/TableOfContents'
+import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
@@ -21,6 +23,7 @@ import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './outline/outlineFolding.css'
 import './outline/headingFolding.css'
+import './outline/headingLevelTag.css'
 import './outline/bullets.css'
 import './outline/zoom.css'
 import './outline/guideLines.css'
@@ -57,6 +60,8 @@ const MemoFrontmatterPanel = memo(FrontmatterPanel)
 const MemoCommentsSection = memo(CommentsSection)
 const MemoBacklinksSection = memo(BacklinksSection)
 const MemoReviewsSection = memo(ReviewsSection)
+/** Up to 200 names (YAZ-2700): the same reason, and every one of its props is stable across a save. */
+const MemoTableOfContents = memo(TableOfContents)
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
@@ -108,6 +113,15 @@ interface EditorProps {
   commentsOrder: CommentsOrder
   /** The block's own Oldest/Newest toggle writes the SETTING through this. */
   onChangeCommentsOrder: (order: CommentsOrder) => void
+  /**
+   * The table of contents setting (YAZ-2700), threaded down like the comments' order. Absent → `off`:
+   * a mount that threads none of the three props below shows no table of contents.
+   */
+  tableOfContents?: TableOfContentsMode
+  /** The content width setting: with the note's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
+  contentWidth?: ContentWidth
+  /** The table of contents' own "Keep open" / "Stop keeping open" write the SETTING through this. */
+  onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   /** The vault's review settings (YAZ-2322): App owns the one `useReviewSettings`; the Reviews section computes its dates from them. */
   reviewSettings?: ReviewSettings
   /**
@@ -118,7 +132,7 @@ interface EditorProps {
   onUserEdit?: (path: string) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, reviewSettings, onUserEdit }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
   // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
@@ -164,11 +178,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, reviewSettings, onUserEdit }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, reviewSettings, onUserEdit }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -177,11 +191,14 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
       )}
     </section>
   )
 }
+
+/** The setter of a mount that threads no table of contents setting: one identity, so the memoised table of contents never sees a new one. */
+const noTableOfContentsChange = (): void => undefined
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
 function CrepeHost({
@@ -203,6 +220,9 @@ function CrepeHost({
   onSyncNow,
   commentsOrder,
   onChangeCommentsOrder,
+  tableOfContents = 'off',
+  contentWidth = 'narrow',
+  onChangeTableOfContents = noTableOfContentsChange,
   reviewSettings,
   onUserEdit,
 }: {
@@ -224,6 +244,9 @@ function CrepeHost({
   onSyncNow?: () => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
+  tableOfContents?: TableOfContentsMode
+  contentWidth?: ContentWidth
+  onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   reviewSettings?: ReviewSettings
   onUserEdit?: (path: string) => void
 }) {
@@ -233,6 +256,13 @@ function CrepeHost({
   documentZoomRef.current = documentZoom
   // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
+  // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
+  const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
+  // And the other way round: the table of contents is ON for every page, and this page can turn its own off.
+  const [tableOfContentsOn, setTableOfContentsOn] = useState(true)
+  // What this page's table of contents is built from (YAZ-2700 D14). The ONE page switch that is
+  // stored: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
+  const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
   const hostRef = useRef<HTMLDivElement>(null)
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
@@ -357,6 +387,29 @@ function CrepeHost({
    * channel would remount the editor and leave the bar talking to nothing.
    */
   const findChannel = useMemo(() => createFindChannel(), [])
+  /**
+   * The table of contents wiring (YAZ-2700), ONE per host on the same terms: the engine publishes
+   * the note's rows (its headings or its bullets) to this channel and answers its jump and scroll spy; the table of contents
+   * below draws them. Stable identity, for the find channel's reason.
+   */
+  const tocChannel = useMemo(() => {
+    const channel = createTocChannel()
+    // The saved source is in the channel BEFORE the editor exists, so the engine's first scan is
+    // already by it: a note saved as Bullets never shows its Auto list first.
+    channel.setSource(storage.getTocSource(root, file.path))
+    return channel
+  }, [])
+  /** The reader chose in the cog: this page's state, the app state file, and the engine, which scans again at once. */
+  const changeTocSource = (source: TocSource | null): void => {
+    setTocSource(source)
+    storage.setTocSource(root, file.path, source)
+    tocChannel.setSource(source)
+  }
+  /** Esc in the table of contents hands the caret back to the note. Stable: the table of contents is memoised. */
+  const focusNote = useCallback(() => {
+    const crepe = crepeRef.current
+    if (crepe !== null) focusEditor(crepe)
+  }, [])
   /** The target whose modal is open; the preview's click sets it, close clears it. */
   const [openDrawing, setOpenDrawing] = useState<string | null>(null)
   /**
@@ -431,6 +484,7 @@ function CrepeHost({
       // below, and a paste that could not be written rides the same passive notice.
       image: { root, notePath: file.path, onOpenImage: setOpenImage, onNotice },
       find: findChannel,
+      toc: tocChannel,
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
@@ -500,7 +554,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel])
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -535,7 +589,7 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : () => setTableOfContentsOn((on) => !on)} contentsFrom={tocSource} onChangeContentsFrom={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
@@ -558,7 +612,7 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-line-numbers={lineNumbersOn || undefined} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">
@@ -589,6 +643,10 @@ function CrepeHost({
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
           positioned ancestor, so the bar holds its corner while the note scrolls under it. */}
       <FindBar channel={findChannel} scope="note" hostRef={hostRef} />
+      {/* The table of contents (YAZ-2700) floats beside that scroller the same way: at the
+          section's right edge, from the scroller's top to its bottom. It draws nothing for a note
+          with fewer than two rows (its headings or its bullets), with the setting off, and while a bullet is zoomed. */}
+      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} hostRef={hostRef} onReturnFocus={focusNote} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}

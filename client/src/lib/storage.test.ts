@@ -18,6 +18,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
+      setTocSource: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       onChange: vi.fn((l: (s: AppState) => void) => {
         listener = l
@@ -164,7 +165,7 @@ describe('storage.init', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, name: null, key: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, tocSources: {}, name: null, key: null } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -379,7 +380,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, name: null, key: null } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -388,6 +389,30 @@ describe('storage', () => {
     b = installBridge(seeded, { id: 'w3', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/a.md')
+  })
+
+  it('the table of contents source is keyed by root then file; null — Auto — is no entry; the same choice again writes nothing (YAZ-2700 D14)', () => {
+    expect(storage.getTocSource('/r1', '/r1/a.md')).toBeNull()
+    storage.setTocSource('/r1', '/r1/a.md', 'bullets')
+    storage.setTocSource('/r1', '/r1/b.md', 'headings')
+    expect(storage.getTocSource('/r1', '/r1/a.md')).toBe('bullets')
+    expect(storage.getTocSource('/r1', '/r1/b.md')).toBe('headings')
+    expect(storage.getTocSource('/r2', '/r1/a.md')).toBeNull()
+    expect(b.bridge.state.setTocSource).toHaveBeenCalledWith('/r1', '/r1/a.md', 'bullets')
+    expect(b.bridge.state.setTocSource).toHaveBeenCalledTimes(2)
+    // The same choice again, and Auto on a note that is on Auto: no write.
+    storage.setTocSource('/r1', '/r1/a.md', 'bullets')
+    storage.setTocSource('/r1', '/r1/never.md', null)
+    expect(b.bridge.state.setTocSource).toHaveBeenCalledTimes(2)
+    storage.setTocSource('/r1', '/r1/a.md', 'headings')
+    expect(storage.getTocSource('/r1', '/r1/a.md')).toBe('headings')
+    storage.setTocSource('/r1', '/r1/a.md', null)
+    expect(storage.getTocSource('/r1', '/r1/a.md')).toBeNull()
+    expect(b.bridge.state.setTocSource).toHaveBeenLastCalledWith('/r1', '/r1/a.md', null)
+    // Another window's choice arrives with the state broadcast, as its folds do.
+    b.emit({ ...defaultAppState(), folders: { '/r1': { ...defaultFolderState(), tocSources: { '/r1/a.md': 'bullets' } } } })
+    expect(storage.getTocSource('/r1', '/r1/a.md')).toBe('bullets')
+    expect(storage.getTocSource('/r1', '/r1/b.md')).toBeNull()
   })
 
   it('folds are keyed by root then file, capped, and pruned when empty', () => {
@@ -541,7 +566,7 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, name: null, key: null } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

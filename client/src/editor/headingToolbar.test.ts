@@ -109,14 +109,15 @@ describe('Heading toolbar group (YAZ-923)', () => {
     // The label IS the icon: an `Hn` / `T` glyph drawn as SVG text.
     expect(buttons.map((b) => b.querySelector('svg text')?.textContent)).toEqual(['H1', 'H2', 'H3', 'T'])
 
-    // A GROUP was added, not a replacement toolbar: Crepe's own marks still lead the strip.
+    // A GROUP was added, not a replacement toolbar: Crepe's own marks are all still there. The
+    // Heading group LEADS the strip (YAZ-2700): its buttons are the ones under the hand.
     expect(item('bold')).not.toBeNull()
     expect(item('italic')).not.toBeNull()
     const order = [...document.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')].map(
       (b) => b.dataset.toolbarItem,
     )
-    expect(order.slice(-4)).toEqual(['h1', 'h2', 'h3', 'text'])
-    expect(order.indexOf('bold')).toBeLessThan(order.indexOf('h1'))
+    expect(order.slice(0, 4)).toEqual(['h1', 'h2', 'h3', 'text'])
+    expect(order.indexOf('text')).toBeLessThan(order.indexOf('bold'))
   })
 
   it('lights exactly the block\'s own level — the invisible ## made visible', async () => {

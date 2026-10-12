@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setBaseGroups.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setBaseGroups.channel].sort(),
     )
   })
 
@@ -113,7 +113,7 @@ describe('registerStateIpc', () => {
 
   it('state:set-folder checks the root and the patch shape', async () => {
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { expanded: ['/v/sub'], lastFile: '/v/a.md' })).toEqual(ok(undefined))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null })
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { lastFile: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].lastFile).toBeNull()
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, 'v', {})).toEqual(bad('NOT_ABSOLUTE'))
@@ -121,7 +121,7 @@ describe('registerStateIpc', () => {
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { expanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { expanded: [1] })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { lastFile: 5 })).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null })
     // The vault's display name (YAZ-1974 D3): a string (cleaned by the store) or null, nothing else.
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { name: '  Business Wiki ' })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].name).toBe('Business Wiki')
@@ -138,7 +138,7 @@ describe('registerStateIpc', () => {
     expect(store.get().folders['/v'].key).toBeNull()
     // The focus list is window identity (`window.setIdentity`, YAZ-1628, YAZ-2619): here it is an unknown key, ignored like any other.
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { focusList: ['/v/sub'] })).toEqual(ok(undefined))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null })
   })
 
   it('state:set-folds checks root, file and keys', async () => {
@@ -149,6 +149,19 @@ describe('registerStateIpc', () => {
     expect(await registered(CONTRACT.state.setFolds.channel)({ sender }, '/v', '/v/a.md', [1])).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setFolds.channel)({ sender }, '/v', '/v/a.md', [])).toEqual(ok(undefined))
     expect(store.get().folders['/v'].folds).toEqual({})
+  })
+
+  it('state:set-toc-source checks root, file and source: `headings`, `bullets` or null, and no other word (YAZ-2700 D14)', async () => {
+    const setTocSource = registered(CONTRACT.state.setTocSource.channel)
+    expect(await setTocSource({ sender }, '/v', '/v/a.md', 'bullets')).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].tocSources).toEqual({ '/v/a.md': 'bullets' })
+    expect(await setTocSource({ sender }, 'v', '/v/a.md', 'headings')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await setTocSource({ sender }, '/v', 'a.md', 'headings')).toEqual(bad('NOT_ABSOLUTE'))
+    for (const junk of ['auto', 'Headings', '', 1, undefined, ['bullets']]) expect(await setTocSource({ sender }, '/v', '/v/a.md', junk)).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().folders['/v'].tocSources).toEqual({ '/v/a.md': 'bullets' })
+    // null is Auto: the entry goes.
+    expect(await setTocSource({ sender }, '/v', '/v/a.md', null)).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].tocSources).toEqual({})
   })
 
   it('state:set-base-groups checks root, key and collapsed', async () => {

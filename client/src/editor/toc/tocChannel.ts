@@ -1,0 +1,127 @@
+/**
+ * The table of contents channel (YAZ-2700): the one object the table of contents and its engine
+ * share.
+ *
+ * `findChannel.ts`'s host-created holder idiom. The host makes ONE per editor mount and hands it
+ * to `createCrepe` (the engine in `tocPlugin.ts` binds itself at view creation, unbinds on destroy)
+ * and to `TableOfContents.tsx`, which subscribes and calls the commands. The channel owns only
+ * what the component draws: the note's rows as (level, text) and whether the table of contents
+ * is hidden. Row POSITIONS stay in the engine: they move on every edit above a row, and a
+ * snapshot that carried them would re-render the list on every one of those edits.
+ *
+ * The rows are the note's headings, or — in a note with fewer than two of them — its bullets
+ * (`tocPlugin.ts` decides). Nothing here says which: a bullet row is a `TocHeading` like any other,
+ * its level its depth in the list, and the component draws, jumps and spies by index alone.
+ *
+ * THE SOURCE (YAZ-2700 D14) is the reader's own answer to that question for this note, from the
+ * page cog: `headings`, `bullets`, or `null` — Auto, the rule above. The host hands it in, the
+ * engine scans by it, and it is NOT part of the snapshot: the component never learns it, and a
+ * change of source reaches it only as the new list.
+ *
+ * 🔒 Subscribers hear a change only when the list of (level, text) changes or the hidden flag
+ * flips. The engine publishes after every scan, and most scans find the list it already had.
+ */
+import type { TocSource } from '@shared/types'
+
+/**
+ * Three levels. Of headings, H1-H3: H4-H6 are labels inside a section here, not structure
+ * (`headingFolding.ts`). Of bullets, the first three depths of the document's own lists.
+ */
+export type TocLevel = 1 | 2 | 3
+
+export interface TocHeading {
+  level: TocLevel
+  /** The heading's text, trimmed, `Untitled heading` for an empty one; or a bullet's label. */
+  text: string
+}
+
+export interface TocSnapshot {
+  /**
+   * The note's rows in document order: every H1-H3 outside lists, or the bullets of a note with
+   * fewer than two of those. The component decides which of them it shows.
+   */
+  headings: readonly TocHeading[]
+  /** True while a bullet zoom is active: the note shows one bullet's subtree, not its structure. */
+  hidden: boolean
+}
+
+/** The engine behind the commands: the plugin binds one per editor view. */
+export interface TocController {
+  /** Go to the row at `index` of `headings`: unfold what hides it and its own fold, caret, scroll, one flash. */
+  jump(index: number): void
+  /**
+   * Which of the shown rows the reader is in. `indices` are the shown rows as indexes into
+   * `headings`; the answer is an index into `indices`, −1 when none of them is on screen at all.
+   * Reads layout and writes nothing.
+   */
+  current(indices: readonly number[], scroller: HTMLElement): number
+  /** Scan the note NOW and publish: the source changed, and the reader is looking at the list. */
+  rescan(): void
+}
+
+export interface TocChannel {
+  jump(index: number): void
+  current(indices: readonly number[], scroller: HTMLElement): number
+  getState(): TocSnapshot
+  subscribe(listener: () => void): () => void
+  /**
+   * Host side: what this note's rows are built from; `null` is Auto. Before an engine is bound it
+   * only waits for the first scan, so a note saved as Bullets never shows its Auto list first.
+   * After, a CHANGE is scanned at once — no 150 ms wait: nothing was typed.
+   */
+  setSource(source: TocSource | null): void
+  /** Engine side: the source to scan by. */
+  getSource(): TocSource | null
+  /** Engine side: bind at view creation, call the returned unbind on destroy. */
+  bind(controller: TocController): () => void
+  /** Engine side: the rows of the scan just made. */
+  publish(headings: readonly TocHeading[]): void
+  /** Engine side: a bullet zoom started or ended. */
+  setHidden(hidden: boolean): void
+}
+
+const sameHeadings = (a: readonly TocHeading[], b: readonly TocHeading[]): boolean =>
+  a.length === b.length && a.every((heading, i) => heading.level === b[i].level && heading.text === b[i].text)
+
+export function createTocChannel(): TocChannel {
+  let controller: TocController | null = null
+  let snapshot: TocSnapshot = { headings: [], hidden: false }
+  let source: TocSource | null = null
+  const listeners = new Set<() => void>()
+
+  const set = (next: TocSnapshot): void => {
+    snapshot = next
+    listeners.forEach((listener) => listener())
+  }
+
+  return {
+    // While unbound (no editor yet, or one already destroyed) the commands are no-ops.
+    jump: (index) => controller?.jump(index),
+    current: (indices, scroller) => controller?.current(indices, scroller) ?? -1,
+    publish(headings) {
+      if (!sameHeadings(headings, snapshot.headings)) set({ ...snapshot, headings })
+    },
+    setHidden(hidden) {
+      if (hidden !== snapshot.hidden) set({ ...snapshot, hidden })
+    },
+    setSource(next) {
+      if (next === source) return
+      source = next
+      controller?.rescan()
+    },
+    getSource: () => source,
+    getState: () => snapshot,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    bind(next) {
+      controller = next
+      return () => {
+        if (controller === next) controller = null
+      }
+    },
+  }
+}

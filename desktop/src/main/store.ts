@@ -21,6 +21,7 @@ import {
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
   STARTUP_WINDOWS,
+  TABLE_OF_CONTENTS,
   THEMES,
   THREAD_WIDTHS,
   addOpen,
@@ -32,6 +33,7 @@ import {
   defaultRightPanelIdentity,
   freeVaultKey,
   isSidebarLens,
+  isTocSource,
   isValidNewNoteFolder,
   mergeFavoritesOrder,
   normalizeRoots,
@@ -49,7 +51,9 @@ import {
   type SettingsState,
   type SidebarLens,
   type StartupWindows,
+  type TableOfContents,
   type Theme,
+  type TocSource,
   type VaultSet,
   type WindowBounds,
   type WindowEntry,
@@ -74,6 +78,8 @@ export interface Store {
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
+  /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
+  setTocSource(root: string, file: string, source: TocSource | null): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /**
    * `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`).
@@ -89,7 +95,7 @@ export interface Store {
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its focus
    * list `focusList` (YAZ-1628, YAZ-2619), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
-   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8), the vaults of each saved set (YAZ-2602 S71), and the
+   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8)/table of contents sources (YAZ-2700 D14), the vaults of each saved set (YAZ-2602 S71), and the
    * Favorites order across vaults (YAZ-2631 R6).
    * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
@@ -156,6 +162,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
+  tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -261,6 +268,16 @@ function sanitizeOpens(raw: unknown): Record<string, OpenStat> {
   return Object.fromEntries(out.slice(0, MAX_OPENS))
 }
 
+/** The table of contents sources (YAZ-2700 D14): page → `headings` or `bullets`. A wrong entry drops alone — a path that is not absolute, or any other value, `auto` among them: Auto is the absence of an entry. */
+function sanitizeTocSources(raw: unknown): Record<string, TocSource> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, TocSource> = {}
+  for (const [file, source] of Object.entries(raw)) {
+    if (isAbsolute(file) && isTocSource(source)) out[file] = source
+  }
+  return out
+}
+
 function sanitizeFolder(raw: unknown): FolderState | null {
   if (!isRecord(raw)) return null
   return {
@@ -271,6 +288,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     opens: sanitizeOpens(raw.opens),
+    tocSources: sanitizeTocSources(raw.tocSources),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
   }
@@ -470,6 +488,16 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, folds } } })
     },
 
+    setTocSource(root, file, source) {
+      const cur = folderOf(root)
+      // Auto on a note that is on Auto already: nothing to write, nothing to tell the windows.
+      if (source === null ? !(file in cur.tocSources) : cur.tocSources[file] === source) return
+      const tocSources = { ...cur.tocSources }
+      if (source === null) delete tocSources[file]
+      else tocSources[file] = source
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocSources } } })
+    },
+
     setBaseGroups(root, key, collapsed) {
       const cur = folderOf(root)
       const baseGroups = { ...cur.baseGroups }
@@ -548,6 +576,8 @@ export function createStore(filePath: string): Store {
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
             // The open history (YAZ-2663 S8) is keyed by page, as `folds` is: a renamed page keeps its uses.
             opens: remapKeys(folder.opens, remap),
+            // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
+            tocSources: remapKeys(folder.tocSources, remap),
           },
         ]),
       )
@@ -630,6 +660,7 @@ export function createStore(filePath: string): Store {
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),
               opens: dropKeys(folder.opens, gone),
+              tocSources: dropKeys(folder.tocSources, gone),
             },
           ]),
       )
