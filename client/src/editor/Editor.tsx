@@ -297,14 +297,11 @@ function CrepeHost({
     const scroller = hostRef.current?.closest('.editor-host')
     const rect = caretRect()
     if (!scroller || !rect) return
-    const before = caretAnchor.current
-    if (before === null) {
-      const node = document.getSelection()!.getRangeAt(0).startContainer
-      // Optional call: jsdom has no scrollIntoView (same posture as `sidebar/revealRow.ts`).
-      ;(node instanceof Element ? node : node.parentElement)?.scrollIntoView?.({ block: 'center' })
-      return
-    }
-    scroller.scrollTop += rect.top - scroller.getBoundingClientRect().top - before
+    const box = scroller.getBoundingClientRect()
+    // An off-screen caret comes to the middle: the caret itself, not its block. A block can be many
+    // windows tall, and its middle is nowhere near the caret (YAZ-2691).
+    const target = caretAnchor.current ?? (box.height - rect.height) / 2
+    scroller.scrollTop += rect.top - box.top - target
   }, [documentZoom])
   // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
