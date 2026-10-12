@@ -30,14 +30,16 @@
   - [x] 2 (YAZ-2705) `useVaultLists` in `client/src/sidebar/hooks/useVaultTree.ts`, `focusOrder`, the window list removed, the docs
   - [x] 4 (YAZ-2707) polish: the new item goes last with two or more vaults
   - [x] 5 (YAZ-2708) gates, and the checks in the real app: before (1.0.3) the list is lost, after it stays; two profiles on two clones of one git remote show one list
-- Now: the pull request and the merge. The handoff goes on YAZ-2703.
-- Next: nothing in this issue. One guided check for Yaseen on his two real Macs after the release.
+  - [x] Merged to `main` by pull request #109 (`2280329`). NO release was cut: Yaseen puts this work into a release that a different agent cuts
+- Now: closed. The handoff is on YAZ-2703.
+- Next: nothing in this issue. One guided check for Yaseen on his two real Macs after the release: add focus on one Mac, wait 30 seconds, look at the other Mac.
 
 ## Open Questions
-- `mainBundleBytes` grew by 4,845 bytes (584,905 → 589,750): the main bundle is not minified, and the ceiling was the exact size of 1.0.3. The raise of the ceiling needs Yaseen's OK.
+- (resolved) `mainBundleBytes` grew by 4,845 bytes (584,905 → 589,750): the main bundle is not minified, and the ceiling was the exact size of 1.0.3. Yaseen approved the raise of the ceiling.
+- UNCONFIRMED: the Playwright specs `focus.spec.ts`, `multiVault.spec.ts` and `search.spec.ts` changed and are typechecked, and nobody ran them.
 
 ## Working Set
-- Branch `feat/yaz-2702-focus-in-vault` from `main` at `fa79bce`.
+- Branch `feat/yaz-2702-focus-in-vault` from `main` at `fa79bce`, merged by #109. The worktree is removed.
 - Main: `desktop/src/main/focus.ts`, `desktop/src/main/ipc/focus.ts`, `desktop/src/main/ipc/fs.ts`, `desktop/src/main/favorites.ts` (`remap`, `renamedTo`, `deletedAt`, shared with focus), `desktop/src/main/git/manager.ts`, `desktop/src/main/store.ts`
 - Shared: `shared/types.ts` (`FocusConfig`, `AppState.focusOrder`), `shared/ipc.ts` (`CONTRACT.focus`, `state.setFocusOrder`)
 - Renderer: `client/src/sidebar/hooks/useVaultTree.ts`, `client/src/lib/storage.ts`
