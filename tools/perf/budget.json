@@ -16,6 +16,6 @@
     "rendererEagerCssBytes": { "max": 152753 },
     "rendererTotalBytes": { "max": 13178391 },
     "rendererMapBytes": { "max": 0 },
-    "mainBundleBytes": { "max": 584905 }
+    "mainBundleBytes": { "max": 589750, "$comment": "Raised from 584905 for YAZ-2702 (+4845 bytes: the focus list in the vault, the `focus.*` bridge and the sync trigger for list files). The main bundle is not minified, and the old ceiling was the exact size of 1.0.3." }
   }
 }

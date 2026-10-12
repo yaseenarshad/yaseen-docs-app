@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowBounds } from '../../shared/types'
+import { defaultAppState, defaultRightPanelIdentity, type AppState, type FocusConfig, type WindowBounds } from '../../shared/types'
 
 export const REPO_ROOT = path.resolve(__dirname, '..', '..')
 export const MAIN_ENTRY = path.join(REPO_ROOT, 'desktop', 'out', 'main', 'index.js')
@@ -242,7 +242,7 @@ const SEEDED_LENS = 'files' as const
 export function seededState(vault: string, file: string | null): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusList: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, opens: {}, name: null, key: null } }
   return state
 }
@@ -316,13 +316,44 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     rightPanel: defaultRightPanelIdentity(),
     sidebarCollapsed: w.sidebarCollapsed ?? false,
     sidebarLens: SEEDED_LENS,
-    focusList: [],
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {
     state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, opens: {}, name: null, key: null }
   }
   return state
+}
+
+// ---------- a vault's focus list (YAZ-2702: in the vault, one file for each Mac) ----------
+
+const FOCUS_FILE_RE = /^focus\.[0-9a-z]{12}\.json$/
+
+/**
+ * A vault's focus list as it stands IN THE VAULT (YAZ-2702 R1): the `focus` of the newest focus
+ * file in `.yaseendocs/` — the latest `at`, and of two with one `at` the later name. Vault-RELATIVE
+ * paths in the user's order; null while the vault has no focus file. The state file holds no focus
+ * list, so this is the only place a test can read one.
+ */
+export async function focusOnDisk(vault: string): Promise<string[] | null> {
+  const dir = path.join(vault, '.yaseendocs')
+  const names = (await readdir(dir).catch(() => [] as string[])).filter((name) => FOCUS_FILE_RE.test(name)).sort()
+  let newest: FocusConfig | null = null
+  for (const name of names) {
+    const file = JSON.parse(await readFile(path.join(dir, name), 'utf8')) as FocusConfig
+    if (newest === null || Date.parse(file.at) >= Date.parse(newest.at)) newest = file
+  }
+  return newest?.focus ?? null
+}
+
+/**
+ * Give `vault` a focus list BEFORE a launch (YAZ-2702): one focus file dated now, so it is the
+ * newest — under the name of a Mac that is no app profile, the way a sync brings another Mac's
+ * file. A seed of `yaseendocs.json` cannot do this: a window holds no focus list.
+ */
+export async function seedFocus(vault: string, rels: string[]): Promise<void> {
+  await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
+  const file: FocusConfig = { version: 1, at: new Date().toISOString(), focus: rels }
+  await writeFile(path.join(vault, '.yaseendocs', 'focus.e2eseed00000.json'), JSON.stringify(file))
 }
 
 /** The `?win=<id>` a window was created with (null for a page the manager did not create). */

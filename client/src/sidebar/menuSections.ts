@@ -156,7 +156,7 @@ const showInSidebar: Leaf = (t, h) => {
 }
 
 /**
- * The focus toggle (YAZ-2619 D3): the favorite toggle's rule on the window's focus list — ONE
+ * The focus toggle (YAZ-2619 D3): the favorite toggle's rule on the focus list of the row's vault (YAZ-2702) — ONE
  * state-aware item on every ROW, file or dir, any lens, never on blank space (R7); a 2+ selection
  * is counted, and a mixed one reads as Add (R9). A VIEW verb, so it closes the Open group (R6): it
  * changes what the Focus tab shows, never what is on disk.

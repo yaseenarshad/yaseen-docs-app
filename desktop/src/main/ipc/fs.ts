@@ -4,6 +4,7 @@ import { CONTRACT } from '@shared/ipc'
 import { rootOfPath, type RenameFileResponse } from '@shared/types'
 import * as favorites from '../favorites'
 import { fileClip } from '../fileClip'
+import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
 import { copyEntry, pasteEntries } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
@@ -34,6 +35,8 @@ import { handle, handleWithEvent } from './envelope'
  * warned about and the rename/delete stands.
  */
 const repairFavorites = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[favorites] repair failed: ${String(err)}`))
+/** The focus list's repair (YAZ-2702 R10, R11), by the same rule: this Mac's focus file follows a rename and a delete, and a repair that fails is warned about and nothing more. */
+const repairFocus = (p: Promise<void>): Promise<void> => p.catch((err: unknown) => console.warn(`[focus] repair failed: ${String(err)}`))
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
 export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
@@ -94,6 +97,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   const afterRename = async (res: RenameFileResponse): Promise<RenameFileResponse> => {
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   }
@@ -174,6 +178,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const res = await removeEntry(req)
     store.removePath(res.path)
     await repairFavorites(favorites.removePath(rootsOf(store.get()), res.path))
+    await repairFocus(focus.removePath(rootsOf(store.get()), res.path))
     broadcastAll(CONTRACT.file.onDeleted.channel, { path: res.path, kind: res.kind })
     return res
   })
@@ -187,6 +192,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const res = await repairRename(req)
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
+    await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res
   })
@@ -230,6 +236,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
         const r = await renameFile({ oldPath: from, newPath: to })
         store.renamePath(r.oldPath, r.newPath)
         await repairFavorites(favorites.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
+        await repairFocus(focus.renamePath(rootsOf(store.get()), r.oldPath, r.newPath))
         broadcastAll(CONTRACT.file.onRenamed.channel, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
         return r
       },

@@ -4,7 +4,7 @@ import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
 /** A fake `window.yaseenDocs` with just the state / window halves the storage module talks to. */
-type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'>>
+type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
 
 function installBridge(state: AppState, identity: IdentityFixture) {
   let listener: ((s: AppState) => void) | null = null
@@ -14,6 +14,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       setFavoritesOrder: vi.fn(async () => undefined),
+      setFocusOrder: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -33,7 +34,6 @@ function installBridge(state: AppState, identity: IdentityFixture) {
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
         sidebarLens: identity.sidebarLens ?? 'favorites',
-        focusList: identity.focusList ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
@@ -79,7 +79,7 @@ describe('openVaultRoots (YAZ-2555 D1)', () => {
 })
 
 describe('listVaults (YAZ-2556 D2: the one vault list of ⌘O and `yaseendocs vaults`)', () => {
-  const win = (id: string, root: string | null): WindowEntry => ({ id, root, roots: root === null ? [] : [root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+  const win = (id: string, root: string | null): WindowEntry => ({ id, root, roots: root === null ? [] : [root], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
 
   it('is the recents, last used first, then the open vaults and the numbered ones (in number order) that are not among them — each by its display name, else its folder name', () => {
     const vaults = listVaults({
@@ -123,37 +123,44 @@ describe('storage.getVaultSets (YAZ-2602 D8)', () => {
   })
 })
 
-describe('storage.getFavoritesOrder / setFavoritesOrder (YAZ-2631 D1)', () => {
+// The two orders across vaults have one rule in the cache (YAZ-2702 Decision 3): the test runs for the two.
+describe.each([
+  ['favoritesOrder', 'getFavoritesOrder', 'setFavoritesOrder'],
+  ['focusOrder', 'getFocusOrder', 'setFocusOrder'],
+] as const)('storage: %s, an order across vaults (YAZ-2631 D1; the focus order: YAZ-2702 Decision 3)', (key, getter, setter) => {
+  const other = key === 'focusOrder' ? 'getFavoritesOrder' : 'getFocusOrder'
+
   const [a1, a2, b1, c1] = ['/v/a/1.md', '/v/a/2.md', '/v/b/1.md', '/v/c/1.md']
 
   it('a drag is in the cache at once, merged as main merges it (R5), and wakes the readers; the broadcast of the same order changes nothing, and a different one — another window\'s drag — replaces it (S12)', async () => {
-    expect(storage.getFavoritesOrder()).toEqual([])
-    b = installBridge({ ...defaultAppState(), favoritesOrder: [a1, c1, b1, a2] }, { id: 'w1', root: '/v/a', roots: ['/v/a', '/v/b'], file: null, tabs: [] })
+    expect(storage[getter]()).toEqual([])
+    b = installBridge({ ...defaultAppState(), [key]: [a1, c1, b1, a2] }, { id: 'w1', root: '/v/a', roots: ['/v/a', '/v/b'], file: null, tabs: [] })
     await storage.init()
     const woke = vi.fn()
     storage.subscribe(woke)
-    const loaded = storage.getFavoritesOrder()
+    const loaded = storage[getter]()
     expect(loaded).toEqual([a1, c1, b1, a2])
-    expect(storage.getFavoritesOrder()).toBe(loaded)
+    expect(storage[getter]()).toBe(loaded)
 
-    storage.setFavoritesOrder(['/v/a', '/v/b'], [b1, a2, a1])
+    storage[setter](['/v/a', '/v/b'], [b1, a2, a1])
     // The entry of a vault this window does not show keeps its place.
-    const dragged = storage.getFavoritesOrder()
+    const dragged = storage[getter]()
     expect(dragged).toEqual([b1, c1, a2, a1])
-    expect(b.bridge.state.setFavoritesOrder.mock.calls).toEqual([[['/v/a', '/v/b'], [b1, a2, a1]]])
+    expect(storage[other]()).toEqual([]) // the other order is not this one's to move
+    expect(b.bridge.state[setter].mock.calls).toEqual([[['/v/a', '/v/b'], [b1, a2, a1]]])
     expect(woke).toHaveBeenCalledTimes(1)
 
     // Main's echo is a new copy of the same paths: the list keeps its identity, so nothing that reads it draws again.
-    b.emit({ ...defaultAppState(), favoritesOrder: [b1, c1, a2, a1], sidebarWidth: 300 })
-    expect(storage.getFavoritesOrder()).toBe(dragged)
+    b.emit({ ...defaultAppState(), [key]: [b1, c1, a2, a1], sidebarWidth: 300 })
+    expect(storage[getter]()).toBe(dragged)
     expect(storage.getSidebarWidth()).toBe(300)
-    b.emit({ ...defaultAppState(), favoritesOrder: [a1, a2, b1] })
-    expect(storage.getFavoritesOrder()).toEqual([a1, a2, b1])
+    b.emit({ ...defaultAppState(), [key]: [a1, a2, b1] })
+    expect(storage[getter]()).toEqual([a1, a2, b1])
 
     // The order that is held already: still sent — main decides — and no reader wakes.
     woke.mockClear()
-    storage.setFavoritesOrder(['/v/a', '/v/b'], [a1, a2, b1])
-    expect(b.bridge.state.setFavoritesOrder).toHaveBeenCalledTimes(2)
+    storage[setter](['/v/a', '/v/b'], [a1, a2, b1])
+    expect(b.bridge.state[setter]).toHaveBeenCalledTimes(2)
     expect(woke).not.toHaveBeenCalled()
   })
 })
@@ -216,7 +223,7 @@ describe('storage', () => {
     expect(storage.getRoot()).toBeNull()
     storage.setRoot('/notes')
     expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
     storage.setWorkspace('/notes', ['/notes/a.md'], '/notes/a.md', defaultRightPanelIdentity())
     storage.setRoot('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
@@ -224,7 +231,7 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual(['/notes/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
     expect(storage.getFile()).toBeNull()
     expect(storage.getTabs()).toEqual([])
   })
@@ -248,37 +255,19 @@ describe('storage', () => {
     expect(storage.getRoots()).toEqual(['/v', '/w2'])
     expect(b.bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
 
+    // A vault that leaves is a write of the vault list alone (YAZ-2702 S9): the window holds no focus list to cut — it is the vault's, in the vault.
     storage.setRoots(['/w2'])
     expect(storage.getRoot()).toBe('/w2')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/w2'] })
     // The same root again keeps the list; another root is the whole list (S61). Main makes the list from `root` (S76).
     storage.setRoots(['/w2', '/x'])
     storage.setRoot('/w2')
     expect(storage.getRoots()).toEqual(['/w2', '/x'])
     storage.setRoot('/z')
     expect(storage.getRoots()).toEqual(['/z'])
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/z', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
     storage.setRoot(null)
     expect(storage.getRoots()).toEqual([])
-  })
-
-  it('a vault that leaves the window takes its focus items, in the same write; a vault that joins and a vault that stays keep the list (YAZ-2602 A5)', async () => {
-    b = installBridge(defaultAppState(), { id: 'w1', root: '/v', roots: ['/v', '/w', '/w2'], file: null, tabs: [], focusList: ['/w/b.md', '/v/dir', '/w2/c.md', '/v/a.md'] })
-    await storage.init()
-
-    // `/w2` leaves and `/w` stays: a vault is told from its neighbour by path segment, so `/w2/c.md` is no item of `/w`.
-    storage.setRoots(['/v', '/w'])
-    expect(storage.getFocusList()).toEqual(['/w/b.md', '/v/dir', '/v/a.md'])
-    expect(b.bridge.window.setIdentity.mock.calls).toEqual([[{ roots: ['/v', '/w'], focusList: ['/w/b.md', '/v/dir', '/v/a.md'] }]])
-
-    // A vault joins: the list is not in the write at all.
-    storage.setRoots(['/v', '/w', '/x'])
-    expect(storage.getFocusList()).toEqual(['/w/b.md', '/v/dir', '/v/a.md'])
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v', '/w', '/x'] })
-
-    // The FIRST vault leaves: `root` moves on, and the list keeps the other vaults' items.
-    storage.setRoots(['/w', '/x'])
-    expect(storage.getFocusList()).toEqual(['/w/b.md'])
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/w', '/x'], focusList: ['/w/b.md'] })
   })
 
   it('setWorkspace mirrors main and right identity in one call and keeps independent item arrays', () => {
@@ -465,31 +454,6 @@ describe('storage', () => {
     expect(storage.keyedVaults()).toEqual([])
   })
 
-  it('focusList is this window identity (YAZ-2619): restored at boot, one list through window.setIdentity, deaf to state broadcasts, cleared by a root change (S24, S25, S27)', async () => {
-    b = installBridge(defaultAppState(), { id: 'w1', root: '/r1', file: null, tabs: [], sidebarLens: 'focus', focusList: ['/r1/restored', '/r1/n.md'] })
-    await storage.init()
-    expect(storage.getFocusList()).toEqual(['/r1/restored', '/r1/n.md']) // restored from main at boot, with the tab (S24)
-    expect(storage.getSidebarLens()).toBe('focus')
-    const next = ['/r1/a', '/r1/b.md']
-    storage.setFocusList(next)
-    expect(storage.getFocusList()).toEqual(next)
-    expect(storage.getFocusList()).not.toBe(next) // a copy: the caller's array is not the cache
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ focusList: ['/r1/a', '/r1/b.md'] })
-    expect(b.bridge.state.setFolder).not.toHaveBeenCalled() // never the per-vault bucket
-    // Another window's write lands as a state broadcast; it cannot move THIS window's list (S25).
-    b.emit({ ...defaultAppState(), sidebarWidth: 333 })
-    expect(storage.getSidebarWidth()).toBe(333)
-    expect(storage.getFocusList()).toEqual(['/r1/a', '/r1/b.md'])
-    // Re-setting the same root keeps the list; a different root clears it and lands on Files, in the root write itself (S27).
-    storage.setRoot('/r1')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r1' })
-    expect(storage.getFocusList()).toEqual(['/r1/a', '/r1/b.md'])
-    storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
-    expect(storage.getFocusList()).toEqual([])
-    expect(storage.getSidebarLens()).toBe('files')
-  })
-
   it('sidebarCollapsed is this window identity and round-trips through window.setIdentity', () => {
     expect(storage.getSidebarCollapsed()).toBe(false)
     storage.setSidebarCollapsed(true)
@@ -523,7 +487,7 @@ describe('storage', () => {
     expect(storage.getSidebarLens()).toBe('favorites')
     // A root CHANGE lands on Files (YAZ-1846 D2) — in the same single identity write.
     storage.setRoot('/r2')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files', focusList: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/r2', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
     expect(storage.getSidebarLens()).toBe('files')
   })
 
