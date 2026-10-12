@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setBaseGroups.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setBaseGroups.channel].sort(),
     )
   })
 
@@ -80,17 +80,21 @@ describe('registerStateIpc', () => {
     expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
   })
 
-  it('state:set-favorites-order takes two lists of absolute paths and merges them into the one order (YAZ-2631 D1)', async () => {
-    const set = registered(CONTRACT.state.setFavoritesOrder.channel)
+  it.each([
+    ['setFavoritesOrder', 'favoritesOrder'],
+    ['setFocusOrder', 'focusOrder'],
+  ] as const)('state.%s takes two lists of absolute paths and merges them into the one order, and into that order alone (YAZ-2631 D1; the focus order: YAZ-2702 Decision 3)', async (setter, key) => {
+    const set = registered(CONTRACT.state[setter].channel)
     expect(await set({ sender }, ['/v/a', '/v/b'], ['/v/b/1.md', '/v/a/1.md'])).toEqual(ok(undefined))
-    expect(store.get().favoritesOrder).toEqual(['/v/b/1.md', '/v/a/1.md'])
+    expect(store.get()[key]).toEqual(['/v/b/1.md', '/v/a/1.md'])
     expect(await set({ sender }, ['/v/a'], ['/v/a/1.md', 'a/2.md'])).toEqual(bad('NOT_ABSOLUTE'))
     expect(await set({ sender }, ['v/a'], ['/v/a/1.md'])).toEqual(bad('NOT_ABSOLUTE'))
     expect(await set({ sender }, ['/v/a'], '/v/a/1.md')).toEqual(bad('BAD_REQUEST'))
     expect(await set({ sender }, '/v/a', ['/v/a/1.md'])).toEqual(bad('BAD_REQUEST'))
     expect(await set({ sender }, ['/v/a'], ['/v/a/1.md', 5])).toEqual(bad('BAD_REQUEST'))
     expect(await set({ sender }, ['/v/a'], ['/v/a/1.md', ''])).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().favoritesOrder).toEqual(['/v/b/1.md', '/v/a/1.md'])
+    expect(store.get()[key]).toEqual(['/v/b/1.md', '/v/a/1.md'])
+    expect(store.get()[key === 'focusOrder' ? 'favoritesOrder' : 'focusOrder']).toEqual([])
   })
 
   it('state:push-recent needs an absolute path', async () => {
@@ -136,7 +140,7 @@ describe('registerStateIpc', () => {
     expect(store.get().folders['/v'].key).toBe(3)
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { key: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].key).toBeNull()
-    // The focus list is window identity (`window.setIdentity`, YAZ-1628, YAZ-2619): here it is an unknown key, ignored like any other.
+    // The focus list is the vault's, behind `focus.set` (YAZ-2702): here `focusList` is an unknown key, ignored like any other.
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { focusList: ['/v/sub'] })).toEqual(ok(undefined))
     expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null })
   })

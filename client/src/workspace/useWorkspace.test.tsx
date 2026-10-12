@@ -402,7 +402,7 @@ describe('tabsReducer', () => {
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */
-type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusList'>>
+type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
 
 function installBridge(app: AppState, identity: IdentityFixture) {
   const bridge = {
@@ -418,7 +418,6 @@ function installBridge(app: AppState, identity: IdentityFixture) {
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
         sidebarLens: identity.sidebarLens ?? 'files',
-        focusList: identity.focusList ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
     },

@@ -23,7 +23,7 @@ const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
 const RIGHT = { open: true, width: 520, items: ['/v/right.md'], expanded: '/v/right.md' }
-const entry: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }
+const entry: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', bounds }
 
 let dir: string
 let store: Store
@@ -87,7 +87,7 @@ describe('registerWindowIpc', () => {
   })
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [] }))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {
@@ -99,12 +99,12 @@ describe('registerWindowIpc', () => {
   it('window:set-identity merges root / file into the entry, keeping id and bounds; tabs follow the invariant', async () => {
     // file → null clears tabs (tabs [] ⇔ file null); a new file not in tabs is prepended.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { root: '/other', file: null })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: null, tabs: [], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: null, tabs: [], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', bounds }])
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { file: '/other/b.md' })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', bounds }])
     // Unknown keys cannot touch id / bounds.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { id: 'hijack', bounds: { x: 0, y: 0, width: 1, height: 1 } })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', bounds }])
   })
 
   it('window:set-identity accepts a tabs patch: de-duplicated, and the active file is prepended when missing (GRO-2232)', async () => {
@@ -115,7 +115,7 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
     // file and tabs patched together: the new file leads.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'] })).toEqual(ok(undefined))
-    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: [], bounds })
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', bounds })
   })
 
   it('window:set-identity accepts one complete right-panel patch and enforces main/right exclusivity', async () => {
@@ -148,7 +148,7 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'focus' }])
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites', focusList: [] }))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites' }))
     // A value that is not a tab is refused, and the message names the three tabs.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'nope' })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: "'sidebarLens' must be 'files', 'focus' or 'favorites'" }) })
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 1 })).toEqual(bad('BAD_REQUEST'))
@@ -156,19 +156,10 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
   })
 
-  it('window:set-identity validates and patches the focus list, and identity reads it back (YAZ-2619 S33)', async () => {
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/a', '/v/b.md'] })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ ...entry, focusList: ['/v/a', '/v/b.md'] }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', focusList: ['/v/a', '/v/b.md'] }))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarCollapsed: true })).toEqual(ok(undefined)) // absent = untouched
-    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true, focusList: ['/v/a', '/v/b.md'] }])
-    // A non-array, or one element that is not an absolute path, rejects the whole call and leaves the entry untouched.
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: 'nope' })).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/a', 5] })).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/c', 'rel'] })).toEqual(bad('NOT_ABSOLUTE'))
-    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true, focusList: ['/v/a', '/v/b.md'] }])
-    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: [] })).toEqual(ok(undefined))
+  it('window:set-identity holds no focus list: the list is the vault\'s, behind `focus.set` (YAZ-2702 Decision 1) — a `focusList` in a patch is an unknown key, and neither the entry nor window:identity gains it', async () => {
+    expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/a', '/v/b.md'], sidebarCollapsed: true })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true }])
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: true, sidebarLens: 'files' }))
   })
 
   describe('the vault list (YAZ-2602 D1, S76)', () => {
@@ -177,7 +168,7 @@ describe('registerWindowIpc', () => {
 
     it('window:set-identity accepts `roots`: `root` follows roots[0], nothing else of the identity moves, and window:identity reads a COPY back', async () => {
       expect(await set({ roots: ['/v', '/w'] })).toEqual(ok(undefined))
-      expect(store.get().windows).toEqual([{ ...entry, roots: ['/v', '/w'] }]) // the tabs, the panel, the lens and the focus lists stay
+      expect(store.get().windows).toEqual([{ ...entry, roots: ['/v', '/w'] }]) // the tabs, the panel and the lens stay
       // A new first vault: `root` follows it. One vault under two spellings is one entry.
       expect(await set({ roots: ['/w', '/v/', '/w/', '/x'] })).toEqual(ok(undefined))
       expect(stored()).toEqual({ ...entry, root: '/w', roots: ['/w', '/v', '/x'] })
@@ -191,15 +182,6 @@ describe('registerWindowIpc', () => {
       // The empty list is the Welcome window.
       expect(await set({ roots: [] })).toEqual(ok(undefined))
       expect(stored()).toMatchObject({ root: null, roots: [] })
-    })
-
-    it('window:set-identity takes `roots` and `focusList` in ONE patch: a vault leaves with its focus items in one commit (A5)', async () => {
-      await set({ roots: ['/v', '/w'], focusList: ['/w/b.md', '/v/a'] })
-      let commits = 0
-      store.onChange(() => commits++)
-      expect(await set({ roots: ['/v'], focusList: ['/v/a'] })).toEqual(ok(undefined))
-      expect(stored()).toEqual({ ...entry, focusList: ['/v/a'] })
-      expect(commits).toBe(1)
     })
 
     it('window:set-identity with `root` alone (the old patch): the SAME root keeps the list, a DIFFERENT root is the whole list, and null is no vault (S76 as amended, A10)', async () => {

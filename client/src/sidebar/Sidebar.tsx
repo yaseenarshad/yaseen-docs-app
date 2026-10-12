@@ -916,7 +916,7 @@ export function Sidebar({
     void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
-  // window in the tab's order (D1), the focus list, or the vault rows of Files (D5).
+  // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
   const orderRef = useRef<readonly string[]>([])
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
@@ -1263,7 +1263,7 @@ export function Sidebar({
             {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={reorder} />}
           </>
         ) : lens === 'focus' ? (
-          // The Focus tab (YAZ-2619 D2, D4): the window's focus list in its own order, each a full
+          // The Focus tab (YAZ-2619 D2, D4): the focus lists of the window's vaults (kept in the vault, YAZ-2702) in their own order, each a full
           // tree row with the same menu plus "Show in sidebar" first (YAZ-2638 D3), under a line that counts the top rows (R11) and clears the
           // list. A top row drags to reorder the list, and a file inside a focused folder drags to move
           // on disk (YAZ-2631 D3). With two or more vaults the items of every vault stand in the one

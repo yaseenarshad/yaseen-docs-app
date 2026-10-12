@@ -224,7 +224,7 @@ describe('github.json drives adoption', () => {
     expect(await manager.status(ROOT)).toEqual({ root: ROOT, state: 'off', enabled: false })
   })
 
-  it('ignores changes to other config files', async () => {
+  it('a change of another config file does not re-read the switch', async () => {
     const h = harness()
     h.enabled.set(ROOT, true)
     const manager = createGitSync(h.host)
@@ -234,7 +234,9 @@ describe('github.json drives adoption', () => {
     h.enabled.set(ROOT, false)
     h.emitConfig(ROOT, 'properties.json')
     await sleep(60)
-    expect(await manager.status(ROOT)).toEqual({ root: ROOT, state: 'synced', enabled: true })
+    // Still managed — only `github.json` is the switch. The file itself is unsynced work (YAZ-2702, below).
+    expect(await manager.status(ROOT)).toEqual({ root: ROOT, state: 'pending', enabled: true })
+    expect(h.vaultSubs()).toBe(1)
   })
 
   it('drops a root that is no longer open', async () => {
@@ -249,6 +251,64 @@ describe('github.json drives adoption', () => {
     await sleep(60)
     expect(h.passes).toHaveLength(1)
     expect(await manager.status(ROOT)).toEqual({ root: ROOT, state: 'off', enabled: false })
+  })
+})
+
+/**
+ * A list file is vault content (YAZ-2702, Decision 5): the vault watcher skips `.yaseendocs/`, so
+ * the config watcher is the only one that can say a favorite or a focus item changed.
+ */
+describe('list files start a sync (YAZ-2702)', () => {
+  const FOCUS = 'focus.0123456789ab.json'
+
+  it('S18: a change of a list file with no note edit marks pending once, and a burst — two list files and a note — runs exactly one pass after the quiet period', async () => {
+    const h = harness({ quietMs: 30 })
+    h.enabled.set(ROOT, true)
+    const manager = createGitSync(h.host)
+    manager.setOpenRoots([ROOT])
+    await until(() => h.statuses.at(-1)?.state === 'synced') // adoption's pull (D3)
+    expect(h.passes).toEqual([ROOT])
+
+    h.emitConfig(ROOT, FOCUS)
+    expect(await manager.status(ROOT)).toEqual({ root: ROOT, state: 'pending', enabled: true })
+    h.emitConfig(ROOT, 'favorites.json')
+    h.emitVault(ROOT, change('a.md', 1))
+    h.emitConfig(ROOT, FOCUS)
+    expect(h.statuses.filter((s) => s.state === 'pending')).toHaveLength(1)
+    expect(h.passes).toEqual([ROOT]) // nothing before the quiet period is over
+
+    await until(() => h.passes.length === 2)
+    await sleep(120)
+    expect(h.passes).toEqual([ROOT, ROOT])
+    expect(h.statuses.at(-1)).toEqual({ root: ROOT, state: 'synced', enabled: true })
+  })
+
+  it('S19: a root with sync off stays silent — no status, no timer, no pass', async () => {
+    const h = harness({ quietMs: 5 })
+    const manager = createGitSync(h.host)
+    manager.setOpenRoots([ROOT]) // off by default
+    await sleep(40)
+
+    h.emitConfig(ROOT, FOCUS)
+    h.emitConfig(ROOT, 'favorites.json')
+    await sleep(80) // many quiet periods
+    expect(h.passes).toEqual([])
+    expect(h.statuses).toEqual([])
+    expect(h.vaultSubs()).toBe(0)
+    expect(await manager.status(ROOT)).toEqual({ root: ROOT, state: 'off', enabled: false })
+  })
+
+  it('S21: github.json only re-reads the switch — no pending, no quiet period, no pass', async () => {
+    const h = harness({ quietMs: 5 })
+    h.enabled.set(ROOT, true)
+    const manager = createGitSync(h.host)
+    manager.setOpenRoots([ROOT])
+    await until(() => h.statuses.at(-1)?.state === 'synced')
+
+    h.emitConfig(ROOT, GITHUB_SYNC_FILE)
+    await sleep(80)
+    expect(h.passes).toEqual([ROOT])
+    expect(h.statuses.some((s) => s.state === 'pending')).toBe(false)
   })
 })
 

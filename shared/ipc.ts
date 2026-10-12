@@ -69,6 +69,8 @@ export const CONTRACT = {
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
     setFavoritesOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-favorites-order', 2),
+    /** The focus order of the window's vaults (YAZ-2702 Decision 3); main merges it into the one list, as it does the Favorites order. */
+    setFocusOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-focus-order', 2),
     /** Prepend to recents (de-duplicated, capped). */
     pushRecent: invoke<[path: string], void>('state:push-recent', 1),
     /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
@@ -242,6 +244,18 @@ export const CONTRACT = {
     set: invoke<[root: string, paths: readonly string[]], void>('favorites:set', 2),
     /** Fired in every window after any change to a vault's favorites.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('favorites:changed'),
+  },
+  /**
+   * A vault's focus list (YAZ-2702): ONE list for each vault, kept in the vault as one file for each
+   * Mac, `.yaseendocs/focus.<mac id>.json`; the newest file is the list. Absolute paths in the user's order.
+   */
+  focus: {
+    /** Absolute paths in stored order, from the newest valid file; `[]` when there is none. Never creates anything. */
+    get: invoke<[root: string], string[]>('focus:get', 1),
+    /** Replace the list; every path must be inside `root` (→ `BAD_REQUEST`). Writes this Mac's file only, and nothing when the list did not change. */
+    set: invoke<[root: string, paths: readonly string[]], void>('focus:set', 2),
+    /** Fired in every window after any change to a focus file of a vault, an own write or another Mac's file from a sync; filter by `root`. */
+    onChanged: push<{ root: string }>('focus:changed'),
   },
   /** Per-vault GitHub sync, off by default (YAZ-1081); every call answers the same status the push carries. */
   github: {
