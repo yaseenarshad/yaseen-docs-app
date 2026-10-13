@@ -34,7 +34,7 @@
 - Found in the polish (YAZ-2735, YAZ-2736): the drag handle mutes over the band of a section line, because the handle of a bullet lies on the innermost line of its list. The empty last paragraph shows no grey line.
 - Declined in the polish, still open for eyes: the fold arrow covers part of the click band of the nearest line (3 of 10 px at a step of 30 px, F15); the 4 px outsets overlap below a code block, a table or a quote that holds the caret (F13); soft 1 px lines at a pixel ratio of 1 (F16).
 - Docs: the new rule is "18a" in `docs/CONTRACTS.md`, so that the rules 19 to 35 keep their numbers (rule 35, the table of contents, came with the merge of `main`).
-- The merge of `main` (YAZ-2700), decided on YAZ-2711: Settings › Editor has "Bullet threading", "Table of contents", "Section indent", in that order. The page cog has "Line numbers", "Section indent", then the three rows of YAZ-2700. In `docs/REGRESSION.md` `main` keeps E31 to E33, and section indent is E34.
+- The merge of `main` (YAZ-2700), decided on YAZ-2711: Settings › Editor has "Bullet threading", "Section indent", "Table of contents", in that order (Yaseen chose this order after the merge, so that the two groups that share the purple path are side by side). The page cog has "Line numbers", "Section indent", then the three rows of YAZ-2700. In `docs/REGRESSION.md` `main` keeps E31 to E33, and section indent is E34.
 
 ## State
 - Done:
@@ -63,7 +63,6 @@
 - UNCONFIRMED: nothing of the polish (`ecf2193`) was seen in the app: the empty last paragraph, the Settings pane and its close button, the handle over a line beside a bullet.
 - UNCONFIRMED: the saved switch was not seen in the app. Its proof is unit tests and a spec step that was not run.
 - For Yaseen: an editor reads the switch when it mounts and does not follow a later change, the same as "TOC made from:". A tab and the right panel that show one note at the same time can differ until the note is opened again there. A live follow is possible with `storage.subscribe`. Wanted?
-- For Yaseen: Settings › Editor has "Table of contents" between "Bullet threading" and "Section indent" (the order of `main`, then this branch). The other order puts the two groups that share the purple path side by side.
 - On Node 25 and later, `localStorage` is `undefined` in each client test (Node's own global hides the one of jsdom). No test of this branch needs it now. `FrontmatterPanel.test.tsx` spreads it (`{ ...localStorage }`), which does not throw.
 - For Yaseen: `rendererTotalBytes` measures 13,213,850, which is 9,167 bytes above its ceiling of 13,204,683 and inside the 0.1% tolerance (13,204 bytes). The gate does not flag it, so it was not raised. The next 4,038 bytes in the renderer make the gate red. Raise it in this pull request too, or leave it?
 - For Yaseen: `README.md` has no entry for the section indent in "Editing". Add one with the release notes (YAZ-2738)?

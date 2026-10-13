@@ -339,21 +339,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-2700: one row, and the same field the table of contents' own "Pin" and "Unpin" buttons write.
-        title: 'Table of contents',
-        hint: 'The headings or the bullets of a note, at its right edge.',
-        items: [
-          {
-            id: 'tableOfContents',
-            label: 'Show the names',
-            keywords: ['outline', 'toc', 'headings', 'jump'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={TABLE_OF_CONTENTS_OPTIONS} value={settings.tableOfContents} onChange={(tableOfContents) => onChange({ ...settings, tableOfContents })} ariaLabel="Table of contents" />
-            ),
-          },
-        ],
-      },
-      {
         // Section indent (YAZ-2709). On or off is a switch of each note (the page cog); these rows
         // are how it looks in every note. The purple path has no rows here: it takes the Bullet
         // threading rows above (show, width, colour).
@@ -374,6 +359,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['heading', 'hover', 'guide'],
             render: ({ settings, onChange }) => (
               <Segmented options={SECTION_LINES_OPTIONS} value={settings.sectionLines} onChange={(sectionLines) => onChange({ ...settings, sectionLines })} ariaLabel="Grey lines" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-2700: one row, and the same field the table of contents' own "Pin" and "Unpin" buttons write.
+        title: 'Table of contents',
+        hint: 'The headings or the bullets of a note, at its right edge.',
+        items: [
+          {
+            id: 'tableOfContents',
+            label: 'Show the names',
+            keywords: ['outline', 'toc', 'headings', 'jump'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_OF_CONTENTS_OPTIONS} value={settings.tableOfContents} onChange={(tableOfContents) => onChange({ ...settings, tableOfContents })} ariaLabel="Table of contents" />
             ),
           },
         ],
