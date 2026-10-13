@@ -20,13 +20,21 @@ const watchers = new Set<() => void>()
 
 /** Emphasis of ONE mark around a word or a phrase: `*so*`, `_so_`. A `*` or `_` with a space inside it, or inside a word, is no mark. */
 const ONE_MARK = /(^|[\s(])([*_])(?=\S)([^*_]*[^\s*_])\2(?=$|[\s).,;:!?])/g
+/** A character reference by number, `&#x20;` or `&#32;` (YAZ-2751): what the editor writes for a space at the start or the end of a line. */
+const CHAR_REF = /&#(?:[xX]([0-9a-fA-F]{1,6})|(\d{1,7}));/g
+/** The character a reference names; a number that names none leaves the reference as it stands. */
+const charOf = (ref: string, hex: string | undefined, dec: string | undefined): string => {
+  const code = hex !== undefined ? parseInt(hex, 16) : Number(dec)
+  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : ref
+}
 
 /**
  * The head of a note as a page shows it: plain text, a few lines. Markdown's marks come off — a
  * heading's `#`, a bullet, a task box, a quote mark, emphasis, the pipes at the ends of a table
  * row — a link shows its text, a wiki link its alias or its target, an HTML tag goes, and a line
  * that is only marks goes whole: a rule, a table's rule, a code fence with or without a language.
- * Text is never taken for a mark: a `<` and a `>` that hold no tag stay.
+ * Text is never taken for a mark: a `<` and a `>` that hold no tag stay. A character reference by
+ * number reads as its character, after the marks are off, so the character it names is never a mark.
  */
 export function plainLines(text: string): string {
   const lines: string[] = []
@@ -42,6 +50,7 @@ export function plainLines(text: string): string {
       .replace(/(\*\*|__|~~|==|`)/g, '')
       .replace(ONE_MARK, '$1$3')
       .replace(/^\s*\|(.*)\|\s*$/, '$1')
+      .replace(CHAR_REF, charOf)
       .replace(/\s+/g, ' ')
       .trim()
     if (line === '' || /^[-*_=`~|:\s]+$/.test(line)) continue
