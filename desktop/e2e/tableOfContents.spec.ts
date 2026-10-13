@@ -437,8 +437,8 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await expect(name('Install')).toHaveAttribute('aria-current', 'true')
   await expect.poll(() => pathsOf(win)).toEqual([null, '1t', '2t', null, null, null])
   await expect.poll(() => linesOf(win)).toEqual(BOTH)
-  // The wash of the row below the mouse is behind the lines: the row still draws its six line pieces.
-  expect(await name('Install').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(6)
+  // The wash of the row below the mouse is behind the lines: the row still draws its five line pieces.
+  expect(await name('Install').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(5)
   await shoot(win, 'toc-05c-lines-on-hover')
 
   // "Reference" is the third level 2 name below "Guide": the line of "Guide" passes the rows above it.
