@@ -3,8 +3,8 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
-import { createStore } from './store'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
+import { createStore, isSettings, sanitizeSettings } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -248,6 +248,31 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ tableOfContents: 'auto' })
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents: true } }))
     expect(createStore(file).get().settings).toMatchObject({ tableOfContents: 'auto' })
+  })
+
+  it('tableOfContentsWidth: an older file without the key loads with 200; 160 to 480 load as they are; anything else loads as 200, never clamped, and fails the channel check (YAZ-2752 D1, D3)', async () => {
+    expect([TOC_MIN_W, TOC_DEFAULT_W, TOC_MAX_W]).toEqual([160, 200, 480])
+    expect(DEFAULT_SETTINGS.tableOfContentsWidth).toBe(200)
+    const { tableOfContentsWidth: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (tableOfContentsWidth: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth } }))
+      const { settings } = createStore(file).get()
+      // One bad field costs that field only: the mode beside it loads as stored.
+      expect(settings.tableOfContents).toBe('pinned')
+      return settings.tableOfContentsWidth
+    }
+
+    for (const width of [160, 161, 320, 479, 480]) expect(await loaded(width)).toBe(width)
+    // A string, what JSON makes of a NaN (null), and one px past each limit: the default, not the nearest limit.
+    for (const width of ['240', null, true, 159, 481, 0, -200, 100000]) expect(await loaded(width)).toBe(200)
+    // JSON cannot hold these two, so they are given to the guard itself.
+    for (const width of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width }).tableOfContentsWidth).toBe(200)
+
+    // `state.setSettings` is strict: a write with a width outside the limits is refused as a whole.
+    for (const width of [160, 480]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(true)
+    for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
   })
 
   it('confirmRename: a file without the key sanitizes to on; off survives; junk falls back (YAZ-2420 3C1)', async () => {

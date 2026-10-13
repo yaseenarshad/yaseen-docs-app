@@ -778,6 +778,8 @@ export interface SettingsState {
   sectionLines: SectionLines
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. */
   tableOfContents: TableOfContents
+  /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
+  tableOfContentsWidth: number
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -815,6 +817,11 @@ export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none'
  */
 export type TableOfContents = 'auto' | 'pinned' | 'off'
 export const TABLE_OF_CONTENTS: readonly TableOfContents[] = ['auto', 'pinned', 'off']
+
+/** The names column of the table of contents (YAZ-2752): the narrowest and the widest a drag makes it, and its width until the reader drags. */
+export const TOC_MIN_W = 160
+export const TOC_MAX_W = 480
+export const TOC_DEFAULT_W = 200
 
 /**
  * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
@@ -856,6 +863,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionStep: 30,
   sectionLines: 'always',
   tableOfContents: 'auto',
+  tableOfContentsWidth: TOC_DEFAULT_W,
 }
 
 export interface WindowBounds {

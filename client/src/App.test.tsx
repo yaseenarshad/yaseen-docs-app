@@ -115,12 +115,12 @@ const captured = vi.hoisted(() => ({
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents })
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -909,6 +909,23 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(editor()?.tableOfContents).toBe('auto')
     // The retained editors are memo: a door that changed with the settings would render each of them.
     expect(editor()?.onChangeTableOfContents).toBe(door)
+  })
+
+  it('hands each editor the stored width of the names column; another window\'s drag arrives at once; a drag here writes the one field through a door that never changes (YAZ-2752 D1)', async () => {
+    const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableOfContents: 'pinned' } }
+    const { bridge, emitStateChanged } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    // The default: what a state file from before the feature loads as.
+    expect(editor()?.tableOfContentsWidth).toBe(200)
+    const door = editor()?.onChangeTableOfContentsWidth
+    // The release of a drag in a different window.
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth: 320 } }))
+    expect(editor()?.tableOfContentsWidth).toBe(320)
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
+    // The release of a drag here: the whole settings object as it is NOW, with the one field changed.
+    act(() => door?.(260))
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth: 260 })
+    expect(editor()?.tableOfContentsWidth).toBe(260)
+    expect(editor()?.onChangeTableOfContentsWidth).toBe(door)
   })
 })
 
