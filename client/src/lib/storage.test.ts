@@ -20,6 +20,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setTocSource: vi.fn(async () => undefined),
+      setSectionIndent: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       onChange: vi.fn((l: (s: AppState) => void) => {
         listener = l
@@ -172,7 +173,7 @@ describe('storage.init', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, tocSources: {}, name: null, key: null } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, tocSources: {}, sectionIndents: {}, name: null, key: null } },
     }
     const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel, sidebarCollapsed: true })
@@ -369,7 +370,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, name: null, key: null } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -402,6 +403,31 @@ describe('storage', () => {
     b.emit({ ...defaultAppState(), folders: { '/r1': { ...defaultFolderState(), tocSources: { '/r1/a.md': 'bullets' } } } })
     expect(storage.getTocSource('/r1', '/r1/a.md')).toBe('bullets')
     expect(storage.getTocSource('/r1', '/r1/b.md')).toBeNull()
+  })
+
+  it('the section indent switch is keyed by root then file; a note with no entry is off; on AND off are sent, and the same value again writes nothing (YAZ-2709 D2)', () => {
+    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(false)
+    storage.setSectionIndent('/r1', '/r1/a.md', true)
+    storage.setSectionIndent('/r1', '/r1/b.md', true)
+    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(true)
+    expect(storage.getSectionIndent('/r1', '/r1/b.md')).toBe(true)
+    expect(storage.getSectionIndent('/r2', '/r1/a.md')).toBe(false)
+    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledWith('/r1', '/r1/a.md', true)
+    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledTimes(2)
+    // The same value again: no write.
+    storage.setSectionIndent('/r1', '/r1/a.md', true)
+    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledTimes(2)
+    // Off is sent as `false`, never as a removal — and off on a note never touched is sent too: it is a choice.
+    storage.setSectionIndent('/r1', '/r1/a.md', false)
+    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(false)
+    expect(b.bridge.state.setSectionIndent).toHaveBeenLastCalledWith('/r1', '/r1/a.md', false)
+    storage.setSectionIndent('/r1', '/r1/never.md', false)
+    expect(b.bridge.state.setSectionIndent).toHaveBeenLastCalledWith('/r1', '/r1/never.md', false)
+    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledTimes(4)
+    // Another window's switch arrives with the state broadcast, as its folds do.
+    b.emit({ ...defaultAppState(), folders: { '/r1': { ...defaultFolderState(), sectionIndents: { '/r1/a.md': true, '/r1/b.md': false } } } })
+    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(true)
+    expect(storage.getSectionIndent('/r1', '/r1/b.md')).toBe(false)
   })
 
   it('folds are keyed by root then file, capped, and pruned when empty', () => {
@@ -530,7 +556,7 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, name: null, key: null } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

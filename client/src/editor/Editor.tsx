@@ -259,14 +259,14 @@ function CrepeHost({
   documentZoomRef.current = documentZoom
   // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
-  // Per page and remembered for it (YAZ-2709): the page cog's "Section indent".
+  // Per page and saved with the note in the app state, on and off (YAZ-2709 D2): the page cog's "Section indent".
   const [sectionIndentOn, toggleSectionIndent] = useSectionIndent(root, file.path)
   // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
   const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
   // And the other way round: the table of contents is ON for every page, and this page can turn its own off.
   const [tableOfContentsOn, setTableOfContentsOn] = useState(true)
-  // What this page's table of contents is built from (YAZ-2700 D14). The ONE page switch that is
-  // stored: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
+  // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
+  // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
   const hostRef = useRef<HTMLDivElement>(null)
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,

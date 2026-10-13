@@ -306,6 +306,15 @@ export const storage = {
     send('state.setTocSource', () => api.state.setTocSource(root, file, source))
   },
 
+  /** This note's "Section indent" switch (YAZ-2709 D2). A note with no entry is off. */
+  getSectionIndent: (root: string, file: string): boolean => folderOf(root).sectionIndents[file] === true,
+  /** The reader's switch for one note. On and off are both stored; the same value again writes nothing. */
+  setSectionIndent(root: string, file: string, on: boolean): void {
+    if (on === folderOf(root).sectionIndents[file]) return
+    patchFolder(root, { sectionIndents: { ...folderOf(root).sectionIndents, [file]: on } })
+    send('state.setSectionIndent', () => api.state.setSectionIndent(root, file, on))
+  },
+
   /**
    * Collapsed group keys for one view; `key` is `<pagePath>::<viewName>` (4C, GRO-2137).
    *

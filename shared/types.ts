@@ -953,6 +953,8 @@ export interface FolderState {
   opens: Record<string, OpenStat>
   /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
+  /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  sectionIndents: Record<string, boolean>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
@@ -1027,7 +1029,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */
