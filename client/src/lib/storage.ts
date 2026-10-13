@@ -21,6 +21,7 @@ import {
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
+  type TocSource,
   type VaultEntry,
   type VaultSet,
   type WindowIdentity,
@@ -291,6 +292,18 @@ export const storage = {
     else folds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
     patchFolder(root, { folds })
     send('state.setFolds', () => api.state.setFolds(root, file, keys))
+  },
+
+  /** What this note's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` — Auto, the note's own structure decides, which is no entry at all. */
+  getTocSource: (root: string, file: string): TocSource | null => folderOf(root).tocSources[file] ?? null,
+  /** The reader's choice for one note; `null` (Auto) removes the entry. The same choice again writes nothing. */
+  setTocSource(root: string, file: string, source: TocSource | null): void {
+    if (source === (folderOf(root).tocSources[file] ?? null)) return
+    const tocSources = { ...folderOf(root).tocSources }
+    if (source === null) delete tocSources[file]
+    else tocSources[file] = source
+    patchFolder(root, { tocSources })
+    send('state.setTocSource', () => api.state.setTocSource(root, file, source))
   },
 
   /**

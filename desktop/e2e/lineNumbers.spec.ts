@@ -1,7 +1,8 @@
 /**
  * The page settings cog and the line numbers of a note, in the REAL app (YAZ-2643):
- *  - THE COG is the first chip of a Markdown note. Its menu has one switch, "Line numbers", and the
- *    word and character count of the note body.
+ *  - THE COG is the first chip of a Markdown note. Its menu has the switch "Line numbers" and the
+ *    word and character count of the note body. (The other switches of the menu are YAZ-2700's:
+ *    `tableOfContents.spec.ts`.)
  *  - A LINE NUMBER is a line of the file ON DISK, frontmatter included. The numbers are built when
  *    the switch turns on, when an outside change lands, and when a save settles. This is the one
  *    place the web worker is proved to load from the built app: no unit suite has a real `Worker`.
@@ -84,7 +85,8 @@ let win: Page
 
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
 const menu = (w: Page) => layer(w).locator('.page-settings__menu')
-const lineSwitch = (w: Page) => menu(w).locator('button[aria-pressed]')
+// By its label: since YAZ-2700 the menu has more `aria-pressed` buttons ("Heading levels", "Table of contents", the three choices of "TOC made from:").
+const lineSwitch = (w: Page) => menu(w).locator('button[aria-pressed]', { hasText: 'Line numbers' })
 const host = (w: Page) => layer(w).locator('.editor-host')
 
 /** Each numbered block of the visible note, in page order: its number, its tag, the first word of its text. */

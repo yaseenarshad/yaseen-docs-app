@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type StartupWindows, type Theme } from '@shared/types'
+import { THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type StartupWindows, type TableOfContents, type Theme } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -29,6 +29,17 @@ export const CONTENT_WIDTH_OPTIONS: readonly Option<ContentWidth>[] = [
 export const COMMENTS_ORDER_OPTIONS: readonly Option<CommentsOrder>[] = [
   { label: 'Oldest first', value: 'oldest' },
   { label: 'Newest first', value: 'newest' },
+]
+
+/**
+ * A note's table of contents (YAZ-2700): the names of its rows (headings, or bullets) beside the
+ * text when the window has room for them, always, or nothing. The editor owns what "room" means
+ * (`namesShow`, editor/toc).
+ */
+export const TABLE_OF_CONTENTS_OPTIONS: readonly Option<TableOfContents>[] = [
+  { label: 'When there is room', value: 'auto' },
+  { label: 'Always', value: 'pinned' },
+  { label: 'Off', value: 'off' },
 ]
 
 /** What a plain launch brings back (YAZ-2589 D2); the main process reads the field when the app starts. */
