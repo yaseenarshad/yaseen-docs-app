@@ -31,6 +31,7 @@ import { windowTitle } from './lib/windowTitle'
 import { isFolderPath, pageName, pathTitles, useAllPathTitles } from './lib/pageLabel'
 import { fetchTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
+import { ConfirmSheet } from './components/ConfirmSheet'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
@@ -690,6 +691,21 @@ export function App() {
     closeTabs(paths)
   }, [closeTabs])
   const closeOneUnderOverview = useCallback((path: string) => closeUnderOverview([path]), [closeUnderOverview])
+  /**
+   * "Kill all tabs" (YAZ-2739): the board's button and the grid button's menu both ask HERE, so one
+   * sheet answers for both. Yes closes each tab as ⌘W closes it, in ONE change of the workspace:
+   * each editor saves its text on the way out. The blank tab goes too. An open board closes with
+   * its last tab (R18). No tab comes back, which is why it asks.
+   */
+  const [killAsk, setKillAsk] = useState(false)
+  // With no tab there is nothing to ask about: a sheet whose last tab went under it (⌘W, a delete) closes.
+  if (killAsk && tabs.length === 0) setKillAsk(false)
+  const askKillAll = useCallback(() => setKillAsk(true), [])
+  const killAllTabs = useCallback(() => {
+    setKillAsk(false)
+    closeBlank()
+    closeUnderOverview([...now.current.tabs])
+  }, [closeBlank, closeUnderOverview])
   /** "Move to right panel", on a page of the board and on a tab of the strip: the page goes to the end of that panel, and an open board stays (R30). */
   const movePageToRight = useCallback((path: string) => {
     ownChange.current = path === now.current.file
@@ -1330,6 +1346,7 @@ export function App() {
               onShowInSidebar={showInSidebar}
               onToggleOverview={toggleOverview}
               overviewOpen={overviewOpen}
+              onKillAll={askKillAll}
               onNotice={notify}
               titles={titles}
               reviewState={reviewState}
@@ -1390,6 +1407,7 @@ export function App() {
                 onOpen={leaveOverview}
                 onCloseTabs={closeUnderOverview}
                 onDismiss={leaveOverviewForOpenPage}
+                onKillAll={askKillAll}
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
                 onMoveToRight={movePageToRight}
                 onShowInSidebar={showInSidebar}
@@ -1463,6 +1481,17 @@ export function App() {
             onCancel={() => setPendingRename(null)}
           />
         ))}
+      {/* "Kill all tabs" asks first (YAZ-2739 D3): the focus starts on Cancel, as on every sheet that takes something away. */}
+      {killAsk && (
+        <ConfirmSheet
+          labelId="confirm-kill-tabs-text"
+          text={tabs.length === 1 ? 'Kill the 1 open tab? Your text is saved. The tab does not come back.' : `Kill all ${tabs.length} tabs? Your text is saved. The tabs do not come back.`}
+          confirmLabel={tabs.length === 1 ? 'Kill 1 tab' : `Kill ${tabs.length} tabs`}
+          danger
+          onConfirm={killAllTabs}
+          onCancel={() => setKillAsk(false)}
+        />
+      )}
     </div>
   )
 }
