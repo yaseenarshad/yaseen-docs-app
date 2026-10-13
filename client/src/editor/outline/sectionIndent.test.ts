@@ -11,8 +11,9 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection, type Plugin } from '@milkdown/kit/prose/state'
 import { DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
-import { HEADING_FOLDED_ATTR } from './headingFolding'
-import { SECTION_DEPTH_ATTR, SECTION_PATH_ATTR, sectionDepths, sectionLineAtOffset, sectionLineFoldTargets, showSectionIndent } from './sectionIndent'
+import { HEADING_FOLDED_ATTR, setHeadingFoldSet } from './headingFolding'
+import sectionIndentCss from './sectionIndent.css?inline'
+import { SECTION_DEPTH_ATTR, SECTION_LINE_HOVER_CLASS, SECTION_PATH_ATTR, sectionDepths, sectionLineAtOffset, sectionLineFoldTargets, showSectionIndent } from './sectionIndent'
 
 /**
  * Seventeen top-level blocks. The note starts at H2, skips from H2 to H4, goes down to H6, and holds
@@ -173,11 +174,6 @@ describe('the purple path', () => {
       caretIn(crepe, caret)
       turnOn(crepe)
       expect(pathShown(crepe)).toEqual(path)
-      // The path stops at your line: the rest of each section on the path stays grey.
-      const caretBlock = viewOf(crepe).state.selection.$from.index(0)
-      expect(pathShown(crepe).slice(caretBlock + 1).every((lines) => lines === 0)).toBe(true)
-      // A purple line is one of the block's own lines.
-      pathShown(crepe).forEach((lines, index) => expect(lines).toBeLessThanOrEqual(DEPTHS[index]))
     })
   }
 
@@ -287,35 +283,75 @@ two text
     expect(sectionLineFoldTargets(doc, 0, 1)).toEqual([])
   })
 
-  it('a mousedown on the line folds them all, the next unfolds them all; the caret and the markdown stay', async () => {
+  it('a mousedown on the line folds them all when any is open, else unfolds them all; with nothing to fold it is swallowed all the same; the caret and the markdown stay', async () => {
     const onMarkdownUpdated = vi.fn()
-    const { crepe } = await mount(FOLDS, { onMarkdownUpdated })
+    const { crepe, root } = await mount(FOLDS, { onMarkdownUpdated })
     const view = viewOf(crepe)
     turnOn(crepe)
     caretIn(crepe, 'two text')
     const selection = view.state.selection
-    // jsdom lays nothing out: the block's indent is given, its left edge is 0, and x = 10 is line 1 of a 30px step.
-    const computed = vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ borderLeftWidth: '60px' }) as CSSStyleDeclaration)
-    const press = (clientX: number): MouseEvent => {
-      const event = new MouseEvent('mousedown', { clientX, bubbles: true, cancelable: true })
-      blocks(crepe)[2].dispatchEvent(event)
+    // The handle gate listens on the document for a move and asks it for a layout jsdom has not: a move stops at the editor's root.
+    root.addEventListener('mousemove', (event) => event.stopPropagation())
+    // jsdom lays nothing out: each block's indent is given as its depth in steps of 30px and its
+    // left edge is 0, so x = 10 is line 1 of every block and x = 25 is between two lines.
+    const computed = vi
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation((el) => ({ borderLeftWidth: `${Number(el.getAttribute(SECTION_DEPTH_ATTR)) * 30}px` }) as CSSStyleDeclaration)
+    const pointer = (type: 'mousedown' | 'mousemove', block: number, clientX: number): MouseEvent => {
+      const event = new MouseEvent(type, { clientX, bubbles: true, cancelable: true })
+      blocks(crepe)[block].dispatchEvent(event)
       return event
     }
     const folded = () => blocks(crepe).filter((el) => el.getAttribute(HEADING_FOLDED_ATTR) === 'true').map((el) => el.textContent)
     try {
+      // Line 1 of "a text" (block 2) belongs to "One": the sections beside it are A and B.
       expect(depthsShown(crepe)[2]).toBe(2)
-      expect(press(10).defaultPrevented).toBe(true)
+      expect(pointer('mousedown', 2, 10).defaultPrevented).toBe(true)
       expect(folded()).toEqual(['a text', 'B1', 'b1 text', 'B2', 'b2 text'])
-      expect(press(10).defaultPrevented).toBe(true)
+      expect(pointer('mousedown', 2, 10).defaultPrevented).toBe(true)
+      expect(folded()).toEqual([])
+      // One of them folded by hand, the other open: the press folds them all. "A" is block 1 (the line's own block is hidden now).
+      setHeadingFoldSet(positionsOf(crepe, ['A']), true)(view.state, view.dispatch)
+      expect(folded()).toEqual(['a text'])
+      expect(pointer('mousedown', 1, 10).defaultPrevented).toBe(true)
+      expect(folded()).toEqual(['a text', 'B1', 'b1 text', 'B2', 'b2 text'])
+      expect(pointer('mousedown', 1, 10).defaultPrevented).toBe(true)
+      expect(folded()).toEqual([])
+      // Only text beside the line of "Two" (block 10): nothing folds, and the press is still not the editor's.
+      expect(pointer('mousedown', 10, 10).defaultPrevented).toBe(true)
       expect(folded()).toEqual([])
       // Between the lines the click is the editor's own.
-      expect(press(25).defaultPrevented).toBe(false)
+      expect(pointer('mousedown', 2, 25).defaultPrevented).toBe(false)
+      // The hand cursor: the page carries the class only while the pointer is in the band of a line.
+      pointer('mousemove', 2, 10)
+      expect(view.dom.classList.contains(SECTION_LINE_HOVER_CLASS)).toBe(true)
+      pointer('mousemove', 2, 25)
+      expect(view.dom.classList.contains(SECTION_LINE_HOVER_CLASS)).toBe(false)
     } finally {
       computed.mockRestore()
     }
     expect(view.state.selection.eq(selection)).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, 300))
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
+  })
+})
+
+describe('the empty last paragraph', () => {
+  it('is what the one rule of sectionIndent.css reads to leave its grey lines out: the paragraph the editor keeps after a last list, not a last paragraph with text', async () => {
+    // The selector as it ships: the rule that makes `--section-line` transparent for an only-child trailing break.
+    const selector = sectionIndentCss.match(/([^{}]+:only-child\))\s*\{\s*--section-line:\s*transparent/)?.[1].trim() ?? ''
+    expect(selector).toContain(`p[${SECTION_DEPTH_ATTR}]:last-child`)
+    const last = async (markdown: string): Promise<Element> => {
+      const { crepe, root } = await mount(markdown)
+      root.classList.add('editor-instance')
+      turnOn(crepe)
+      return viewOf(crepe).dom.lastElementChild!
+    }
+    const kept = await last('# A\n\n* bullet\n')
+    // It is a block of the section like any other: it keeps its depth, so its indent.
+    expect([kept.tagName, kept.getAttribute(SECTION_DEPTH_ATTR), kept.textContent]).toEqual(['P', '1', ''])
+    expect(kept.matches(selector)).toBe(true)
+    expect((await last('# A\n\ntext\n')).matches(selector)).toBe(false)
   })
 })
 

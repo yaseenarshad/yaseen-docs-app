@@ -873,6 +873,17 @@ describe('App content width (YAZ-1176)', () => {
   })
 })
 
+describe('App section indent settings (YAZ-2709)', () => {
+  it('hands the step width and the grey-lines choice to the editor CSS on the app container, and another window\'s change lands live', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    // sectionIndent.css reads the step as a plain number (`--section-step-setting`) and the lines as an attribute.
+    expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['30', 'always'])
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sectionStep: 36, sectionLines: 'hover' } }))
+    expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['36', 'hover'])
+  })
+})
+
 describe('App sidebar resize (YAZ-738)', () => {
   const drag = (el: HTMLElement, dx: number) => {
     el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 }))

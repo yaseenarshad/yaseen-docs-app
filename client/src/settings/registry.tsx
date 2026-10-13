@@ -105,9 +105,8 @@ export interface SettingsSection {
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true
   /**
-   * Its own page in the dialog rather than a stretch of the scrolling settings page — the
-   * hotkey reference, which is a table to look things up in, not settings to scroll past.
-   * Search still indexes it.
+   * A reference page, listed under the nav's divider rather than among the settings pages — the
+   * hotkey reference, which is a table to look things up in, not settings. Search still indexes it.
    */
   standalone?: true
   groups: readonly SettingsGroup[]

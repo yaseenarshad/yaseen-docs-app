@@ -34,8 +34,11 @@ function overAffordance(view: EditorView, x: number, stack: readonly Element[]):
     ) {
       if (isGuideStripHit(x, el)) return true
     }
-    // A section line (YAZ-2709): the indent is the top-level block's own border, so the block is in the stack.
-    // The handle of a bullet stands left of the bullet's box, which is inside its list's indent: on the list's inner lines.
+    // A section line (YAZ-2709): the indent is the top-level block's own border, so the block is in
+    // the stack. Crepe floats the handle from 48px to 16px left of the box of the row under the
+    // pointer. A paragraph's or a heading's box starts at the column edge, so its handle is clear
+    // of every line; a bullet's box starts after its list's indent, so its handle lies on the
+    // list's innermost line and would take the press that folds.
     if (el.parentElement === view.dom && sectionLineAt(x, el) !== null) return true
   }
   return false

@@ -47,7 +47,7 @@ export const SECTION_PATH_ATTR = 'data-sp'
 export const SECTION_LINE_HOVER_CLASS = 'section-line-hover'
 
 /** A click within this many px of a line's centre is on the line: the same 10px band as a list guide line (guideLines.css). */
-export const LINE_BAND_HALF_WIDTH = 5
+const LINE_BAND_HALF_WIDTH = 5
 
 interface SectionIndentState {
   /** The page's switch: what the host sends (`showSectionIndent`). */
@@ -109,7 +109,7 @@ export const sectionDepths = (doc: ProseNode): Uint8Array => {
 }
 
 /** The headings of the sections that hold block `caret`, outermost first: heading k owns line k. */
-export const pathHeadings = (doc: ProseNode, depths: Uint8Array, caret: number): number[] => {
+const pathHeadings = (doc: ProseNode, depths: Uint8Array, caret: number): number[] => {
   const path: number[] = []
   for (let index = caret - 1, need = depths[caret] - 1; index >= 0 && need >= 0; index--) {
     if (depths[index] !== need || headingLevel(doc.child(index)) === null) continue
@@ -124,7 +124,7 @@ export const pathHeadings = (doc: ProseNode, depths: Uint8Array, caret: number):
  * the block after path heading k down to the caret's block. The path stops at the caret's line
  * (YAZ-2709 D6): no block after it has a purple line.
  */
-export const sectionPaths = (doc: ProseNode, depths: Uint8Array, caret: number): Uint8Array => {
+const sectionPaths = (doc: ProseNode, depths: Uint8Array, caret: number): Uint8Array => {
   const purple = new Uint8Array(doc.childCount)
   const path = pathHeadings(doc, depths, caret)
   path.forEach((heading, k) => {
@@ -196,7 +196,11 @@ export const sectionLineFoldTargets = (doc: ProseNode, index: number, line: numb
   return targets
 }
 
-/** The top-level block and line under a pointer event, or null. A block's indent is its own border, so a hit targets the block itself. */
+/**
+ * The top-level block and line under a pointer event, or null. A block's indent is its own border,
+ * so a hit targets the block itself. No handler asks if the page is on: a page that is off, or
+ * zoomed into a bullet, has no `data-sd`, so nothing on it is a hit.
+ */
 const lineHit = (view: EditorView, event: MouseEvent): { index: number; line: number } | null => {
   const target = event.target
   if (!(target instanceof HTMLElement) || target.parentElement !== view.dom) return null
@@ -239,8 +243,7 @@ export const sectionIndent = $prose(() => {
           return true
         },
         mousemove: (view, event) => {
-          const on = pluginKey.getState(view.state)?.on === true
-          view.dom.classList.toggle(SECTION_LINE_HOVER_CLASS, on && lineHit(view, event) !== null)
+          view.dom.classList.toggle(SECTION_LINE_HOVER_CLASS, lineHit(view, event) !== null)
           return false
         },
         mouseleave: (view) => {
@@ -249,11 +252,6 @@ export const sectionIndent = $prose(() => {
         },
       },
     },
-    view: (view) => ({
-      destroy: () => {
-        view.dom.classList.remove(SECTION_LINE_HOVER_CLASS)
-      },
-    }),
   })
 })
 

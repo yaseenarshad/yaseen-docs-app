@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { inStripBand } from './blockHandleGate'
 
 describe('inStripBand', () => {
@@ -106,6 +106,52 @@ describe('own-editor scoping (YAZ-747)', () => {
       await new Promise((r) => requestAnimationFrame(() => r(null)))
       expect(handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(false)
     } finally {
+      document.elementsFromPoint = originalFrom
+      await crepe.destroy()
+      root.remove()
+    }
+  })
+})
+
+describe('a section line (YAZ-2709)', () => {
+  // Crepe floats a bullet's handle 16px left of the bullet's box, and that box starts after its
+  // list's indent: the handle lies on the list's innermost section line. Over the band of a line
+  // it must step aside, or it takes the press that folds the sections beside that line.
+  it('mutes the handle in the band of a line, not between two lines, and not on a page that is off', async () => {
+    const { createCrepe } = await import('./createCrepe')
+    const { editorViewCtx } = await import('@milkdown/kit/core')
+    const { HANDLE_MUTED_CLASS } = await import('./blockHandleGate')
+    const { showSectionIndent } = await import('./outline/sectionIndent')
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: '# One\n\n## Two\n\n* bullet\n' })
+    await crepe.create()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const handle = document.createElement('div')
+    handle.className = 'milkdown-block-handle'
+    view.dom.parentElement!.appendChild(handle)
+
+    // The list is two sections deep. jsdom lays nothing out: its indent is given as two steps of
+    // 30px and its left edge is 0, so line 1 is centred at x = 10 and line 2 at x = 40.
+    const list = view.dom.querySelector(':scope > ul')!
+    const originalFrom = document.elementsFromPoint
+    document.elementsFromPoint = () => [list]
+    const computed = vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ borderLeftWidth: '60px' }) as CSSStyleDeclaration)
+    const mutedAt = async (clientX: number): Promise<boolean> => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX, clientY: 10, bubbles: true }))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      return handle.classList.contains(HANDLE_MUTED_CLASS)
+    }
+    try {
+      // Off: the list carries no depth, so there is no line to step aside for.
+      expect(await mutedAt(40)).toBe(false)
+      showSectionIndent(crepe, true)
+      expect(await mutedAt(40)).toBe(true)
+      expect(await mutedAt(25)).toBe(false)
+      expect(await mutedAt(10)).toBe(true)
+    } finally {
+      computed.mockRestore()
       document.elementsFromPoint = originalFrom
       await crepe.destroy()
       root.remove()
