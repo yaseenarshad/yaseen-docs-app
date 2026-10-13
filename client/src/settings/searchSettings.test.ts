@@ -37,6 +37,7 @@ describe('settingCandidates', () => {
       'sectionStep',
       'sectionLines',
       'tableOfContents',
+      'tocLines',
       'confirmDelete',
       'confirmRename',
       'newNoteLocation',
@@ -106,11 +107,22 @@ describe('searchSettings', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
   })
 
-  it('"toc" and "jump" find the table of contents row, "outline" and "headings" find it among others; its own name finds the ⌘J line of the Hotkeys table too (YAZ-2700)', () => {
-    for (const query of ['toc', 'jump']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tableOfContents'])
+  it('"toc" finds the two rows of the table of contents and "jump" the first alone; "outline" and "headings" find it among others; the group\'s name finds both rows and the ⌘J line of the Hotkeys table (YAZ-2700, YAZ-2762)', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'toc'))).toEqual(['tableOfContents', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'jump'))).toEqual(['tableOfContents'])
     // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
-    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tableOfContents', 'hotkeys-keyboard'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tableOfContents', 'tocLines', 'hotkeys-keyboard'])
+  })
+
+  it('"Level lines" (YAZ-2762): its label and "hierarchy" find that row alone; "outline", "guide" and "hover" find it among the rows that share the word', () => {
+    for (const query of ['level lines', 'hierarchy']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['bulletThreading', 'tableOfContents', 'tocLines'])
+    // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sectionLines', 'tocLines'])
+    // The row says its group and its page to search, as each other row does.
+    expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {

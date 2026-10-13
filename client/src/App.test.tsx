@@ -927,6 +927,21 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(editor()?.tableOfContentsWidth).toBe(260)
     expect(editor()?.onChangeTableOfContentsWidth).toBe(door)
   })
+
+  it('hands the "Level lines" choice to toc.css as an attribute on the app container; another window\'s change lands live, and no editor renders for it (YAZ-2762 D5)', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    // The default: what a state file from before the feature loads as.
+    expect(app.getAttribute('data-toc-lines')).toBe('hover')
+    const renders = captured.editors.length
+    for (const tocLines of ['always', 'off', 'hover'] as const) {
+      act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tocLines } }))
+      expect(app.getAttribute('data-toc-lines')).toBe(tocLines)
+    }
+    // It is a gate in the stylesheet and no prop of an editor: the open note is not drawn again, and the other gates stay.
+    expect(captured.editors.length).toBe(renders)
+    expect([app.getAttribute('data-section-lines'), app.getAttribute('data-content-width')]).toEqual(['always', 'narrow'])
+  })
 })
 
 describe('App sidebar resize (YAZ-738)', () => {
