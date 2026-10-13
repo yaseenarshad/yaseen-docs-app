@@ -75,7 +75,7 @@
   background: var(--bg-hover-row);
 }
 
-/* The name keeps its room: the folder beside it gives way first, down to nothing. */
+/* The name keeps its room (YAZ-2740 D2): the folder beside it gives way first, then the vault tag, each down to nothing. The name is cut last. */
 .start__name {
   min-width: 0;
   overflow: hidden;
@@ -94,18 +94,29 @@
   color: var(--fg-muted);
 }
 
-/* How long ago, at the right edge of a "Recent" row. */
+/* How long ago, at the right edge of a "Recent" row: a few letters (YAZ-2740 D1) in a slot of one width, so the vault tags stand in one line.
+   The slot is 4 characters and the padding: `min-width` counts the padding (`box-sizing` in app.css). */
 .start__when {
   flex: none;
+  min-width: calc(4ch + 6px);
   margin-left: auto;
   padding-left: 6px;
   font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   color: var(--fg-muted);
 }
 
 /* After the vault tag, the time stands beside it, not at a second edge. */
 .tree__vault + .start__when {
   margin-left: 0;
+}
+
+/* The vault tag of a row of the page gives way before the name does (YAZ-2740 D2). In the sidebar it keeps its width (`.tree__vault` in app.css).
+   The shrink number is this large on purpose: at 1000 the name still lost a part of a pixel, and that is enough for its "…". */
+.start__row .tree__vault {
+  flex: 0 1000000 auto;
+  min-width: 0;
 }
 
 /* The one grey line of a column with no rows (S19): `.sidebar__msg`'s size, in line with the heading. */

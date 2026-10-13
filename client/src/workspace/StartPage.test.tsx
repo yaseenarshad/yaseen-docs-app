@@ -154,9 +154,9 @@ describe('StartPage', () => {
     expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/Projects/Alpha/plan.md`, ...notes.slice(0, 6)])
     const [x, plan, n0] = rowsOf(el, 'recent')
     // The name is the page's title; a page at the top of its vault names no folder.
-    expect([part(plan, 'start__name'), part(plan, 'start__where'), part(plan, 'start__when')]).toEqual(['The plan', 'Projects / Alpha', '2 hours ago'])
-    expect([part(x, 'start__name'), part(x, 'start__where'), part(x, 'start__when')]).toEqual(['x', null, 'just now'])
-    expect(part(n0, 'start__when')).toBe('3 hours ago')
+    expect([part(plan, 'start__name'), part(plan, 'start__where'), part(plan, 'start__when')]).toEqual(['The plan', 'Projects / Alpha', '2h'])
+    expect([part(x, 'start__name'), part(x, 'start__where'), part(x, 'start__when')]).toEqual(['x', null, 'now'])
+    expect(part(n0, 'start__when')).toBe('3h')
     // Each row is a button that says its column and its place in it (the arrow keys of YAZ-2674 read them).
     expect(rowsOf(el, 'recent').map((button) => [button.type, button.dataset.col, button.dataset.row])).toEqual(Array.from({ length: 8 }, (_, at) => ['button', 'recent', String(at)]))
     // S24
