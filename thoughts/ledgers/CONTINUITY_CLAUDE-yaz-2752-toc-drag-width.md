@@ -31,14 +31,16 @@
   - [x] 2 (YAZ-2757) the drag: `namesRoom`, the shown width, `--toc-width` on the section, `startResize`, `.toc__resize`
   - [x] 3 (YAZ-2758) polish and anti-slop: the audit and its fixes
   - [x] The check in the real app, out of sight (its own profile, a demo vault, the DevTools protocol): 23 of 23 cases pass
-- Now: [→] 4 (YAZ-2759) verify and deliver: the gates are green, the ceilings are raised; the pull request and the merge remain
-- Next: 5 (YAZ-2760) release notes on YAZ-2752
-- Remaining:
-  - [ ] Merge when the pull request is green
+  - [x] 4 (YAZ-2759) gates, size ceilings, e2e step 5b, docs, pull request #115; its check `ci` was green
+  - [x] 5 (YAZ-2760) release notes on YAZ-2752, with a GIF and two pictures
+  - [x] Merged to `main` by pull request #115 (`b96ae62`). NO release was cut: Yaseen puts this work into a release with other work
+- Now: closed. The handoff is on YAZ-2754.
+- Next: nothing in this issue.
 
 ## Open Questions
 - (resolved) the delivery path: Yaseen said "merge when the PR is green".
-- UNCONFIRMED: the new e2e step is typechecked only.
+- UNCONFIRMED: step 5b of `desktop/e2e/tableOfContents.spec.ts` is typechecked, and nobody ran it.
+- UNCONFIRMED: `desktop/src/main/vaultIndex/idSweep.test.ts` failed in two full runs on a loaded Mac after the merge of `main`, and passed alone 3 of 3. This work does not touch it. CI was green.
 
 ## Working Set
 - Branch `feat/yaz-2752-toc-drag-width` from `main` at `0378399`. Worktree `.claude/worktrees/yaz-2752-toc-drag-width`.
