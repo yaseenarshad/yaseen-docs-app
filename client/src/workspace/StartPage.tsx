@@ -15,7 +15,7 @@ import { focusOpenDocument } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
 import { pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
 import { dirname, relTo } from '../lib/paths'
-import { relativeTime } from '../lib/relativeTime'
+import { shortRelativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { favoriteOrder, findNode } from '../lib/treeState'
@@ -370,7 +370,7 @@ export function StartPage({ roots, titles, onOpen, onOpenBackground, onShowInFil
                         {top && dir !== stripSlash(vault) && <span className="start__where">{relTo(vault, dir).split('/').join(' / ')}</span>}
                         {/* S20: the tag of a top row of the Favorites tab (YAZ-2631 D4), by what the app calls the vault. */}
                         {top && roots.length > 1 && <span className="tree__vault">{row.vault.name}</span>}
-                        {row.last !== undefined && <span className="start__when">{relativeTime(row.last, now)}</span>}
+                        {row.last !== undefined && <span className="start__when">{shortRelativeTime(row.last, now)}</span>}
                       </button>
                     </li>
                   )
