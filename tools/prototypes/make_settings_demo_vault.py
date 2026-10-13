@@ -107,7 +107,7 @@ def comments_note(name: str, n: int) -> str:
     if n >= 3:
         items[1] += "\n    reply_to: c00"
         items[2] += "\n    pinned: true"
-    return f"---\ntitle: {name}\ncomments:\n" + "\n".join(items) + f"\n---\n\n# {name}\n\nOpen **Settings › Editor › Comments** and flip Oldest first / Newest first. The comments block below must reorder live. The comment block's own header toggle must ALSO update the setting in the dialog (two writers, one setting).\n"
+    return f"---\ntitle: {name}\ncomments:\n" + "\n".join(items) + f"\n---\n\n# {name}\n\nOpen **Settings › Appearance › Comments** and flip Oldest first / Newest first. The comments block below must reorder live. The comment block's own header toggle must ALSO update the setting in the dialog (two writers, one setting).\n"
 
 
 def dangling(where: str) -> str:
@@ -150,29 +150,29 @@ This vault exists only to stress-test the new **Settings dialog** (YAZ-1679). No
 5. **Esc** closes. Click on the dark backdrop closes. The × top-right closes.
 6. Close it → keyboard focus goes back to where it was (tab into the editor first, open, close, keep typing).
 7. Make the window very short and narrow → the dialog shrinks, the right pane scrolls, nothing overflows.
-8. It is ONE scrolling page: scroll the right pane by hand → the left nav highlight follows the section you are in. Click a nav item → it scrolls to that heading.
+8. Each section is its OWN page (YAZ-2709): click a nav item → the right pane shows only that section, from its top, and that item alone is highlighted. Scroll a long page by hand → the highlight does not change.
 9. **⌘⇧N** for a second window. Change Theme in one → the other window updates live. Open the dialog in both.
 
 ## Sections (H1) and groups (H2)
 10. *Appearance* → open `Appearance/Long article for width and spacing` first, flip Theme / Content width / Line spacing / Space between blocks.
 11. *Appearance › Theme* → open `Appearance/Dark mode check` and switch to Dark with the dialog open. Dialog + editor both recolour.
 12. *Editor › Bullet threading* (one group: Show / Line width / Line colour) → open `Editor/Deep bullet threading`, toggle, change width, pick a colour, press **Default** (disabled once already default).
-13. *Editor › Comments › Order* → open `Editor/Comments oldest vs newest`. Flip the order in the dialog, then flip it from the comment block's own header. Both stay in sync.
+13. *Appearance › Comments › Order* (the last group of that page) → open `Editor/Comments oldest vs newest`. Flip the order in the dialog, then flip it from the comment block's own header. Both stay in sync.
 14. *Files & Links › Confirm before deleting* → right-click `Files and Links/Delete me 1` → Delete. With it **On** you get the sheet; tick "Don't ask me again" → reopen Settings, it now shows **Off**. Turn it back On.
 15. *Files & Links › Default location* → follow the instructions inside `Files and Links/Dangling links (vault root)` and `Files and Links/nested/deeper/Dangling links (deep folder)`.
 16. *Sync* → this vault is NOT a git repo, read the hint. Then File › Open Recent → the *(git no remote)* vault → different hint. Then *(git remote)* → shows repo + branch. **Do not turn sync ON in the (git remote) vault** (fake remote).
-17. *Hotkeys* → below a divider in the left nav, its OWN page (not on the scrolling settings page). All four groups (Keyboard / Views / Window / Mouse) are there. Click *Appearance* on the left → back to the settings page, scrolled to Appearance. The old keyboard button is gone from the footer.
+17. *Hotkeys* → below a divider in the left nav, a page like the others. All four groups (Keyboard / Views / Window / Mouse) are there. Click *Appearance* on the left → the Appearance page is back, from its top. The old keyboard button is gone from the footer.
 
 ## Search (top of the nav)
 18. Type `dark` → only the Theme row, under an "Appearance" heading. Click Dark right there in the result.
-18b. Type `threading` → the three threading rows under "Editor › Bullet threading".
-19. Type `width` → Content width AND Thread width, under two headings.
+18b. Type `threading` → the three threading rows under "Editor › Bullet threading", then the two rows under "Editor › Section indent".
+19. Type `width` → Content width, Line width AND Step width, under three headings.
 20. Type `trash` → Confirm before deleting (matched by its hint).
 21. Type `close tab` → the Hotkeys entry.
 22. Type `github` → Sync row (only when a vault is open).
 23. Type `zzz` → "No settings match".
 24. With text in the box, **Esc** once clears it (back to your page), **Esc** again closes.
-25. With text in the box, click a nav item → the search clears and the page scrolls to that section.
+25. With text in the box, click a nav item → the search clears and the page of that section shows, from its top.
 
 ## Things to look for
 - Any row without a hairline, any control that wraps badly at 760px wide.

@@ -12,11 +12,15 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
- * all but "TOC made from", which the host saves with the note (YAZ-2700 D14).
+ * all but section indent (YAZ-2709) and "TOC made from" (YAZ-2700 D14), which the host saves with
+ * the note.
  */
-export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
+export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, onToggleSectionIndent, headingLevels, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
   lineNumbers: boolean
   onToggleLineNumbers: () => void
+  /** This page's text stands below its headings (YAZ-2709); how it looks is in Settings › Editor › Section indent. */
+  sectionIndent: boolean
+  onToggleSectionIndent: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
   headingLevels: boolean
   onToggleHeadingLevels: () => void
@@ -72,6 +76,9 @@ export function PageSettings({ lineNumbers, onToggleLineNumbers, headingLevels, 
       {text !== null && <div id={menuId} className="page-settings__menu" role="group" aria-label="Page settings">
         <button type="button" aria-pressed={lineNumbers} onClick={onToggleLineNumbers}>
           <span>Line numbers</span><span aria-hidden="true">{lineNumbers ? '✓' : ''}</span>
+        </button>
+        <button type="button" aria-pressed={sectionIndent} onClick={onToggleSectionIndent}>
+          <span>Section indent</span><span aria-hidden="true">{sectionIndent ? '✓' : ''}</span>
         </button>
         <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
           <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>

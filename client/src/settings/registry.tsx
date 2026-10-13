@@ -33,7 +33,7 @@ import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -105,9 +105,8 @@ export interface SettingsSection {
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true
   /**
-   * Its own page in the dialog rather than a stretch of the scrolling settings page — the
-   * hotkey reference, which is a table to look things up in, not settings to scroll past.
-   * Search still indexes it.
+   * A reference page, listed under the nav's divider rather than among the settings pages — the
+   * hotkey reference, which is a table to look things up in, not settings. Search still indexes it.
    */
   standalone?: true
   groups: readonly SettingsGroup[]
@@ -270,6 +269,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // How you READ a note, like the rows above; the Editor page keeps to a note's structure (YAZ-2709).
+        title: 'Comments',
+        items: [
+          {
+            id: 'commentsOrder',
+            label: 'Order',
+            keywords: ['comments order', 'sort'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={COMMENTS_ORDER_OPTIONS} value={settings.commentsOrder} onChange={(commentsOrder) => onChange({ ...settings, commentsOrder })} ariaLabel="Comments order" />
+            ),
+          },
+        ],
+      },
     ],
   },
   {
@@ -277,6 +290,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Editor',
     groups: [
       {
+        // These three rows also draw the path through heading sections (YAZ-2709): one look for both.
         title: 'Bullet threading',
         hint: 'Guide lines that connect nested bullets.',
         items: [
@@ -325,6 +339,31 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // Section indent (YAZ-2709). On or off is a switch of each note (the page cog); these rows
+        // are how it looks in every note. The purple path has no rows here: it takes the Bullet
+        // threading rows above (show, width, colour).
+        title: 'Section indent',
+        hint: 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.',
+        items: [
+          {
+            id: 'sectionStep',
+            label: 'Step width',
+            keywords: ['heading', 'indentation', 'nesting'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SECTION_STEP_OPTIONS} value={settings.sectionStep} onChange={(sectionStep) => onChange({ ...settings, sectionStep })} ariaLabel="Step width" />
+            ),
+          },
+          {
+            id: 'sectionLines',
+            label: 'Grey lines',
+            keywords: ['heading', 'hover', 'guide'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={SECTION_LINES_OPTIONS} value={settings.sectionLines} onChange={(sectionLines) => onChange({ ...settings, sectionLines })} ariaLabel="Grey lines" />
+            ),
+          },
+        ],
+      },
+      {
         // YAZ-2700: one row, and the same field the table of contents' own "Pin" and "Unpin" buttons write.
         title: 'Table of contents',
         hint: 'The headings or the bullets of a note, at its right edge.',
@@ -335,19 +374,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['outline', 'toc', 'headings', 'jump'],
             render: ({ settings, onChange }) => (
               <Segmented options={TABLE_OF_CONTENTS_OPTIONS} value={settings.tableOfContents} onChange={(tableOfContents) => onChange({ ...settings, tableOfContents })} ariaLabel="Table of contents" />
-            ),
-          },
-        ],
-      },
-      {
-        title: 'Comments',
-        items: [
-          {
-            id: 'commentsOrder',
-            label: 'Order',
-            keywords: ['comments order', 'sort'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={COMMENTS_ORDER_OPTIONS} value={settings.commentsOrder} onChange={(commentsOrder) => onChange({ ...settings, commentsOrder })} ariaLabel="Comments order" />
             ),
           },
         ],

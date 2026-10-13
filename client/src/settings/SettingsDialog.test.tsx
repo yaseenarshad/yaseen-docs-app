@@ -1,12 +1,16 @@
 /**
- * The settings dialog (YAZ-1679): one scrolling page of every section with grouped rows, nav
- * anchors with a scrollspy, search over the one registry, the popover's controls rehoused row by
- * row (Theme writes through `onChange`, the folder input's draft/commit logic, the per-vault
- * GitHub switch through `sync.setEnabled`, the per-vault review settings through `review.save`),
- * and the modal's own contract — Esc layered over search, click-away, focus restored to whatever
- * opened it.
+ * The settings dialog (YAZ-1679): a page for each section with grouped rows (YAZ-2709, amending
+ * the one long scrolling page), a nav whose click swaps the page, search over the one registry,
+ * the popover's controls rehoused row by row (Theme writes through `onChange`, the folder input's
+ * draft/commit logic, the per-vault GitHub switch through `sync.setEnabled`, the per-vault review
+ * settings through `review.save`), and the modal's own contract — Esc layered over search,
+ * click-away, focus restored to whatever opened it.
+ *
+ * ONE SECTION IS ON SCREEN AT A TIME, so a test of a row in a later section goes to that
+ * section's page first, the way a user does: `mountOn('Files & Links', …)` is `mount(…)` and a
+ * click on that nav item.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
@@ -18,13 +22,6 @@ import { SettingsDialog } from './SettingsDialog'
 
 let root: Root | null = null
 let container: HTMLElement | null = null
-
-/** jsdom has no `scrollIntoView`; the nav's click is exactly that call, so it is a spy here. */
-const scrollIntoView = vi.fn()
-beforeEach(() => {
-  Element.prototype.scrollIntoView = scrollIntoView
-  scrollIntoView.mockClear()
-})
 
 function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, syncStatus?: GithubSyncStatus | null, reviewSettings?: ReviewSettings, vaultIds?: { enabled: boolean; held: boolean; ask?: IndexResponse['ask']; letters?: string; old?: number; unfinished?: boolean; state?: Partial<IdsState> }, vaultName?: string) {
   const onChange = vi.fn()
@@ -76,7 +73,7 @@ const navButtons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElemen
 const navShape = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.settings-nav__item, .settings-nav__divider')].map((n) => (n.tagName === 'HR' ? '—' : n.textContent))
 const navByTitle = (el: HTMLElement, title: string) => navButtons(el).find((b) => b.textContent === title) as HTMLButtonElement
 const clickNav = (el: HTMLElement, title: string) => act(() => navByTitle(el, title).click())
-/** The one current nav item, whichever kind: `location` on a scroll anchor, `page` on a standalone page. */
+/** The one current nav item, and what it says it is: always `page`, the section the pane shows. */
 const currentNav = (el: HTMLElement) => navButtons(el).find((b) => b.getAttribute('aria-current') !== null)?.textContent
 const currentKind = (el: HTMLElement) => navButtons(el).find((b) => b.getAttribute('aria-current') !== null)?.getAttribute('aria-current')
 const headings = (el: HTMLElement) => [...el.querySelectorAll('.settings-section__title')].map((h) => h.textContent)
@@ -102,25 +99,42 @@ const pressEnter = (input: HTMLInputElement) => act(() => void input.dispatchEve
 const blur = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
 const status = (extra: Partial<GithubSyncStatus> = {}): GithubSyncStatus => ({ root: '/vault', state: 'off', ...extra })
 
-/**
- * jsdom lays nothing out, so the scroll geometry is stubbed: every section 300px tall in order,
- * the pane 400px tall showing the whole 1500px page as it scrolls. `scrollTop` is a plain
- * property on the pane, so setting it and dispatching `scroll` is the whole simulation.
- */
-function layOut(el: HTMLElement, sectionHeight = 300, paneHeight = 400) {
-  const all = sections(el)
-  all.forEach((s, i) => Object.defineProperty(s, 'offsetTop', { value: i * sectionHeight, configurable: true }))
-  Object.defineProperty(pane(el), 'clientHeight', { value: paneHeight, configurable: true })
-  Object.defineProperty(pane(el), 'scrollHeight', { value: all.length * sectionHeight, configurable: true })
-}
+/** jsdom lays nothing out; `scrollTop` is a plain property on the pane, so setting it and dispatching `scroll` is the whole simulation. */
 const scrollTo = (el: HTMLElement, top: number) =>
   act(() => {
     pane(el).scrollTop = top
     pane(el).dispatchEvent(new Event('scroll', { bubbles: true }))
   })
 
+/** `mount`, then the page of the section named: a row of a later section is reached by its nav item, as a user reaches it. */
+const mountOn = (title: string, ...args: Parameters<typeof mount>) => {
+  const mounted = mount(...args)
+  clickNav(mounted.el, title)
+  return mounted
+}
+/** Every page in nav order, each one opened by its nav item, with what `read` finds while it shows. */
+const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
+  navButtons(el)
+    .map((b) => b.textContent as string)
+    .map((title) => {
+      clickNav(el, title)
+      return [title, read()]
+    })
+
+/** The rows of each page with no vault open, in registry order (registry.tsx). */
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents']
+/** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
+const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows']
+const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
+const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-mouse']
+const THREADING_HINT = 'Guide lines that connect nested bullets.'
+const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
+const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.'
+
 describe('SettingsDialog shell (D1)', () => {
-  it('is a modal dialog named Settings that opens at the top with the search box focused', () => {
+  it('is a modal dialog named Settings that opens on Appearance with the search box focused', () => {
     const { el } = mount()
     const dialog = el.querySelector('[role="dialog"]')
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
@@ -154,8 +168,8 @@ describe('SettingsDialog shell (D1)', () => {
   })
 })
 
-describe('SettingsDialog: one page of every settings section (the post-demo redesign)', () => {
-  it('the nav: the settings-page anchors (Review only with a vault, Sync only with the engine), a divider, then the standalone Hotkeys page', () => {
+describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
+  it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
     expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Files & Links', '—', 'Hotkeys'])
     unmount()
@@ -166,109 +180,154 @@ describe('SettingsDialog: one page of every settings section (the post-demo rede
     expect(navShape(withVault.el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
   })
 
-  it('renders every settings section on the one page, in order, each anchored by id and every row addressed by data-setting — Hotkeys is not on it', () => {
+  it('opens on Appearance: the one section in the pane, anchored by id, with only its rows — no row of a later section is there', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
-    expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Review', 'Sync'])
-    expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance', 'settings-editor', 'settings-files', 'settings-review', 'settings-sync'])
-    expect(rowIds(el)).toEqual(['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'bulletThreading', 'threadWidth', 'threadColor', 'tableOfContents', 'commentsOrder', 'confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows', 'enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault', 'githubSync'])
-    for (const r of el.querySelectorAll<HTMLElement>('.setting')) expect(r.dataset.setting).toBeTruthy()
-    expect(el.querySelector('[data-setting^="hotkeys"]')).toBeNull()
+    expect(headings(el)).toEqual(['Appearance'])
+    expect(sections(el).map((s) => s.id)).toEqual(['settings-appearance'])
+    expect(rowIds(el)).toEqual(APPEARANCE_ROWS)
+    expect(currentNav(el)).toBe('Appearance')
+    expect(currentKind(el)).toBe('page')
+    expect(pane(el).scrollTop).toBe(0)
+    for (const id of [...EDITOR_ROWS, ...FILES_ROWS, ...REVIEW_ROWS, 'githubSync', ...HOTKEY_ROWS]) expect(row(el, id)).toBeNull()
   })
 
-  it('group titles and hints render under their section; untitled groups are plain rows', () => {
+  it('a nav click shows only that section: its heading, its anchor id and its rows in registry order, every row addressed by data-setting, and it alone is aria-current="page"', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
+    const seen = onEachPage(el, () => {
+      for (const r of el.querySelectorAll<HTMLElement>('.setting')) expect(r.dataset.setting).toBeTruthy()
+      return {
+        headings: headings(el),
+        anchors: sections(el).map((s) => s.id),
+        rows: rowIds(el),
+        current: navButtons(el).filter((b) => b.getAttribute('aria-current') !== null).map((b) => [b.textContent, b.getAttribute('aria-current')]),
+      }
+    })
+    const page = (title: string, anchor: string, rows: string[]) => [title, { headings: [title], anchors: [anchor], rows, current: [[title, 'page']] }]
+    expect(seen).toEqual([
+      page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
+      page('Editor', 'settings-editor', EDITOR_ROWS),
+      page('Files & Links', 'settings-files', FILES_ROWS),
+      page('Review', 'settings-review', REVIEW_ROWS),
+      page('Sync', 'settings-sync', ['githubSync']),
+      page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
+    ])
+  })
+
+  it('group titles and hints render on their own page; untitled groups are plain rows', () => {
     const { el } = mount()
-    expect(groupTitles(el)).toEqual(['Spacing', 'Bullet threading', 'Table of contents', 'Comments', 'When the app starts'])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['Guide lines that connect nested bullets.', 'The headings or the bullets of a note, at its right edge.'])
-    // The threading rows carry the shortened labels; the group names the feature.
-    expect(row(el, 'bulletThreading')?.querySelector('.setting__label')?.textContent).toBe('Show')
-    expect(row(el, 'threadWidth')?.querySelector('.setting__label')?.textContent).toBe('Line width')
+    const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
+    // Appearance, as it opens: Comments is its last group, after Spacing.
+    expect(groupTitles(el)).toEqual(['Spacing', 'Comments'])
+    expect(hints()).toEqual([])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
-    // Files & Links starts with an untitled group: its rows sit straight under the section title.
+    expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
+    // It starts with an untitled group: Theme and Content width sit straight under the section title.
+    expect(el.querySelector('#settings-appearance .settings-group')).not.toBeNull()
+    expect(el.querySelector('#settings-appearance .settings-group')?.querySelector('.settings-group__title')).toBeNull()
+
+    clickNav(el, 'Editor')
+    expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
+    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, TOC_HINT])
+    // The threading rows carry the shortened labels; the group names the feature.
+    expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
+    for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
+
+    clickNav(el, 'Files & Links')
+    expect(groupTitles(el)).toEqual(['When the app starts'])
+    expect(hints()).toEqual([])
+    // Files & Links starts with an untitled group too.
+    expect(el.querySelector('#settings-files .settings-group')).not.toBeNull()
     expect(el.querySelector('#settings-files .settings-group')?.querySelector('.settings-group__title')).toBeNull()
   })
 
-  it('the two per-vault sections, Review and Sync, carry a note under their titles; no other section does', () => {
+  it('the two per-vault sections, Review and Sync, carry a note under their titles; no other page does', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    const notes = [...el.querySelectorAll('.settings-section__note')]
-    expect(notes.map((n) => n.textContent)).toEqual(["These settings are saved in this vault's .yaseendocs folder and sync with it.", "These settings are saved in this vault's .yaseendocs folder, not app-wide."])
-    expect(notes.map((n) => n.closest('[data-section]')?.id)).toEqual(['settings-review', 'settings-sync'])
+    const notes = onEachPage(el, () => [...el.querySelectorAll('.settings-section__note')].map((n) => [n.closest('[data-section]')?.id, n.textContent]))
+    expect(notes).toEqual([
+      ['Appearance', []],
+      ['Editor', []],
+      ['Files & Links', []],
+      ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
+      ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
+      ['Hotkeys', []],
+    ])
   })
 
-  it('two or more vaults in the window: Review, Sync and the "This vault" group each say which vault they act on, first thing under the title; one vault: no such line (YAZ-2602 R10, S39)', () => {
-    const lines = (el: HTMLElement) => [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: '))
+  it('two or more vaults in the window: the pages of Review and Sync, and the "This vault" group of Files & Links, each say which vault they act on, first thing under the title; one vault: no such line on any page (YAZ-2602 R10, S39)', () => {
+    /** Each "Vault: …" line of each page: its words, what it stands under, and which muted line it is. */
+    const lines = (el: HTMLElement) =>
+      onEachPage(el, () =>
+        [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: ')).map((n) => ({ text: n.textContent, under: n.previousElementSibling?.textContent, className: n.className })),
+      )
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false }, 'Work')
-    expect(lines(el).map((n) => n.textContent)).toEqual(['Vault: Work', 'Vault: Work', 'Vault: Work'])
-    expect(lines(el).map((n) => n.previousElementSibling?.textContent)).toEqual(['This vault', 'Review', 'Sync'])
     // The same muted lines the dialog already has: a group's hint, a section's note.
-    expect(lines(el).map((n) => n.className)).toEqual(['settings-group__hint', 'settings-section__note', 'settings-section__note'])
-    expect(lines(el)[1].nextElementSibling?.textContent).toBe("These settings are saved in this vault's .yaseendocs folder and sync with it.")
+    expect(lines(el)).toEqual([
+      ['Appearance', []],
+      ['Editor', []],
+      ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
+      ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
+      ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
+      ['Hotkeys', []],
+    ])
+    clickNav(el, 'Review')
+    expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(['Vault: Work', "These settings are saved in this vault's .yaseendocs folder and sync with it."])
     unmount()
-    expect(lines(mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false }).el)).toEqual([])
+    const one = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS, { enabled: true, held: false })
+    expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
   })
 
-  it('Hotkeys is its own page: clicking it swaps the pane for its four tables and takes aria-current; no anchor is current meanwhile', () => {
+  it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its four tables and takes aria-current="page"', () => {
     const { el } = mount()
+    expect(navShape(el).slice(-2)).toEqual(['—', 'Hotkeys'])
     clickNav(el, 'Hotkeys')
     expect(currentNav(el)).toBe('Hotkeys')
-    expect(currentKind(el)).toBe('page') // a page, where an anchor says `location`
+    expect(currentKind(el)).toBe('page') // the same kind every page has
+    expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
     expect(headings(el)).toEqual(['Hotkeys'])
+    expect(sections(el).map((s) => s.id)).toEqual(['settings-hotkeys'])
     expect(groupTitles(el)).toEqual(['Keyboard', 'Views', 'Window', 'Mouse'])
-    expect(rowIds(el)).toEqual(['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-mouse'])
+    expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     expect([...el.querySelectorAll('[data-setting="hotkeys-window"] .hotkeys__keys')].map((k) => k.textContent)).toContain('⌘,')
-    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 
-  it('an anchor click from the Hotkeys page returns to the settings page and scrolls to that section', () => {
-    const { el } = mount()
-    clickNav(el, 'Hotkeys')
-    clickNav(el, 'Editor')
-    expect(currentNav(el)).toBe('Editor')
-    expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links'])
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(scrollIntoView.mock.instances[0]).toBe(el.querySelector('#settings-editor'))
-  })
-
-  it('an anchor click scrolls its section into view and marks it current — as a location, not a page', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
+  it('a section that goes while its page shows gives way to the first, in the pane and in the nav: Sync with the engine gone', () => {
+    const { el, onChange, onClose } = mount({ ...DEFAULT_SETTINGS }, status())
     clickNav(el, 'Sync')
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(scrollIntoView.mock.instances[0]).toBe(el.querySelector('#settings-sync'))
     expect(currentNav(el)).toBe('Sync')
-    expect(currentKind(el)).toBe('location')
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
+    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Files & Links', '—', 'Hotkeys'])
+    expect(headings(el)).toEqual(['Appearance'])
+    expect(currentNav(el)).toBe('Appearance')
+    expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
   })
 
-  it('scrolling while the Hotkeys page shows leaves aria-current on Hotkeys — the spy only watches the settings page', () => {
+  it('the pane starts at the top after a swap: a nav click puts scrollTop back to 0, to a settings page and to Hotkeys', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    clickNav(el, 'Hotkeys')
     scrollTo(el, 500)
-    expect(currentNav(el)).toBe('Hotkeys')
-    expect(currentKind(el)).toBe('page')
-  })
-
-  it('scrollspy: the current nav item follows the pane scroll — last heading above the read line, the last section at the bottom', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    layOut(el) // sections at 0 / 300 / 600 / 900, pane 400 of 1200
-    scrollTo(el, 0)
-    expect(currentNav(el)).toBe('Appearance')
-    scrollTo(el, 270) // the read line (scrollTop + 24 = 294) is still above Editor's top (300)
-    expect(currentNav(el)).toBe('Appearance')
-    scrollTo(el, 280) // 304: Editor's top is now at or above it
-    expect(currentNav(el)).toBe('Editor')
-    scrollTo(el, 650)
-    expect(currentNav(el)).toBe('Files & Links')
-    // The bottom: 1200 - 400 = 800, and Sync's top (900) never reaches the read line.
-    scrollTo(el, 800)
-    expect(currentNav(el)).toBe('Sync')
-  })
-
-  it('reopening starts at the top of the settings page again — no remembered page', () => {
-    const { el } = mount()
+    expect(pane(el).scrollTop).toBe(500) // the stub holds what it is given, so the 0 below is the click's doing
+    clickNav(el, 'Editor')
+    expect(headings(el)).toEqual(['Editor'])
+    expect(pane(el).scrollTop).toBe(0)
+    scrollTo(el, 300)
+    expect(pane(el).scrollTop).toBe(300)
     clickNav(el, 'Hotkeys')
-    expect(currentNav(el)).toBe('Hotkeys')
-    unmount()
-    const again = mount()
-    expect(currentNav(again.el)).toBe('Appearance')
-    expect(headings(again.el)).toEqual(['Appearance', 'Editor', 'Files & Links'])
+    expect(headings(el)).toEqual(['Hotkeys'])
+    expect(pane(el).scrollTop).toBe(0)
+  })
+
+  it('reopening starts at Appearance again — no remembered page', () => {
+    for (const left of ['Editor', 'Hotkeys']) {
+      const { el } = mount()
+      clickNav(el, left)
+      expect(currentNav(el)).toBe(left)
+      unmount()
+      const again = mount()
+      expect(currentNav(again.el)).toBe('Appearance')
+      expect(currentKind(again.el)).toBe('page')
+      expect(headings(again.el)).toEqual(['Appearance'])
+      expect(rowIds(again.el)).toEqual(APPEARANCE_ROWS)
+      unmount()
+    }
   })
 })
 
@@ -284,11 +343,11 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Line colour: Default is disabled while the thread already uses the accent, enabled once a colour is set', () => {
-    const { el, onChange } = mount()
+    const { el, onChange } = mountOn('Editor')
     const defaultButton = rowButtons(el, 'threadColor').find((b) => b.textContent === 'Default') as HTMLButtonElement
     expect(defaultButton.disabled).toBe(true)
     unmount()
-    const custom = mount({ ...DEFAULT_SETTINGS, threadColor: '#ff0000' })
+    const custom = mountOn('Editor', { ...DEFAULT_SETTINGS, threadColor: '#ff0000' })
     const reset = rowButtons(custom.el, 'threadColor').find((b) => b.textContent === 'Default') as HTMLButtonElement
     expect(reset.disabled).toBe(false)
     act(() => reset.click())
@@ -297,12 +356,12 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Confirm before deleting carries its hint in the row', () => {
-    const { el } = mount()
+    const { el } = mountOn('Files & Links')
     expect(row(el, 'confirmDelete')?.querySelector('.setting__hint')?.textContent).toBe('Deleted notes and folders move to the Trash either way.')
   })
 
   it('Ask before renaming is on by default, says what it shows, and Off writes the whole object with only it flipped (YAZ-2420 3C1)', () => {
-    const { el, onChange } = mount()
+    const { el, onChange } = mountOn('Files & Links')
     expect(row(el, 'confirmRename')?.querySelector('.setting__label')?.textContent).toBe('Ask before renaming')
     expect(row(el, 'confirmRename')?.querySelector('.setting__hint')?.textContent).toBe('Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.')
     expect(rowButtons(el, 'confirmRename').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
@@ -310,13 +369,34 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, confirmRename: false })
   })
 
-  it('Show the names: When there is room · Always · Off under "Table of contents" in Editor, between Bullet threading and Comments; Always writes the whole object with only it flipped (YAZ-2700)', () => {
-    const { el, onChange } = mount()
+  it('Section indent: two rows under Editor, in the last group of the page, after Bullet threading; each writes the whole object with only its field changed (YAZ-2709)', () => {
+    const { el, onChange } = mountOn('Editor')
+    const rows = ['sectionStep', 'sectionLines']
+    const groupOf = (id: string) => row(el, id)?.closest('.settings-group')
+    for (const id of rows) expect(row(el, id)?.closest('[data-section]')?.id).toBe('settings-editor')
+    // The group is the last of the page, and holds those two rows and no other.
+    expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
+    expect(rows.map((id) => groupOf(id)?.querySelector('.settings-group__title')?.textContent)).toEqual(['Section indent', 'Section indent'])
+    expect([...(groupOf('sectionStep')?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(rows)
+    expect(groupOf('sectionStep')?.querySelector('.settings-group__hint')?.textContent).toBe(SECTION_INDENT_HINT)
+    expect(rows.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Step width', 'Grey lines'])
+    expect(rowButtons(el, 'sectionStep').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['24px', 'false'], ['30px', 'true'], ['36px', 'false']])
+    expect(rowButtons(el, 'sectionLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Always show', 'true'], ['Only near the mouse', 'false']])
+    act(() => rowButtons(el, 'sectionStep')[2].click())
+    act(() => rowButtons(el, 'sectionLines')[1].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, sectionStep: 36 },
+      { ...DEFAULT_SETTINGS, sectionLines: 'hover' },
+    ])
+  })
+
+  it('Show the names: When there is room · Always · Off under "Table of contents" on the Editor page, after Section indent; Always writes the whole object with only it flipped (YAZ-2700)', () => {
+    const { el, onChange } = mountOn('Editor')
     expect(row(el, 'tableOfContents')?.closest('[data-section]')?.id).toBe('settings-editor')
     const group = row(el, 'tableOfContents')?.closest('.settings-group')
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Table of contents')
-    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe('The headings or the bullets of a note, at its right edge.')
-    expect([...el.querySelectorAll('#settings-editor .settings-group__title')].map((t) => t.textContent)).toEqual(['Bullet threading', 'Table of contents', 'Comments'])
+    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(TOC_HINT)
+    expect([...el.querySelectorAll('#settings-editor .settings-group__title')].map((t) => t.textContent)).toEqual(EDITOR_GROUPS)
     expect(row(el, 'tableOfContents')?.querySelector('.setting__label')?.textContent).toBe('Show the names')
     expect(rowButtons(el, 'tableOfContents').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['When there is room', 'true'], ['Always', 'false'], ['Off', 'false']])
     act(() => rowButtons(el, 'tableOfContents')[1].click())
@@ -324,7 +404,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Reopen: All vaults · Last vault · None under "When the app starts", Last vault by default; None writes the whole object with only it flipped (YAZ-2589 D2, A3)', () => {
-    const { el, onChange } = mount()
+    const { el, onChange } = mountOn('Files & Links')
     expect(row(el, 'startupWindows')?.closest('[data-section]')?.id).toBe('settings-files')
     expect(row(el, 'startupWindows')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('When the app starts')
     expect(row(el, 'startupWindows')?.querySelector('.setting__label')?.textContent).toBe('Reopen')
@@ -335,7 +415,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('Default location: a dropdown of the three Obsidian options, writing the whole object with only the location flipped; the folder input and the wide row appear only for the third', () => {
-    const { el, onChange } = mount()
+    const { el, onChange } = mountOn('Files & Links')
     const select = row(el, 'newNoteLocation')?.querySelector<HTMLSelectElement>('select.settings__select') as HTMLSelectElement
     expect([...select.options].map((o) => o.textContent)).toEqual(['Vault folder', 'Same folder as current file', 'In the folder specified below'])
     expect(select.selectedOptions[0].textContent).toBe('Same folder as current file') // the YAZ-1643 default
@@ -347,13 +427,13 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     })
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, newNoteLocation: 'root' })
     unmount()
-    const folder = mount({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Inbox' })
+    const folder = mountOn('Files & Links', { ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Inbox' })
     expect(row(folder.el, 'newNoteLocation')?.classList.contains('setting--wide')).toBe(true)
     expect(row(folder.el, 'newNoteLocation')?.querySelector<HTMLInputElement>('.settings__input')?.value).toBe('Inbox')
   })
 
   it('Default location: an invalid folder keeps the stored value, marks the input aria-invalid, and keeps the typed text for fixing up', () => {
-    const { el, onChange } = mount({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Old' })
+    const { el, onChange } = mountOn('Files & Links', { ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Old' })
     const input = row(el, 'newNoteLocation')?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
     expect(input.value).toBe('Old')
     type(input, 'a/../b')
@@ -369,7 +449,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('GitHub sync: the engine-stamped `enabled` is the read-back, the hint is the detected repo, and Off calls setEnabled(false) — never onChange', () => {
-    const { el, setEnabled, onChange } = mount({ ...DEFAULT_SETTINGS }, status({ state: 'synced', enabled: true, repo: { remoteUrl: 'git@github.com:me/notes.git', branch: 'main' } }))
+    const { el, setEnabled, onChange } = mountOn('Sync', { ...DEFAULT_SETTINGS }, status({ state: 'synced', enabled: true, repo: { remoteUrl: 'git@github.com:me/notes.git', branch: 'main' } }))
     const buttons = rowButtons(el, 'githubSync')
     expect(buttons.map((b) => b.textContent)).toEqual(['On', 'Off'])
     expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
@@ -380,7 +460,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
   })
 
   it('GitHub sync: a null status (first fetch in flight) reads as Off, the safe default', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, null)
+    const { el } = mountOn('Sync', { ...DEFAULT_SETTINGS }, null)
     expect(rowButtons(el, 'githubSync').map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true])
     expect(row(el, 'githubSync')?.querySelector('.setting__hint')?.textContent).toBe("This folder isn't a git repo — set it up with GitHub Desktop, then turn sync on.")
   })
@@ -391,14 +471,16 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   const number = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
   const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
 
-  it('is absent with no vault open', () => {
+  it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
-    expect(el.querySelector('#settings-review')).toBeNull()
-    expect(row(el, 'baseDays')).toBeNull()
+    expect(navByTitle(el, 'Review')).toBeUndefined()
+    const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
+    expect(found.map(([title]) => title)).toEqual(['Appearance', 'Editor', 'Files & Links', 'Hotkeys'])
+    for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
   it('upkeep off: the Review section shows one row, a switch labelled "Enable upkeep review", reading Off', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
+    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
     expect(reviewRows(el)).toEqual(['enabled'])
     expect(row(el, 'enabled')?.querySelector('.setting__label')?.textContent).toBe('Enable upkeep review')
     expect(rowButtons(el, 'enabled').map((b) => b.textContent)).toEqual(['On', 'Off'])
@@ -407,18 +489,18 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('Enable upkeep review: On saves the whole object with enabled true, Off with it false — never onChange', () => {
-    const off = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    const off = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
     act(() => rowButtons(off.el, 'enabled')[0].click())
     expect(off.save).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_REVIEW_SETTINGS, enabled: true })
     expect(off.onChange).not.toHaveBeenCalled()
     unmount()
-    const on = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14 })
+    const on = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14 })
     act(() => rowButtons(on.el, 'enabled')[1].click())
     expect(on.save).toHaveBeenCalledExactlyOnceWith({ ...S, baseDays: 14, enabled: false })
   })
 
   it('turned on: the three numbers and "New notes are in review" appear under the switch at once; turned off, they go', () => {
-    const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
+    const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, DEFAULT_REVIEW_SETTINGS)
     rerender(S)
     expect(reviewRows(el)).toEqual(['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault'])
     expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
@@ -438,7 +520,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('turned on, the four rows under the switch show the current values, each number beside its unit', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14, growth: 1.5, maxDays: 90, reviewByDefault: false })
+    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, baseDays: 14, growth: 1.5, maxDays: 90, reviewByDefault: false })
     expect(['baseDays', 'growth', 'maxDays', 'reviewByDefault'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Check a note after', 'Each time it is still relevant, wait', 'Longest wait', 'New notes are in review'])
     expect(['baseDays', 'growth', 'maxDays'].map((id) => number(el, id).value)).toEqual(['14', '1.5', '90'])
     expect(['baseDays', 'growth', 'maxDays'].map((id) => row(el, id)?.querySelector('.setting__control')?.textContent)).toEqual(['days', '× longer', 'days'])
@@ -447,15 +529,15 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('says the schedule in words under the three numbers', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    const { el } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
     expect(row(el, 'maxDays')?.querySelector('.setting__hint')?.textContent).toBe('30 days, then 60, 120, 240, 365.')
     unmount()
-    const fixed = mount({ ...DEFAULT_SETTINGS }, undefined, { ...S, growth: 1 })
+    const fixed = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, { ...S, growth: 1 })
     expect(row(fixed.el, 'maxDays')?.querySelector('.setting__hint')?.textContent).toBe('Every 30 days.')
   })
 
   it('a valid number commits on Enter or blur: save gets the whole object with that one field changed — never onChange', () => {
-    const { el, save, onChange } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
     type(number(el, 'baseDays'), '45')
     expect(save).not.toHaveBeenCalled() // a draft until it is committed
     pressEnter(number(el, 'baseDays'))
@@ -471,13 +553,13 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('an unchanged number saves nothing', () => {
-    const { el, save } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
     blur(number(el, 'baseDays'))
     expect(save).not.toHaveBeenCalled()
   })
 
   it('a draft the rules refuse is marked while it stands, is not saved, and gives way to the last good value', () => {
-    const { el, save } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
     // Each is one of `sanitizeReviewSettings`' rules: whole days from 1, growth from 1, the longest wait never under the first.
     for (const [id, draft, stored] of [['baseDays', '0', '30'], ['baseDays', '7.5', '30'], ['growth', '0.5', '2'], ['maxDays', '10', '365'], ['maxDays', 'soon', '365'], ['growth', '', '2']] as const) {
       const input = number(el, id)
@@ -493,7 +575,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
   })
 
   it('New notes are in review: On · Off, and Off saves the whole object with reviewByDefault flipped', () => {
-    const { el, save, onChange } = mount({ ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
     const buttons = rowButtons(el, 'reviewByDefault')
     expect(buttons.map((b) => b.textContent)).toEqual(['On', 'Off'])
     expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
@@ -516,37 +598,56 @@ describe('SettingsDialog search (D6)', () => {
 
   it('a titled group heads its hits with a breadcrumb, without repeating the group title below it', () => {
     const { el } = mount()
+    // "threading" is in one group's title and in the hint of Section indent, which names that group: both groups' rows, each under its own breadcrumb (Table of contents, between them, has no hit).
     type(searchInput(el), 'threading')
+    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Section indent'])
+    expect(groupTitles(el)).toEqual([])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT])
+    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
+    // "guide lines" is the first group's hint alone: its three rows, under the one breadcrumb.
+    type(searchInput(el), 'guide lines')
     expect(headings(el)).toEqual(['Editor › Bullet threading'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual(['Guide lines that connect nested bullets.'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT])
     expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor'])
   })
 
   it('hits from several groups stack under their own breadcrumbs, in registry order', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status())
     // "bullet": the threading group (by its hint and title), the table of contents group (by its
-    // hint: a note of bullets has one too, YAZ-2700 D14) and, on the standalone Hotkeys page, the
-    // two tables whose labels name a bullet — four breadcrumbs, registry order, never rank.
+    // hint: a note of bullets has one too, YAZ-2700 D14), the Section indent group (its hint names
+    // Bullet threading) and, on the Hotkeys page, the two tables whose labels name a bullet — five
+    // breadcrumbs, registry order, never rank.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'tableOfContents', 'hotkeys-keyboard', 'hotkeys-mouse'])
+    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
+    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'hotkeys-keyboard', 'hotkeys-mouse'])
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
+    // Comments is a group of Appearance now, so its breadcrumb says so.
+    type(searchInput(el), 'comments')
+    expect(headings(el)).toEqual(['Appearance › Comments'])
+    expect(rowIds(el)).toEqual(['commentsOrder'])
+    type(searchInput(el), 'section indent')
+    expect(headings(el)).toEqual(['Editor › Section indent'])
+    expect(rowIds(el)).toEqual(['sectionStep', 'sectionLines'])
     type(searchInput(el), 'close tab')
     expect(headings(el)).toEqual(['Hotkeys › Window'])
     expect(rowIds(el)).toEqual(['hotkeys-window'])
   })
 
-  it('clearing a query returns to whatever page was showing before it — the Hotkeys page included', () => {
+  it('clearing a query returns to the page that was showing before it — a later settings page and the Hotkeys page alike', () => {
     const { el } = mount()
-    clickNav(el, 'Hotkeys')
-    type(searchInput(el), 'dark')
-    expect(headings(el)).toEqual(['Appearance'])
-    pressEscape(searchInput(el))
-    expect(headings(el)).toEqual(['Hotkeys'])
-    expect(currentNav(el)).toBe('Hotkeys')
+    for (const [title, rows] of [['Editor', EDITOR_ROWS], ['Hotkeys', HOTKEY_ROWS]] as const) {
+      clickNav(el, title)
+      type(searchInput(el), 'dark')
+      expect(headings(el)).toEqual(['Appearance'])
+      expect(rowIds(el)).toEqual(['theme'])
+      pressEscape(searchInput(el))
+      expect(headings(el)).toEqual([title])
+      expect(rowIds(el)).toEqual(rows)
+      expect(currentNav(el)).toBe(title)
+    }
   })
 
   it('no hit says so, quoting the query', () => {
@@ -556,40 +657,65 @@ describe('SettingsDialog search (D6)', () => {
     expect(rowIds(el)).toEqual([])
   })
 
-  it('Escape with a query clears it and brings the page back; the × button does the same', () => {
+  it('Escape with a query clears it and brings back the page that was showing; the × button does the same', () => {
     const { el, onClose } = mount()
+    // As it opens: Appearance.
+    type(searchInput(el), 'trash')
+    expect(rowIds(el)).toEqual(['confirmDelete'])
+    pressEscape(searchInput(el))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(searchInput(el).value).toBe('')
+    expect(headings(el)).toEqual(['Appearance'])
+    expect(rowIds(el)).toEqual(APPEARANCE_ROWS)
+
+    // From a later page: the same page again, not the first.
+    clickNav(el, 'Files & Links')
     type(searchInput(el), 'dark')
     expect(rowIds(el)).toEqual(['theme'])
     pressEscape(searchInput(el))
     expect(onClose).not.toHaveBeenCalled()
     expect(searchInput(el).value).toBe('')
-    expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links'])
+    expect(headings(el)).toEqual(['Files & Links'])
+    expect(rowIds(el)).toEqual(FILES_ROWS)
 
     type(searchInput(el), 'dark')
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Clear search settings"]')?.click())
     expect(searchInput(el).value).toBe('')
-    expect(headings(el)).toEqual(['Appearance', 'Editor', 'Files & Links'])
+    expect(headings(el)).toEqual(['Files & Links'])
+    expect(rowIds(el)).toEqual(FILES_ROWS)
+    expect(currentNav(el)).toBe('Files & Links')
+    expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('a nav click during a search clears the query and then scrolls to that section on the restored page', () => {
+  it('a nav click during a search clears the query and shows that page, from its top', () => {
     const { el } = mount()
+    scrollTo(el, 400)
     type(searchInput(el), 'dark')
+    expect(rowIds(el)).toEqual(['theme'])
     clickNav(el, 'Files & Links')
     expect(searchInput(el).value).toBe('')
     expect(currentNav(el)).toBe('Files & Links')
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(scrollIntoView.mock.instances[0]).toBe(el.querySelector('#settings-files'))
+    expect(currentKind(el)).toBe('page')
+    expect(headings(el)).toEqual(['Files & Links'])
+    expect(sections(el).map((sec) => sec.id)).toEqual(['settings-files'])
+    expect(rowIds(el)).toEqual(FILES_ROWS)
+    expect(pane(el).scrollTop).toBe(0)
+    // And a click on the page the search was typed over: the query goes, that page is back.
+    type(searchInput(el), 'dark')
+    clickNav(el, 'Files & Links')
+    expect(searchInput(el).value).toBe('')
+    expect(rowIds(el)).toEqual(FILES_ROWS)
   })
 })
 
 describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () => {
   const OFF_TEXT = "This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
-  const withIds = (enabled: boolean, held = false) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
+  const withIds = (enabled: boolean, held = false) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held })
   const pressed = (el: HTMLElement) => rowButtons(el, 'ids').map((b) => b.getAttribute('aria-pressed'))
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
   it('with no vault open the row is absent, and so is its "This vault" group; a search does not find it', () => {
-    const { el } = mount()
+    const { el } = mountOn('Files & Links')
     expect(row(el, 'ids')).toBeNull()
     expect(groupTitles(el)).not.toContain('This vault')
     type(searchInput(el), 'files & links')
@@ -661,7 +787,7 @@ describe("SettingsDialog: Give this vault's notes IDs (YAZ-2523 V4, V13)", () =>
 describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D2)', () => {
   const ASK = { notes: 3, folders: 1, foreign: 0 }
   const open = async (vaultIds: { ask?: IndexResponse['ask']; letters?: string } = { ask: ASK }, vaultName?: string) => {
-    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ...vaultIds }, vaultName)
+    const mounted = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: false, held: false, ...vaultIds }, vaultName)
     await act(async () => rowButtons(mounted.el, 'ids')[0].click())
     return mounted
   }
@@ -758,7 +884,7 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
   })
 
   it('Off in a vault whose notes hold IDs still asks first, and "Turn off" saves no with no letters handed over (S11)', async () => {
-    const { el, setIds } = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true })
+    const { el, setIds } = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true })
     act(() => rowButtons(el, 'ids')[1].click())
     expect(el.querySelector('.confirm__input')).toBeNull()
     expect(setIds).not.toHaveBeenCalled()
@@ -768,14 +894,14 @@ describe('SettingsDialog: On opens the box with the typed ID letters (YAZ-2677 D
 })
 
 describe('SettingsDialog: Duplicate IDs (YAZ-2677 D7, S55 to S57)', () => {
-  const withIds = (enabled: boolean) => mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled })
+  const withIds = (enabled: boolean) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled })
   const button = (el: HTMLElement) => rowButtons(el, 'duplicates')[0]
   const result = (el: HTMLElement) => row(el, 'duplicates')?.querySelector('[role="status"]')?.textContent
 
   it('the row shows only while the vault uses IDs: under "This vault", after the switch, with one button', () => {
     expect(row(withIds(false).el, 'duplicates')).toBeNull()
     unmount()
-    expect(row(mount().el, 'duplicates')).toBeNull()
+    expect(row(mountOn('Files & Links').el, 'duplicates')).toBeNull()
     unmount()
     const { el, checkIds } = withIds(true)
     expect(row(el, 'duplicates')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
@@ -822,7 +948,7 @@ describe('SettingsDialog: Duplicate IDs (YAZ-2677 D7, S55 to S57)', () => {
 
 describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
   const withIds = async (enabled: boolean, state?: Partial<IdsState>, vaultName?: string) => {
-    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled, letters: 'YAZ', state: state ?? {} }, vaultName)
+    const mounted = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled, letters: 'YAZ', state: state ?? {} }, vaultName)
     // The row reads the letters and the counts from the main process as it appears.
     await act(async () => undefined)
     return mounted
@@ -835,7 +961,7 @@ describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
   it('S79: the row shows only while the vault uses IDs, with the letters and one button', async () => {
     expect(row((await withIds(false)).el, 'idLetters')).toBeNull()
     unmount()
-    expect(row(mount().el, 'idLetters')).toBeNull()
+    expect(row(mountOn('Files & Links').el, 'idLetters')).toBeNull()
     unmount()
     const { el, idsState, reletter } = await withIds(true)
     expect(row(el, 'idLetters')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
@@ -905,7 +1031,7 @@ describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
 
 describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
   const withOld = async (old: number, enabled = true, vaultName?: string) => {
-    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled, letters: 'YAZ', old, state: {} }, vaultName)
+    const mounted = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled, held: enabled, letters: 'YAZ', old, state: {} }, vaultName)
     await act(async () => undefined)
     return mounted
   }
@@ -960,7 +1086,7 @@ describe('SettingsDialog: Old IDs (YAZ-2677 D6, S88 to S91)', () => {
   })
 
   it('S90: a run that stopped with links left, after each note has its number: the row still shows, and a second run finishes it', async () => {
-    const mounted = mount({ ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true, letters: 'YAZ', old: 0, unfinished: true, state: {} })
+    const mounted = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: true, held: true, letters: 'YAZ', old: 0, unfinished: true, state: {} })
     await act(async () => undefined)
     const { el, backfill } = mounted
     expect(line(el)).toBe('Each note has a number, but some links still hold an old ID.')
