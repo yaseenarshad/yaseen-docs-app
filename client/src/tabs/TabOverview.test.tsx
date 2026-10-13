@@ -9,6 +9,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileHead } from '@shared/types'
 import { TabOverview, ZOOM_MS, type TabOverviewProps } from './TabOverview'
+import { withoutTitle } from './board'
 import { boardHighlight } from './boardHighlight'
 import { _resetTabHeads, plainLines } from './useTabHeads'
 
@@ -468,5 +469,15 @@ describe('plainLines (S54)', () => {
     expect(plainLines('| Name | Role |\n| --- | :-: |\n| Ana | Lead |')).toBe('Name | Role\nAna | Lead')
     // What is no mark stays: a name with underscores, a sum.
     expect(plainLines('snake_case_name is 2 * 3 * 4')).toBe('snake_case_name is 2 * 3 * 4')
+  })
+
+  it('reads a character reference by number as its character (YAZ-2751): the space the editor writes at the start of a heading is no text, so the heading is the title again; a reference that names a "<" makes no tag; what is no reference stays', () => {
+    // The editor saves "#  Welcome" as "# &#x20;Welcome": the page shows the title once, and no "&#x20;".
+    expect(plainLines('# &#x20;Welcome\n\nSome text')).toBe('Welcome\nSome text')
+    expect(withoutTitle(plainLines('# &#x20;Welcome\n\nSome text'), 'Welcome')).toBe('Some text')
+    expect(plainLines('ends with a space&#32;\ncaf&#xE9; &#128512;')).toBe('ends with a space\ncafé 😀')
+    // Decoded last: a "<" that came from a reference is text, never the start of a tag.
+    expect(plainLines('a &#x3C;b> c')).toBe('a <b> c')
+    expect(plainLines('R&D costs &# 12; and &#xZZ; and &#0;')).toBe('R&D costs &# 12; and &#xZZ; and &#0;')
   })
 })
