@@ -418,6 +418,38 @@ describe('TabOverview', () => {
     expect(new Set(ids).size).toBe(TABS.length)
   })
 
+  it('"Kill all tabs" (YAZ-2739 S1 to S3, S21): a button on the board while a tab is open, under filter text too; it asks App and closes nothing itself; with no tab, or with no door, there is no button', async () => {
+    const onKillAll = vi.fn()
+    const { el, props, again } = await mount({ onKillAll })
+    const kill = () => el.querySelector<HTMLButtonElement>('.taboverview__kill')
+    expect(kill()?.textContent).toBe('Kill all tabs')
+
+    // Text in the filter hides pages, and the button is the same one: it is about every tab (D4).
+    type(el, 'plan')
+    expect(texts(el, '.taboverview__title').length).toBeLessThan(TABS.length)
+    act(() => kill()?.click())
+    expect(onKillAll).toHaveBeenCalledTimes(1)
+    expect(props.onCloseTabs).not.toHaveBeenCalled()
+
+    await again({ tabs: [] })
+    expect(kill()).toBeNull()
+    await again({ onKillAll: undefined })
+    expect(kill()).toBeNull()
+  })
+
+  it('a menu of the strip that is open has the keys (YAZ-2739 S8): the grid button\'s menu leaves the focus in the filter box, and its Esc is not the board\'s', async () => {
+    const { el, props } = await mount()
+    const stripMenu = document.createElement('div')
+    stripMenu.className = 'ctx-menu'
+    document.body.appendChild(stripMenu)
+    key(el, 'Escape')
+    key(el, 'Enter')
+    expect([props.onDismiss, props.onOpen].map((door) => vi.mocked(door).mock.calls.length)).toEqual([0, 0])
+    stripMenu.remove()
+    key(el, 'Escape')
+    expect(props.onDismiss).toHaveBeenCalledTimes(1)
+  })
+
   it('R45: tells the strip which page it highlights: the pointer and the arrows move it, and a board that goes lets go', async () => {
     const { el } = await mount()
     expect(boardHighlight()).toBe('/v/a.md')

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -56,6 +57,8 @@ export interface TabBarProps {
   onToggleOverview?: () => void
   /** Whether the overview shows: the button's one state. */
   overviewOpen?: boolean
+  /** The grid button's right-click menu (YAZ-2739): "Kill all tabs". App asks first. Absent, the button has no menu. */
+  onKillAll?: () => void
   /**
    * Where a failed OS action says so (YAZ-963) — App's passive notice. Optional: a mount with
    * nowhere to show one loses the message, never the gesture.
@@ -105,12 +108,13 @@ const Chevron = ({ d }: { d: string }) => (
  * tab that joins or leaves the strip slides open or shut. Left of
  * the strip sit the ◀ ▶ history buttons (YAZ-721), disabled when the active tab's stack has
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item. Right of them
- * the grid button shows every open tab at once (YAZ-2648 D8). The ONE preview tab (YAZ-2648 D1)
+ * the grid button shows every open tab at once (YAZ-2648 D8), and its right-click menu has one
+ * item, "Kill all tabs" (YAZ-2739), which App answers with a sheet. The ONE preview tab (YAZ-2648 D1)
  * wears an italic label; a double click on it keeps it. After the tabs a "+" shows the blank tab
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -119,6 +123,8 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   // is read when the menu opens, so the review item is about the tab that was right-clicked; a
   // null state hides it.
   const [menu, setMenu] = useState<TabMenuAt | null>(null)
+  /** The grid button's own menu (YAZ-2739), and where it stands. */
+  const [gridMenu, setGridMenu] = useState<{ x: number; y: number } | null>(null)
   const activeRef = useRef<HTMLDivElement | null>(null)
   // The page the tab board highlights (YAZ-2648): its tab is lit, and brought into view like the active one.
   const lit = useBoardHighlight()
@@ -270,7 +276,23 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
           <Chevron d="m6 4 4 4-4 4" />
         </button>
         {onToggleOverview && (
-          <button type="button" className="tabbar-nav__btn" aria-label="Show all open tabs" title="Show all open tabs (⌘⇧M)" aria-pressed={overviewOpen} onClick={onToggleOverview}>
+          <button
+            type="button"
+            className="tabbar-nav__btn"
+            aria-label="Show all open tabs"
+            title="Show all open tabs (⌘⇧M)"
+            aria-pressed={overviewOpen}
+            onClick={onToggleOverview}
+            // The right press that opens the menu leaves the keyboard focus where it is — under the board, in its filter box.
+            onMouseDown={(e) => {
+              if (e.button === 2 && onKillAll !== undefined) e.preventDefault()
+            }}
+            onContextMenu={(e) => {
+              if (onKillAll === undefined) return
+              e.preventDefault()
+              setGridMenu({ x: e.clientX, y: e.clientY })
+            }}
+          >
             <GridIcon />
           </button>
         )}
@@ -388,6 +410,25 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
       )}
       <div className="tabbar-tail" {...endSlot} />
       {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {/* The grid button's menu: one item. With no tab it has nothing to close, and is grey like any item that cannot be used. */}
+      {gridMenu !== null && (
+        <ContextMenuSurface x={gridMenu.x} y={gridMenu.y} onClose={() => setGridMenu(null)}>
+          <button
+            type="button"
+            className={tabs.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}
+            role="menuitem"
+            disabled={tabs.length === 0}
+            // So does the press on the item: a sheet that is cancelled then gives the keys back to the board, or to the note.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setGridMenu(null)
+              onKillAll?.()
+            }}
+          >
+            Kill all tabs
+          </button>
+        </ContextMenuSurface>
+      )}
     </div>
   )
 }
