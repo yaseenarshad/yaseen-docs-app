@@ -93,7 +93,7 @@ function twoVaultState(): AppState {
     { path: vaultA, lastOpened: now },
     { path: vaultB, lastOpened: now - 60_000 },
   ]
-  state.folders[vaultB] = { expanded: [], lastFile: path.join(vaultB, 'Ideas.md'), folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null }
+  state.folders[vaultB] = { expanded: [], lastFile: path.join(vaultB, 'Ideas.md'), folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, name: null, key: null }
   return state
 }
 

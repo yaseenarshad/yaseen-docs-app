@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type StartupWindows, type TableOfContents, type Theme } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SectionLines, type StartupWindows, type TableOfContents, type Theme } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -73,6 +73,15 @@ export const DEFAULT_THREAD_SWATCH = '#5b6cff'
 export const THREADING_OPTIONS: readonly Option<boolean>[] = [
   { label: 'Off', value: false },
   { label: 'On', value: true },
+]
+
+/** Section indent (YAZ-2709): the width of one step; `SECTION_STEPS` validates the field, and the editor reads it as `--section-step-setting`. */
+export const SECTION_STEP_OPTIONS: readonly Option<number>[] = SECTION_STEPS.map((value) => ({ label: `${value}px`, value }))
+
+/** Section indent (YAZ-2709): when the grey section lines show; the editor reads it as `data-section-lines` on `.app`. */
+export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [
+  { label: 'Always show', value: 'always' },
+  { label: 'Only near the mouse', value: 'hover' },
 ]
 
 /** The On-first pair the guards use ("Confirm before deleting", GitHub sync): the safe answer leads. */

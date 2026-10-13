@@ -1,20 +1,19 @@
 /**
- * THE SETTINGS DIALOG (YAZ-1679): a centred modal — ONE long page of every section, grouped rows
- * under section and group headings, scrolling on the right; the section titles down the left as
- * anchors with a scrollspy, under a search box. It replaces the 220px popover that grew above the
- * sidebar cog (GRO-2024) and folds the hotkey reference (GRO-2067) in as its own page. App mounts
- * it, so the cog, ⌘, and the app menu's Settings… all open the ONE dialog.
+ * THE SETTINGS DIALOG (YAZ-1679): a centred modal — one page for each section, grouped rows
+ * under the section and group headings on the right; the section titles down the left, under a
+ * search box. It replaces the 220px popover that grew above the sidebar cog (GRO-2024) and folds
+ * the hotkey reference (GRO-2067) in as its own page. App mounts it, so the cog, ⌘, and the app
+ * menu's Settings… all open the ONE dialog.
  *
  * What it shows comes entirely from `SETTINGS_SECTIONS` (registry.tsx): the nav lists the
- * sections this context can show, the page renders them all in order, and search runs over the
- * same items — a setting declared once appears in all three.
+ * sections this context can show, the page renders the one that is chosen, and search runs over
+ * the items of them all — a setting declared once appears in all three.
  *
- * ONE PAGE, NOT PAGES (Yasin's call after the demo): every setting is on the page at once, so a
- * nav click is a scroll, not a route, and the active nav item is DERIVED from where the page is
- * scrolled to. Opening always starts at the top. The one exception is a `standalone` section
- * (Hotkeys — a reference table, noise among settings): it is its own page inside the dialog,
- * listed under a divider in the nav, and `page` names it while it is showing; `null` is the
- * settings page.
+ * A PAGE FOR EACH SECTION (Yasin's call in the YAZ-2709 demo, ⚡ amending YAZ-1679's one long
+ * page): the sections had grown past what one scroll reads well, and a nav click was already the
+ * way to each of them. `page` names the section showing; opening always starts at the first.
+ * A `standalone` section (Hotkeys — a reference table, noise among settings) is a page like
+ * the others, listed under a divider in the nav.
  *
  * ⚡ KEYS ARE THE OVERLAY'S, NEVER `window`'s — the DrawingModal precedent (YAZ-888): React
  * flushes mount effects inside the dispatch of the event that opened the dialog, so a `window`
@@ -32,15 +31,6 @@ import { searchSettings, settingCandidates } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import './settings.css'
 
-/**
- * How far below the pane's top edge a section heading may sit and still count as "the one you
- * are reading" — a touch more than the pane's `scroll-padding-top`, so a section the nav just
- * scrolled to (landing exactly under the padding) is the active one, not its predecessor.
- */
-const SPY_OFFSET = 24
-
-const anchorId = (id: SettingsSectionId) => `settings-${id}`
-
 interface SettingsDialogProps {
   ctx: SettingsCtx
   onClose: () => void
@@ -48,18 +38,16 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
   const sections = availableSections(ctx)
-  const scrollSections = sections.filter((s) => s.standalone !== true)
-  const pages = sections.filter((s) => s.standalone === true)
+  const settingsPages = sections.filter((s) => s.standalone !== true)
+  const referencePages = sections.filter((s) => s.standalone === true)
   const paneRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [query, setQuery] = useState('')
-  /** The standalone page showing, or null for the settings page. Search leaves it alone, so clearing a query returns to it. */
-  const [page, setPage] = useState<SettingsSectionId | null>(null)
-  /** The scrollspy's answer: which scroll section is being read. Meaningful only while `page` is null. */
-  const [active, setActive] = useState<SettingsSectionId>(scrollSections[0].id)
-  /** An anchor click's target, applied after the render that (re)shows the settings page — a search or a standalone page may be leaving. */
-  const [pending, setPending] = useState<SettingsSectionId | null>(null)
+  /** The section asked for. Search leaves it alone, so clearing a query returns to it. */
+  const [page, setPage] = useState<SettingsSectionId>(sections[0].id)
+  /** The section showing: a section this context stops showing while its page is open (Sync, Review) gives way to the first, in the pane and in the nav alike. */
+  const shown = sections.find((s) => s.id === page) ?? sections[0]
 
   useEffect(() => {
     const previous = document.activeElement
@@ -68,39 +56,6 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
       if (previous instanceof HTMLElement) previous.focus()
     }
   }, [])
-
-  /**
-   * The scrollspy: at the top the first section is being read; otherwise the LAST section whose
-   * top is at or above the read line; at the very bottom the last section, even when the page is
-   * too short for its heading to reach the read line. Sections are the pane's offset children
-   * (`position: relative` on it), so `offsetTop` is scroll-independent. A standalone page has
-   * no anchors to spy on.
-   */
-  const updateActive = (): void => {
-    const pane = paneRef.current
-    if (pane === null || page !== null) return
-    const anchors = pane.querySelectorAll<HTMLElement>('[data-section]')
-    const atBottom = pane.scrollTop > 0 && pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1
-    let reading = anchors[0]
-    if (atBottom) reading = anchors[anchors.length - 1]
-    else if (pane.scrollTop > 0) {
-      for (let i = anchors.length - 1; i > 0; i--) {
-        if (anchors[i].offsetTop <= pane.scrollTop + SPY_OFFSET) {
-          reading = anchors[i]
-          break
-        }
-      }
-    }
-    setActive(reading.dataset.section as SettingsSectionId)
-  }
-
-  useEffect(() => {
-    if (pending === null) return
-    // Instant, not smooth: a smooth scroll fires the spy on every intermediate frame and the nav
-    // highlight walks through the sections in between. A nav click is a jump, like a page switch.
-    paneRef.current?.querySelector(`#${anchorId(pending)}`)?.scrollIntoView({ block: 'start' })
-    setPending(null)
-  }, [pending])
 
   // Built once per open: the searchable text is labels, hints and keywords, none of which a click
   // inside the dialog changes in a way search needs to see.
@@ -116,17 +71,11 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
     else onClose()
   }
 
-  /** An anchor click is a scroll — a search or a standalone page first gives way so there is a page to scroll. */
-  const jumpTo = (id: SettingsSectionId): void => {
-    setQuery('')
-    setPage(null)
-    setActive(id)
-    setPending(id)
-  }
-  /** A standalone item is a page swap; a query in progress is dropped like any other navigation. */
+  /** A nav click is a page swap, and the new page starts at its top; a query in progress is dropped like any other navigation. */
   const showPage = (id: SettingsSectionId): void => {
     setQuery('')
     setPage(id)
+    if (paneRef.current !== null) paneRef.current.scrollTop = 0
   }
 
   const row = (item: SettingDef) => (
@@ -146,7 +95,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
     </div>
   )
   const section = (s: SettingsSection) => (
-    <section key={s.id} id={anchorId(s.id)} data-section={s.id} className="settings-section">
+    <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section">
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
@@ -186,15 +135,14 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
               </button>
             )}
           </div>
-          {/* `location` = where you are in a scrolled document; `page` = the standalone page showing. */}
-          {scrollSections.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" aria-current={page === null && s.id === active ? 'location' : undefined} onClick={() => jumpTo(s.id)}>
+          {settingsPages.map((s) => (
+            <button key={s.id} type="button" className="settings-nav__item" aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
               {s.title}
             </button>
           ))}
           <hr className="settings-nav__divider" />
-          {pages.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" aria-current={page === s.id ? 'page' : undefined} onClick={() => showPage(s.id)}>
+          {referencePages.map((s) => (
+            <button key={s.id} type="button" className="settings-nav__item" aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
               {s.title}
             </button>
           ))}
@@ -202,7 +150,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
         <button type="button" className="settings-dialog__close" aria-label="Close settings" onClick={onClose}>
           ✕
         </button>
-        <div ref={paneRef} className="settings-pane" onScroll={updateActive}>
+        <div ref={paneRef} className="settings-pane">
           {searching ? (
             hitGroups.length === 0 ? (
               <p className="settings-empty">No settings match “{query}”.</p>
@@ -214,11 +162,8 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
                 </section>
               ))
             )
-          ) : page === null ? (
-            scrollSections.map(section)
           ) : (
-            // `page` only ever holds a standalone section's id (`open` from the nav).
-            section(pages.find((s) => s.id === page) as SettingsSection)
+            section(shown)
           )}
         </div>
       </div>
