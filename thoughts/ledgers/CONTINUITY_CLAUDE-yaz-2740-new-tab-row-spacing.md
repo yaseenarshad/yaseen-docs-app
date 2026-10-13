@@ -21,15 +21,16 @@ On the new tab page, a narrow row shows the name of the file first. The time in 
 - Done:
   - [x] Scoping, decisions locked in YAZ-2742
   - [x] YAZ-2743 1- The name of a row is cut last, and the time is short
-- Now: [→] YAZ-2744 2- Polish and anti-slop
-- Remaining:
-  - [ ] YAZ-2745 3- Verify and deliver (PR, guided user test, merge on Yasin's word)
-  - [ ] YAZ-2746 4- Release notes
+  - [x] YAZ-2744 2- Polish and anti-slop
+  - [x] YAZ-2745 3- Verify and deliver: PR #112 merged to main (`39c68f3`) after Yasin's guided user test
+  - [x] YAZ-2746 4- Release notes: one comment on YAZ-2740, "Text Spacing on New Tab Page", with one GIF and two pictures
+- Now: COMPLETE. No release is cut: the work joins a later release. The closeout handoff is the last comment on YAZ-2742.
 
 ## Open Questions
-- UNCONFIRMED: `desktop/e2e/startPage.spec.ts` "a narrow window with two vaults" passes in the real app. Its sizes come from a copy of the row in headless Chromium.
+- UNCONFIRMED: `desktop/e2e/startPage.spec.ts` "a narrow window with two vaults" passes in the real app. It is written and not run (the e2e suite shows the app's window). Run `npm run build`, then `npm run e2e:only -- startPage`, and remove its "NOT RUN" note.
+- The `rendererTotalBytes` ceiling of `tools/perf/budget.json` is behind the build since PR #111: the build measures 13,215,827 and the ceiling is 13,206,494, inside the 0.1% tolerance. Not from this work.
 
 ## Working Set
-- Worktree: `.claude/worktrees/yaz-2740-new-tab-row-spacing`, branch `feat/yaz-2740-new-tab-row-spacing`, from `bdd497b`.
+- Everything is on main. The worktree and the branch are removed.
 - Files: `client/src/lib/relativeTime.ts` (+ test), `client/src/workspace/StartPage.tsx`, `startPage.css`, `StartPage.test.tsx`, `desktop/e2e/startPage.spec.ts`, `docs/CONTRACTS.md`, `docs/REGRESSION.md` (W13).
 - Checks: `npm run typecheck`, `npm test`, `npm run build`, `npm run perf:budget:ci`.
