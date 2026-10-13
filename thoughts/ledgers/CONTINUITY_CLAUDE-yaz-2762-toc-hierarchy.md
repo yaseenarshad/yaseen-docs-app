@@ -38,21 +38,28 @@
   - [x] Tests and documents (`0cb69d16`): the 5 red tests of the settings list are green; new unit tests for `pathLines`, `data-path`, `data-reading`, the rules of toc.css, the load guard of `tocLines`, the row "Level lines", the search, and the gate on `.app`; e2e step 5c written and typechecked; rule 35 and "App state" of `docs/CONTRACTS.md`, row E31 and hand step 15 of `docs/REGRESSION.md`, `README.md`; this ledger
   - [x] Two of the four gates on that state: `npm run typecheck` green (3 projects, 0 errors); `npm test` 325 files and 6718 tests passed, 2 skipped, 0 failed. Each of 23 changes made by hand to `pathLines`, the wheel listener and toc.css made a test fail (the code is back as it was)
   - [x] 4A (YAZ-2778) the audit: 16 findings, none "must fix"
-  - [x] 4B (YAZ-2779) the 16 findings applied, NOT committed (the working tree holds them): one layer for the level piece (`--toc-piece`, five layers), one stamp and one timer in the wheel effect, the `nav` kept for the cleanup, the path on a wheel over the table of contents that moves the note, the comments, the order of three imports, the tests, rule 35, row E31, hand step 15 and the note on step 5c. `npm run typecheck` green (3 projects, 0 errors); `npm test` 325 files and 6719 tests passed, 2 skipped, 0 failed. Each of 13 changes made by hand to the wheel effect, `onWheelOverToc` and toc.css made a test fail (the code is back as it was)
-- Now: [→] 5 (YAZ-2780) verify and deliver: commit the corrections of 4B, `npm run build`, `npm run perf:budget:ci`, the size ceilings (D6), pull request, merge, release
-- Remaining:
-  - [ ] 6 (YAZ-2781) release notes on YAZ-2762, with one GIF and the pictures; the same notes on the GitHub release page, with the notes of YAZ-2752
+  - [x] 4B (YAZ-2779) the 16 findings applied (`d0d45b4c`): one layer for the level piece (`--toc-piece`, five layers), one stamp and one timer in the wheel effect, the `nav` kept for the cleanup, the path on a wheel over the table of contents that moves the note, the comments, the order of three imports, the tests, rule 35, row E31, hand step 15 and the note on step 5c. `npm run typecheck` green (3 projects, 0 errors); `npm test` 325 files and 6719 tests passed, 2 skipped, 0 failed. Each of 13 changes made by hand to the wheel effect, `onWheelOverToc` and toc.css made a test fail (the code is back as it was)
+  - [x] 5 (YAZ-2780) the four gates on the final commit `ef4259bb`: typecheck green; 325 files and 6,719 tests green, 2 skipped; build green; `perf:budget:ci` PASS with four ceilings raised to the measured values (D6: JS +776, CSS +1,406, total +2,182, main +134)
+  - [x] The final build in the real app, out of sight (its own profile, a demo vault, the DevTools protocol): 97 of 97 cases pass
+  - [x] Merged to `main` by the pull request #116 (`d94d03f8`). CI on the pull request was red one time on `client/src/views/engine.perf.test.ts` (67.4 ms against 50 ms), a timing test this work does not touch, then green
+  - [x] Released in v1.0.6, "Table of Contents: Clearer Levels + Wider Names" (`eee343b5`), with YAZ-2752
+  - [x] 6 (YAZ-2781) the release notes: one comment on YAZ-2762 with one GIF and three pictures; the same notes on the release page
+- Now: CLOSED (2026-10-13). The handoff is the "Closeout handoff" comment on YAZ-2764.
+- Next: nothing in this issue.
+- Remaining (not required, each needs its own issue if Yaseen wants it):
+  - [ ] The packaged gate `npm run perf:budget` fails on `asarBytes` (27,549,019 against 27,300,312), and it failed before this work: v1.0.5 measured 27,544,616. CI runs only `perf:budget:ci`
+  - [ ] The timing tests that fail on CI from time to time: `searchCandidates.perf.test.ts` and `engine.perf.test.ts`, each with a limit of 50 ms
+  - [ ] The lines at a pixel ratio of 1: a row is 25.398 px high, so some level pieces are soft and the accent line has lighter pixels at some row seams. The old hairline has the same seams
+  - [ ] One run of step 5c of `desktop/e2e/tableOfContents.spec.ts` by a person who may run Playwright
 
 ## Open Questions
-- UNCONFIRMED: no agent has looked at the app's screen. Only Yaseen used the demo build `24eba9f0`. Each fact about the look comes from the code and from jsdom tests: the tones in both themes, the place of the lines (12 px, 24 px), the join of the first line and the level piece on a `1t` row (`calc(50% + 0.5px)`), the 160 ms fade of the registered colours, and the path in the card.
-- UNCONFIRMED: step 5c of `desktop/e2e/tableOfContents.spec.ts` is typechecked, and nobody ran it. Its selectors were read from the source. It is the first step of the suite that uses `mouse.wheel`. It counts five gradients on a row since 4B.
-- UNCONFIRMED: nobody saw the two changes of 4B in the app. Finding 1 changes 1 px of the approved demo: the accent line that passes a level 2 row has no grey point at mid-row. Finding 16 adds a case that no table had: the wheel on "Unpin", on the padding of the column or on the drag edge moves the note, and now shows the path.
-- UNCONFIRMED: the merge commit `b3379d85` was not seen in the running app. The demo that Yaseen approved was `24eba9f0`, from before the merge of YAZ-2752.
-- UNCONFIRMED: `npm run build` and `npm run perf:budget:ci` were not run on this state. The estimate of the scoping is CSS +0.7 KB and JS +0.35 KB; the CSS ceiling has about 165 bytes of room, so it must go up (D6).
-- UNCONFIRMED: the smallest free version for the release. `package.json` says 1.0.5.
+- UNCONFIRMED: step 5c of `desktop/e2e/tableOfContents.spec.ts` is typechecked, and nobody ran it. It is the first step of the suite that uses `mouse.wheel`.
+- UNCONFIRMED: the look at a pixel ratio of 1 on a real monitor. The check emulated it on a Retina display.
+- UNCONFIRMED: Windows, and a real trackpad with momentum.
+- Yaseen declined a guided test on the final build ("No, demo was the test"). An agent saw the final build out of sight, and Yaseen used the demo build `24eba9f0`.
 
 ## Working Set
-- Branch `feat/yaz-2762-toc-hierarchy` (the lock on YAZ-2764 names it `demo/yaz-2762-toc-hierarchy`), from `origin/main` at `995d739`, with `origin/main` at `1e99551d` merged in (`b3379d85`). Worktree `.claude/worktrees/yaz-2762-toc-hierarchy`.
+- The branch `feat/yaz-2762-toc-hierarchy` and its worktree are removed after the merge. The work is on `main` from `d94d03f8`.
 - State: `shared/types.ts`, `desktop/src/main/store.ts`, `client/src/App.tsx`
 - Settings: `client/src/settings/options.ts`, `client/src/settings/registry.tsx`
 - Component: `client/src/editor/toc/TableOfContents.tsx`, `client/src/editor/toc/toc.css`
