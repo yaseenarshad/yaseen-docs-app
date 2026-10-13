@@ -75,6 +75,7 @@ state.setFavoritesOrder/2: invoke state:set-favorites-order ["a0","a1"]; => "ans
 state.setFocusOrder/2: invoke state:set-focus-order ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFolder/2: invoke state:set-folder ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFolds/3: invoke state:set-folds ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setSectionIndent/3: invoke state:set-section-indent ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

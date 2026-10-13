@@ -19,7 +19,7 @@ See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, ag
 npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
 npm run typecheck
 npm run build    # electron-vite build into desktop/out
-npm run e2e      # 59 Playwright-Electron specs driving the real app
+npm run e2e      # 60 Playwright-Electron specs driving the real app
 ```
 
 ## Build the app
@@ -44,6 +44,7 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 
 - **Fold**: parent bullets get a chevron — and so do `H1`–`H3` headings outside lists, where the chevron collapses the heading's section (everything up to the next same-or-bigger heading). A bullet holding an image folds too: the picture shrinks to a small thumbnail on the line (type before or after it to name it), clicking the thumbnail unfolds it, and an expanded image shows a corner button that folds it back. Collapsed state is remembered per file in the app state file (`~/Library/Application Support/Yaseen Docs/yaseendocs.json`) only — the markdown on disk (and its mtime) is never touched by folding. `⌘↑` / `⌘↓` fold / unfold the bullet or heading section at the caret (Logseq's defaults; a no-op on leaves, native document jump outside both), `⌘⇧U` folds every foldable bullet, `⌘⇧I` unfolds all, and `⌘Z` right after a fold reverts it (folds older than the latest action stay put; `⌘Z` is normal text undo otherwise).
 - **Bullet threading** (Roam / Logseq "bullet paths"): the lines from each nested list's top down to the bullet at the caret, and the bullets on that path, take the accent colour and stop at the active bullet. View-only; Settings › Editor › Bullet threading has Show on/off (default on), Line width 1/2/3px and Line colour (Default = the app accent).
+- **Section indent**: a note that uses headings can read like a bullet note. Turn it on for a note from the page cog ("Section indent", off by default, remembered for that note): the text stands below its heading, one step in for each level of nesting, and a thin line runs down from each heading to the end of its section. The lines on the way to the caret take the Bullet threading colour and width. A click on a line folds the sections beside it; a second click opens them. View-only, the file never changes; Settings › Editor › Section indent has Step width 24/30/36px and Grey lines (Always show / Only near the mouse).
 - **Keys**: `Tab` indents (no-op on a first sibling), `Shift-Tab` outdents (level 1 → paragraph), `Enter` at the end of a parent creates its first child, `Enter` on an empty item outdents, `Backspace` at the start of an item joins it into the previous line.
 - **Tasks**: `⌘Enter` cycles the item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.
 - **Marks**: `⌘U` toggles underline (stored as `<u>text</u>`, like obsidian-underline), `⌘⇧X` toggles strikethrough.

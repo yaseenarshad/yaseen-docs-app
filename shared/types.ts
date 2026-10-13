@@ -772,11 +772,22 @@ export interface SettingsState {
   commentsOrder: CommentsOrder
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
+  /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
+  sectionStep: number
+  /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the note. */
+  sectionLines: SectionLines
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. */
   tableOfContents: TableOfContents
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
+
+/** Section indent (YAZ-2709): the widths of one step, in px, in the order Settings shows them. */
+export const SECTION_STEPS: readonly number[] = [24, 30, 36]
+
+/** Section indent (YAZ-2709): when the grey section lines show. */
+export type SectionLines = 'always' | 'hover'
+export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 
 /** Obsidian's Appearance vocabulary and order — also exactly Electron's `nativeTheme.themeSource`. */
 export type Theme = 'system' | 'light' | 'dark'
@@ -827,7 +838,7 @@ export function isValidNewNoteFolder(v: string): boolean {
   return v === '' || v.split('/').every((s) => s.trim() !== '' && !s.trim().startsWith('.') && !s.includes('\0'))
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent; new notes beside the source page (YAZ-1643). */
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent; new notes beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
 export const DEFAULT_SETTINGS: SettingsState = {
   lineSpacing: 1.5,
   blockGap: 4,
@@ -842,6 +853,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   confirmRename: true,
   commentsOrder: 'oldest',
   startupWindows: 'last',
+  sectionStep: 30,
+  sectionLines: 'always',
   tableOfContents: 'auto',
 }
 
@@ -940,6 +953,8 @@ export interface FolderState {
   opens: Record<string, OpenStat>
   /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
+  /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  sectionIndents: Record<string, boolean>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
@@ -1014,7 +1029,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, sectionIndents: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */

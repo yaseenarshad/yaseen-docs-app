@@ -78,6 +78,10 @@ vi.mock('./lineNumbers/lineNumbers', async () => {
   return { requestBlockLines: vi.fn(async (text: string) => blockLines(text)), showLineNumbers: vi.fn() }
 })
 
+// Section indent (YAZ-2709): the fake Crepe has no view to send the switch to. The real plugin is
+// covered by outline/sectionIndent.test.ts; what the host SENDS is the thing under test here.
+vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
+
 // External edits apply as diffs (YAZ-1347): the fake lands the body the way the real apply would.
 vi.mock('./external/applyExternalMarkdown', () => ({
   applyExternalMarkdown: vi.fn((crepe: { md: string }, md: string) => {
@@ -93,6 +97,7 @@ import { createCrepe, focusEditor, getPlainText, setMarkdown, type CreateCrepeOp
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
+import { showSectionIndent } from './outline/sectionIndent'
 
 interface FakeCrepe {
   md: string
@@ -522,7 +527,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(true)
     const stores = watchStores()
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Line numbers:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
     act(() => row(el, 'Table of contents').click())
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
     expect(el.querySelector('nav.toc')).toBeNull()
@@ -542,7 +547,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
   it('with the app-wide setting Off the cog has no "Table of contents" row — there is nothing to turn off — and "Heading levels" is still there', async () => {
     const el = await mount(BODY, 1, { tableOfContents: 'off' })
     clickCog(el)
-    expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Heading levels'])
+    expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
     expect(el.querySelector('.page-settings__choices')).toBeNull()
   })
 })
@@ -1612,5 +1617,96 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     expect(el.querySelector('.editor-host')!.hasAttribute('data-line-numbers')).toBe(true)
     expect(showLineNumbersMock).toHaveBeenCalledTimes(2)
     expect(showLineNumbersMock).toHaveBeenLastCalledWith(second, { lines: [4, 6], ends: [4, 6], kinds: 'hp' })
+  })
+})
+
+/**
+ * "Section indent" (YAZ-2709 D2): the page's own switch, saved with the note in the app state as
+ * its table of contents source is. `storage` is spied, as in the "TOC made from" tests above: the
+ * record below is what the app state holds for the vault, page → switch.
+ */
+describe('section indent is the page’s own switch (YAZ-2709)', () => {
+  const showSectionIndentMock = vi.mocked(showSectionIndent)
+  let saved: Record<string, boolean>
+  /** The switch, by its name, through the real menu. */
+  function switchSectionIndent(host: ParentNode): void {
+    clickCog(host)
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith('Section indent'))!.click())
+    clickCog(host)
+  }
+  const indented = (host: ParentNode): boolean => host.querySelector('.editor-host')!.hasAttribute('data-section-indent')
+
+  beforeEach(() => {
+    saved = {}
+    vi.spyOn(storage, 'getSectionIndent').mockImplementation((_root, file) => saved[file] === true)
+    vi.spyOn(storage, 'setSectionIndent').mockImplementation((_root, file, on) => void (saved[file] = on))
+  })
+
+  afterEach(() => {
+    vi.mocked(storage.getSectionIndent).mockRestore()
+    vi.mocked(storage.setSectionIndent).mockRestore()
+  })
+
+  it('is off on a page with no entry: the editor is told nothing, and a mount writes nothing', async () => {
+    const el = await mount(BODY)
+    expect(storage.getSectionIndent).toHaveBeenCalledWith('/vault', PATH)
+    expect(indented(el)).toBe(false)
+    expect(showSectionIndentMock).not.toHaveBeenCalled()
+    expect(storage.setSectionIndent).not.toHaveBeenCalled()
+  })
+
+  it('on tells the editor once and saves `true`; off tells it off and saves `false`, an entry of its own; the note and the browser store are never written', async () => {
+    const browserStore = vi.spyOn(Storage.prototype, 'setItem')
+    const el = await mount(BODY)
+    switchSectionIndent(el)
+    expect(indented(el)).toBe(true)
+    expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
+    expect(storage.setSectionIndent).toHaveBeenCalledExactlyOnceWith('/vault', PATH, true)
+    switchSectionIndent(el)
+    expect(indented(el)).toBe(false)
+    expect(showSectionIndentMock).toHaveBeenCalledTimes(2)
+    expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), false)
+    // D2: off is `false` for THIS page, never the removal of its entry.
+    expect(vi.mocked(storage.setSectionIndent).mock.calls).toEqual([['/vault', PATH, true], ['/vault', PATH, false]])
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(browserStore).not.toHaveBeenCalled()
+    browserStore.mockRestore()
+  })
+
+  it('seeds from the app state: the next editor of the page starts on and tells its editor, a page saved as off and a page with no entry start off', async () => {
+    const first = await mount(BODY)
+    switchSectionIndent(first)
+    act(() => root?.unmount())
+    first.remove()
+    showSectionIndentMock.mockClear()
+    // A new editor on the same page: a second tab, the right panel, or the app after a restart.
+    const again = await mount(BODY)
+    expect(indented(again)).toBe(true)
+    expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
+    act(() => root?.unmount())
+    again.remove()
+    saved['/vault/off.md'] = false
+    const off = await mount(BODY, 1, { path: '/vault/off.md' })
+    expect(indented(off)).toBe(false)
+    act(() => root?.unmount())
+    off.remove()
+    const other = await mount(BODY, 1, { path: '/vault/other.md' })
+    expect(indented(other)).toBe(false)
+    // Reading wrote nothing: the one write is the click on the first page.
+    expect(storage.setSectionIndent).toHaveBeenCalledTimes(1)
+  })
+
+  it('an outside change that lands tells the editor again: a rebuilt editor state starts off', async () => {
+    const el = await mount(FM + BODY)
+    switchSectionIndent(el)
+    expect(showSectionIndentMock).toHaveBeenCalledTimes(1)
+    diskHas(FM + '# Hello\n\nchanged outside\n', 2)
+    diskHas(FM + '# Hello\n\nchanged outside\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    await settle()
+    expect(applyExternalMock).toHaveBeenCalledTimes(1)
+    expect(showSectionIndentMock).toHaveBeenCalledTimes(2)
+    expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), true)
   })
 })

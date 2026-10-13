@@ -77,6 +77,8 @@ const counts = async (): Promise<number[]> => {
 async function openSettings(w: Page): Promise<void> {
   await cog(w).click()
   await expect(dialog(w)).toBeVisible()
+  // One section to a page (YAZ-2709): the IDs rows are on the page of Files & Links, a nav click away.
+  await dialog(w).locator('.settings-nav__item', { hasText: /^Files & Links$/ }).click()
   await expect(row(w, 'ids')).toBeVisible()
 }
 
