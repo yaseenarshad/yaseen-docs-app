@@ -138,7 +138,7 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
   /** The path with row `at` current, the rows that are not on it left out: row → `data-path`. */
   const lit = (rows: readonly TocRow[], at: number): Record<number, string> => Object.fromEntries(pathLines(rows, at).flatMap((path, row) => (path === '' ? [] : [[row, path]])))
 
-  it('a level 1 row has no path; a level 2 row has the line of its level 1 parent down to it, where the line turns in to the name (`1t`)', () => {
+  it('a level 1 row has no path; a level 2 row has the line of its level 1 parent down to it, where the level piece goes to the name (`1t`)', () => {
     for (const at of [0, 6]) expect(pathLines(NOTE, at)).toEqual(NONE)
     expect(lit(NOTE, 1)).toEqual({ 1: '1t' })
     // Not the first child: the line of the parent passes the earlier sibling and the rows below it.
@@ -154,7 +154,7 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
     expect(lit(NOTE, 5)).toEqual({ 1: '1', 2: '1', 3: '1', 4: '1t', 5: '2t' })
   })
 
-  it('a level 3 row directly below a level 1: the first line down to it and no turn, because the row is two levels in; the second line stays grey', () => {
+  it('a level 3 row directly below a level 1: the first line down to it and no `t`, because the row is two levels in; the second line stays grey', () => {
     expect(lit(NOTE, 7)).toEqual({ 7: '1' })
     expect(lit(levels(1, 3, 3, 3), 3)).toEqual({ 1: '1', 2: '1', 3: '1' })
   })
@@ -183,7 +183,7 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
         if (row.level === 1) expect(path[i]).toBe('')
         // A line passes only rows that are further in than it: line 1 at 12px, line 2 at 24px.
         if (path[i] !== '') expect(Number(path[i][0])).toBeLessThan(row.level)
-        // The turn is the name ONE level in from the line.
+        // The path arrives (`t`) only at the name ONE level in from the line.
         if (path[i].endsWith('t')) expect(row.level).toBe(Number(path[i][0]) + 1)
       })
     }
@@ -615,11 +615,6 @@ describe('names while you scroll', () => {
       await notReading()
       expect(reading(m)).toBe(false)
       expect(vi.getTimerCount()).toBe(0)
-      // A wheel over the names column is the mouse on the list: toc.css's hover rule shows the lines there, not this attribute.
-      act(() => {
-        names(m)[1].dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 40 }))
-      })
-      expect(reading(m)).toBe(false)
 
       wheel(m)
       act(() => {
@@ -636,13 +631,53 @@ describe('names while you scroll', () => {
       expect(reading(m)).toBe(false)
     })
 
-    it('a table of contents that goes away while the path shows clears its timer — a bullet zoom, the setting off, the editor closed — and comes back with no attribute', () => {
+    it('a wheel over the table of contents that moves the NOTE sets it by the same rule — beside the list, and on a list that fits — and one that scrolls the list itself does not', () => {
+      fakeClock()
+      const m = mountAtRest('pinned', HEADINGS, 900)
+      const wheelOver = (el: Element, init: WheelEventInit = { deltaY: 40 }): void =>
+        act(() => {
+          el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, ...init }))
+        })
+      const list = m.section.querySelector<HTMLElement>('.toc__names')!
+      const unpin = buttonNamed(m, 'Unpin')!
+      // A list longer than its box keeps the wheel and the note stays: the mouse is on the list, and toc.css's hover rule shows the lines there.
+      Object.defineProperties(list, { scrollHeight: { configurable: true, value: 900 }, clientHeight: { configurable: true, value: 300 } })
+      wheelOver(names(m)[1])
+      // A sideways turn and a pinch move nothing, here as over the note.
+      wheelOver(unpin, { deltaX: 40, deltaY: 0 })
+      wheelOver(unpin, { deltaY: 40, ctrlKey: true })
+      expect([m.scroller.scrollTop, reading(m), vi.getTimerCount()]).toEqual([0, false, 0])
+      // Beside the list there is no list to scroll: the note moves, and the scroller hears no wheel of its own.
+      const commits = m.commits()
+      wheelOver(unpin)
+      expect([m.scroller.scrollTop, reading(m), vi.getTimerCount()]).toEqual([40, true, 1])
+      // A list that fits lets the note move too. It is the same burst: the one timer, 1500 ms after the LAST turn.
+      Object.defineProperties(list, { scrollHeight: { configurable: true, value: 300 } })
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      wheelOver(names(m)[1])
+      expect([m.scroller.scrollTop, vi.getTimerCount()]).toEqual([80, 1])
+      act(() => {
+        vi.advanceTimersByTime(1499)
+      })
+      expect(reading(m)).toBe(true)
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+      expect([reading(m), vi.getTimerCount(), m.commits()]).toEqual([false, 0, commits])
+    })
+
+    it('a table of contents that goes away while the path shows clears its timer and its attribute — a bullet zoom, the setting off, the editor closed — and comes back with no attribute; names that give way to the rail keep both to the end of the linger', () => {
       fakeClock()
       const zoomed = mountAtRest('pinned', HEADINGS, 900)
       wheel(zoomed)
-      expect(reading(zoomed)).toBe(true)
+      const gone = nav(zoomed)!
+      expect(gone.hasAttribute('data-reading')).toBe(true)
       act(() => zoomed.channel.setHidden(true))
       expect(vi.getTimerCount()).toBe(0)
+      // The cleanup kept the element itself: React's ref to it is empty by then.
+      expect([gone.isConnected, gone.hasAttribute('data-reading')]).toEqual([false, false])
       act(() => zoomed.channel.setHidden(false))
       expect(reading(zoomed)).toBe(false)
       // The listener is a new one, and it works: a turn sets the attribute again.
@@ -653,11 +688,23 @@ describe('names while you scroll', () => {
       zoomed.render('pinned')
       expect(reading(zoomed)).toBe(false)
 
+      // The names give way to the rail — "Unpin" here; a window that gets narrow does the same. The nav and
+      // its listener stay, so the timer still takes the attribute away, and it opens no card on its way.
+      const unpinned = mountAtRest('pinned', HEADINGS, 900)
+      wheel(unpinned)
+      const kept = nav(unpinned)
+      unpinned.render('auto')
+      expect([nav(unpinned) === kept, kept?.hasAttribute('data-names'), reading(unpinned), vi.getTimerCount()]).toEqual([true, false, true, 1])
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      expect([reading(unpinned), card(unpinned) !== null, vi.getTimerCount()]).toEqual([false, false, 0])
+
       const closed = mountAtRest('auto')
       wheel(closed)
       expect([reading(closed), card(closed) !== null]).toEqual([true, true])
       act(() => closed.root.unmount())
-      // The card's linger and the path's: both timers are gone, and a late tick has nothing to do.
+      // The ONE timer of the card and of the path is gone: a clock that runs on has nothing to do.
       expect(vi.getTimerCount()).toBe(0)
       expect(() => vi.advanceTimersByTime(5000)).not.toThrow()
     })
@@ -1387,6 +1434,8 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     const of = (selector: string): Record<string, string> => declared(rule(tocCss, selector))
     /** Each rule of the sheet outside `@media`, comments left out: [selector, body]. */
     const rules = (): Array<[string, string]> => [...tocCss.replace(/\/\*.*?\*\//gs, '').replace(/@media.*$/s, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim().replace(/\s+/g, ' '), body])
+    /** Where a rule stands in the sheet: of two rules of the same weight, the later one wins. */
+    const place = (selector: string): number => rules().findIndex(([found]) => found === selector)
     const GATE = [".app[data-toc-lines='always'] .toc__names", ".app[data-toc-lines='hover'] .toc__names:hover", ".app[data-toc-lines='hover'] .toc__names:focus-within"]
     const READING = ".app[data-toc-lines='hover'] .toc[data-reading] .toc__names"
 
@@ -1400,37 +1449,33 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       const gated = rules().filter(([selector]) => selector.includes('data-toc-lines'))
       expect(gated.map(([selector]) => selector)).toEqual([GATE.join(', '), READING])
       for (const [, body] of gated) expect(Object.keys(declared(body)).filter((property) => property !== '--toc-rest' && property !== '--toc-path')).toEqual([])
-      // The current name and the name under the mouse outweigh the tone on each level (the two rules are tested above).
+      // The current name outweighs the tone on each level (tested above). The name under the mouse has the weight of a
+      // level rule, so it wins by its place alone: after the last of them.
       expect(of('.toc__name:hover').color).toBe('var(--fg)')
+      expect(place('.toc__name:hover')).toBeGreaterThan(place(".toc__name[data-level='3']"))
     })
 
-    it('the level lines are backgrounds of the row: 1px at 12px and at 24px, the 9px level piece at mid-row, the path over the grey — and clear until a level asks for them (D2, D7)', () => {
+    it('the level lines are backgrounds of the row: 1px at 12px and at 24px, the 9px level piece at mid-row, the path over the piece and the piece over the grey lines — and clear until a level asks for them (D2, D7)', () => {
       const row = of('.toc__name')
       // The layers in paint order, the first on top: [the colour it reads, where and how big].
       const layers = [...row.background.matchAll(/linear-gradient\(var\((--toc-[\w-]+)\), var\(\1\)\) (.*?) no-repeat/g)].map(([, colour, box]) => [colour, box])
+      // The level piece is BELOW the path: the line of a path that only passes a level 2 name crosses the grey piece whole.
       expect(layers).toEqual([
-        ['--toc-turn', '12px 50% / 9px 1px'],
-        ['--toc-tick', '12px 50% / 9px 1px'],
         ['--toc-p1', '12px 0 / 1px var(--toc-p1-h)'],
         ['--toc-p2', '24px 0 / 1px 100%'],
+        ['--toc-piece', '12px 50% / 9px 1px'],
         ['--toc-l1', '12px 0 / 1px 100%'],
         ['--toc-l2', '24px 0 / 1px 100%'],
       ])
-      // Six gradients and nothing else in the shorthand: no colour, so the wash under the mouse can be one.
-      expect(row.background.split('no-repeat')).toHaveLength(7)
-      expect(Object.fromEntries(Object.entries(row).filter(([property]) => property.startsWith('--toc-')))).toEqual({
-        '--toc-l1': 'transparent',
-        '--toc-l2': 'transparent',
-        '--toc-p1': 'transparent',
-        '--toc-p2': 'transparent',
-        '--toc-p1-h': '100%',
-        '--toc-turn': 'transparent',
-        '--toc-tick': 'transparent',
-      })
+      // Five gradients and nothing else in the shorthand: no colour, so the wash under the mouse can be one.
+      expect(row.background.split('no-repeat')).toHaveLength(layers.length + 1)
+      // Each property a layer reads has its default on the row itself, and draws nothing: a clear colour, the full height.
+      const read = [...row.background.matchAll(/var\((--toc-[\w-]+)\)/g)].map(([, property]) => property)
+      for (const property of read) expect([property, row[property]]).toEqual([property, property === '--toc-p1-h' ? '100%' : 'transparent'])
       // Level 1: no line. Level 2: the first line and the level piece. Level 3: both lines and no level piece.
       const lines = (level: number): Record<string, string> => Object.fromEntries(Object.entries(of(`.toc__name[data-level='${level}']`)).filter(([property]) => property.startsWith('--toc-')))
       expect(lines(1)).toEqual({})
-      expect(lines(2)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-tick': 'var(--toc-rest)' })
+      expect(lines(2)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-piece': 'var(--toc-rest)' })
       expect(lines(3)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)' })
       // A line stands below the left edge of its parent level: the 12px of indent for each level.
       expect([of(".toc__name[data-level='2']")['padding-left'], of(".toc__name[data-level='3']")['padding-left']]).toEqual(['24px', '36px'])
@@ -1443,11 +1488,13 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       expect(of(".toc__name[data-path^='1']")).toEqual({ '--toc-p1': 'var(--toc-path)' })
       expect(of(".toc__name[data-path^='2']")).toEqual({ '--toc-p2': 'var(--toc-path)' })
       // Half the row and half the 1px piece: the line ends on the lower edge of the piece, with no gap and no stub.
-      expect(of(".toc__name[data-path='1t']")).toEqual({ '--toc-p1-h': 'calc(50% + 0.5px)', '--toc-turn': 'var(--toc-path)' })
+      expect(of(".toc__name[data-path='1t']")).toEqual({ '--toc-piece': 'var(--toc-path)', '--toc-p1-h': 'calc(50% + 0.5px)' })
+      // The piece is grey by the level 2 rule, which has the same weight: the accent wins by its place alone.
+      expect(place(".toc__name[data-path='1t']")).toBeGreaterThan(place(".toc__name[data-level='2']"))
       // These three are each rule that reads the attribute: a level 3 name has no level piece, so `2t` is drawn as `2`.
       expect(rules().map(([selector]) => selector).filter((selector) => selector.includes('data-path'))).toEqual([".toc__name[data-path^='1']", ".toc__name[data-path^='2']", ".toc__name[data-path='1t']"])
       // The path never has a colour of its own: it is clear wherever `--toc-path` is.
-      expect(rules().filter(([, body]) => /--toc-(p1|p2|turn):\s*var\(--accent\)/.test(body))).toEqual([])
+      expect(rules().filter(([, body]) => /--toc-(p1|p2|piece):\s*var\(--accent\)/.test(body))).toEqual([])
     })
 
     it('`data-toc-lines` on `.app` says when the lines show: always, or while the mouse or the keyboard is in the list; a turn of the wheel shows the PATH only; `off` has no rule; the two colours fade in 160 ms (D5, D8)', () => {

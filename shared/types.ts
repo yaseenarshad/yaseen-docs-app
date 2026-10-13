@@ -780,7 +780,7 @@ export interface SettingsState {
   tableOfContents: TableOfContents
   /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
   tableOfContentsWidth: number
-  /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the pointer or the keyboard is in the list, always, or never. */
+  /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
 }
 

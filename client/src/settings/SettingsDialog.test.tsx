@@ -411,7 +411,6 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['tableOfContents', 'tocLines'])
     expect(row(el, 'tocLines')?.querySelector('.setting__label')?.textContent).toBe('Level lines')
     expect(row(el, 'tocLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines')
-    expect(DEFAULT_SETTINGS.tocLines).toBe('hover')
     expect(rowButtons(el, 'tocLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
     act(() => rowButtons(el, 'tocLines')[1].click())
     act(() => rowButtons(el, 'tocLines')[2].click())
