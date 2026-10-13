@@ -1727,6 +1727,63 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('c')
   })
 
+  it('"Kill all tabs" (YAZ-2739 D1 to D4): the board\'s button and the grid button\'s menu open ONE sheet with the count; Cancel keeps every tab and the board; the confirm closes every tab — the ones the filter hides too — and the board with them', async () => {
+    const { el, emitTabOverview } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/Docs/c.md'] })
+    const board = () => el.querySelector('.taboverview')
+    const sheetText = () => document.querySelector('.confirm .confirm__text')?.textContent ?? null
+    const sheetButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.confirm .confirm__btn')].find((b) => b.textContent === label)
+    const fromMenu = () => {
+      act(() => void el.querySelector('[aria-label="Show all open tabs"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Kill all tabs')?.click())
+    }
+
+    // The board's button asks, and closes nothing; Cancel leaves the tabs and the board as they were.
+    act(() => emitTabOverview())
+    act(() => el.querySelector<HTMLButtonElement>('.taboverview__kill')?.click())
+    expect(sheetText()).toBe('Kill all 3 tabs? Your text is saved. The tabs do not come back.')
+    expect(sheetButton('Kill 3 tabs')?.className).toContain('confirm__btn--danger')
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    act(() => sheetButton('Cancel')?.click())
+    expect(sheetText()).toBeNull()
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(board()).not.toBeNull()
+
+    // The grid button's menu asks through the same sheet. Text in the filter hides pages and saves none of them.
+    const filter = el.querySelector<HTMLInputElement>('.taboverview__filter')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(filter, 'c')
+      filter.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect([...el.querySelectorAll('.taboverview__title')].map((t) => t.textContent)).toEqual(['c'])
+    fromMenu()
+    expect(sheetText()).toBe('Kill all 3 tabs? Your text is saved. The tabs do not come back.')
+    act(() => sheetButton('Kill 3 tabs')?.click())
+    expect(sheetText()).toBeNull()
+    expect(stripLabels(el)).toEqual([])
+    expect(board()).toBeNull()
+  })
+
+  it('"Kill all tabs" with the board closed, and with ONE tab (YAZ-2739 S11, S16, R4, R11): the sheet names the one tab; a sheet whose last tab goes closes; with no tab the menu asks nothing', async () => {
+    const { el, emitCloseTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const sheetText = () => document.querySelector('.confirm .confirm__text')?.textContent ?? null
+    const sheetButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.confirm .confirm__btn')].find((b) => b.textContent === label)
+    const fromMenu = () => {
+      act(() => void el.querySelector('[aria-label="Show all open tabs"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Kill all tabs')?.click())
+    }
+
+    fromMenu()
+    expect(sheetText()).toBe('Kill the 1 open tab? Your text is saved. The tab does not come back.')
+    expect(sheetButton('Kill 1 tab')).toBeDefined()
+    // ⌘W under the sheet closes the last tab: there is nothing left to ask about.
+    act(() => emitCloseTab())
+    expect(stripLabels(el)).toEqual([])
+    expect(sheetText()).toBeNull()
+
+    fromMenu()
+    expect(sheetText()).toBeNull()
+  })
+
   it('the ways off the tab board: every trip to a page closes it, the page ALREADY open too (S46, YAZ-2657 A2); ⌘W closes the tab and it (S47); its last tab closes it (S44, R18). A rename of the open page, an island\'s ✕ — ONE identity write — and "Move to right panel" from a strip tab\'s menu leave it open (R12, R30)', async () => {
     const { bridge, el, emitTabOverview, emitNextTab, emitCloseTab, emitLinkOpenFile, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md'] })
     const board = () => el.querySelector('.taboverview')

@@ -4,7 +4,7 @@
  * background tabs, per-tab buffer preservation across switches, ⌃Tab cycling through the menu
  * accelerator ids, the tab board (the grid button and ⌘⇧M: islands, the filter, Enter), the
  * blank tab (⌘T and "+": a search result fills it as a kept tab), quit → relaunch tab restore
- * (every tab kept, no blank tab), and the ⌘W ladder down to the window close. Same harness as
+ * (every tab kept, no blank tab), "Kill all tabs" (YAZ-2739), and the ⌘W ladder down to the window close. Same harness as
  * smoke.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault, `i3-` step
  * screenshots); serial by design — each step continues the previous state.
  */
@@ -239,6 +239,42 @@ test('step 4b — the tab context menu sits above the editor and accepts a real 
   await menu.getByRole('menuitem', { name: 'Copy path', exact: true }).click()
   await expect(menu).toHaveCount(0)
   await shoot(win, 'i3-04b-tab-menu-click')
+})
+
+test('step 4c — "Kill all tabs" (YAZ-2739): the grid button\'s menu and the board\'s button ask with the count; Cancel keeps every tab; the confirm closes them all, the ones the filter hides too, and the board with them', async () => {
+  // In a second window (⌘⇧N duplicate), so the first one keeps its tabs for the ladder below (S26).
+  await clickMenuItem(app, 'menu.file.new-window', 'w1')
+  const dup = await extraWindow(app, ['w1'])
+  const dupId = winParam(dup)!
+  await expect(tabsOf(dup)).toHaveText([...KEPT, 'Scratch'])
+  const sheet = dup.locator('.confirm')
+  const ASK = 'Kill all 5 tabs? Your text is saved. The tabs do not come back.'
+
+  // A right-click on the grid button: a menu of one item. Cancel on its sheet closes nothing.
+  await gridButton(dup).click({ button: 'right' })
+  await dup.locator('.ctx-menu').getByRole('menuitem', { name: 'Kill all tabs', exact: true }).click()
+  await expect(sheet.locator('.confirm__text')).toHaveText(ASK)
+  await sheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(sheet).toHaveCount(0)
+  await expect(tabsOf(dup)).toHaveCount(5)
+
+  // The board's button, with text in the filter: the sheet counts every tab, and every tab goes.
+  await gridButton(dup).click()
+  await expect(board(dup)).toBeVisible()
+  await dup.keyboard.type('idea')
+  await expect(pageTitles(dup)).toHaveText(['Ideas'])
+  await dup.locator('.taboverview__kill').click()
+  await expect(sheet.locator('.confirm__text')).toHaveText(ASK)
+  await shoot(dup, 'i3-04c-kill-all-tabs-sheet')
+  await sheet.getByRole('button', { name: 'Kill 5 tabs', exact: true }).click()
+  await expect(tabsOf(dup)).toHaveCount(0)
+  await expect(board(dup)).toHaveCount(0)
+  await expect(dup.locator('.start')).toBeVisible() // the new tab page, and the window is alive
+  await expect(tabsOf(win)).toHaveText([...KEPT, 'Scratch']) // the other window keeps its tabs
+
+  // ⌘W on a window with no tab closes it: the ladder below starts from one window again.
+  await clickMenuItem(app, 'menu.file.close-tab', dupId)
+  await expect.poll(() => windowCount(app)).toBe(1)
 })
 
 test('step 5 — the ⌘W ladder: tabs → empty state with the window ALIVE → window close', async () => {
