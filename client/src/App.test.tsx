@@ -114,13 +114,13 @@ const captured = vi.hoisted(() => ({
   startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowInFiles: (path: string) => void; onBack: () => void; onRowMenu: (path: string, x: number, y: number) => void; onBackToSearch: () => void; focusRef: { current: (() => boolean) | null }; previewPath?: string | null; onPreview?: (path: string | null) => void } | null,
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
-  /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder. */
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void }[],
+  /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit })
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -225,6 +225,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
+      setTocSource: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)
@@ -881,6 +882,32 @@ describe('App section indent settings (YAZ-2709)', () => {
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['30', 'always'])
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sectionStep: 36, sectionLines: 'hover' } }))
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['36', 'hover'])
+  })
+})
+
+describe('App table of contents setting (YAZ-2700 D2)', () => {
+  const editor = () => captured.editors.filter((e) => e.path === '/v/a.md').at(-1)
+
+  it('hands each editor the stored setting with the content width; another window\'s change arrives at once; Pin and Unpin write the one field through a door that never changes', async () => {
+    const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'medium' } }
+    const { bridge, emitStateChanged } = await mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    // The default: what a state file from before the feature loads as.
+    expect([editor()?.tableOfContents, editor()?.contentWidth]).toEqual(['auto', 'medium'])
+    const door = editor()?.onChangeTableOfContents
+    // Settings › Editor › Table of contents › Off, in a different window.
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'medium', tableOfContents: 'off' } }))
+    expect(editor()?.tableOfContents).toBe('off')
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
+    // "Pin" in the card: the whole settings object with the one field changed, and the editor follows.
+    act(() => door?.('pinned'))
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tableOfContents: 'pinned' })
+    expect(editor()?.tableOfContents).toBe('pinned')
+    // "Unpin".
+    act(() => door?.('auto'))
+    expect(bridge.state.setSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tableOfContents: 'auto' })
+    expect(editor()?.tableOfContents).toBe('auto')
+    // The retained editors are memo: a door that changed with the settings would render each of them.
+    expect(editor()?.onChangeTableOfContents).toBe(door)
   })
 })
 

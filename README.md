@@ -19,7 +19,7 @@ See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, ag
 npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
 npm run typecheck
 npm run build    # electron-vite build into desktop/out
-npm run e2e      # 53 Playwright-Electron specs driving the real app
+npm run e2e      # 59 Playwright-Electron specs driving the real app
 ```
 
 ## Build the app
@@ -54,6 +54,9 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Bullet markers**: `-`, `*` and `+` are the same bullet — bullets at the same indent are siblings whatever marker each uses (unified on load; saved as `*` like before).
 - **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line collapses the parent bullets directly alongside it or fully expands every parent below them, never the line's owner (caret stays put).
 - **Drag**: the 6-dot handle moves a block; with several blocks highlighted, grabbing a handle inside the highlight moves them all together (drop position controls nesting depth). Over a guide line or a fold chevron the handle yields, so those clicks always land.
+- **Table of contents**: a note with two or more headings shows them at its right edge — as names beside the text when the window has room for them without making the text narrower, else as small lines; put the mouse on the lines (or scroll) and the names open as a card. Click a name to go there: the note glides to it, opens any fold in the way and puts the caret on it. `⌘J` does the same from the keyboard (`↑` / `↓` pick, `⏎` goes, `Esc` returns to the note). The names are the `H1`–`H3` headings outside bullets, or, in a note with fewer than two of those, its bullets, three levels deep; **TOC made from:** in the page cog (Auto / Headings / Bullets) chooses for one note, remembered per note in the app state file. Two places turn it off: Settings › Editor › Table of contents (When there is room / Always / Off — the card's **Pin** is "Always") for the whole app, and the cog's "Table of contents" switch for one page until it is closed. View-only — the file is never touched.
+- **Heading levels**: the heading at the caret, and the one under the mouse, shows a small tag after its text (`H2`); "Heading levels" in the page cog shows it on every heading of that page.
+- **Selection toolbar**: select text and the toolbar leads with `H1` `H2` `H3` `T` (back to plain text), then bold, italic, strikethrough, the highlight colours, code and link.
 - **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Content width is Narrow (1040px), Medium (1440px), or Full (fluid); the page header, editor, a folder's views, comments, and backlinks stay aligned to that one global setting. Width, line spacing, and the gap between blocks are adjustable in Settings (the cog bottom-left, or `⌘,`); stored in the app state file (every window follows a change live), never in the files. Settings › Hotkeys lists every hotkey.
 - **Spelling**: misspellings get the OS squiggle; right-click for suggestions, "Add to Dictionary", and cut/copy/paste.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.

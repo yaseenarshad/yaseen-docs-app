@@ -34,6 +34,7 @@ describe('settingCandidates', () => {
       'bulletThreading',
       'threadWidth',
       'threadColor',
+      'tableOfContents',
       'sectionStep',
       'sectionLines',
       'confirmDelete',
@@ -103,6 +104,13 @@ describe('searchSettings', () => {
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
     for (const query of ['startup', 'launch', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
+  })
+
+  it('"toc" and "jump" find the table of contents row, "outline" and "headings" find it among others; its own name finds the ⌘J line of the Hotkeys table too (YAZ-2700)', () => {
+    for (const query of ['toc', 'jump']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['tableOfContents'])
+    // The words the app already uses for the bullet features and the fold keys: the row is one of the answers.
+    for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tableOfContents', 'hotkeys-keyboard'])
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {

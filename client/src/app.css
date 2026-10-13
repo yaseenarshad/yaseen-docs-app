@@ -110,6 +110,27 @@ button {
   cursor: pointer;
 }
 
+/* Scrollbars (YAZ-2700): the app's own, in both themes. `color-scheme` tells the system which
+   theme this is — without it a dark page got the system's LIGHT bar. Then one quiet look for every
+   scroller: thin, a soft thumb, no track. `scrollbar-color` is inherited, `scrollbar-width` is
+   not, hence the `*`. A scroller that hides its bar (`scrollbar-width: none`) still wins: its
+   selector is a class. (Below the two palette blocks on purpose: they stay the file's first
+   `:root` and first `[data-theme='dark']`, which is how the palette tests find them.) */
+:root {
+  color-scheme: light;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.4);
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+}
+
+* {
+  scrollbar-width: thin;
+}
+
 .app {
   --content-max-width: 1040px;
   display: flex;
@@ -2174,6 +2195,94 @@ button {
   margin: 0;
   padding: 3px 7px;
   color: var(--fg-muted);
+}
+
+/* "TOC made from" (YAZ-2700 D14): a small label over three choices in one frame, so they read as
+   one control and not as three more switches. The buttons take the menu's own hover and pressed
+   colours above; only their shape is theirs. */
+.page-settings__menu .page-settings__label {
+  padding: 6px 7px 3px;
+  font-size: 11px;
+}
+
+/* The small "i" beside the label: a quiet glyph, not one more row of the menu. */
+.page-settings__menu .page-settings__label .page-settings__info {
+  display: inline-flex;
+  width: auto;
+  margin-left: 4px;
+  padding: 1px;
+  vertical-align: -3px;
+  color: var(--fg-muted);
+  background: transparent;
+  cursor: help;
+}
+
+.page-settings__menu .page-settings__label .page-settings__info:hover,
+.page-settings__menu .page-settings__label .page-settings__info:focus-visible {
+  color: var(--fg);
+  background: transparent;
+}
+
+/* What the "i" says: a panel LEFT of the menu, on the menu's own surface. The menu scrolls, so a
+   panel inside it would be cut; here it is free, and wide enough to read. `172px` in its `right`
+   is the menu's width (`.page-settings__menu`, above): the panel starts 8px left of the menu. */
+.page-settings__tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: calc(172px + 8px);
+  z-index: 10;
+  width: 268px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+  text-align: left;
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px #0002;
+}
+
+.page-settings__tip p {
+  margin: 0 0 8px;
+}
+
+.page-settings__tip p:last-child {
+  margin: 0;
+}
+
+.page-settings__tip dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 10px;
+  margin: 0 0 8px;
+}
+
+.page-settings__tip dt {
+  font-weight: 600;
+}
+
+.page-settings__tip dd {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.page-settings__choices {
+  display: flex;
+  gap: 2px;
+  margin: 0 2px 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.page-settings__menu .page-settings__choices button {
+  flex: 1 1 auto;
+  width: auto;
+  justify-content: center;
+  padding: 3px 4px;
+  font-size: 11px;
 }
 
 /* Line numbers (YAZ-2643). A numbered block carries `data-line`; the number is that block's own

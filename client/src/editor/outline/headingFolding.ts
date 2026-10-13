@@ -29,7 +29,7 @@ import { getOutlineFoldKey } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
-/** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. Exported for the section lines (sectionIndent.ts), whose click folds only what a chevron folds. */
+/** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. The table of contents (YAZ-2700) lists the same three, and a click on a section line (sectionIndent.ts) folds only what a chevron folds. */
 export const DEEPEST_FOLDABLE_LEVEL = 3
 
 interface HeadingEntry {
@@ -206,12 +206,12 @@ const chevronSvg = (): SVGSVGElement => {
   return svg
 }
 
-/** Heading level of a node, or null for anything else. Any level ends a section; only 1-3 start one. Exported for section indent (sectionIndent.ts), where all six levels make a step. */
+/** Heading level of a node, or null for anything else. Any level ends a section; only 1-3 start one. Section indent (sectionIndent.ts) reads it too, where all six levels make a step. */
 export const headingLevel = (node: ProseNode): number | null =>
   node.type.name === 'heading' ? Number(node.attrs.level) : null
 
 /** Blocks whose children may hold headings of their own (blockquote, …). Lists are excluded on purpose. */
-const isWalkableContainer = (node: ProseNode): boolean =>
+export const isWalkableContainer = (node: ProseNode): boolean =>
   node.isBlock && !node.isTextblock && !node.isLeaf && !LIST_NODE_NAMES.has(node.type.name)
 
 /**
