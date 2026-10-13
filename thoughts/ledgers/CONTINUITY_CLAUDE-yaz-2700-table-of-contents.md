@@ -42,8 +42,9 @@
   - [x] 7 (YAZ-2718) the toolbar order
   - [x] 8 (YAZ-2719, 8A YAZ-2720, 8B YAZ-2721) polish: 25 findings, 22 fixed, 3 declined
   - [x] 9 (YAZ-2722) gates green, the size ceilings raised, the e2e spec, the documents
-- Now: [→] the pull request against `main`, then the merge
-- Next: Yaseen's guided test (25 steps, on YAZ-2722), then the release with YAZ-2702
+  - [x] Merged to `main` by pull request #110 (`7659418`). Yaseen did the guided test and approved it ("approved looks great")
+- Now: closed. The handoff is on YAZ-2701.
+- Next: nothing in this issue. It ships in release 1.0.4 with YAZ-2702.
 
 ## Open Questions
 - (resolved) Four size ceilings went up by the size of this work: eager JS +19,674, eager CSS +6,618, renderer total +26,292, main bundle +1,805 bytes. Scoping estimated 5 KB of JS and 2 KB of CSS; the scope then grew in the demo (bullets, the tag, the scrollbars, the cog, "TOC made from").
