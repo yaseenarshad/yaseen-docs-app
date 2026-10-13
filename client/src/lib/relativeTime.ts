@@ -21,3 +21,15 @@ export function relativeTime(then: number, now: number): string {
   }
   return 'just now'
 }
+
+/** The letter of each unit of `UNITS`, for `shortRelativeTime`. */
+const SHORT: Partial<Record<Intl.RelativeTimeFormatUnit, string>> = { year: 'y', month: 'mo', week: 'w', day: 'd', hour: 'h', minute: 'm' }
+
+/** `relativeTime` in a few letters, for a row with little room (YAZ-2740 D1): "now" under a minute, then "34m", "3h", "2d", "1w", "5mo", "1y". */
+export function shortRelativeTime(then: number, now: number): string {
+  const diff = now - then
+  for (const [unit, ms] of UNITS) {
+    if (diff >= ms) return `${Math.floor(diff / ms)}${SHORT[unit]}`
+  }
+  return 'now'
+}
