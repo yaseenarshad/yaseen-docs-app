@@ -778,6 +778,8 @@ export interface SettingsState {
   sectionLines: SectionLines
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. */
   tableOfContents: TableOfContents
+  /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the pointer or the keyboard is in the list, always, or never. */
+  tocLines: TocLines
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -788,6 +790,10 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 /** Section indent (YAZ-2709): when the grey section lines show. */
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
+
+/** The table of contents (YAZ-2762): when its level lines show. */
+export type TocLines = 'hover' | 'always' | 'off'
+export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
 /** Obsidian's Appearance vocabulary and order — also exactly Electron's `nativeTheme.themeSource`. */
 export type Theme = 'system' | 'light' | 'dark'
@@ -856,6 +862,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionStep: 30,
   sectionLines: 'always',
   tableOfContents: 'auto',
+  tocLines: 'hover',
 }
 
 export interface WindowBounds {

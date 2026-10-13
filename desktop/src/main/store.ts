@@ -17,6 +17,7 @@ import {
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
   SECTION_LINES,
+  TOC_LINES,
   SECTION_STEPS,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
@@ -50,6 +51,7 @@ import {
   type RecentRoots,
   type RightPanelIdentity,
   type SectionLines,
+  type TocLines,
   type SettingsState,
   type SidebarLens,
   type StartupWindows,
@@ -170,6 +172,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
+  tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

@@ -80,6 +80,26 @@ export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
   return rows.filter(({ level }) => level === 1).slice(0, MAX_ROWS)
 }
 
+/**
+ * THE PATH (YAZ-2762): for each row, the level whose line is on the way from the current row up
+ * to its parents: '' for none, else '1' or '2' (`data-path`), with a 't' after it on a row the
+ * path ARRIVES at: a name on the path that is one level in from that line ('1t' is a level 2
+ * name below its level 1 parent).
+ * A parent's line passes each row below the parent, down to its child on the path. Bullet
+ * threading's rule: the path stops at the current row.
+ */
+export const pathLines = (rows: readonly TocRow[], at: number): string[] => {
+  const path = rows.map(() => '')
+  let child = at
+  for (let i = at - 1; i >= 0 && rows[child].level > 1; i--) {
+    if (rows[i].level >= rows[child].level) continue
+    for (let row = i + 1; row <= child; row++) path[row] = String(rows[i].level)
+    if (rows[child].level === rows[i].level + 1) path[child] += 't'
+    child = i
+  }
+  return path
+}
+
 const MAX_PITCH = 10
 const MIN_PITCH = 4
 
@@ -302,11 +322,31 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     const unlock = (): void => {
       lock.current = null
     }
+    // READING (YAZ-2762): while the reader turns the wheel over the note, and for the card's own
+    // linger after, the path shows in the names and follows them down the list (toc.css,
+    // `data-reading`). An attribute on the nav, so a turn of the wheel renders nothing.
+    let lastTurn = 0
+    let pathTimer: ReturnType<typeof setTimeout> | null = null
+    const reading = (on: boolean): void => {
+      navRef.current?.toggleAttribute('data-reading', on)
+    }
+    const pathLinger = (): void => {
+      pathTimer = null
+      const rest = WHEEL_LINGER_MS - (performance.now() - lastTurn)
+      if (rest > 0) pathTimer = setTimeout(pathLinger, rest)
+      else reading(false)
+    }
     const onWheel = (event: WheelEvent): void => {
       unlock()
       // A sideways turn or a pinch (ctrlKey) is not reading down the note.
-      if (live.current.names || event.deltaY === 0 || event.ctrlKey) return
+      if (event.deltaY === 0 || event.ctrlKey) return
       const now = performance.now()
+      lastTurn = now
+      if (pathTimer === null) {
+        reading(true)
+        pathTimer = setTimeout(pathLinger, WHEEL_LINGER_MS)
+      }
+      if (live.current.names) return
       if (now - lastWheel > WHEEL_BURST_MS) travelled = 0
       travelled += Math.abs(event.deltaY)
       lastWheel = now
@@ -322,6 +362,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
       scroller.removeEventListener('pointerdown', unlock)
       scroller.removeEventListener('keydown', unlock)
       if (timer !== null) clearTimeout(timer)
+      if (pathTimer !== null) clearTimeout(pathTimer)
+      reading(false)
     }
   }, [shows, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- the rest is read through `live` and refs
 
@@ -523,6 +565,8 @@ function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; on
   const listRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
   const placed = useRef(false)
+  // Computed when the current row changes, never on a scroll inside one section.
+  const path = useMemo(() => pathLines(rows, at), [rows, at])
 
   const edges = (): void => {
     const list = listRef.current
@@ -570,6 +614,7 @@ function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; on
           type="button"
           className="toc__name"
           data-level={row.level}
+          data-path={path[i] || undefined}
           aria-current={i === at ? 'true' : undefined}
           tabIndex={i === at ? 0 : -1}
           // The full name as a tooltip only where the column cut it.

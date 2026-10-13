@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SectionLines, type StartupWindows, type TableOfContents, type Theme } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SectionLines, type StartupWindows, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -82,6 +82,13 @@ export const SECTION_STEP_OPTIONS: readonly Option<number>[] = SECTION_STEPS.map
 export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [
   { label: 'Always show', value: 'always' },
   { label: 'Only near the mouse', value: 'hover' },
+]
+
+/** The table of contents (YAZ-2762): when its level lines show; toc.css reads it as `data-toc-lines` on `.app`. */
+export const TOC_LINES_OPTIONS: readonly Option<TocLines>[] = [
+  { label: 'On hover', value: 'hover' },
+  { label: 'Always show', value: 'always' },
+  { label: 'Never', value: 'off' },
 ]
 
 /** The On-first pair the guards use ("Confirm before deleting", GitHub sync): the safe answer leads. */
