@@ -7,6 +7,7 @@ import { sentinel, writeNote } from './genVault.mjs'
 import { abba, loadSensitive, summarizeRuns } from './lib/stats.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
 import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
+import { NOTES } from './scenarios/typing.mjs'
 
 const made = []
 const tmp = () => {
@@ -79,6 +80,21 @@ describe('fixtures', () => {
     const s = JSON.parse(fs.readFileSync(path.join(profile, 'yaseendocs.json'), 'utf8'))
     expect(s.windows.map((w) => [w.id, w.root, w.roots, w.file])).toEqual([['w1', '/a', ['/a', '/b'], '/a/1.md']])
     expect(s.windows[0].tabs).toEqual(['/a/1.md', '/a/2.md', '/b/1.md', '/b/2.md'])
+  })
+
+  it('typing has the prose note twice, and the two rows differ by the Section indent switch alone (YAZ-2724)', () => {
+    const rows = Object.fromEntries(NOTES.map(([key, ...note]) => [key, note]))
+    expect(rows.prose5k).toEqual(['Prose 5k', 'prose', 5000])
+    expect(rows.prose5kIndent).toEqual([...rows.prose5k, true])
+    // The rows from before it keep their keys, so their numbers still line up with baseline.json.
+    expect(NOTES.slice(0, 2).map(([key, , kind]) => [key, kind])).toEqual([['bullets5k', 'bullets'], ['bullets20k', 'bullets']])
+  })
+
+  it('the prose note is the one made of top-level blocks: three times the bullet note of its length (YAZ-2724)', () => {
+    const dir = tmp()
+    // A block is a run of lines between blank lines; a list is one.
+    const blocks = (name, kind) => fs.readFileSync(writeNote(dir, name, kind, 5000), 'utf8').split(/\n{2,}/).filter((part) => part.trim() !== '').length
+    expect([blocks('Prose 5k', 'prose'), blocks('Bullets 5k', 'bullets')]).toEqual([1821, 596])
   })
 
   it('multi-vault takes its tab switches in a ring, so every other one stays inside a vault and every other one crosses to the other', () => {
