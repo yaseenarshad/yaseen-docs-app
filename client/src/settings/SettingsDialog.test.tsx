@@ -123,9 +123,9 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'tableOfContents', 'sectionStep', 'sectionLines']
-/** The groups of the Editor page, in registry order: main's "Table of contents" (YAZ-2700) sits where main has it, directly after Bullet threading, and Section indent stays the last group. */
-const EDITOR_GROUPS = ['Bullet threading', 'Table of contents', 'Section indent']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents']
+/** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
+const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
 const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows']
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 const HOTKEY_ROWS = ['hotkeys-keyboard', 'hotkeys-views', 'hotkeys-window', 'hotkeys-mouse']
@@ -227,7 +227,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
-    expect(hints()).toEqual([THREADING_HINT, TOC_HINT, SECTION_INDENT_HINT])
+    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, TOC_HINT])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
@@ -390,7 +390,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     ])
   })
 
-  it('Show the names: When there is room · Always · Off under "Table of contents" on the Editor page, between Bullet threading and Section indent; Always writes the whole object with only it flipped (YAZ-2700)', () => {
+  it('Show the names: When there is room · Always · Off under "Table of contents" on the Editor page, after Section indent; Always writes the whole object with only it flipped (YAZ-2700)', () => {
     const { el, onChange } = mountOn('Editor')
     expect(row(el, 'tableOfContents')?.closest('[data-section]')?.id).toBe('settings-editor')
     const group = row(el, 'tableOfContents')?.closest('.settings-group')
@@ -619,8 +619,8 @@ describe('SettingsDialog search (D6)', () => {
     // Bullet threading) and, on the Hotkeys page, the two tables whose labels name a bullet — five
     // breadcrumbs, registry order, never rank.
     type(searchInput(el), 'bullet')
-    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Table of contents', 'Editor › Section indent', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'tableOfContents', 'sectionStep', 'sectionLines', 'hotkeys-keyboard', 'hotkeys-mouse'])
+    expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
+    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'hotkeys-keyboard', 'hotkeys-mouse'])
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
