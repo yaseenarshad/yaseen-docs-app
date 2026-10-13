@@ -384,11 +384,21 @@
   }
 }
 
-.taboverview__filter {
+/* The top row (YAZ-2739): the filter box in the middle column, "Kill all tabs" at the end of the
+   last. The side columns are always equal, and never narrower than the button, so the box stays
+   in the middle of the board; in a narrow board it is the box that gives way. */
+.taboverview__top {
   flex: none;
-  align-self: center;
-  width: min(360px, calc(100% - 48px));
-  margin: 20px 0 8px;
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 360px) minmax(100px, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 20px 16px 8px;
+}
+
+.taboverview__filter {
+  grid-column: 2;
+  width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -405,6 +415,13 @@
 
 .taboverview__filter::placeholder {
   color: var(--fg-muted);
+}
+
+/* "Kill all tabs" (YAZ-2739), top right of the board. Its look is the confirm sheet's danger
+   button (`confirm__btn--danger`, app.css): the same red says the same thing in both places. */
+.taboverview__kill {
+  grid-column: 3;
+  justify-self: end;
 }
 
 /* The board's area: what the stack rule measures. Its box is the window's to size, never the
