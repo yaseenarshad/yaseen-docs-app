@@ -141,14 +141,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} />))
   await settle()
   await settle()
   return container
@@ -342,6 +342,34 @@ describe('CrepeHost table of contents (YAZ-2700)', () => {
     const el = await mount(BODY)
     act(() => tocOf().publish(TWO))
     expect(el.querySelector('nav.toc')).toBeNull()
+  })
+
+  it('the width setting of the names column comes down as a prop too, 200px where none is threaded, and a drag of the column\'s edge goes back up through its door (YAZ-2752)', async () => {
+    /** The names column of a 1400px note: jsdom lays nothing out, so the section gets its width before the rows arrive and the first measure runs. */
+    const pinnedNames = (el: HTMLElement): HTMLElement => {
+      const section = el.querySelector<HTMLElement>('section.editor')
+      if (section === null) throw new Error('no section.editor')
+      Object.defineProperty(section, 'clientWidth', { configurable: true, value: 1400 })
+      act(() => tocOf().publish(TWO))
+      return section
+    }
+    expect(pinnedNames(await mount(BODY, 1, { tableOfContents: 'pinned' })).style.getPropertyValue('--toc-width')).toBe('200px')
+    act(() => root?.unmount())
+    container?.remove()
+
+    const onChangeTableOfContentsWidth = vi.fn()
+    const el = await mount(BODY, 1, { tableOfContents: 'pinned', tableOfContentsWidth: 320, onChangeTableOfContentsWidth })
+    const section = pinnedNames(el)
+    expect(section.style.getPropertyValue('--toc-width')).toBe('320px')
+    act(() => {
+      el.querySelector('.toc__resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 1000 }))
+    })
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 960 }))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+    })
+    expect(section.style.getPropertyValue('--toc-width')).toBe('360px')
+    expect(onChangeTableOfContentsWidth).toHaveBeenCalledExactlyOnceWith(360)
   })
 
   it('Esc inside it hands the caret back to THIS note\'s editor', async () => {
