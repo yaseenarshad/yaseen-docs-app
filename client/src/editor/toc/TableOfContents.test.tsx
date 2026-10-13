@@ -740,10 +740,10 @@ describe('where the reader is: the marker, and a long list in step with the note
       expect(scrollTo).not.toHaveBeenCalled()
       const reduced = tocCss.match(/@media \(prefers-reduced-motion: reduce\)\s*\{(.*)\}\s*$/s)?.[1] ?? ''
       expect(reduced).toMatch(/\.toc\[data-names\],\s*\.toc__card\s*\{\s*animation:\s*none;/)
-      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__pin,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
-      // Every rule of the sheet that eases is one of those five.
+      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
+      // Every rule of the sheet that eases is one of those six.
       const eased = [...tocCss.replace(/@media.*$/s, '').matchAll(/([^{}]+)\{[^{}]*transition:/g)].map(([, selector]) => selector.replace(/\/\*.*?\*\//gs, '').trim())
-      expect(eased).toEqual(['.toc__name', '.toc__marker[data-placed]', '.toc__pin', '.toc__line', '.toc__card'])
+      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__marker[data-placed]', '.toc__pin', '.toc__line', '.toc__card'])
     } finally {
       delete (window as unknown as Record<string, unknown>).matchMedia
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
@@ -799,7 +799,7 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
   })
 
   it('the row under the mouse is the soft accent, the current one stays the accent; the current line is 5px longer; the card is 440px tall at most', () => {
-    expect(rule(tocCss, '.toc__name:hover')).toMatch(/background:\s*var\(--accent-soft\);/)
+    expect(rule(tocCss, '.toc__name:hover')).toMatch(/background-color:\s*var\(--accent-soft\);/)
     // One rule keeps the current name the accent under the mouse too: three parts outweigh `.toc__name:hover`.
     expect(rule(tocCss, ".toc__names .toc__name[aria-current='true']")).toMatch(/color:\s*var\(--accent\);/)
     expect(tocCss).not.toMatch(/\.toc__name\[aria-current='true'\]:hover/)

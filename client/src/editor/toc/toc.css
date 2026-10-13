@@ -17,6 +17,20 @@
   --toc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* The colours of the level lines (YAZ-2762): the grey ones, and the path to the current name.
+   Both are clear while the lines do not show. Registered, so that they can fade. */
+@property --toc-rest {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+@property --toc-path {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
 /* LINES is the default look: the nav spans the note but takes no pointer, so the text under it
    stays the text. Only the rail and the card (`.toc__hover`) answer the mouse. */
 .toc {
@@ -72,6 +86,22 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
   mask-image: linear-gradient(to bottom, transparent 0, #000 var(--toc-fade-top), #000 calc(100% - var(--toc-fade-bottom)), transparent 100%);
+  transition: --toc-rest 160ms ease, --toc-path 160ms ease;
+}
+
+/* When the level lines show — the grey ones and the path together — is a setting (Settings › Editor › Table of contents, `data-toc-lines`
+   on `.app`): while the reader is IN the list — the mouse, or the keyboard —, always, or never. */
+.app[data-toc-lines='always'] .toc__names,
+.app[data-toc-lines='hover'] .toc__names:hover,
+.app[data-toc-lines='hover'] .toc__names:focus-within {
+  --toc-rest: var(--border);
+  --toc-path: var(--accent);
+}
+
+/* On hover, the PATH also shows while the reader turns the wheel over the note (`data-reading`,
+   set by the component): it follows them down the list. The grey lines wait for the mouse. */
+.app[data-toc-lines='hover'] .toc[data-reading] .toc__names {
+  --toc-path: var(--accent);
 }
 
 /* A card that only FOLLOWS the note (it opened because of a scroll of the note): its list is moved
@@ -88,8 +118,21 @@
   --toc-fade-bottom: 28px;
 }
 
-/* Each name carries a piece of ONE hairline down the list's left edge; the marker rides on it. */
+/* Each name carries a piece of ONE hairline down the list's left edge; the marker rides on it.
+   It also carries a piece of each LEVEL LINE that passes it (YAZ-2762): a 1px line below the
+   left edge of each parent level. A line is a background, so it adds no element. */
 .toc__name {
+  /* The grey line of each level, then the path over it (YAZ-2762). */
+  --toc-l1: transparent;
+  --toc-l2: transparent;
+  --toc-p1: transparent;
+  --toc-p2: transparent;
+  /* THE TURN: on the row where the path arrives at a name one level in, its line stops at the
+     middle of the row and a short level piece goes from it to the name. */
+  --toc-p1-h: 100%;
+  --toc-turn: transparent;
+  /* The same level piece in grey, on each level 2 name, while the grey lines show. */
+  --toc-tick: transparent;
   display: block;
   flex: none;
   width: 100%;
@@ -101,22 +144,52 @@
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background:
+    linear-gradient(var(--toc-turn), var(--toc-turn)) 12px 50% / 9px 1px no-repeat,
+    linear-gradient(var(--toc-tick), var(--toc-tick)) 12px 50% / 9px 1px no-repeat,
+    linear-gradient(var(--toc-p1), var(--toc-p1)) 12px 0 / 1px var(--toc-p1-h) no-repeat,
+    linear-gradient(var(--toc-p2), var(--toc-p2)) 24px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l1), var(--toc-l1)) 12px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l2), var(--toc-l2)) 24px 0 / 1px 100% no-repeat;
   border-left: 1px solid var(--border);
   border-radius: 0 5px 5px 0;
   transition: color 80ms ease, background-color 80ms ease;
 }
 
-/* The level reads from the indent and the weight, never from a size: 12px per level below the first. */
+/* The level reads from the indent, the weight and the tone, never from a size: 12px per level
+   below the first, and each level is one step quieter than the one above it (YAZ-2762). */
 .toc__name[data-level='1'] {
   font-weight: 500;
+  color: var(--fg);
 }
 
 .toc__name[data-level='2'] {
+  --toc-l1: var(--toc-rest);
+  --toc-tick: var(--toc-rest);
   padding-left: 24px;
+  color: color-mix(in srgb, var(--fg) 55%, var(--fg-muted));
 }
 
 .toc__name[data-level='3'] {
+  --toc-l1: var(--toc-rest);
+  --toc-l2: var(--toc-rest);
   padding-left: 36px;
+}
+
+/* The path (YAZ-2762): the level lines from the current name up to its parents are the accent,
+   while the lines show. `data-path` is the level whose line is on the path at this row; a `t`
+   after it says the path ARRIVES at this name, one level in from its line. */
+.toc__name[data-path^='1'] {
+  --toc-p1: var(--toc-path);
+}
+
+.toc__name[data-path^='2'] {
+  --toc-p2: var(--toc-path);
+}
+
+.toc__name[data-path='1t'] {
+  --toc-p1-h: calc(50% + 0.5px);
+  --toc-turn: var(--toc-path);
 }
 
 /* The name under the mouse is a ROW, in the column and in the card alike: the accent's own soft
@@ -124,7 +197,7 @@
    themes — the same purple family as the marker, never a grey that the page could be. */
 .toc__name:hover {
   color: var(--fg);
-  background: var(--accent-soft);
+  background-color: var(--accent-soft);
 }
 
 /* The current name is the accent, and keeps it under the mouse — the wash says "here", the colour
@@ -308,6 +381,7 @@
   .toc__card,
   .toc__line,
   .toc__name,
+  .toc__names,
   .toc__pin,
   .toc__marker[data-placed] {
     transition: none;
