@@ -45,7 +45,8 @@
   - [x] 7 (YAZ-2737), the part before the pull request: `desktop/e2e/sectionIndent.spec.ts` (written, not run), `lineNumbers.spec.ts` corrected for the second switch, `docs/CONTRACTS.md` rule 18a and the Settings text, `docs/REGRESSION.md` rows E31, W7 and E28 with the hand scenario E31, the two size ceilings raised, this ledger
   - [x] `main` merged in: `2cc49c6` (YAZ-2700, the table of contents, 14 files with conflicts) and `56269b3` (release 1.0.4)
   - [x] YAZ-2731, the real store of the switch: `FolderState.sectionIndents`, `state.setSectionIndent`, `storage.getSectionIndent` / `setSectionIndent`, `useSectionIndent` on them; the fixture and its browser storage are deleted; step 7 of `sectionIndent.spec.ts` (the restart; written, not run); rule 18a, "App state" and row E34 say what is true
-- Now: [→] The size ceilings (D14), then the coordinator shows Yaseen the diff of the stored data (`FolderState.sectionIndents`) before the pull request leaves the draft state
+  - [x] The size ceilings (D14): three rows of `tools/perf/budget.json` raised to the measured values of the final tree, and the gate prints PASS
+- Now: [→] The coordinator shows Yaseen the diff of the stored data (`FolderState.sectionIndents`) before the pull request leaves the draft state
 - Next: the guided test on the final build
 - Remaining:
   - [ ] Yaseen reviews the stored-data change of YAZ-2731 (the field, its guard, its default)
@@ -64,7 +65,7 @@
 - For Yaseen: an editor reads the switch when it mounts and does not follow a later change, the same as "TOC made from:". A tab and the right panel that show one note at the same time can differ until the note is opened again there. A live follow is possible with `storage.subscribe`. Wanted?
 - For Yaseen: Settings › Editor has "Table of contents" between "Bullet threading" and "Section indent" (the order of `main`, then this branch). The other order puts the two groups that share the purple path side by side.
 - On Node 25 and later, `localStorage` is `undefined` in each client test (Node's own global hides the one of jsdom). No test of this branch needs it now. `FrontmatterPanel.test.tsx` spreads it (`{ ...localStorage }`), which does not throw.
-- For Yaseen: `rendererTotalBytes` (13,188,128) and `mainBundleBytes` (590,019) are above their ceilings by 9,737 and 269 bytes, inside the 0.1% tolerance. They were not raised. Raise them in this pull request too, or leave them?
+- For Yaseen: `rendererTotalBytes` measures 13,213,850, which is 9,167 bytes above its ceiling of 13,204,683 and inside the 0.1% tolerance (13,204 bytes). The gate does not flag it, so it was not raised. The next 4,038 bytes in the renderer make the gate red. Raise it in this pull request too, or leave it?
 - For Yaseen: `README.md` has no entry for the section indent in "Editing". Add one with the release notes (YAZ-2738)?
 - For Yaseen: 30 px as the default step, with 3 px of the nearest line's click band below the fold arrow (F15); and the soft grey lines at a pixel ratio of 1 (F16).
 
@@ -75,8 +76,8 @@
 - The settings: `client/src/settings/SettingsDialog.tsx`, `registry.tsx`, `options.ts`, `settings.css`, `shared/types.ts` (`sectionStep`, `sectionLines`), `desktop/src/main/store.ts`, `client/src/App.tsx` (`--section-step-setting`, `data-section-lines`)
 - The checks: `desktop/e2e/sectionIndent.spec.ts` (7 steps), `settings.spec.ts`, `ids.spec.ts`, `lineNumbers.spec.ts` (none run); `tools/perf/scenarios/typing.mjs`, `tools/perf/harness.test.mjs`, `tools/perf/README.md`
 - The documents: `docs/CONTRACTS.md` (rule 18a; "App state" › `settings`; rules 15, 16, 34), `docs/REGRESSION.md` (E34, W7, E28), `tools/prototypes/make_settings_demo_vault.py`
-- `tools/perf/budget.json`: `rendererEagerJsBytes` 2,033,771 → 2,038,475, `rendererEagerCssBytes` 152,753 → 157,786
+- `tools/perf/budget.json`, on top of the ceilings that `main` set for YAZ-2700 (`c2c1086`): `rendererEagerJsBytes` 2,053,445 → 2,057,579 (+4,134), `rendererEagerCssBytes` 159,371 → 164,404 (+5,033), `mainBundleBytes` 591,555 → 593,172 (+1,617). `rendererTotalBytes` stays at 13,204,683
 - Commands: `/opt/homebrew/bin/npm run typecheck`, `/opt/homebrew/bin/npm test`, `/opt/homebrew/bin/npm run build`, `/opt/homebrew/bin/npm run perf:budget:ci`
 - Gates on 2026-10-12, after the merge of `main` (`2cc49c6`): typecheck green; 324 files / 6,674 tests green, 2 skipped.
-- Gates on 2026-10-12, with YAZ-2731: typecheck green; 324 files / 6,679 tests green, 2 skipped.
+- Gates on 2026-10-12, with YAZ-2731 and the ceilings: typecheck green; 324 files / 6,679 tests green, 2 skipped; build green; budget PASS.
 - Known flake: `desktop/src/main/fs/tree.test.ts` "liveness" can time out one time. Run it alone before you call it a failure.
