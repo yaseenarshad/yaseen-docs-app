@@ -123,7 +123,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
 const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'startupWindows']
@@ -403,6 +403,30 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, tableOfContents: 'pinned' })
   })
 
+  it('Level lines: On hover · Always show · Never, the second and last row of "Table of contents", On hover by default; each choice writes the whole object with only `tocLines` changed, and the row shows the saved one (YAZ-2762 D5)', () => {
+    const { el, onChange } = mountOn('Editor')
+    const group = row(el, 'tocLines')?.closest('.settings-group')
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Table of contents')
+    // Below "Show the names", and the group holds those two rows and no other.
+    expect([...(group?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(['tableOfContents', 'tocLines'])
+    expect(row(el, 'tocLines')?.querySelector('.setting__label')?.textContent).toBe('Level lines')
+    expect(row(el, 'tocLines')?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Level lines')
+    expect(DEFAULT_SETTINGS.tocLines).toBe('hover')
+    expect(rowButtons(el, 'tocLines').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On hover', 'true'], ['Always show', 'false'], ['Never', 'false']])
+    act(() => rowButtons(el, 'tocLines')[1].click())
+    act(() => rowButtons(el, 'tocLines')[2].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, tocLines: 'always' },
+      { ...DEFAULT_SETTINGS, tocLines: 'off' },
+    ])
+    // The row beside it is a field of its own: it did not move.
+    expect(rowButtons(el, 'tableOfContents').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
+    unmount()
+    // A saved "Never" comes back pressed.
+    const saved = mountOn('Editor', { ...DEFAULT_SETTINGS, tocLines: 'off' })
+    expect(rowButtons(saved.el, 'tocLines').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
+  })
+
   it('Reopen: All vaults · Last vault · None under "When the app starts", Last vault by default; None writes the whole object with only it flipped (YAZ-2589 D2, A3)', () => {
     const { el, onChange } = mountOn('Files & Links')
     expect(row(el, 'startupWindows')?.closest('[data-section]')?.id).toBe('settings-files')
@@ -614,13 +638,13 @@ describe('SettingsDialog search (D6)', () => {
 
   it('hits from several groups stack under their own breadcrumbs, in registry order', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    // "bullet": the threading group (by its hint and title), the table of contents group (by its
-    // hint: a note of bullets has one too, YAZ-2700 D14), the Section indent group (its hint names
+    // "bullet": the threading group (by its hint and title), the two rows of the table of contents
+    // group (by its hint: a note of bullets has one too, YAZ-2700 D14), the Section indent group (its hint names
     // Bullet threading) and, on the Hotkeys page, the two tables whose labels name a bullet — five
     // breadcrumbs, registry order, never rank.
     type(searchInput(el), 'bullet')
     expect(headings(el)).toEqual(['Editor › Bullet threading', 'Editor › Section indent', 'Editor › Table of contents', 'Hotkeys › Keyboard', 'Hotkeys › Mouse'])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'hotkeys-keyboard', 'hotkeys-mouse'])
+    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tableOfContents', 'tocLines', 'hotkeys-keyboard', 'hotkeys-mouse'])
     type(searchInput(el), 'spacing')
     expect(headings(el)).toEqual(['Appearance › Spacing'])
     expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])

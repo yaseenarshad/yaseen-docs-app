@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, OPEN_HALF_LIFE_MS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, defaultAppState, defaultRightPanelIdentity, listVaults, normalizeRoots, openScore, openVaultRoots, rootOfPath, sameVaults, type AppState, type OpenStat, type VaultSet, type WindowEntry } from '@shared/types'
 import { createStore, isSettings, sanitizeSettings } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -273,6 +273,37 @@ describe('createStore: loading', () => {
     // `state.setSettings` is strict: a write with a width outside the limits is refused as a whole.
     for (const width of [160, 480]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(true)
     for (const width of [159, 481, NaN, '200', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tableOfContentsWidth: width })).toBe(false)
+  })
+
+  it('tocLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check (YAZ-2762 D5)', async () => {
+    expect(TOC_LINES).toEqual(['hover', 'always', 'off'])
+    expect(DEFAULT_SETTINGS.tocLines).toBe('hover')
+    // A yaseendocs.json from before YAZ-2762: the missing field gets its default, and no other field changes.
+    const { tocLines: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, tableOfContents: 'pinned', tableOfContentsWidth: 320 } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth: 320 })
+    const loaded = async (tocLines: unknown): Promise<string> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tableOfContents: 'off', tocLines } }))
+      const { settings } = createStore(file).get()
+      // One bad field costs that field only: the mode beside it loads as stored.
+      expect(settings.tableOfContents).toBe('off')
+      return settings.tocLines
+    }
+
+    for (const tocLines of TOC_LINES) expect(await loaded(tocLines)).toBe(tocLines)
+    // A word of another setting ("Never" is `off` here, not `never`), another case, and values that are not a string.
+    for (const tocLines of ['never', 'on', 'Hover', '', null, true, 1, ['always'], { value: 'always' }]) expect(await loaded(tocLines)).toBe('hover')
+
+    // `state.setSettings` is strict: a write with a value outside the three, or with no `tocLines`, is refused as a whole.
+    for (const tocLines of TOC_LINES) expect(isSettings({ ...DEFAULT_SETTINGS, tocLines })).toBe(true)
+    for (const tocLines of ['never', true, undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tocLines })).toBe(false)
+    expect(isSettings(legacySettings)).toBe(false)
+    // A value that is good is saved and read again by the next start.
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, tocLines: 'always' })
+    await store.flush()
+    expect((await onDisk()).settings.tocLines).toBe('always')
+    expect(createStore(file).get().settings.tocLines).toBe('always')
   })
 
   it('confirmRename: a file without the key sanitizes to on; off survives; junk falls back (YAZ-2420 3C1)', async () => {
