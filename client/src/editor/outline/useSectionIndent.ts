@@ -1,49 +1,30 @@
 import { useCallback, useState } from 'react'
+import { storage } from '../../lib/storage'
 
 /**
- * A page's own "Section indent" switch (YAZ-2709): off until the page turns it on, and remembered
- * for that page.
+ * A page's own "Section indent" switch (YAZ-2709 D2): off until the page turns it on, and
+ * remembered for that page.
  *
- * DEMO FIXTURE. The store behind this hook is `localStorage`, one key for each root + page, so the
- * demo needs no change in the main process and no new bridge call. The real feature keeps the
- * switch in the folder-state record (`FolderState` in shared/types.ts, written through
- * `storage`), the pattern YAZ-2700 uses for `tocSources`: it then follows a rename, goes when the
- * page is deleted, and reaches every window. The fixture does none of the three, and two editors
- * on one page (a tab and the right panel) each keep their own copy until they mount again.
- * Callers see only `[on, toggle]`, so the real record replaces this file and nothing else.
+ * The switch is in the app state, with the note: `folders[root].sectionIndents[path]`, read and
+ * written through `storage` — the record YAZ-2700 keeps for a note's table of contents source
+ * (`tocSources`), on the same terms. It follows a rename or a move of the note, goes when the note
+ * is deleted, and is there after a restart. On AND off are stored (D2): a page the reader turned
+ * off is not a page that was never touched.
+ *
+ * Like the table of contents source, it is read when the editor mounts and not followed after
+ * that: an editor that opens the page later starts with the stored switch, and two editors that
+ * are open on one page at the same time (a tab and the right panel, or two windows) each keep
+ * what they show until they mount again.
  */
-const KEY_PREFIX = 'mdapp.sectionIndent:'
-
-const read = (key: string): boolean => {
-  try {
-    return localStorage.getItem(key) === '1'
-  } catch {
-    // No storage (a locked-down profile): the switch still works, and lasts as long as the tab.
-    return false
-  }
-}
-
-const write = (key: string, on: boolean): void => {
-  try {
-    if (on) localStorage.setItem(key, '1')
-    else localStorage.removeItem(key)
-  } catch {
-    // Not remembered; the state below still holds it for this mount.
-  }
-}
-
 export function useSectionIndent(root: string, path: string): [on: boolean, toggle: () => void] {
-  const key = `${KEY_PREFIX}${root}\n${path}`
-  const [held, setHeld] = useState(() => ({ key, on: read(key) }))
+  const [held, setHeld] = useState(() => ({ root, path, on: storage.getSectionIndent(root, path) }))
   // Another page in the same mount: read its own switch during this render, not one render late.
-  const current = held.key === key ? held : { key, on: read(key) }
+  const current = held.root === root && held.path === path ? held : { root, path, on: storage.getSectionIndent(root, path) }
   if (current !== held) setHeld(current)
   const toggle = useCallback(() => {
-    setHeld((before) => {
-      const on = !(before.key === key ? before.on : read(key))
-      write(key, on)
-      return { key, on }
-    })
-  }, [key])
+    const on = !current.on
+    setHeld({ root, path, on })
+    storage.setSectionIndent(root, path, on)
+  }, [root, path, current.on])
   return [current.on, toggle]
 }

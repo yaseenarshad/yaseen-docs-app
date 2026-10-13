@@ -1620,56 +1620,81 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
   })
 })
 
+/**
+ * "Section indent" (YAZ-2709 D2): the page's own switch, saved with the note in the app state as
+ * its table of contents source is. `storage` is spied, as in the "TOC made from" tests above: the
+ * record below is what the app state holds for the vault, page → switch.
+ */
 describe('section indent is the page’s own switch (YAZ-2709)', () => {
   const showSectionIndentMock = vi.mocked(showSectionIndent)
-  /** The cog's second switch, through the real menu. */
+  let saved: Record<string, boolean>
+  /** The switch, by its name, through the real menu. */
   function switchSectionIndent(host: ParentNode): void {
     clickCog(host)
-    act(() => host.querySelectorAll<HTMLButtonElement>('.page-settings__menu button[aria-pressed]')[1].click())
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith('Section indent'))!.click())
     clickCog(host)
   }
   const indented = (host: ParentNode): boolean => host.querySelector('.editor-host')!.hasAttribute('data-section-indent')
 
-  // Node 25 and later has a `localStorage` global of its own (`undefined` without `--localstorage-file`),
-  // and it shadows the one of jsdom: the hook gets a store that lives as long as one test.
   beforeEach(() => {
-    const items = new Map<string, string>()
-    vi.stubGlobal('localStorage', { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) })
+    saved = {}
+    vi.spyOn(storage, 'getSectionIndent').mockImplementation((_root, file) => saved[file] === true)
+    vi.spyOn(storage, 'setSectionIndent').mockImplementation((_root, file, on) => void (saved[file] = on))
   })
-  afterEach(() => vi.unstubAllGlobals())
 
-  it('is off on a page that never turned it on, and the editor is told nothing', async () => {
+  afterEach(() => {
+    vi.mocked(storage.getSectionIndent).mockRestore()
+    vi.mocked(storage.setSectionIndent).mockRestore()
+  })
+
+  it('is off on a page with no entry: the editor is told nothing, and a mount writes nothing', async () => {
     const el = await mount(BODY)
+    expect(storage.getSectionIndent).toHaveBeenCalledWith('/vault', PATH)
     expect(indented(el)).toBe(false)
     expect(showSectionIndentMock).not.toHaveBeenCalled()
+    expect(storage.setSectionIndent).not.toHaveBeenCalled()
   })
 
-  it('on tells the editor once; off tells it off; the note is never written', async () => {
+  it('on tells the editor once and saves `true`; off tells it off and saves `false`, an entry of its own; the note and the browser store are never written', async () => {
+    const browserStore = vi.spyOn(Storage.prototype, 'setItem')
     const el = await mount(BODY)
     switchSectionIndent(el)
     expect(indented(el)).toBe(true)
     expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
+    expect(storage.setSectionIndent).toHaveBeenCalledExactlyOnceWith('/vault', PATH, true)
     switchSectionIndent(el)
     expect(indented(el)).toBe(false)
     expect(showSectionIndentMock).toHaveBeenCalledTimes(2)
     expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), false)
+    // D2: off is `false` for THIS page, never the removal of its entry.
+    expect(vi.mocked(storage.setSectionIndent).mock.calls).toEqual([['/vault', PATH, true], ['/vault', PATH, false]])
     await pastDebounce()
     expect(writeFile).not.toHaveBeenCalled()
+    expect(browserStore).not.toHaveBeenCalled()
+    browserStore.mockRestore()
   })
 
-  it('is remembered for the page: the next mount of it starts on, and another page stays off', async () => {
+  it('seeds from the app state: the next editor of the page starts on and tells its editor, a page saved as off and a page with no entry start off', async () => {
     const first = await mount(BODY)
     switchSectionIndent(first)
     act(() => root?.unmount())
     first.remove()
     showSectionIndentMock.mockClear()
+    // A new editor on the same page: a second tab, the right panel, or the app after a restart.
     const again = await mount(BODY)
     expect(indented(again)).toBe(true)
     expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
     act(() => root?.unmount())
     again.remove()
+    saved['/vault/off.md'] = false
+    const off = await mount(BODY, 1, { path: '/vault/off.md' })
+    expect(indented(off)).toBe(false)
+    act(() => root?.unmount())
+    off.remove()
     const other = await mount(BODY, 1, { path: '/vault/other.md' })
     expect(indented(other)).toBe(false)
+    // Reading wrote nothing: the one write is the click on the first page.
+    expect(storage.setSectionIndent).toHaveBeenCalledTimes(1)
   })
 
   it('an outside change that lands tells the editor again: a rebuilt editor state starts off', async () => {

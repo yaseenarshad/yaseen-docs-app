@@ -8,21 +8,21 @@
  *  - A CLICK ON A LINE folds the sections beside it, a second click opens them, and the caret stays.
  *  - IT IS A VIEW: the file on disk has the same bytes after all of it, proven after a real quit
  *    (the autosave flush point).
- *
- * Not here: that a note keeps its switch over a restart. The store behind the switch is a fixture
- * until YAZ-2731 builds the real one, and that issue adds the step.
+ *  - THE SWITCH IS SAVED with the note in the state file of the app (YAZ-2731,
+ *    `folders[root].sectionIndents`), on AND off, and never in the note: it is on again after a
+ *    restart.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one
  * note of this spec's own in it, `section-indent-` step screenshots. Serial: each step continues
  * the last.
  */
-// Written for YAZ-2709. Not yet run: Playwright was off limits when this was written, so every
+// Written for YAZ-2709, and step 7 for YAZ-2731. Not yet run: Playwright was off limits when this was written, so every
 // selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -225,5 +225,26 @@ test('step 5 — a click on the line below the H1 folds the H2 sections, a secon
 test('step 6 — the file on disk has the same bytes as at the start', async () => {
   await quitApp(app) // the autosave flush point: a pending write would land here
   // The note is plain ASCII, so the same text is the same bytes.
+  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+})
+
+test('step 7 — the switch is saved for the note in the state file of the app: on again after the restart, and off is saved too', async () => {
+  // Step 6 quit the app. The state file has the switch of this note, and of no other note.
+  expect((await readState(userData)).folders[vault]?.sectionIndents).toEqual({ [notePath]: true })
+
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(paragraph(win, OSAKA)).toBeVisible()
+  await expect(host(win)).toHaveAttribute('data-section-indent', 'true')
+  await expect(paragraph(win, KYOTO)).toHaveCSS('border-left-width', '60px')
+  await cog(win).click()
+  await expect(indentSwitch(win)).toHaveAttribute('aria-pressed', 'true')
+  await shoot(win, 'section-indent-05-after-restart')
+
+  // Off is a value of its own (YAZ-2711 D2): the entry stays, as `false`.
+  await indentSwitch(win).click()
+  await expect(indentSwitch(win)).toHaveAttribute('aria-pressed', 'false')
+  await expect(editorOf(win).locator('[data-sd], [data-sp]')).toHaveCount(0)
+  await expect.poll(async () => (await readState(userData)).folders[vault]?.sectionIndents[notePath], { timeout: 10_000 }).toBe(false)
   expect(await readFile(notePath, 'utf8')).toBe(BODY)
 })
