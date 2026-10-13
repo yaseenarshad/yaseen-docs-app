@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { TocSource } from '@shared/types'
 import { PageSettings } from './PageSettings'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -18,7 +19,7 @@ function mount(text = 'one two  three\nfour') {
   function Harness() {
     const [on, setOn] = useState(false)
     return <>
-      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} readText={readText} />
+      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
       <button data-outside>Outside</button>
     </>
   }
@@ -72,10 +73,11 @@ describe('PageSettings', () => {
     expect(beyond).not.toHaveBeenCalled()
   })
 
-  it('has ONE switch, "Line numbers", which flips the host state and leaves the menu open (S5, S6)', () => {
+  it('"Line numbers" is the first switch: it flips the host state and leaves the menu open (S5, S6)', () => {
     mount()
     click(cog())
-    expect(menu()!.querySelectorAll('button')).toHaveLength(1)
+    // This host hands no table of contents handler, as the app does with the setting Off: two switches.
+    expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Line numbers', 'Heading levels'])
     expect(toggle().textContent).toContain('Line numbers')
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
     click(toggle())
@@ -117,5 +119,192 @@ describe('PageSettings', () => {
     click(cog())
     click(cog())
     expect(readText).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * "TOC made from" (YAZ-2700 D14): what this page's table of contents is built from. One label and
+ * three choices that are one control; the host keeps the choice (and saves it), the menu shows it.
+ */
+describe('PageSettings: TOC made from', () => {
+  let changed: ReturnType<typeof vi.fn<(source: TocSource | null) => void>>
+
+  function mountWith(initial: TocSource | null, shown = true) {
+    readText = vi.fn(() => 'text')
+    changed = vi.fn()
+    function Harness() {
+      const [source, setSource] = useState<TocSource | null>(initial)
+      const onChange = (next: TocSource | null) => {
+        changed(next)
+        setSource(next)
+      }
+      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+  }
+
+  const group = () => menu()!.querySelector<HTMLElement>('[role="group"][aria-label="TOC made from"]')
+  const choices = () => [...group()!.querySelectorAll<HTMLButtonElement>('button')]
+  const pressed = () => choices().map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
+
+  it('a mount that passes no handler has no such control', () => {
+    mount()
+    click(cog())
+    expect(menu()!.textContent).not.toContain('TOC made from')
+    expect(menu()!.querySelector('.page-settings__choices')).toBeNull()
+  })
+
+  it('shows a label and three choices in one group, after "Table of contents" and above the counts; Auto is pressed for a note with no choice', () => {
+    mountWith(null)
+    expect(menu()!.querySelector('.page-settings__label')?.textContent).toBe('TOC made from:')
+    expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
+    const order = [...menu()!.children].map((child) => child.className || child.textContent)
+    expect(order).toEqual(['Line numbers', 'Heading levels', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
+  })
+
+  it('shows the saved choice pressed, and that one alone', () => {
+    mountWith('bullets')
+    expect(pressed()).toEqual(['Auto:false', 'Headings:false', 'Bullets:true'])
+  })
+
+  it('a click hands the host that source — null for Auto — and leaves the menu open with every choice still there', () => {
+    mountWith(null)
+    click(choices()[1])
+    expect(changed).toHaveBeenLastCalledWith('headings')
+    expect(pressed()).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
+    click(choices()[2])
+    expect(changed).toHaveBeenLastCalledWith('bullets')
+    expect(pressed()).toEqual(['Auto:false', 'Headings:false', 'Bullets:true'])
+    click(choices()[0])
+    expect(changed).toHaveBeenLastCalledWith(null)
+    expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
+    expect(changed).toHaveBeenCalledTimes(3)
+    expect(menu()).not.toBeNull()
+  })
+
+  it('is gone when the host passes no handler, though a source is saved: this page shows no table of contents', () => {
+    mountWith('headings', false)
+    expect(group()).toBeNull()
+    expect(menu()!.textContent).not.toContain('TOC made from')
+  })
+
+  /** The small "i" beside the label, and the text it opens. */
+  describe('the "i"', () => {
+    const info = () => menu()!.querySelector<HTMLButtonElement>('.page-settings__info')!
+    const tip = () => container.querySelector<HTMLElement>('.page-settings__tip')
+    // React hears `mouseenter` / `mouseleave` as the `mouseover` / `mouseout` that bubble.
+    const mouse = (type: 'mouseover' | 'mouseout') => act(() => void info().dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget: document.body })))
+
+    it('is a button in the label, named for what it explains, and no row or choice of the menu', () => {
+      mountWith(null)
+      expect(info().closest('.page-settings__label')).not.toBeNull()
+      expect(info().getAttribute('aria-label')).toBe('About “TOC made from”')
+      expect(info().hasAttribute('aria-pressed')).toBe(false)
+      expect(choices()).not.toContain(info())
+      // The label reads "TOC made from:" and nothing more: the "i" is a drawing.
+      expect(info().textContent).toBe('')
+      expect(tip()).toBeNull()
+      expect(info().hasAttribute('aria-describedby')).toBe(false)
+    })
+
+    it('shows its text while the mouse is on it, BESIDE the menu and not in it, and says the approved words', () => {
+      mountWith(null)
+      mouse('mouseover')
+      expect(tip()?.getAttribute('role')).toBe('tooltip')
+      expect(menu()!.contains(tip())).toBe(false)
+      expect(tip()?.parentElement).toBe(container.querySelector('.page-settings'))
+      expect(info().getAttribute('aria-describedby')).toBe(tip()?.id)
+      expect([...tip()!.querySelectorAll(':scope > p')].map((p) => p.textContent)).toEqual([
+        'This sets what the table of contents of this page shows.',
+        'If a selection finds less than two lines, no table of contents shows. Select Auto to get it back.',
+        'The app saves the selection for this page.',
+      ])
+      expect([...tip()!.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(['Auto', 'Headings', 'Bullets'])
+      expect([...tip()!.querySelectorAll('dd')].map((dd) => dd.textContent)).toEqual([
+        'The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.',
+        'Shows each H1, H2 and H3. This includes the headings that are in bullets.',
+        'Shows the bullets, to three levels.',
+      ])
+      // Reading it chose nothing and closed nothing.
+      expect(changed).not.toHaveBeenCalled()
+      expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
+      mouse('mouseout')
+      expect(tip()).toBeNull()
+      expect(menu()).not.toBeNull()
+    })
+
+    it('shows it for the keyboard too: on focus, and gone on blur', () => {
+      mountWith('headings')
+      act(() => info().focus())
+      expect(tip()).not.toBeNull()
+      act(() => choices()[0].focus())
+      expect(tip()).toBeNull()
+    })
+
+    it('goes with the menu, and a menu opened again starts without it', () => {
+      mountWith(null)
+      // The mouse rests on the "i" while Esc closes the menu from a choice: no `mouseleave` ever comes for a button that is gone.
+      mouse('mouseover')
+      act(() => choices()[1].focus())
+      act(() => void choices()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      expect(menu()).toBeNull()
+      expect(tip()).toBeNull()
+      click(cog())
+      expect(menu()).not.toBeNull()
+      expect(tip()).toBeNull()
+    })
+  })
+})
+
+/**
+ * The two page switches of YAZ-2700: "Heading levels" (D12) and "Table of contents" (D15). Like
+ * "Line numbers", each shows what the host keeps and asks the host to flip it; a host that hands no
+ * handler for "Table of contents" gets no row for it.
+ */
+describe('PageSettings: Heading levels and Table of contents', () => {
+  function mountSwitches(tableOfContentsRow = true) {
+    readText = vi.fn(() => 'text')
+    function Harness() {
+      const [levels, setLevels] = useState(false)
+      const [contents, setContents] = useState(true)
+      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined}
+        headingLevels={levels} onToggleHeadingLevels={() => setLevels((on) => !on)}
+        tableOfContents={contents} onToggleTableOfContents={tableOfContentsRow ? () => setContents((on) => !on) : undefined}
+        readText={readText} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+  }
+  const rows = () => [...menu()!.querySelectorAll<HTMLButtonElement>(':scope > button')]
+  const row = (name: string) => rows().find((button) => button.textContent?.startsWith(name))!
+  const state = () => rows().map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
+
+  it('stand under "Line numbers", in that order: "Heading levels" off and "Table of contents" on until the reader says otherwise', () => {
+    mountSwitches()
+    expect(state()).toEqual(['Line numbers:false', 'Heading levels:false', 'Table of contents✓:true'])
+  })
+
+  it('each flips its own host state and no other, and leaves the menu open', () => {
+    mountSwitches()
+    click(row('Heading levels'))
+    expect(state()).toEqual(['Line numbers:false', 'Heading levels✓:true', 'Table of contents✓:true'])
+    click(row('Table of contents'))
+    expect(state()).toEqual(['Line numbers:false', 'Heading levels✓:true', 'Table of contents:false'])
+    click(row('Heading levels'))
+    click(row('Table of contents'))
+    expect(state()).toEqual(['Line numbers:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(menu()).not.toBeNull()
+  })
+
+  it('a host that hands no handler for "Table of contents" gets no row for it: the app-wide setting is Off, so there is nothing to turn off here', () => {
+    mountSwitches(false)
+    expect(state()).toEqual(['Line numbers:false', 'Heading levels:false'])
   })
 })

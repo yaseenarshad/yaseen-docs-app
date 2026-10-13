@@ -772,6 +772,8 @@ export interface SettingsState {
   commentsOrder: CommentsOrder
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
+  /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. */
+  tableOfContents: TableOfContents
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -794,6 +796,24 @@ export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
 /** What a plain launch brings back (YAZ-2589 D2): every window · the windows of the vault used last · none (the list of vaults). */
 export type StartupWindows = 'all' | 'last' | 'none'
 export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
+
+/**
+ * A note's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
+ * bullets (`TocSource`) — when the window has room beside the text and small lines when it has
+ * not, `pinned` keeps the names open, `off` shows nothing.
+ */
+export type TableOfContents = 'auto' | 'pinned' | 'off'
+export const TABLE_OF_CONTENTS: readonly TableOfContents[] = ['auto', 'pinned', 'off']
+
+/**
+ * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
+ * is every H1-H3 of the note, the ones inside bullets too; `bullets` is its bullets, however many
+ * headings it has. The third choice, Auto — the note's own structure decides — is the ABSENCE of
+ * a choice: it is never stored, and reads as `null` everywhere.
+ */
+export type TocSource = 'headings' | 'bullets'
+export const TOC_SOURCES: readonly TocSource[] = ['headings', 'bullets']
+export const isTocSource = (v: unknown): v is TocSource => TOC_SOURCES.includes(v as TocSource)
 
 /**
  * Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no
@@ -822,6 +842,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   confirmRename: true,
   commentsOrder: 'oldest',
   startupWindows: 'last',
+  tableOfContents: 'auto',
 }
 
 export interface WindowBounds {
@@ -917,6 +938,8 @@ export interface FolderState {
   baseGroups: Record<string, string[]>
   /** The open history (YAZ-2663 D1): page → how much it is used, and when it was last on show (max MAX_OPENS). The main process alone adds a use (`upsertWindow`). Persisted, per machine. */
   opens: Record<string, OpenStat>
+  /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  tocSources: Record<string, TocSource>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
@@ -991,7 +1014,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, tocSources: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */

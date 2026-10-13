@@ -7,6 +7,9 @@ export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ord
 export const isListItem = (node: ProseNode | null | undefined): node is ProseNode =>
   node?.type.name === 'list_item'
 
+/** What `itemLabelText` answers for an item with no label: the table of contents reads it as "no row" (`toc/tocPlugin.ts`). */
+export const UNTITLED_ITEM = 'Untitled item'
+
 /**
  * First-block text of a list item — the label behind fold keys, zoom keys and breadcrumbs alike.
  * An image counts as its alt text (width stripped, src as the fallback), the same stand-in the
@@ -15,13 +18,13 @@ export const isListItem = (node: ProseNode | null | undefined): node is ProseNod
  */
 export const itemLabelText = (item: ProseNode): string => {
   const first = item.firstChild
-  if (!first) return 'Untitled item'
+  if (!first) return UNTITLED_ITEM
   const text = first.textBetween(0, first.content.size, '', (leaf) =>
     leaf.type.name === 'image'
       ? parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string)
       : '',
   )
-  return text.trim() || 'Untitled item'
+  return text.trim() || UNTITLED_ITEM
 }
 
 export interface NestedList {
