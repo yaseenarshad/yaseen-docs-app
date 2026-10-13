@@ -1300,7 +1300,10 @@
   color: var(--fg);
 }
 
+/* Its own text colour beside its own background (YAZ-2700 D11): without one the system's is used,
+   which is black or white by `color-scheme` and never the app's `--fg`. */
 .view-board__add-input {
+  color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--border);
 }

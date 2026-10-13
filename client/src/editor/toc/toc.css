@@ -1,0 +1,315 @@
+/* The table of contents (YAZ-2700): a note's rows — its headings, or its bullets — at its right
+   edge: TableOfContents.tsx.
+
+   It is CHROME, like the find bar: a sibling of the scroller inside `section.editor` (the
+   positioned ancestor), so it holds its place while the note scrolls under it and the document
+   zoom (`--document-zoom`, on the scroller's content) never reaches it. The component sets `top`
+   to where the scroller starts — below the status chips, and a conflict bar when there is one —
+   `--toc-height` to the scroller's height and `--toc-gutter` to the width of the scroller's own
+   scrollbar (0 when the system overlays it). Colours are app.css's tokens, so both themes follow.
+
+   ONE scrollbar: the note's. The lists here scroll (the wheel, the arrow keys, and they follow the
+   current row by themselves) but show no bar of their own — a soft fade at an edge says there
+   is more behind it. */
+:root {
+  /* TOC_WIDTH in TableOfContents.tsx is the same number: `namesShow` counts with it. */
+  --toc-width: 200px;
+  --toc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* LINES is the default look: the nav spans the note but takes no pointer, so the text under it
+   stays the text. Only the rail and the card (`.toc__hover`) answer the mouse. */
+.toc {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  /* Above the note, BELOW the status chips (app.css: z-index 2): their menus — the page cog's, the
+     zoom pill's — drop down over this corner. At the same level this element, the later sibling,
+     would be drawn over an open menu. */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+/* ---------- names: a quiet column beside the text ---------- */
+
+/* The column stands LEFT of the note's scrollbar, over room the scroller pads out for it — so the
+   one scrollbar stays at the window's edge, where a scrollbar belongs. */
+.toc[data-names] {
+  right: var(--toc-gutter, 0px);
+  left: auto;
+  width: var(--toc-width);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 20px 14px 24px 6px;
+  pointer-events: auto;
+  animation: toc-fade 240ms ease;
+}
+
+.editor:has(> .toc[data-names]) > .editor-host {
+  padding-right: var(--toc-width);
+}
+
+.editor:has(> .toc[data-names]) > .find-bar-dock--note {
+  right: var(--toc-width);
+}
+
+.toc__names {
+  --toc-fade-top: 0px;
+  --toc-fade-bottom: 0px;
+  position: relative;
+  display: flex;
+  /* Fills the names column; in the card it is as tall as its names until the card's max-height shrinks it. */
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  /* The wheel stays in the list at its ends: the note under it never moves by accident. */
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--toc-fade-top), #000 calc(100% - var(--toc-fade-bottom)), transparent 100%);
+}
+
+/* A card that only FOLLOWS the note (it opened because of a scroll of the note): its list is moved
+   by the component, in step with the note, and does not take the wheel itself. */
+.toc__hover[data-follow] .toc__names {
+  overflow-y: hidden;
+}
+
+.toc__names[data-above] {
+  --toc-fade-top: 28px;
+}
+
+.toc__names[data-below] {
+  --toc-fade-bottom: 28px;
+}
+
+/* Each name carries a piece of ONE hairline down the list's left edge; the marker rides on it. */
+.toc__name {
+  display: block;
+  flex: none;
+  width: 100%;
+  padding: 4px 8px 4px 12px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-left: 1px solid var(--border);
+  border-radius: 0 5px 5px 0;
+  transition: color 80ms ease, background-color 80ms ease;
+}
+
+/* The level reads from the indent and the weight, never from a size: 12px per level below the first. */
+.toc__name[data-level='1'] {
+  font-weight: 500;
+}
+
+.toc__name[data-level='2'] {
+  padding-left: 24px;
+}
+
+.toc__name[data-level='3'] {
+  padding-left: 36px;
+}
+
+/* The name under the mouse is a ROW, in the column and in the card alike: the accent's own soft
+   wash behind it and full-strength text on it, so where the mouse is reads at a glance in both
+   themes — the same purple family as the marker, never a grey that the page could be. */
+.toc__name:hover {
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+
+/* The current name is the accent, and keeps it under the mouse — the wash says "here", the colour
+   says "you are here". ONE rule for both: `.toc__names` in the selector outweighs `:hover` above. */
+.toc__names .toc__name[aria-current='true'] {
+  color: var(--accent);
+}
+
+/* The accent piece of the hairline. The component moves it to the current name; it SLIDES there,
+   which is what makes the list read as one thing following the reader. */
+.toc__marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: 2px;
+  height: 0;
+  pointer-events: none;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.toc__marker[data-placed] {
+  transition: transform 260ms var(--toc-ease), height 260ms var(--toc-ease);
+}
+
+.toc__name:focus-visible,
+.toc__pin:focus-visible,
+.toc__rail:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.toc__pin {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  border-radius: 5px;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.toc__pin:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* "Unpin", at the top of the pinned column: as wide as its word, on the names' left edge. */
+.toc__pin--off {
+  align-self: flex-start;
+  margin: 0 0 8px 6px;
+}
+
+/* ---------- lines: a rail in the right gutter, and its card ---------- */
+
+/* The rail and the card as ONE hover target, side by side with no gap, so the mouse goes from one
+   to the other without leaving. The right margin keeps the scroller's scrollbar free. */
+.toc__hover {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: calc(100% - 22px);
+  margin-right: max(14px, calc(var(--toc-gutter, 0px) + 6px));
+  pointer-events: auto;
+}
+
+.toc__rail {
+  display: flex;
+  flex: none;
+  padding: 10px 4px 10px 10px;
+  border-radius: 6px;
+}
+
+/* The clip for a rail longer than the window; the component scrolls it to the current line. */
+.toc__track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 23px;
+  overflow: hidden;
+}
+
+/* One line per row, `--toc-pitch` apart centre to centre: 18 / 12 / 7 px for level 1 / 2 / 3.
+   The current one is the accent and a little longer, and it grows into that. */
+.toc__line {
+  --toc-w: 18px;
+  flex: none;
+  width: var(--toc-w);
+  height: var(--toc-line, 3px);
+  margin: calc((var(--toc-pitch, 10px) - var(--toc-line, 3px)) / 2) 0;
+  background: var(--border);
+  border-radius: 2px;
+  transition: width 220ms var(--toc-ease), background-color 220ms ease;
+}
+
+.toc__line[data-level='2'] {
+  --toc-w: 12px;
+}
+
+.toc__line[data-level='3'] {
+  --toc-w: 7px;
+}
+
+/* Reading progress: what is above the current row is read. */
+.toc__line[data-read] {
+  background: var(--fg-muted);
+}
+
+.toc__line[data-current] {
+  width: calc(var(--toc-w) + 5px);
+  background: var(--accent);
+}
+
+/* The card: the find bar's surface. It shrinks before the rail does, so a 320px panel still fits
+   both. It is never taller than 440px: a card as tall as the window is a wall, and the list
+   inside moves in step with the note, so the current row is always in it. It comes in from
+   the rail's side and leaves the same way (`data-leaving`, for the component's `EXIT_MS`). */
+.toc__card {
+  display: flex;
+  flex: 0 1 240px;
+  flex-direction: column;
+  min-width: 0;
+  max-height: min(calc(var(--toc-height, 100vh) - 32px), 440px);
+  padding: 8px 8px 8px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+  transform-origin: right center;
+  animation: toc-card-in 180ms var(--toc-ease);
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+
+.toc__card[data-leaving] {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(6px) scale(0.98);
+}
+
+.toc__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 0 6px 8px;
+}
+
+.toc__title {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes toc-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px) scale(0.97);
+  }
+}
+
+@keyframes toc-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toc[data-names],
+  .toc__card {
+    animation: none;
+  }
+
+  .toc__card,
+  .toc__line,
+  .toc__name,
+  .toc__pin,
+  .toc__marker[data-placed] {
+    transition: none;
+  }
+}

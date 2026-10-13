@@ -33,7 +33,7 @@ import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, STARTUP_WINDOWS_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS } from './options'
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -334,6 +334,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   Default
                 </button>
               </>
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-2700: one row, and the same field the table of contents' own "Pin" and "Unpin" buttons write.
+        title: 'Table of contents',
+        hint: 'The headings or the bullets of a note, at its right edge.',
+        items: [
+          {
+            id: 'tableOfContents',
+            label: 'Show the names',
+            keywords: ['outline', 'toc', 'headings', 'jump'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_OF_CONTENTS_OPTIONS} value={settings.tableOfContents} onChange={(tableOfContents) => onChange({ ...settings, tableOfContents })} ariaLabel="Table of contents" />
             ),
           },
         ],

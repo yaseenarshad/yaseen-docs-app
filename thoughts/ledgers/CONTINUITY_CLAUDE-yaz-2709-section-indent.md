@@ -49,7 +49,7 @@
   - [ ] YAZ-2731: replace `useSectionIndent.ts` with the record in the folder state; add the restart step to `sectionIndent.spec.ts`; delete the fixture sentence in rule 18a
   - [ ] The typing numbers of YAZ-2724, in a quiet window that Yaseen gives: `npm run desktop:build && npm run perf -- typing --runs 5`, on `main` and on the branch
   - [ ] One run of `sectionIndent`, `settings`, `ids` and `lineNumbers` by a person who may run Playwright
-  - [ ] The guided test on the final build (hand scenario E31 in `docs/REGRESSION.md`, 16 steps), after YAZ-2731
+  - [ ] The guided test on the final build (hand scenario E34 in `docs/REGRESSION.md`, 16 steps), after YAZ-2731
   - [ ] The pull request leaves the draft state; Yaseen merges
   - [ ] YAZ-2738: the release notes, and the feature's own release after the merge
 
@@ -69,7 +69,7 @@
 - The feature: `client/src/editor/outline/sectionIndent.ts`, `sectionIndent.css`, `sectionIndent.test.ts`, `useSectionIndent.ts` (the fixture), `client/src/editor/PageSettings.tsx`, `Editor.tsx`, `blockHandleGate.ts`, `createCrepe.ts`
 - The settings: `client/src/settings/SettingsDialog.tsx`, `registry.tsx`, `options.ts`, `settings.css`, `shared/types.ts` (`sectionStep`, `sectionLines`), `desktop/src/main/store.ts`, `client/src/App.tsx` (`--section-step-setting`, `data-section-lines`)
 - The checks: `desktop/e2e/sectionIndent.spec.ts`, `settings.spec.ts`, `ids.spec.ts`, `lineNumbers.spec.ts` (none run); `tools/perf/scenarios/typing.mjs`, `tools/perf/harness.test.mjs`, `tools/perf/README.md`
-- The documents: `docs/CONTRACTS.md` (rule 18a; "App state" › `settings`; rules 15, 16, 34), `docs/REGRESSION.md` (E31, W7, E28), `tools/prototypes/make_settings_demo_vault.py`
+- The documents: `docs/CONTRACTS.md` (rule 18a; "App state" › `settings`; rules 15, 16, 34), `docs/REGRESSION.md` (E34, W7, E28), `tools/prototypes/make_settings_demo_vault.py`
 - `tools/perf/budget.json`: `rendererEagerJsBytes` 2,033,771 → 2,038,475, `rendererEagerCssBytes` 152,753 → 157,786
 - Commands: `/opt/homebrew/bin/npm run typecheck`, `/opt/homebrew/bin/npm test`, `/opt/homebrew/bin/npm run build`, `/opt/homebrew/bin/npm run perf:budget:ci`
 - Gates on 2026-10-12, before the commit of 1A and 7: typecheck green; 319 files / 6,474 tests green, 2 skipped; build green; budget PASS with the two raised ceilings.
