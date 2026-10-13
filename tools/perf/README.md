@@ -33,7 +33,7 @@ The big notes copy the shapes the YAZ-2132 scope measured (`genVault.mjs`), so t
 |---|---|
 | `launch` | spawn → main JS → navigation → first paint → the restored note painted (warm profile, 2 tabs); spawn → note on a fresh profile, with 10 restored tabs, and with 3 windows (the last one's note) |
 | `open-big` | click a 1k / 5k / 20k-line bullet note, a 5k prose note, a 5k code note → painted, and the longest task. 90 s cap per open: past it, `timedOut` and null for the rest |
-| `typing` | keydown → next frame per key (40 keys) at the end of a 5k and a 20k-line bullet note; null when the note is not painted within 90 s |
+| `typing` | keydown → next frame per key (40 keys) at the end of a 5k and a 20k-line bullet note, and of a 5k-line prose note twice: with "Section indent" off (`prose5k`) and turned on from the page cog (`prose5kIndent`, YAZ-2724). The prose note has about 1,800 top-level blocks, which is what that feature costs on, so the two rows apart are its cost per key. Null when the note is not painted within 90 s, and for `prose5kIndent` on a build with no such switch. The two prose rows are written, not yet run |
 | `sidebar-resize` | per mouse move while dragging the sidebar edge with 3 mounted tabs, move → next frame |
 | `tab-switch` | click a tab → painted: first visit (mounts an editor) and revisits |
 | `multi-vault` | one window on two 2k-note vaults, two tabs of each (YAZ-2602): spawn → the restored note painted; click a tab → painted, for a switch inside one vault and for a switch between the two, which must measure the same (S80). Written, not yet run |

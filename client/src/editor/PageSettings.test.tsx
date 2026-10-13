@@ -18,8 +18,9 @@ function mount(text = 'one two  three\nfour') {
   readText = vi.fn(() => text)
   function Harness() {
     const [on, setOn] = useState(false)
+    const [indent, setIndent] = useState(false)
     return <>
-      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
+      <PageSettings lineNumbers={on} onToggleLineNumbers={() => setOn((value) => !value)} sectionIndent={indent} onToggleSectionIndent={() => setIndent((value) => !value)} headingLevels={false} onToggleHeadingLevels={() => undefined} readText={readText} />
       <button data-outside>Outside</button>
     </>
   }
@@ -37,6 +38,8 @@ afterEach(() => {
 const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
 const menu = () => container.querySelector<HTMLElement>('.page-settings__menu[role="group"]')
 const toggle = () => menu()!.querySelector<HTMLButtonElement>('button[aria-pressed]')!
+/** The second switch (YAZ-2709). */
+const indentToggle = () => menu()!.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')[1]
 const click = (element: Element) => act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
 describe('PageSettings', () => {
@@ -76,8 +79,8 @@ describe('PageSettings', () => {
   it('"Line numbers" is the first switch: it flips the host state and leaves the menu open (S5, S6)', () => {
     mount()
     click(cog())
-    // This host hands no table of contents handler, as the app does with the setting Off: two switches.
-    expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Line numbers', 'Heading levels'])
+    // This host hands no table of contents handler, as the app does with the setting Off: three switches.
+    expect([...menu()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
     expect(toggle().textContent).toContain('Line numbers')
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
     click(toggle())
@@ -86,6 +89,19 @@ describe('PageSettings', () => {
     expect(toggle().textContent).toContain('✓')
     click(toggle())
     expect(toggle().getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('has "Section indent" under it: its own switch, which leaves "Line numbers" and the open menu alone (YAZ-2709)', () => {
+    mount()
+    click(cog())
+    expect(indentToggle().getAttribute('aria-pressed')).toBe('false')
+    click(indentToggle())
+    expect(menu()).not.toBeNull()
+    expect(indentToggle().getAttribute('aria-pressed')).toBe('true')
+    expect(indentToggle().textContent).toContain('✓')
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+    click(indentToggle())
+    expect(indentToggle().getAttribute('aria-pressed')).toBe('false')
   })
 
   it('shows the words and the characters of the text (S13, S17, S18)', () => {
@@ -138,7 +154,7 @@ describe('PageSettings: TOC made from', () => {
         changed(next)
         setSource(next)
       }
-      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
+      return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined} sectionIndent={false} onToggleSectionIndent={() => undefined} headingLevels={false} onToggleHeadingLevels={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={source} onChangeTocSource={shown ? onChange : undefined} readText={readText} />
     }
     container = document.createElement('div')
     document.body.append(container)
@@ -163,7 +179,7 @@ describe('PageSettings: TOC made from', () => {
     expect(menu()!.querySelector('.page-settings__label')?.textContent).toBe('TOC made from:')
     expect(pressed()).toEqual(['Auto:true', 'Headings:false', 'Bullets:false'])
     const order = [...menu()!.children].map((child) => child.className || child.textContent)
-    expect(order).toEqual(['Line numbers', 'Heading levels', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
+    expect(order).toEqual(['Line numbers', 'Section indent', 'Heading levels', 'Table of contents✓', 'page-settings__label', 'page-settings__choices', 'page-settings__divider', '1 words', '4 characters'])
   })
 
   it('shows the saved choice pressed, and that one alone', () => {
@@ -272,6 +288,7 @@ describe('PageSettings: Heading levels and Table of contents', () => {
       const [levels, setLevels] = useState(false)
       const [contents, setContents] = useState(true)
       return <PageSettings lineNumbers={false} onToggleLineNumbers={() => undefined}
+        sectionIndent={false} onToggleSectionIndent={() => undefined}
         headingLevels={levels} onToggleHeadingLevels={() => setLevels((on) => !on)}
         tableOfContents={contents} onToggleTableOfContents={tableOfContentsRow ? () => setContents((on) => !on) : undefined}
         readText={readText} />
@@ -286,25 +303,25 @@ describe('PageSettings: Heading levels and Table of contents', () => {
   const row = (name: string) => rows().find((button) => button.textContent?.startsWith(name))!
   const state = () => rows().map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
 
-  it('stand under "Line numbers", in that order: "Heading levels" off and "Table of contents" on until the reader says otherwise', () => {
+  it('stand under "Line numbers" and "Section indent" (YAZ-2709), in that order: "Heading levels" off and "Table of contents" on until the reader says otherwise', () => {
     mountSwitches()
-    expect(state()).toEqual(['Line numbers:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
   })
 
   it('each flips its own host state and no other, and leaves the menu open', () => {
     mountSwitches()
     click(row('Heading levels'))
-    expect(state()).toEqual(['Line numbers:false', 'Heading levels✓:true', 'Table of contents✓:true'])
+    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels✓:true', 'Table of contents✓:true'])
     click(row('Table of contents'))
-    expect(state()).toEqual(['Line numbers:false', 'Heading levels✓:true', 'Table of contents:false'])
+    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels✓:true', 'Table of contents:false'])
     click(row('Heading levels'))
     click(row('Table of contents'))
-    expect(state()).toEqual(['Line numbers:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
     expect(menu()).not.toBeNull()
   })
 
   it('a host that hands no handler for "Table of contents" gets no row for it: the app-wide setting is Off, so there is nothing to turn off here', () => {
     mountSwitches(false)
-    expect(state()).toEqual(['Line numbers:false', 'Heading levels:false'])
+    expect(state()).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false'])
   })
 })

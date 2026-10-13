@@ -226,6 +226,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setTocSource: vi.fn(async () => undefined),
+      setSectionIndent: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)
@@ -371,6 +372,9 @@ const withFolder = (state: AppState, folderRoot: string, lastFile: string | null
   ...state,
   folders: { ...state.folders, [folderRoot]: { ...defaultFolderState(), lastFile } },
 })
+
+/** Settings shows one section to a page (YAZ-2709): the page of the section named, by its nav item, as a user reaches it. */
+const settingsPage = (el: HTMLElement, title: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === title)!.click())
 
 afterEach(() => {
   act(() => root?.unmount())
@@ -868,6 +872,17 @@ describe('App content width (YAZ-1176)', () => {
     expect(el.querySelector('.app')?.getAttribute('data-content-width')).toBe('narrow')
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'full' } }))
     expect(el.querySelector('.app')?.getAttribute('data-content-width')).toBe('full')
+  })
+})
+
+describe('App section indent settings (YAZ-2709)', () => {
+  it('hands the step width and the grey-lines choice to the editor CSS on the app container, and another window\'s change lands live', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    // sectionIndent.css reads the step as a plain number (`--section-step-setting`) and the lines as an attribute.
+    expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['30', 'always'])
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sectionStep: 36, sectionLines: 'hover' } }))
+    expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['36', 'hover'])
   })
 })
 
@@ -3198,6 +3213,7 @@ describe('App upkeep review (YAZ-2322)', () => {
     /** The Settings dialog's "Enable upkeep review" switch, clicked On or Off. */
     const setUpkeep = (el: HTMLElement, emitSettings: () => void, on: boolean) => {
       act(() => emitSettings())
+      settingsPage(el, 'Review')
       act(() => el.querySelectorAll<HTMLButtonElement>('[data-setting="enabled"] button')[on ? 0 : 1].click())
       act(() => button(el, 'Close settings')?.click())
     }
@@ -3347,6 +3363,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('with no vault open there is no row', async () => {
     const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     expect(el.querySelector('.settings-dialog')).not.toBeNull()
     expect(el.querySelector('[data-setting="ids"]')).toBeNull()
   })
@@ -3354,6 +3371,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('a vault with no answer, or one that said no, reads Off; a click on Off writes nothing and reads nothing', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     expect(pressed(el)).toEqual(['false', 'true'])
     await act(async () => idsButtons(el)[1].click())
     expect(el.querySelector('.confirm')).toBeNull()
@@ -3364,6 +3382,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('On opens the box with the counts of the snapshot and writes nothing; valid letters and "Give IDs" save yes and the letters in capitals (S5, S7, S12)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()], { enabled: false }))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     expect(idsReads(bridge)).toEqual([])
     await act(async () => idsButtons(el)[0].click())
     expect(sheetText(el)).toContain('Give the notes in this vault IDs?')
@@ -3382,6 +3401,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('Cancel in the box writes nothing, and the switch stays Off (S8)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[0].click())
     typeLetters(el, 'yaz')
     await act(async () => sheetBtn(el, 'Cancel')?.click())
@@ -3393,6 +3413,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('a vault that has letters asks for them, and only those letters start the save (S9)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()], { enabled: false, letters: 'YAZ', was: ['OLD'], other: 1 }))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[0].click())
     expect(el.querySelector('.confirm__letters')?.textContent).toBe("Type this vault's ID letters, YAZ, to confirm.")
     typeLetters(el, 'doc')
@@ -3406,6 +3427,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('a vault whose notes hold IDs reads On; Off asks before it saves no, with no letters handed over (S11)', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [note('k3m9x2pq7abc')], { enabled: true, letters: 'YAZ', was: ['OLD'] }))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     expect(pressed(el)).toEqual(['true', 'false'])
     act(() => idsButtons(el)[1].click())
     expect(bridge.ids.set).not.toHaveBeenCalled()
@@ -3416,6 +3438,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('an ID vault with no note holding one yet: Off saves no at once', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[1].click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
@@ -3430,6 +3453,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
       broken(b)
     })
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[0].click())
     typeLetters(el, 'yaz')
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
@@ -3442,6 +3466,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
       broken(b)
     })
     act(() => on.emitSettings())
+    settingsPage(on.el, 'Files & Links')
     await act(async () => idsButtons(on.el)[1].click())
     expect(on.el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
@@ -3452,6 +3477,7 @@ describe('App "Give this vault\u2019s notes IDs" in Settings (YAZ-2523 V4, YAZ-2
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(false, [note()]))
     bridge.ids.set.mockRejectedValueOnce(new Error('disk full'))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[0].click())
     typeLetters(el, 'YAZ')
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
@@ -3468,10 +3494,12 @@ describe('App "Duplicate IDs" in Settings (YAZ-2677 D7)', () => {
   it('the row is there only while the vault uses IDs; a click asks main, and the line shows what it answers', async () => {
     const off = await mount(defaultAppState(), VAULT, {}, feed(false))
     act(() => off.emitSettings())
+    settingsPage(off.el, 'Files & Links')
     expect(row(off.el)).toBeNull()
     act(() => root?.unmount())
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true))
     act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
     expect(bridge.ids.check).not.toHaveBeenCalled()
     bridge.ids.check.mockResolvedValueOnce('YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.')
     await act(async () => row(el)?.querySelector('button')?.click())
@@ -3688,7 +3716,12 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       upkeep({ '/v': true })(b)
       b.bridge.github.status.mockImplementation(async (vault) => ({ root: vault, state: 'off' as const, enabled: vault === '/v' }))
     })
-    const pressed = (setting: string) => [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
+    // Each of the three rows is on the page of its own section.
+    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Review', githubSync: 'Sync' }
+    const pressed = (setting: string) => {
+      settingsPage(el, PAGE[setting])
+      return [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
+    }
     const turnOn = (setting: string) => el.querySelector<HTMLButtonElement>(`[data-setting="${setting}"] button`)?.click()
     act(() => emitSettings())
     expect({ ids: pressed('ids'), review: pressed('enabled'), sync: pressed('githubSync') }).toEqual({ ids: ['true', 'false'], review: ['true', 'false'], sync: ['true', 'false'] })
@@ -3698,6 +3731,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     act(() => emitSettings())
     expect({ ids: pressed('ids'), review: pressed('enabled'), sync: pressed('githubSync') }).toEqual({ ids: ['false', 'true'], review: ['false', 'true'], sync: ['false', 'true'] })
     // On asks first, and the box names the vault that it acts on (YAZ-2677 S13): the active tab's.
+    settingsPage(el, PAGE.ids)
     await act(async () => turnOn('ids'))
     expect(bridge.ids.set).not.toHaveBeenCalled()
     expect(sheetText(el)).toContain('Give the notes in w IDs?')
@@ -3709,8 +3743,10 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     await act(async () => sheetBtn(el, 'Give IDs')?.click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/w', true, 'WRK')
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    settingsPage(el, PAGE.enabled)
     await act(async () => turnOn('enabled'))
     expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
+    settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
   })
@@ -3720,13 +3756,20 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       feed({ '/v': { ids: true }, '/w': { ids: false } })(b)
       upkeep({ '/v': true, '/w': true })(b)
     })
-    const named = () => [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: '))
+    /** The "Vault: …" line of each page that has one: Files & Links (its "This vault" group), Review and Sync. */
+    const named = () =>
+      [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')]
+        .map((item) => item.textContent ?? '')
+        .flatMap((title) => {
+          settingsPage(el, title)
+          return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
+        })
     act(() => emitSettings())
-    expect(named()).toEqual(['Vault: v', 'Vault: v', 'Vault: v'])
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual(['Vault: w', 'Vault: w', 'Vault: w'])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
