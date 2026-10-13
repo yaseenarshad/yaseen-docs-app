@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import type { CommentsOrder, ContentWidth, FileResponse, GithubSyncStatus, PropertiesResponse, TableOfContents as TableOfContentsMode, TocSource } from '@shared/types'
+import { TOC_DEFAULT_W, type CommentsOrder, type ContentWidth, type FileResponse, type GithubSyncStatus, type PropertiesResponse, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -118,13 +118,17 @@ interface EditorProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /**
    * The table of contents setting (YAZ-2700), threaded down like the comments' order. Absent → `off`:
-   * a mount that threads none of the three props below shows no table of contents.
+   * a mount that threads none of the five props below shows no table of contents.
    */
   tableOfContents?: TableOfContentsMode
   /** The content width setting: with the note's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
   contentWidth?: ContentWidth
   /** The table of contents' own "Pin" / "Unpin" write the SETTING through this. */
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
+  /** The width setting of the table of contents' names column (YAZ-2752), px. Absent → `TOC_DEFAULT_W`. */
+  tableOfContentsWidth?: number
+  /** A drag of the names column's edge writes the SETTING through this, once, on its release. */
+  onChangeTableOfContentsWidth?: (width: number) => void
   /** The vault's review settings (YAZ-2322): App owns the one `useReviewSettings`; the Reviews section computes its dates from them. */
   reviewSettings?: ReviewSettings
   /**
@@ -135,7 +139,7 @@ interface EditorProps {
   onUserEdit?: (path: string) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, reviewSettings, onUserEdit }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
   // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
@@ -181,11 +185,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, reviewSettings, onUserEdit }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -194,13 +198,13 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
       )}
     </section>
   )
 }
 
-/** The setter of a mount that threads no table of contents setting: one identity, so the memoised table of contents never sees a new one. */
+/** The setters of a mount that threads no table of contents setting: one identity, so the memoised table of contents never sees a new one. */
 const noTableOfContentsChange = (): void => undefined
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
@@ -226,6 +230,8 @@ function CrepeHost({
   tableOfContents = 'off',
   contentWidth = 'narrow',
   onChangeTableOfContents = noTableOfContentsChange,
+  tableOfContentsWidth = TOC_DEFAULT_W,
+  onChangeTableOfContentsWidth = noTableOfContentsChange,
   reviewSettings,
   onUserEdit,
 }: {
@@ -250,6 +256,8 @@ function CrepeHost({
   tableOfContents?: TableOfContentsMode
   contentWidth?: ContentWidth
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
+  tableOfContentsWidth?: number
+  onChangeTableOfContentsWidth?: (width: number) => void
   reviewSettings?: ReviewSettings
   onUserEdit?: (path: string) => void
 }) {
@@ -670,7 +678,7 @@ function CrepeHost({
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note
           with fewer than two rows (its headings or its bullets), with the setting off, and while
           a bullet is zoomed. */}
-      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} hostRef={hostRef} onReturnFocus={focusNote} />
+      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
