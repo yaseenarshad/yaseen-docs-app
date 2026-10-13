@@ -8,6 +8,9 @@
  *  - THE KEYBOARD (D8): ⌘J puts the keyboard on the current name; ↑ ↓ Home End move, ⏎ goes, Esc
  *    and a second ⌘J give the caret back to the note.
  *  - "Pin" AND "Unpin" (D2, D10) write the ONE app-wide setting, `settings.tableOfContents`.
+ *  - THE EDGE OF THE NAMES (YAZ-2752, decisions D1–D5 on YAZ-2754): a drag of the column's left
+ *    edge changes its width, stops at the limits, and writes `settings.tableOfContentsWidth`,
+ *    which is there after a restart.
  *  - HEADINGS OR BULLETS (D6, D14): a note of bullets lists its bullets, three levels deep. The
  *    cog's "TOC made from:" selects the source for one note, and the app saves that choice in
  *    `folders[root].tocSources`: it is there after the note is closed and after a restart.
@@ -27,7 +30,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { SIDEBAR_MIN_W } from '../../shared/types'
+import { SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W } from '../../shared/types'
 import { activeTab, appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -283,6 +286,51 @@ test('step 5 — "Pin" and "Unpin" write the one app-wide setting', async () => 
   await expect.poll(async () => (await readState(userData)).settings.tableOfContents).toBe('auto')
 })
 
+test('step 5b — the edge of the names: a drag changes the width, stops at the limits, and the app saves it (YAZ-2752)', async () => {
+  // Pinned in the 1100px window, the names may take what leaves the text 500px (`TEXT_FLOOR`).
+  await openCardByMouse(win)
+  await card(win).locator('.toc__pin').click()
+  await expect(toc(win)).toHaveAttribute('data-names', '')
+  await expect(host(win)).toHaveCSS('padding-right', `${TOC_DEFAULT_W}px`)
+  const noteWidth = await layer(win).locator('section.editor').evaluate((section) => section.clientWidth)
+  const room = Math.min(TOC_MAX_W, noteWidth - 500)
+  expect(room, `the note area is ${noteWidth}px; this step needs room for more than 300px of names`).toBeGreaterThan(300)
+
+  /** Press the edge, move it `dx` px (to the left is wider), and let go. */
+  const dragEdge = async (dx: number): Promise<void> => {
+    const box = await toc(win).locator('.toc__resize').boundingBox()
+    if (box === null) throw new Error('the names column has no edge to drag')
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await win.mouse.move(x, y)
+    await win.mouse.down()
+    await win.mouse.move(x + dx, y, { steps: 5 })
+    await win.mouse.up()
+  }
+
+  // 100px to the left: the scroller's padding follows the column, and the release writes the setting.
+  await dragEdge(-100)
+  await expect(host(win)).toHaveCSS('padding-right', '300px')
+  await expect.poll(async () => (await readState(userData)).settings.tableOfContentsWidth).toBe(300)
+  await shoot(win, 'toc-05b-wider')
+
+  // Far to the left: it stops where the text would get narrower than 500px.
+  await dragEdge(-900)
+  await expect(host(win)).toHaveCSS('padding-right', `${room}px`)
+  await expect.poll(async () => (await readState(userData)).settings.tableOfContentsWidth).toBe(room)
+
+  // Far to the right: it stops at the smallest width. A drag never unpins (D5).
+  await dragEdge(900)
+  await expect(host(win)).toHaveCSS('padding-right', `${TOC_MIN_W}px`)
+  await expect(toc(win)).toHaveAttribute('data-names', '')
+  await expect.poll(async () => (await readState(userData)).settings.tableOfContentsWidth).toBe(TOC_MIN_W)
+  expect((await readState(userData)).settings.tableOfContents).toBe('pinned')
+
+  // Back to the lines, for the steps below. The width stays saved; step 7 reads it after its restart.
+  await toc(win).locator('.toc__pin--off').click()
+  await expect(rail(win)).toBeVisible()
+})
+
 test('step 6 — a note of bullets lists its bullets, three levels deep, and a click lands on the bullet', async () => {
   await fileRow(win, 'Bullets').click()
   await expect(activeTab(win)).toContainText('Bullets')
@@ -341,6 +389,8 @@ test('step 7 — "TOC made from:" selects the source of one note, and the choice
   await expect(activeTab(win)).toContainText('Chapters')
   await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
   expect((await readState(userData)).folders[vault]?.tocSources[chaptersPath]).toBe('bullets')
+  // And so is the width of the names that step 5b left (YAZ-2752).
+  expect((await readState(userData)).settings.tableOfContentsWidth).toBe(TOC_MIN_W)
 })
 
 test('step 8 — the page switches: "Table of contents" hides it on this page, "Heading levels" shows each level tag; neither is stored', async () => {

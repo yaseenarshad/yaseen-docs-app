@@ -12,7 +12,8 @@
    current row by themselves) but show no bar of their own — a soft fade at an edge says there
    is more behind it. */
 :root {
-  /* TOC_WIDTH in TableOfContents.tsx is the same number: `namesShow` counts with it. */
+  /* TOC_WIDTH in TableOfContents.tsx is the same number: `namesShow` counts with it. While the
+     names show, the component sets the reader's own width on `section.editor` (YAZ-2752). */
   --toc-width: 200px;
   --toc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -70,6 +71,23 @@
 
 .editor:has(> .toc[data-names]) > .find-bar-dock--note {
   right: var(--toc-width);
+}
+
+/* The drag edge of the column (YAZ-2752): a strip over the names' hairline, wider than the line
+   and hidden until the mouse is on it — the sidebar edge's look (app.css: `.sidebar-resize`). */
+.toc__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  z-index: 1;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.toc__resize:hover,
+.toc__resize[data-active] {
+  background: var(--accent-soft);
 }
 
 .toc__names {

@@ -328,6 +328,8 @@ export function App() {
   const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newNoteFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
   // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
+  // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
+  const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
@@ -1168,6 +1170,9 @@ export function App() {
       tableOfContents: settings.tableOfContents,
       contentWidth: settings.contentWidth,
       onChangeTableOfContents: changeTableOfContents,
+      // YAZ-2752: the width of its names column is a SETTING as well.
+      tableOfContentsWidth: settings.tableOfContentsWidth,
+      onChangeTableOfContentsWidth: changeTableOfContentsWidth,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }

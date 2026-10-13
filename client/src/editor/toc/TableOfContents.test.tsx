@@ -1,5 +1,5 @@
 /**
- * The table of contents (YAZ-2700): its three pure rules — `namesShow`, `shownRows`,
+ * The table of contents (YAZ-2700): its four pure rules — `namesShow`, `namesRoom`, `shownRows`,
  * `railPitch` — and the component, driven through a real `TocChannel` with a stand-in engine
  * (tocPlugin.test.ts proves the engine; this file proves what is drawn and what the mouse and the
  * keyboard do).
@@ -8,11 +8,11 @@
  * `section.editor`. jsdom lays nothing out, so a section is given the width a test wants.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { ContentWidth, TableOfContents as TableOfContentsMode } from '@shared/types'
+import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import appCss from '../../app.css?inline'
-import { COLUMN_MAX, MAX_ROWS, namesShow, NAMES_FLOOR, railPitch, shownRows, TableOfContents, TOC_WIDTH } from './TableOfContents'
+import { COLUMN_MAX, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, railPitch, shownRows, TableOfContents, TEXT_FLOOR, TOC_WIDTH } from './TableOfContents'
 import tocCss from './toc.css?inline'
 import { createTocChannel, type TocChannel, type TocRow } from './tocChannel'
 
@@ -56,6 +56,35 @@ describe('namesShow: names or lines', () => {
       medium: columnMax(".app[data-content-width='medium']"),
       full: columnMax(".app[data-content-width='full']"),
     })
+  })
+})
+
+describe('namesRoom: how wide the names column may get (YAZ-2752 D2, D3)', () => {
+  it('pinned leaves the text 500px, auto takes the empty margin and no more, and neither goes past 480', () => {
+    expect([TOC_MIN_W, TOC_WIDTH, TOC_MAX_W, TEXT_FLOOR]).toEqual([160, TOC_DEFAULT_W, 480, 500])
+    // "Always": the text has 500px at the floor today (700 of note, 200 of names) and never less.
+    expect([700, 820, 980, 981, 4000].map((note) => namesRoom('pinned', note, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
+    // The content width does not count for pinned names.
+    expect(namesRoom('pinned', 900, COLUMN_MAX.full)).toBe(400)
+    // "When there is room", a narrow column (1040) and a medium one (1440).
+    expect([1240, 1360, 1520, 1521, 4000].map((note) => namesRoom('auto', note, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
+    expect([1640, 1760, 1920, 4000].map((note) => namesRoom('auto', note, COLUMN_MAX.medium))).toEqual([200, 320, 480, 480])
+    // The note's own scrollbar (11px in the real app) is not margin: a column that took it would narrow the text.
+    // Where that leaves less than the 200px `namesShow` gave the names, the column is still 200, as it was before YAZ-2752.
+    expect([1240, 1250, 1297, 1531, 1532].map((note) => namesRoom('auto', note, COLUMN_MAX.narrow, 11))).toEqual([200, 200, 246, 480, 480])
+    // It does not count for pinned names: they are allowed to narrow the text.
+    expect(namesRoom('pinned', 820, COLUMN_MAX.narrow, 11)).toBe(320)
+  })
+
+  it('wherever the names show there is room for 200px or more, so the narrowest column always fits', () => {
+    for (const columnMax of [COLUMN_MAX.narrow, COLUMN_MAX.medium]) {
+      // The first width at which each mode shows the names.
+      expect(namesShow('auto', columnMax + TOC_WIDTH, columnMax)).toBe(true)
+      expect(namesRoom('auto', columnMax + TOC_WIDTH, columnMax)).toBe(TOC_WIDTH)
+      expect(namesShow('pinned', NAMES_FLOOR, columnMax)).toBe(true)
+      expect(namesRoom('pinned', NAMES_FLOOR, columnMax)).toBe(TOC_WIDTH)
+    }
+    expect(TOC_MIN_W).toBeLessThanOrEqual(TOC_WIDTH)
   })
 })
 
@@ -136,14 +165,21 @@ interface Mounted {
   jump: ReturnType<typeof vi.fn>
   current: ReturnType<typeof vi.fn>
   onChangeMode: ReturnType<typeof vi.fn>
+  onChangeWidth: ReturnType<typeof vi.fn>
   onReturnFocus: ReturnType<typeof vi.fn>
-  render: (mode: TableOfContentsMode, contentWidth?: ContentWidth) => void
+  /** How many times React has committed the table of contents: a render that drew nothing new does not count, and neither does a write to the DOM by hand. */
+  commits: () => number
+  /** `saved` is the width setting; it stays what it was when left out. */
+  render: (mode: TableOfContentsMode, contentWidth?: ContentWidth, saved?: number) => void
 }
 
 const mounts: Mounted[] = []
 
-/** CrepeHost's DOM: `section.editor` > `.editor-host` > `.editor-mount`, the table of contents beside the scroller. */
-function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0): Mounted {
+/**
+ * CrepeHost's DOM: `section.editor` > `.editor-host` > `.editor-mount`, the table of contents beside
+ * the scroller. `width` is the section's; `saved` is the width setting of the names column.
+ */
+function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0, saved = TOC_DEFAULT_W): Mounted {
   const section = document.createElement('section')
   section.className = 'editor'
   const scroller = document.createElement('div')
@@ -163,14 +199,25 @@ function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS
   channel.bind({ jump, current, rescan: vi.fn() })
   channel.publish(headings)
   const onChangeMode = vi.fn()
+  const onChangeWidth = vi.fn()
   const onReturnFocus = vi.fn()
   const root = createRoot(slot)
-  const render = (next: TableOfContentsMode, contentWidth: ContentWidth = 'narrow'): void =>
+  // One ref for the life of the mount, as CrepeHost's is: a new one per render would run every effect that reads it again.
+  const hostRef = { current: mountEl }
+  let commits = 0
+  let savedNow = saved
+  const render = (next: TableOfContentsMode, contentWidth: ContentWidth = 'narrow', nextSaved = savedNow): void => {
+    savedNow = nextSaved
     act(() => {
-      root.render(<TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} hostRef={{ current: mountEl }} onReturnFocus={onReturnFocus} />)
+      root.render(
+        <Profiler id="toc" onRender={() => void (commits += 1)}>
+          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} />
+        </Profiler>,
+      )
     })
+  }
   render(mode)
-  const mounted = { root, section, scroller, mountEl, channel, jump, current, onChangeMode, onReturnFocus, render }
+  const mounted = { root, section, scroller, mountEl, channel, jump, current, onChangeMode, onChangeWidth, onReturnFocus, commits: () => commits, render }
   mounts.push(mounted)
   return mounted
 }
@@ -633,6 +680,260 @@ describe('names: the column', () => {
   })
 })
 
+describe('the edge of the names column: a drag sets its width (YAZ-2752)', () => {
+  const edge = (m: Mounted): HTMLElement | null => m.section.querySelector<HTMLElement>('.toc__resize')
+  /** The column's width as toc.css reads it: the variable on `section.editor`, or '' when the component set none. */
+  const widthOf = (m: Mounted): string => m.section.style.getPropertyValue('--toc-width')
+  const press = (m: Mounted, clientX: number): MouseEvent => {
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX })
+    act(() => {
+      edge(m)!.dispatchEvent(event)
+    })
+    return event
+  }
+  /** A mouse move anywhere in the window. `clientX` is set by hand: a real mouse reports fractions of a px, jsdom's event would cut them. */
+  const moveTo = (clientX: number): void => {
+    const event = new MouseEvent('mousemove')
+    Object.defineProperty(event, 'clientX', { value: clientX })
+    act(() => {
+      window.dispatchEvent(event)
+    })
+  }
+  const release = (): void =>
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mouseup'))
+    })
+
+  afterEach(() => {
+    // A drag a failed test left open must not hold the next test's mouse.
+    release()
+    vi.unstubAllGlobals()
+  })
+
+  it('the edge is there wherever the names are, in both modes, and nowhere else; it takes the mouse and never the keyboard', () => {
+    for (const m of [mount('pinned', HEADINGS, 900), mount('auto', HEADINGS, 1040 + TOC_WIDTH)]) {
+      expect(nav(m)?.hasAttribute('data-names')).toBe(true)
+      expect(edge(m)).not.toBeNull()
+      expect(nav(m)?.firstElementChild).toBe(edge(m))
+      expect(edge(m)?.getAttribute('aria-hidden')).toBe('true')
+      expect([edge(m)?.tagName, edge(m)?.hasAttribute('tabindex')]).toEqual(['DIV', false])
+      // The wheel on it is the wheel on the column beside the list: the note moves.
+      act(() => {
+        edge(m)!.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 30 }))
+      })
+      expect(m.scroller.scrollTop).toBe(30)
+      // ⌘J and the arrows walk the names as before: the edge is not one of them.
+      act(() => m.mountEl.focus())
+      pressCmdJ(m.mountEl)
+      expect(document.activeElement).toBe(names(m)[0])
+      keyOn(names(m)[0], 'ArrowUp')
+      expect(document.activeElement).toBe(names(m)[0])
+    }
+    // The small lines and their card have none, pinned or not; and no table of contents, no edge.
+    for (const m of [mount('auto', HEADINGS, 1040 + TOC_WIDTH - 1), mount('pinned', HEADINGS, NAMES_FLOOR - 1)]) {
+      click(rail(m))
+      expect(card(m)).not.toBeNull()
+      expect(edge(m)).toBeNull()
+      expect(widthOf(m)).toBe('')
+    }
+    expect(edge(mount('off', HEADINGS, 1600))).toBeNull()
+    expect(edge(mount('pinned', [HEADINGS[0]], 1600))).toBeNull()
+  })
+
+  it('the column shows the saved width, or the room when that is less — and the saved width never decides whether the names show', () => {
+    // jsdom's ResizeObserver never reports; this one keeps what it was given, and `resize` runs it as a resized window would.
+    const heard: Array<() => void> = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          heard.push(callback)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    const resize = (m: Mounted, width: number): void => {
+      Object.defineProperty(m.section, 'clientWidth', { configurable: true, value: width })
+      act(() => heard.forEach((callback) => callback()))
+    }
+
+    // "Always" at its floor: 200px of room. The saved 320 comes back as the window grows, and stops there.
+    const pinned = mount('pinned', HEADINGS, NAMES_FLOOR, 320)
+    expect(widthOf(pinned)).toBe('200px')
+    resize(pinned, 760)
+    expect(widthOf(pinned)).toBe('260px')
+    resize(pinned, 2000)
+    expect(widthOf(pinned)).toBe('320px')
+    // Under the floor the lines show, and the variable is gone with the names.
+    resize(pinned, NAMES_FLOOR - 1)
+    expect(nav(pinned)?.hasAttribute('data-names')).toBe(false)
+    expect(widthOf(pinned)).toBe('')
+
+    // "When there is room": the column stops at the empty margin, so the text is never narrower.
+    const auto = mount('auto', HEADINGS, 1360, 400)
+    expect(widthOf(auto)).toBe('320px')
+    resize(auto, 1520)
+    expect(widthOf(auto)).toBe('400px')
+    // The same window, pinned: the room is the one of "Always".
+    resize(auto, 1360)
+    auto.render('pinned')
+    expect(widthOf(auto)).toBe('400px')
+    auto.render('off')
+    expect(widthOf(auto)).toBe('')
+
+    // A saved 160 still needs 200px of margin before the names show; then the column is 160px.
+    const slim = mount('auto', HEADINGS, 1040 + TOC_WIDTH - 1, 160)
+    expect(nav(slim)?.hasAttribute('data-names')).toBe(false)
+    resize(slim, 1040 + TOC_WIDTH)
+    expect(nav(slim)?.hasAttribute('data-names')).toBe(true)
+    expect(widthOf(slim)).toBe('160px')
+    // And a saved 480 does not take the names away from a note that has 200px of margin.
+    const wide = mount('auto', HEADINGS, 1040 + TOC_WIDTH, 480)
+    expect(nav(wide)?.hasAttribute('data-names')).toBe(true)
+    expect(widthOf(wide)).toBe('200px')
+
+    // Showing less than the saved width is not a change of the setting.
+    for (const m of [pinned, auto, slim, wide]) expect(m.onChangeWidth).not.toHaveBeenCalled()
+  })
+
+  it('a drag: each move writes --toc-width on the section and React renders nothing; left is wider; the release saves one whole number', () => {
+    // 1400px pinned: 900px over what the text keeps, so the limit is the 480 of the setting.
+    const m = mount('pinned', HEADINGS, 1400)
+    expect(widthOf(m)).toBe('200px')
+    expect(press(m, 1000).defaultPrevented).toBe(true)
+    expect(document.body.style.cursor).toBe('col-resize')
+    expect(edge(m)?.hasAttribute('data-active')).toBe(true)
+
+    const commits = m.commits()
+    const asked = m.current.mock.calls.length
+    const drawn = [nav(m), edge(m), ...names(m)]
+    moveTo(940)
+    expect(widthOf(m)).toBe('260px')
+    moveTo(1010)
+    expect(widthOf(m)).toBe('190px')
+    // A mouse between two px: the width is a whole one.
+    moveTo(899.6)
+    expect(widthOf(m)).toBe('300px')
+    moveTo(879.5)
+    expect(widthOf(m)).toBe('321px')
+    // Four moves: not one render, not one read of the scroll spy, nothing saved yet.
+    expect(m.commits()).toBe(commits)
+    expect([nav(m), edge(m), ...names(m)]).toEqual(drawn)
+    expect(m.current.mock.calls.length).toBe(asked)
+    expect(m.onChangeWidth).not.toHaveBeenCalled()
+
+    release()
+    expect(m.onChangeWidth).toHaveBeenCalledExactlyOnceWith(321)
+    expect(document.body.style.cursor).toBe('')
+    expect(edge(m)?.hasAttribute('data-active')).toBe(false)
+    // Until the setting comes back the variable keeps the drag's last width, so the column does not jump.
+    expect(widthOf(m)).toBe('321px')
+    expect(m.commits()).toBe(commits)
+    // The drag is over: the mouse moves nothing now, and a second release saves nothing.
+    moveTo(500)
+    release()
+    expect(widthOf(m)).toBe('321px')
+    expect(m.onChangeWidth).toHaveBeenCalledTimes(1)
+
+    // The setting comes back as the prop. NOW React renders (the count above is a live one), the
+    // width is there already, and the scroll spy reads once: the text flowed, so every row moved.
+    m.render('pinned', 'narrow', 321)
+    expect(m.commits()).toBeGreaterThan(commits)
+    expect(widthOf(m)).toBe('321px')
+    expect(m.current.mock.calls.length).toBe(asked + 1)
+    m.render('pinned', 'narrow', 321)
+    expect(m.current.mock.calls.length).toBe(asked + 1)
+  })
+
+  it('a drag stops at 160 and at 480, at the empty margin with "When there is room", and at 500px of text with "Always" — it never unpins or closes the column', () => {
+    /** Drag the edge as far as the mouse goes each way; what the column is at each end, and what the release saved. */
+    const dragBothWays = (m: Mounted): { widest: string; narrowest: string } => {
+      press(m, 1000)
+      moveTo(-5000)
+      const widest = widthOf(m)
+      moveTo(5000)
+      const narrowest = widthOf(m)
+      release()
+      return { widest, narrowest }
+    }
+    const wide = mount('pinned', HEADINGS, 1400)
+    expect(dragBothWays(wide)).toEqual({ widest: '480px', narrowest: '160px' })
+    expect(wide.onChangeWidth).toHaveBeenCalledExactlyOnceWith(160)
+    // Far to the right is narrow, not gone: "Unpin" is the way to close the column.
+    expect(nav(wide)?.hasAttribute('data-names')).toBe(true)
+    expect(wide.onChangeMode).not.toHaveBeenCalled()
+
+    // 900px pinned: the text keeps 500, so the names stop at 400.
+    expect(dragBothWays(mount('pinned', HEADINGS, 900))).toEqual({ widest: '400px', narrowest: '160px' })
+    // 1360px with a 1040px column: 320px of margin, and the names take no more than that.
+    expect(dragBothWays(mount('auto', HEADINGS, 1360))).toEqual({ widest: '320px', narrowest: '160px' })
+    // At the first width that shows names at all, the margin is the 200 they start with.
+    expect(dragBothWays(mount('auto', HEADINGS, 1040 + TOC_WIDTH))).toEqual({ widest: '200px', narrowest: '160px' })
+
+    // Saved 400 in a note with room for 320: the drag starts from the 320 it shows, and saves where it ends.
+    const cut = mount('auto', HEADINGS, 1360, 400)
+    press(cut, 1000)
+    moveTo(1020)
+    expect(widthOf(cut)).toBe('300px')
+    release()
+    expect(cut.onChangeWidth).toHaveBeenCalledExactlyOnceWith(300)
+  })
+
+  it('a release that changed nothing saves nothing: a press alone, a double-click, a trip out and back — and a right press starts no drag', () => {
+    // Saved 400, shown 320: a click on the edge must not make the 320 the saved width.
+    const m = mount('auto', HEADINGS, 1360, 400)
+    press(m, 1000)
+    release()
+    act(() => {
+      edge(m)!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    })
+    press(m, 1000)
+    moveTo(1040)
+    expect(widthOf(m)).toBe('280px')
+    moveTo(1000)
+    release()
+    expect(widthOf(m)).toBe('320px')
+    expect(m.onChangeWidth).not.toHaveBeenCalled()
+    expect(document.body.style.cursor).toBe('')
+    // A right press starts no drag: the system's menu opens on it, and the release may never reach the window.
+    act(() => {
+      edge(m)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 1000, button: 2 }))
+    })
+    moveTo(900)
+    expect(widthOf(m)).toBe('320px')
+    expect(document.body.style.cursor).toBe('')
+  })
+
+  it('names that go away under a drag end it — the editor closes, a bullet zooms: the listeners go, the cursor comes back, nothing is saved', () => {
+    const closed = mount('pinned', HEADINGS, 1400)
+    press(closed, 1000)
+    moveTo(900)
+    expect(widthOf(closed)).toBe('300px')
+    act(() => closed.root.unmount())
+    expect(document.body.style.cursor).toBe('')
+    expect(widthOf(closed)).toBe('')
+    // A listener left on the window would write the variable again here, and save on the release.
+    moveTo(800)
+    release()
+    expect(widthOf(closed)).toBe('')
+    expect(closed.onChangeWidth).not.toHaveBeenCalled()
+
+    const zoomed = mount('pinned', HEADINGS, 1400)
+    press(zoomed, 1000)
+    moveTo(900)
+    act(() => zoomed.channel.setHidden(true))
+    expect(document.body.style.cursor).toBe('')
+    moveTo(800)
+    release()
+    expect(widthOf(zoomed)).toBe('')
+    expect(zoomed.onChangeWidth).not.toHaveBeenCalled()
+    // Back from the zoom: the saved width, not the abandoned drag's.
+    act(() => zoomed.channel.setHidden(false))
+    expect(widthOf(zoomed)).toBe('200px')
+  })
+})
+
 describe('where the reader is: the marker, and a long list in step with the note (D5)', () => {
   const ROW = 24
   /**
@@ -796,6 +1097,22 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     expect(column).toMatch(/width:\s*var\(--toc-width\);/)
     // "Room" is counted by the component, never by a container query: a container would trap the full-window drawing and image dialogs.
     expect(tocCss).not.toMatch(/@container|container-type/)
+  })
+
+  it('the drag edge (YAZ-2752) is a 6px strip from top to bottom with the names\' hairline inside it, the accent wash under the mouse and during a drag', () => {
+    const strip = rule(tocCss, '.toc__resize')
+    const px = (body: string, property: string): number => Number(body.match(new RegExp(`(?:^|[;\\s])${property}:\\s*(-?\\d+)(?:px)?;`))?.[1])
+    expect(strip).toMatch(/position:\s*absolute;/)
+    expect(strip).toMatch(/cursor:\s*col-resize;/)
+    expect([px(strip, 'top'), px(strip, 'bottom'), px(strip, 'width')]).toEqual([0, 0, 6])
+    // The hairline is the names' 1px left border, at the column's left padding.
+    const hairline = Number(rule(tocCss, '.toc[data-names]').match(/padding:\s*\d+px \d+px \d+px (\d+)px;/)?.[1])
+    expect(rule(tocCss, '.toc__name')).toMatch(/border-left:\s*1px solid/)
+    expect(px(strip, 'left')).toBeLessThanOrEqual(hairline)
+    expect(px(strip, 'left') + px(strip, 'width')).toBeGreaterThanOrEqual(hairline + 1)
+    // Over the names, whose list is a layer of its own (its fade is a mask).
+    expect(zIndex(strip)).toBeGreaterThan(0)
+    expect(tocCss).toMatch(/\.toc__resize:hover,\s*\.toc__resize\[data-active\]\s*\{\s*background:\s*var\(--accent-soft\);\s*\}/)
   })
 
   it('the row under the mouse is the soft accent, the current one stays the accent; the current line is 5px longer; the card is 440px tall at most', () => {

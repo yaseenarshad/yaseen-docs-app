@@ -17,6 +17,13 @@
  * `namesShow` picks between them from the setting and the width of this editor's `section.editor`
  * — measured by a ResizeObserver, so it runs on a resize and never on a scroll or a keystroke.
  *
+ * THE WIDTH OF THE NAMES (YAZ-2752) is the reader's: a drag of the column's left edge
+ * (`.toc__resize`) sets it, from `TOC_MIN_W` to `TOC_MAX_W`, and its release saves it as ONE
+ * app-wide setting. The column shows that width, or the room it has here when that is less
+ * (`namesRoom`); the saved width never decides WHETHER the names show. The width reaches toc.css
+ * as `--toc-width` on `section.editor`, which the column, the scroller's padding and the find bar
+ * all read — and a drag writes that variable for each move of the mouse, with no render at all.
+ *
  * It renders nothing when the setting is off, when the note has fewer than two rows to show,
  * and while a bullet zoom is active (the channel's `hidden`). Then it also holds no listener.
  *
@@ -38,15 +45,20 @@
  * document order claims. A hidden editor never claims, and a note that shows no table of contents
  * never does either.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
-import type { ContentWidth, TableOfContents as TableOfContentsMode } from '@shared/types'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
+import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
 import './toc.css'
 
-/** Width of the names column, px. toc.css's `--toc-width` is the same number. */
-export const TOC_WIDTH = 200
+/**
+ * The room `auto` needs beside the text before it shows the names, px: the width of the names
+ * column until the reader drags its edge. toc.css's `--toc-width` on `:root` is the same number.
+ */
+export const TOC_WIDTH = TOC_DEFAULT_W
 /** A note narrower than this shows lines even when the names are pinned. */
 export const NAMES_FLOOR = 700
+/** The least pinned names leave the text, px: what it has at `NAMES_FLOOR` beside names of `TOC_WIDTH`. */
+export const TEXT_FLOOR = NAMES_FLOOR - TOC_WIDTH
 /** The widest the text column gets per content width: app.css's `--content-max-width` rules on `.app`. */
 export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: 1040, medium: 1440, full: Infinity }
 
@@ -57,6 +69,17 @@ export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: 1040, medium: 
  */
 export const namesShow = (mode: TableOfContentsMode, noteWidth: number, columnMax: number): boolean =>
   mode === 'pinned' ? noteWidth >= NAMES_FLOOR : mode === 'auto' && noteWidth - TOC_WIDTH >= columnMax
+
+/**
+ * The widest the names column gets in a note that shows it (YAZ-2752): never past `TOC_MAX_W`.
+ * `pinned` leaves the text `TEXT_FLOOR`. `auto` takes the empty margin beside the text column and
+ * no more, so a wider column never narrows the text: the margin is what the note has left of its
+ * own scrollbar (`gutter`) and its text column — and never less than the `TOC_WIDTH` that
+ * `namesShow` gave the names. So where `namesShow` says names, this is `TOC_WIDTH` or more, and
+ * `TOC_MIN_W` always fits.
+ */
+export const namesRoom = (mode: TableOfContentsMode, noteWidth: number, columnMax: number, gutter = 0): number =>
+  Math.min(TOC_MAX_W, mode === 'pinned' ? noteWidth - TEXT_FLOOR : Math.max(TOC_WIDTH, noteWidth - gutter - columnMax))
 
 /** The most rows a table of contents draws, and the most the scroll spy reads per frame. */
 export const MAX_ROWS = 200
@@ -151,13 +174,17 @@ export interface TableOfContentsProps {
   contentWidth: ContentWidth
   /** "Pin" and "Unpin" write the SETTING through this. */
   onChangeMode: (mode: TableOfContentsMode) => void
+  /** The saved width of the names column, px (the setting). The column shows it, or the room it has when that is less. */
+  width: number
+  /** A drag of the column's edge writes the SETTING through this, once, on its release. */
+  onChangeWidth: (width: number) => void
   /** An element inside this editor's scroller: its `.editor-host` and `section.editor` are found from it. */
   hostRef: RefObject<HTMLElement | null>
   /** Esc and a second ⌘J hand the caret back to the note. */
   onReturnFocus: () => void
 }
 
-export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hostRef, onReturnFocus }: TableOfContentsProps) {
+export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus }: TableOfContentsProps) {
   const { rows: all, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
   const rows = useMemo(() => shownRows(all), [all])
   const shows = mode !== 'off' && !hidden && rows.length >= ENOUGH_ROWS
@@ -169,6 +196,9 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
   const [open, setOpen] = useState(false)
   const columnMax = COLUMN_MAX[contentWidth]
   const names = shows && namesShow(mode, box.width, columnMax)
+  // Read only while the names show: the saved width, or the room this note has when that is less.
+  const room = namesRoom(mode, box.width, columnMax, box.gutter)
+  const shownWidth = Math.min(width, room)
   const at = Math.min(current, rows.length - 1)
 
   const navRef = useRef<HTMLElement>(null)
@@ -180,8 +210,11 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
   const openedAt = useRef(0)
   /** ⌘J on a closed card: the names do not exist yet, so the focus lands in a layout effect on the open. */
   const pendingFocus = useRef(false)
+  /** Ends the drag of the column's edge that is under way, with nothing saved. */
+  const endResize = useRef<(() => void) | null>(null)
 
   const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
+  const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
 
   /** The mouse is on the rail or the card, or the keyboard is inside them. */
   const held = (): boolean => {
@@ -272,9 +305,26 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     return () => observer.disconnect()
   }, [shows, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
+  // The width of the names column, as the ONE variable toc.css's column, the scroller's padding
+  // and the find bar's place all read. It is there only while the names show. A drag writes the
+  // same variable itself (`startResize`), so after its release this finds the width already there
+  // and the column does not jump. Names that go away under a drag — the editor closes, the window
+  // narrows, the note zooms — end it.
+  useLayoutEffect(() => {
+    if (!names) return
+    const section = sectionOf()
+    if (section === null) return
+    section.style.setProperty('--toc-width', `${shownWidth}px`)
+    return () => {
+      endResize.current?.()
+      section.style.removeProperty('--toc-width')
+    }
+  }, [names, shownWidth, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `sectionOf` reads only `hostRef`
+
   // The scroll spy. At most `MAX_ROWS` rows are read per frame and nothing is written. A new
-  // list of rows, a new measure (a resize moves every row) and a change of look (the names
-  // column narrows the text) are each read once without a scroll.
+  // list of rows, a new measure (a resize moves every row), a change of look (the names column
+  // narrows the text) and a new width of that column (the text flows again) are each read once
+  // without a scroll.
   useEffect(() => {
     if (!shows) return
     const scroller = scrollerOf()
@@ -301,7 +351,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
       scroller.removeEventListener('scroll', onScroll)
       if (frame !== 0) cancelAnimationFrame(frame)
     }
-  }, [shows, rows, box, names, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
+  }, [shows, rows, box, names, shownWidth, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
   // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
   // opens the card in lines mode. ONE linger timer serves a whole burst of wheel events: an event
@@ -464,6 +514,45 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     scroller.scrollTop += event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
   }
 
+  /**
+   * The drag of the column's left edge, the sidebar edge's way (YAZ-2239): each move writes the
+   * width straight to the section's `--toc-width` and sets NO state — the note's text flows again
+   * for every move, and a render on top of that is what made such a drag stutter. The setting is
+   * written once, on the release, and only when the width is a new one. Left is wider. The width
+   * is whole px and stops at `TOC_MIN_W` and at the room this note has.
+   */
+  const startResize = (event: ReactMouseEvent<HTMLElement>): void => {
+    const section = sectionOf()
+    // The left button only: a right press opens the system's menu, and its release may never come.
+    if (section === null || event.button !== 0) return
+    // No text selection under the drag.
+    event.preventDefault()
+    const edge = event.currentTarget
+    const start = shownWidth
+    const x0 = event.clientX
+    let next = start
+    const move = (ev: MouseEvent): void => {
+      next = Math.min(room, Math.max(TOC_MIN_W, Math.round(start + x0 - ev.clientX)))
+      section.style.setProperty('--toc-width', `${next}px`)
+    }
+    const end = (): void => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+      edge.toggleAttribute('data-active', false)
+      endResize.current = null
+    }
+    const up = (): void => {
+      end()
+      if (next !== start) onChangeWidth(next)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    document.body.style.cursor = 'col-resize'
+    edge.toggleAttribute('data-active', true)
+    endResize.current = end
+  }
+
   const nameList = <Names rows={rows} at={at} onPick={jump} />
 
   return (
@@ -482,6 +571,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, hos
     >
       {names ? (
         <>
+          {/* Mouse only: the arrow keys walk the names, so the edge never takes the focus. */}
+          <div className="toc__resize" aria-hidden onMouseDown={startResize} />
           {/* Offered only where it does something: where there is room for the names anyway, an unpin would change nothing the reader can see. */}
           {mode === 'pinned' && !namesShow('auto', box.width, columnMax) && (
             <button type="button" className="toc__pin toc__pin--off" title="Unpin: go back to the small lines" onClick={() => onChangeMode('auto')}>
