@@ -31,8 +31,6 @@ import { searchSettings, settingCandidates } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import './settings.css'
 
-const anchorId = (id: SettingsSectionId) => `settings-${id}`
-
 interface SettingsDialogProps {
   ctx: SettingsCtx
   onClose: () => void
@@ -46,8 +44,10 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [query, setQuery] = useState('')
-  /** The section showing. Search leaves it alone, so clearing a query returns to it. */
+  /** The section asked for. Search leaves it alone, so clearing a query returns to it. */
   const [page, setPage] = useState<SettingsSectionId>(sections[0].id)
+  /** The section showing: a section this context stops showing while its page is open (Sync, Review) gives way to the first, in the pane and in the nav alike. */
+  const shown = sections.find((s) => s.id === page) ?? sections[0]
 
   useEffect(() => {
     const previous = document.activeElement
@@ -95,7 +95,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
     </div>
   )
   const section = (s: SettingsSection) => (
-    <section key={s.id} id={anchorId(s.id)} data-section={s.id} className="settings-section">
+    <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section">
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
@@ -136,13 +136,13 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
             )}
           </div>
           {settingsPages.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" aria-current={page === s.id ? 'page' : undefined} onClick={() => showPage(s.id)}>
+            <button key={s.id} type="button" className="settings-nav__item" aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
               {s.title}
             </button>
           ))}
           <hr className="settings-nav__divider" />
           {referencePages.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" aria-current={page === s.id ? 'page' : undefined} onClick={() => showPage(s.id)}>
+            <button key={s.id} type="button" className="settings-nav__item" aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
               {s.title}
             </button>
           ))}
@@ -163,8 +163,7 @@ export function SettingsDialog({ ctx, onClose }: SettingsDialogProps) {
               ))
             )
           ) : (
-            // A section this context stops showing while it is open gives way to the first.
-            section(sections.find((s) => s.id === page) ?? sections[0])
+            section(shown)
           )}
         </div>
       </div>

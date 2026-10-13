@@ -119,7 +119,7 @@
   color: var(--accent);
 }
 
-/* Between the settings-page anchors and the standalone pages (Hotkeys). */
+/* Between the settings pages and the reference pages (Hotkeys). */
 .settings-nav__divider {
   width: auto;
   margin: 8px 6px;
@@ -130,24 +130,22 @@
 /* ---------- content pane ---------- */
 
 /*
- * ONE scrolling page. `position: relative` makes the sections the pane's offset children, which
- * is what the scrollspy measures; `scroll-padding-top` matches the top padding so a nav anchor
- * lands under it rather than flush against the edge (and SPY_OFFSET in SettingsDialog.tsx sits
- * just past it).
+ * One section to a page (YAZ-2709), or the hits of a search. The pane scrolls a page that is
+ * longer than the sheet; a nav click puts it back to the top (SettingsDialog.tsx `showPage`).
  */
 .settings-pane {
-  position: relative;
   min-height: 0;
   padding: 24px 28px;
   overflow: auto;
-  scroll-padding-top: 24px;
 }
 
 .settings-dialog__close {
   position: absolute;
   top: 12px;
   right: 12px;
-  /* The pane is a later positioned sibling, so without this it paints OVER the button and eats the click (DL8). */
+  /* The pane comes later in the tree, so a positioned box in it (a dropdown's wrapper) that scrolls
+     under the button would otherwise paint OVER it and eat the click (DL8, found when the pane
+     itself was positioned). */
   z-index: 1;
   display: flex;
   padding: 6px 9px;

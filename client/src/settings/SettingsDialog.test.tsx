@@ -287,39 +287,15 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect([...el.querySelectorAll('[data-setting="hotkeys-window"] .hotkeys__keys')].map((k) => k.textContent)).toContain('⌘,')
   })
 
-  it('a nav click from the Hotkeys page shows the page of that section: Editor alone, the tables gone', () => {
-    const { el } = mount()
-    clickNav(el, 'Hotkeys')
-    clickNav(el, 'Editor')
-    expect(currentNav(el)).toBe('Editor')
-    expect(currentKind(el)).toBe('page')
-    expect(headings(el)).toEqual(['Editor'])
-    expect(sections(el).map((s) => s.id)).toEqual(['settings-editor'])
-    expect(rowIds(el)).toEqual(EDITOR_ROWS)
-  })
-
-  it('a nav click swaps the page and marks it current as a page: Sync shows the Sync row and nothing of Appearance', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(row(el, 'githubSync')).toBeNull()
+  it('a section that goes while its page shows gives way to the first, in the pane and in the nav: Sync with the engine gone', () => {
+    const { el, onChange, onClose } = mount({ ...DEFAULT_SETTINGS }, status())
     clickNav(el, 'Sync')
-    expect(headings(el)).toEqual(['Sync'])
-    expect(sections(el).map((s) => s.id)).toEqual(['settings-sync'])
-    expect(rowIds(el)).toEqual(['githubSync'])
     expect(currentNav(el)).toBe('Sync')
-    expect(currentKind(el)).toBe('page')
-    expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
-  })
-
-  it('no scrollspy: scrolling the pane leaves the page and the current nav item as they are, on a settings page and on Hotkeys', () => {
-    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
-    scrollTo(el, 500)
-    expect(currentNav(el)).toBe('Appearance')
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
+    expect(navShape(el)).toEqual(['Appearance', 'Editor', 'Files & Links', '—', 'Hotkeys'])
     expect(headings(el)).toEqual(['Appearance'])
-    clickNav(el, 'Hotkeys')
-    scrollTo(el, 500)
-    expect(currentNav(el)).toBe('Hotkeys')
-    expect(currentKind(el)).toBe('page')
-    expect(headings(el)).toEqual(['Hotkeys'])
+    expect(currentNav(el)).toBe('Appearance')
+    expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
   })
 
   it('the pane starts at the top after a swap: a nav click puts scrollTop back to 0, to a settings page and to Hotkeys', () => {

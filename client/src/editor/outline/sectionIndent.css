@@ -1,7 +1,7 @@
 /* Section indent (YAZ-2709). A top-level block inside a section carries `data-sd`, its depth (1-6),
    and on the way to the caret `data-sp`, how many of its lines are purple (sectionIndent.ts).
-   Everything here is drawing. The page switch is `data-section-indent` on `.editor-host`, but no
-   rule needs it: a page that is off has no `data-sd` at all.
+   Everything here is drawing. The page switch is `data-section-indent` on `.editor-host`; one rule
+   reads it, the query container below. No other rule needs it: a page that is off has no `data-sd`.
 
    THE INDENT is a transparent `border-left` on the block, `--sd` steps wide, and THE LINES are a
    `border-image` gradient inside that border: line k stands one third into step k. One rule for
@@ -60,7 +60,8 @@
 
 /* The grey is OPAQUE on purpose (the same 14% as a list guide line, mixed into the page instead of
    into nothing): the outsets below can lie over a neighbour's, and two see-through lines would
-   add up to a darker dash. `--bg` is the note's own surface in both themes (app.css). */
+   add up to a darker dash. `--bg` is the note's own surface in both themes (app.css). A line is
+   1px wide until the path makes it wider: the registered initial value of `--w1`…`--w6`. */
 .editor-instance .milkdown > .ProseMirror > [data-sd] {
   --step: calc(var(--section-step-n) * 1px);
   --section-line: color-mix(in srgb, currentColor 14%, var(--bg));
@@ -70,12 +71,6 @@
   --l4: var(--section-line);
   --l5: var(--section-line);
   --l6: var(--section-line);
-  --w1: 1px;
-  --w2: 1px;
-  --w3: 1px;
-  --w4: 1px;
-  --w5: 1px;
-  --w6: 1px;
   border-left: calc(var(--sd) * var(--step)) solid transparent;
   /* Line k is centred at `step * (k - 1) + step / 3`. A stop written `colour 0 end` starts where
      the stop before it ended, so every edge is hard. The slice keeps the first `--sd` steps of the
@@ -108,7 +103,11 @@
 
 /* The lines cross the gap above a block: the outset is that block's own margin. A heading's is
    app.css's `--edit-block-gap` × 7/6/5/4/4 for h2…h6 (an h1 is never inside a section); Crepe gives
-   a code block, a table and a quote `4px 0`. A paragraph, a list and a rule have none. */
+   a code block, a table and a quote `4px 0`. A paragraph, a list and a rule have none.
+   Those three reach 4px DOWN too, their own bottom margin, which no block after them covers. One
+   overlap is left as it is (YAZ-2727, declined in YAZ-2736): when the caret's block is one of the
+   three and a heading or another of them follows, the next block's 1px grey lies on the path's
+   wider line for those 4px. A cure needs a rule that reads the block before. */
 .editor-instance .milkdown > .ProseMirror > h2[data-sd] {
   border-image-outset: calc(var(--edit-block-gap, 4px) * 7) 0 0;
 }
@@ -173,6 +172,13 @@
 }
 
 .app[data-section-lines='hover'] .editor-instance .milkdown > .ProseMirror:not(:hover) > [data-sd] {
+  --section-line: transparent;
+}
+
+/* The empty paragraph the editor keeps after a last list, table or code block is where the next
+   text goes, so it keeps its indent (the first key must not move it), but no grey line runs past
+   the last thing written. The path still reaches it: the rules above set `--l1`…`--l6` directly. */
+.editor-instance .milkdown > .ProseMirror > p[data-sd]:last-child:has(> .ProseMirror-trailingBreak:only-child) {
   --section-line: transparent;
 }
 
