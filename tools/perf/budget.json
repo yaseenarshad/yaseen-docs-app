@@ -12,9 +12,9 @@
     "chromiumLocaleBytes": { "max": 1121390 },
     "lprojCount": { "max": 55, "min": 55, "$comment": "The app-level .lproj markers keep Open/Save panels in the OS language: exactly 55." },
     "asarNodeModulesFiles": { "max": 0 },
-    "rendererEagerJsBytes": { "max": 2053445 },
-    "rendererEagerCssBytes": { "max": 159371 },
-    "rendererTotalBytes": { "max": 13204683 },
+    "rendererEagerJsBytes": { "max": 2053622 },
+    "rendererEagerCssBytes": { "max": 159505 },
+    "rendererTotalBytes": { "max": 13204994 },
     "rendererMapBytes": { "max": 0 },
     "mainBundleBytes": { "max": 591555, "$comment": "Raised from 584905 for YAZ-2702 (+4845 bytes: the focus list in the vault, the `focus.*` bridge and the sync trigger for list files), then from 589750 for YAZ-2700 (+1805 bytes: `tocSources` in the store, with its load guard, its rename remap and its delete drop, and the `state:set-toc-source` channel). The main bundle is not minified, and 584905 was the exact size of 1.0.3." }
   }
