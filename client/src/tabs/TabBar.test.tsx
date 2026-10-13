@@ -49,6 +49,58 @@ const noNav = { canBack: false, canForward: false, onBack: vi.fn(), onForward: v
 describe('TabBar', () => {
   const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
 
+  it('"Kill all tabs" (YAZ-2739 S4 to S9): a right-click on the grid button opens a menu of ONE danger item, which asks App; a plain click opens no menu; Esc closes it and asks nothing; with no tab the item is disabled; with no door there is no menu', () => {
+    const onKillAll = vi.fn()
+    const onToggleOverview = vi.fn()
+    const base = { active: '/v/a.md', onToggleOverview, ...noop, ...noNav }
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], onKillAll, ...base })
+    const grid = () => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const rightClick = (): boolean => {
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+      act(() => void grid().dispatchEvent(event))
+      return event.defaultPrevented
+    }
+
+    act(() => grid().click())
+    expect(onToggleOverview).toHaveBeenCalledTimes(1)
+    expect(items()).toEqual([])
+
+    expect(rightClick()).toBe(true)
+    expect(items().map((item) => [item.textContent, item.className, item.disabled])).toEqual([['Kill all tabs', 'ctx-menu__item ctx-menu__item--danger', false]])
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(items()).toEqual([])
+    expect(onKillAll).not.toHaveBeenCalled()
+
+    // Neither the right press on the button nor the press on the item takes the keyboard focus: under
+    // the board it stays in the filter box, so a sheet that is cancelled gives the keys back to the board.
+    const press = (target: Element, button: number): boolean => {
+      const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button })
+      act(() => void target.dispatchEvent(event))
+      return event.defaultPrevented
+    }
+    expect([press(grid(), 0), press(grid(), 2)]).toEqual([false, true])
+    rightClick()
+    expect(press(items()[0], 0)).toBe(true)
+    act(() => items()[0].click())
+    expect(onKillAll).toHaveBeenCalledTimes(1)
+    expect(items()).toEqual([])
+    expect(onToggleOverview).toHaveBeenCalledTimes(1) // the menu is no click on the button
+
+    // No tab: the item says so, and asks nothing.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={[]} onKillAll={onKillAll} {...base} active={null} />))
+    rightClick()
+    expect(items().map((item) => [item.className, item.disabled])).toEqual([['ctx-menu__item', true]])
+    act(() => items()[0].click())
+    expect(onKillAll).toHaveBeenCalledTimes(1)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+
+    // No door: the button has no menu of its own.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md']} {...base} />))
+    expect(rightClick()).toBe(false)
+    expect(items()).toEqual([])
+  })
+
   it('renders a labelled tablist: one role=tab per path, extension-stripped label, full path as tooltip', () => {
     const el = mount({ tabs: ['/v/Note.md', '/v/sub/Plan.markdown'], active: '/v/Note.md', ...noop, ...noNav })
     expect(el.querySelector('.tabbar')?.getAttribute('role')).toBe('tablist')
