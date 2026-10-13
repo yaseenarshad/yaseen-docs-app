@@ -46,17 +46,21 @@
   - [x] `main` merged in: `2cc49c6` (YAZ-2700, the table of contents, 14 files with conflicts) and `56269b3` (release 1.0.4)
   - [x] YAZ-2731, the real store of the switch: `FolderState.sectionIndents`, `state.setSectionIndent`, `storage.getSectionIndent` / `setSectionIndent`, `useSectionIndent` on them; the fixture and its browser storage are deleted; step 7 of `sectionIndent.spec.ts` (the restart; written, not run); rule 18a, "App state" and row E34 say what is true
   - [x] The size ceilings (D14): three rows of `tools/perf/budget.json` raised to the measured values of the final tree, and the gate prints PASS
-- Now: [→] The coordinator shows Yaseen the diff of the stored data (`FolderState.sectionIndents`) before the pull request leaves the draft state
-- Next: the guided test on the final build
-- Remaining:
-  - [ ] Yaseen reviews the stored-data change of YAZ-2731 (the field, its guard, its default)
-  - [ ] The typing numbers of YAZ-2724, in a quiet window that Yaseen gives: `npm run desktop:build && npm run perf -- typing --runs 5`, on `main` and on the branch
-  - [ ] One run of `sectionIndent`, `settings`, `ids`, `lineNumbers` and `tableOfContents` by a person who may run Playwright
-  - [ ] The guided test on the final build (hand scenario E34 in `docs/REGRESSION.md`, 16 steps; step 16 is the saved switch)
-  - [ ] The pull request leaves the draft state; Yaseen merges
-  - [ ] YAZ-2738: the release notes, and the feature's own release after the merge
+  - [x] `main` merged in again: `24b7bcd` (YAZ-2739, one conflict in `tools/perf/budget.json`; the two renderer ceilings are the measured values of the merged build: JS +4,128, CSS +5,033)
+  - [x] Settings › Editor order, by Yaseen after the merge: "Bullet threading", "Section indent", "Table of contents" (`2c2c2ee`); the README entry (`59b9d7c`)
+  - [x] YAZ-2738: the release notes, one comment on YAZ-2709 with one GIF and four pictures
+  - [x] Merged to `main` by the pull request #111 (`0378399`), on Yaseen's word ("just merge it, those are flaky"): the CI check was red two times on timing tests that this work does not touch, and green one time; the full suite was green here on the same commit
+  - [x] Released in v1.0.5, "Headers Act Like Bullets (Hierarchy) + Kill All Tabs", with YAZ-2739 and YAZ-2751
+- Now: CLOSED (2026-10-12). The handoff is the "Closeout handoff" comment on YAZ-2711.
+- Next: nothing in this issue.
+- Remaining (not required, each needs its own issue if Yaseen wants it):
+  - [ ] The typing numbers of YAZ-2724 from the perf harness: `npm run desktop:build && npm run perf -- typing --runs 5` (needs a quiet window)
+  - [ ] One run of the specs `sectionIndent`, `settings`, `ids`, `lineNumbers` and `tableOfContents` by a person who may run Playwright
+  - [ ] A look at the grey lines on a display with a pixel ratio of 1 (YAZ-2736 F16)
 
 ## Open Questions
+- CI on GitHub failed two times on timing tests in code this work does not touch: `client/src/views/expr/evaluate.perf.test.ts` (50.56 ms against 50), then `client/src/search/searchCandidates.perf.test.ts` (63 ms against 50) and `desktop/src/main/fs/watchConformance.test.ts` (a file written in slow chunks). The three passed 8 of 8 runs on this Mac on the same commit.
+- Yaseen declined the guided test on the final build ("no i dont need the test, we did the test already, approved it"). The saved switch after a restart, a rename, a move and a delete was not seen in the app; unit tests cover the store.
 - UNCONFIRMED: the typing numbers in the harness. Only one measurement exists, by hand in the app (7.2 ms on, 6.6 ms off, 2,557 blocks). The `:has()` rule for the empty last paragraph (YAZ-2736 F14) was not in the build of that measurement.
 - UNCONFIRMED: no spec of this branch was run. Each selector of `sectionIndent.spec.ts` was read from the source.
 - UNCONFIRMED: the caret stays in a block that a click on a line hides. The unit test proves it in jsdom. Chromium can treat a selection in a `display: none` block differently; step 5 of the spec asserts it.
