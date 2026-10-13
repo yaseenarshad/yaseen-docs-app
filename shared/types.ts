@@ -780,6 +780,8 @@ export interface SettingsState {
   tableOfContents: TableOfContents
   /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
   tableOfContentsWidth: number
+  /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
+  tocLines: TocLines
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -790,6 +792,10 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 /** Section indent (YAZ-2709): when the grey section lines show. */
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
+
+/** The table of contents (YAZ-2762): when its level lines show. */
+export type TocLines = 'hover' | 'always' | 'off'
+export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
 /** Obsidian's Appearance vocabulary and order — also exactly Electron's `nativeTheme.themeSource`. */
 export type Theme = 'system' | 'light' | 'dark'
@@ -864,6 +870,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionLines: 'always',
   tableOfContents: 'auto',
   tableOfContentsWidth: TOC_DEFAULT_W,
+  tocLines: 'hover',
 }
 
 export interface WindowBounds {

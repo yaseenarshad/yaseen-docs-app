@@ -24,6 +24,12 @@
  * as `--toc-width` on `section.editor`, which the column, the scroller's padding and the find bar
  * all read — and a drag writes that variable for each move of the mouse, with no render at all.
  *
+ * THE HIERARCHY OF THE NAMES (YAZ-2762) is toc.css's work: a tone for each level, and thin level
+ * lines as backgrounds of each name. This component gives it two attributes. `data-path` on a name
+ * (`pathLines`) says which level line is on the way from the current row up to its parents. And
+ * `data-reading` on the `<nav>` says the reader is moving the note with the wheel: with the setting
+ * "Level lines" on "On hover", the path then shows without the mouse on the list.
+ *
  * It renders nothing when the setting is off, when the note has fewer than two rows to show,
  * and while a bullet zoom is active (the channel's `hidden`). Then it also holds no listener.
  *
@@ -103,6 +109,26 @@ export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
   return rows.filter(({ level }) => level === 1).slice(0, MAX_ROWS)
 }
 
+/**
+ * THE PATH (YAZ-2762): for each row, the level whose line is on the way from the current row up
+ * to its parents: '' for none, else '1' or '2' (`data-path`), with a 't' after it on a row the
+ * path ARRIVES at: a name on the path that is one level in from that line ('1t' is a level 2
+ * name below its level 1 parent).
+ * A parent's line passes each row below the parent, down to its child on the path. Bullet
+ * threading's rule: the path stops at the current row.
+ */
+export const pathLines = (rows: readonly TocRow[], at: number): string[] => {
+  const path = rows.map(() => '')
+  let child = at
+  for (let i = at - 1; i >= 0 && rows[child].level > 1; i--) {
+    if (rows[i].level >= rows[child].level) continue
+    for (let row = i + 1; row <= child; row++) path[row] = String(rows[i].level)
+    if (rows[child].level === rows[i].level + 1) path[child] += 't'
+    child = i
+  }
+  return path
+}
+
 const MAX_PITCH = 10
 const MIN_PITCH = 4
 
@@ -114,7 +140,7 @@ export const railPitch = (height: number, count: number): { pitch: number; fits:
 
 /** The card stays this long after the mouse or the keyboard leaves it. */
 const GRACE_MS = 200
-/** The card stays this long after the last turn of the wheel. */
+/** The card stays this long after the last turn of the wheel, and so does the path in the names (`data-reading`). */
 const WHEEL_LINGER_MS = 1500
 /** A click on the rail right after the mouse opened the card does not close it again. */
 const CLICK_GUARD_MS = 300
@@ -192,6 +218,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const pendingFocus = useRef(false)
   /** Ends the drag of the column's edge that is under way, with nothing saved. */
   const endResize = useRef<(() => void) | null>(null)
+  /** The wheel effect's `turn`, for a wheel over the table of contents that moves the note (`onWheelOverToc`). */
+  const wheelTurn = useRef<(() => void) | null>(null)
 
   const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
   const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
@@ -334,44 +362,70 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   }, [shows, rows, box, names, shownWidth, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
   // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
-  // opens the card in lines mode. ONE linger timer serves a whole burst of wheel events: an event
-  // only stamps the time, and the timer re-arms itself for what is left.
+  // shows the path in the names and, in lines mode, opens the card. ONE linger timer serves a whole
+  // burst of wheel events, for both: an event only stamps the time, and the timer re-arms itself
+  // for what is left.
   useEffect(() => {
     if (!shows) return
     const scroller = scrollerOf()
     if (scroller === null) return
-    let lastWheel = 0
+    // Kept for the cleanup: React has cleared `navRef` by then when the nav goes away.
+    const nav = navRef.current
+    let lastTurn = 0
     let travelled = 0
     let timer: ReturnType<typeof setTimeout> | null = null
-    const linger = (): void => {
-      timer = null
-      const rest = WHEEL_LINGER_MS - (performance.now() - lastWheel)
-      if (rest > 0) timer = setTimeout(linger, rest)
-      else if (!held()) setOpen(false)
-    }
     const unlock = (): void => {
       lock.current = null
+    }
+    // READING (YAZ-2762): from the first turn of a burst to the end of the linger, the path shows
+    // in the names and follows the reader down the list (toc.css, `data-reading`). An attribute
+    // on the nav, so a turn of the wheel renders nothing.
+    const reading = (on: boolean): void => {
+      nav?.toggleAttribute('data-reading', on)
+    }
+    const linger = (): void => {
+      timer = null
+      const rest = WHEEL_LINGER_MS - (performance.now() - lastTurn)
+      if (rest > 0) {
+        timer = setTimeout(linger, rest)
+        return
+      }
+      reading(false)
+      // Only a card that is open: the end of a burst in names mode sets no state.
+      if (live.current.open && !held()) setOpen(false)
+    }
+    /** The reader moved the note with the wheel. It answers how long ago the turn before this one was. */
+    const turn = (): number => {
+      const now = performance.now()
+      const gap = now - lastTurn
+      lastTurn = now
+      if (timer === null) {
+        reading(true)
+        timer = setTimeout(linger, WHEEL_LINGER_MS)
+      }
+      return gap
     }
     const onWheel = (event: WheelEvent): void => {
       unlock()
       // A sideways turn or a pinch (ctrlKey) is not reading down the note.
-      if (live.current.names || event.deltaY === 0 || event.ctrlKey) return
-      const now = performance.now()
-      if (now - lastWheel > WHEEL_BURST_MS) travelled = 0
+      if (event.deltaY === 0 || event.ctrlKey) return
+      const gap = turn()
+      if (live.current.names) return
+      if (gap > WHEEL_BURST_MS) travelled = 0
       travelled += Math.abs(event.deltaY)
-      lastWheel = now
-      if (!live.current.open && travelled < WHEEL_OPEN_PX) return
-      if (!live.current.open) live.current.openByWheel()
-      if (timer === null) timer = setTimeout(linger, WHEEL_LINGER_MS)
+      if (!live.current.open && travelled >= WHEEL_OPEN_PX) live.current.openByWheel()
     }
+    wheelTurn.current = turn
     scroller.addEventListener('wheel', onWheel, { passive: true })
     scroller.addEventListener('pointerdown', unlock, { passive: true })
     scroller.addEventListener('keydown', unlock)
     return () => {
+      wheelTurn.current = null
       scroller.removeEventListener('wheel', onWheel)
       scroller.removeEventListener('pointerdown', unlock)
       scroller.removeEventListener('keydown', unlock)
       if (timer !== null) clearTimeout(timer)
+      reading(false)
     }
   }, [shows, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- the rest is read through `live` and refs
 
@@ -461,6 +515,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    *  - a card that is FOLLOWING (above) lets the note move: it opened under the mouse because of
    *    that very scroll, and must not stop it.
    * (`section.editor` does not scroll, so nothing else answers a wheel here.)
+   * Where the NOTE moves, the reader is reading down it as with a wheel over the note itself — an
+   * event the scroller's own listener never gets — so the path shows by the same rule (`wheelTurn`).
    */
   const onWheelOverToc = (event: ReactWheelEvent<HTMLElement>): void => {
     const scroller = scrollerOf()
@@ -468,6 +524,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     const list = event.target instanceof Element ? event.target.closest('.toc__names') : null
     if (!following.current && list !== null && list.scrollHeight > list.clientHeight + 1) return
     lock.current = null
+    wheelTurn.current?.()
     // deltaMode 1 is lines (a mouse wheel on some drivers); 16px is the browser's own line.
     scroller.scrollTop += event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
   }
@@ -614,6 +671,8 @@ function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; on
   const listRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
   const placed = useRef(false)
+  // Computed when the current row changes, never on a scroll inside one section.
+  const path = useMemo(() => pathLines(rows, at), [rows, at])
 
   const edges = (): void => {
     const list = listRef.current
@@ -661,6 +720,7 @@ function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; on
           type="button"
           className="toc__name"
           data-level={row.level}
+          data-path={path[i] || undefined}
           aria-current={i === at ? 'true' : undefined}
           tabIndex={i === at ? 0 : -1}
           // The full name as a tooltip only where the column cut it.

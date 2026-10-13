@@ -11,6 +11,11 @@
  *  - THE EDGE OF THE NAMES (YAZ-2752, decisions D1–D5 on YAZ-2754): a drag of the column's left
  *    edge changes its width, stops at the limits, and writes `settings.tableOfContentsWidth`,
  *    which is there after a restart.
+ *  - THE HIERARCHY OF THE NAMES (YAZ-2762, decisions D1–D10 on YAZ-2764): each level has its own
+ *    tone. Thin grey lines show the levels, and the lines from the current row up to its parents
+ *    are the accent colour (the path). "Level lines" in Settings says when the lines show, and
+ *    writes `settings.tocLines`. With "On hover", the path also shows while the wheel turns over
+ *    the note.
  *  - HEADINGS OR BULLETS (D6, D14): a note of bullets lists its bullets, three levels deep. The
  *    cog's "TOC made from:" selects the source for one note, and the app saves that choice in
  *    `folders[root].tocSources`: it is there after the note is closed and after a restart.
@@ -26,6 +31,7 @@
  */
 // Written for YAZ-2700. Not yet run: Playwright was off limits when this was written, so every
 // selector here was read from the source, not observed. Run it once and fix what it finds.
+// Step 5c (YAZ-2762) is the same: written and type-checked, and not run.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -152,6 +158,76 @@ async function setWindowWidth(width: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, w) => {
     BrowserWindow.getAllWindows()[0]?.setContentSize(w, 750)
   }, width)
+}
+
+/** `data-path` of each name: the level line that is on the path at that row, and null for a row that is not on it. */
+const pathsOf = (w: Page): Promise<(string | null)[]> => names(w).evaluateAll((els) => els.map((el) => el.getAttribute('data-path')))
+
+type LineState = 'shown' | 'clear' | 'fading'
+
+/**
+ * What the list of names draws now. The grey level lines read `--toc-rest` and the path reads
+ * `--toc-path` (toc.css): each is `shown` when it is the token it must be (`--border`,
+ * `--accent`), `clear` when it is transparent, and `fading` between the two (160 ms).
+ * Each colour is read from a probe in the list itself, so both sides of a comparison are written
+ * by the same engine in the same way.
+ */
+const linesOf = (w: Page): Promise<{ grey: LineState; path: LineState }> =>
+  toc(w)
+    .locator('.toc__names')
+    .evaluate((list) => {
+      const colourOf = (value: string): string => {
+        const probe = document.createElement('span')
+        probe.style.color = value
+        list.appendChild(probe)
+        const colour = getComputedStyle(probe).color
+        probe.remove()
+        return colour
+      }
+      const stateOf = (line: string, token: string): 'shown' | 'clear' | 'fading' => {
+        const colour = colourOf(`var(${line})`)
+        return colour === colourOf(`var(${token})`) ? 'shown' : colour === colourOf('transparent') ? 'clear' : 'fading'
+      }
+      return { grey: stateOf('--toc-rest', '--border'), path: stateOf('--toc-path', '--accent') }
+    })
+
+/**
+ * The tones of the names (D1), on names that are not the current one and not below the mouse:
+ * level 1 is `--fg` at weight 500, level 2 is the mix of the two text tokens, level 3 is
+ * `--fg-muted`, the three are three different colours, and the current name is the accent.
+ */
+const tonesOf = (w: Page): Promise<{ one: boolean; weight: string; two: boolean; three: boolean; distinct: boolean; current: boolean }> =>
+  toc(w)
+    .locator('.toc__names')
+    .evaluate((list) => {
+      const colourOf = (value: string): string => {
+        const probe = document.createElement('span')
+        probe.style.color = value
+        list.appendChild(probe)
+        const colour = getComputedStyle(probe).color
+        probe.remove()
+        return colour
+      }
+      const styleOf = (selector: string): CSSStyleDeclaration | null => {
+        const name = list.querySelector(selector)
+        return name === null ? null : getComputedStyle(name)
+      }
+      const [one, two, three] = [1, 2, 3].map((level) => styleOf(`.toc__name[data-level="${level}"]:not([aria-current])`))
+      return {
+        one: one?.color === colourOf('var(--fg)'),
+        weight: one?.fontWeight ?? '',
+        two: two?.color === colourOf('color-mix(in srgb, var(--fg) 55%, var(--fg-muted))'),
+        three: three?.color === colourOf('var(--fg-muted)'),
+        distinct: new Set([one?.color, two?.color, three?.color]).size === 3,
+        current: styleOf('.toc__name[aria-current="true"]')?.color === colourOf('var(--accent)'),
+      }
+    })
+
+/** The mouse on the text of the note: not on the list, not on the lines. */
+async function mouseOnNote(w: Page): Promise<void> {
+  const box = await host(w).boundingBox()
+  if (box === null) throw new Error('the note has no scroller')
+  await w.mouse.move(box.x + box.width / 3, box.y + box.height / 2)
 }
 
 /** The card, opened by the mouse on the lines. */
@@ -329,6 +405,130 @@ test('step 5b — the edge of the names: a drag changes the width, stops at the 
   // Back to the lines, for the steps below. The width stays saved; step 7 reads it after its restart.
   await toc(win).locator('.toc__pin--off').click()
   await expect(rail(win)).toBeVisible()
+})
+
+test('step 5c — the hierarchy of the names: a tone for each level, the level lines on hover, the path after a scroll, and the three choices of "Level lines" (YAZ-2762)', async () => {
+  const TONES = { one: true, weight: '500', two: true, three: true, distinct: true, current: true }
+  const BOTH = { grey: 'shown', path: 'shown' }
+  const NONE = { grey: 'clear', path: 'clear' }
+  /** Longer than the fade of the lines (160 ms): a line that would come has come. */
+  const PAST_FADE_MS = 500
+  const reading = (w: Page) => layer(w).locator('nav.toc[data-reading]')
+  const name = (text: string) => names(win).nth(HEADING_ROWS.indexOf(text))
+
+  // "On hover" is the default, in the state file and on the app container, where toc.css reads it.
+  expect((await readState(userData)).settings.tocLines).toBe('hover')
+  await expect(win.locator('.app')).toHaveAttribute('data-toc-lines', 'hover')
+
+  // The card has the same list (D4): the lines show while the mouse is on its names.
+  await openCardByMouse(win)
+  await card(win).locator('.toc__name').first().hover()
+  await expect.poll(() => linesOf(win)).toEqual(BOTH)
+  await shoot(win, 'toc-05c-card-lines')
+
+  // The names column, for the other parts of this step.
+  await card(win).locator('.toc__pin').click()
+  await expect(toc(win)).toHaveAttribute('data-names', '')
+
+  // A click makes "Install" the current row: Guide › Setup › Install. The mouse is on the list, so
+  // the lines show: the first line stops at "Setup" with its level piece, the second goes to "Install".
+  await name('Install').click()
+  await expectLanded(win, 'h', 'Install')
+  await expect(name('Install')).toHaveAttribute('aria-current', 'true')
+  await expect.poll(() => pathsOf(win)).toEqual([null, '1t', '2t', null, null, null])
+  await expect.poll(() => linesOf(win)).toEqual(BOTH)
+  // The wash of the row below the mouse is behind the lines: the row still draws its five line pieces.
+  expect(await name('Install').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(5)
+  await shoot(win, 'toc-05c-lines-on-hover')
+
+  // "Reference" is the third level 2 name below "Guide": the line of "Guide" passes the rows above it.
+  await name('Reference').click()
+  await expectLanded(win, 'h', 'Reference')
+  await expect.poll(() => pathsOf(win)).toEqual([null, '1', '1', '1', '1t', null])
+
+  // The mouse leaves the list: no lines. The tones are always there.
+  await mouseOnNote(win)
+  await expect.poll(() => linesOf(win)).toEqual(NONE)
+  await expect.poll(() => tonesOf(win)).toEqual(TONES)
+  await shoot(win, 'toc-05c-tones-at-rest')
+
+  // The keyboard in the list shows the lines too (⌘J), and Esc takes them away with the keyboard.
+  await win.keyboard.press('Meta+j')
+  await expect(name('Reference')).toBeFocused()
+  await expect.poll(() => linesOf(win)).toEqual(BOTH)
+  await win.keyboard.press('Escape')
+  await expect(editorOf(win)).toBeFocused()
+  await expect.poll(() => linesOf(win)).toEqual(NONE)
+
+  // A turn of the wheel over the note: the path shows, the grey lines do not, and the current row is still "Reference".
+  await win.mouse.wheel(0, 60)
+  await expect(reading(win)).toHaveCount(1)
+  await expect.poll(() => linesOf(win)).toEqual({ grey: 'clear', path: 'shown' })
+  await expect.poll(() => pathsOf(win)).toEqual([null, '1', '1', '1', '1t', null])
+  // To the end of the note: the path follows the reader down the list, to "Appendix".
+  await win.mouse.wheel(0, 100_000)
+  await expect(name('Appendix')).toHaveAttribute('aria-current', 'true')
+  await expect.poll(() => pathsOf(win)).toEqual([null, '1', '1', '1', '1', '1t'])
+  await expect.poll(() => linesOf(win)).toEqual({ grey: 'clear', path: 'shown' })
+  await shoot(win, 'toc-05c-path-after-scroll')
+  // 1500 ms after the last turn the path goes.
+  await expect(reading(win)).toHaveCount(0, { timeout: 5_000 })
+  await expect.poll(() => linesOf(win)).toEqual(NONE)
+
+  /** Settings › Editor › Table of contents › "Level lines": select one choice, and close the dialog. */
+  const chooseLevelLines = async (label: 'On hover' | 'Always show' | 'Never', value: 'hover' | 'always' | 'off'): Promise<void> => {
+    const dialog = win.locator('.settings-dialog[role="dialog"]')
+    const row = dialog.locator('[data-setting="tocLines"]')
+    await clickMenuItem(app, 'menu.app.settings', 'w1')
+    await expect(dialog).toBeVisible()
+    await dialog.locator('.settings-nav__item', { hasText: /^Editor$/ }).click()
+    await expect(row.locator('.setting__label')).toHaveText('Level lines')
+    await expect(row.getByRole('button')).toHaveText(['On hover', 'Always show', 'Never'])
+    await row.getByRole('button', { name: label, exact: true }).click()
+    await expect(row.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(row.locator('button[aria-pressed="true"]')).toHaveCount(1)
+    // The app saves the choice, and the open note follows at once: the attribute changes, the list is the same list.
+    await expect.poll(async () => (await readState(userData)).settings.tocLines).toBe(value)
+    await expect(win.locator('.app')).toHaveAttribute('data-toc-lines', value)
+    await win.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(names(win)).toHaveText(HEADING_ROWS)
+    await mouseOnNote(win)
+  }
+
+  // "Always show": the grey lines and the path at rest, with the mouse on the note.
+  await chooseLevelLines('Always show', 'always')
+  await expect.poll(() => linesOf(win)).toEqual(BOTH)
+  await shoot(win, 'toc-05c-always-show')
+
+  // "Never": no lines with the mouse on the list, and none on a turn of the wheel. The tones stay.
+  await chooseLevelLines('Never', 'off')
+  await expect.poll(() => linesOf(win)).toEqual(NONE)
+  await win.mouse.wheel(0, -60)
+  await expect(reading(win)).toHaveCount(1)
+  await name('Guide').hover()
+  await win.waitForTimeout(PAST_FADE_MS)
+  expect(await linesOf(win)).toEqual(NONE)
+  await mouseOnNote(win)
+  await expect.poll(() => tonesOf(win)).toEqual(TONES)
+  await shoot(win, 'toc-05c-never')
+
+  // Back to "On hover", the default: at rest there are no lines again, and the mouse on the list shows them.
+  await chooseLevelLines('On hover', 'hover')
+  await expect(reading(win)).toHaveCount(0, { timeout: 5_000 })
+  await expect.poll(() => linesOf(win)).toEqual(NONE)
+  await name('Guide').hover()
+  await expect.poll(() => linesOf(win)).toEqual(BOTH)
+
+  // Back to the lines, for the steps below. The other two settings of the table of contents did not change.
+  await toc(win).locator('.toc__pin--off').click()
+  await expect(rail(win)).toBeVisible()
+  await expect
+    .poll(async () => {
+      const { settings } = await readState(userData)
+      return [settings.tocLines, settings.tableOfContents, settings.tableOfContentsWidth]
+    })
+    .toEqual(['hover', 'auto', TOC_MIN_W])
 })
 
 test('step 6 — a note of bullets lists its bullets, three levels deep, and a click lands on the bullet', async () => {

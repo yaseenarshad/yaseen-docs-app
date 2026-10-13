@@ -1202,7 +1202,7 @@ export function App() {
   }
 
   return (
-    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines}>
+    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines}>
       {notice !== null && (
         // `data-icon` is a test / observability hook — nothing in the CSS selects it; the glyph is the SVG.
         <div className="link-notice" role="status" data-icon={notice.icon}>

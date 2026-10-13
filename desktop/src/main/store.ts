@@ -25,6 +25,7 @@ import {
   TABLE_OF_CONTENTS,
   THEMES,
   THREAD_WIDTHS,
+  TOC_LINES,
   TOC_MAX_W,
   TOC_MIN_W,
   addOpen,
@@ -57,6 +58,7 @@ import {
   type StartupWindows,
   type TableOfContents,
   type Theme,
+  type TocLines,
   type TocSource,
   type VaultSet,
   type WindowBounds,
@@ -173,6 +175,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
+  tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
