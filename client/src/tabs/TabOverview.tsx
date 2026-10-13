@@ -33,6 +33,8 @@ export interface TabOverviewProps {
   onCloseTabs: (paths: string[]) => void
   /** Esc: back to the page. */
   onDismiss: () => void
+  /** "Kill all tabs" (YAZ-2739): App asks first, then closes every tab of the window. Absent, the board has no such button. */
+  onKillAll?: () => void
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. A page dropped on the board's right edge takes the first. */
   onMoveToRight?: (path: string) => void
   onShowInSidebar?: (path: string) => void
@@ -105,8 +107,11 @@ function PageFace({ label, lines }: { label: string; lines: string }) {
  * big (a peek). A page DRAGS: onto the drop area the board shows along its right edge, or onto the
  * right panel itself, and it opens beside the page. SHIFT-click PICKS pages — shift is the
  * selection gesture everywhere in the app — and a small bar closes the picked ones, or the others.
+ *
+ * "Kill all tabs" (YAZ-2739), at the end of the top row, is about every tab of the window, whatever
+ * the filter shows. The board only asks: App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onMoveToRight, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   /** The islands the user spread by hand: they stay spread until the board closes. */
@@ -302,8 +307,9 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   }
 
   const onKeyDown = (e: KeyboardEvent): void => {
-    // A menu that is open has the keys: its Esc closes it, not the board.
-    if (anyMenu) return
+    // A menu that is open has the keys: its Esc closes it, not the board. The board's own menus, and
+    // a menu of the strip that left the focus here: the grid button's (YAZ-2739).
+    if (anyMenu || document.querySelector('.ctx-menu') !== null) return
     if (e.key === 'Escape') {
       e.preventDefault()
       // The first Esc drops the pick; the board goes on the next.
@@ -375,29 +381,38 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         else e.preventDefault()
       }}
     >
-      <input
-        ref={inputRef}
-        className="taboverview__filter"
-        type="text"
-        value={query}
-        placeholder="Filter open tabs"
-        aria-label="Filter open tabs"
-        // The focus stays here while the arrows move the highlight: a reader is told which page has it.
-        role="combobox"
-        aria-expanded
-        aria-controls={listId}
-        aria-activedescendant={currentStop}
-        spellCheck={false}
-        onChange={(e) => changeQuery(e.target.value)}
-        onBlur={() => {
-          if (!refocus.current) return
-          refocus.current = false
-          // Only while nothing else took it: a click that opened the page gave the focus to that page.
-          requestAnimationFrame(() => {
-            if (document.activeElement === document.body) inputRef.current?.focus()
-          })
-        }}
-      />
+      {/* The board's top row: the filter box in the middle, and "Kill all tabs" at the right end. */}
+      <div className="taboverview__top">
+        <input
+          ref={inputRef}
+          className="taboverview__filter"
+          type="text"
+          value={query}
+          placeholder="Filter open tabs"
+          aria-label="Filter open tabs"
+          // The focus stays here while the arrows move the highlight: a reader is told which page has it.
+          role="combobox"
+          aria-expanded
+          aria-controls={listId}
+          aria-activedescendant={currentStop}
+          spellCheck={false}
+          onChange={(e) => changeQuery(e.target.value)}
+          onBlur={() => {
+            if (!refocus.current) return
+            refocus.current = false
+            // Only while nothing else took it: a click that opened the page gave the focus to that page.
+            requestAnimationFrame(() => {
+              if (document.activeElement === document.body) inputRef.current?.focus()
+            })
+          }}
+        />
+        {/* Every tab of the window at once, whatever the filter shows. App asks first: no tab comes back. */}
+        {onKillAll !== undefined && tabs.length > 0 && (
+          <button type="button" className="taboverview__kill confirm__btn confirm__btn--danger" onClick={onKillAll}>
+            Kill all tabs
+          </button>
+        )}
+      </div>
       <div className="taboverview__body" ref={bodyRef} id={listId} role="listbox" aria-label="Open tabs">
         {shown.length === 0 && <p className="taboverview__msg">{tabs.length === 0 ? 'No open tabs.' : 'No open tab matches.'}</p>}
         {board.map((vault) => (
