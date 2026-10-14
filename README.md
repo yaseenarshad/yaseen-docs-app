@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.gif" width="860" alt="A heading section folds in a note. A folder opens as a board, and a card moves to a new column. Then an AI agent runs one command, and its comment shows below the open note.">
+  <img src="docs/assets/hero.gif" width="860" alt="A heading section folds in a note. A folder opens as a board, and a card moves to a new column. Then you ask your AI agent to check a headline. It runs one command, and its comment shows below the open note.">
 </p>
 
 <p align="center">
@@ -108,7 +108,7 @@ The command can edit or delete only the comments that an agent wrote. It refuses
 **So what:** you see what your agent thinks before it changes one word of your text.
 
 <p align="center">
-  <img src="docs/assets/comment.gif" width="860" alt="A terminal runs the yaseendocs comment command. Comment 1 from the agent shows below the open note.">
+  <img src="docs/assets/comment.gif" width="860" alt="In a chat window, you ask your AI agent to check a headline. The agent runs the yaseendocs comment command, and comment 1 from the agent shows below the open note.">
 </p>
 
 To set it up on a Mac, put these two lines in the instructions file of your agent (`CLAUDE.md` or `AGENTS.md`). Your agent reads the help and learns the rest.
@@ -148,17 +148,17 @@ status: In progress
 owner: Maya
 due: 2026-10-24
 comments:
-  - id: e92e9d39
+  - id: e7993087
     n: 1
-    at: 2026-10-14T02:02:25Z
+    at: 2026-10-14T02:11:53Z
     by: agent
     title: The headline is wrong
     body: Paying for 10 of 12 months saves 16.7%, not 20%.
 ---
 ## Why
 
-- The annual plan is below the fold
-- Visitors pick monthly because it is the only plan they see
+- Annual is below the fold
+- Visitors only see monthly
 
 ## Headline
 

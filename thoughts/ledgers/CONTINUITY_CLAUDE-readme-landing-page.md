@@ -23,9 +23,13 @@ picture are set.
   each the best at one thing. Yaseen Docs has all of them, on local files.
 - The comparison table has 7 rows. Yasin chose each title and each mark.
   Notion keeps its tick on the database row.
-- Obsidian Bases got a kanban view in 1.14 (5 Oct 2026). So the Obsidian
-  reasons are: zoom needs a plugin, Sync is a paid add-on, a database
-  needs a `.base` file.
+- Obsidian Bases got a kanban view in 1.14 (5 Oct 2026). The facts behind
+  the Obsidian crosses are: zoom needs a plugin, Sync is a paid add-on, a
+  database needs a `.base` file. Yasin took the first and the last note
+  out of the table (13 Oct 2026). The crosses stay.
+- The agent in the pictures is a drawn chat window with the title "Your AI agent",
+  not a terminal (Yasin, 13 Oct 2026). It copies no real product. The comment below
+  the note is real: the command runs during the capture.
 - The licence is MIT (Yasin's choice, 13 Oct 2026).
 - `LAUNCH.md` is now `docs/DEVELOPMENT.md`. The old README is `docs/FEATURES.md`.
 - The `yaseendocs` command is not on PATH and is for the Mac only. The README
@@ -40,10 +44,10 @@ picture are set.
   - [x] Phase 2: check of each cell about the other products (primary sources)
   - [x] Phase 3: assets in `docs/assets/` (banner, hero, 3 GIFs, 3 steps, toc, sync, social preview)
   - [x] Phase 4: README written, MIT `LICENSE` added
-- Now: [→] Phase 5: push the branch, Yasin looks at the page on GitHub
+  - [x] Phase 5: branch pushed, Yasin looked at the page on GitHub
+  - [x] Phase 7: About box (description, link, 8 topics) set, Projects tab off (Yasin said yes, 13 Oct 2026)
+- Now: [→] Phase 6: Yasin's yes, then merge
 - Remaining:
-  - [ ] Phase 6: Yasin's yes, then merge
-  - [ ] Phase 7: About box (description, link, topics), Projects tab off
   - [ ] Phase 8: Yasin uploads `~/Downloads/yaseen-docs-app-social-preview.png` (Settings, General, Social preview)
 
 ## Open Questions
