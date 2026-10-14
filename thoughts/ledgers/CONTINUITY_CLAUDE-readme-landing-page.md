@@ -39,6 +39,10 @@ picture are set.
 - The tag line is Yasin's (13 Oct 2026): "The ultimate local docs app to collab with
   your AI agent". It is in the banner, in the link preview picture and in the alt text
   of the banner. It replaced "The notes app for people who work with AI agents".
+- The hook is "Write like Google Docs. Organise like Notion. Own your files like
+  Obsidian. And your AI agent reads every note." Yasin changed Logseq to Google Docs.
+- PR #117 and PR #118 were merged while the check was running, because Yasin said so.
+  Nobody saw those two checks go green in the session.
 - The licence is MIT (Yasin's choice, 13 Oct 2026).
 - `LAUNCH.md` is now `docs/DEVELOPMENT.md`. The old README is `docs/FEATURES.md`.
 - The `yaseendocs` command is not on PATH and is for the Mac only. The README
@@ -57,10 +61,11 @@ picture are set.
   - [x] Phase 7: About box (description, link, 8 topics) set, Projects tab off (Yasin said yes, 13 Oct 2026)
   - [x] Phase 6: Yasin approved the page, PR #117 merged (13 Oct 2026)
   - [x] Phase 8: Yasin uploaded the link preview picture (the one with the old tag line)
-- Now: [→] Phase 9: the new tag line, on branch `docs/readme-tagline`
-- Remaining:
-  - [ ] Phase 10: Yasin uploads the new `~/Downloads/yaseen-docs-app-social-preview.png` again
-  - [ ] Phase 11: the About box still has the old line. A change needs Yasin's yes.
+  - [x] Phase 9: the new tag line, PR #118 merged
+  - [x] Phase 11: the About box has the new line: "… with an outliner, database and boards built-in." (Yasin's words)
+  - [x] Phase 12: the hook starts with "Write like Google Docs" (Yasin's words), branch `docs/readme-hook`
+- Now: [→] Phase 10: Yasin uploads the new `~/Downloads/yaseen-docs-app-social-preview.png` again
+- Remaining: nothing else
 
 ## Open Questions
 
