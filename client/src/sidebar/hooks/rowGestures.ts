@@ -361,8 +361,8 @@ export function useInlineEdits(
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>,
   openTo: (file: string) => void,
 ) {
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string } | null>(null)
-  const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null } | null>(null)
+  const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
   const startCreate = useCallback(
     (kind: EntryKind, seed = '') => {
@@ -373,11 +373,15 @@ export function useInlineEdits(
       // Favorites and Focus each show a SUBSET of the vault (YAZ-1766 3B1, YAZ-2619 S36): a target dir
       // the tab does not hold — or the root on a tab with no rows — would give the input nowhere to
       // mount, so the create moves to Files, where the `openTo` above has already opened that dir.
+      // A FOLDER made at the root goes there too: it is no item of the list, so the tab would never
+      // show it. A note made there opens as a tab, so it stays (YAZ-2619 R18, YAZ-2845 D2).
       // The reveal hop's rule (D10), applied to the other gesture that needs a row. With two or more
       // vaults a vault's root is held only as its row (YAZ-2602), and neither tab has that row (YAZ-2631 D1).
       const shown = menu.lens === 'favorites' ? favoriteNodes : menu.lens === 'focus' ? focusNodes : null
-      if (shown !== null && (menu.targetDir === root ? shown.length === 0 : findDirNode(shown, menu.targetDir) === null)) onLensChange('files')
-      setCreating({ kind, seed, parentDir: menu.targetDir })
+      const toFiles = shown !== null && (menu.targetDir === root ? shown.length === 0 || kind === 'dir' : findDirNode(shown, menu.targetDir) === null)
+      if (toFiles) onLensChange('files')
+      // The copy this tab's row stands under means nothing in Files, which draws each row once (YAZ-2845 D1).
+      setCreating({ kind, seed, parentDir: menu.targetDir, top: toFiles ? null : menu.top })
       setMenu(null)
     },
     [menu, root, favoriteNodes, focusNodes, onLensChange, openTo],
@@ -420,7 +424,7 @@ export function useInlineEdits(
   )
 
   const renaming: PendingRename | null = useMemo(
-    () => (renamingEntry === null ? null : { path: renamingEntry.path, title: vaultOf(renamingEntry.path).index.ids, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }),
+    () => (renamingEntry === null ? null : { path: renamingEntry.path, top: renamingEntry.top, title: vaultOf(renamingEntry.path).index.ids, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }),
     [renamingEntry, submitRename, vaultOf],
   )
 
@@ -432,6 +436,7 @@ export function useInlineEdits(
             kind: creating.kind,
             seed: creating.seed,
             parentDir: creating.parentDir,
+            top: creating.top,
             onSubmit: submitCreate,
             onCancel: cancelCreate,
           },

@@ -241,6 +241,11 @@ export interface MenuTargets {
   targetDir: string | null
   /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
   rowKind: 'file' | 'dir' | null
+  /**
+   * The top row of the right-clicked copy (YAZ-2845 D1): the create input and the rename input show
+   * under it alone. Null for blank space and for a search row, whose rows are no copy of the tree's.
+   */
+  top: string | null
   /** "Copy path" — the right-clicked row (file or folder), or for blank space the vault ROOT of a window with one vault (GRO-2273); null there with two or more (YAZ-2602 S10). */
   copyPath: string | null
   /**
@@ -729,6 +734,7 @@ export function Sidebar({
         showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
         targetDir: node === null && multi ? null : targetDirFor(node, root),
         rowKind: node?.type ?? null,
+        top: asSearch ? null : (node?.top ?? null),
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
         // expression TODAY and must stay independent anyway — `copyPath`'s root fallback
         // below is exactly the divergence the split exists for.
@@ -1340,7 +1346,7 @@ export function Sidebar({
                 if (lost.folders.length === 0) removeShortcutRow(path, dir)
                 else setConfirmingShortcut({ path, dir, lost })
               },
-              onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })),
+              onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),
               onDelete: askDelete,
               onAddVault: (path) => void onAddVault(path),
               onPickVault,
