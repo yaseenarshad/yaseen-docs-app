@@ -52,7 +52,7 @@ picture are set.
   - [x] Phase 4: README written, MIT `LICENSE` added
   - [x] Phase 5: branch pushed, Yasin looked at the page on GitHub
   - [x] Phase 7: About box (description, link, 8 topics) set, Projects tab off (Yasin said yes, 13 Oct 2026)
-- Now: [→] Phase 6: Yasin's yes, then merge
+- Now: [→] Phase 6: Yasin approved the page (13 Oct 2026). Open the PR, merge when the check is green
 - Remaining:
   - [ ] Phase 8: Yasin uploads `~/Downloads/yaseen-docs-app-social-preview.png` (Settings, General, Social preview)
 
