@@ -13,6 +13,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   y: 0,
   targetDir: '/v',
   rowKind: null,
+  top: null,
   copyPath: null,
   openPath: null,
   // The multi-select pair (🔒 D5, YAZ-1337): null is the ordinary menu — no selection to act on.

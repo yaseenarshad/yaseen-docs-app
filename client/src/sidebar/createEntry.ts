@@ -35,6 +35,8 @@ export interface MenuRow {
   path: string
   /** A SHORTCUT row only (YAZ-2290 D2): the folder the row stands in — `path` is the note where it lives. */
   shortcutIn?: string
+  /** The top row the right-clicked row stands under (YAZ-2845 D1): which copy of a row that shows twice. */
+  top?: string
 }
 
 /** Where a right-click creates: a dir row → itself, a file row → its parent (a shortcut row → the folder it stands in), blank space → the root. */

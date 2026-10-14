@@ -4997,6 +4997,89 @@ describe('favorites (YAZ-1766)', () => {
     expect(isOpen(el, `${v}/Projects/Alpha`)).toBe('true')
     expect(storage.getExpanded(v)).not.toContain(`${v}/Notes`)
   })
+
+  describe('a folder that shows two times (YAZ-2845)', () => {
+    // "Work" and "Work/Wrenly" both listed, as in the bug report: Wrenly is a top row AND a row inside Work.
+    const WORK = (v: string): TreeNode[] => [
+      {
+        type: 'dir', name: 'Work', path: `${v}/Work`,
+        children: [{ type: 'dir', name: 'Wrenly', path: `${v}/Work/Wrenly`, children: [{ type: 'dir', name: 'GTM', path: `${v}/Work/Wrenly/GTM`, children: [note(`${v}/Work/Wrenly/GTM/plan.md`, 'plan.md')] }] }],
+      },
+      note(`${v}/top.md`, 'top.md'),
+    ]
+    const listed = ['/Work/Wrenly', '/Work']
+    /** The input of the tab, and the top row's item that holds it (0: under the top Wrenly, 1: under Work). */
+    const inputs = (el: HTMLElement) => [...el.querySelectorAll<HTMLInputElement>('.create-inline__input')]
+    const copyOf = (el: HTMLElement, input: Element) => [...el.querySelectorAll('ul.tree[role="tree"] > li')].findIndex((li) => li.contains(input))
+    const type = async (input: HTMLInputElement, name: string) => {
+      await act(async () => {
+        input.value = name
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+    }
+    const mountWork = async (lens: 'favorites' | 'focus') => {
+      const m = await mountVault({ lens }, { favorites: listed, focus: listed, nodes: WORK })
+      act(() => rowByPath(m.el, `${m.v}/Work/Wrenly`)?.click()) // the top copy unfolds, and with it GTM shows
+      return m
+    }
+
+    it.each(['favorites', 'focus'] as const)('S3, S4, S5, S20 on %s: "New folder" on either copy of GTM opens ONE input, under the right-clicked copy; Enter makes the folder there, the tab stays, and no list changes', async (lens) => {
+      const { el, v, bridge, props } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      for (const copy of [0, 1]) {
+        rightClick(rowsByPath(el, gtm)[copy] ?? null)
+        await act(async () => itemByLabel(el, 'New folder')?.click())
+        // `openTo` opened Work too, so GTM shows two times now — yet one input stands, in the copy that was clicked.
+        expect(rowsByPath(el, gtm)).toHaveLength(2)
+        expect(inputs(el)).toHaveLength(1)
+        expect(copyOf(el, inputs(el)[0]!)).toBe(copy)
+        await type(inputs(el)[0]!, `Made ${copy}`)
+        expect(bridge.createDir).toHaveBeenCalledTimes(copy + 1)
+        expect(bridge.createDir.mock.calls[copy]?.[0].path.startsWith(`${gtm}/`)).toBe(true)
+        expect(inputs(el)).toHaveLength(0)
+      }
+      // A note inside a copy (S6): its folder is GTM, and the input stands in that copy alone.
+      rightClick(rowsByPath(el, `${gtm}/plan.md`)[1] ?? null)
+      await act(async () => itemByLabel(el, 'New note')?.click())
+      expect(inputs(el)).toHaveLength(1)
+      expect(copyOf(el, inputs(el)[0]!)).toBe(1)
+      expect(props.onLensChange).not.toHaveBeenCalled()
+      expect(bridge.favorites.set).not.toHaveBeenCalled()
+      expect(bridge.focus.set).not.toHaveBeenCalled()
+    })
+
+    it.each(['favorites', 'focus'] as const)('S8 on %s: "Rename" on a copy of a folder that shows two times opens ONE input, on that copy, and Enter renames it', async (lens) => {
+      const { el, v, props } = await mountWork(lens)
+      const gtm = `${v}/Work/Wrenly/GTM`
+      act(() => rowByPath(el, `${v}/Work`)?.click())
+      rightClick(rowsByPath(el, gtm)[1] ?? null)
+      await act(async () => itemByLabel(el, 'Rename')?.click())
+      expect(inputs(el)).toHaveLength(1)
+      expect(copyOf(el, inputs(el)[0]!)).toBe(1)
+      await type(inputs(el)[0]!, 'Go to market')
+      expect(vi.mocked(props.onRenameFile).mock.calls.length + vi.mocked(props.onRetitle).mock.calls.length).toBe(1)
+      expect(props.onLensChange).not.toHaveBeenCalled()
+    })
+
+    it.each(['favorites', 'focus'] as const)('S11, S12 on %s: on blank space of a tab with rows, "New folder" goes to Files — the tab could never show it — and "New note" stays (YAZ-2619 R18)', async (lens) => {
+      const { el, props, rerender } = await mountWork(lens)
+      rightClick(el.querySelector('.sidebar__body'))
+      await act(async () => itemByLabel(el, 'New note')?.click())
+      expect(props.onLensChange).not.toHaveBeenCalled()
+      expect(inputs(el)).toHaveLength(1)
+      act(() => void inputs(el)[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      for (const label of ['New folder', 'New dated folder']) {
+        vi.mocked(props.onLensChange).mockClear()
+        rightClick(el.querySelector('.sidebar__body'))
+        await act(async () => itemByLabel(el, label)?.click())
+        expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+      }
+      // In Files the input stands at the top of the vault: the tab's copy means nothing there.
+      await rerender({ lens: 'files' })
+      expect(inputs(el)).toHaveLength(1)
+      expect(el.querySelector('ul.tree[role="tree"] > li')?.contains(inputs(el)[0]!)).toBe(true)
+    })
+  })
 })
 
 describe('context menu order (GRO-2272 C1a)', () => {

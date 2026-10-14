@@ -13,6 +13,12 @@ export interface PendingCreate {
   seed: string
   /** Absolute path of the directory the entry is created in. */
   parentDir: string
+  /**
+   * The top row of the right-clicked copy (YAZ-2845 D1): on Focus and Favorites a folder can show
+   * twice, and two inputs would each take the focus — the first one's blur is its cancel. So the
+   * input mounts under that copy alone. Null (blank space, a search row): under each level that matches.
+   */
+  top: string | null
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
 }
@@ -21,6 +27,8 @@ export interface PendingCreate {
 export interface PendingRename {
   /** Absolute path of the row (file or dir) being renamed. */
   path: string
+  /** As `PendingCreate.top` (YAZ-2845 D1): the box replaces the label of the right-clicked copy alone. */
+  top: string | null
   /** A note's or a folder's box edits a TITLE: the vault uses IDs. Where it does not (YAZ-2523 🔒 V3) it edits a file name, held to the name rules. */
   title: boolean
   onSubmit: (name: string) => Promise<void>
@@ -197,6 +205,8 @@ interface TreeProps {
   marks?: TreeMarks
   /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a row that has nothing to open asks it. The top level's alone. */
   onLeaveToPage?: () => boolean
+  /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
+  top?: string
   depth?: number
 }
 
@@ -221,6 +231,7 @@ function TreeLevel({
   reorder,
   marks,
   onLeaveToPage,
+  top,
   depth = 0,
 }: TreeProps) {
   const recurse = { vaultRows, expanded, activeFile, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks }
@@ -228,6 +239,12 @@ function TreeLevel({
   const here = shortcuts.get(dirPath)
   const rows = here === undefined ? nodes : [...nodes.filter((n) => n.type === 'dir'), ...[...nodes.filter((n) => n.type === 'file'), ...here].sort(byName)]
   const isShortcutRow = (node: TreeNode): boolean => here?.includes(node) === true
+  // The top row a row stands under (YAZ-2845 D1): a top row is its own. It tells the copies of a row
+  // that shows twice apart, and a right-click hands it to the menu, so an input mounts in that copy alone.
+  const topOf = (node: TreeNode): string => top ?? node.path
+  const inCopy = (want: string | null, node: TreeNode): boolean => want === null || want === topOf(node)
+  // The top level is no copy of anything: one per tab, so a create there (the root) mounts as before.
+  const createsHere = pending !== null && pending.parentDir === dirPath && (pending.top === null || top === undefined || pending.top === top)
   // The reorder gesture lives on the TOP rows alone (YAZ-2631 D3): a favorite, a focus item, a vault row of Files.
   const rowReorder = reorder !== undefined && depth === 0 ? reorder : null
   /** The vault a top row of the Focus tab or of the Favorites tab is in, file or folder (YAZ-2631 D4): said only where the window has two or more. A vault row is in no vault's folder, so it says none — and Files has no other top row. */
@@ -247,7 +264,7 @@ function TreeLevel({
     // The arrows are the whole tree's, taken once at its top (YAZ-2662 D11) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
-      {pending !== null && pending.parentDir === dirPath && (
+      {pending !== null && createsHere && (
         <li>
           <CreateInline
             kind={pending.kind}
@@ -261,7 +278,7 @@ function TreeLevel({
       {rows.map((node) =>
         node.type === 'dir' ? (
           <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)} aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
-            {renaming !== null && renaming.path === node.path ? (
+            {renaming !== null && renaming.path === node.path && inCopy(renaming.top, node) ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, and what it edits is
               // the folder's TITLE (YAZ-2420 🔒 D16).
               <RenameInline initial={pageLabel(node.path, true, titles)} title={renaming.title} indent={8 + depth * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
@@ -301,7 +318,7 @@ function TreeLevel({
                   selection.set(node.path)
                   onOpenFile(node.path)
                 }}
-                onContextMenu={(e) => onNodeContextMenu(node, e)}
+                onContextMenu={(e) => onNodeContextMenu({ ...node, top: topOf(node) }, e)}
                 draggable={rowReorder !== null}
                 onDragStart={rowReorder === null ? undefined : (e) => {
                   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
@@ -336,9 +353,9 @@ function TreeLevel({
                 {vaultTag(node.path)}
               </button>
             )}
-            {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} {...recurse} />}
+            {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} top={topOf(node)} {...recurse} />}
           </li>
-        ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) ? (
+        ) : renaming !== null && renaming.path === node.path && !isShortcutRow(node) && inCopy(renaming.top, node) ? (
           // Inline rename (Links E1, GRO-2194): a note's box edits its TITLE (YAZ-2420 🔒 D16);
           // view-only files show the full filename so their extension stays explicit.
           // The REAL row only: a second input on the note's shortcut row would take the focus,
@@ -387,7 +404,7 @@ function TreeLevel({
               onDoubleClick={(e) => {
                 if (!e.shiftKey && !e.metaKey && node.kind !== null) onKeepFile(node.path)
               }}
-              onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath } : node, e)}
+              onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
