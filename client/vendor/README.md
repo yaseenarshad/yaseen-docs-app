@@ -17,7 +17,7 @@ map requires).
 cd ~/Documents/GitHub/yaseen-excalidraw && git pull
 yarn install
 HASH=$(git rev-parse --short HEAD)
-V=~/Documents/GitHub/yaseen-milkdown/client/vendor
+V=~/Documents/GitHub/yaseen-docs-app/client/vendor
 for p in excalidraw common element math fractional-indexing; do
   yarn --cwd ./packages/$p build:esm
   (cd packages/$p && npm pack --pack-destination /tmp)
@@ -43,4 +43,4 @@ Each ships as a `.tgz`, the readable `.patch` it was built from, and an `.md`. B
 through the root `package.json` (`file:` devDependencies plus `overrides`, so every Milkdown package
 resolves the patched copy) and rebuilt by one script: `node tools/buildMilkdownPatch.mjs
 <components|plugin-tooltip>`. The upstream Milkdown PRs for both fixes are in
-`thoughts/yaz-2131-scope/upstream/`: prepared, not opened; Yasin's call.
+`client/vendor/upstream/`: prepared, not opened; Yasin's call.

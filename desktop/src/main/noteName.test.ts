@@ -3,7 +3,7 @@ import { kebabTitle, noteFileName } from '@shared/noteName'
 
 describe('a title in kebab-case (YAZ-2420 D3)', () => {
   it('is the title in lowercase, its words joined by hyphens', () => {
-    expect(kebabTitle('UP-001 - Abdul Rehman R')).toBe('up-001-abdul-rehman-r')
+    expect(kebabTitle('UP-001 - Abdul Sample R')).toBe('up-001-abdul-sample-r')
   })
 
   it('turns every run of punctuation and spaces into one hyphen, and has none at either end', () => {
@@ -49,7 +49,7 @@ describe('a title in kebab-case (YAZ-2420 D3)', () => {
 
 describe("a note's file name (YAZ-2420 D3)", () => {
   it('is the kebab-case title, then the id', () => {
-    expect(noteFileName('UP-001 - Abdul Rehman R', 'k3m9x2pq7abc')).toBe('up-001-abdul-rehman-r-k3m9x2pq7abc.md')
+    expect(noteFileName('UP-001 - Abdul Sample R', 'k3m9x2pq7abc')).toBe('up-001-abdul-sample-r-k3m9x2pq7abc.md')
   })
 
   it('keeps a leading underscore in front of the kebab-case title', () => {

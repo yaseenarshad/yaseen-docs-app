@@ -1009,7 +1009,7 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
 })
 
 describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', () => {
-  const LONG = '/Users/yasin/Documents/GitHub/content-skills/content-app-planning-with-a-very-long-folder-name'
+  const LONG = '/Users/me/Documents/GitHub/some-project/a-vault-with-a-very-long-folder-name'
 
   it('each row is ONE line — a name, an ⓘ and a time — and no path anywhere in the panel', () => {
     const { el } = render()

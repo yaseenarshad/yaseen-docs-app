@@ -12,7 +12,7 @@
   once upstream Milkdown releases the same fix.
 
 Upstream PR: prepared, awaiting Yasin's go (the patch and PR text are in
-`thoughts/yaz-2131-scope/upstream/list-item-restore/`); drop this hunk under
+`client/vendor/upstream/list-item-restore/`); drop this hunk under
 YAZ-2213 once released.
 
 The package name and version remain unchanged so every Milkdown package uses

@@ -240,4 +240,6 @@ The first three things to try:
 
 The app is Electron with a React editor that uses Milkdown. The [developer page](docs/DEVELOPMENT.md) tells how to run, build and test it. The rules that the app follows are in [docs/CONTRACTS.md](docs/CONTRACTS.md).
 
+Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md). Found a security problem? Read [SECURITY.md](SECURITY.md).
+
 The license is [MIT](LICENSE).
