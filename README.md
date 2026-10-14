@@ -1,152 +1,249 @@
-# yaseen-milkdown
+<p align="center">
+  <img src="docs/assets/banner.png" width="860" alt="Yaseen Docs. The notes app for people who work with AI agents. Plain markdown files, with an outliner, tables and boards on top.">
+</p>
 
-Yaseen Docs — a local markdown editor for a folder of notes (e.g. an Obsidian vault), as an Electron macOS desktop app: a React renderer running [Milkdown Crepe](https://milkdown.dev/), and a main process that reads and writes the files on this machine (the renderer only ever talks to the `window.yaseenDocs` bridge — there is no server of any kind). Pick a folder, browse its `.md` files in the sidebar, edit WYSIWYG, and changes are saved back to disk (debounced, atomic). Files changed outside the app (another editor, sync) are reloaded live; if you have unsaved edits you get a Reload / Keep mine choice. YAML frontmatter is preserved byte-for-byte. Lineage in one line: product behaviour follows Obsidian, the transport mechanism follows VS Code (sandboxed renderer + typed preload bridge + main-process fs).
+<p align="center">
+  <a href="https://github.com/yaseenarshad/yaseen-docs-app/releases/latest"><img src="https://img.shields.io/github/v/release/yaseenarshad/yaseen-docs-app?label=version" alt="The newest version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Mac%20(Apple%20Silicon)%20%C2%B7%20Windows%20(x64)-blue" alt="Mac with Apple Silicon, and Windows 64-bit">
+</p>
 
-## Requirements
+<p align="center">
+  <a href="https://github.com/yaseenarshad/yaseen-docs-app/releases/latest"><b>Download</b></a> ·
+  <a href="#the-answer">How it works</a> ·
+  <a href="#the-doubts">Questions</a> ·
+  <a href="docs/FEATURES.md">Every feature</a>
+</p>
 
-Node.js 20.19 or newer (22+ recommended), npm, macOS (the packaged app targets macOS arm64; the dev build runs wherever Electron does).
+<p align="center">
+  <b>Write like Logseq. Organise like Notion. Own your files like Obsidian.<br>And your AI agent reads every note.</b>
+</p>
 
-## Run
+<p align="center">
+  <img src="docs/assets/hero.gif" width="860" alt="A heading section folds in a note. A folder opens as a board, and a card moves to a new column. Then an AI agent runs one command, and its comment shows below the open note.">
+</p>
 
-```sh
-npm install
-npm run dev      # launches the Electron app with HMR
+<p align="center">
+  <a href="https://github.com/yaseenarshad/yaseen-docs-app/releases/latest"><b>Download for Mac</b></a> · <a href="https://github.com/yaseenarshad/yaseen-docs-app/releases/latest"><b>Download for Windows</b></a><br>
+  <sub>Free · No account · No server · Your notes stay on your computer</sub>
+</p>
+
+## The problem
+
+I used Notion for the databases, Logseq for the outliner, Obsidian for the plain files and Google Docs for the smooth writing. Each one is the best at one thing. None of them has all four. Then I started to work with AI agents all day, and agents need notes that are files on your computer. So I built one app where you get the best part of each, on files that your agent can read.
+
+You know these moments:
+
+- You write in Notion, and each paragraph is a block. Your agent goes through an API for each page.
+- You move to Obsidian for the files. Then you want to zoom into one bullet, and you need a plugin. You want sync, and it costs from $4 each month.
+- You try an outliner. Each line is a bullet, and your notes are on a server or in a database.
+- You open Google Docs, because it is smooth. Your bullets do not fold, and there is no file for your agent to open.
+
+| | Notion | Obsidian | Google Docs | Logseq · Roam · Workflowy | Yaseen Docs |
+| -- | :--: | :--: | :--: | :--: | :--: |
+| **Local Markdown (Agent Native)** | ❌<br><sub>Cloud</sub> | ✅ | ❌<br><sub>Cloud</sub> | ❌<br><sub>Cloud or a database ¹</sub> | ✅ |
+| **Sync Across Devices Included** | ✅ | ❌<br><sub>Add-on, from $4 a month</sub> | ✅ | ✅ | ✅<br><sub>Free, through git</sub> |
+| **Smooth Outliner** | ❌<br><sub>Toggles only</sub> | ❌<br><sub>Zoom needs a plugin</sub> | ❌<br><sub>Headings only</sub> | ✅ | ✅ |
+| **Real Document (Not Blocks)** | ❌<br><sub>Blocks</sub> | ✅ | ✅ | ❌<br><sub>Each line is a bullet</sub> | ✅ |
+| **View Files in Spreadsheet-like Table (Any Folder = Database)** | ✅ | ❌<br><sub>Needs a <code>.base</code> file</sub> | ❌ | ❌ | ✅ |
+| **Own Your Data (No Account, No Server)** | ❌ | ✅ | ❌ | ❌<br><sub>²</sub> | ✅ |
+| **Open Source** | ❌ | ❌ | ❌ | ❌<br><sub>²</sub> | ✅ |
+
+<sub>¹ The older version of Logseq keeps markdown files. The current version stores a database.<br>² Logseq is open source, and it keeps your notes on your computer with no account. Roam and Workflowy are closed and need an account.</sub>
+
+Four apps, and you paste between them and your agent. You need one.
+
+## The answer
+
+Yaseen Docs gives you the outliner, the databases and the smooth writing in one app, on plain markdown files that your agent opens directly.
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/assets/step-1.png" width="260" alt="The Notes folder in the sidebar, with its folders and notes"><br><b>1. Open a folder</b><br>Any folder of <code>.md</code> files. No import, no account.</td>
+    <td align="center" width="33%"><img src="docs/assets/step-2.png" width="260" alt="A note with nested bullets and a line that shows the path to the current bullet"><br><b>2. Write and organise</b><br>Bullets, tables and boards, all on those files.</td>
+    <td align="center" width="33%"><img src="docs/assets/step-3.png" width="260" alt="A comment from an AI agent below a note"><br><b>3. Give it to your agent</b><br>It reads the same files and leaves comments.</td>
+  </tr>
+</table>
+
+## What it does
+
+### Fold it, zoom it, never get lost
+
+Each list is an outline. Fold a bullet, or fold a full heading section. Click the dot of a bullet, and that bullet becomes the page. Drag a bullet by its handle. `Tab` and `Shift-Tab` move it in and out. `⌘Enter` makes it a task, then ticks it. A coloured line shows the path from the top of the list to the bullet that you are on.
+
+All of it is built in. There is no plugin to find and no setting to turn on.
+
+**So what:** a note of 2,000 lines is as easy to work in as a note of 20 lines. And a fold or a zoom is only a view. It never changes your file.
+
+<p align="center">
+  <img src="docs/assets/outline.gif" width="860" alt="A bullet folds with Command and the up arrow. A heading section folds with a click. Then Command and the full stop zoom into one bullet, and it becomes the page.">
+</p>
+
+### Turn any folder into a table or a board
+
+Double-click a folder. It opens as a page, and the notes in it are the rows. There is no setup file and no import. The columns are the properties that your notes already have. Add a Board view, and drag a card to a different column.
+
+It works like a spreadsheet:
+
+- Edit a cell in place, and move between cells with the arrow keys.
+- Freeze columns. Drag a column to move it or to make it wider.
+- Sort by more than one column. Filter with All, Any or None.
+- Get a summary row: Count, Sum, Average, Median, Min, Max and more.
+- Group by one property, then by a second one, in a Table and on a Board. Drag a row to a different group, and its value changes.
+
+You get five views: Table, Board, Cards, List and Outline.
+
+**So what:** your projects, your reading list and your meetings each get a database, and there is no database to manage. A column is one line in each note. When you drag a card, the app changes one line in one file, and your agent reads it at once.
+
+<p align="center">
+  <img src="docs/assets/board.gif" width="860" alt="The Projects folder opens as a table of 8 notes. It changes to a board, and the card Customer interviews moves from Todo to In progress.">
+</p>
+
+### Your agent comments. It does not edit behind your back.
+
+Each note has a comment thread below it. The app ships a command, `yaseendocs`, that your agent runs. The comment shows in your open note at once. You read it and you answer it in the app, as you do with a person.
+
+The command can edit or delete only the comments that an agent wrote. It refuses to change yours.
+
+**So what:** you see what your agent thinks before it changes one word of your text.
+
+<p align="center">
+  <img src="docs/assets/comment.gif" width="860" alt="A terminal runs the yaseendocs comment command. Comment 1 from the agent shows below the open note.">
+</p>
+
+To set it up on a Mac, put these two lines in the instructions file of your agent (`CLAUDE.md` or `AGENTS.md`). Your agent reads the help and learns the rest.
+
+```
+To comment on one of my notes, use this command. Run it with --help first:
+"/Applications/Yaseen Docs.app/Contents/Resources/bin/yaseendocs"
 ```
 
-See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, agent verification).
+### Sync with the git that you already have
 
-```sh
-npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
-npm run typecheck
-npm run build    # electron-vite build into desktop/out
-npm run e2e      # 60 Playwright-Electron specs driving the real app
-```
+Turn on GitHub sync for a folder that is a git repo. The app commits and pushes 30 seconds after you stop typing. It pulls when you open the folder and when you come back to the window. It uses the git on your computer, so the app never sees your password.
 
-## Build the app
+**So what:** your notes are on each of your computers, with the full history, and you pay for no sync plan.
 
-```sh
-npm run desktop:build
-```
+<p align="center">
+  <img src="docs/assets/sync.png" width="720" alt="The status at the top of a note: Synced and Saved">
+</p>
 
-produces `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg` (arm64, ad-hoc signed). Drag the `.app` into `/Applications`, or send someone the dmg.
+### Always know where you are in a long note
 
-## Sharing it
+A table of contents sits at the right edge of each note. It lists your headings, or your bullets when the note has no headings. Each level has its own tone and its own line, and a marker follows you while you scroll. Click a name to jump there, or press `⌘J` on a Mac. Drag its edge to make it wider.
 
-Every packaged version is downloadable from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-docs-app/releases) — the `.dmg` for a Mac (Apple Silicon), the `-win-x64-setup.exe` for Windows — no build toolchain needed on the installing machine.
+**So what:** you jump to any part of a long note in one click, and you always see where you are.
 
-The Mac app is ad-hoc signed, not notarized, so on someone else's Mac (macOS 15) the first open is blocked with "Apple could not verify…". Once: open **System Settings › Privacy & Security**, scroll to the blocked-app notice, click **Open Anyway**, and confirm. After that it opens normally. The Windows installer is unsigned, so SmartScreen shows "Windows protected your PC" the first time: click **More info › Run anyway**, once.
+<p align="center">
+  <img src="docs/assets/toc.png" width="860" alt="A long note with the table of contents at the right. Lines show three levels of headings, and the current heading, Support, is marked.">
+</p>
 
-GitHub sync uses the computer's own git, found at a fixed set of locations rather than on `PATH` (`desktop/src/main/git/exec.ts`): on a Mac the Command Line Tools or Homebrew git, on Windows [Git for Windows](https://git-scm.com/download/win) (its installer bundles the Git Credential Manager, so a one-time GitHub sign-in sticks). Without one, the sync banner says so and offers a setup prompt to paste into an LLM.
+### It is all one file
 
-## Editing
+Here is the note from the pictures above, as it is on disk: its place on the board, and the comment from the agent.
 
-Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Editor rules" and "Keyboard" for the exact semantics:
-
-- **Fold**: parent bullets get a chevron — and so do `H1`–`H3` headings outside lists, where the chevron collapses the heading's section (everything up to the next same-or-bigger heading). A bullet holding an image folds too: the picture shrinks to a small thumbnail on the line (type before or after it to name it), clicking the thumbnail unfolds it, and an expanded image shows a corner button that folds it back. Collapsed state is remembered per file in the app state file (`~/Library/Application Support/Yaseen Docs/yaseendocs.json`) only — the markdown on disk (and its mtime) is never touched by folding. `⌘↑` / `⌘↓` fold / unfold the bullet or heading section at the caret (Logseq's defaults; a no-op on leaves, native document jump outside both), `⌘⇧U` folds every foldable bullet, `⌘⇧I` unfolds all, and `⌘Z` right after a fold reverts it (folds older than the latest action stay put; `⌘Z` is normal text undo otherwise).
-- **Bullet threading** (Roam / Logseq "bullet paths"): the lines from each nested list's top down to the bullet at the caret, and the bullets on that path, take the accent colour and stop at the active bullet. View-only; Settings › Editor › Bullet threading has Show on/off (default on), Line width 1/2/3px and Line colour (Default = the app accent).
-- **Section indent**: a note that uses headings can read like a bullet note. Turn it on for a note from the page cog ("Section indent", off by default, remembered for that note): the text stands below its heading, one step in for each level of nesting, and a thin line runs down from each heading to the end of its section. The lines on the way to the caret take the Bullet threading colour and width. A click on a line folds the sections beside it; a second click opens them. View-only, the file never changes; Settings › Editor › Section indent has Step width 24/30/36px and Grey lines (Always show / Only near the mouse).
-- **Keys**: `Tab` indents (no-op on a first sibling), `Shift-Tab` outdents (level 1 → paragraph), `Enter` at the end of a parent creates its first child, `Enter` on an empty item outdents, `Backspace` at the start of an item joins it into the previous line.
-- **Tasks**: `⌘Enter` cycles the item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.
-- **Marks**: `⌘U` toggles underline (stored as `<u>text</u>`, like obsidian-underline), `⌘⇧X` toggles strikethrough.
-- **Images**: Double-click an image for a full-size lightbox that pages through every image on the page (`←` / `→` or the arrows at the bottom).
-- **Lines**: `⇧↓` / `⇧↑` select by whole lines (a line = the paragraph, heading, or bullet text, never a wrapped row): mid-line they first take the rest of this line, from a line edge each press adds exactly one more line, never a piece of the next, and going back undoes one press at a time. Folded or zoomed-away lines are skipped, and nothing hidden is ever deleted: `⌫`, `Delete`, typing and `Enter` over such a selection remove only what you can see. A deleted parent bullet's children move up one level (unfold a parent first to delete it with its children).
-- **Zoom**: click a bullet's glyph (or `⌘.` at the caret) to zoom into that subtree, Workflowy-style; breadcrumbs at the top zoom back out (`⌘⇧.` = out one level). View-only — the file is never touched.
-- **Zoom history**: every zoom in/out is a history entry, so Back returns to the level you were at before an accidental zoom and Forward re-zooms. `⌘Z` right after a zoom reverts it too — `⌘Z` always reverts the single latest view action — bullet fold, heading fold or zoom — and is normal text undo otherwise.
-- **Bullet markers**: `-`, `*` and `+` are the same bullet — bullets at the same indent are siblings whatever marker each uses (unified on load; saved as `*` like before).
-- **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line collapses the parent bullets directly alongside it or fully expands every parent below them, never the line's owner (caret stays put).
-- **Drag**: the 6-dot handle moves a block; with several blocks highlighted, grabbing a handle inside the highlight moves them all together (drop position controls nesting depth). Over a guide line or a fold chevron the handle yields, so those clicks always land.
-- **Table of contents**: a note with two or more headings shows them at its right edge — as names beside the text when the window has room for them without making the text narrower, else as small lines; put the mouse on the lines (or scroll) and the names open as a card. The names show their level: each level has its own tone, and with the mouse on the names thin lines show which names are below which, with the lines from the current name up to its parents in the accent colour; that accent path also shows while you scroll the note with the wheel. Settings › Editor › Table of contents › **Level lines** (On hover / Always show / Never) says when the lines show. Click a name to go there: the note glides to it, opens any fold in the way and puts the caret on it. `⌘J` does the same from the keyboard (`↑` / `↓` pick, `⏎` goes, `Esc` returns to the note). The names are the `H1`–`H3` headings outside bullets, or, in a note with fewer than two of those, its bullets, three levels deep; **TOC made from:** in the page cog (Auto / Headings / Bullets) chooses for one note, remembered per note in the app state file. Two places turn it off: Settings › Editor › Table of contents (When there is room / Always / Off — the card's **Pin** is "Always") for the whole app, and the cog's "Table of contents" switch for one page until it is closed. View-only — the file is never touched.
-- **Heading levels**: the heading at the caret, and the one under the mouse, shows a small tag after its text (`H2`); "Heading levels" in the page cog shows it on every heading of that page.
-- **Selection toolbar**: select text and the toolbar leads with `H1` `H2` `H3` `T` (back to plain text), then bold, italic, strikethrough, the highlight colours, code and link.
-- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Content width is Narrow (1040px), Medium (1440px), or Full (fluid); the page header, editor, a folder's views, comments, and backlinks stay aligned to that one global setting. Width, line spacing, and the gap between blocks are adjustable in Settings (the cog bottom-left, or `⌘,`); stored in the app state file (every window follows a change live), never in the files. Settings › Hotkeys lists every hotkey.
-- **Spelling**: misspellings get the OS squiggle; right-click for suggestions, "Add to Dictionary", and cut/copy/paste.
-- **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
-
-### Comments
-
-Every note carries a Linear-style comment stream under its body, before "Linked mentions". It lives in the note's own frontmatter, under one `comments` key, so it travels with the file (sync, rename, Obsidian); no sidecar, nothing else is written. A folder has the same stream under its views, kept in the folder's hidden `.folder.md` (see Folders). Threads are one level deep (a reply names its top-level parent in `reply_to`; a reply to a reply is filed under the root), a comment can carry an optional one-line title, every comment wears a stable number (`#3`, a reply `#3.1`) that never changes, even after a delete, and folds like a bullet without its header text ever moving (Expand all / Collapse all on the header), and bodies are GitHub-flavoured Markdown, rendered read-only and sanitised. The Properties panel shows the key as Reserved, and it never enters the index or a view column. `⌘Enter` posts; Delete asks first.
-
-For agents: the app ships a command, `yaseendocs` (in the packaged app, `Yaseen Docs.app/Contents/Resources/bin/yaseendocs`). Give the agent the command and a page's path — right-click the page › **Copy path**; a folder's page is the `.folder.md` inside it. The agent runs `--help` and learns the rest: `yaseendocs comment "<page.md>" --body "…"` (with `--title`, `--reply-to`, `--by`), `comments` (`--json` for the threads), `edit` and `delete` — the last two only on comments an agent wrote (`by`), never yours. It writes exactly what the app writes. One verb takes no page: `yaseendocs vaults` lists the vaults the app knows (`--json` for a script), and only reads. Without the command, append a comment by hand: `by: agent`, `n` one past the highest in its run — the page's top-level comments, or that parent's replies — and quote the `id` if it happens to be all digits:
-
-```yaml
+```markdown
+---
+status: In progress
+owner: Maya
+due: 2026-10-24
 comments:
-  - id: 3f9a1c2e
+  - id: e92e9d39
     n: 1
-    at: 2026-09-11T18:22:31Z
+    at: 2026-10-14T02:02:25Z
     by: agent
-    title: Numbers check
-    body: The Q3 figure in the second table is off by one row.
+    title: The headline is wrong
+    body: Paying for 10 of 12 months saves 16.7%, not 20%.
+---
+## Why
+
+- The annual plan is below the fold
+- Visitors pick monthly because it is the only plan they see
+
+## Headline
+
+- "Save 20% with annual"
+- Pay for 10 months, get 12
 ```
 
-### Review
+**So what:** open it in any editor. Keep the folder in git. If you stop using Yaseen Docs, your notes are still your notes.
 
-Upkeep review is off until you turn it on for a vault (Settings › Review). Once it is on, a note that has gone unchanged and unchecked for 30 days comes up in the **Inbox** (the row above the sidebar's tabs, with the number due). With several vaults in one window, each vault that has it on has its own Inbox row, "Inbox · <vault>". Clicking it shows each due note's whole page in place of your tabs: **Still relevant** (`⌘⇧Enter`) pushes its next check out — 60 days, then 120, 240, up to 365 — and editing the page starts it again at 30. **Skip** (`⌘⇧S`) brings it back after the others, **Undo** takes back the last answer, `Esc` (or the Inbox row again) returns to your tabs exactly as they were. A folder's right-click menu has **Review this folder**.
+### Also in the box
 
-A review writes one line into the note's own frontmatter, under `reviews`; when it is next due is worked out from that log, never stored, so the three numbers (Settings › Review, kept per vault in `.yaseendocs/review.json`) can change at any time. A note's right-click menu turns its review off (`review: false`); its page lists its reviews under "Linked mentions". For agents, `yaseendocs due "<page.md>"` prints the day a page is next due, and `yaseendocs due "<folder>"` lists what is due now, each page by its title and path.
+- **Links that do not break.** Type `[[` to link to a note. Rename or move a note, and its links follow. Rename it outside the app, and the app offers to repair them.
+- **Search.** `⌘K` finds a note by title, alias or folder, across each vault in the window.
+- **Many vaults, one window.** Put up to 8 folders side by side, and save the set as a workspace.
+- **Live reload.** A file that your agent or a different editor changes updates in your open note. If you have edits that are not saved, the app asks first.
+- **Permanent IDs, if you want them.** Turn them on for a vault, and each note gets a short ID such as `DOC-12` that you and your agent can say, type and search.
+- **Review inbox.** Turn it on, and a note that you did not touch for 30 days comes back for a quick "Still relevant?" check.
 
-## Two kinds of vault
+The full list, with each shortcut, is in [docs/FEATURES.md](docs/FEATURES.md).
 
-A vault is one of two kinds. A folder you open is a **plain** vault: the app asks nothing and writes nothing you did not ask for. IDs are a setting, for the vault where you want them: Settings › Files & Links › **Give this vault's notes IDs**.
+## The proof
 
-- **IDs on**: every note gets a permanent ID, the app names each note's file from its title and its ID, and links keep working when a note is renamed or moved, by anything. Everything below about titles, built file names, IDs, shortcuts, each folder's own properties and the default Board and `status` column describes this kind of vault.
-- **IDs off** (how every folder starts): the app is a plain viewer and editor of the files you have, and it never writes anything you did not ask for: no IDs, no `title:` lines, no hidden files in your folders. A note's name is its file name: a new note is `Name.md`, a rename renames the file and updates the links that named it, and a copy is `Name copy.md`. Folder pages and tables still work: a folder opens as a Table whose columns are the notes' own properties, and editing a cell changes that one line in that one note. Shortcuts, per-folder properties, deleting a column, Copy ID and search by ID are not offered.
+Each number is measured, not estimated.
 
-Click **On** and a box asks first. It says what an ID is, how many notes and folders the app will write to, and how to undo it, and it has a text field: type the vault's **ID letters**, 2 to 5 letters such as `YAZ`. "Give IDs" does nothing until the letters are typed; Cancel or Esc writes nothing. A vault where every note and folder already has its ID turns on by itself.
+| What | Number |
+| -- | -- |
+| Automatic tests | 6,719 |
+| Releases | 60 in less than 8 weeks |
+| From the start of the app to your note on the screen | 385 ms |
+| To open a note of 5,000 lines | 1.04 s |
+| An edit by your agent shows in your open note | 137 ms |
+| From a key press to the screen, at the end of a note of 5,000 lines | 32 ms |
 
-The answer and the letters are kept in the vault itself, in `.yaseendocs/ids.json`, so your other machines get the same ones. You can change the answer at any time. Turning it on gives the notes their IDs then. Turning it off stops the app writing from then on and removes nothing; notes show their file names, and links stored as IDs do not open, until you turn it back on.
+<sub>The speeds are medians on an Apple M3, measured with version 0.9.28.</sub>
 
-A note's ID is the vault's letters and a number, like `YAZ-12`: the next number of the vault, so you can say it, type it and remember it. It is in the note's `id:` line, in each link to the note (`[[YAZ-12]]`) and in its file name (`my-note-yaz-12.md`). A number that a deleted note had is not used again. Each Mac keeps its own count in the vault, in `.yaseendocs/ids/`, so two Macs that sync the vault never change the same file. The 12-character IDs that older versions gave (`6cbnmcq5n2sj`) still work everywhere, and the app never changes one unless you ask: Settings › **Old IDs** › "Give them numbers" gives each of those notes the next number, and its links and file name follow.
+What the app does not need:
 
-With IDs on, the same group of Settings has three more rows.
+- No account.
+- No payment.
+- No server and no telemetry. The app uses the network only when you turn on GitHub sync, or when a note shows a picture from the web.
 
-- **ID letters**: "Change letters" changes the letters in every note's ID, in each link and in each file name. The numbers stay, and a link with the old letters still opens its note. Do it on one Mac, while the vault is synced and closed on the others.
-- **Duplicate IDs**: two Macs that have not synced yet can give two notes the same number. The app fixes that by itself after the sync: the older note keeps the number, the Mac that made the newer note gives it the next one and updates the links it wrote, and a notice says what changed (`YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.`). "Check for duplicates" runs the same check now.
-- **Old IDs**: shown while a note still has a 12-character ID, or while a run that gives them numbers stopped before its end. "Give them numbers" gives each such note the next number, oldest file first, and its links and its file name follow. Sync the vault and close it on the other Macs first.
+## The doubts
 
-A file that arrives with no ID (an agent wrote it, or you dropped it in Finder) gets its number from one Mac only: the vault's first Mac (the one whose count file in `.yaseendocs/ids/` is oldest) does it at once, and every other Mac waits 10 minutes and does it only if the file still has none. So two Macs never write two numbers into one file.
+**Will it change my files?**<br>
+Opening a note never writes to it, and your frontmatter stays as it is. The first time that you edit a note, the app saves it in one tidy markdown style: `*` bullets and 2-space indents. IDs stay off until you turn them on.
 
-## Sidebar and windows
+**Does it work with my Obsidian vault?**<br>
+Yes. Open the same folder, and your `[[wikilinks]]` work. Tags show as plain text. The app does not read Obsidian plugins or `.base` files.
 
-- **Three tabs**: the sidebar shows your vault three ways, switched by the tabs at the top. **Files** (the default, YAZ-1846) is the ordinary folder tree on disk — every file, not just the ones the app can open: a file with no in-app viewer (an EPUB, a ZIP, …) is listed muted and a click hands it to the OS default app, as does right-click → Open in ▸ "Default app" on any row. Every folder shows how many notes it holds, and a folder is itself a page: double-click it to open it (see Folders). The **eye** tab is your focus list and the **♥** tab is your favorites (both below). Same vault, three readings; all offer the same right-click menu.
-- **Create**: right-click a folder, a file, or the blank space under the tree → "New note" / "New folder", and below a divider "New dated note" / "New dated folder" (the dated ones come pre-titled with today's `MM_DD- `, cursor ready for the rest); type its title inline (Enter confirms, Esc cancels). A title is free text and is kept in the note's own frontmatter as `title:` (a folder's in its `.folder.md`); the name on disk is built from it by the app, never typed: a note's file is its title in kebab-case plus the note's id (`UP-001 - Abdul Rehman R` → `up-001-abdul-rehman-r-yaz-12.md`), a folder's is its title in kebab-case (`Upwork 2026` → `upwork-2026/`). Two notes can share a title; their ids keep the files apart. Notes open at once, starting from the folder's template when it has one (a hidden `.template.md` in that folder); nothing is ever overwritten.
-- **Rename and delete**: both are in the same right-click menu, on every tab. Renaming a note or a folder edits its title inline — the same edit as the title at the top of its page, or a double-click on its name in a table: the `title:` line is rewritten, the file or folder is renamed to match (a note keeps its id), and every `[[link]]` that spelled the old title follows it across the vault (a summary notice says how many; links the app wrote are by id and need no update). Any other file is renamed by its name. Deleting moves the file to the system Trash — never a permanent delete — and closes its tabs. A rename or move done OUTSIDE the app (Finder, sync) is detected too and offers to repair the links, always confirm-first. The app never renames a file it did not name: a note made elsewhere keeps its file name, and shows it as its title, until you edit its title in the app; a `title:` you or an agent write by hand shows at once and renames nothing.
-- **Cut, copy, paste**: right-click a row (or a selection) → **Cut** / **Copy**, then right-click a folder → **Paste** (`⌘X` / `⌘C` / `⌘V` do the same on the selected rows; `⌘V` pastes into the selected folder, beside the selected file, or into the vault root when nothing is selected; with several vaults in the window, select a vault or a folder first). One clipboard for the whole app, so you can copy in one window and paste into another vault's window. A copied note is its own note at once — a fresh id, the title "<title> copy" and a file name built from both — so pasting into the same folder is how you duplicate; a copied folder is "<title> copy", every note in it gets its own id, and each keeps the folder's values for it; any other file that lands on an existing name becomes "Photo copy.png", then "Photo copy 2.png". A cut never overwrites, moves tabs and links along like drag-drop, and pastes once. Folders copy whole. The menu itself is six groups: open, clipboard, new, this row, favorites + **Open in ▸** (new window, VS Code, default app, Finder), delete.
-- **Search**: `⌘K` searches note titles and aliases across the vault — across every vault in the window — from the sidebar; ↑/↓ pick, Enter opens, ⌘-Enter opens in a background tab. Type a note's number — `12`, `YAZ-12`, `yaz12` or `yaz 12` all find `YAZ-12` — or paste anything that holds an ID: a `[[link]]`, a file name, an old copied path. That note or folder is the first result, and the title matches for the same text come after it.
-- **Tabs and windows**: notes — and folders — open in tabs (`⌃Tab` / `⌃⇧Tab` or `⌘⇧]` / `⌘⇧[` to switch, `⌘W` closes the **tab** — on the last one it empties the window and then closes it). `⌘⇧N` duplicates the window (same vaults, same file). `⌘O` opens the vault switcher in the sidebar header. It lists your vaults in two groups: **Open**, the vaults that have a window (a minimized one too), then **Not open**; in each group the vault you used last is on top, so `⌘O` `⏎` goes to the open vault you were in before this one — with no other vault open, to the last one you used — however you got here: a click on a vault's window counts as a use (type to filter, `⏎` brings that vault to the front — a minimized window is restored — or opens it in a new window, `⇧⏎` or ⇧-click opens it in this window; hover a vault's ⓘ to see its full path; right-click a vault — or the header's vault name — to open it in this window, give it a display name, set its shortcut, copy its name or path, reveal it in Finder, open it in VS Code, or remove it from the recents; the list closes when you go to another window). **Set shortcut** in that menu gives a vault a number, 1 to 9, and `⌘1`–`⌘9` then go to that vault from any window: its window comes to the front, or the vault opens when it is closed. One vault per number — pick a number another vault has and it moves, with no question; "No shortcut" takes it away, and so does removing the vault from the recents. The number shows as a `⌘1` badge beside the vault in the list, and the Window menu lists the numbered vaults with their keys. A window's title starts with its vault's name — `<vault> — <page>` — so the vault is the part you read in the Window menu and the Dock's window list. `⌘⇧O` opens a folder, `⌘⇧W` closes the window; File › Open Recent lists the last folders (⌥-click an entry to open it beside the current window). ⌘-click a sidebar file — or right-click → Open in ▸ "New window" — to open it in its own window.
-- **Several vaults in one window**: right-click the blank space under the tree → **Add vault to this window ▸** and pick a vault you know, or "Open folder…" (or right-click a vault in `⌘O` → "Add to this window"). Each vault is then one row at the top of the sidebar, with its own tree under it, and the header names them ("Notes + Client docs"). Your tabs stay, and tabs of all the vaults sit in one strip; the window's title starts with the vault of the tab in front. Each note keeps its own vault's links, properties, sync and IDs — a `[[link]]` never crosses to another vault. The eye tab is one list across the vaults — each vault keeps its own focus, and each item shows its vault's name; the ♥ tab shows each vault's favorites under its vault; `⌘K` searches all of them, each result under its vault. Drag moves a file inside one vault; between vaults use cut and paste. Right-click a vault's row → **Remove from this window** to take it out: its tabs close, saved, and nothing on disk changes. A window holds up to 8 vaults, and one vault cannot be inside another. `⌘O` and `⌘1`–`⌘9` on a vault go to the window that shows it, alone or with others. A window with one vault looks exactly as before.
-- **Workspaces**: a workspace is a set of vaults you saved under a name. With two or more vaults in the window, right-click the header → **Save as workspace…**, type a name and press `⏎` (the same name again replaces it). `⌘O` lists your workspaces first: pick one and the window with exactly those vaults comes to the front, or a new window opens on them. A folder that is gone is left out, and the app says which. Right-click a workspace to rename it or remove it from the list; the folders are never touched. Workspaces are kept on this machine, up to 20, and do not sync. `⌘O` `⏎` still goes to the vault you used last, never to a workspace.
-- **When you start the app again**: the windows of the vault you were in when you quit come back, with their tabs, size and place. Settings › Files & Links › When the app starts › **Reopen** changes that: **All vaults** brings back every window that was open when you quit, **Last vault** (the default) only those of the vault you were in, and **None** opens the list of your vaults. A window that does not come back is forgotten, like one you closed: its vault is still in `⌘O`, and opens on its last page. When the app is closed and you open a vault or a note from a link or a launcher, only that vault opens, whatever the setting says; a link to something that is no longer there counts as a plain start, and the app tells you it could not open it.
-- **Links**: a `yaseendocs://` URL opens that exact note from anywhere (Slack, another app), and inside a note `[[` completes a link to any other note. Finder's Open With also lists Yaseen Docs for `.md`/`.markdown` (as an alternate, never stealing the default handler).
-- **From a launcher or a script**: a folder handed to the app from outside is "Open folder…" on it, so `open -a "Yaseen Docs" <folder>` opens that folder as a vault — the vault's window when it has one (a minimized one is restored), else a new window on its last file. With the app closed, that opens the vault alone: the windows of your other vaults do not come back with it. `yaseendocs vaults --json` (the command under Comments, "For agents") lists the vaults the app knows, each with its path, its name, its number, whether a window is on it and when it was last used; it only reads, so it also answers with the app closed. With those two, a launcher such as Alfred can show your vaults and go to the one you pick.
-- **Folders start closed**: every tab opens fully collapsed on every launch, with your last tab restored. Folders you open are remembered for the session and shared by every window on the vault; quitting forgets them. Opening a note from search, a link or another tab still opens its folders. The double chevron beside the tabs expands or collapses everything on screen.
-- **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload. Drag the sidebar's right edge to resize it (180–520 px, remembered); drag it well past the minimum to collapse.
-- **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path", the plain path and the one copy item a row, a tab or a table row has (a note's id is in its file name, so a path that has gone stale still finds the note in `⌘K`); a click selects a row, shift-click adds files and folders to the selection, then right-click it for "Copy N paths" (or press ⌘⇧C).
-- **Focus**: right-click any file or folder → "Add to focus" (shift-select several for "Add N to focus") and the **eye** tab opens with it in the list. The eye tab shows only what you added, in the order you added it — a folder opens in place — while **Files** always shows the whole vault. Keep adding from any tab, or from search results: the search text stays so you can add more, and Esc shows the list. Right-click an item → "Remove from focus" to take it out, or click **Clear** above the list to empty it. Focus is kept in the vault, in its own `.yaseendocs/` folder: every window on the vault shows the same list, it stays after you quit or close the window, and with GitHub sync on it is the same on every Mac that syncs the vault — an item whose note has not synced yet simply does not show until it arrives. Each Mac writes its own small file there, so two Macs never conflict; if two Macs change focus while offline, the later change is the list. A vault holds up to 500 focus items; the list follows renames and drops what is deleted.
-- **Favorites**: right-click any file or folder → "Add to favorites" (shift-select several for "Add N to favorites"); a heart toast confirms. The **♥** tab lists them in the order you added them — drag a row up or down to reorder — and a favorited folder opens in place, so a note can show both on its own and inside its folder. Every row keeps the full right-click menu, including "Add to focus". Favorites live in the vault's own `.yaseendocs/favorites.json` and sync with it — turn on GitHub sync and the same list shows up on your other machine; a favorited note that hasn't synced yet simply doesn't show until it arrives. Every window sees the same list, it survives a restart, follows renames and drops out when deleted.
+**Where do my notes go?**<br>
+Nowhere. They stay in your folder. GitHub sync is off until you turn it on, and then it pushes to your own repo with your own git.
 
-## Folders
+**Does it cost money?**<br>
+No. It is free, with the [MIT license](LICENSE).
 
-A **folder is a page**. Double-click a folder in the sidebar (or right-click → **Open**, or press Enter on it) and it opens as a tab: its title (edit it to rename the folder — the folder on disk takes the title in kebab-case), the folder's own properties, a database view over its notes, the folder's own comments, and the notes that link to it. A single click still just selects and folds the folder. Its rows are the markdown notes under it, at any depth, plus its shortcuts (below) — not its subfolders, which are pages of their own, and not other kinds of file. The vault's top folder has no page.
+**Why does my computer warn me at the first start?**<br>
+The app is not signed with a paid certificate from Apple or Microsoft. You allow it one time, and then it starts like each other app.
 
-A folder's settings — its views, columns, labels and formulas, with the folder's own properties and comments beside them — live in a hidden `.folder.md` inside the folder, so they travel with it when it is renamed, moved or synced. Every folder has the file from the moment it exists, holding the folder's id and, for a folder made in the app, its title; its settings are added the first time you change something.
+**What is not there yet?**<br>
+A phone app, a Linux build, a build for Intel Macs, automatic updates, and live editing with other people. The command for agents is for the Mac only.
 
-- **Views**: Table and Board (kanban) by default; the **+** at the end of the tabs adds Cards, List or an Outline. Click a tab to switch, drag it to reorder, right-click it to rename, duplicate or delete.
-- **The outline**: a free-text bullet document kept in the folder's settings — notes about the folder, not a list of what is in it. A `[[link]]` in it is just a link.
-- **Configure**: Sort / Properties / Filter menus and a search box, plus grouping and column setup. A Table keeps its header visible while the page scrolls and can freeze its leading visible columns; reorder the column you want to the front, then choose the prefix under Properties → Table. The two freezes compose, and in a grouped Table each section's controls stay visible at the left edge while the columns scroll. A Board has one Board-wide numeric Properties → Board → Column width setting that applies equally to every column, shown in px (280 by default, no fixed maximum). Enter or leaving a changed valid value saves it as a whole pixel with a 180 minimum; invalid or blank input restores without saving, Escape cancels, and untouched older widths below 180 remain readable. Every config change is one write into the folder's `.folder.md`, under the single `folder_settings` key.
-- **Edit in place**: note properties edit right in table cells and card/list rows — text, numbers, checkboxes, dates, lists and `[[links]]` with completion; an edit rewrites just that one value in the note's own file.
-- **Each folder has its own properties**: a column's value for a note is saved in the note under `in:`, in a block named by the folder's id, so two folders that show the same note can each have their own Status for it. The fields at the top of a note's frontmatter (`id`, `title`, `aliases`, `tags`, anything you type there) are the note's own — the same wherever it shows, and not table columns. `title` is edited at the top of the page and is not listed in the panel. The note's properties panel lists **Note fields** (its own) first, then, under a line, **Properties from <folder>** with that folder's values. A folder's values go with the folder: when a note leaves a folder (you move it out, or remove its shortcut) that folder's values leave the note — the app asks first — and a copy of a folder shows the same values as the original. A link in a folder's value counts as a linked mention like any other.
-- **Board drag**: drag a card to another column to change its group property; the "No value" column removes it.
-- **Open from a table or board**: click a card to select it (arrows walk cards like cells); the title or Enter opens the note in this tab, ⌘ a background tab, ⌥ the right panel. A table's Name cell is plain text, not a link: a click selects it, a double-click edits the note's title, Enter opens the note, ⌘-click opens it in a background tab and ⌥-click in the right panel. Right-click a row or card for the page menu; a table row's starts with **Open**.
-- **New**: the toolbar's New button (or a group header's "+") creates a note in the folder, titled `Untitled` every time (the ids keep the files apart), and so does "New note" on the folder in the sidebar. Both start from the folder's template when it has one: a hidden `.template.md` in the folder.
-- **Built-in columns**: a Table shows the note's title under **Name** — its file name is a separate column, **File name**, that a view can add — and a `#` that counts from 1 inside every group (Properties → Table → Row numbers, or right-click the `#` header, to hide it). Every folder has one `status` Select — Backlog / Todo / In progress / Done — by default. A column is never written into your notes as an empty key: a note gets the key when you give it a value, and until then the cell is simply empty.
-- **Columns**: right-click a Table header to rename it, hide it, add a column to its right or delete it; drag a header to reorder. A rename changes only what the header says — the key stays. The Properties panel is two-level: the list shows, hides and reorders; open a row to edit its title, key, type, options, relation and (on a Board) card styling. Delete asks first, then removes the column from this folder and this folder's value for it from every note that has one.
-- **Shortcuts**: a note lives in one folder but can also appear in others. Right-click a folder → **Add note shortcut** and pick the note: it then shows in that folder's views and under it in the sidebar, marked as a shortcut. It is the same note wherever it shows, so an edit anywhere edits the one file; each folder keeps its own column values for it. Right-click the shortcut → **Remove shortcut** takes it out of that folder and leaves the note where it lives. The note records it as `also_in`, by the folder's id, so renaming or moving either one never breaks it.
-- **Counts**: every folder in the sidebar shows how many notes it holds, shortcuts included.
-- **Links to folders**: `[[Folder title]]` links to a folder when no note answers to that name: a click opens the folder's tab, `[[` offers folders as you type, and renaming a folder updates the links to it. A link column can be pointed at a folder so its picker offers only that folder's notes.
-- **Property declarations** (optional): a vault-wide `properties.json` decides which editor a column gets when the folder itself does not say. It is written INTO the vault, at `<vault>/.yaseendocs/properties.json` — the `.obsidian/`-style dotfolder that travels with your notes, so the declarations move with the vault rather than living in app state.
+## The download
 
-## Out of scope
+[**Download the newest release**](https://github.com/yaseenarshad/yaseen-docs-app/releases/latest). The app needs a Mac with Apple Silicon and macOS 12 or later, or a 64-bit Windows computer.
 
-Tags stay plain text (not resolved into links); `[[wikilinks]]`, by contrast, are live — they resolve, they are clickable, they autocomplete as you type `[[`, and they are rewritten when a note is renamed. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no auto-update, no Intel or universal builds, no Windows/Linux — all Future issues.
+On a Mac:
 
-Retired in YAZ-844: Obsidian's `.base` file format. There is no "New base", no `.base` file type, no `![[X.base]]` embed and no ` ```base ` code block — a folder's own page is the only place these views are mounted now.
+1. Open the `.dmg`. Drag **Yaseen Docs** to **Applications**.
+2. Open the app. macOS blocks it one time. Go to **System Settings › Privacy & Security** and click **Open Anyway**.
+3. Click **Open folder…** and select the folder with your notes.
+
+On Windows:
+
+1. Run the `setup.exe`. SmartScreen shows a warning one time. Click **More info**, then **Run anyway**.
+2. Click **Open folder…** and select the folder with your notes.
+3. Where this page says `⌘`, press `Ctrl`. A small number of keys, such as `⌘J`, are for the Mac only.
+
+The first three things to try:
+
+1. Click the dot of a bullet to zoom into it. Press `⌘.` to do the same from the keyboard.
+2. Double-click a folder. Click **+**, add a **Board**, and drag a card.
+3. Give your agent the two lines from above, and ask it to comment on a note.
+
+## For developers
+
+The app is Electron with a React editor that uses Milkdown. The [developer page](docs/DEVELOPMENT.md) tells how to run, build and test it. The rules that the app follows are in [docs/CONTRACTS.md](docs/CONTRACTS.md).
+
+The license is [MIT](LICENSE).
