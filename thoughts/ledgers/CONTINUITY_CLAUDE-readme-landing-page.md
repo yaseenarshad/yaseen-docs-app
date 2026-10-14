@@ -1,6 +1,6 @@
 # Continuity: README as a sales page
 
-Branch: `docs/readme-landing-page`. The guide for this work:
+Branch: `docs/readme-landing-page` (merged, PR #117), then `docs/readme-tagline`. The guide for this work:
 `skills-growprofit-eng/yaseen-skills-and-prompts/1-yaseen-engineering-workflow/yaseen-references/github-initial-repo-setup-sop.md`.
 
 ## Goal
@@ -36,6 +36,9 @@ picture are set.
 - The agent in the pictures is a drawn chat window with the title "Your AI agent",
   not a terminal (Yasin, 13 Oct 2026). It copies no real product. The comment below
   the note is real: the command runs during the capture.
+- The tag line is Yasin's (13 Oct 2026): "The ultimate local docs app to collab with
+  your AI agent". It is in the banner, in the link preview picture and in the alt text
+  of the banner. It replaced "The notes app for people who work with AI agents".
 - The licence is MIT (Yasin's choice, 13 Oct 2026).
 - `LAUNCH.md` is now `docs/DEVELOPMENT.md`. The old README is `docs/FEATURES.md`.
 - The `yaseendocs` command is not on PATH and is for the Mac only. The README
@@ -52,9 +55,12 @@ picture are set.
   - [x] Phase 4: README written, MIT `LICENSE` added
   - [x] Phase 5: branch pushed, Yasin looked at the page on GitHub
   - [x] Phase 7: About box (description, link, 8 topics) set, Projects tab off (Yasin said yes, 13 Oct 2026)
-- Now: [→] Phase 6: Yasin approved the page (13 Oct 2026). Open the PR, merge when the check is green
+  - [x] Phase 6: Yasin approved the page, PR #117 merged (13 Oct 2026)
+  - [x] Phase 8: Yasin uploaded the link preview picture (the one with the old tag line)
+- Now: [→] Phase 9: the new tag line, on branch `docs/readme-tagline`
 - Remaining:
-  - [ ] Phase 8: Yasin uploads `~/Downloads/yaseen-docs-app-social-preview.png` (Settings, General, Social preview)
+  - [ ] Phase 10: Yasin uploads the new `~/Downloads/yaseen-docs-app-social-preview.png` again
+  - [ ] Phase 11: the About box still has the old line. A change needs Yasin's yes.
 
 ## Open Questions
 
