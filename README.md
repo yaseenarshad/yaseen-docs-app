@@ -43,9 +43,9 @@ You know these moments:
 | -- | :--: | :--: | :--: | :--: | :--: |
 | **Local Markdown (Agent Native)** | ❌<br><sub>Cloud</sub> | ✅ | ❌<br><sub>Cloud</sub> | ❌<br><sub>Cloud or a database ¹</sub> | ✅ |
 | **Sync Across Devices Included** | ✅ | ❌<br><sub>Add-on, from $4 a month</sub> | ✅ | ✅ | ✅<br><sub>Free, through git</sub> |
-| **Smooth Outliner** | ❌<br><sub>Toggles only</sub> | ❌<br><sub>Zoom needs a plugin</sub> | ❌<br><sub>Headings only</sub> | ✅ | ✅ |
+| **Smooth Outliner** | ❌<br><sub>Toggles only</sub> | ❌ | ❌<br><sub>Headings only</sub> | ✅ | ✅ |
 | **Real Document (Not Blocks)** | ❌<br><sub>Blocks</sub> | ✅ | ✅ | ❌<br><sub>Each line is a bullet</sub> | ✅ |
-| **View Files in Spreadsheet-like Table (Any Folder = Database)** | ✅ | ❌<br><sub>Needs a <code>.base</code> file</sub> | ❌ | ❌ | ✅ |
+| **View Files in Spreadsheet-like Table (Any Folder = Database)** | ✅ | ❌ | ❌ | ❌ | ✅ |
 | **Own Your Data (No Account, No Server)** | ❌ | ✅ | ❌ | ❌ <sup>²</sup> | ✅ |
 | **Open Source** | ❌ | ❌ | ❌ | ❌ <sup>²</sup> | ✅ |
 
