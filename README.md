@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" width="860" alt="Yaseen Docs. The notes app for people who work with AI agents. Plain markdown files, with an outliner, tables and boards on top.">
+  <img src="docs/assets/banner.png" width="860" alt="Yaseen Docs. The ultimate local docs app to collab with your AI agent. Plain markdown files, with an outliner, tables and boards on top.">
 </p>
 
 <p align="center">
