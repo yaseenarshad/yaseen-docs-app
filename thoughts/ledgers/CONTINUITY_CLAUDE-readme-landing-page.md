@@ -26,7 +26,9 @@ picture are set.
 - The comparison is a picture, `docs/assets/compare.png`, not a markdown table (the
   guide, 13 Oct 2026). The rows are in `tools/readmeMedia/compare.html`. Make it again:
   `node tools/readmeMedia/compare.mjs`. Change the alt text in the README with it.
-  The other products have no logo in the picture yet: a download needs Yasin's yes.
+  The logos (Yasin's yes, 13 Oct 2026): Simple Icons 16.35.0 glyphs for Notion, Obsidian,
+  Google Docs, Logseq and Roam Research. Workflowy is the icon from workflowy.com
+  (`tools/readmeMedia/logos/workflowy.png`).
 - Obsidian Bases got a kanban view in 1.14 (5 Oct 2026). The facts behind
   the Obsidian crosses are: zoom needs a plugin, Sync is a paid add-on, a
   database needs a `.base` file. Yasin took the first and the last note

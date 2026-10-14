@@ -43,7 +43,7 @@ You know these moments:
   <img src="docs/assets/compare.png" width="100%" alt="Notion, Obsidian, Google Docs, the outliners (Logseq, Roam and Workflowy) and Yaseen Docs compared. Local Markdown that an AI agent reads: Obsidian and Yaseen Docs (Notion and Google Docs are in the cloud, the outliners use the cloud or a database). Sync across devices included: Notion, Google Docs, the outliners and Yaseen Docs (in Obsidian it is an add-on, from 4 dollars a month). Smooth outliner: the outliners and Yaseen Docs (Notion has toggles only, Google Docs folds headings only). Real document, not blocks: Obsidian, Google Docs and Yaseen Docs (Notion has blocks, in the outliners each line is a bullet). View files in a spreadsheet-like table, where any folder is a database: Notion and Yaseen Docs. Own your data, with no account and no server: Obsidian and Yaseen Docs. Open source: only Yaseen Docs.">
 </p>
 
-<sub>"Outliners" means Logseq, Roam Research and Workflowy. Logseq is the exception in the last two rows: it is open source, and it needs no account. Its older version keeps markdown files, and its current version stores a database. The price is the price of Obsidian Sync on obsidian.md.</sub>
+<sub>"Outliners" means Logseq, Roam Research and Workflowy. Logseq is the exception in the last two rows: it is open source, and it needs no account. Its older version keeps markdown files, and its current version stores a database. The price is the price of Obsidian Sync on obsidian.md. Yaseen Docs is not affiliated with these products. Their names and logos belong to their owners.</sub>
 
 Four apps, and you paste between them and your agent. You need one.
 
