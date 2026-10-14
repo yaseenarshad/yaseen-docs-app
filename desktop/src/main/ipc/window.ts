@@ -154,6 +154,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // opened; MRU bumped), false = the folder is gone and was pruned from the MRU instead. Any
   // window may ask; the caller is not consulted.
   handle(CONTRACT.window.openRecent, async (path: unknown): Promise<boolean> => windows.openRecentBeside(requireAbsPath(path, 'path')))
+  // `window:open-alone` (YAZ-2858 D1): "Open by itself" — the same contract, but main raises only a
+  // window that shows this vault alone, else it opens a new one.
+  handle(CONTRACT.window.openAlone, async (path: unknown): Promise<boolean> => windows.openAlone(requireAbsPath(path, 'path')))
 
   // Saved sets of vaults (YAZ-2602 D8; the user reads "workspace"). `window:open-set` is the
   // manager's door: what opened, and the folders that are gone. Any window may ask it, and may

@@ -38,6 +38,7 @@ const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => 
   // The window's vaults (YAZ-2602): no flyout to add one and no vault row, as on every row of a window with one vault.
   addVaults: null,
   removeVault: null,
+  openAlone: null,
   lens: 'files',
   leaveSearchTo: null,
   // "Show in sidebar" (YAZ-2638): null is a row of the Files tab, and blank space.
@@ -73,6 +74,7 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onAddVault: vi.fn(),
   onPickVault: vi.fn(),
   onRemoveVault: vi.fn(),
+  onOpenAlone: vi.fn(),
   ...over,
 })
 
@@ -663,5 +665,34 @@ describe('the vault items (YAZ-2602)', () => {
     expect(leafOf(sections, 'Remove from this window')?.danger).toBeUndefined()
     select(sections, 'Remove from this window')
     expect(h.onRemoveVault).toHaveBeenCalledExactlyOnceWith('/w')
+  })
+})
+
+/**
+ * "Open by itself" (YAZ-2858 D4): the ⌘O list's item, on the sidebar's VAULT row — a window with two
+ * or more vaults — directly above "Open in ▸". It hands the vault's root to main's `window.openAlone`.
+ */
+describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
+  const VAULT_ROW: Partial<MenuSectionTargets> = { targetDir: '/w', rowKind: 'dir', copyPath: '/w', revealPath: '/w', openVsCodePath: '/w', removeVault: '/w', openAlone: '/w' }
+
+  it('S15: a vault row shows it directly above "Open in", in the same group; it hands the root to its handler and is no danger item', () => {
+    const h = handlers()
+    const sections = buildMenuSections(targets(VAULT_ROW), h)
+    expect(groupsOf(sections)).toEqual([
+      ['Paste', 'Copy path'],
+      ['New note', 'New folder'],
+      ['New dated note', 'New dated folder'],
+      ['Open by itself', 'Open in'],
+      ['Remove from this window'],
+    ])
+    expect(leafOf(sections, 'Open by itself')?.danger).toBeUndefined()
+    select(sections, 'Open by itself')
+    expect(h.onOpenAlone).toHaveBeenCalledExactlyOnceWith('/w')
+    expect(h.onOpenNewWindow).not.toHaveBeenCalled()
+  })
+
+  it('S16: a file row, a folder row and blank space never show it', () => {
+    const DIR_ROW: Partial<MenuSectionTargets> = { rowKind: 'dir', targetDir: '/v/sub', copyPath: '/v/sub', openPath: '/v/sub', revealPath: '/v/sub', openVsCodePath: '/v/sub', openDefaultPath: '/v/sub' }
+    for (const row of [FILE_ROW, DIR_ROW, BLANK, { targetDir: null }]) expect(itemOf(build(row), 'Open by itself')).toBeUndefined()
   })
 })

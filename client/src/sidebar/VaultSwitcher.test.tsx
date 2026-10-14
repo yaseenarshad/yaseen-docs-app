@@ -548,7 +548,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(panel(el)).toBeNull()
   })
 
-  it('the current vault\'s own row gets the same six; another row gets all nine — and the highlight never moves', () => {
+  it('the current vault\'s own row gets the same six; another row gets all ten, "Open by itself" first (YAZ-2858 D2) — and the highlight never moves', () => {
     const { el } = render()
     openPanel(el)
     const before = activeRow(el)
@@ -556,7 +556,7 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     rightClick(otherRow(el))
-    expect(menuLabels()).toEqual(['Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open by itself', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     expect(activeRow(el)).toBe(before)
   })
 
@@ -1116,15 +1116,15 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
     expect(panel(el)).toBeNull()
   })
 
-  it('a row\'s menu: a vault that is not in this window leads with "Add to this window", then "Open in this window"; a vault that is in it has neither, and no Remove (S8)', () => {
+  it('a row\'s menu: a vault that is not in this window leads with "Add to this window", then "Open in this window"; a vault that is in it has neither, and no Remove (S8) — each below "Open by itself" (YAZ-2858 D2, S11)', () => {
     const { el } = render({ roots: [ROOT, '/w/Notes'], onAddHere: vi.fn(async () => true) })
     openPanel(el)
     rightClick(rowOf(el, ARCHIVE))
-    expect(menuLabels()).toEqual(['Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuLabels()).toEqual(['Open by itself', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     for (const inWindow of [ROOT, '/w/Notes']) {
       rightClick(rowOf(el, inWindow))
-      expect(menuLabels()).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+      expect(menuLabels()).toEqual(['Open by itself', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     }
   })
@@ -1553,5 +1553,126 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     seedSets(WORK)
     rerender({ roots: [ARCHIVE] }) // one vault is never a workspace
     expect(headerName(el)).toBe('Archive')
+  })
+})
+
+/**
+ * "Open by itself" (YAZ-2858 D2, D3): a vault alone in its own window, through main's
+ * `window.openAlone` — mocked on the fake bridge, as the workspace doors are. The menu item stands
+ * first on each vault row but the one this window shows alone; ⌥⏎ and ⌥-click do the same on a
+ * vault row, and win over ⇧. A workspace row and "Open folder…" ignore ⌥.
+ */
+describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
+  const ARCHIVE = '/v/Archive'
+  const rowOf = (el: HTMLElement, path: string) => rows(el).find((r) => pathOf(r) === path)!
+  const altEnter = (el: HTMLElement, shiftKey = false) => act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', altKey: true, shiftKey, bubbles: true, cancelable: true })))
+  const altClick = (row: HTMLElement) => act(() => void row.dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true })))
+  const escape = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+
+  let openAlone: ReturnType<typeof vi.fn>
+  let openSet: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    openAlone = vi.fn(async () => true)
+    openSet = vi.fn(async () => ({ opened: true, missing: [] }))
+    Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openAlone, openSet })
+  })
+
+  it('S9: another vault\'s row menu leads with "Open by itself", its hint ⌥⏎', () => {
+    const { el } = render()
+    openPanel(el)
+    rightClick(rowOf(el, ARCHIVE))
+    expect(menuLabels()).toEqual(['Open by itself', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
+    expect(menuItem('Open by itself').dataset.hint).toBe('⌥⏎')
+  })
+
+  it('S10: in a window with one vault, that vault has no "Open by itself" — neither on its row nor in the header\'s menu', () => {
+    const { el } = render()
+    rightClick(trigger(el))
+    expect(menuLabels()).not.toContain('Open by itself')
+    escape()
+    openPanel(el)
+    rightClick(rowOf(el, ROOT))
+    expect(menuLabels()).not.toContain('Open by itself')
+  })
+
+  it('S11: in a workspace window, each of its vaults keeps "Open by itself" — and only that from the first group', () => {
+    const { el } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    for (const inWindow of [ROOT, '/w/Notes']) {
+      rightClick(rowOf(el, inWindow))
+      expect(menuLabels()).toEqual(['Open by itself', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+      escape()
+    }
+  })
+
+  it('S12: the item goes through window.openAlone — never openRecent, never onOpenHere — and closes the panel; a folder that is gone greys the row and keeps the panel (S5)', async () => {
+    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    openPanel(el)
+    rightClick(rowOf(el, '/w/Notes'))
+    pick('Open by itself')
+    await settle()
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).not.toHaveBeenCalled()
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+    expect(panel(el)).toBeNull()
+
+    openAlone.mockResolvedValueOnce(false)
+    openPanel(el)
+    rightClick(rowOf(el, ARCHIVE))
+    pick('Open by itself')
+    await settle()
+    expect(panel(el)).not.toBeNull()
+    expect(rowOf(el, ARCHIVE).disabled).toBe(true)
+    expect(rowOf(el, ARCHIVE).querySelector('.vault-switcher__when')?.textContent).toBe(MISSING_TEXT)
+  })
+
+  it('S13: ⌥⏎ and ⌥-click on a vault row open it by itself; with ⇧ held too, ⌥ wins — and ⇧ then shows no "Open here"', async () => {
+    const { el, props } = render()
+    openPanel(el)
+    altEnter(el)
+    await settle()
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(panel(el)).toBeNull()
+
+    openPanel(el)
+    altClick(rowOf(el, ARCHIVE))
+    await settle()
+    expect(openAlone).toHaveBeenLastCalledWith(ARCHIVE)
+
+    openPanel(el)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', shiftKey: true, altKey: true })))
+    expect(activeRow(el)!.querySelector('.vault-switcher__when')?.textContent).not.toBe(OPEN_HERE_TEXT)
+    altEnter(el, true)
+    await settle()
+    expect(openAlone).toHaveBeenLastCalledWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledTimes(3)
+    expect(props.onOpenHere).not.toHaveBeenCalled()
+    expect(openRecent).not.toHaveBeenCalled()
+  })
+
+  it('S14: ⌥ on a workspace row opens the workspace as ⏎ does; ⌥ on "Open folder…" runs the picker', async () => {
+    act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW }] })))
+    const { el, props } = render()
+    openPanel(el)
+    for (let i = 0; i < 8; i++) key(el, 'ArrowUp')
+    altEnter(el)
+    await settle()
+    expect(openSet).toHaveBeenCalledExactlyOnceWith('set-work')
+    expect(panel(el)).toBeNull()
+
+    openPanel(el)
+    altClick(rows(el)[0])
+    await settle()
+    expect(openSet).toHaveBeenCalledTimes(2)
+
+    openPanel(el)
+    altClick(openFolderRow(el))
+    expect(props.onPickFolder).toHaveBeenCalledTimes(1)
+    openPanel(el)
+    for (let i = 0; i < 8; i++) key(el, 'ArrowDown')
+    altEnter(el)
+    expect(props.onPickFolder).toHaveBeenCalledTimes(2)
+    expect(openAlone).not.toHaveBeenCalled()
+    expect(openRecent).not.toHaveBeenCalled()
   })
 })

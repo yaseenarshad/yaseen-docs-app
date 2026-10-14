@@ -8,10 +8,10 @@ import { buildVaultMenuSections, buildVaultSetMenuSections, type VaultMenuHandle
 
 const OTHER = '/v/Émojis 🚀 & spaces'
 /** A target as the switcher builds it: the folder name, no display name set. */
-const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, renamed: false, keyed: [], ...over })
+const target = (over: Partial<VaultMenuTarget> = {}): VaultMenuTarget => ({ path: OTHER, name: 'Émojis 🚀 & spaces', isCurrent: false, isAloneHere: false, renamed: false, keyed: [], ...over })
 
 function handlers(): VaultMenuHandlers {
-  return { onOpenHere: vi.fn(), onAddHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onSetKey: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
+  return { onOpenAlone: vi.fn(), onOpenHere: vi.fn(), onAddHere: vi.fn(), onRename: vi.fn(), onResetName: vi.fn(), onSetKey: vi.fn(), onReveal: vi.fn(), onOpenVsCode: vi.fn(), onRemove: vi.fn(), onNotice: vi.fn() }
 }
 
 /** The non-empty groups' labels — what `ContextMenu` draws, a hairline between each. */
@@ -33,9 +33,9 @@ afterEach(() => {
 })
 
 describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
-  it('another vault: Add to this window, Open in this window · Set display name, Set shortcut · the two copies · Reveal and VS Code · Remove — five groups in that order', () => {
+  it('another vault: Open by itself, Add to this window, Open in this window · Set display name, Set shortcut · the two copies · Reveal and VS Code · Remove — five groups in that order (YAZ-2858 D2)', () => {
     expect(groupsOf(buildVaultMenuSections(target(), handlers()))).toEqual([
-      ['Add to this window', 'Open in this window'],
+      ['Open by itself', 'Add to this window', 'Open in this window'],
       ['Set display name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
@@ -49,7 +49,7 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
 
   it('a renamed vault also offers Reset to folder name, beside Set display name (YAZ-1974 D5) — Set shortcut stays below both (YAZ-2555 S13)', () => {
     expect(groupsOf(buildVaultMenuSections(target({ name: 'Launch', renamed: true }), handlers()))).toEqual([
-      ['Add to this window', 'Open in this window'],
+      ['Open by itself', 'Add to this window', 'Open in this window'],
       ['Set display name', 'Reset to folder name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
@@ -58,12 +58,12 @@ describe('buildVaultMenuSections (YAZ-1798 D7)', () => {
   })
 
   it('the current vault: no Open in this window (you are there) and no Remove (it would come straight back, D3) — the display name items and Set shortcut stay', () => {
-    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true }), handlers()))).toEqual([
+    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, isAloneHere: true }), handlers()))).toEqual([
       ['Set display name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
     ])
-    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, renamed: true }), handlers()))).toEqual([
+    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true, isAloneHere: true, renamed: true }), handlers()))).toEqual([
       ['Set display name', 'Reset to folder name', 'Set shortcut'],
       ['Copy vault name', 'Copy path'],
       ['Reveal in Finder', 'Open in VS Code'],
@@ -139,15 +139,38 @@ describe('Add to this window (YAZ-2602 S8)', () => {
   it('a vault that is not in this window: "Add to this window" stands above "Open in this window", and hands its path over', () => {
     const h = handlers()
     const sections = buildVaultMenuSections(target(), h)
-    expect(groupsOf(sections)[0]).toEqual(['Add to this window', 'Open in this window'])
+    expect(groupsOf(sections)[0]).toEqual(['Open by itself', 'Add to this window', 'Open in this window'])
     item(sections, 'add-here').onSelect()
     expect(h.onAddHere).toHaveBeenCalledExactlyOnceWith(OTHER)
     expect(h.onOpenHere).not.toHaveBeenCalled()
   })
 
-  it('a vault that is in this window has neither item, and no Remove', () => {
+  it('a vault that is in this window has neither item, and no Remove; beside another vault it keeps "Open by itself" (YAZ-2858 S11)', () => {
     const labels = groupsOf(buildVaultMenuSections(target({ isCurrent: true }), handlers())).flat()
-    expect(labels).toEqual(['Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(labels).toEqual(['Open by itself', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  })
+})
+
+/** "Open by itself" (YAZ-2858 D2): the first item, on each vault row but the one this window shows alone. */
+describe('Open by itself (YAZ-2858 D2, S9 to S11)', () => {
+  it('S9: another vault leads with "Open by itself", hint ⌥⏎, in the first group; it hands its path to onOpenAlone and to nothing else', () => {
+    const h = handlers()
+    const sections = buildVaultMenuSections(target(), h)
+    expect(sections.flat()[0].id).toBe('open-alone')
+    expect(item(sections, 'open-alone').label).toBe('Open by itself')
+    expect(item(sections, 'open-alone').hint).toBe('⌥⏎')
+    item(sections, 'open-alone').onSelect()
+    expect(h.onOpenAlone).toHaveBeenCalledExactlyOnceWith(OTHER)
+    expect(h.onOpenHere).not.toHaveBeenCalled()
+    expect(h.onAddHere).not.toHaveBeenCalled()
+  })
+
+  it('S10: the vault this window shows alone has no "Open by itself" (it would do nothing)', () => {
+    expect(buildVaultMenuSections(target({ isCurrent: true, isAloneHere: true }), handlers()).flat().some((i) => i.id === 'open-alone')).toBe(false)
+  })
+
+  it('S11: a vault of a workspace window keeps "Open by itself", alone in the first group (it is in this window)', () => {
+    expect(groupsOf(buildVaultMenuSections(target({ isCurrent: true }), handlers()))[0]).toEqual(['Open by itself'])
   })
 })
 

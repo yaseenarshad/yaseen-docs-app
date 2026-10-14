@@ -102,6 +102,14 @@ export interface WindowManager extends WindowLookup {
    */
   openRecentBeside(path: string): boolean
   /**
+   * "Open by itself" (YAZ-2858 D1, `window:open-alone`): the `openRecentBeside` door with an EXACT
+   * match. It raises only a live window whose vaults are this one vault alone (`sameVaults`); a
+   * window that shows it beside another vault does not count and does not change (S1). With none, a
+   * new window opens on the vault's remembered last file. The probe and the MRU bump are the same:
+   * a dead folder is pruned and opens nothing → `false`. No saved set changes (S7).
+   */
+  openAlone(path: string): boolean
+  /**
    * The door for a saved set of vaults (YAZ-2602 D8, `window:open-set`). Probes each folder: the
    * vaults that are left, in the saved order, are what opens, and the ones that are gone come back
    * in `missing` — the saved set itself keeps them, a folder can come back (S66). Every live window
@@ -137,7 +145,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -428,8 +436,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     return wins.length > 0
   }
 
-  /** The one open-recent door (see `WindowManager.openRecentBeside`). A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1). */
-  const openRecentBeside = (path: string): boolean => {
+  /**
+   * The open-recent door (see `WindowManager.openRecentBeside`) and "Open by itself" (`openAlone`,
+   * YAZ-2858 D1): one body, and `alone` picks the match. A `const`, like `openWindow`, so `routeToFile` can call it too (YAZ-2556 D1).
+   */
+  const openVault = (path: string, alone: boolean): boolean => {
     // Beside never passes through the renderer's validating openRoot, so probe here: a dead
     // folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
     if (!host.dirExists(path)) {
@@ -440,12 +451,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // — through `noteUsed`: a vault that is already on top is not written again (YAZ-2555 D5, S25).
     noteUsed(path)
     // Already open (YAZ-1767 🔒 D9) — in a window that shows it, alone or beside others (YAZ-2602 D6): raise that vault's live windows instead of opening a third
-    // copy. Roots compare like `resolveLinkTarget`: trailing slash off.
+    // copy. Roots compare like `resolveLinkTarget`: trailing slash off. "Open by itself" counts only a window with this vault alone (YAZ-2858 D1).
     const wanted = stripSlash(path)
-    if (raiseWindows((w) => w.roots.some((root) => stripSlash(root) === wanted))) return true
+    if (raiseWindows((w) => (alone ? sameVaults(w.roots, [wanted]) : w.roots.some((root) => stripSlash(root) === wanted)))) return true
     openWindow({ root: path, file: store.get().folders[path]?.lastFile ?? null })
     return true
   }
+  const openRecentBeside = (path: string): boolean => openVault(path, false)
 
   /** The door for a saved set of vaults (see `WindowManager.openVaultSet`). */
   const openVaultSet = (id: string): OpenSetResult => {
@@ -514,6 +526,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     openRecentBeside,
+
+    openAlone: (path) => openVault(path, true),
 
     openVaultSet,
 

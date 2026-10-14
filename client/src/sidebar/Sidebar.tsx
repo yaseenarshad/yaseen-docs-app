@@ -335,6 +335,8 @@ export interface MenuTargets {
   addVaults: { path: string; name: string }[] | null
   /** "Remove from this window" (YAZ-2602 D7) — a VAULT row only: that vault's root. */
   removeVault: string | null
+  /** "Open by itself" (YAZ-2858 D4) — a VAULT row only: that vault's root. Equal to `removeVault` today; its OWN field. */
+  openAlone: string | null
   /**
    * The lens the items act in (🔒 D1, YAZ-2050): the active one, or FILES for a row of the Search
    * tab — a search row is a disk row. Every lens rule in the menu path reads this.
@@ -774,6 +776,7 @@ export function Sidebar({
         // The known vaults that are not in this window (YAZ-2602 D2), in the order of the ⌘O list, read as the menu opens.
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
         removeVault: vaultRow,
+        openAlone: vaultRow,
       })
     },
     [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState],
@@ -823,6 +826,11 @@ export function Sidebar({
     },
     [rootOf],
   )
+
+  /** "Open by itself" on a vault row (YAZ-2858 D4): main raises the window that shows the vault alone, else opens one; this one untouched. */
+  const openVaultAlone = useCallback((root: string) => {
+    api.window.openAlone(root).catch((err: unknown) => console.error('[sidebar] window.openAlone failed:', err))
+  }, [])
 
   const { setRenamingEntry, startCreate, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
 
@@ -1351,6 +1359,7 @@ export function Sidebar({
               onAddVault: (path) => void onAddVault(path),
               onPickVault,
               onRemoveVault,
+              onOpenAlone: openVaultAlone,
             },
           )}
           onClose={() => setMenu(null)}
