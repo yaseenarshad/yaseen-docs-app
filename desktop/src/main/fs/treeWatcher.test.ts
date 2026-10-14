@@ -204,7 +204,7 @@ describe('isNetworkMount (macOS `mount`)', () => {
     expect(isNetworkMount(TABLE, '/Volumes/Notes/Team vault')).toBe(true)
     expect(isNetworkMount(TABLE, '/Volumes/NFS Vaults/mine')).toBe(true)
     expect(isNetworkMount(TABLE, '/Volumes/USB Stick/vault')).toBe(false)
-    expect(isNetworkMount(TABLE, '/System/Volumes/Data/Users/yasin/vault')).toBe(false)
+    expect(isNetworkMount(TABLE, '/System/Volumes/Data/Users/me/vault')).toBe(false)
     expect(isNetworkMount(TABLE, '/Volumes/NotesNot/vault')).toBe(false)
   })
 

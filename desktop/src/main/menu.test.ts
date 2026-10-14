@@ -589,7 +589,7 @@ describe('createMenuHandlers', () => {
     const { handlers, host } = makeHandlers(undefined)
     handlers.openHelp()
     expect(host.openExternal).toHaveBeenCalledWith(HELP_URL)
-    expect(HELP_URL).toBe('https://github.com/yaseenarshad/yaseen-milkdown#readme')
+    expect(HELP_URL).toBe('https://github.com/yaseenarshad/yaseen-docs-app#readme')
   })
 })
 

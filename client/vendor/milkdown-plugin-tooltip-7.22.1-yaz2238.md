@@ -15,7 +15,7 @@
   both versions always evaluate: unchanged.
 
 Upstream PR: prepared, not opened; Yasin's call (the patch and PR text are in
-`thoughts/yaz-2131-scope/upstream/tooltip-throttle/`).
+`client/vendor/upstream/tooltip-throttle/`).
 
 The package name and version remain unchanged so every Milkdown package, `@milkdown/kit` and
 `@milkdown/components` included, resolves the same patched 7.22.1 through the root npm override.

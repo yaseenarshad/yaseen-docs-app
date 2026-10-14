@@ -12,7 +12,7 @@ import type { Store } from './store'
 import type { WindowManager } from './windows'
 
 /** Help › Yaseen Docs on GitHub: the repo README (origin URL of this repo). */
-export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-milkdown#readme'
+export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-docs-app#readme'
 
 export interface MenuHandlers {
   copyAs(mode: 'plain' | 'markdown'): void

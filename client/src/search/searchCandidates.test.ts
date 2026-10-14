@@ -227,7 +227,7 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   })
 
   it('D: a `[[<id>]]` link, a file name or a whole copied path that holds the id is the same one result, wherever the note lives now', () => {
-    for (const pasted of [`[[${ID}|Abdul]]`, `up-001-abdul-rehman-${ID}.md`, `/Users/y/vault/ai-dev-hire/upwork/up-001-abdul-rehman-${ID}.md`]) expect(found(pasted)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
+    for (const pasted of [`[[${ID}|Abdul]]`, `up-001-abdul-sample-${ID}.md`, `/Users/y/vault/ai-dev-hire/upwork/up-001-abdul-sample-${ID}.md`]) expect(found(pasted)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
   })
 
   it("D: a folder's id is the folder, the only result", () => {

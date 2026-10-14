@@ -7,3 +7,7 @@ desktop/.maps/
 *.log
 .claude/*
 desktop/e2e/artifacts/
+
+# Agent working notes and plans stay local
+thoughts/
+docs/superpowers/

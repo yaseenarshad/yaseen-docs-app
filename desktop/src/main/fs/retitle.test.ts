@@ -40,10 +40,10 @@ const ID = 'k3m9x2pq7abc'
 describe('retitle: a note (table B)', () => {
   it('the title is edited in the app: the `title:` line is written, then the file is renamed to the built name, and the id part does not change', async () => {
     const old = await note('up/abdul-k3m9x2pq7abc.md', `---\nid: ${ID}\ntitle: Abdul\nstatus: new # keep\n---\nbody\n`)
-    const newPath = at('up', `up-001-abdul-rehman-r-${ID}.md`)
-    expect(await retitle(root, { path: old, title: 'UP-001 - Abdul Rehman R' })).toEqual({ oldPath: old, newPath, kind: 'file' })
-    expect(await readFile(newPath, 'utf8')).toBe(`---\nid: ${ID}\ntitle: UP-001 - Abdul Rehman R\nstatus: new # keep\n---\nbody\n`)
-    expect(await readdir(at('up'))).toEqual([`up-001-abdul-rehman-r-${ID}.md`])
+    const newPath = at('up', `up-001-abdul-sample-r-${ID}.md`)
+    expect(await retitle(root, { path: old, title: 'UP-001 - Abdul Sample R' })).toEqual({ oldPath: old, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe(`---\nid: ${ID}\ntitle: UP-001 - Abdul Sample R\nstatus: new # keep\n---\nbody\n`)
+    expect(await readdir(at('up'))).toEqual([`up-001-abdul-sample-r-${ID}.md`])
   })
 
   it('a file made outside the app, on its first title edit: `title:` is written and the file takes the built name (D5)', async () => {

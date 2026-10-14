@@ -170,16 +170,16 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
   }
 
   it('a note copied in the app: the copy holds a fresh id and `title: <title> copy`, under the name built from both; the original keeps its bytes', async () => {
-    const original = `---\nid: ${ID}\ntitle: Abdul Rehman\nstatus: new # kept\n---\nbody\n`
-    const dir = await folder('d21-note', { [`abdul-rehman-${ID}.md`]: original })
-    const from = path.join(dir, `abdul-rehman-${ID}.md`)
+    const original = `---\nid: ${ID}\ntitle: Abdul Sample\nstatus: new # kept\n---\nbody\n`
+    const dir = await folder('d21-note', { [`abdul-sample-${ID}.md`]: original })
+    const from = path.join(dir, `abdul-sample-${ID}.md`)
     const res = await copyEntry(from, dir, door)
     const id = (await propertiesOf(res.to)).id
     // S34: the copy gets the vault's next number at once; the original keeps its ID, an old one here (R3).
     expect(id).toBe(door.given[door.given.length - 1])
     expect(id).toMatch(/^YAZ-[1-9]\d*$/)
-    expect(res).toEqual({ from, to: path.join(dir, `abdul-rehman-copy-${String(id).toLowerCase()}.md`), kind: 'file' })
-    expect(await read(res.to)).toBe(`---\nid: ${String(id)}\ntitle: Abdul Rehman copy\nstatus: new # kept\n---\nbody\n`)
+    expect(res).toEqual({ from, to: path.join(dir, `abdul-sample-copy-${String(id).toLowerCase()}.md`), kind: 'file' })
+    expect(await read(res.to)).toBe(`---\nid: ${String(id)}\ntitle: Abdul Sample copy\nstatus: new # kept\n---\nbody\n`)
     expect(await read(from)).toBe(original)
   })
 

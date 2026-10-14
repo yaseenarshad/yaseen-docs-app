@@ -46,12 +46,12 @@ const ID = 'YAZ-12'
 const NAME = 'yaz-12'
 
 describe('createNote (YAZ-2290 E1/E3)', () => {
-  it('B: a note titled `UP-001 - Abdul Rehman R` is `up-001-abdul-rehman-r-<id>.md`, born with that id and its `title`; its path is what comes back (YAZ-2420 D20)', async () => {
+  it('B: a note titled `UP-001 - Abdul Sample R` is `up-001-abdul-sample-r-<id>.md`, born with that id and its `title`; its path is what comes back (YAZ-2420 D20)', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await expect(createNote('/v/Projects', 'UP-001 - Abdul Rehman R', true, undefined, ID)).resolves.toBe(`/v/Projects/up-001-abdul-rehman-r-${NAME}.md`)
+    await expect(createNote('/v/Projects', 'UP-001 - Abdul Sample R', true, undefined, ID)).resolves.toBe(`/v/Projects/up-001-abdul-sample-r-${NAME}.md`)
 
-    expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/up-001-abdul-rehman-r-${NAME}.md`, content: '---\ntitle: UP-001 - Abdul Rehman R\n---\n', id: ID }]])
+    expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/up-001-abdul-sample-r-${NAME}.md`, content: '---\ntitle: UP-001 - Abdul Sample R\n---\n', id: ID }]])
   })
 
   it('B, S14: with no id handed in, the next number is taken from the door, for the folder the note is made in, and is the id in the name; two notes of one title are two files (YAZ-2420 D20, YAZ-2677 D4)', async () => {

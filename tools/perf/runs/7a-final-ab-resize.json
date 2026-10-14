@@ -1,5 +1,5 @@
 {
-  "app": "/Users/yasinarshad/Documents/GitHub/ydocs-2131-perf/desktop/dist-app/mac-arm64/Yaseen Docs.app",
+  "app": "desktop/dist-app/mac-arm64/Yaseen Docs.app",
   "vs": "/private/tmp/claude-501/-Users-yasinarshad-Documents-GitHub-yaseen-docs-app/c86e4da7-9236-45a1-8785-da911c6b5880/scratchpad/7a/before/Yaseen Docs.app",
   "machine": {
     "cpu": "Apple M3",

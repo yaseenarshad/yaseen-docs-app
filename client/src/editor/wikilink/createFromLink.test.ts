@@ -133,17 +133,17 @@ describe('createFromLink (bridge flow)', () => {
   })
 
   it('B: the typed text is the title — of the `[[` picker’s Create row, born with the id handed in, and of a clicked name link, born with one of its own; the path that comes back is the one created (YAZ-2420 D20)', async () => {
-    await expect(createFromLink('/vault', 'UP-001 - Abdul Rehman R', true, 'Notes', ID)).resolves.toEqual({ status: 'created', path: `/vault/Notes/up-001-abdul-rehman-r-${NAME}.md` })
-    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/Notes/up-001-abdul-rehman-r-${NAME}.md`, content: '---\ntitle: UP-001 - Abdul Rehman R\n---\n', id: ID })
+    await expect(createFromLink('/vault', 'UP-001 - Abdul Sample R', true, 'Notes', ID)).resolves.toEqual({ status: 'created', path: `/vault/Notes/up-001-abdul-sample-r-${NAME}.md` })
+    expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: `/vault/Notes/up-001-abdul-sample-r-${NAME}.md`, content: '---\ntitle: UP-001 - Abdul Sample R\n---\n', id: ID })
     createFile.mockClear()
-    const clicked = await createFromLink('/vault', 'UP-001 - Abdul Rehman R', true, 'Notes')
+    const clicked = await createFromLink('/vault', 'UP-001 - Abdul Sample R', true, 'Notes')
     // One of its own: the vault's next number, from the door (YAZ-2677 D4), in lowercase in the name (R8).
     expect(isNoteId(born().id)).toBe(true)
     expect(born().id).toMatch(/^YAZ-[1-9]\d*$/)
     expect(born().id).not.toBe(ID)
-    const name = `/vault/Notes/up-001-abdul-rehman-r-${born().id.toLowerCase()}.md`
+    const name = `/vault/Notes/up-001-abdul-sample-r-${born().id.toLowerCase()}.md`
     expect(clicked).toEqual({ status: 'created', path: name })
-    expect(born()).toEqual({ path: name, content: '---\ntitle: UP-001 - Abdul Rehman R\n---\n', id: born().id })
+    expect(born()).toEqual({ path: name, content: '---\ntitle: UP-001 - Abdul Sample R\n---\n', id: born().id })
   })
 
   it('an empty page name ([[#h]] — the same-file form) is a no-op: nothing created', async () => {

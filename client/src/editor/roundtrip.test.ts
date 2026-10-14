@@ -1,24 +1,18 @@
 /**
- * Crepe round-trip (GRO-1961): a synthetic fixture plus, when present on this
- * machine, a few real vault files (read-only) go through createCrepe() +
+ * Crepe round-trip (GRO-1961): a synthetic fixture plus, when ROUNDTRIP_FILES
+ * names some (paths joined by the OS path delimiter), real notes of your own
+ * (read-only) go through createCrepe() +
  * getMarkdownForSave(). Formatting normalisation is accepted (CONTRACTS.md
  * "Editor rules" 5); the assertions are on stable invariants: headings and words.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, delimiter } from 'node:path'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { splitFrontmatter } from '@shared/frontmatter'
 
-const VAULT =
-  '/Users/yasin/yaseen-os/yaseen-machine-content/Content Pillars/1. Agentic Agency'
-const FILES = [
-  `${VAULT}/How to Build Agents (for non-technical business owners)/Part 1/Storyboard-v1.md`,
-  `${VAULT}/Services - Agentic Agency vs Traditional Agency.md`,
-  `${VAULT}/How to Build Agents (for non-technical business owners)/Yaseen Dump.md`,
-  `${VAULT}/How to Sell Agents (for non-technical business owners)/sources/Sequoia Article.md`,
-]
+const FILES = (process.env.ROUNDTRIP_FILES ?? '').split(delimiter).filter(Boolean)
 const SYNTHETIC = `---
 title: Synthetic fixture
 tags: [a, b]
