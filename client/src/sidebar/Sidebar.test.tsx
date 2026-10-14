@@ -96,6 +96,8 @@ function installBridge() {
     state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), setFavoritesOrder: vi.fn(async () => undefined), setFocusOrder: vi.fn(async () => undefined), onChange: vi.fn((_listener: (state: AppState) => void) => () => undefined) },
     window: {
       open: vi.fn(async () => undefined),
+      // "Open by itself" on a vault row (YAZ-2858 D4): main's door; `false` = the folder is gone.
+      openAlone: vi.fn(async (_path: string) => true),
       identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })),
       setIdentity: vi.fn(async () => undefined),
     },
@@ -7114,13 +7116,34 @@ describe('several vaults in one window (YAZ-2602)', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, b, props } = await two({ upkeep: true })
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
     expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
     await act(async () => itemByLabel(el, 'Copy path')?.click())
     expect(writeText).toHaveBeenCalledExactlyOnceWith(b)
     rightClick(rowByPath(el, b))
     act(() => itemByLabel(el, 'Remove from this window')?.click())
     expect(props.onRemoveVault).toHaveBeenCalledExactlyOnceWith(b)
+  })
+
+  it('"Open by itself" on a vault row (YAZ-2858 D4, S15) calls main\'s window.openAlone with that vault\'s root, and a failure is logged; a file row, a folder row and blank space have no such item (S16)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { el, a, b, bridge } = await two()
+    rightClick(rowByPath(el, b))
+    act(() => itemByLabel(el, 'Open by itself')?.click())
+    expect(bridge.window.openAlone).toHaveBeenCalledExactlyOnceWith(b)
+    expect(bridge.window.open).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    bridge.window.openAlone.mockRejectedValueOnce(new Error('ipc down'))
+    rightClick(rowByPath(el, a))
+    await act(async () => itemByLabel(el, 'Open by itself')?.click())
+    expect(bridge.window.openAlone).toHaveBeenLastCalledWith(a)
+    expect(error).toHaveBeenCalledWith('[sidebar] window.openAlone failed:', expect.any(Error))
+    for (const target of [rowByPath(el, `${a}/a.md`), rowByPath(el, `${a}/sub`), body(el)]) {
+      rightClick(target)
+      expect(itemByLabel(el, 'Open by itself')).toBeUndefined()
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    }
+    error.mockRestore()
   })
 
   it('"New note" on a vault row creates in that vault\'s root, as that vault makes a note, and opens the row if it was closed (S13, R4)', async () => {
@@ -8347,7 +8370,7 @@ describe('several vaults in one window (YAZ-2602)', () => {
     const { el, b, input, props, rerender } = await searchTwo()
     await type(input, 'plan')
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open in', 'Remove from this window'])
+    expect(topItems(el)).toEqual(['Show in sidebar', 'Paste', 'Copy path', 'New note', 'New folder', 'New dated note', 'New dated folder', 'Open by itself', 'Open in', 'Remove from this window'])
     act(() => itemByLabel(el, 'New note')?.click())
     expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(b)
     await rerender({ lens: 'files', revealRequest: { id: 1, path: b } })

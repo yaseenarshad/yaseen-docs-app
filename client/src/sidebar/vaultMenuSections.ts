@@ -4,11 +4,15 @@ import { errorText, type MenuAction, type MenuSection } from './menuSections'
 /**
  * The vault right-click menu AS DATA (YAZ-1798 D2/D7): GitHub Desktop's repository menu, kept to
  * what means something for a vault. Drawn by the sidebar's own `ContextMenu`, which skips empty
- * groups — so the CURRENT vault simply returns three of the five. Five groups, in this order:
+ * groups — so the CURRENT vault simply returns three or four of the five. Five groups, in this order:
  *
- *   Add to this window, Open in this window · Set display name, Reset to folder name,
+ *   Open by itself, Add to this window, Open in this window · Set display name, Reset to folder name,
  *   Set shortcut ▸ · Copy vault name, Copy path · Reveal in Finder, Open in VS Code ·
  *   Remove from recent vaults
+ *
+ * "Open by itself" (YAZ-2858 D2), hint ⌥⏎, opens the vault alone in its own window — main raises
+ * the window that already shows it alone. It stands first on each vault, the vaults of a workspace
+ * window too (S11), and hides only on the vault this window shows alone: there it would do nothing (S10).
  *
  * A vault that is in this window (the header's name, or its own row — "current", YAZ-2602 S8)
  * gets neither "Open in this window" (you are there) nor "Remove" (it is in the recents and would
@@ -28,6 +32,8 @@ export interface VaultMenuTarget {
   name: string
   /** The vault is one of this window's (YAZ-2602 S8). */
   isCurrent: boolean
+  /** This window shows the vault and nothing else (YAZ-2858 D2): no "Open by itself". */
+  isAloneHere: boolean
   /** A display name is set (YAZ-1974 D5): offers "Reset to folder name". */
   renamed: boolean
   /** Every vault that has a number (YAZ-2555 D2), this one included — who the "Set shortcut" flyout names beside each number. */
@@ -35,6 +41,8 @@ export interface VaultMenuTarget {
 }
 
 export interface VaultMenuHandlers {
+  /** "Open by itself" (YAZ-2858 D2): main's `window.openAlone` — the window with the vault alone, raised or new. */
+  onOpenAlone: (path: string) => void
   /** Switch THIS window to the vault in place (D8, D11) — the one deliberate overwrite; every plain gesture opens beside. */
   onOpenHere: (path: string) => void
   /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). */
@@ -77,19 +85,22 @@ const copyItem = (id: string, what: string, text: string, h: VaultMenuHandlers):
   },
 })
 
-export function buildVaultMenuSections({ path, name, isCurrent, renamed, keyed }: VaultMenuTarget, h: VaultMenuHandlers): MenuSection[] {
+export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, renamed, keyed }: VaultMenuTarget, h: VaultMenuHandlers): MenuSection[] {
   /** What stands beside a number: its vault's name — checked when it is this vault — or "free". */
   const holder = (n: number): string => {
     const vault = keyed.find((v) => v.key === n)
     return vault === undefined ? 'free' : vault.path === path ? `✓ ${vault.name}` : vault.name
   }
   return [
-    isCurrent
-      ? []
-      : [
-          { id: 'add-here', label: 'Add to this window', onSelect: () => h.onAddHere(path) },
-          { id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) },
-        ],
+    [
+      ...(isAloneHere ? [] : [{ id: 'open-alone', label: 'Open by itself', hint: '⌥⏎', onSelect: () => h.onOpenAlone(path) }]),
+      ...(isCurrent
+        ? []
+        : [
+            { id: 'add-here', label: 'Add to this window', onSelect: () => h.onAddHere(path) },
+            { id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) },
+          ]),
+    ],
     [
       { id: 'rename', label: 'Set display name', onSelect: () => h.onRename(path) },
       ...(renamed ? [{ id: 'reset-name', label: 'Reset to folder name', onSelect: () => h.onResetName(path) }] : []),

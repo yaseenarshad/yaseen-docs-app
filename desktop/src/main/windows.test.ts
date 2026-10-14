@@ -723,6 +723,139 @@ describe('createWindowManager: openRecentBeside (YAZ-1767 D1 — the one open-re
   })
 })
 
+describe('createWindowManager: openAlone (YAZ-2858 D1 — "Open by itself": a window with this vault alone)', () => {
+  const entry = (id: string, ...roots: string[]) => ({ id, root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } })
+
+  it('S1: the vault is open ONLY in a workspace window → a new window with it alone, on its last file; the workspace window is not raised and does not change', () => {
+    store.upsertWindow(entry('ab', '/v/a', '/v/b'))
+    store.setFolder('/v/b', { lastFile: '/v/b/Start here.md' })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const ab = created[0].win
+    const before = store.get().windows[0]
+    expect(manager.openAlone('/v/b')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(created[1].entry.root).toBe('/v/b')
+    expect(created[1].entry.roots).toEqual(['/v/b'])
+    expect(created[1].entry.file).toBe('/v/b/Start here.md')
+    expect(created[1].entry.tabs).toEqual(['/v/b/Start here.md'])
+    expect(ab.focusCount).toBe(0)
+    expect(store.get().windows[0]).toEqual(before)
+  })
+
+  it('S2: a window already shows the vault alone → that window is raised (minimized too), nothing new opens; a trailing slash is the same vault', () => {
+    store.upsertWindow(entry('ab', '/v/a', '/v/b'))
+    store.upsertWindow(entry('b', '/v/b/'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const [ab, b] = created.map((x) => x.win)
+    b.minimized = true
+    expect(manager.openAlone('/v/b')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(b.focusCount).toBe(1)
+    expect(b.minimized).toBe(false)
+    expect(ab.focusCount).toBe(0)
+    expect(manager.openAlone('/v/b/')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(b.focusCount).toBe(2)
+  })
+
+  it('S3: several windows show the vault alone → all of them are raised, the one focused last ends on top (the raiseWindows rule)', () => {
+    store.upsertWindow(entry('b1', '/v/b'))
+    store.upsertWindow(entry('b2', '/v/b'))
+    store.upsertWindow(entry('ab', '/v/a', '/v/b'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const [b1, b2, ab] = created.map((x) => x.win)
+    const order: string[] = []
+    b1.focus = () => order.push('b1')
+    b2.focus = () => order.push('b2')
+    ab.focus = () => order.push('ab')
+    b2.emit('focus')
+    b1.emit('focus')
+    expect(manager.openAlone('/v/b')).toBe(true)
+    expect(order).toEqual(['b2', 'b1'])
+    expect(created).toHaveLength(3)
+  })
+
+  it('S4: the vault is in no window → a new window on it, as the plain open-recent door opens it', () => {
+    store.upsertWindow(entry('a', '/v/a'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    expect(manager.openAlone('/v/fresh')).toBe(true)
+    expect(created).toHaveLength(2)
+    expect(created[1].entry.root).toBe('/v/fresh')
+    expect(created[1].entry.roots).toEqual(['/v/fresh'])
+    expect(created[1].entry.file).toBeNull()
+    expect(created[1].entry.tabs).toEqual([])
+  })
+
+  it('S5: a dead folder → pruned from the MRU, no window, returns false', () => {
+    store.pushRecent('/v/gone', 1)
+    store.pushRecent('/v/notes', 2)
+    const { host, created } = makeHost([AREA], () => true, (p) => p !== '/v/gone')
+    expect(createWindowManager(store, host).openAlone('/v/gone')).toBe(false)
+    expect(created).toHaveLength(0)
+    expect(store.get().windows).toEqual([])
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v/notes'])
+  })
+
+  it('S6: each use bumps the vault to the top of the MRU; already on top → no write', () => {
+    store.pushRecent('/v/b', 1)
+    store.pushRecent('/v/a', 2)
+    store.upsertWindow(entry('b', '/v/b'))
+    const { host } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    expect(manager.openAlone('/v/b')).toBe(true)
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v/b', '/v/a'])
+    const before = store.get()
+    expect(manager.openAlone('/v/b')).toBe(true)
+    expect(store.get()).toBe(before)
+  })
+
+  it('S7: no saved workspace changes, and the window with the vault alone never stands for the workspace (YAZ-2602 S70)', () => {
+    const work = store.saveVaultSet('Work', ['/v/a', '/v/b'], 1)
+    store.upsertWindow(entry('ab', '/v/a', '/v/b'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const sets = store.get().vaultSets
+    expect(manager.openAlone('/v/b')).toBe(true)
+    expect(store.get().vaultSets).toBe(sets)
+    const [ab, b] = created.map((x) => x.win)
+    expect(manager.openVaultSet(work!.id).opened).toBe(true)
+    expect(ab.focusCount).toBe(1)
+    expect(b.focusCount).toBe(0)
+    expect(created).toHaveLength(2)
+  })
+
+  it('S8: after S1, the plain open-recent door still raises BOTH windows that show the vault, the one focused last on top (YAZ-2602 D6 stays)', () => {
+    store.upsertWindow(entry('ab', '/v/a', '/v/b'))
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    expect(manager.openAlone('/v/b')).toBe(true)
+    const [ab, b] = created.map((x) => x.win)
+    const order: string[] = []
+    ab.focus = () => order.push('ab')
+    b.focus = () => order.push('b')
+    b.emit('focus')
+    ab.emit('focus')
+    expect(manager.openRecentBeside('/v/b')).toBe(true)
+    expect(order).toEqual(['b', 'ab'])
+    order.length = 0
+    b.emit('focus')
+    expect(manager.openRecentBeside('/v/b')).toBe(true)
+    expect(order).toEqual(['ab', 'b'])
+    expect(created).toHaveLength(2)
+  })
+})
+
 describe('createWindowManager: openVaultSet (YAZ-2602 D8 — a saved set of vaults opens as ONE window)', () => {
   const entry = (id: string, ...roots: string[]) => ({ id, root: roots[0], roots, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files' as const, bounds: { x: 0, y: 0, width: 800, height: 600 } })
   /** Three saved sets; "Work" (`/v/b`, `/v/a`, in that order) is the least recently used. */

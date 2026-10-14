@@ -109,6 +109,8 @@ export interface MenuHandlers {
   onPickVault: () => void
   /** "Remove from this window" on a vault row (YAZ-2602 D7): the vault's root. */
   onRemoveVault: (root: string) => void
+  /** "Open by itself" on a vault row (YAZ-2858 D4): the vault's root, for main's `window.openAlone`. */
+  onOpenAlone: (root: string) => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -312,6 +314,17 @@ const addShortcut: Leaf = (t, h) => {
   return { id: 'add-shortcut', label: 'Add note shortcut', onSelect: () => h.onAddShortcut(dir) }
 }
 
+/**
+ * "Open by itself" (YAZ-2858 D4) — a VAULT row only, directly above "Open in ▸": the vault alone in
+ * its own window, the ⌘O list's item under the same name. A window with one vault has no vault row,
+ * so never there; a file row keeps its "Open in ▸ New window".
+ */
+const openAlone: Leaf = (t, h) => {
+  const root = t.openAlone
+  if (root === null) return null
+  return { id: 'open-alone', label: 'Open by itself', onSelect: () => h.onOpenAlone(root) }
+}
+
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
 /** "Open in ▸ New window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. */
@@ -424,7 +437,7 @@ const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNote, newFolder]
 const CREATE_MORE_GROUP: readonly Item[] = [newDatedNote, newDatedFolder]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openIn, addVault]
+const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */

@@ -12,9 +12,13 @@
  * right-click menu reaches the header, the OS window title and `folders[root].name` on disk,
  * survives quit → relaunch, and "Reset to folder name" undoes all three.
  *
- * A vault's number (YAZ-2555 D2, D3) is the last claim: the Window menu's row for vault 2 goes
+ * A vault's number (YAZ-2555 D2, D3) is the next claim: the Window menu's row for vault 2 goes
  * through the same door from ANOTHER window — a minimized window is restored and comes to the
  * front, and nothing new opens (S23).
+ *
+ * "Open by itself" (YAZ-2858 D1, D2) is the last claim: from a workspace window (two vaults), the
+ * row menu's first item opens one of them ALONE in a second window — the workspace window keeps
+ * both — and a second use raises that window instead of opening a third.
  *
  * ⌘O and ⌘2 are native accelerators Playwright cannot press, so steps 2 and 6 drive their menu
  * items by id (`menu.file.switch-vault`, `menu.window.vault.2`); every other open is the trigger's
@@ -305,5 +309,48 @@ test('step 6 — ⌘2 from another window restores vault 2\'s minimized window a
   expect(await windowCount(app)).toBe(2)
   await expect.poll(async () => (await readState(userData)).windows.map((w) => w.id)).toEqual(['w1', 'w2'])
   await shoot(winB, 'vault-switcher-09-vault-key')
+  await quitApp(app)
+})
+
+// ---------------------------------------------------------------- "Open by itself" (YAZ-2858)
+
+test('step 7 — "Open by itself" on a vault of a workspace window opens it ALONE in a second window; a second use raises that window, and nothing new opens', async () => {
+  // One window that shows both vaults (a workspace window, YAZ-2602 D1), and Beta's remembered last file.
+  const state = twoVaultState()
+  state.windows[0].roots = [vaultA, vaultB]
+  app = await launchApp({ userData, seedState: state })
+  win = await appWindow(app, 'w1')
+  await expect(headerName(win)).toHaveText(`${ALPHA} + ${BETA}`)
+  expect(await windowCount(app)).toBe(1)
+
+  // The row menu of a vault of THIS window: "Open by itself" leads it (D2, S11), its hint ⌥⏎.
+  await openPanel(win)
+  await rowNamed(win, BETA).click({ button: 'right' })
+  await expect(vaultMenuItems(win).first()).toHaveText('Open by itself')
+  await expect(vaultMenuItem(win, 'Open by itself')).toHaveAttribute('data-hint', '⌥⏎')
+  await shoot(win, 'vault-switcher-10-open-by-itself-menu')
+  await vaultMenuItem(win, 'Open by itself').click()
+
+  // `window.openAlone(vaultB)`: no window shows Beta ALONE, so a NEW one opens on its last file (D1, S1).
+  const winB = await extraWindow(app, ['w1'])
+  const winBId = winParam(winB)!
+  await expect(panel(win)).toHaveCount(0) // `true` from the door closes the panel (S12)
+  expect(await windowCount(app)).toBe(2)
+  await expect.poll(() => winB.title()).toBe(titleOf('Ideas.md', BETA))
+  await expect(editorOf(winB)).toContainText(IDEAS_BODY)
+  await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === winBId)?.roots).toEqual([vaultB])
+  // The workspace window does not change: it still shows both vaults.
+  expect((await readState(userData)).windows.find((w) => w.id === 'w1')?.roots).toEqual([vaultA, vaultB])
+  await expect(headerName(win)).toHaveText(`${ALPHA} + ${BETA}`)
+  await shoot(winB, 'vault-switcher-11-opened-by-itself')
+
+  // A second use RAISES the window with Beta alone (S2): read after the panel closes, when any third window would already exist.
+  await openPanel(win)
+  await rowNamed(win, BETA).click({ button: 'right' })
+  await vaultMenuItem(win, 'Open by itself').click()
+  await expect(panel(win)).toHaveCount(0)
+  await expect.poll(async () => (await windowIs(app, winBId))?.focused).toBe(true)
+  expect(await windowCount(app)).toBe(2)
+  await expect.poll(async () => (await readState(userData)).windows.length).toBe(2)
   await quitApp(app)
 })
