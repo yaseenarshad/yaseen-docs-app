@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <b>Write like Logseq. Organise like Notion. Own your files like Obsidian.<br>And your AI agent reads every note.</b>
+  <b>Write like Google Docs. Organise like Notion. Own your files like Obsidian.<br>And your AI agent reads every note.</b>
 </p>
 
 <p align="center">
