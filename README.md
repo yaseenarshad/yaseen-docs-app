@@ -46,8 +46,8 @@ You know these moments:
 | **Smooth Outliner** | ❌<br><sub>Toggles only</sub> | ❌<br><sub>Zoom needs a plugin</sub> | ❌<br><sub>Headings only</sub> | ✅ | ✅ |
 | **Real Document (Not Blocks)** | ❌<br><sub>Blocks</sub> | ✅ | ✅ | ❌<br><sub>Each line is a bullet</sub> | ✅ |
 | **View Files in Spreadsheet-like Table (Any Folder = Database)** | ✅ | ❌<br><sub>Needs a <code>.base</code> file</sub> | ❌ | ❌ | ✅ |
-| **Own Your Data (No Account, No Server)** | ❌ | ✅ | ❌ | ❌<br><sub>²</sub> | ✅ |
-| **Open Source** | ❌ | ❌ | ❌ | ❌<br><sub>²</sub> | ✅ |
+| **Own Your Data (No Account, No Server)** | ❌ | ✅ | ❌ | ❌ <sup>²</sup> | ✅ |
+| **Open Source** | ❌ | ❌ | ❌ | ❌ <sup>²</sup> | ✅ |
 
 <sub>¹ The older version of Logseq keeps markdown files. The current version stores a database.<br>² Logseq is open source, and it keeps your notes on your computer with no account. Roam and Workflowy are closed and need an account.</sub>
 
