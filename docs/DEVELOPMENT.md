@@ -1,6 +1,6 @@
-# LAUNCH — how to run this app (for humans and agents)
+# Development — how to run, build and test this app (for humans and agents)
 
-Yaseen Docs: a local markdown editor as an Electron macOS desktop app — React + Milkdown Crepe renderer, main-process file layer. See `README.md` for the human overview and `docs/CONTRACTS.md` for the bridge and editor contracts.
+Yaseen Docs: a local markdown editor as an Electron desktop app for macOS and Windows — React + Milkdown Crepe renderer, main-process file layer. See `README.md` for the short tour, `docs/FEATURES.md` for every feature, and `docs/CONTRACTS.md` for the bridge and editor contracts.
 
 ## Dev loop (do this when asked to "run it")
 
@@ -19,15 +19,15 @@ npm run dev
 npm run desktop:build
 ```
 
-- Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg` (arm64 only; the filenames contain spaces, so quote them). `mac.identity: null` makes electron-builder skip signing, so `desktop/build/adhocSign.cjs` (`afterPack`) trims Chromium's non-English locale paks and then deep ad-hoc signs the bundle itself — without that seal Gatekeeper reports a downloaded copy as "damaged" instead of offering **Open Anyway**.
+- Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-<version>-arm64.dmg` (arm64 only; the filenames contain spaces, so quote them). `mac.identity: null` makes electron-builder skip signing, so `desktop/build/adhocSign.cjs` (`afterPack`) trims Chromium's non-English locale paks and then deep ad-hoc signs the bundle itself — without that seal Gatekeeper reports a downloaded copy as "damaged" instead of offering **Open Anyway**.
 - The first packaging run on a clean machine needs network: electron-builder downloads its Electron dist zip and dmgbuild once, then caches them.
 - Install: drag `Yaseen Docs.app` into `/Applications` in Finder — either straight from `desktop/dist-app/mac-arm64/`, or from the mounted dmg:
 
 ```bash
-open "desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg"
+open desktop/dist-app/*.dmg
 ```
 
-- On another Mac the first open is blocked by Gatekeeper (the app is not notarized): System Settings › Privacy & Security › **Open Anyway**, once. See `README.md` "Sharing it".
+- On another Mac the first open is blocked by Gatekeeper (the app is not notarized): System Settings › Privacy & Security › **Open Anyway**, once. See `docs/FEATURES.md` "Sharing it".
 - Windows: `npm run desktop:build:win` packages an unsigned x64 NSIS installer, `desktop/dist-app/Yaseen Docs-<version>-win-x64-setup.exe` (electron-builder can produce it from a Mac too). First open shows SmartScreen — **More info › Run anyway**, once. Both scripts stamp the root `package.json` version through `tools/packDesktop.mjs`.
 - No toolchain on the target machine? Download the `.dmg` (Mac, Apple Silicon) or the `-win-x64-setup.exe` (Windows) from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-docs-app/releases). Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both on GitHub runners and attaches them to that tag's release.
 
