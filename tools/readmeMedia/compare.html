@@ -1,0 +1,92 @@
+<!doctype html>
+<!--
+  The comparison picture of the README, 1600 × 900: Notion, Obsidian, Google Docs, the outliners
+  (Logseq, Roam Research, Workflowy) and Yaseen Docs, one row for each thing a reader gets. Same dark
+  card as the banner (rounded, transparent outside), so it reads on GitHub's light and dark pages
+  alike. A designed page, no picture of the app — compare.mjs renders it as it is. The rows live in
+  ROWS below; README.md repeats them in the picture's alt text, so change the two together.
+  Query: icon = the app icon's URL.
+
+  The other products have no logo yet: LOGOS below is empty, and a head shows the name alone. To add
+  one, put the glyph of Simple Icons (CC0) in LOGOS under the product's name, in the brand's own
+  colour. The marks belong to their owners.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Yaseen Docs — comparison</title>
+<style>
+  html, body { margin: 0; background: transparent; }
+  body { width: 1600px; height: 900px; font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  /* The banner's dark card, with a glow where the app's column stands. */
+  .card { position: relative; width: 1600px; height: 900px; border-radius: 34px; overflow: hidden; background: radial-gradient(900px 700px at 1420px 450px, rgba(99, 102, 241, .40), transparent 70%), linear-gradient(135deg, #171933, #0e0f1d); }
+  /* The column of the app: one bright panel behind its cells, taller than the rows, so it stands in front. */
+  .ours { position: absolute; left: 1296px; top: 14px; width: 260px; height: 872px; border-radius: 28px; background: linear-gradient(180deg, #7c83ff, #4f52e6); box-shadow: 0 0 0 1px rgba(255, 255, 255, .22) inset, 0 18px 70px rgba(99, 102, 241, .75); }
+  .grid { position: absolute; left: 52px; top: 26px; width: 1504px; display: grid; grid-template-columns: 580px 166px 166px 166px 166px 260px; }
+  .head { height: 132px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 27px; font-weight: 700; letter-spacing: -.3px; color: #aeb2c6; text-align: center; }
+  .head small { font-size: 17px; font-weight: 600; letter-spacing: 0; color: #868aa3; }
+  .head.us { color: #fff; font-size: 31px; font-weight: 800; }
+  /* The other products' logos: small, on a white chip, in their own colour and shape. */
+  .logos { display: flex; gap: 6px; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; background: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+  .logo svg { width: 26px; height: 26px; display: block; }
+  .head img { width: 52px; height: 52px; border-radius: 12px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .55); }
+  .name, .cell { height: 102px; border-top: 1px solid rgba(255, 255, 255, .1); }
+  .name { display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 31px; font-weight: 700; letter-spacing: -.4px; color: #fff; }
+  .name small { font-size: 22px; font-weight: 500; letter-spacing: -.1px; color: #9a9eb3; }
+  .cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .cell.us { border-top-color: rgba(255, 255, 255, .26); }
+  .cell svg { width: 42px; height: 42px; display: block; flex: none; }
+  .cell.us svg { width: 48px; height: 48px; filter: drop-shadow(0 4px 10px rgba(30, 27, 110, .45)); }
+  .cell span { max-width: 160px; font-size: 18px; font-weight: 600; line-height: 1.12; color: #fca5a5; text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="ours"></div>
+  <div class="grid" id="grid"></div>
+</div>
+<script>
+  const YES = '<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#22c55e"/><path d="M10.5 18.6 l5 5 l10 -10.6" fill="none" stroke="#fff" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  const NO = '<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#ef4444"/><path d="M12 12 l12 12 M24 12 l-12 12" fill="none" stroke="#fff" stroke-width="3.8" stroke-linecap="round"/></svg>'
+  const OURS = '<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#fff"/><path d="M10.5 18.6 l5 5 l10 -10.6" fill="none" stroke="#16a34a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  // A product's name -> the <svg> of its logo. Empty: the head shows the name alone.
+  const LOGOS = {}
+  // [the name in the head, its small print, the products whose logos stand above it]
+  const HEADS = [
+    ['Notion', '', ['Notion']],
+    ['Obsidian', '', ['Obsidian']],
+    ['Google Docs', '', ['Google Docs']],
+    ['Outliners', 'Logseq, Roam,<br>Workflowy', ['Logseq', 'Roam Research', 'Workflowy']],
+  ]
+  // [what the reader gets, its small print, Notion, Obsidian, Google Docs, the outliners, Yaseen Docs]
+  // — a cell is yes / no, or [yes / no, a note]. A tick of Yaseen Docs has no note.
+  const ROWS = [
+    ['Local Markdown', 'agent native', [false, 'Cloud'], true, [false, 'Cloud'], [false, 'Cloud or<br>a database'], true],
+    ['Sync across devices included', '', true, [false, 'Add-on, from<br>$4 a month'], true, true, true],
+    ['Smooth outliner', '', [false, 'Toggles only'], false, [false, 'Headings only'], true, true],
+    ['Real document', 'not blocks', [false, 'Blocks'], true, true, [false, 'Each line<br>is a bullet'], true],
+    ['View files in spreadsheet-like table', 'any folder = database', true, false, false, false, true],
+    ['Own your data', 'no account, no server', false, true, false, false, true],
+    ['Open source', '', false, false, false, false, true],
+  ]
+  const grid = document.getElementById('grid')
+  const add = (className, html) => { const el = document.createElement('div'); el.className = className; el.innerHTML = html; grid.append(el) }
+  add('head', '')
+  for (const [name, small, products] of HEADS) {
+    const logos = products.filter((product) => LOGOS[product]).map((product) => `<i class="logo">${LOGOS[product]}</i>`).join('')
+    add('head', (logos ? `<div class="logos">${logos}</div>` : '') + `<div>${name}</div>` + (small ? `<small>${small}</small>` : ''))
+  }
+  add('head us', '<img id="icon" alt=""><div>Yaseen Docs</div>')
+  const OUR_COLUMN = HEADS.length
+  for (const [name, small, ...cells] of ROWS) {
+    add('name', `<div>${name}</div>` + (small ? `<small>${small}</small>` : ''))
+    cells.forEach((cell, column) => {
+      const [yes, note] = Array.isArray(cell) ? cell : [cell, '']
+      add(column === OUR_COLUMN ? 'cell us' : 'cell', (column === OUR_COLUMN ? OURS : yes ? YES : NO) + (note ? `<span>${note}</span>` : ''))
+    })
+  }
+  document.getElementById('icon').src = new URLSearchParams(location.search).get('icon')
+</script>
+</body>
+</html>

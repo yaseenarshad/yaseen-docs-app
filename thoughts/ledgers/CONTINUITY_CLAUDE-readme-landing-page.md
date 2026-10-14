@@ -21,8 +21,12 @@ picture are set.
 
 - The frame is Yasin's: Notion, Obsidian, Google Docs and the outliners are
   each the best at one thing. Yaseen Docs has all of them, on local files.
-- The comparison table has 7 rows. Yasin chose each title and each mark.
+- The comparison has 7 rows. Yasin chose each title and each mark.
   Notion keeps its tick on the database row.
+- The comparison is a picture, `docs/assets/compare.png`, not a markdown table (the
+  guide, 13 Oct 2026). The rows are in `tools/readmeMedia/compare.html`. Make it again:
+  `node tools/readmeMedia/compare.mjs`. Change the alt text in the README with it.
+  The other products have no logo in the picture yet: a download needs Yasin's yes.
 - Obsidian Bases got a kanban view in 1.14 (5 Oct 2026). The facts behind
   the Obsidian crosses are: zoom needs a plugin, Sync is a paid add-on, a
   database needs a `.base` file. Yasin took the first and the last note

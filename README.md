@@ -39,17 +39,11 @@ You know these moments:
 - You try an outliner. Each line is a bullet, and your notes are on a server or in a database.
 - You open Google Docs, because it is smooth. Your bullets do not fold, and there is no file for your agent to open.
 
-| | Notion | Obsidian | Google Docs | Logseq · Roam · Workflowy | Yaseen Docs |
-| -- | :--: | :--: | :--: | :--: | :--: |
-| **Local Markdown (Agent Native)** | ❌<br><sub>Cloud</sub> | ✅ | ❌<br><sub>Cloud</sub> | ❌<br><sub>Cloud or a database ¹</sub> | ✅ |
-| **Sync Across Devices Included** | ✅ | ❌<br><sub>Add-on, from $4 a month</sub> | ✅ | ✅ | ✅<br><sub>Free, through git</sub> |
-| **Smooth Outliner** | ❌<br><sub>Toggles only</sub> | ❌ | ❌<br><sub>Headings only</sub> | ✅ | ✅ |
-| **Real Document (Not Blocks)** | ❌<br><sub>Blocks</sub> | ✅ | ✅ | ❌<br><sub>Each line is a bullet</sub> | ✅ |
-| **View Files in Spreadsheet-like Table (Any Folder = Database)** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Own Your Data (No Account, No Server)** | ❌ | ✅ | ❌ | ❌ <sup>²</sup> | ✅ |
-| **Open Source** | ❌ | ❌ | ❌ | ❌ <sup>²</sup> | ✅ |
+<p align="center">
+  <img src="docs/assets/compare.png" width="100%" alt="Notion, Obsidian, Google Docs, the outliners (Logseq, Roam and Workflowy) and Yaseen Docs compared. Local Markdown that an AI agent reads: Obsidian and Yaseen Docs (Notion and Google Docs are in the cloud, the outliners use the cloud or a database). Sync across devices included: Notion, Google Docs, the outliners and Yaseen Docs (in Obsidian it is an add-on, from 4 dollars a month). Smooth outliner: the outliners and Yaseen Docs (Notion has toggles only, Google Docs folds headings only). Real document, not blocks: Obsidian, Google Docs and Yaseen Docs (Notion has blocks, in the outliners each line is a bullet). View files in a spreadsheet-like table, where any folder is a database: Notion and Yaseen Docs. Own your data, with no account and no server: Obsidian and Yaseen Docs. Open source: only Yaseen Docs.">
+</p>
 
-<sub>¹ The older version of Logseq keeps markdown files. The current version stores a database.<br>² Logseq is open source, and it keeps your notes on your computer with no account. Roam and Workflowy are closed and need an account.</sub>
+<sub>"Outliners" means Logseq, Roam Research and Workflowy. Logseq is the exception in the last two rows: it is open source, and it needs no account. Its older version keeps markdown files, and its current version stores a database. The price is the price of Obsidian Sync on obsidian.md.</sub>
 
 Four apps, and you paste between them and your agent. You need one.
 
