@@ -290,6 +290,14 @@ test('step 2 — a narrow window shows the lines; the mouse on them opens the ca
   await expect(card(win)).toHaveCount(0)
   await shoot(win, 'toc-02-lines')
 
+  // A scroll of the note opens nothing (YAZ-2886): the current line moves, the card stays shut.
+  await mouseOnNote(win)
+  await win.mouse.wheel(0, 400)
+  await win.waitForTimeout(300)
+  await expect(card(win)).toHaveCount(0)
+  await expect(rail(win)).toHaveAttribute('aria-expanded', 'false')
+  await win.mouse.wheel(0, -400)
+
   await openCardByMouse(win)
   await expect(rail(win)).toHaveAttribute('aria-expanded', 'true')
   await expect(card(win).locator('.toc__title')).toHaveText('Table of contents')

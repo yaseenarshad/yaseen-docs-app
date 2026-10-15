@@ -463,74 +463,29 @@ describe('lines: the rail', () => {
   })
 })
 
-describe('names while you scroll', () => {
+describe('a scroll of the note', () => {
   const wheel = (m: Mounted, init: WheelEventInit = { deltaY: 40 }): void =>
     act(() => {
       m.scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, ...init }))
     })
 
-  it('a turn of the wheel over the note opens the card; it closes 1500 ms after the LAST one', () => {
-    fakeClock()
+  it('a turn of the wheel over the note opens no card, in lines mode and in names mode; the current line still moves (YAZ-2886)', async () => {
     const m = mount('auto')
-    wheel(m)
-    expect(card(m)).not.toBeNull()
-    act(() => {
-      vi.advanceTimersByTime(1000)
-    })
-    wheel(m)
-    act(() => {
-      vi.advanceTimersByTime(1499)
-    })
-    expect(card(m)).not.toBeNull()
-    act(() => {
-      vi.advanceTimersByTime(1)
-    })
+    wheel(m, { deltaY: 400 })
+    m.current.mockReturnValue(3)
+    await scrollFrame(m)
     expect(card(m)).toBeNull()
-  })
-
-  it('it stays while the keyboard is inside it', () => {
-    fakeClock()
-    const m = mount('auto')
-    wheel(m)
-    act(() => names(m)[0].focus())
-    act(() => {
-      vi.advanceTimersByTime(5000)
-    })
-    expect(card(m)).not.toBeNull()
+    expect(rail(m).getAttribute('aria-expanded')).toBe('false')
+    expect(lines(m).findIndex((line) => line.hasAttribute('data-current'))).toBe(3)
+    const wide = mount('auto', HEADINGS, 1300)
+    wheel(wide, { deltaY: 400 })
+    expect(card(wide)).toBeNull()
   })
 
   it('a scroll with no wheel — typing at the bottom of the window, a jump — opens nothing', async () => {
     const m = mount('auto')
     await scrollFrame(m)
     expect(card(m)).toBeNull()
-  })
-
-  it('a sideways turn and a pinch open nothing', () => {
-    const m = mount('auto')
-    wheel(m, { deltaX: 40, deltaY: 0 })
-    wheel(m, { deltaY: 40, ctrlKey: true })
-    expect(card(m)).toBeNull()
-  })
-
-  it('in names mode the wheel opens no card: the names are there already', () => {
-    const m = mount('auto', HEADINGS, 1300)
-    wheel(m)
-    expect(card(m)).toBeNull()
-  })
-
-  it('a nudge of the trackpad opens nothing: the wheel must travel 40px in ONE burst, and two turns more than 300 ms apart are two bursts', () => {
-    fakeClock()
-    const m = mount('auto')
-    wheel(m, { deltaY: 39 })
-    expect(card(m)).toBeNull()
-    // The burst is over: its 39px do not count toward the next one.
-    vi.advanceTimersByTime(301)
-    wheel(m, { deltaY: 39 })
-    expect(card(m)).toBeNull()
-    // The same burst, 100 ms on, and upward: travel counts both ways.
-    vi.advanceTimersByTime(100)
-    wheel(m, { deltaY: -1 })
-    expect(card(m)).not.toBeNull()
   })
 
   describe('the path follows the wheel: data-reading on the nav (YAZ-2762 D8)', () => {
@@ -580,19 +535,15 @@ describe('names while you scroll', () => {
       expect(reading(m)).toBe(false)
     })
 
-    it('above the rail it comes with the first nudge, before the card: the card that opens has its path, and both go 1500 ms after the last turn', () => {
+    it('above the rail a turn of the wheel sets the path and opens no card; the path goes 1500 ms after the last turn', () => {
       fakeClock()
       const m = mount('auto')
-      wheel(m, { deltaY: 10 })
-      expect([reading(m), card(m) !== null]).toEqual([true, false])
       wheel(m)
-      expect([reading(m), card(m) !== null]).toEqual([true, true])
-      // The card is inside the nav that has the attribute: toc.css shows the path in its list.
-      expect(card(m)?.closest('nav.toc[data-reading]')).toBe(nav(m))
+      expect([reading(m), card(m) !== null]).toEqual([true, false])
       act(() => {
         vi.advanceTimersByTime(1499)
       })
-      expect([reading(m), card(m) !== null]).toEqual([true, true])
+      expect(reading(m)).toBe(true)
       act(() => {
         vi.advanceTimersByTime(1)
       })
@@ -702,75 +653,11 @@ describe('names while you scroll', () => {
 
       const closed = mountAtRest('auto')
       wheel(closed)
-      expect([reading(closed), card(closed) !== null]).toEqual([true, true])
+      expect([reading(closed), card(closed) !== null]).toEqual([true, false])
       act(() => closed.root.unmount())
-      // The ONE timer of the card and of the path is gone: a clock that runs on has nothing to do.
+      // The ONE timer of the path is gone: a clock that runs on has nothing to do.
       expect(vi.getTimerCount()).toBe(0)
       expect(() => vi.advanceTimersByTime(5000)).not.toThrow()
-    })
-  })
-
-  describe('a card the wheel opened FOLLOWS the note', () => {
-    const hover = (m: Mounted): HTMLElement => m.section.querySelector<HTMLElement>('.toc__hover')!
-    /** A list longer than its box: toc.css would let the wheel scroll it. */
-    const makeLong = (m: Mounted): void => {
-      Object.defineProperties(m.section.querySelector('.toc__names')!, { scrollHeight: { configurable: true, value: 900 }, clientHeight: { configurable: true, value: 300 } })
-    }
-    const wheelOver = (el: Element, deltaY = 30): void =>
-      act(() => {
-        el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY }))
-      })
-    /** A mouse move as the browser reports it; `by` 0 is the re-hit-test after the card appeared under a mouse at rest. */
-    const mouseMove = (el: Element, by: number): void =>
-      act(() => {
-        el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, movementX: by, screenX: by }))
-      })
-
-    it('the wheel over it still moves the NOTE, though its list is long; a real move of the mouse on it ends that, and then the list keeps the wheel', () => {
-      const m = mount('auto')
-      wheel(m)
-      expect(hover(m).hasAttribute('data-follow')).toBe(true)
-      makeLong(m)
-      wheelOver(names(m)[1])
-      expect(m.scroller.scrollTop).toBe(30)
-      // The card came up under a mouse that did not move: no move, so it still follows.
-      mouseMove(hover(m), 0)
-      expect(hover(m).hasAttribute('data-follow')).toBe(true)
-      wheelOver(names(m)[1])
-      expect(m.scroller.scrollTop).toBe(60)
-      // Now the reader means the card.
-      mouseMove(hover(m), 2)
-      expect(hover(m).hasAttribute('data-follow')).toBe(false)
-      wheelOver(names(m)[1])
-      expect(m.scroller.scrollTop).toBe(60)
-    })
-
-    it('a card the reader opened by hand does not follow — the mouse, a click, ⌘J — and one opened by hand after a wheel has stopped following', () => {
-      fakeClock()
-      const byClick = mount('auto')
-      click(rail(byClick))
-      expect(hover(byClick).hasAttribute('data-follow')).toBe(false)
-      const byKey = mount('auto')
-      act(() => byKey.mountEl.focus())
-      pressCmdJ(byKey.mountEl)
-      expect(hover(byKey).hasAttribute('data-follow')).toBe(false)
-
-      const m = mount('auto')
-      wheel(m)
-      expect(hover(m).hasAttribute('data-follow')).toBe(true)
-      // It closes 1.5 s after the turn; the mouse on the rail opens it again, and this time the reader asked for it.
-      act(() => {
-        vi.advanceTimersByTime(1500)
-      })
-      expect(card(m)).toBeNull()
-      act(() => {
-        hover(m).dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-      })
-      expect(card(m)).not.toBeNull()
-      expect(hover(m).hasAttribute('data-follow')).toBe(false)
-      makeLong(m)
-      wheelOver(names(m)[1])
-      expect(m.scroller.scrollTop).toBe(0)
     })
   })
 })
@@ -1378,12 +1265,12 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     expect(toc).toBeLessThan(chips)
   })
 
-  it('ONE scrollbar, the note’s: a list shows none, keeps the wheel at its ends, and does not scroll by itself while its card follows; the names take their 200px from the scroller', () => {
+  it('ONE scrollbar, the note’s: a list shows none and keeps the wheel at its ends; no card follows the note (YAZ-2886); the names take their 200px from the scroller', () => {
     const list = rule(tocCss, '.toc__names')
     expect(list).toMatch(/overflow-y:\s*auto;/)
     expect(list).toMatch(/scrollbar-width:\s*none;/)
     expect(list).toMatch(/overscroll-behavior:\s*contain;/)
-    expect(rule(tocCss, '.toc__hover[data-follow] .toc__names')).toMatch(/overflow-y:\s*hidden;/)
+    expect(tocCss).not.toContain('data-follow')
     // `namesShow` counts with TOC_WIDTH: the scroller pads by it, the find bar moves by it, the column stands left of the note's scrollbar.
     expect(tocCss).toMatch(new RegExp(`--toc-width:\\s*${TOC_WIDTH}px;`))
     expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
