@@ -12,8 +12,8 @@
  *  - NAMES (`data-names`): a quiet column of the rows' names beside the text. toc.css pads the
  *    scroller on the right by the column's width, so the names never cover the note.
  *  - LINES: a rail of small lines, one per row, in the page's right gutter. The mouse on the
- *    rail, a click on it, a turn of the wheel over the note, or ⌘J opens a card with the same
- *    names ON TOP of the text.
+ *    rail, a click on it, or ⌘J opens a card with the same names ON TOP of the text. A scroll
+ *    of the note never opens it (YAZ-2886): only the rail's lines change.
  * `namesShow` picks between them from the setting and the width of this editor's `section.editor`
  * — measured by a ResizeObserver, so it runs on a resize and never on a scroll or a keystroke.
  *
@@ -40,10 +40,8 @@
  * the note: the last rows of a note can never reach the top of the scroller, and without the
  * hold a click on one of them would light the row below it.
  *
- * The card opens on `wheel`, NOT on `scroll`: typing at the bottom of the window and a jump both
- * scroll the note, and neither is the reader asking where they are. A wheel over the table of
- * contents moves ONE thing: a list longer than its box, which stops at its ends, or else the note
- * (`onWheelOverToc`).
+ * A wheel over the table of contents moves ONE thing: a list longer than its box, which stops at
+ * its ends, or else the note (`onWheelOverToc`).
  *
  * 🔒 ⌘J is a WINDOW CAPTURE listener, one per table of contents and with no coordinator between
  * them (the find bar's idiom, `FindBar.tsx`): it claims the key while focus stands inside its own
@@ -140,7 +138,7 @@ export const railPitch = (height: number, count: number): { pitch: number; fits:
 
 /** The card stays this long after the mouse or the keyboard leaves it. */
 const GRACE_MS = 200
-/** The card stays this long after the last turn of the wheel, and so does the path in the names (`data-reading`). */
+/** The path in the names stays this long after the last turn of the wheel (`data-reading`). */
 const WHEEL_LINGER_MS = 1500
 /** A click on the rail right after the mouse opened the card does not close it again. */
 const CLICK_GUARD_MS = 300
@@ -150,10 +148,6 @@ const EDGE_PX = 16
 const RAIL_PADDING_PX = 16
 /** A closed card stays mounted this long, so toc.css can fade it out (`data-leaving`). */
 const EXIT_MS = 140
-/** The wheel opens the card only after this much travel: a nudge of the trackpad is not reading down the note. */
-const WHEEL_OPEN_PX = 40
-/** Two wheel events further apart than this are two separate turns. */
-const WHEEL_BURST_MS = 300
 
 interface Box {
   /** Width of `section.editor`: what `namesShow` reads. */
@@ -240,26 +234,10 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       if (!held()) setOpen(false)
     }, GRACE_MS)
   }
-  /**
-   * FOLLOWING: the card opened because the reader is scrolling the NOTE, and the mouse has not
-   * moved on it since. Its list then does not take the wheel (toc.css stops it scrolling by
-   * itself) — the wheel goes on to the note, and the list keeps step with it. A real move of the
-   * mouse on the card ends it: now the reader means the card.
-   */
-  const following = useRef(false)
-  const follow = (on: boolean): void => {
-    following.current = on
-    hoverRef.current?.toggleAttribute('data-follow', on)
-  }
   const openCard = (): void => {
     cancelGrace()
-    follow(false)
     openedAt.current = performance.now()
     setOpen(true)
-  }
-  const openByWheel = (): void => {
-    openCard()
-    follow(true)
   }
   const focusCurrent = (): void => {
     const nav = navRef.current
@@ -289,8 +267,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   }
 
   // Mirror for the listeners below, which are registered once per shown table of contents.
-  const live = useRef({ names, open, enter, leave, openByWheel })
-  live.current = { names, open, enter, leave, openByWheel }
+  const live = useRef({ enter, leave })
+  live.current = { enter, leave }
 
   // The measure: the section's width picks the look, the scroller's top and height place it. A
   // ResizeObserver, so it costs nothing on a scroll or a keystroke — the scroller's BOX does not
@@ -362,9 +340,9 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   }, [shows, rows, box, names, shownWidth, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
   // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
-  // shows the path in the names and, in lines mode, opens the card. ONE linger timer serves a whole
-  // burst of wheel events, for both: an event only stamps the time, and the timer re-arms itself
-  // for what is left.
+  // shows the path in the names. It never opens the card (YAZ-2886): a reader who scrolls is
+  // reading, and the card would cover the text. ONE linger timer serves a whole burst of wheel
+  // events: an event only stamps the time, and the timer re-arms itself for what is left.
   useEffect(() => {
     if (!shows) return
     const scroller = scrollerOf()
@@ -372,7 +350,6 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     // Kept for the cleanup: React has cleared `navRef` by then when the nav goes away.
     const nav = navRef.current
     let lastTurn = 0
-    let travelled = 0
     let timer: ReturnType<typeof setTimeout> | null = null
     const unlock = (): void => {
       lock.current = null
@@ -391,29 +368,20 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
         return
       }
       reading(false)
-      // Only a card that is open: the end of a burst in names mode sets no state.
-      if (live.current.open && !held()) setOpen(false)
     }
-    /** The reader moved the note with the wheel. It answers how long ago the turn before this one was. */
-    const turn = (): number => {
-      const now = performance.now()
-      const gap = now - lastTurn
-      lastTurn = now
+    /** The reader moved the note with the wheel. */
+    const turn = (): void => {
+      lastTurn = performance.now()
       if (timer === null) {
         reading(true)
         timer = setTimeout(linger, WHEEL_LINGER_MS)
       }
-      return gap
     }
     const onWheel = (event: WheelEvent): void => {
       unlock()
       // A sideways turn or a pinch (ctrlKey) is not reading down the note.
       if (event.deltaY === 0 || event.ctrlKey) return
-      const gap = turn()
-      if (live.current.names) return
-      if (gap > WHEEL_BURST_MS) travelled = 0
-      travelled += Math.abs(event.deltaY)
-      if (!live.current.open && travelled >= WHEEL_OPEN_PX) live.current.openByWheel()
+      turn()
     }
     wheelTurn.current = turn
     scroller.addEventListener('wheel', onWheel, { passive: true })
@@ -511,9 +479,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    *  - a list that is longer than its box scrolls itself, and STOPS at its ends (toc.css:
    *    `overscroll-behavior`): the note must not move under a reader who is only looking
    *    through the names;
-   *  - a list that fits has nothing to scroll, so the note moves — no dead strip beside the text;
-   *  - a card that is FOLLOWING (above) lets the note move: it opened under the mouse because of
-   *    that very scroll, and must not stop it.
+   *  - a list that fits has nothing to scroll, so the note moves — no dead strip beside the text.
    * (`section.editor` does not scroll, so nothing else answers a wheel here.)
    * Where the NOTE moves, the reader is reading down it as with a wheel over the note itself — an
    * event the scroller's own listener never gets — so the path shows by the same rule (`wheelTurn`).
@@ -522,7 +488,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     const scroller = scrollerOf()
     if (scroller === null || event.deltaY === 0 || event.ctrlKey) return
     const list = event.target instanceof Element ? event.target.closest('.toc__names') : null
-    if (!following.current && list !== null && list.scrollHeight > list.clientHeight + 1) return
+    if (list !== null && list.scrollHeight > list.clientHeight + 1) return
     lock.current = null
     wheelTurn.current?.()
     // deltaMode 1 is lines (a mouse wheel on some drivers); 16px is the browser's own line.
@@ -604,10 +570,6 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
           onMouseEnter={() => {
             cancelGrace()
             if (!open) openCard()
-          }}
-          // A REAL move (the browser's own re-hit-test after a layout change moves nothing).
-          onMouseMove={(event) => {
-            if (following.current && (event.movementX !== 0 || event.movementY !== 0)) follow(false)
           }}
           onMouseLeave={closeSoon}
           onWheel={onWheelOverToc}

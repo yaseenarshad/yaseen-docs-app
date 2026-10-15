@@ -123,12 +123,6 @@
   --toc-path: var(--accent);
 }
 
-/* A card that only FOLLOWS the note (it opened because of a scroll of the note): its list is moved
-   by the component, in step with the note, and does not take the wheel itself. */
-.toc__hover[data-follow] .toc__names {
-  overflow-y: hidden;
-}
-
 .toc__names[data-above] {
   --toc-fade-top: 28px;
 }
