@@ -117,8 +117,9 @@ test('step 2 — the pill opens "What\'s new": every release in the list, the ta
   await expect(whatsNew(win).locator('.whats-new__body img')).toHaveAttribute('loading', 'lazy')
   await expect(actions(win)).toHaveText(['Later', 'Download'])
   // D9: about 94% of the window.
-  const [box, size] = [await whatsNew(win).boundingBox(), win.viewportSize()]
-  expect(box !== null && size !== null && box.width > size.width * 0.85 && box.height > size.height * 0.85).toBe(true)
+  const box = await whatsNew(win).boundingBox()
+  const [width, height] = await win.evaluate(() => [innerWidth, innerHeight]) // an Electron page has no `viewportSize()`
+  expect(box !== null && box.width > Math.min(width * 0.85, 1200) && box.height > height * 0.85).toBe(true) // the width stops at 1280px
   await shoot(win, 'update-02-whats-new')
 })
 
