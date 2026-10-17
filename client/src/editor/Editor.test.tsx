@@ -19,6 +19,7 @@ import { Editor } from './Editor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
+import { announceTwinSave } from '../lib/twinEditors'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -724,6 +725,99 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
  * refetches and a fresh `file` would remount Crepe, so the host keeps its own disk bytes and hands
  * the panel those. The raw fallback is read here because it shows those bytes literally.
  */
+/**
+ * Copies of one file (YAZ-2940 D4, S23): a save tells the file's other editors in this window at
+ * once, through `twinEditors.ts`, without waiting for the watcher. They answer with the same
+ * code the watcher drives: a clean copy reloads as a diff, a dirty copy shows the conflict bar,
+ * and the editor that saved skips its own announce by the echo check.
+ */
+describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
+  const NEXT = '# Hello\n\nfrom the other copy\n'
+
+  it('a clean copy reloads as a diff on the announce: no conflict bar, no save back', async () => {
+    const el = await mount(FM + BODY)
+    diskHas(FM + NEXT, 7)
+    diskHas(FM + NEXT, 7) // reload() re-reads
+    await act(async () => {
+      announceTwinSave(PATH, 7)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(applyExternalMock).toHaveBeenCalledWith(crepe(), NEXT)
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    // The watcher's event for the same write then matches the new mtime: no further read.
+    const reads = readFile.mock.calls.length
+    await emit({ type: 'change', path: PATH, mtime: 7 })
+    expect(readFile.mock.calls.length).toBe(reads)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('a dirty copy shows the conflict bar and keeps its text', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nmy unsaved edit\n')
+    diskHas(FM + NEXT, 7)
+    await act(async () => {
+      announceTwinSave(PATH, 7)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
+    expect(applyExternalMock).not.toHaveBeenCalled()
+    expect(crepe().md).toBe('# Hello\n\nmy unsaved edit\n')
+  })
+
+  it('an announce for another path is not heard', async () => {
+    await mount(FM + BODY)
+    const reads = readFile.mock.calls.length
+    await act(async () => {
+      announceTwinSave('/vault/other.md', 7)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(readFile.mock.calls.length).toBe(reads)
+  })
+
+  it('two editors on one path: the one that saves skips its own announce, the twin reloads before any watcher event', async () => {
+    const file: FileResponse = { path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length }
+    readFile.mockResolvedValueOnce(file)
+    readFile.mockResolvedValueOnce(file)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    act(() =>
+      root?.render(
+        <>
+          <Editor {...props} />
+          <Editor {...props} />
+        </>,
+      ),
+    )
+    await settle()
+    await settle()
+    const [a, b] = createCrepeMock.mock.results.map((r) => r.value as FakeCrepe)
+    expect(createCrepeMock).toHaveBeenCalledTimes(2)
+    const reads = readFile.mock.calls.length
+    // Type in copy A; its save lands with mtime 99 (beforeEach's writeFile).
+    act(() => {
+      a.md = NEXT
+      a.onMarkdownUpdated?.(NEXT)
+    })
+    diskHas(FM + NEXT, 99) // B's read of the change
+    diskHas(FM + NEXT, 99) // B's reload() re-reads
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    // Only B read the disk (twice: the change check and the reload); A took its announce as an echo.
+    expect(readFile.mock.calls.length).toBe(reads + 2)
+    expect(applyExternalMock).toHaveBeenCalledExactlyOnceWith(b, NEXT)
+    expect(b.md).toBe(NEXT)
+    expect(container.querySelector('.conflict-bar')).toBeNull()
+    // The watcher's event for that write is an echo for both copies now.
+    await emit({ type: 'change', path: PATH, mtime: 99 })
+    expect(readFile.mock.calls.length).toBe(reads + 2)
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1) // B's reloaded text is its baseline: no save back
+  })
+})
+
 describe('the frontmatter panel follows the disk (YAZ-1356)', () => {
   const FM3 = '---\nstatus: shipped\n---\n'
 

@@ -9,7 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
-import { getZoomedItemPos, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
+import { getZoomedItemPos, HIDDEN_TAB_LAYER_CLASS, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
 
 const OUTLINE = `Intro paragraph
 
@@ -352,6 +352,22 @@ describe('browser history: Back / Forward walk zoom levels (GRO-2091 A)', () => 
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     popTo({ [ZOOM_HISTORY_KEY]: { file: 'notes.md', key: 'deadbeef:0' } })
     expect(zoomedPos(crepe)).toBeNull()
+  })
+
+  it('only the SHOWN copy of a file answers Back / Forward; a hidden tab layer ignores them (YAZ-2940 S24)', async () => {
+    const shown = await mount()
+    const hidden = await mount() // a duplicated tab: same file, same history `file`
+    hidden.root.classList.add(HIDDEN_TAB_LAYER_CLASS)
+    clickGlyph(shown.root, 'L2 a')
+    const l2Entry = history.state
+    clickCrumb(shown.root, 'Notes')
+    popTo(l2Entry) // Back
+    expect(zoomedPos(shown.crepe)).toBe(posOf(shown.crepe, 'L2 a') - 2)
+    expect(zoomedPos(hidden.crepe)).toBeNull()
+    // Shown again, the copy answers like any editor.
+    hidden.root.classList.remove(HIDDEN_TAB_LAYER_CLASS)
+    popTo(l2Entry)
+    expect(zoomedPos(hidden.crepe)).toBe(posOf(hidden.crepe, 'L2 a') - 2)
   })
 
   it('zoom keys are label + occurrence over ALL items, so same-labelled items stay distinct', async () => {

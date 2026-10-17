@@ -10,7 +10,10 @@
  * a stashed buffer would be a live resurrection vector for whatever mounts there next.
  *
  * The design, pinned:
- *  - every `useAutosave` registers a per-path handle here (one editor per path per window);
+ *  - every `useAutosave` registers a handle here, in a SET per path: a duplicated tab (YAZ-2940
+ *    D3) puts two or more editors on one path in one window, and every step below acts on
+ *    EVERY handle of a path — a rename or delete that missed one copy would let that copy
+ *    write the old path again;
  *  - the ORIGINATING window awaits `flushRenamedPath(oldPath)` BEFORE invoking `fs:rename`,
  *    so its own buffer is on disk and travels with the file;
  *  - EVERY window's `file:renamed` handler calls `carryEditorAcrossRename(old, new)` BEFORE
@@ -19,7 +22,9 @@
  *    old path (no resurrection);
  *  - the editor mounting at the new path takes the stashed buffer (`takeRenameBuffer`) and
  *    applies it as an UNSAVED change over the freshly read file — the buffer survives into
- *    the new path and autosave writes it there (no silent loss).
+ *    the new path and autosave writes it there (no silent loss). The stash stays ONE buffer
+ *    per new path: copies of one file stay in sync (`twinEditors.ts`, YAZ-2940 D4), so when
+ *    several are dirty the last one captured wins, and the first copy to mount takes it.
  *
  * Residual race, accepted: a save already IN FLIGHT over IPC when the rename lands cannot
  * be recalled; `writeFile` recreates the old path in that sub-millisecond window. The
@@ -52,20 +57,28 @@ export interface RenameBuffer {
   body: string
 }
 
-const handles = new Map<string, RenameContinuityHandle>()
+/** Every mounted editor's handle, by path: a set, since copies of a tab share a path (YAZ-2940 D3). */
+const handles = new Map<string, Set<RenameContinuityHandle>>()
 const buffers = new Map<string, RenameBuffer>()
 
-/** One handle per open path per window (tabs de-duplicate); returns the unregister. */
+const handlesAt = (path: string): readonly RenameContinuityHandle[] => [...(handles.get(path) ?? [])]
+
+/** Adds this editor's handle to its path's set; the unregister removes only this handle. */
 export function registerRenameContinuity(path: string, handle: RenameContinuityHandle): () => void {
-  handles.set(path, handle)
+  let set = handles.get(path)
+  if (set === undefined) handles.set(path, (set = new Set()))
+  set.add(handle)
   return () => {
-    if (handles.get(path) === handle) handles.delete(path)
+    const current = handles.get(path)
+    if (current === undefined) return
+    current.delete(handle)
+    if (current.size === 0) handles.delete(path)
   }
 }
 
-/** Flush the editor open at `path`, if any — the pre-rename step (a) and the pre-rewrite step. */
+/** Flush every editor open at `path` — the pre-rename step (a) and the pre-rewrite step. */
 export function flushRenamedPath(path: string): Promise<void> {
-  return handles.get(path)?.flush() ?? Promise.resolve()
+  return Promise.all(handlesAt(path).map((handle) => handle.flush())).then(() => undefined)
 }
 
 /**
@@ -74,7 +87,7 @@ export function flushRenamedPath(path: string): Promise<void> {
  */
 export function flushRenamedDir(dir: string): Promise<void> {
   const prefix = `${dir}/`
-  return Promise.all([...handles].filter(([path]) => path.startsWith(prefix)).map(([, handle]) => handle.flush())).then(() => undefined)
+  return Promise.all([...handles].filter(([path]) => path.startsWith(prefix)).flatMap(([, set]) => [...set].map((handle) => handle.flush()))).then(() => undefined)
 }
 
 /**
@@ -90,22 +103,22 @@ export function carryEditorsAcrossDirRename(oldDir: string, newDir: string): voi
 }
 
 /**
- * The `file:renamed` step, run BEFORE the workspace remap unmounts the old editor: capture a dirty
- * buffer into the new path's stash and retire the old handle. No editor at `oldPath` → no-op.
+ * The `file:renamed` step, run BEFORE the workspace remap unmounts the old editors: capture each
+ * dirty buffer into the new path's stash and retire every old handle. No editor at `oldPath` → no-op.
  */
 function carryEditorBuffer(oldPath: string, newPath: string): void {
-  const handle = handles.get(oldPath)
-  if (handle === undefined) return
-  const buffer = handle.capture()
-  handle.retire()
-  if (buffer !== null) buffers.set(newPath, buffer)
+  for (const handle of handlesAt(oldPath)) {
+    const buffer = handle.capture()
+    handle.retire()
+    if (buffer !== null) buffers.set(newPath, buffer) // copies are in sync: the last dirty one wins
+  }
 }
 
 export function carryEditorAcrossRename(oldPath: string, newPath: string): void {
   carryEditorBuffer(oldPath, newPath)
 }
 
-/** Same-path handoff before React moves one editable owner between main and right panes. */
+/** Same-path handoff before React moves one editable owner between main and right panes (every main copy closes, YAZ-2940 D8). */
 export function carryEditorAcrossPane(path: string): void {
   carryEditorBuffer(path, path)
 }
@@ -118,8 +131,9 @@ export function takeRenameBuffer(path: string): RenameBuffer | null {
 }
 
 /**
- * The `file:deleted` step (GRO-2272), run BEFORE the workspace remap unmounts the editor: retire
- * the editor at `path` so it can never write again, and drop any buffer stashed for it.
+ * The `file:deleted` step (GRO-2272), run BEFORE the workspace remap unmounts the editors: retire
+ * every editor at `path` (each copy, YAZ-2940 D3) so none can write again, and drop any buffer
+ * stashed for it.
  *
  * Deliberately NOT `carryEditorAcrossRename`, which sits a few lines above and looks like the
  * thing to copy. That one CAPTURES, retires and STASHES, because a rename has a destination
@@ -134,14 +148,14 @@ export function takeRenameBuffer(path: string): RenameBuffer | null {
  * reach — the same limits rename has always had.
  */
 export function retireDeletedPath(path: string): void {
-  handles.get(path)?.retire()
+  for (const handle of handlesAt(path)) handle.retire()
   buffers.delete(path)
 }
 
 /** The `file:deleted` kind-`dir` twin: every editor (and stashed buffer) under `dir` retires. */
 export function retireDeletedDir(dir: string): void {
   const prefix = `${dir}/`
-  for (const path of [...handles.keys()]) if (path.startsWith(prefix)) handles.get(path)?.retire()
+  for (const path of [...handles.keys()]) if (path.startsWith(prefix)) for (const handle of handlesAt(path)) handle.retire()
   for (const path of [...buffers.keys()]) if (path.startsWith(prefix)) buffers.delete(path)
 }
 

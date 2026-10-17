@@ -69,6 +69,8 @@ export const ZOOM_CRUMBS_CLASS = 'outline-zoom-crumbs'
 export const ZOOM_CRUMB_CLASS = 'outline-zoom-crumb'
 /** Property on `history.state` carrying `{ file, key }` (`key` null = zoomed out) for this file. */
 export const ZOOM_HISTORY_KEY = 'mdappZoom'
+/** The class App gives a tab's layer while it does not show (tabs.css): its editor ignores Back / Forward. */
+export const HIDDEN_TAB_LAYER_CLASS = 'tabstack__layer--hidden'
 
 interface ZoomHistoryEntry {
   file: string
@@ -324,7 +326,10 @@ export const createOutlineZoom = ({ fileName, title }: ZoomOptions) =>
         view: (view) => {
           // Back / Forward: restore the entry's level. Entries of another file (left behind by a
           // file switch) are ignored; the original page entry (no zoom state) means zoomed out.
+          // Only the SHOWN editor answers: a duplicated tab (YAZ-2940 S24) keeps a hidden copy of
+          // this file mounted, and its entries carry the same `file`.
           const onPopState = (event: PopStateEvent) => {
+            if (view.dom.closest(`.${HIDDEN_TAB_LAYER_CLASS}`) !== null) return
             const entry = readZoomEntry(event.state)
             if (entry !== null && entry.file !== pluginKey.getState(view.state)?.fileName) return
             const target = entry?.key == null ? null : itemPosForZoomKey(view.state.doc, entry.key)
