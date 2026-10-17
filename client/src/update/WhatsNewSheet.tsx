@@ -174,9 +174,17 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
   return (
     <div className="whats-new-overlay" tabIndex={-1} onMouseDown={onClose} onKeyDown={onKeyDown}>
       <div className="whats-new" role="dialog" aria-modal="true" aria-labelledby="whats-new-title" onMouseDown={(e) => e.stopPropagation()}>
-        <h2 className="whats-new__title" id="whats-new-title">
-          What's new
-        </h2>
+        <div className="whats-new__head">
+          <h2 className="whats-new__title" id="whats-new-title">
+            What's new
+          </h2>
+          {/* D16 (Yasin: "its natural for a lot of users to think and know that they can click the x at the top right"): the same close as Esc and Later. */}
+          <button type="button" className="whats-new__close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
         {selected === undefined ? (
           <div className="whats-new__notes" aria-busy={notes === 'loading'}>
             {notes === 'loading' && <p className="whats-new__msg">Loading…</p>}

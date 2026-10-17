@@ -57,6 +57,16 @@ const key = (target: Element, k: string) => {
   return e
 }
 
+describe('WhatsNewSheet: the ✕ at the top right (D16)', () => {
+  it('closes the sheet, like Esc and Later', async () => {
+    const { onClose } = await render({ kind: 'ready', version: '1.0.14' })
+    const x = document.querySelector<HTMLButtonElement>('.whats-new__head .whats-new__close')!
+    expect(x.getAttribute('aria-label')).toBe('Close')
+    act(() => x.click())
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('WhatsNewSheet: the list of releases (D10)', () => {
   it('lists every release newest first: the title without its version (or the version when there is none), a date with no year, and the year once (D15)', async () => {
     const { rows } = await render({ kind: 'idle' })
