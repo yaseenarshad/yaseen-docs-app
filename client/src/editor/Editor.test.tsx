@@ -142,14 +142,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startScrollTop={extra.startScrollTop} />))
   await settle()
   await settle()
   return container
@@ -731,6 +731,33 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
  * code the watcher drives: a clean copy reloads as a diff, a dirty copy shows the conflict bar,
  * and the editor that saved skips its own announce by the echo check.
  */
+describe('a duplicated tab starts at its source\'s scroll spot (YAZ-2940 D7)', () => {
+  it('sets the scroller\'s scrollTop once the content lands, after the caret grab that may scroll; a later prop is never applied', async () => {
+    // The caret grab runs first and moves the scroller, as a real focus can.
+    vi.mocked(focusEditor).mockImplementation(() => {
+      const host = container?.querySelector<HTMLElement>('.editor-host')
+      if (host) host.scrollTop = 5
+    })
+    const el = await mount(FM + BODY, 1, { startScrollTop: 420 })
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    expect(focusEditor).toHaveBeenCalled()
+    expect(host.scrollTop).toBe(420)
+    // A new index source builds the editor again: the start is spent, and a new prop is not read.
+    vi.mocked(focusEditor).mockReset()
+    host.scrollTop = 0
+    const built = createCrepeMock.mock.calls.length
+    await act(async () => root?.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} onRetitle={noop} startScrollTop={999} />))
+    await settle()
+    expect(createCrepeMock.mock.calls.length).toBe(built + 1)
+    expect(host.scrollTop).toBe(0)
+  })
+
+  it('a mount with no start leaves the scroller where the caret grab put it', async () => {
+    const el = await mount(FM + BODY)
+    expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(0)
+  })
+})
+
 describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
   const NEXT = '# Hello\n\nfrom the other copy\n'
 

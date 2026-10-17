@@ -781,4 +781,20 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Move to new window')?.click())
     expect(onMoveToNewWindow).toHaveBeenCalledWith('/v/a.md', 't3')
   })
+
+  it('D5: the menu has "Duplicate tab" right after "Move to new window"; a click copies THAT tab, by id, and closes the menu', () => {
+    const onDuplicate = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const tabs = [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/a.md' }]
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="t1" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} onMoveToNewWindow={vi.fn()} onMoveToRight={vi.fn()} onDuplicate={onDuplicate} {...noNav} />))
+    const el = container
+    act(() => void el.querySelector('[data-tab="t2"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    expect(items().map((item) => item.textContent).slice(0, 3)).toEqual(['Move to new window', 'Duplicate tab', 'Move to right panel'])
+    act(() => items()[1].click())
+    expect(onDuplicate).toHaveBeenCalledExactlyOnceWith('t2')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
 })

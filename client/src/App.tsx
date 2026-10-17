@@ -95,7 +95,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, keep, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, keep, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -739,6 +739,23 @@ export function App() {
       .then(() => (now.current.phase === 'open' ? closeUnderOverview([id]) : closeTab(id)))
       .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])
+  /**
+   * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
+   * opens right after it and shows — under the board it shows on the board beside its source, and the
+   * board stays (S5: a menu action is no trip to a page, R30). The copy starts at its source's scroll
+   * spot: read here, before its layer mounts, and handed to its editor once (`startScroll`).
+   */
+  const startScroll = useRef(new Map<string, number>())
+  const duplicateTab = useCallback((id: string) => {
+    const top = document.querySelector(`[data-tab="${id}"] .editor-host`)?.scrollTop
+    ownChange.current = now.current.phase === 'open'
+    const copy = duplicate(id)
+    if (copy !== null && top !== undefined) startScroll.current.set(copy, top)
+  }, [duplicate])
+  // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
+  useEffect(() => {
+    for (const id of startScroll.current.keys()) if (mounted.includes(id)) startScroll.current.delete(id)
+  }, [mounted])
   /** A rename or a move of the page on show, or of a folder above it, changes `file` and is no trip to a page: an open board stays. */
   const renamedUnderOverview = useCallback((oldPath: string, newPath: string, dir: boolean) => {
     const { file: open, phase } = now.current
@@ -1377,6 +1394,7 @@ export function App() {
               onDropPage={dropOnMain}
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}
+              onDuplicate={duplicateTab}
               canBack={canBack}
               canForward={canForward}
               onBack={back}
@@ -1422,7 +1440,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startScrollTop={startScroll.current.get(id)} />
                 </div>
               )
             })}
@@ -1458,6 +1476,7 @@ export function App() {
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
                 onMoveToRight={movePageToRight}
                 onMoveToNewWindow={movePageToNewWindow}
+                onDuplicate={duplicateTab}
                 onShowInSidebar={showInSidebar}
                 onNotice={notify}
                 reviewState={reviewState}

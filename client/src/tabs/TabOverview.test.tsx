@@ -250,6 +250,17 @@ describe('TabOverview', () => {
     expect(menuItems(one.el)).toEqual(['Copy path', 'Close 1 tab'])
   })
 
+  it('YAZ-2940 D5, S5: a page\'s menu has "Duplicate tab" right after "Move to new window"; a click copies that tab by id and leaves the board open', async () => {
+    const { el, props } = await mount({ onMoveToNewWindow: vi.fn(), onDuplicate: vi.fn() })
+    rightClick(page(el, '/v/Projects/plan.md'))
+    expect(menuItems(el).slice(0, 3)).toEqual(['Move to new window', 'Duplicate tab', 'Move to right panel'])
+    act(() => menuItem(el, 'Duplicate tab')?.click())
+    expect(props.onDuplicate).toHaveBeenCalledExactlyOnceWith('/v/Projects/plan.md')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(props.onDismiss).not.toHaveBeenCalled()
+    expect(props.onOpen).not.toHaveBeenCalled()
+  })
+
   it('S65 to S69: pick many: shift-click picks and never opens; the bar closes the picked tabs, or the others, and drops the pick; Esc drops the pick before it leaves the board; a plain click still opens', async () => {
     const { el, props, again } = await mount()
     const bar = () => el.querySelector('.taboverview__pick')

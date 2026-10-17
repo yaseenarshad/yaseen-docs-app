@@ -22,6 +22,8 @@ export interface TabMenuProps {
   onMoveToRight?: (path: string) => void
   /** "Move to new window" (YAZ-2933): the tab leaves for a window of its own — the page by path, and only this tab (by id) closes here (YAZ-2940 S16). */
   onMoveToNewWindow?: (path: string, id: string) => void
+  /** "Duplicate tab" (YAZ-2940 D5): a copy of this tab, by id, opens right after it in this window. */
+  onDuplicate?: (id: string) => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
   onSetReview?: (path: string, on: boolean) => void
@@ -33,9 +35,9 @@ export interface TabMenuProps {
  * A tab's right-click menu, in ONE place (YAZ-2648): the strip's tabs and the board's pages are
  * the same open files, so they offer the same items — the sidebar row's Copy path (YAZ-922) and
  * its OS actions (YAZ-963: Reveal in Finder, Open in VS Code), Show in sidebar, the move to a
- * new window (YAZ-2933) and to the right panel, and the review toggle (YAZ-2322).
+ * new window (YAZ-2933), "Duplicate tab" (YAZ-2940) and the move to the right panel, and the review toggle (YAZ-2322).
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow, onDuplicate, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
   /**
    * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so the
    * menu closes at once and there is nothing to confirm or repair — but a STALE tab (deleted or
@@ -63,6 +65,20 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow
           }}
         >
           Move to new window
+        </button>
+      )}
+      {/* Right after "Move to new window" (YAZ-2940 D5). */}
+      {onDuplicate !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onDuplicate(menu.id)
+            onClose()
+          }}
+        >
+          Duplicate tab
         </button>
       )}
       {onMoveToRight !== undefined && (

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { defaultRightPanelIdentity, type RightPanelIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
-import { carryEditorAcrossPane } from '../lib/renameContinuity'
+import { carryEditorAcrossPane, flushRenamedPath } from '../lib/renameContinuity'
 import { hashFilePath } from '../lib/urlHash'
 
 /**
@@ -118,6 +118,7 @@ export type TabsAction =
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
   | { type: 'open-new'; path: string } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
   | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (no-op when already open)
+  | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'keep'; id: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
   | { type: 'new-tab' } // ⌘T, the strip's "+": the blank tab shows (no-op while it does)
   | { type: 'close-blank' } // ⌘W on the blank tab, its ✕: it goes, and the tab that was active is active again
@@ -258,6 +259,19 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
       if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
       return { ...s, tabs: [...s.tabs, newTab(a.path)] } // not mounted: the editor lazy-mounts on first activation
+    }
+    case 'duplicate': {
+      // A copy (YAZ-2940 D6, S1, S3, S4): a new id on the same page, right after the source, active and
+      // mounted, with the source's stack (none when it has none — the lazy default; a stack is never
+      // changed in place, so the two share it until one of them moves). A preview source is kept, and so
+      // is the copy. A copy of a copy is a copy like any other. A trip to a tab drops an unused blank tab.
+      const i = s.tabs.findIndex((t) => t.id === a.id)
+      if (i === -1) return s
+      const copy = newTab(s.tabs[i].path)
+      const tabs = [...s.tabs]
+      tabs.splice(i + 1, 0, copy)
+      const h = s.history[a.id]
+      return { tabs, active: copy.id, mounted: [...s.mounted, copy.id], history: h === undefined ? s.history : { ...s.history, [copy.id]: h }, preview: s.preview === a.id ? null : s.preview, blank: false }
     }
     case 'keep':
       // Nothing stored changes, so the caller mirrors nothing (YAZ-2648 D4).
@@ -647,6 +661,8 @@ export interface UseWorkspace extends WorkspaceState {
    * the end and activated when it is not open, and the preview tab the first click made keeps its page.
    */
   openKept: (path: string) => void
+  /** "Duplicate tab" (YAZ-2940 D6): a copy of that tab, right after it and active; the copy's id, or null for an unknown tab. */
+  duplicate: (id: string) => string | null
   /** The preview tab (by id) becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other tab. */
   keep: (id: string) => void
   /** ⌘T, the strip's "+" (YAZ-2655 D10): the one blank tab shows; a second call changes nothing. Never mirrored. */
@@ -726,6 +742,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
     for (const path of prevState.rightPanel.items) {
       if (shows(nextState, path)) carryEditorAcrossPane(path)
     }
+    // A switch between two copies of one file (YAZ-2940 D4, S22) — a click, ⌃Tab, the board, a close to
+    // its heir, a duplicate: the copy left behind saves now, and its save reaches the twin at once (`twinEditors.ts`).
+    const was = activePath(prevState)
+    if (nextState.active !== prevState.active && was !== null && was === activePath(nextState)) void flushRenamedPath(was)
     stateRef.current = nextState
     setState(nextState)
     // ONE explicit write per durable change carries both owners and the active main file. A copy is
@@ -745,6 +765,12 @@ export function useWorkspace(root: string | null): UseWorkspace {
     },
     [dispatch],
   )
+  // A copy is never stored (D2), so only a copy of a tab that was not active changes what the window stores: its file.
+  const duplicate = useCallback((id: string): string | null => {
+    const s = stateRef.current
+    dispatch({ type: 'duplicate', id }, { mirror: activePath(s) !== tabById(s, id)?.path })
+    return stateRef.current === s ? null : stateRef.current.active
+  }, [dispatch])
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   const close = useCallback((id: string) => dispatch({ type: 'close', id }), [dispatch])
@@ -805,7 +831,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, keep, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, keep, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

@@ -1043,6 +1043,120 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
   })
 })
 
+describe('duplicate (YAZ-2940 D6): "Duplicate tab" makes a copy', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  /** t1 (A, active) · t2 (B). */
+  const two = (over: Partial<IdTabsState> = {}): IdTabsState => ({
+    tabs: [{ id: 't1', path: A }, { id: 't2', path: B }],
+    active: 't1',
+    mounted: ['t1'],
+    history: {},
+    preview: null,
+    blank: false,
+    ...over,
+  })
+
+  it('S1: the copy is a new tab of the same page, right after its source — not at the end — active and mounted, with a copy of the source\'s stack', () => {
+    const stack = { entries: ['/v/c.md', A], index: 1 }
+    const s = two({ history: { t1: stack } })
+    const d = reduceTabs(s, { type: 'duplicate', id: 't1' })
+    const copy = d.tabs[1]
+    expect(d.tabs.map((t) => t.path)).toEqual([A, A, B])
+    expect(copy.id).not.toBe('t1')
+    expect(d.active).toBe(copy.id)
+    expect(d.mounted).toEqual(['t1', copy.id])
+    expect(d.history).toEqual({ t1: stack, [copy.id]: stack })
+    expect(d.blank).toBe(false)
+    // Back in the copy walks the copy's stack only: the source keeps its own.
+    const back = reduceTabs(d, { type: 'back' })
+    expect(back.history[copy.id]).toEqual({ entries: ['/v/c.md', A], index: 0 })
+    expect(back.history.t1).toBe(stack)
+    // A source with no stack gives a copy with none: the lazy default.
+    expect(reduceTabs(two(), { type: 'duplicate', id: 't1' }).history).toEqual({})
+  })
+
+  it('S3: a preview source becomes a kept tab, and the copy is kept; another tab\'s preview mark stays', () => {
+    expect(reduceTabs(two({ preview: 't1' }), { type: 'duplicate', id: 't1' }).preview).toBeNull()
+    expect(reduceTabs(two({ preview: 't2' }), { type: 'duplicate', id: 't1' }).preview).toBe('t2')
+  })
+
+  it('S4, S5: a copy of a copy is a copy; a tab that was not active is copied too, and its copy shows; an unknown tab changes nothing', () => {
+    const once = reduceTabs(two(), { type: 'duplicate', id: 't1' })
+    const twice = reduceTabs(once, { type: 'duplicate', id: once.tabs[1].id })
+    expect(twice.tabs.map((t) => t.path)).toEqual([A, A, A, B])
+    expect(new Set(twice.tabs.map((t) => t.id)).size).toBe(4)
+    expect(twice.active).toBe(twice.tabs[2].id)
+    const ofB = reduceTabs(two(), { type: 'duplicate', id: 't2' })
+    expect(ofB.tabs.map((t) => t.path)).toEqual([A, B, B])
+    expect(ofB.active).toBe(ofB.tabs[2].id)
+    const s = two()
+    expect(reduceTabs(s, { type: 'duplicate', id: 'nope' })).toBe(s)
+  })
+})
+
+describe('copies in the hook (YAZ-2940): the duplicate mirror and the switch save (D4, S22)', () => {
+  let reactRoot: Root | null = null
+  let latest: UseWorkspace
+  let bridge: ReturnType<typeof installBridge>
+  const flushed: string[] = []
+  /** A mounted editor of `path`, as `useAutosave` registers it: its flush says so. */
+  const editorOf = (path: string, name: string) => registerRenameContinuity(path, { flush: async () => void flushed.push(name), capture: () => null, retire: () => undefined })
+
+  function Probe() {
+    latest = useWorkspace('/v')
+    return null
+  }
+
+  beforeEach(async () => {
+    flushed.length = 0
+    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    reactRoot = createRoot(document.createElement('div'))
+    act(() => reactRoot?.render(<Probe />))
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+  })
+
+  afterEach(() => {
+    act(() => reactRoot?.unmount())
+    reactRoot = null
+  })
+
+  it('a copy of the active tab writes nothing (the stored list and file stay); a copy of another tab writes its file as the active one; the hook gives the copy\'s id', () => {
+    bridge.window.setIdentity.mockClear()
+    let copy: string | null = null
+    act(() => void (copy = latest.duplicate(latest.tabs[1].id)))
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/b.md'])
+    expect(copy).toBe(latest.tabs[2].id)
+    expect(latest.active).toBe(copy)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    act(() => void latest.duplicate(latest.tabs[0].id))
+    expect(latest.file).toBe('/v/a.md')
+    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+    expect(latest.duplicate('nope')).toBeNull()
+  })
+
+  it('S22: a switch between two copies saves every editor of the file at once — by a click, ⌃Tab, a close to its heir, the duplicate itself — and a switch between two files saves nothing', () => {
+    const offA = editorOf('/v/a.md', 'a')
+    const offB = editorOf('/v/b.md', 'b')
+    act(() => void latest.duplicate(latest.tabs[1].id)) // a · b · b′ (active): the source b saves before its copy reads the file
+    expect(flushed).toEqual(['b'])
+    act(() => latest.activate(latest.tabs[1].id)) // b′ → b
+    act(() => latest.next()) // ⌃Tab: b → b′
+    expect(flushed).toEqual(['b', 'b', 'b'])
+    act(() => latest.activate(latest.tabs[0].id)) // b′ → a: another file
+    act(() => latest.activate(latest.tabs[2].id)) // a → b′
+    act(() => latest.prev()) // ⌃⇧Tab: b′ → b
+    expect(flushed).toEqual(['b', 'b', 'b', 'b'])
+    act(() => latest.closeActive()) // b closes; its heir is b′
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md'])
+    expect(flushed).toEqual(['b', 'b', 'b', 'b', 'b'])
+    offA()
+    offB()
+  })
+})
+
 describe('copies: the mirror stores each file once (YAZ-2940 D2, S25)', () => {
   let reactRoot: Root | null = null
   let latest: UseWorkspace
