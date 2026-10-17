@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -195,24 +195,42 @@ describe('check', () => {
     await updater.check()
     await until(updater, 'idle')
     expect(String(error.mock.calls[0][0])).toContain('sha256')
+    expect(existsSync(join(userData, 'update-refused'))).toBe(false) // a second download can succeed
     expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'idle' }])
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d']) // no hdiutil, no ditto
     expect(existsSync(join(userData, 'updates'))).toBe(false)
     error.mockRestore()
   })
 
-  it('S10: a build that does not meet our requirement → back to idle, detached, nothing staged', async () => {
+  it('S10: a build that does not meet our requirement → manual for that version, detached, nothing staged, and remembered in update-refused', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater, calls, states } = fake({ verify: new Error('test-requirement: code failed to satisfy specified code requirement(s)') })
     await updater.check()
-    await until(updater, 'idle')
+    await until(updater, 'manual')
     expect(String(error.mock.calls[0][0])).toContain('requirement')
-    expect(states.at(-1)).toEqual({ kind: 'idle' })
+    expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'manual', version: '1.0.13' }])
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d', '/usr/bin/hdiutil attach', '/usr/bin/codesign --verify', '/usr/bin/hdiutil detach'])
     expect(existsSync(`${bundle}.update`)).toBe(false)
     expect(existsSync(join(userData, 'updates'))).toBe(false) // a failed download leaves nothing (S11)
+    expect(readFileSync(join(userData, 'update-refused'), 'utf8')).toBe('1.0.13')
     error.mockRestore()
   })
+
+  it('a refused version is never downloaded again; a later version clears update-refused and downloads', async () => {
+    vi.useFakeTimers() // start() arms the 10 s timer; this test calls check() itself
+    await writeFile(join(userData, 'update-refused'), '1.0.13')
+    const { updater, fetched, states, host } = fake()
+    updater.start()
+    await expect(updater.check()).resolves.toEqual({ kind: 'manual', version: '1.0.13' })
+    expect(fetched).toEqual([`${FEED}/latest`])
+    const later = fake({ latest: release('v1.0.14'), overrides: { userData: host.userData } })
+    later.updater.start()
+    await expect(later.updater.check()).resolves.toEqual({ kind: 'downloading', version: '1.0.14' })
+    await until(later.updater, 'ready')
+    expect(existsSync(join(userData, 'update-refused'))).toBe(false)
+    expect(states).toEqual([{ kind: 'manual', version: '1.0.13' }])
+  })
+
 
   it('a stalled check stops after 30 s, so the next check can run (the JSON requests carry the timeout signal)', async () => {
     const timeout = new AbortController()
@@ -319,6 +337,28 @@ describe('the updated-to marker (S24)', () => {
   })
 })
 
+describe('update-refused at start (YAZ-2986)', () => {
+  beforeEach(() => void vi.useFakeTimers())
+
+  it('a refused version newer than this app → manual at once, with no request', async () => {
+    await writeFile(join(userData, 'update-refused'), '1.0.13')
+    const { updater, fetched } = fake()
+    updater.start()
+    expect(updater.state()).toEqual({ kind: 'manual', version: '1.0.13' })
+    expect(fetched).toEqual([])
+  })
+
+  it('this version or an older one (installed by hand) → the file is deleted, and idle', async () => {
+    for (const version of ['1.0.12', '1.0.11']) {
+      await writeFile(join(userData, 'update-refused'), version)
+      const { updater } = fake()
+      updater.start()
+      expect(updater.state()).toEqual({ kind: 'idle' })
+      expect(existsSync(join(userData, 'update-refused'))).toBe(false)
+    }
+  })
+})
+
 describe('notes (D5, D8)', () => {
   const list = ['v1.0.10', 'v1.0.14', 'v1.0.13', 'v1.0.12', 'v1.0.11', 'v1.0.9', 'v1.0.8'].map((t) => release(t))
   const drafts = [{ ...release('v1.0.15'), draft: true }, { ...release('v1.0.16'), prerelease: true }]
@@ -398,15 +438,15 @@ describe('installOnExit (S21, S22)', () => {
     vi.mocked(console.error).mockRestore()
   })
 
-  it('with an update staged starts the detached swap with this PID, the bundle, the marker, the version and the reopen flag', async () => {
+  it('with an update staged starts the detached swap with this PID, the bundle, the marker, the refused file, the version and the reopen flag', async () => {
     const { updater, host } = fake()
     await updater.check()
     await until(updater, 'ready')
     updater.installOnExit(true)
     updater.installOnExit(false)
     expect(vi.mocked(host.spawnDetached).mock.calls).toEqual([
-      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'updated-to'), '1.0.13', '1']],
-      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'updated-to'), '1.0.13', '0']],
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'updated-to'), join(userData, 'update-refused'), '1.0.13', '1']],
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'updated-to'), join(userData, 'update-refused'), '1.0.13', '0']],
     ])
   })
 

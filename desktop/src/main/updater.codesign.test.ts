@@ -111,11 +111,11 @@ describe.skipIf(process.platform !== 'darwin')('a download end to end (real hdiu
     expect(stdout).not.toContain(userData) // `hdiutil info` names each attached image by its path
   }, SLOW)
 
-  it('S10: a build that does not meet it (another identity) is refused: idle, nothing staged, nothing left mounted', async () => {
+  it('S10: a build that does not meet it (another identity) is refused: manual, nothing staged, nothing left mounted', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater, ended, app, userData } = await updaterFor('bad', await dmgWith('bad', 'com.test.other'))
     await updater.check()
-    await expect(ended).resolves.toEqual({ kind: 'idle' })
+    await expect(ended).resolves.toEqual({ kind: 'manual', version: '1.0.13' }) // refused: the user installs it by hand
     expect(String(error.mock.calls[0][0])).toMatch(/requirement/)
     error.mockRestore()
     expect(existsSync(`${app}.update`)).toBe(false)

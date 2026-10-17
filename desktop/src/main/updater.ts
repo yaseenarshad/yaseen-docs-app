@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { constants, readFileSync, rmSync } from 'node:fs'
-import { access, mkdir, mkdtemp, open, rename, rm, rmdir } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, open, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ReleaseNote, UpdateState } from '@shared/types'
@@ -57,7 +57,7 @@ export interface UpdaterHost {
 }
 
 export interface Updater {
-  /** On `ready`, before the first window: reads the `updated-to` marker (S24), then the first check 10 s from now and every 12 h after (D7); no check in a dev run with no feed (S7). */
+  /** On `ready`, before the first window: reads the `updated-to` marker (S24) and the `update-refused` file, then the first check 10 s from now and every 12 h after (D7); no check in a dev run with no feed (S7). */
   start(): void
   /** One check now: the state it finds, `downloading` as soon as a download starts. Never two at once; while `downloading` or `ready` it answers the state and fetches nothing (S6). */
   check(): Promise<UpdateState>
@@ -122,17 +122,17 @@ export async function ownRequirement(run: Run, bundle: string): Promise<string |
 }
 
 /**
- * The swap (S21–S23), run by `/bin/sh -c SWAP_SCRIPT sh <pid> <app> <marker> <version> <reopen>`. It
+ * The swap (S21–S23), run by `/bin/sh -c SWAP_SCRIPT sh <pid> <app> <marker> <refused> <version> <reopen>`. It
  * waits for the app's process to end and deletes a stale `<app>.old`; two renames on one disk put `<app>.update` in place, and only a
  * swap that landed writes the `updated-to` marker (S24). If the new app is not in place, `<app>.old`
- * goes back (S23). `reopen` = 1 opens whichever app stands at `<app>` (S21; S22 passes 0).
+ * goes back and the version goes to `update-refused` (S23): the next launch offers it as `manual`. `reopen` = 1 opens whichever app stands at `<app>` (S21; S22 passes 0).
  */
 export const SWAP_SCRIPT = [
-  'pid=$1 app=$2 marker=$3 version=$4 reopen=$5',
+  'pid=$1 app=$2 marker=$3 refused=$4 version=$5 reopen=$6',
   'while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done',
   // A stale `.old` goes first: `mv` into an existing folder would put the app INSIDE it.
   'rm -rf "$app.old"',
-  'if [ ! -e "$app.old" ] && mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; printf %s "$version" > "$marker"; else [ -d "$app" ] || mv "$app.old" "$app"; fi',
+  'if [ ! -e "$app.old" ] && mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; printf %s "$version" > "$marker"; else [ -d "$app" ] || mv "$app.old" "$app"; printf %s "$version" > "$refused"; fi',
   '[ "$reopen" = 1 ] && open "$app"',
   'exit 0',
 ].join('\n')
@@ -151,9 +151,25 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
   const feed = host.feed ?? UPDATE_FEED
   const updates = join(host.userData, 'updates')
   const marker = join(host.userData, 'updated-to')
+  const refusedFile = join(host.userData, 'update-refused')
   const staged = `${host.bundle}.update`
 
   let state: UpdateState = { kind: 'idle' }
+  /**
+   * The version that cannot install itself here (YAZ-2986): its build failed our requirement (S10), or
+   * its swap could not land (S23, perhaps macOS App Management). The result cannot change, so it is
+   * `manual` from then on, never ~98.5 MB at each launch. Kept in `update-refused`; a later version clears it.
+   */
+  let refused: string | null = null
+  const refuse = async (version: string): Promise<void> => {
+    refused = version
+    try {
+      await writeFile(`${refusedFile}.part`, version)
+      await rename(`${refusedFile}.part`, refusedFile)
+    } catch (err) {
+      console.error(`[update] could not write update-refused: ${String(err)}`) // this launch still knows
+    }
+  }
 
   const set = (next: UpdateState): void => {
     state = next
@@ -218,7 +234,10 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
         await host.run('/usr/bin/hdiutil', ['attach', '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', mount, dmg])
         try {
           const app = join(mount, APP_IN_DMG)
-          await host.run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', `=${requirement}`, app])
+          await host.run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', `=${requirement}`, app]).catch(async (err: unknown) => {
+            await refuse(version)
+            throw err
+          })
           await rm(staged, { recursive: true, force: true })
           await host.run('/usr/bin/ditto', [app, staged])
         } finally {
@@ -241,6 +260,10 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     const version = release.tag_name.replace(/^v/, '')
     // S1. A pre-release tag (`1.0.14-beta.1`) is never an update: `compareVersions` would rank it above 1.0.14.
     if (version.includes('-') || !newer(version, host.version)) return state
+    if (version === refused) {
+      set({ kind: 'manual', version })
+      return state
+    }
     const asset = pickAsset(release)
     if (asset === null) return state // S2: CI still builds it; the next check finds it
     const requirement = await canInstall()
@@ -250,13 +273,17 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     }
     // The answer is `downloading` at once (S6): the ~98.5 MB go on in the background (D6), and the
     // pushes say how they end.
+    if (refused !== null) {
+      refused = null // a later version than the refused one: try again
+      void rm(refusedFile, { force: true }).catch(() => undefined)
+    }
     const before = state
     set({ kind: 'downloading', version })
     download(version, asset, requirement).then(
       () => set({ kind: 'ready', version }),
       (err: unknown) => {
         console.error(`[update] the download of ${version} failed: ${String(err)}`)
-        set(before) // S9, S10: the next check tries again
+        set(refused === version ? { kind: 'manual', version } : before) // S10 stays refused; S9: the next check tries again
       },
     )
     return state
@@ -280,6 +307,15 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       } catch {
         // no marker: a plain launch
       }
+      try {
+        const version = readFileSync(refusedFile, 'utf8').trim()
+        if (newer(version, host.version)) {
+          refused = version
+          state = { kind: 'manual', version }
+        } else rmSync(refusedFile, { force: true }) // this version, or older: installed by hand
+      } catch {
+        // nothing refused
+      }
       if (!host.isPackaged && host.feed === undefined) return // S7
       // S3: a failed timer check is silent to the user; the log is for us.
       const quiet = (): void => void check().catch((err: unknown) => console.error(`[update] check failed: ${String(err)}`))
@@ -299,7 +335,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     installOnExit(reopen) {
       if (state.kind !== 'ready') return
       try {
-        host.spawnDetached('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(host.pid), host.bundle, marker, state.version, reopen ? '1' : '0'])
+        host.spawnDetached('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(host.pid), host.bundle, marker, refusedFile, state.version, reopen ? '1' : '0'])
       } catch (err) {
         console.error(`[update] the swap did not start: ${String(err)}`) // the app still exits; the next check stages again
       }
