@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_WINDOW_ROOTS, isSidebarLens, rootOfPath, type OpenSetResult, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, isSidebarLens, rootOfPath, type OpenSetResult, type PageView, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -64,6 +64,29 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
   return v
 }
 
+/**
+ * A page view from the renderer (YAZ-2951 D5, S19): a copy of a good one, folds cut at
+ * MAX_FOLD_KEYS_PER_FILE; anything else is `undefined`, so the new window opens with no page view
+ * rather than not at all.
+ */
+function optionalPageView(v: unknown): PageView | undefined {
+  if (!isRecord(v)) return undefined
+  const { scrollTop, zoomKey, folds, magnification } = v
+  if (typeof scrollTop !== 'number' || !Number.isFinite(scrollTop)) return undefined
+  if (zoomKey !== null && typeof zoomKey !== 'string') return undefined
+  if (!Array.isArray(folds) || !folds.every((k) => typeof k === 'string')) return undefined
+  if (typeof magnification !== 'number' || !Number.isFinite(magnification)) return undefined
+  return { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
+}
+
+/** "Move to new window"'s carry (YAZ-2951 D2): absent, or an object whose `view` passes `optionalPageView`. */
+function optionalPopOutCarry(v: unknown): PopOutCarry {
+  if (v === undefined) return {}
+  if (!isRecord(v)) throw new BridgeFailure('BAD_REQUEST', "'carry' must be an object")
+  const view = optionalPageView(v.view)
+  return view === undefined ? {} : { view }
+}
+
 /** A saved set's `id` or `name` (YAZ-2602 D8): a string; the store decides what it names. */
 function requireString(v: unknown, param: 'id' | 'name'): string {
   if (typeof v !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${param}' must be a string`)
@@ -88,7 +111,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
     const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
-    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens }
+    // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
+    const startView = windows.takeStartView(id)
+    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -145,17 +170,18 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.openWindow({ root: optionalPath(opts, 'root') ?? null, file: optionalPath(opts, 'file') ?? null })
   })
 
-  handleWithEvent(CONTRACT.window.duplicate, async (e) => {
-    windows.duplicateWindow(entryFor(e))
+  // `window:duplicate` (⌘⇧N, YAZ-2951 D5): the window asks after it saved its page, with the page view of the tab on show.
+  handleWithEvent(CONTRACT.window.duplicate, async (e, view: unknown) => {
+    windows.duplicateWindow(entryFor(e), optionalPageView(view))
   })
 
   // `window:pop-out` (YAZ-2933 D1): a tab's "Move to new window". Main copies the CALLER's window, so the
   // renderer never names a list of vaults; a path in no vault of that window is no tab of it.
-  handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown) => {
+  handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown, carry: unknown) => {
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
     if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
-    windows.popOut(from, target)
+    windows.popOut(from, target, optionalPopOutCarry(carry))
   })
 
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the

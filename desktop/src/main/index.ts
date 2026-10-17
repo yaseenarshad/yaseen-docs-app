@@ -183,7 +183,7 @@ app.whenReady().then(() => {
     writeText: (text) => clipboard.writeText(text),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
-  const handlers = createMenuHandlers(store, manager, {
+  const handlers = createMenuHandlers(manager, {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
     openExternal: (url) => void shell.openExternal(url),

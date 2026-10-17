@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, FileResponse, FileWriteRequest, FileWriteResponse, FolderPatch, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SettingsState, TocSource, TreeResponse, VaultConfigChange, WatchEvent, WindowIdentity, ZoomStep } from './types'
 
 /**
  * A request main answers. `A` and `R` are phantom: at runtime only `kind`, `channel` and `arity`
@@ -96,10 +96,10 @@ export const CONTRACT = {
     /** Record this window's folder/file/tabs and chrome; main re-enforces the tabs invariant (GRO-2232). */
     setIdentity: invoke<[patch: Partial<Omit<WindowIdentity, 'id'>>], void>('window:set-identity', 1),
     open: invoke<[opts: OpenWindowOptions], void>('window:open', 1),
-    /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
-    duplicate: invoke<[], void>('window:duplicate', 0),
-    /** A tab's "Move to new window" (YAZ-2933): a new window on the caller's vaults with only `path` in it, sidebar hidden. */
-    popOut: invoke<[path: string], void>('window:pop-out', 1),
+    /** `⌘⇧N`: same folder, same file, new window (GRO-2167); its active tab starts with `view` (YAZ-2951 D5). */
+    duplicate: invoke<[view?: PageView], void>('window:duplicate', 1),
+    /** A tab's "Move to new window" (YAZ-2933): a new window on the caller's vaults with only `path` in it, sidebar hidden; the page starts with `carry.view` (YAZ-2951 D2). */
+    popOut: invoke<[path: string, carry?: PopOutCarry], void>('window:pop-out', 2),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */
@@ -143,6 +143,8 @@ export const CONTRACT = {
     onTabOverview: push('menu:tab-overview'),
     /** File › New Tab (⌘T): show the one blank tab, with the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
     onNewTab: push('menu:new-tab'),
+    /** File › New Window (⌘⇧N): the window saves its page, reads its page view, then calls `window.duplicate` (YAZ-2951 D5). */
+    onNewWindow: push('menu:new-window'),
   },
   /** Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes it to the best window. */
   link: {

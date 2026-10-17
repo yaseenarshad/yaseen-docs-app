@@ -12,7 +12,8 @@
  *    zooms to that ancestor; the first crumb, the page's title, zooms out fully.
  * Zooming dispatches a metadata-only transaction (`tr.docChanged === false`), so the listener never
  * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. Zoom is not
- * persisted: switching files remounts the editor and therefore clears it.
+ * persisted: switching files remounts the editor and therefore clears it. A copy of the page only
+ * STARTS at its source's level (see "Start level" below).
  *
  * Browser history (GRO-2091 A): every zoom change pushes one in-memory history entry
  * (`{ [ZOOM_HISTORY_KEY]: { file, key } }`, URL untouched — the 2-arg `pushState`, since an empty
@@ -24,6 +25,12 @@
  * before the latest zoom change while that change is the latest VIEW action — cleared by a user
  * document change (plugin-appended transactions excepted) or by a fold (viewActions.ts stamp).
  * `undoLastZoom` (Mod-z, priority 100) reverts exactly that one step and declines otherwise.
+ *
+ * Start level (YAZ-2951 D1): a copy of a tab, or a page in a new window, starts drilled into its
+ * source's bullet (`startKey`, a zoom key). `init` resolves it against the parsed page; a key that
+ * is not found starts zoomed out (S7). It pushes no history entry (S21) and sets no ⌘Z level (S22).
+ * The host then moves the caret into that bullet (`caretIntoZoom`), once the editor is made: never
+ * from the plugin view, which ProseMirror builds inside the EditorView constructor.
  *
  * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead),
  * `Mod-.` = zoom into the item at the caret, `Mod-Shift-.` = zoom out one level. While zoomed,
@@ -44,6 +51,8 @@ export interface ZoomOptions {
   fileName: string
   /** The page's title (YAZ-2420 🔒 D14), read as the breadcrumb is drawn: the first crumb; clicking it zooms out fully. */
   title: () => string
+  /** The zoom key to start drilled into (YAZ-2951 D1): a copied page view's `zoomKey`. Absent, null or not found = zoomed out. */
+  startKey?: string | null
 }
 
 interface ZoomState {
@@ -129,6 +138,12 @@ export const itemPosForZoomKey = (doc: ProseNode, key: string): number | null =>
   return found
 }
 
+/** The zoomed bullet's zoom key, or null when not zoomed (YAZ-2951 D4): read once, by the page view reader, never per transaction. */
+export const getZoomKey = (state: EditorState): string | null => {
+  const itemPos = getZoomedItemPos(state)
+  return itemPos === null ? null : zoomKeyAt(state.doc, itemPos)
+}
+
 const readZoomEntry = (state: unknown): ZoomHistoryEntry | null => {
   if (typeof state !== 'object' || state === null) return null
   const entry = (state as Record<string, unknown>)[ZOOM_HISTORY_KEY]
@@ -146,6 +161,13 @@ const itemLabel = (item: ProseNode): string => {
 /** Position of the innermost list_item containing the selection head, or null outside lists. */
 const itemAtSelection = (state: EditorState): number | null => innermostItemPos(state.selection.$from)
 
+/** Whether the whole selection is inside the list_item at `itemPos`. */
+const selectionInItem = (state: EditorState, itemPos: number): boolean => {
+  const item = state.doc.nodeAt(itemPos)
+  const { from, to } = state.selection
+  return item !== null && from >= itemPos && to <= itemPos + item.nodeSize
+}
+
 /**
  * Zoom into the list_item at `itemPos` (null = zoom out fully); moves the caret into it if the
  * selection was outside. Every user-driven zoom change pushes a history entry; `fromHistory`
@@ -158,12 +180,7 @@ const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}
   if (dispatch) {
     const tr = state.tr.setMeta(pluginKey, itemPos).setMeta(VIEW_ACTION_META, 'zoom' satisfies ViewAction)
     if (isUndo) tr.setMeta(UNDO_META, true)
-    if (itemPos !== null) {
-      const item = state.doc.nodeAt(itemPos)
-      const { from, to } = state.selection
-      const inside = item !== null && from >= itemPos && to <= itemPos + item.nodeSize
-      if (!inside) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
-    }
+    if (itemPos !== null && !selectionInItem(state, itemPos)) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
     if (!fromHistory) {
       const entry: ZoomHistoryEntry = { file: zoom.fileName, key: itemPos === null ? null : zoomKeyAt(state.doc, itemPos) }
       // No URL argument: an empty string would resolve against the document and drop `#/path.md`.
@@ -171,6 +188,19 @@ const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}
     }
     dispatch(tr.scrollIntoView())
   }
+  return true
+}
+
+/**
+ * Put the caret in the drilled-in bullet when it is outside it (YAZ-2951 D1): a page that STARTS
+ * drilled in has its caret at the page start, in a hidden block. A selection-only transaction: no
+ * zoom meta, so no history entry (S21) and no ⌘Z level (S22). Declines when not drilled in or
+ * when the caret is inside already. The host runs it once the editor is made (`moveCaretIntoZoom`).
+ */
+export const caretIntoZoom: Command = (state, dispatch) => {
+  const itemPos = getZoomedItemPos(state)
+  if (itemPos === null || selectionInItem(state, itemPos)) return false
+  dispatch?.(state.tr.setSelection(Selection.near(state.doc.resolve(itemPos + 1), 1)))
   return true
 }
 
@@ -290,13 +320,20 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   return isListItem($pos.parent) ? $pos.before() : null
 }
 
-export const createOutlineZoom = ({ fileName, title }: ZoomOptions) =>
-  $prose(
+export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOptions) => {
+  // Used by the FIRST state only: a rebuilt state (`setMarkdown` → `replaceAll(md, true)`) starts zoomed out, as before.
+  let pendingStartKey = startKey
+  return $prose(
     () =>
       new Plugin<ZoomState>({
         key: pluginKey,
         state: {
-          init: () => ({ itemPos: null, fileName, undoLevel: undefined }),
+          // The start level (YAZ-2951 D1) is plain state: no transaction, so no history entry and no ⌘Z level.
+          init: (_config, state) => {
+            const key = pendingStartKey
+            pendingStartKey = null
+            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), fileName, undoLevel: undefined }
+          },
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
@@ -356,6 +393,7 @@ export const createOutlineZoom = ({ fileName, title }: ZoomOptions) =>
         },
       }),
   )
+}
 
 /** Keymap: `Mod-.` / `Mod-Shift-.` / `Mod-z` (zoom panic-undo) plus the escape guard; register with `editor.use(zoomKeymap)`. */
 export const zoomKeymap = $shortcut((_ctx: Ctx) => ({
