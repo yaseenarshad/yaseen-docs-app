@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { ReleaseNote, UpdateState } from '@shared/types'
 import { api } from '../api'
 import { commentHtml } from '../comments/markdown'
+import './whatsNewSheet.css'
 
 interface WhatsNewSheetProps {
   update: UpdateState
@@ -115,7 +116,7 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
             {action === undefined ? 'Close' : 'Later'}
           </button>
           {action !== undefined && (
-            <button type="button" className="confirm__btn whats-new__primary" onClick={act}>
+            <button type="button" className="confirm__btn btn--primary" onClick={act}>
               {action}
             </button>
           )}

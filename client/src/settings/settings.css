@@ -8,7 +8,9 @@
  * this file without a dark rule of its own.
  */
 
-.settings-overlay {
+/* The "What's new" sheet's overlay is this one (YAZ-2976). */
+.settings-overlay,
+.whats-new-overlay {
   position: fixed;
   inset: 0;
   z-index: 70;

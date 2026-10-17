@@ -1,0 +1,87 @@
+/*
+ * The "What's new" sheet (YAZ-2976 D5), imported by `WhatsNewSheet.tsx`, so it loads with the sheet's
+ * lazy chunk, never at launch. The rest is reused: the overlay is the settings dialog's
+ * (`settings.css`, `.whats-new-overlay` is in its selector), the buttons are the confirm sheet's
+ * (`.confirm__btn`) with the app's `.btn--primary`, and a release's body is the comments' Markdown
+ * (`.comments__body`). Themed through app.css's tokens, like update.css.
+ */
+
+/* The overlay takes the focus of a click inside the sheet; it is no control, so no ring. */
+.whats-new-overlay {
+  outline: none;
+}
+
+/* `min-height: 0` lets the notes scroll inside the sheet instead of growing it past the window. */
+.whats-new {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(640px, calc(100vh - 64px));
+  min-height: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.whats-new__title {
+  margin: 0;
+  padding: 16px 20px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.whats-new__notes {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 20px 16px;
+  overflow-y: auto;
+}
+
+.whats-new__msg {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.whats-new__release + .whats-new__release {
+  border-top: 1px solid var(--border);
+}
+
+.whats-new__release-title {
+  margin: 16px 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.whats-new__meta {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* The comments' Markdown, minus the comment column's indent (comments.css `.comments__body`). */
+.whats-new__body.comments__body {
+  margin-left: 0;
+  padding-bottom: 16px;
+}
+
+.whats-new__body img {
+  height: auto;
+  border-radius: 6px;
+}
+
+.whats-new__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* `.confirm__btn:hover` would give the primary button the pale hover of the plain one. */
+.whats-new__actions .btn--primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #000);
+}
