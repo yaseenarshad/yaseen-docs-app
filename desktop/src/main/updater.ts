@@ -123,14 +123,16 @@ export async function ownRequirement(run: Run, bundle: string): Promise<string |
 
 /**
  * The swap (S21–S23), run by `/bin/sh -c SWAP_SCRIPT sh <pid> <app> <marker> <version> <reopen>`. It
- * waits for the app's process to end; two renames on one disk put `<app>.update` in place, and only a
+ * waits for the app's process to end and deletes a stale `<app>.old`; two renames on one disk put `<app>.update` in place, and only a
  * swap that landed writes the `updated-to` marker (S24). If the new app is not in place, `<app>.old`
  * goes back (S23). `reopen` = 1 opens whichever app stands at `<app>` (S21; S22 passes 0).
  */
 export const SWAP_SCRIPT = [
   'pid=$1 app=$2 marker=$3 version=$4 reopen=$5',
   'while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done',
-  'if mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; printf %s "$version" > "$marker"; else [ -d "$app" ] || mv "$app.old" "$app"; fi',
+  // A stale `.old` goes first: `mv` into an existing folder would put the app INSIDE it.
+  'rm -rf "$app.old"',
+  'if [ ! -e "$app.old" ] && mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; printf %s "$version" > "$marker"; else [ -d "$app" ] || mv "$app.old" "$app"; fi',
   '[ "$reopen" = 1 ] && open "$app"',
   'exit 0',
 ].join('\n')
