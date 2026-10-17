@@ -6,12 +6,14 @@ import { describe, expect, it } from 'vitest'
 import { BOARD, boardHeight, buildBoard, islandBox, islandCols, nearest, stackedIslands, withoutTitle, type BoardShape } from './board'
 
 const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+/** Tabs by path: with no copies, a tab's id here is its path (YAZ-2940 D1). */
+const byPath = (paths: readonly string[]) => paths.map((path) => ({ id: path, path }))
 
 describe('buildBoard (D7)', () => {
   const tabs = ['/v/Clients/Acme/brief.md', '/v/today.md', '/w/x.md', '/v/Clients/Globex/call.md', '/v/Clients/Acme/notes.md', '/v/Clients/Acme', '/elsewhere/loose.md']
 
   it('one island per folder that DIRECTLY holds a page, under its vault: the label is the whole path in the vault, the top level is named by the vault, and the pages keep the strip\'s order', () => {
-    const board = buildBoard(tabs, ['/v', '/w'], ['Notes', 'Work'], name)
+    const board = buildBoard(byPath(tabs), ['/v', '/w'], ['Notes', 'Work'], name)
     expect(board.map((vault) => [vault.name, vault.islands.map((island) => [island.label, island.pages.map((page) => page.label)])])).toEqual([
       // The vault's top level first, then its folders by path. A folder tab stands on its PARENT's island.
       ['Notes', [['Notes', ['today']], ['Clients', ['Acme']], ['Clients / Acme', ['brief', 'notes']], ['Clients / Globex', ['call']]]],
@@ -21,13 +23,18 @@ describe('buildBoard (D7)', () => {
     ])
     expect(board[0].islands.map((island) => [island.dir, island.top])).toEqual([['/v', true], ['/v/Clients', false], ['/v/Clients/Acme', false], ['/v/Clients/Globex', false]])
     // S36: three files of one name in three folders are three pages on three islands, each named by its folder.
-    const same = buildBoard(['/v/Clients/Acme/notes.md', '/v/notes.md', '/v/Clients/Globex/notes.md'], ['/v'], ['Notes'], name)
+    const same = buildBoard(byPath(['/v/Clients/Acme/notes.md', '/v/notes.md', '/v/Clients/Globex/notes.md']), ['/v'], ['Notes'], name)
     expect(same[0].islands.map((island) => [island.label, island.pages.map((page) => page.label)])).toEqual([['Notes', ['notes']], ['Clients / Acme', ['notes']], ['Clients / Globex', ['notes']]])
   })
 
   it('the filter keeps a page whose title or path in the vault holds every term, and an island with no page left is gone', () => {
-    const board = buildBoard(tabs, ['/v', '/w'], ['Notes', 'Work'], name, ['acme', 'no'])
+    const board = buildBoard(byPath(tabs), ['/v', '/w'], ['Notes', 'Work'], name, ['acme', 'no'])
     expect(board.map((vault) => vault.islands.map((island) => [island.label, island.pages.map((page) => page.label)]))).toEqual([[['Clients / Acme', ['notes']]]])
+  })
+
+  it('YAZ-2940 D1: two tabs of one file are two pages of its island, each with its own tab id, in the strip\'s order', () => {
+    const board = buildBoard([{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }], ['/v'], ['Notes'], name)
+    expect(board[0].islands[0].pages).toEqual([{ id: 't1', path: '/v/a.md', label: 'a' }, { id: 't2', path: '/v/b.md', label: 'b' }, { id: 't3', path: '/v/a.md', label: 'a' }])
   })
 })
 

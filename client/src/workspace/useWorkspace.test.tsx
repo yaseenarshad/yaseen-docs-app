@@ -1,6 +1,7 @@
 /**
  * The renderer-owned tab model (Tabs I2, GRO-2234): the pure reducer's invariants
- * (`active ∈ tabs`, `tabs: []` ⇔ `active: null`, de-duplication, the keep-mounted set),
+ * (`active ∈ tabs`, `tabs: []` ⇔ `active: null`, a trip to an open file goes to its tab, the keep-mounted set),
+ * the copies of a file (YAZ-2940: two tabs of one path, each with its own id),
  * the boot snapshot precedence, and the hook's ONE-explicit-`setIdentity({tabs, file})`
  * mirror per change.
  */
@@ -10,7 +11,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { _resetRenameContinuity, registerRenameContinuity, takeRenameBuffer } from '../lib/renameContinuity'
-import { bootTabs, bootWorkspace, tabsReducer, useWorkspace, workspaceReducer, type TabsState, type UseWorkspace, type WorkspaceState } from './useWorkspace'
+import { activePath, bootTabs, bootWorkspace, newTabId, storedTabs, tabById, tabOf, tabsReducer as reduceTabs, useWorkspace, workspaceReducer as reduceWorkspace, type TabsState as IdTabsState, type UseWorkspace, type WorkspaceState as IdWorkspaceState } from './useWorkspace'
+import { byPath, pathTabsReducer, pathWorkspaceReducer, type PathTabs, type PathWorkspace } from './testTabs'
+
+// These tests read the model by path (`testTabs.ts`): with no copies, a path names one tab (YAZ-2940 D1).
+const tabsReducer = pathTabsReducer
+const workspaceReducer = pathWorkspaceReducer
+type TabsState = PathTabs
+type WorkspaceState = PathWorkspace
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -108,8 +116,8 @@ describe('tabsReducer', () => {
     it('the mark follows a renamed file and a renamed folder, and goes with a deleted one; a reset starts with none', () => {
       expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/q.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/q.md'], preview: '/v/q.md' })
       expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/a.md', newPath: '/v/z.md' })).toMatchObject({ tabs: ['/v/z.md', '/v/p.md'], preview: '/v/p.md' })
-      // The new path is open already: the old tab is dropped (de-dup), and its mark with it.
-      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
+      // The new path is open already: both tabs stay (two tabs of one path are valid, YAZ-2940 D1), and the mark stays on its tab.
+      expect(tabsReducer(previewing(), { type: 'rename', oldPath: '/v/p.md', newPath: '/v/a.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/a.md'], preview: '/v/a.md', blank: false })
       const inDir: TabsState = { ...state(['/v/a.md', '/v/Old/p.md'], '/v/a.md'), preview: '/v/Old/p.md' }
       expect(tabsReducer(inDir, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toMatchObject({ tabs: ['/v/a.md', '/v/New/p.md'], preview: '/v/New/p.md' })
       expect(tabsReducer(inDir, { type: 'delete-dir', path: '/v/Old' })).toMatchObject({ tabs: ['/v/a.md'], preview: null, blank: false })
@@ -354,10 +362,10 @@ describe('tabsReducer', () => {
       expect(tabsReducer(s, { type: 'rename', oldPath: '/v/old.md', newPath: '/v/new.md' })).toBe(s)
     })
 
-    it('drops the old tab when the new path is somehow already open (dedupe), keeping activation sane', () => {
+    it('keeps BOTH tabs when the new path is somehow already open (YAZ-2940 D1: two tabs of one path are valid)', () => {
       const s = state(['/v/old.md', '/v/new.md'], '/v/old.md', ['/v/old.md'])
       const next = tabsReducer(s, { type: 'rename', oldPath: '/v/old.md', newPath: '/v/new.md' })
-      expect(next.tabs).toEqual(['/v/new.md'])
+      expect(next.tabs).toEqual(['/v/new.md', '/v/new.md'])
       expect(next.active).toBe('/v/new.md')
       expect(next.mounted).toEqual(['/v/new.md'])
     })
@@ -391,10 +399,10 @@ describe('tabsReducer', () => {
       expect(tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toBe(s)
     })
 
-    it('drops a remapped tab whose target path is somehow already open (dedupe), keeping activation sane', () => {
+    it('keeps a remapped tab whose target path is somehow already open (YAZ-2940 D1: two tabs of one path are valid)', () => {
       const s = state(['/v/Old/a.md', '/v/New/a.md'], '/v/Old/a.md', ['/v/Old/a.md'])
       const next = tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })
-      expect(next.tabs).toEqual(['/v/New/a.md'])
+      expect(next.tabs).toEqual(['/v/New/a.md', '/v/New/a.md'])
       expect(next.active).toBe('/v/New/a.md')
       expect(next.mounted).toEqual(['/v/New/a.md'])
     })
@@ -442,21 +450,21 @@ describe('bootTabs (rules 12/15)', () => {
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
     await storage.init()
-    expect(bootTabs('/v')).toEqual(state(['/v/a.md', '/v/b.md'], '/v/b.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/a.md', '/v/b.md'], '/v/b.md'))
   })
 
   it('a pasted #hash wins as active and is PREPENDED when missing from the stored tabs', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false })
     await storage.init()
     history.replaceState(null, '', '#/v/pasted.md')
-    expect(bootTabs('/v')).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
+    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
   })
 
   it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
-    expect(bootTabs('/v')).toEqual(state(['/v/last.md'], '/v/last.md'))
-    expect(bootTabs(null)).toEqual(state([], null))
+    expect(byPath(bootTabs('/v'))).toEqual(state(['/v/last.md'], '/v/last.md'))
+    expect(byPath(bootTabs(null))).toEqual(state([], null))
   })
 
   it('restores right identity with only the expanded editor mounted and lets a pasted hash take ownership', async () => {
@@ -468,13 +476,13 @@ describe('bootTabs (rules 12/15)', () => {
       rightPanel: { open: true, width: 560, items: ['/v/b.md', '/v/c.md'], expanded: '/v/b.md' },
     })
     await storage.init()
-    expect(bootWorkspace('/v')).toMatchObject({
+    expect(byPath(bootWorkspace('/v'))).toMatchObject({
       tabs: ['/v/a.md'],
       rightPanel: { open: true, width: 560, items: ['/v/b.md', '/v/c.md'], expanded: '/v/b.md' },
       rightMounted: ['/v/b.md'],
     })
     history.replaceState(null, '', '#/v/b.md')
-    expect(bootWorkspace('/v')).toMatchObject({
+    expect(byPath(bootWorkspace('/v'))).toMatchObject({
       tabs: ['/v/b.md', '/v/a.md'],
       rightPanel: { items: ['/v/c.md'], expanded: null },
       rightMounted: [],
@@ -491,6 +499,9 @@ describe('useWorkspace legacy main-tab mirror', () => {
     latest = useWorkspace(root)
     return null
   }
+  /** The hook's state read by path; the id of the tab that shows `path` (a path that is open nowhere names no tab). */
+  const read = () => byPath(latest)
+  const idOf = (path: string): string => latest.tabs.find((t) => t.path === path)?.id ?? path
 
   beforeEach(async () => {
     bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
@@ -516,7 +527,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.next())
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
 
-    act(() => latest.close('/v/a.md'))
+    act(() => latest.close(idOf('/v/a.md')))
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(4)
   })
@@ -524,12 +535,12 @@ describe('useWorkspace legacy main-tab mirror', () => {
   it('a no-op action mirrors nothing', () => {
     act(() => latest.openCurrent('/v/a.md'))
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
-    act(() => latest.activate('/v/a.md')) // already active
+    act(() => latest.activate(idOf('/v/a.md'))) // already active
     act(() => latest.openCurrent('/v/a.md')) // the page already open: its sidebar row asks for it again (YAZ-2648 S46)
     act(() => latest.openKept('/v/a.md'))
     act(() => latest.openBackground('/v/a.md')) // already open
     act(() => latest.prev()) // one tab: nothing to cycle
-    act(() => latest.close('/v/zzz.md')) // unknown
+    act(() => latest.close(idOf('/v/zzz.md'))) // unknown
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
   })
 
@@ -580,43 +591,43 @@ describe('useWorkspace legacy main-tab mirror', () => {
       closed = latest.closeActive()
     })
     expect(closed).toBe(true)
-    expect(latest.tabs).toEqual([])
+    expect(read().tabs).toEqual([])
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
   })
 
   it('closeMany is ONE identity write for N tabs (YAZ-2657 A10)', () => {
     for (const path of ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md']) act(() => latest.openBackground(path))
     const writes = bridge.window.setIdentity.mock.calls.length
-    act(() => latest.closeMany(['/v/a.md', '/v/b.md', '/v/c.md']))
-    expect(latest.tabs).toEqual(['/v/d.md'])
+    act(() => latest.closeMany(['/v/a.md', '/v/b.md', '/v/c.md'].map(idOf)))
+    expect(read().tabs).toEqual(['/v/d.md'])
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/d.md'], file: '/v/d.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('keep writes nothing — the preview mark is session-only (YAZ-2648 D4) — and openKept is a double click: the previewed page stays, a page not open yet opens kept', () => {
     act(() => latest.openCurrent('/v/a.md'))
-    expect(latest.preview).toBe('/v/a.md')
+    expect(read().preview).toBe('/v/a.md')
     const writes = bridge.window.setIdentity.mock.calls.length
-    act(() => latest.keep('/v/a.md'))
-    expect(latest.preview).toBeNull()
+    act(() => latest.keep(idOf('/v/a.md')))
+    expect(read().preview).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
 
     // A sidebar double click: the first click previews, the second keeps what the first opened — and writes nothing either.
     act(() => latest.openCurrent('/v/b.md'))
     const afterPreview = bridge.window.setIdentity.mock.calls.length
     act(() => latest.openKept('/v/b.md'))
-    expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md'])
-    expect(latest.preview).toBeNull()
+    expect(read().tabs).toEqual(['/v/a.md', '/v/b.md'])
+    expect(read().preview).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(afterPreview)
     // A folder row's double click had no first open: the folder opens as a kept tab.
     act(() => latest.openKept('/v/Docs'))
-    expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs'])
-    expect(latest.active).toBe('/v/Docs')
-    expect(latest.preview).toBeNull()
+    expect(read().tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs'])
+    expect(read().active).toBe('/v/Docs')
+    expect(read().preview).toBeNull()
     // Nothing was replaced: the next click gets a new preview tab.
     act(() => latest.openCurrent('/v/c.md'))
-    expect(latest.tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs', '/v/c.md'])
-    expect(latest.preview).toBe('/v/c.md')
+    expect(read().tabs).toEqual(['/v/a.md', '/v/b.md', '/v/Docs', '/v/c.md'])
+    expect(read().preview).toBe('/v/c.md')
   })
 
   it('the blank tab is never written (YAZ-2655 D10): ⌘T and its close mirror nothing, the stored file stays the last real tab, ⌘W closes it alone, and a fill is ONE ordinary write', () => {
@@ -626,7 +637,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     const writes = bridge.window.setIdentity.mock.calls.length
     act(() => latest.newTab())
     expect(latest.blank).toBe(true)
-    expect(latest.active).toBe('/v/a2.md')
+    expect(read().active).toBe('/v/a2.md')
     // The blank tab has no stack: the arrows have nowhere to go.
     expect(latest.canBack).toBe(false)
     let closed = false
@@ -635,7 +646,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     })
     expect(closed).toBe(true)
     expect(latest.blank).toBe(false)
-    expect(latest.tabs).toEqual(['/v/a2.md'])
+    expect(read().tabs).toEqual(['/v/a2.md'])
     act(() => latest.newTab())
     act(() => latest.closeBlank())
     expect(latest.blank).toBe(false)
@@ -644,7 +655,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.newTab())
     act(() => latest.openCurrent('/v/b.md'))
     expect(latest.blank).toBe(false)
-    expect(latest.preview).toBeNull()
+    expect(read().preview).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a2.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
   })
@@ -657,7 +668,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(latest.canForward).toBe(false)
 
     act(() => latest.back())
-    expect(latest.active).toBe('/v/b.md')
+    expect(read().active).toBe('/v/b.md')
     expect(latest.canBack).toBe(true)
     expect(latest.canForward).toBe(true)
   })
@@ -682,13 +693,13 @@ describe('useWorkspace legacy main-tab mirror', () => {
   it('reset with a restored file mirrors against the EXPLICIT new root; an empty reset mirrors nothing', () => {
     act(() => latest.openCurrent('/v/a.md'))
     act(() => latest.reset('/w', '/w/b.md'))
-    expect(latest.tabs).toEqual(['/w/b.md'])
+    expect(read().tabs).toEqual(['/w/b.md'])
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/w', { lastFile: '/w/b.md' })
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() })
     const writes = bridge.window.setIdentity.mock.calls.length
     act(() => latest.reset(null, null)) // rides on setRoot's own {root, file: null, tabs: []} write
-    expect(latest.tabs).toEqual([])
-    expect(latest.active).toBeNull()
+    expect(read().tabs).toEqual([])
+    expect(read().active).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
   })
 })
@@ -924,5 +935,151 @@ describe('delete / delete-dir (GRO-2272)', () => {
       expect(new Set(next.tabs).size).toBe(next.tabs.length)
       for (const m of next.mounted) expect(next.tabs).toContain(m)
     }
+  })
+})
+
+/**
+ * Copies (YAZ-2940 D1, D2): each tab has its own id, so two tabs may show one file. These tests use
+ * the real ids. A: `/v/a.md`, shown by `t1` and `t3`; B: `/v/b.md`, shown by `t2`.
+ */
+describe('copies: two tabs of one file (YAZ-2940)', () => {
+  const A = '/v/a.md'
+  const B = '/v/b.md'
+  /** t1 (A) · t2 (B) · t3 (A), the copy of t1, active. */
+  const copies = (over: Partial<IdTabsState> = {}): IdTabsState => ({
+    tabs: [{ id: 't1', path: A }, { id: 't2', path: B }, { id: 't3', path: A }],
+    active: 't3',
+    mounted: ['t1', 't3'],
+    history: {},
+    preview: null,
+    blank: false,
+    ...over,
+  })
+  const ids = (s: IdTabsState) => s.tabs.map((t) => t.id)
+  const paths = (s: IdTabsState) => s.tabs.map((t) => t.path)
+
+  it('the helpers: tabOf is the active tab if it shows the file, else the first from the left; storedTabs names each file once, at its first tab; activePath is the active tab\'s file', () => {
+    expect(tabOf(copies(), A)?.id).toBe('t3')
+    expect(tabOf(copies({ active: 't2' }), A)?.id).toBe('t1')
+    expect(tabOf(copies(), '/v/none.md')).toBeNull()
+    expect(tabById(copies(), 't2')).toEqual({ id: 't2', path: B })
+    expect(storedTabs(copies().tabs)).toEqual([A, B])
+    expect(activePath(copies({ active: 't3' }))).toBe(A)
+    expect(activePath(copies({ tabs: [], active: null, mounted: [] }))).toBeNull()
+    expect(newTabId()).not.toBe(newTabId())
+  })
+
+  it('S11, S12: ✕ on a copy closes that tab only, and the heir follows the ladder; closing the source leaves its copy', () => {
+    const closed = reduceTabs(copies(), { type: 'close', id: 't3' })
+    expect(ids(closed)).toEqual(['t1', 't2'])
+    expect(closed.active).toBe('t2') // the active LAST tab falls back to its left neighbour
+    expect(closed.mounted).toEqual(['t1', 't2'])
+    const source = reduceTabs(copies(), { type: 'close', id: 't1' })
+    expect(ids(source)).toEqual(['t2', 't3'])
+    expect(source.active).toBe('t3')
+  })
+
+  it('S7: an open of a file that has copies goes to the active copy, else to the first from the left — and never opens a new tab', () => {
+    const s = copies()
+    for (const type of ['open-current', 'navigate', 'open-new'] as const) {
+      expect(reduceTabs(s, { type, path: A })).toBe(s)
+      const fromB = reduceTabs(copies({ active: 't2', mounted: ['t2'] }), { type, path: A })
+      expect(ids(fromB)).toEqual(['t1', 't2', 't3'])
+      expect(fromB.active).toBe('t1')
+    }
+    expect(reduceTabs(s, { type: 'open-background', path: A })).toBe(s)
+    // The blank tab goes to the copy that was active under it.
+    expect(reduceTabs({ ...s, blank: true }, { type: 'open-current', path: A })).toMatchObject({ active: 't3', blank: false })
+  })
+
+  it('S8: Back onto a file that copies show goes to the first copy from the left; the stacks stay', () => {
+    const s = copies({ active: 't2', mounted: ['t2'], history: { t2: { entries: ['/v/c.md', A, B], index: 2 } } })
+    const back = reduceTabs(s, { type: 'back' })
+    expect(back.active).toBe('t1')
+    expect(paths(back)).toEqual([A, B, A])
+    expect(back.history).toEqual(s.history)
+  })
+
+  it('S17, S19: a rename moves every copy in place — ids, activation and the mounted set stay — and history entries follow', () => {
+    const s = copies({ history: { t2: { entries: [A, B], index: 1 } } })
+    const renamed = reduceTabs(s, { type: 'rename', oldPath: A, newPath: '/v/z.md' })
+    expect(renamed.tabs).toEqual([{ id: 't1', path: '/v/z.md' }, { id: 't2', path: B }, { id: 't3', path: '/v/z.md' }])
+    expect(renamed.active).toBe('t3')
+    expect(renamed.mounted).toEqual(['t1', 't3'])
+    expect(renamed.history).toEqual({ t2: { entries: ['/v/z.md', B], index: 1 } })
+    const inDir = copies({ tabs: [{ id: 't1', path: '/v/D/a.md' }, { id: 't2', path: B }, { id: 't3', path: '/v/D/a.md' }] })
+    expect(paths(reduceTabs(inDir, { type: 'rename-dir', oldPath: '/v/D', newPath: '/v/E' }))).toEqual(['/v/E/a.md', B, '/v/E/a.md'])
+    expect(ids(reduceTabs(inDir, { type: 'delete-dir', path: '/v/D' }))).toEqual(['t2'])
+  })
+
+  it('S18: a delete closes every copy, each through the close ladder, and leaves the other stacks', () => {
+    const s = copies({ history: { t2: { entries: [A, B], index: 1 } } })
+    const gone = reduceTabs(s, { type: 'delete', path: A })
+    expect(gone.tabs).toEqual([{ id: 't2', path: B }])
+    expect(gone.active).toBe('t2')
+    expect(gone.mounted).toEqual(['t2'])
+    expect(gone.history).toEqual({ t2: { entries: [B], index: 0 } })
+    // Copies of the active file at both ends: t1 goes first (not active), then t3, whose heir is t2.
+    expect(reduceTabs(copies({ active: 't1' }), { type: 'delete', path: A })).toMatchObject({ active: 't2', tabs: [{ id: 't2', path: B }] })
+  })
+
+  it('S13: closing every tab closes the copies too; a reset gives new ids and names each stored file once', () => {
+    expect(reduceTabs(copies(), { type: 'close-many', ids: ['t1', 't2', 't3'] })).toMatchObject({ tabs: [], active: null, mounted: [] })
+    const reset = reduceTabs(copies(), { type: 'reset', tabs: [A, B, A], active: A })
+    expect(paths(reset)).toEqual([A, B])
+    expect(ids(reset).some((id) => ['t1', 't2', 't3'].includes(id))).toBe(false)
+    expect(activePath(reset)).toBe(A)
+  })
+
+  it('S15: a copy moved to the right panel takes the file there, and EVERY main tab of the file closes', () => {
+    const start: IdWorkspaceState = { ...copies(), rightPanel: defaultRightPanelIdentity(), rightMounted: [], rightHistory: {} }
+    const moved = reduceWorkspace(start, { type: 'transfer-main-to-right', path: A, at: 0 })
+    expect(moved.tabs).toEqual([{ id: 't2', path: B }])
+    expect(moved.active).toBe('t2')
+    expect(moved.rightPanel).toMatchObject({ open: true, items: [A], expanded: A })
+    // A link in the right panel to a file with copies takes it from the main area the same way.
+    const right: IdWorkspaceState = { ...start, rightPanel: { ...start.rightPanel, open: true, items: ['/v/c.md'], expanded: '/v/c.md' }, rightMounted: ['/v/c.md'] }
+    expect(reduceWorkspace(right, { type: 'navigate-right', from: '/v/c.md', to: A }).tabs).toEqual([{ id: 't2', path: B }])
+  })
+})
+
+describe('copies: the mirror stores each file once (YAZ-2940 D2, S25)', () => {
+  let reactRoot: Root | null = null
+  let latest: UseWorkspace
+  let bridge: ReturnType<typeof installBridge>
+
+  function Probe() {
+    latest = useWorkspace('/v')
+    return null
+  }
+
+  beforeEach(async () => {
+    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    reactRoot = createRoot(document.createElement('div'))
+    act(() => reactRoot?.render(<Probe />))
+  })
+
+  afterEach(() => {
+    act(() => reactRoot?.unmount())
+    reactRoot = null
+  })
+
+  it('two tabs of one file (an outside rename onto an open file) write that file once, at its first tab — and an active copy writes its file', () => {
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+    act(() => latest.openKept('/v/c.md'))
+    act(() => latest.renamePath('/v/c.md', '/v/a.md'))
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/a.md'])
+    expect(latest.file).toBe('/v/a.md')
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+    // Go to B, then to the copy at the end: the stored file is the copy's file, and the list still names it once.
+    act(() => latest.activate(latest.tabs[1].id))
+    act(() => latest.activate(latest.tabs[2].id))
+    expect(latest.active).toBe(latest.tabs[2].id)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
+    // ⌘W on the copy closes it alone; the first tab of the file stays.
+    act(() => latest.closeActive())
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md'])
   })
 })

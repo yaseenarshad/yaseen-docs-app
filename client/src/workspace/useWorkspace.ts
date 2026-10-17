@@ -12,30 +12,35 @@ import { hashFilePath } from '../lib/urlHash'
  * `{ file }`-only patch, whose main-side normalization would prepend files into `tabs`
  * on its own (the legacy pre-tabs path).
  *
- * Invariants (enforced here, matching main's `WindowEntry`): `active ∈ tabs` whenever
- * non-null; `tabs: []` ⇔ `active: null`; `tabs` de-duplicated by path. `mounted` is
- * renderer-only: `mounted ⊆ tabs`, `active ∈ mounted` whenever non-null.
+ * Each tab has its own id (YAZ-2940 D1), so two tabs may show one path: a copy. `active`,
+ * `mounted`, `history` and `preview` name tabs by id; a file call always takes the tab's path.
+ * A copy is never stored (D2): the mirror writes `storedTabs(tabs)` — each path once — and the
+ * active tab's path as `file`, so main's `WindowEntry.tabs` stays de-duplicated by path.
+ *
+ * Invariants: `active` is the id of a tab in `tabs` whenever non-null; `tabs: []` ⇔
+ * `active: null`; ids are unique. `mounted` is renderer-only: `mounted ⊆ tab ids`,
+ * `active ∈ mounted` whenever non-null.
  */
 export interface TabsState {
-  /** Open tabs, absolute paths, left→right (`WindowEntry.tabs`). */
-  tabs: string[]
-  /** The active tab; doubles as the window's `file` (title, URL hash, sidebar highlight). */
+  /** Open tabs, left→right. Two tabs may show one path (YAZ-2940 D1); `storedTabs` gives `WindowEntry.tabs`. */
+  tabs: Tab[]
+  /** The active tab's id; its path doubles as the window's `file` (title, URL hash, sidebar highlight) — `activePath`. */
   active: string | null
   /**
-   * Tabs visited since boot, in first-activation order: exactly the editors kept mounted.
+   * Tab ids visited since boot, in first-activation order: exactly the editors kept mounted.
    * A background tab's editor lazy-mounts on first activation — which is also why opening
    * one never steals focus (`focusEditor` only fires when an editor mounts).
    */
   mounted: string[]
   /**
-   * Per-tab back/forward stacks (YAZ-721, LOCKED ruling D1): a side table keyed by the tab's
-   * CURRENT path — NOT tab identity. A tab with no record reads lazily as
-   * `{ entries: [path], index: 0 }`. Renderer- and session-only: it never reaches `storage`.
+   * Per-tab back/forward stacks (YAZ-721, LOCKED ruling D1): a side table keyed by tab id
+   * (YAZ-2940 D1); the entries are paths. A tab with no record reads lazily as
+   * `{ entries: [tab.path], index: 0 }`. Renderer- and session-only: it never reaches `storage`.
    */
   history: Record<string, TabHistory>
   /**
-   * The ONE preview tab (YAZ-2648 D1), or null. Renderer- and session-only, like `history`:
-   * `preview ∈ tabs` whenever non-null. Every other tab is a kept tab, and a kept tab is never
+   * The id of the ONE preview tab (YAZ-2648 D1), or null. Renderer- and session-only, like `history`:
+   * a tab of `tabs` whenever non-null. Every other tab is a kept tab, and a kept tab is never
    * replaced by an open from the sidebar.
    */
   preview: string | null
@@ -49,11 +54,41 @@ export interface TabsState {
   blank: boolean
 }
 
+/** One open tab (YAZ-2940 D1): its own id, and the page it shows. */
+export interface Tab {
+  id: string
+  path: string
+}
+
 /** One tab's back/forward stack (YAZ-721 D1): `entries[index]` is the page the tab shows. */
 export interface TabHistory {
   entries: string[]
   index: number
 }
+
+let lastTabId = 0
+/** A new tab id (YAZ-2940 D1): unique in this window for the session. Ids never reach storage. */
+export const newTabId = (): string => `tab-${++lastTabId}`
+
+const newTab = (path: string): Tab => ({ id: newTabId(), path })
+
+/** The tab with this id, or null. */
+export const tabById = (s: Pick<TabsState, 'tabs'>, id: string | null): Tab | null => (id === null ? null : (s.tabs.find((t) => t.id === id) ?? null))
+
+/** The tab a trip to `path` goes to (YAZ-2940 S7, S8): the active tab if it shows `path`, else the first from the left that does, else null. */
+export function tabOf(s: Pick<TabsState, 'tabs' | 'active'>, path: string): Tab | null {
+  const active = tabById(s, s.active)
+  return active !== null && active.path === path ? active : (s.tabs.find((t) => t.path === path) ?? null)
+}
+
+/** What the window stores (YAZ-2940 D2, S25): each path once, in the order of its first tab — a copy is never stored. */
+export const storedTabs = (tabs: readonly Tab[]): string[] => [...new Set(tabs.map((t) => t.path))]
+
+/** The active tab's path: the window's `file`. */
+export const activePath = (s: Pick<TabsState, 'tabs' | 'active'>): string | null => tabById(s, s.active)?.path ?? null
+
+/** Whether any tab shows `path`. */
+const shows = (s: Pick<TabsState, 'tabs'>, path: string): boolean => s.tabs.some((t) => t.path === path)
 
 export interface WorkspaceState extends TabsState {
   rightPanel: RightPanelIdentity
@@ -76,84 +111,111 @@ export type WorkspaceAction =
   | { type: 'set-right-open'; open: boolean }
   | { type: 'set-right-width'; width: number }
 
+// Actions that name a TAB take its id; actions that name a FILE take a path (YAZ-2940 D1). A trip to
+// a file that is open goes to `tabOf` it: the active tab if it shows it, else the first from the left.
 export type TabsAction =
-  | { type: 'open-current'; path: string } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (activate instead when already open)
-  | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (activate instead when already open)
+  | { type: 'open-current'; path: string } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open)
+  | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
   | { type: 'open-new'; path: string } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to, and the preview tab that shows it is kept
   | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (no-op when already open)
-  | { type: 'keep'; path: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
+  | { type: 'keep'; id: string } // double click, first edit: the preview tab becomes a kept tab (no-op for any other tab)
   | { type: 'new-tab' } // ⌘T, the strip's "+": the blank tab shows (no-op while it does)
   | { type: 'close-blank' } // ⌘W on the blank tab, its ✕: it goes, and the tab that was active is active again
-  | { type: 'activate'; path: string } // tab-strip click
-  | { type: 'close'; path: string } // ✕ / ⌘W: the active tab closes to its right neighbour, else left
-  | { type: 'close-many'; paths: readonly string[] } // the tab board's "Close them", "Close the others" and an island's ✕: each tab by `close`, in ONE change
+  | { type: 'activate'; id: string } // tab-strip click
+  | { type: 'close'; id: string } // ✕ / ⌘W: this tab only, a copy too (S11); the active tab closes to its right neighbour, else left
+  | { type: 'close-many'; ids: readonly string[] } // the tab board's "Close them", "Close the others" and an island's ✕: each tab by `close`, in ONE change
   | { type: 'move'; from: number; to: number } // drag-to-reorder (I3): the tab at `from` lands at final index `to`
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'back' } // the active tab steps back through its OWN stack (YAZ-721)
   | { type: 'forward' } // …and forward again, as far as the stack was walked back
-  | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: replace wholesale, normalizing
-  | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): the open tab follows the file in place
+  | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: the STORED paths and file; replace wholesale with new ids, normalizing
+  | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
   | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): the folder's own tab and every tab under it follow in place
-  | { type: 'delete'; path: string } // in-app delete (GRO-2272): the tab goes, the active one closing to its heir
+  | { type: 'delete'; path: string } // in-app delete (GRO-2272): every tab of the file goes, each closing as `close` does (S18)
   | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): the folder's own tab and every tab under it go
 
 const EMPTY: TabsState = { tabs: [], active: null, mounted: [], history: {}, preview: null, blank: false }
 
-/** Go to the tab `active`. A trip to a tab drops an unused blank tab (YAZ-2655 S73). */
+/** Go to the tab `active` (an id). A trip to a tab drops an unused blank tab (YAZ-2655 S73). */
 function withActive(s: TabsState, active: string): TabsState {
   return { tabs: s.tabs, active, mounted: s.mounted.includes(active) ? s.mounted : [...s.mounted, active], history: s.history, preview: s.preview, blank: false }
+}
+
+/** A new KEPT tab for `path` at the end of the strip, active. */
+function appendActive(s: TabsState, path: string, preview: boolean): TabsState {
+  const tab = newTab(path)
+  return { tabs: [...s.tabs, tab], active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: preview ? tab.id : s.preview, blank: false }
 }
 
 /**
  * A page opened while the blank tab is active FILLS it (YAZ-2655 D10, S71): a KEPT tab where the
  * blank tab stood, at the end of the strip. A page that is open already has its own tab, so the
- * app goes there and the blank tab goes away (S72). The preview tab is not touched either way.
+ * app goes there (`tabOf`) and the blank tab goes away (S72). The preview tab is not touched either way.
  */
 function fillBlank(s: TabsState, path: string): TabsState {
-  if (s.tabs.includes(path)) return withActive(s, path)
-  return { tabs: [...s.tabs, path], active: path, mounted: [...s.mounted, path], history: s.history, preview: s.preview, blank: false }
+  const open = tabOf(s, path)
+  return open !== null ? withActive(s, open.id) : appendActive(s, path, false)
 }
 
 /**
- * `path` takes over the tab `slot` in place (same-tab navigation): the old page's editor unmounts
- * (→ autosave flush), and the slot's stack gains the page and re-keys onto it, any forward entries
- * truncated. A slot that was the preview tab stays the preview tab, on its new page.
+ * `path` takes over the tab `slot` (an id) in place (same-tab navigation): the tab keeps its id, and
+ * App's layer mounts a new editor for the new page (→ the old one's autosave flush). The slot's stack
+ * gains the page, any forward entries truncated. A slot that was the preview tab stays the preview tab.
  */
 function replaceSlot(s: TabsState, slot: string, path: string): TabsState {
-  const h = s.history[slot] ?? { entries: [slot], index: 0 }
-  const history = { ...s.history }
-  delete history[slot]
+  const h = s.history[slot] ?? { entries: [tabById(s, slot)?.path ?? path], index: 0 }
   return {
-    tabs: s.tabs.map((t) => (t === slot ? path : t)),
-    active: path,
-    mounted: [...s.mounted.filter((t) => t !== slot), path],
-    history: { ...history, [path]: { entries: [...h.entries.slice(0, h.index + 1), path], index: h.index + 1 } },
-    preview: s.preview === slot ? path : s.preview,
+    tabs: s.tabs.map((t) => (t.id === slot ? { id: slot, path } : t)),
+    active: slot,
+    mounted: [...s.mounted.filter((t) => t !== slot), slot],
+    history: { ...s.history, [slot]: { entries: [...h.entries.slice(0, h.index + 1), path], index: h.index + 1 } },
+    preview: s.preview,
     blank: false,
   }
 }
 
+/** One stack's entries rewritten through `f` (renamed, or dropped with `null`); the index follows the entry it pointed at. */
+function mapEntries(r: TabHistory, f: (p: string) => string | null): TabHistory {
+  const entries: string[] = []
+  let index = 0
+  r.entries.forEach((e, i) => {
+    const m = f(e)
+    if (m === null) return
+    if (i === r.index) index = entries.length
+    entries.push(m)
+  })
+  return { entries, index }
+}
+
 /**
- * Rewrite every stack through `f` — renaming a path, or dropping it with `null` (which drops
- * the whole record when its own key goes). The index follows the entry it pointed at, which
- * always survives when the key does: a record's key IS its current entry.
+ * Rewrite every PATH-keyed stack (the right panel's) through `f` — renaming a path, or dropping it
+ * with `null` (which drops the whole record when its own key goes). The index follows the entry it
+ * pointed at, which always survives when the key does: a record's key IS its current entry.
  */
 function rekey(h: Record<string, TabHistory>, f: (p: string) => string | null): Record<string, TabHistory> {
   const out: Record<string, TabHistory> = {}
   for (const [key, r] of Object.entries(h)) {
     const k = f(key)
-    if (k === null) continue
-    const entries: string[] = []
-    let index = 0
-    r.entries.forEach((e, i) => {
-      const m = f(e)
-      if (m === null) return
-      if (i === r.index) index = entries.length
-      entries.push(m)
-    })
-    out[k] = { entries, index }
+    if (k !== null) out[k] = mapEntries(r, f)
   }
   return out
+}
+
+/** `rekey` for the main tabs' stacks, keyed by tab id (YAZ-2940 D1): the keys stay, and a record whose own page is dropped goes — its tab closes with it. */
+function remapStacks(h: Record<string, TabHistory>, f: (p: string) => string | null): Record<string, TabHistory> {
+  const out: Record<string, TabHistory> = {}
+  for (const [id, r] of Object.entries(h)) {
+    if (f(r.entries[r.index]) !== null) out[id] = mapEntries(r, f)
+  }
+  return out
+}
+
+/** Whether some stack still holds a page that `f` picks. */
+const inStacks = (h: Record<string, TabHistory>, f: (p: string) => boolean): boolean => Object.values(h).some((r) => r.entries.some(f))
+
+/** Every tab of a page that `f` picks closes, left to right, each through the SAME ladder as `close`: the heir is whatever survives. */
+function closeWhere(s: TabsState, f: (path: string) => boolean): TabsState {
+  return s.tabs.filter((t) => f(t.path)).reduce((acc, t) => tabsReducer(acc, { type: 'close', id: t.id }), s)
 }
 
 /** `path` is the folder `dir` itself — a folder is a tab too (YAZ-2290 D3) — or sits below it. */
@@ -164,10 +226,11 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
   switch (a.type) {
     case 'open-current': {
       if (s.blank) return fillBlank(s, a.path)
-      if (a.path === s.active) return s
-      if (s.tabs.includes(a.path)) return withActive(s, a.path) // dedupe by path: activate, never duplicate
+      // Open already: go to its tab, never duplicate (S7). The active tab that shows it is a no-op.
+      const open = tabOf(s, a.path)
+      if (open !== null) return open.id === s.active ? s : withActive(s, open.id)
       // No preview tab yet: the page gets one, at the end of the strip. A kept tab is never replaced (YAZ-2648 D1).
-      if (s.preview === null) return { tabs: [...s.tabs, a.path], active: a.path, mounted: [...s.mounted, a.path], history: s.history, preview: a.path, blank: false }
+      if (s.preview === null) return appendActive(s, a.path, true)
       // The page takes the PREVIEW tab's slot, wherever it stands, and that tab becomes the active one.
       return replaceSlot(s, s.preview, a.path)
     }
@@ -176,29 +239,29 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // Back returns. The rule `open-current` had before the preview tab. The blank tab has no page
       // and so no link: a page that opens while it is active fills it, like any other.
       if (s.blank) return fillBlank(s, a.path)
-      if (a.path === s.active) return s
-      if (s.tabs.includes(a.path)) return withActive(s, a.path)
-      if (s.active === null) return { tabs: [a.path], active: a.path, mounted: [a.path], history: s.history, preview: s.preview, blank: false }
+      const open = tabOf(s, a.path)
+      if (open !== null) return open.id === s.active ? s : withActive(s, open.id)
+      if (s.active === null) return appendActive(s, a.path, false)
       return replaceSlot(s, s.active, a.path)
     }
     case 'open-new': {
       // A kept tab is asked for (YAZ-2648 D2): the preview tab that shows the page loses its mark first.
-      const kept = a.path === s.preview ? { ...s, preview: null } : s
+      const kept = tabById(s, s.preview)?.path === a.path ? { ...s, preview: null } : s
       if (kept.blank) return fillBlank(kept, a.path)
-      if (a.path === kept.active) return kept
-      if (kept.tabs.includes(a.path)) return withActive(kept, a.path)
-      return { tabs: [...s.tabs, a.path], active: a.path, mounted: [...s.mounted, a.path], history: s.history, preview: s.preview, blank: false }
+      const open = tabOf(kept, a.path)
+      if (open !== null) return open.id === kept.active ? kept : withActive(kept, open.id)
+      return appendActive(s, a.path, false)
     }
     case 'open-background': {
-      if (s.tabs.includes(a.path)) return s // already open: stay where we are, steal nothing
+      if (shows(s, a.path)) return s // already open: stay where we are, steal nothing
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
-      if (s.active === null) return { tabs: [a.path], active: a.path, mounted: [a.path], history: s.history, preview: s.preview, blank: s.blank }
-      return { ...s, tabs: [...s.tabs, a.path] } // not mounted: the editor lazy-mounts on first activation
+      if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
+      return { ...s, tabs: [...s.tabs, newTab(a.path)] } // not mounted: the editor lazy-mounts on first activation
     }
     case 'keep':
       // Nothing stored changes, so the caller mirrors nothing (YAZ-2648 D4).
-      return a.path === s.preview ? { ...s, preview: null } : s
+      return a.id === s.preview ? { ...s, preview: null } : s
     case 'new-tab':
       // One blank tab at most (YAZ-2655 D10). Nothing stored changes, so the caller mirrors nothing.
       return s.blank ? s : { ...s, blank: true }
@@ -206,12 +269,12 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       return s.blank ? { ...s, blank: false } : s
     case 'activate':
       // The tab that was active under the blank tab is a tab to go to, like any other (S73).
-      return (a.path === s.active && !s.blank) || !s.tabs.includes(a.path) ? s : withActive(s, a.path)
+      return (a.id === s.active && !s.blank) || tabById(s, a.id) === null ? s : withActive(s, a.id)
     case 'back':
     case 'forward': {
       // The step lands in the ACTIVE tab's slot, like any same-tab navigation — but records
       // nothing: the stack is walked, not extended. A target already open in ANOTHER tab
-      // activates that tab instead, leaving both stacks alone (de-dup by path wins here too).
+      // goes to that tab instead (`tabOf`, S8), leaving both stacks alone.
       // The blank tab has no stack (YAZ-2655): under it the arrows have nowhere to go.
       if (s.active === null || s.blank) return s
       const h = s.history[s.active]
@@ -219,42 +282,42 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const i = h.index + (a.type === 'back' ? -1 : 1)
       if (i < 0 || i >= h.entries.length) return s
       const target = h.entries[i]
-      if (s.tabs.includes(target)) return withActive(s, target)
-      const history = { ...s.history }
-      delete history[s.active]
+      const open = tabOf(s, target)
+      if (open !== null) return withActive(s, open.id)
+      const slot = s.active
       return {
-        tabs: s.tabs.map((t) => (t === s.active ? target : t)),
-        active: target,
-        mounted: [...s.mounted.filter((t) => t !== s.active), target],
-        history: { ...history, [target]: { entries: h.entries, index: i } },
-        preview: s.preview === s.active ? target : s.preview, // the preview tab stays one, on the page it stepped to
+        tabs: s.tabs.map((t) => (t.id === slot ? { id: slot, path: target } : t)),
+        active: slot,
+        mounted: [...s.mounted.filter((t) => t !== slot), slot],
+        history: { ...s.history, [slot]: { entries: h.entries, index: i } },
+        preview: s.preview, // the preview tab stays one, on the page it stepped to
         blank: false,
       }
     }
     case 'close': {
-      const i = s.tabs.indexOf(a.path)
+      const i = s.tabs.findIndex((t) => t.id === a.id)
       if (i === -1) return s
       const history = { ...s.history }
-      delete history[a.path] // the tab's stack closes with it
+      delete history[a.id] // the tab's stack closes with it
       const rest: TabsState = {
-        tabs: s.tabs.filter((t) => t !== a.path),
+        tabs: s.tabs.filter((t) => t.id !== a.id),
         active: s.active,
-        mounted: s.mounted.filter((t) => t !== a.path),
+        mounted: s.mounted.filter((t) => t !== a.id),
         history,
-        preview: s.preview === a.path ? null : s.preview,
+        preview: s.preview === a.id ? null : s.preview,
         blank: s.blank,
       }
-      if (a.path !== s.active) return rest
+      if (a.id !== s.active) return rest
       // ⌘W ladder (rule 7): the right neighbour takes over, else the left; closing the last
       // tab leaves the empty state — the window stays alive (App escalates to closeSelf only
       // on a ⌘W with zero tabs). A tab closed under the blank tab is no trip to its heir: the heir
       // is the stored file, and the blank tab still shows.
       const heir = s.tabs[i + 1] ?? s.tabs[i - 1] ?? null
-      return heir === null ? { ...rest, active: null } : { ...withActive({ ...rest, active: null }, heir), blank: s.blank }
+      return heir === null ? { ...rest, active: null } : { ...withActive({ ...rest, active: null }, heir.id), blank: s.blank }
     }
     case 'close-many':
       // One fold over `close`, as `delete-dir` does: the heir is whatever is left when all of them are gone.
-      return a.paths.reduce((acc, path) => tabsReducer(acc, { type: 'close', path }), s)
+      return a.ids.reduce((acc, id) => tabsReducer(acc, { type: 'close', id }), s)
     case 'move': {
       // Reorder only: `active` and `mounted` are untouched — dragging never activates a tab.
       // A preview tab that is given a place is kept (YAZ-2648 D2).
@@ -263,100 +326,66 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const tabs = [...s.tabs]
       const [moved] = tabs.splice(a.from, 1)
       tabs.splice(to, 0, moved)
-      return { ...s, tabs, preview: moved === s.preview ? null : s.preview }
+      return { ...s, tabs, preview: moved.id === s.preview ? null : s.preview }
     }
     case 'cycle': {
       // From the blank tab, which stands last (YAZ-2655): on to the first tab, back to the last real one.
-      if (s.blank) return s.tabs.length === 0 ? s : withActive(s, s.tabs[a.dir === 1 ? 0 : s.tabs.length - 1])
+      if (s.blank) return s.tabs.length === 0 ? s : withActive(s, s.tabs[a.dir === 1 ? 0 : s.tabs.length - 1].id)
       if (s.active === null || s.tabs.length < 2) return s
-      const i = s.tabs.indexOf(s.active)
-      return withActive(s, s.tabs[(i + a.dir + s.tabs.length) % s.tabs.length])
+      const i = s.tabs.findIndex((t) => t.id === s.active)
+      return withActive(s, s.tabs[(i + a.dir + s.tabs.length) % s.tabs.length].id)
     }
     case 'reset': {
       if (a.active === null) return s.tabs.length === 0 && s.active === null && s.mounted.length === 0 && !s.blank ? s : EMPTY
-      const tabs = [...new Set(a.tabs)]
-      // An active file missing from the list is PREPENDED — main's own normalization order.
-      return { tabs: tabs.includes(a.active) ? tabs : [a.active, ...tabs], active: a.active, mounted: [a.active], history: {}, preview: null, blank: false }
+      const paths = [...new Set(a.tabs)]
+      // An active file missing from the list is PREPENDED — main's own normalization order. Every tab gets a new id.
+      const tabs = (paths.includes(a.active) ? paths : [a.active, ...paths]).map(newTab)
+      const active = tabs.find((t) => t.path === a.active)?.id ?? null
+      return { tabs, active, mounted: active === null ? [] : [active], history: {}, preview: null, blank: false }
     }
     case 'rename': {
-      // The tab follows its renamed file IN PLACE (Links E1): same slot, activation and the
-      // mounted set remapped with it. Should the new path somehow already be open (a stale
-      // tab), the old one is dropped instead — the de-dup invariant wins. Stacks follow by
-      // key AND by entry: a page reached through history is the same file as the one on screen.
-      // The preview mark follows its tab (YAZ-2648), and goes with a tab that is dropped.
+      // EVERY tab of the file follows it IN PLACE (Links E1, YAZ-2940 S17): same slot, same id, so
+      // activation, the mounted set and the preview mark stay on it. Two tabs of one path are
+      // valid now, so a tab whose new path is open already stays too. Stacks follow by entry:
+      // a page reached through history is the same file as the one on screen.
       if (a.oldPath === a.newPath) return s
-      const remap = (t: string) => (t === a.oldPath ? a.newPath : t)
-      if (!s.tabs.includes(a.oldPath)) {
+      const remap = (p: string) => (p === a.oldPath ? a.newPath : p)
+      if (!shows(s, a.oldPath)) {
         // Not open here, but some tab may still hold it further back in its stack.
-        return Object.values(s.history).some((r) => r.entries.includes(a.oldPath)) ? { ...s, history: rekey(s.history, remap) } : s
+        return inStacks(s.history, (p) => p === a.oldPath) ? { ...s, history: remapStacks(s.history, remap) } : s
       }
-      const hasNew = s.tabs.includes(a.newPath)
-      const tabs = hasNew ? s.tabs.filter((t) => t !== a.oldPath) : s.tabs.map(remap)
-      const mounted = [...new Set(hasNew ? s.mounted.filter((t) => t !== a.oldPath) : s.mounted.map(remap))]
-      const active = s.active === a.oldPath ? a.newPath : s.active
-      const kept = { ...s.history }
-      if (hasNew) delete kept[a.oldPath]
-      return {
-        tabs,
-        active,
-        mounted: active !== null && !mounted.includes(active) && tabs.includes(active) ? [...mounted, active] : mounted,
-        history: rekey(kept, remap),
-        preview: s.preview === a.oldPath ? (hasNew ? null : a.newPath) : s.preview,
-        blank: s.blank,
-      }
+      return { ...s, tabs: s.tabs.map((t) => (t.path === a.oldPath ? { id: t.id, path: a.newPath } : t)), history: remapStacks(s.history, remap) }
     }
     case 'delete': {
       // Deleting a tab IS closing it, from the user's point of view — so reuse the `close`
       // case rather than re-implementing the heir ladder. Divergence between the two would
       // show up as "deleting the active note picks a different tab than ⌘W does", which is
-      // the kind of inconsistency nobody reports but everybody feels. The page also leaves
-      // every OTHER tab's stack first: back must never step onto a file that is gone.
-      const base = Object.values(s.history).some((r) => r.entries.includes(a.path))
-        ? { ...s, history: rekey(s.history, (p) => (p === a.path ? null : p)) }
-        : s
-      return tabsReducer(base, { type: 'close', path: a.path })
+      // the kind of inconsistency nobody reports but everybody feels. Every tab of the file
+      // closes (S18). The page also leaves every OTHER tab's stack first: back must never step
+      // onto a file that is gone.
+      const base = inStacks(s.history, (p) => p === a.path) ? { ...s, history: remapStacks(s.history, (p) => (p === a.path ? null : p)) } : s
+      return closeWhere(base, (p) => p === a.path)
     }
     case 'delete-dir': {
       // The folder's own tab (YAZ-2290 D3) and every tab under it close, left to right, each
       // through the SAME ladder. The fold means the heir is whatever survives after all of them
       // are gone.
       const under = (t: string) => atOrUnder(t, a.path)
-      const base = Object.values(s.history).some((r) => r.entries.some(under)) ? { ...s, history: rekey(s.history, (p) => (under(p) ? null : p)) } : s
-      const doomed = s.tabs.filter(under)
-      if (doomed.length === 0) return base
-      return doomed.reduce((acc, path) => tabsReducer(acc, { type: 'close', path }), base)
+      const base = inStacks(s.history, under) ? { ...s, history: remapStacks(s.history, (p) => (under(p) ? null : p)) } : s
+      return closeWhere(base, under)
     }
     case 'rename-dir': {
       // A FOLDER moved (E1b): its own tab (YAZ-2290 D3) and every tab under `oldPath/` follow
-      // by prefix, each in its own slot; activation and the mounted set remap with them. A
-      // remapped tab landing on a path that was ALREADY open is dropped — the de-dup invariant
-      // wins (same rule as `rename`).
+      // by prefix, each in its own slot with its own id (S19), so activation, the mounted set and
+      // the preview mark stay on them. A tab landing on a path that is open already stays (as `rename`).
       if (a.oldPath === a.newPath) return s
       const moved = (t: string) => atOrUnder(t, a.oldPath)
       const remap = (t: string) => (moved(t) ? a.newPath + t.slice(a.oldPath.length) : t)
-      if (!s.tabs.some(moved)) {
+      if (!s.tabs.some((t) => moved(t.path))) {
         // Nothing open at or under the folder, but a stack further back may still point inside it.
-        return Object.values(s.history).some((r) => r.entries.some(moved)) ? { ...s, history: rekey(s.history, remap) } : s
+        return inStacks(s.history, moved) ? { ...s, history: remapStacks(s.history, remap) } : s
       }
-      const existing = new Set(s.tabs)
-      const tabs: string[] = []
-      let preview: string | null = null
-      for (const t of s.tabs) {
-        const m = remap(t)
-        if (m !== t && (existing.has(m) || tabs.includes(m))) continue
-        tabs.push(m)
-        if (t === s.preview) preview = m // the mark follows its tab, and goes with one that is dropped
-      }
-      const mounted = [...new Set(s.mounted.map(remap))].filter((t) => tabs.includes(t))
-      const active = s.active === null ? null : remap(s.active)
-      return {
-        tabs,
-        active,
-        mounted: active !== null && !mounted.includes(active) && tabs.includes(active) ? [...mounted, active] : mounted,
-        history: rekey(s.history, remap),
-        preview,
-        blank: s.blank,
-      }
+      return { ...s, tabs: s.tabs.map((t) => (moved(t.path) ? { id: t.id, path: remap(t.path) } : t)), history: remapStacks(s.history, remap) }
     }
   }
 }
@@ -393,7 +422,8 @@ function insertAt(items: readonly string[], path: string, at = items.length): st
 }
 
 function openRight(s: WorkspaceState, path: string, foreground: boolean, at?: number): WorkspaceState {
-  const main = s.tabs.includes(path) ? tabsReducer(s, { type: 'close', path }) : s
+  // One owner per file between the two areas (YAZ-2940 S15): EVERY main tab of the page closes.
+  const main = closeWhere(s, (p) => p === path)
   const alreadyRight = s.rightPanel.items.includes(path)
   const items = alreadyRight && at === undefined ? s.rightPanel.items : insertAt(s.rightPanel.items, path, at)
   const expanded = foreground ? path : s.rightPanel.expanded
@@ -413,7 +443,7 @@ function navigateRight(s: WorkspaceState, from: string, to: string, historyIndex
   if (s.rightPanel.items.includes(to)) {
     return { ...s, rightPanel: { ...s.rightPanel, expanded: to } }
   }
-  const main = s.tabs.includes(to) ? tabsReducer(s, { type: 'close', path: to }) : s
+  const main = closeWhere(s, (p) => p === to)
   const items = [...s.rightPanel.items]
   items[fromIndex] = to
   const prior = s.rightHistory[from] ?? { entries: [from], index: 0 }
@@ -437,7 +467,7 @@ function repairRightPaths(
   main: TabsState,
   map: (path: string) => string | null,
 ): WorkspaceState {
-  const mainPaths = new Set(main.tabs)
+  const mainPaths = new Set(storedTabs(main.tabs))
   const seen = new Set<string>()
   const items: string[] = []
   for (const item of s.rightPanel.items) {
@@ -467,16 +497,19 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
     case 'open-right-background':
       return openRight(s, a.path, false, a.at)
     case 'transfer-main-to-right':
-      return s.tabs.includes(a.path) ? openRight(s, a.path, true, a.at) : s
+      return shows(s, a.path) ? openRight(s, a.path, true, a.at) : s
     case 'transfer-right-to-main': {
       if (!s.rightPanel.items.includes(a.path)) return s
       const without = closeRight(s, a.path)
-      const tabs = insertAt(without.tabs, a.path, a.at)
+      // A right page is never a main tab (one owner), so the page gets a new tab at the exact slot.
+      const tab = newTab(a.path)
+      const tabs = [...without.tabs]
+      tabs.splice(Math.max(0, Math.min(a.at, tabs.length)), 0, tab)
       return {
         ...without,
         tabs,
-        active: a.path,
-        mounted: without.mounted.includes(a.path) ? without.mounted : [...without.mounted, a.path],
+        active: tab.id,
+        mounted: [...without.mounted, tab.id],
         // The page is the active tab now: a trip to a tab, which drops an unused blank tab (YAZ-2655).
         blank: false,
       }
@@ -588,7 +621,7 @@ export function bootWorkspace(root: string | null): WorkspaceState {
   const main = bootTabs(root)
   if (root === null) return { ...main, ...rightDefault() }
   const stored = storage.getRightPanel()
-  const mainPaths = new Set(main.tabs)
+  const mainPaths = new Set(storedTabs(main.tabs))
   const items = stored.items.filter((path) => !mainPaths.has(path))
   const expanded = stored.expanded !== null && items.includes(stored.expanded) ? stored.expanded : null
   return {
@@ -600,6 +633,8 @@ export function bootWorkspace(root: string | null): WorkspaceState {
 }
 
 export interface UseWorkspace extends WorkspaceState {
+  /** The active tab's path (`activePath`): the window's `file` — title, URL hash, sidebar highlight, every file call. */
+  file: string | null
   /**
    * Rule 11, as YAZ-2648 D1 has it: a sidebar single click (Files, Search, Favorites, Focus) and a
    * deep link open the page in the PREVIEW tab. A kept tab is never replaced.
@@ -612,18 +647,20 @@ export interface UseWorkspace extends WorkspaceState {
    * the end and activated when it is not open, and the preview tab the first click made keeps its page.
    */
   openKept: (path: string) => void
-  /** The preview tab becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other path. */
-  keep: (path: string) => void
+  /** The preview tab (by id) becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other tab. */
+  keep: (id: string) => void
   /** ⌘T, the strip's "+" (YAZ-2655 D10): the one blank tab shows; a second call changes nothing. Never mirrored. */
   newTab: () => void
   /** The blank tab's ✕: it goes, and the tab that was active before is active again (S75). Never mirrored. */
   closeBlank: () => void
   /** Rule 5: append at the end without activating (and so without stealing focus). */
   openBackground: (path: string) => void
-  activate: (path: string) => void
-  close: (path: string) => void
-  /** The tab board's closes of several tabs (YAZ-2648 D9, D15): each as `close`, and ONE identity write for all of them. */
-  closeMany: (paths: readonly string[]) => void
+  /** A tab, by id (YAZ-2940 D1). */
+  activate: (id: string) => void
+  /** That tab only: a copy closes alone (S11). */
+  close: (id: string) => void
+  /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
+  closeMany: (ids: readonly string[]) => void
   /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
   move: (from: number, to: number) => void
   /** ⌘W: closes the active tab — the blank tab alone, while it shows (YAZ-2655 S75); false when there is none (App escalates to `closeSelf`). */
@@ -638,7 +675,7 @@ export interface UseWorkspace extends WorkspaceState {
   canForward: boolean
   /** The root switched to `nextRoot` (rule 13): replace the list with the restored file, or nothing. */
   reset: (nextRoot: string | null, file: string | null) => void
-  /** An in-app rename landed (`file:renamed`, Links E1): remap the open tab in place; no-op when absent. */
+  /** An in-app rename landed (`file:renamed`, Links E1): remap every tab of the file in place (S17); no-op when absent. */
   renamePath: (oldPath: string, newPath: string) => void
   /**
    * A FOLDER rename landed (`file:renamed` kind `dir`, Links E1b — GRO-2241): remap every
@@ -647,7 +684,7 @@ export interface UseWorkspace extends WorkspaceState {
    * lastFile write then lands under the repaired root, not a stale entry.
    */
   renameDirPath: (oldPath: string, newPath: string, nextRoot?: string) => void
-  /** A delete landed (`file:deleted`, GRO-2272): drop the tab; the active one closes to its heir. */
+  /** A delete landed (`file:deleted`, GRO-2272): drop every tab of the file (S18); the active one closes to its heir. */
   deletePath: (path: string) => void
   /**
    * A FOLDER delete landed (`file:deleted` kind `dir`): drop every tab under the prefix. `nextRoot`,
@@ -683,31 +720,35 @@ export function useWorkspace(root: string | null): UseWorkspace {
     const prevState = stateRef.current
     const nextState = workspaceReducer(prevState, action)
     if (nextState === prevState) return
-    for (const path of prevState.tabs) {
+    for (const path of storedTabs(prevState.tabs)) {
       if (nextState.rightPanel.items.includes(path)) carryEditorAcrossPane(path)
     }
     for (const path of prevState.rightPanel.items) {
-      if (nextState.tabs.includes(path)) carryEditorAcrossPane(path)
+      if (shows(nextState, path)) carryEditorAcrossPane(path)
     }
     stateRef.current = nextState
     setState(nextState)
-    // ONE explicit write per durable change carries both owners and the active main file.
-    if (opts?.mirror !== false) storage.setWorkspace(opts?.root !== undefined ? opts.root : rootRef.current, nextState.tabs, nextState.active, nextState.rightPanel)
+    // ONE explicit write per durable change carries both owners and the active main file. A copy is
+    // never stored (YAZ-2940 D2): each path once, in the order of its first tab, and the active tab's path.
+    if (opts?.mirror !== false) storage.setWorkspace(opts?.root !== undefined ? opts.root : rootRef.current, storedTabs(nextState.tabs), activePath(nextState), nextState.rightPanel)
   }, [])
 
   const openCurrent = useCallback((path: string) => dispatch({ type: 'open-current', path }), [dispatch])
   const navigate = useCallback((path: string) => dispatch({ type: 'navigate', path }), [dispatch])
   // `keep` changes no stored field (the mark is session-only, D4), so it is never mirrored — and
   // neither is `open-new` on the page the active preview tab shows, which only takes its mark off.
-  const keep = useCallback((path: string) => dispatch({ type: 'keep', path }, { mirror: false }), [dispatch])
+  const keep = useCallback((id: string) => dispatch({ type: 'keep', id }, { mirror: false }), [dispatch])
   const openKept = useCallback(
-    (path: string) => dispatch({ type: 'open-new', path }, { mirror: !(path === stateRef.current.preview && path === stateRef.current.active) }),
+    (path: string) => {
+      const s = stateRef.current
+      dispatch({ type: 'open-new', path }, { mirror: !(s.preview !== null && s.preview === s.active && activePath(s) === path) })
+    },
     [dispatch],
   )
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
-  const activate = useCallback((path: string) => dispatch({ type: 'activate', path }), [dispatch])
-  const close = useCallback((path: string) => dispatch({ type: 'close', path }), [dispatch])
-  const closeMany = useCallback((paths: readonly string[]) => dispatch({ type: 'close-many', paths }), [dispatch])
+  const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
+  const close = useCallback((id: string) => dispatch({ type: 'close', id }), [dispatch])
+  const closeMany = useCallback((ids: readonly string[]) => dispatch({ type: 'close-many', ids }), [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
   const newTab = useCallback(() => dispatch({ type: 'new-tab' }, { mirror: false }), [dispatch])
@@ -719,7 +760,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
     }
     const active = stateRef.current.active
     if (active === null) return false
-    dispatch({ type: 'close', path: active })
+    dispatch({ type: 'close', id: active })
     return true
   }, [dispatch, closeBlank])
   const next = useCallback(() => dispatch({ type: 'cycle', dir: 1 }), [dispatch])
@@ -763,6 +804,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const rightH: TabHistory | undefined = state.rightHistory[state.rightPanel.expanded ?? '']
   return {
     ...state,
+    file: activePath(state),
     openCurrent, navigate, openKept, keep, newTab, closeBlank, openBackground, activate, close, closeMany, move, closeActive, next, prev, back, forward, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,

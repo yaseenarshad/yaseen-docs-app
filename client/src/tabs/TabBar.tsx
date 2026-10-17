@@ -4,6 +4,7 @@ import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
+import type { Tab } from '../workspace/useWorkspace'
 import { TabMenu, type TabMenuAt } from './TabMenu'
 import { useBoardHighlight } from './boardHighlight'
 import './tabs.css'
@@ -11,11 +12,11 @@ import './tabs.css'
 export interface TabBarProps {
   /** The vaults of the window (YAZ-2602): the Files tree of the vault that holds a tab says whether it is a folder (YAZ-2290). */
   roots: readonly string[]
-  /** Open tabs, absolute paths, left→right. */
-  tabs: readonly string[]
-  /** The active tab (the window's `file`); null with no tabs open. */
+  /** Open tabs, left→right. Two tabs may show one path (YAZ-2940 D1): keys and lookups use the id, labels and file calls the path. */
+  tabs: readonly Tab[]
+  /** The active tab's id (its path is the window's `file`); null with no tabs open. */
   active: string | null
-  /** The preview tab (YAZ-2648 D1), or null: its label is italic until the tab is kept. */
+  /** The preview tab's id (YAZ-2648 D1), or null: its label is italic until the tab is kept. */
   preview?: string | null
   /**
    * The blank tab shows (YAZ-2655 D10): "New tab", after the last tab, and the active one — no tab
@@ -28,18 +29,20 @@ export interface TabBarProps {
   onCloseBlank?: () => void
   /** The right panel is closed, and its "Show right panel" button floats over the row's end: the row keeps that room free (YAZ-2656 S93). */
   reserveEnd?: boolean
-  onActivate: (path: string) => void
-  /** A double click on a tab (YAZ-2648 D2): the preview tab becomes a kept tab; any other tab is one already. */
-  onKeep?: (path: string) => void
-  onClose: (path: string) => void
+  /** A tab, by id. */
+  onActivate: (id: string) => void
+  /** A double click on a tab (YAZ-2648 D2), by id: the preview tab becomes a kept tab; any other tab is one already. */
+  onKeep?: (id: string) => void
+  /** A tab's ✕ or middle click, by id: that tab alone, a copy too. */
+  onClose: (id: string) => void
   /** Drag-to-reorder (I3, GRO-2235): the tab at `from` lands at final index `to`. */
   onMove: (from: number, to: number) => void
   /** A validated page dropped from the right panel at a tab insertion slot. */
   onDropPage?: (page: PageDrag, at: number) => void
   /** Context-menu equivalent of dragging this tab into the right panel. */
   onMoveToRight?: (path: string) => void
-  /** The menu's "Move to new window" (YAZ-2933): this tab, alone in a window of its own. */
-  onMoveToNewWindow?: (path: string) => void
+  /** The menu's "Move to new window" (YAZ-2933): this tab, alone in a window of its own — its page, and its id to close it here. */
+  onMoveToNewWindow?: (path: string, id: string) => void
   /** History (YAZ-721): the active tab's own back/forward stack has somewhere to go. */
   canBack: boolean
   canForward: boolean
@@ -80,7 +83,7 @@ export interface TabBarProps {
 const SLIDE_MS = 150
 const SLIDE = { '--tab-slide-ms': `${SLIDE_MS}ms` } as CSSProperties
 
-/** A tab that closed, for as long as it slides shut: its label, and the tab it stood before (null: the end). */
+/** A tab that closed, for as long as it slides shut: its label, and the id of the tab it stood before (null: the end). */
 interface Ghost {
   key: number
   label: string
@@ -100,7 +103,8 @@ const Chevron = ({ d }: { d: string }) => (
 )
 
 /**
- * The window tab strip (Tabs I2/I3, GRO-2234/2235): one tab per open file, ViewTabs' tablist
+ * The window tab strip (Tabs I2/I3, GRO-2234/2235): one tab per open tab — two may show one file
+ * (YAZ-2940 D1), each keyed by its own id — ViewTabs' tablist
  * semantics (role=tab, aria-selected). The tabs are pills (YAZ-2656 R40, R41): each has a fill of
  * its own, the active one the brightest, and none joins the page. Labels hide only Markdown's vault
  * extension; view-only labels keep their extension, a folder's is its whole name (YAZ-2290) and
@@ -145,7 +149,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
 
   // THE SLIDE (YAZ-2656 D12, S88). A tab that JOINS the strip slides open: the count grew, and the
   // tab is not the page that filled the blank tab, which stood there already. A page that takes a
-  // tab's place — the preview tab's next page, a rename — is a new element in the same room, and
+  // tab's place — the preview tab's next page, a rename — keeps that tab's id and its room, and
   // does not slide. The class stays on the tab for as long as it stands, so no render in the
   // middle of the slide cuts it; CSS runs it once. A tab that LEAVES is gone from `tabs` at once,
   // so a ghost of it — a label, nothing to act on — slides shut where it stood and is dropped
@@ -156,18 +160,19 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   const ghostKey = useRef(0)
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
   if (tabs.length > last.current.tabs.length && !(last.current.blank && !blank)) {
-    for (const path of tabs) if (!last.current.tabs.includes(path)) slidIn.current.add(path)
+    for (const tab of tabs) if (!last.current.tabs.some((t) => t.id === tab.id)) slidIn.current.add(tab.id)
   }
   useEffect(() => {
     const was = last.current
     last.current = { tabs, blank }
-    for (const path of slidIn.current) if (!tabs.includes(path)) slidIn.current.delete(path)
+    const open = new Set(tabs.map((t) => t.id))
+    for (const id of slidIn.current) if (!open.has(id)) slidIn.current.delete(id)
     // With no motion asked for — and where there is no `matchMedia` to ask — nothing slides shut.
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== false) return
     const gone: Ghost[] = []
     if (tabs.length < was.tabs.length) {
-      was.tabs.forEach((path, i) => {
-        if (!tabs.includes(path)) gone.push({ key: ++ghostKey.current, label: labelOf(path), before: was.tabs.slice(i + 1).find((next) => tabs.includes(next)) ?? null })
+      was.tabs.forEach((tab, i) => {
+        if (!open.has(tab.id)) gone.push({ key: ++ghostKey.current, label: labelOf(tab.path), before: was.tabs.slice(i + 1).find((next) => open.has(next.id))?.id ?? null })
       })
     }
     // The blank tab that went unused; one that a page filled is that page's tab now.
@@ -185,9 +190,9 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
     const pending = timers.current
     return () => pending.forEach(clearTimeout)
   }, [])
-  const ghostsBefore = (path: string | null) =>
+  const ghostsBefore = (id: string | null) =>
     ghosts
-      .filter((ghost) => ghost.before === path)
+      .filter((ghost) => ghost.before === id)
       .map((ghost) => (
         <div key={`ghost:${ghost.key}`} className="tabbar__tab tabbar__tab--out" aria-hidden>
           <span className="tabbar__btn">
@@ -221,7 +226,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
   const externalPage = (event: DragEvent): PageDrag | null => {
     if (drag !== null || onDropPage === undefined || event.dataTransfer === null) return null
     const page = readPageDrag(event.dataTransfer)
-    return page?.owner === 'right' && !tabs.includes(page.path) ? page : null
+    return page?.owner === 'right' && !tabs.some((t) => t.path === page.path) ? page : null
   }
 
   const dropExternal = (event: DragEvent, insertion: number): void => {
@@ -306,26 +311,27 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         {...endSlot}
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
-        {tabs.flatMap((path, i) => {
+        {tabs.flatMap(({ id, path }, i) => {
           // Under the blank tab no tab of the strip is the active one (YAZ-2655).
-          const isActive = !blank && path === active
+          const isActive = !blank && id === active
           const label = labelOf(path)
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
-          if (path === preview) cls.push('tabbar__tab--preview')
-          if (path === lit) cls.push('tabbar__tab--lit')
-          if (slidIn.current.has(path)) cls.push('tabbar__tab--in')
+          if (id === preview) cls.push('tabbar__tab--preview')
+          if (id === lit) cls.push('tabbar__tab--lit')
+          if (slidIn.current.has(id)) cls.push('tabbar__tab--in')
           if (drag !== null && drag.from === i) cls.push('tabbar__tab--dragging')
           // The drop slot: the tab the drop would land before gives way — or the LAST tab, for the end slot.
           if (gap === i) cls.push('tabbar__tab--gap-before')
           if (gap === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--gap-after')
           return [
-            ...ghostsBefore(path),
+            ...ghostsBefore(id),
             <div
-              key={path}
+              key={id}
+              data-tab={id}
               ref={(node) => {
                 if (isActive) activeRef.current = node
-                if (path === lit) litRef.current = node
+                if (id === lit) litRef.current = node
               }}
               className={cls.join(' ')}
               draggable
@@ -360,7 +366,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, path, review: reviewState?.(path) ?? null })
+                setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null })
               }}
             >
               <button
@@ -369,16 +375,16 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
                 className="tabbar__btn"
                 aria-selected={isActive}
                 title={path}
-                onClick={() => onActivate(path)}
-                onDoubleClick={() => onKeep?.(path)}
+                onClick={() => onActivate(id)}
+                onDoubleClick={() => onKeep?.(id)}
                 onAuxClick={(e) => {
                   // Middle-click closes — the browser-tab convention.
-                  if (e.button === 1) onClose(path)
+                  if (e.button === 1) onClose(id)
                 }}
               >
                 <span className="tabbar__label">{label}</span>
               </button>
-              <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => onClose(path)}>
+              <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => onClose(id)}>
                 ✕
               </button>
             </div>,

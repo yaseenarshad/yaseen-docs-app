@@ -5,6 +5,9 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 export interface TabMenuAt {
   x: number
   y: number
+  /** The tab's own id (YAZ-2940 D1): a copy's menu is about that copy. */
+  id: string
+  /** The page it shows: every file action of the menu takes this. */
   path: string
   /** Whether the note is in review; null for a path that is no note in the index, which hides the item. */
   review: boolean | null
@@ -17,8 +20,8 @@ export interface TabMenuProps {
   onClose: () => void
   /** Context-menu equivalent of dragging this tab into the right panel. */
   onMoveToRight?: (path: string) => void
-  /** "Move to new window" (YAZ-2933): the tab leaves for a window of its own. */
-  onMoveToNewWindow?: (path: string) => void
+  /** "Move to new window" (YAZ-2933): the tab leaves for a window of its own — the page by path, and only this tab (by id) closes here (YAZ-2940 S16). */
+  onMoveToNewWindow?: (path: string, id: string) => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
   onSetReview?: (path: string, on: boolean) => void
@@ -55,7 +58,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow
           className="ctx-menu__item"
           role="menuitem"
           onClick={() => {
-            onMoveToNewWindow(menu.path)
+            onMoveToNewWindow(menu.path, menu.id)
             onClose()
           }}
         >

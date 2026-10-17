@@ -9,6 +9,7 @@
  */
 import { rootOfPath, stripSlash } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
+import type { Tab } from '../workspace/useWorkspace'
 
 /** Every length is in px. A page is a sheet of paper, 3:4, big enough to read its first lines. */
 export const BOARD = {
@@ -35,7 +36,9 @@ export const BOARD = {
   stackMin: 4,
 } as const
 
+/** One page of the board: one TAB (YAZ-2940 D1), so two copies of a file are two pages. */
 export interface BoardPage {
+  id: string
   path: string
   label: string
 }
@@ -64,9 +67,9 @@ export interface VaultIslands {
  * and its folders by path, and the pages of an island in the strip's order. `terms` is the filter,
  * lowercased: a page stays when its title or its path inside the vault holds every one.
  */
-export function buildBoard(tabs: readonly string[], roots: readonly string[], vaultNames: readonly string[], labelOf: (path: string) => string, terms: readonly string[] = []): VaultIslands[] {
+export function buildBoard(tabs: readonly Tab[], roots: readonly string[], vaultNames: readonly string[], labelOf: (path: string) => string, terms: readonly string[] = []): VaultIslands[] {
   const vaults = new Map<number, Map<string, Island>>()
-  for (const path of tabs) {
+  for (const { id, path } of tabs) {
     const root = rootOfPath(roots, path)
     const label = labelOf(path)
     const hay = `${label}\n${root === null ? path : relTo(root, path)}`.toLowerCase()
@@ -78,7 +81,7 @@ export function buildBoard(tabs: readonly string[], roots: readonly string[], va
     vaults.set(at, islands)
     const island = islands.get(dir) ?? { dir, top, label: root === null ? dir : top ? (vaultNames[at] ?? '') : relTo(root, dir).split('/').join(' / '), pages: [] }
     islands.set(dir, island)
-    island.pages.push({ path, label })
+    island.pages.push({ id, path, label })
   }
   return [...vaults]
     .sort(([a], [b]) => a - b)

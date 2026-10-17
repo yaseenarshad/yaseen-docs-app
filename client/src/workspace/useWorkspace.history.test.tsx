@@ -1,10 +1,14 @@
 /**
- * Per-tab back/forward history (YAZ-721, ruling D1): a path-keyed side table on `TabsState`,
+ * Per-tab back/forward history (YAZ-721, ruling D1): a side table on `TabsState`, keyed by tab id (YAZ-2940 D1),
  * renderer-only and session-only. These tests are the contract; the reducer must satisfy
  * them without changing the existing main-tab reducer expectations beyond `history: {}`.
  */
 import { describe, expect, it } from 'vitest'
-import { tabsReducer, type TabsState } from './useWorkspace'
+import { pathTabsReducer, type PathTabs } from './testTabs'
+
+// Read by path (`testTabs.ts`): with no copies, a path names one tab, and the stacks are keyed by tab id (YAZ-2940 D1).
+const tabsReducer = pathTabsReducer
+type TabsState = PathTabs
 
 const A = '/v/a.md'
 const B = '/v/b.md'

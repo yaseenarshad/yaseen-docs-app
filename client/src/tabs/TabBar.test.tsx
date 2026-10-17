@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { TabBar, type TabBarProps } from './TabBar'
+import { TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
@@ -24,6 +24,12 @@ const reveal = vi.mocked(api.shell.reveal)
 const openVsCode = vi.mocked(api.shell.openVsCode)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** These tests name each tab by its path: with no copies, a tab's id here is its path (YAZ-2940 D1). */
+type TabBarProps = Omit<IdTabBarProps, 'tabs'> & { tabs: readonly string[] }
+function TabBar({ tabs, ...props }: TabBarProps) {
+  return <IdTabBar tabs={tabs.map((path) => ({ id: path, path }))} {...props} />
+}
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -751,5 +757,28 @@ describe('the widths of the tabs (YAZ-2689)', () => {
   it('S9: a tab slides open and shut on the most that it can be wide, since its width is its name\'s', () => {
     expect(tabsCss).toMatch(/@keyframes tab-in\s*\{\s*from\s*\{[^}]*max-width:\s*0;/)
     expect(tabsCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/flex-basis/)
+  })
+})
+
+describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
+  it('shows each copy as its own tab, marks only the active copy, and names the tab by id for ✕, a click and the menu — the file by path', () => {
+    const onActivate = vi.fn()
+    const onClose = vi.fn()
+    const onMoveToNewWindow = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const tabs = [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} tabs={tabs} active="t3" onActivate={onActivate} onClose={onClose} onMove={vi.fn()} onMoveToNewWindow={onMoveToNewWindow} {...noNav} />))
+    const el = container
+    expect([...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)).toEqual(['t1', 't2', 't3'])
+    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['a', 'true']])
+    act(() => el.querySelector<HTMLButtonElement>('[data-tab="t1"] [role="tab"]')?.click())
+    expect(onActivate).toHaveBeenCalledWith('t1')
+    act(() => el.querySelector<HTMLButtonElement>('[data-tab="t3"] .tabbar__close')?.click())
+    expect(onClose).toHaveBeenCalledWith('t3')
+    act(() => void el.querySelector('[data-tab="t3"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Move to new window')?.click())
+    expect(onMoveToNewWindow).toHaveBeenCalledWith('/v/a.md', 't3')
   })
 })

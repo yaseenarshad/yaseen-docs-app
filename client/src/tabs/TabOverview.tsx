@@ -3,6 +3,7 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import { readPageDrag, writePageDrag } from '../workspace/pageDrag'
+import { storedTabs, type Tab } from '../workspace/useWorkspace'
 import { BOARD, buildBoard, islandCols, nearest, stackedIslands, withoutTitle, type Island, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
 import { TabMenu, type TabMenuAt } from './TabMenu'
@@ -16,28 +17,28 @@ export interface TabOverviewProps {
   /** The vaults of the window, and the name the app gives each: pages stand on islands by vault, then by folder (D7). */
   roots: readonly string[]
   vaultNames: readonly string[]
-  /** Open tabs, absolute paths, left→right: one page each. */
-  tabs: readonly string[]
-  /** The active tab: its page is marked, the highlight starts on it, and the zoom goes out of it and into it. */
+  /** Open tabs, left→right: one page each — two copies of a file are two pages (YAZ-2940 D1). Keys, the highlight and the pick use the id; labels and file calls the path. */
+  tabs: readonly Tab[]
+  /** The active tab's id: its page is marked, the highlight starts on it, and the zoom goes out of it and into it. */
   active: string | null
-  /** The preview tab (D1): its page's title is italic, as its tab's label is. */
+  /** The preview tab's id (D1): its page's title is italic, as its tab's label is. */
   preview: string | null
   /** The window's titles (YAZ-2420 🔒 D14): a page is named as its tab is. */
   titles: PathTitles
   /** App is on its way to the active tab's page: the board zooms into that page, and says so `ZOOM_MS` later. */
   leaving?: boolean
   onLeft?: () => void
-  /** A click on a page, Enter on the highlighted one: App goes to that tab. */
-  onOpen: (path: string) => void
-  /** A page's ✕, an island's ✕: the tabs close and the board stays. */
-  onCloseTabs: (paths: string[]) => void
+  /** A click on a page, Enter on the highlighted one: App goes to that tab (by id). */
+  onOpen: (id: string) => void
+  /** A page's ✕, an island's ✕: the tabs (by id) close and the board stays. */
+  onCloseTabs: (ids: string[]) => void
   /** Esc: back to the page. */
   onDismiss: () => void
   /** "Kill all tabs" (YAZ-2739): App asks first, then closes every tab of the window. Absent, the board has no such button. */
   onKillAll?: () => void
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. A page dropped on the board's right edge takes the first. */
   onMoveToRight?: (path: string) => void
-  onMoveToNewWindow?: (path: string) => void
+  onMoveToNewWindow?: (path: string, id: string) => void
   onShowInSidebar?: (path: string) => void
   onNotice?: (message: string) => void
   reviewState?: (path: string) => boolean | null
@@ -123,11 +124,11 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const [islandMenu, setIslandMenu] = useState<{ x: number; y: number; dir: string } | null>(null)
   /** The menu of the picked pages, opened on one of them. */
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number } | null>(null)
-  /** The pages picked with shift-click. The board's own, for as long as it is open. */
+  /** The pages (tab ids) picked with shift-click. The board's own, for as long as it is open. */
   const [picked, setPicked] = useState<ReadonlySet<string>>(NONE)
   /** Space is down on a highlighted page. */
   const [peeking, setPeeking] = useState(false)
-  /** The page a drag carries, and whether it is over the board's drop area. */
+  /** The page (tab id) a drag carries, and whether it is over the board's drop area. */
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropOver, setDropOver] = useState(false)
   /** The filter box was the last thing used: Space then types a space (see `onKeyDown`). */
@@ -141,8 +142,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const inputRef = useRef<HTMLInputElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const isFolder = useFolderPaths(roots)
-  const linesOf = useTabHeads(tabs)
+  // The heads are a file's, read once for all its copies.
+  const linesOf = useTabHeads(storedTabs(tabs))
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
+  const paths = new Map(tabs.map((t) => [t.id, t.path]))
+  /** The folder of a tab's page: the island it stands on. */
+  const dirOf = (id: string): string => dirname(paths.get(id) ?? '')
 
   // Built on every render, on purpose: at most a tab strip of pages, arithmetic only, and the labels
   // then follow the titles and the trees with nothing to keep in step. No element is measured here.
@@ -150,7 +155,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const board = buildBoard(tabs, roots, vaultNames, labelOf, terms)
   const many = roots.length > 1
   const islands = new Map<string, Island>(board.flatMap((vault) => vault.islands.map((island) => [island.dir, island])))
-  const activeDir = active === null ? null : dirname(active)
+  const activeDir = active === null || !paths.has(active) ? null : dirOf(active)
   // Text in the filter spreads every island: a match must be on show.
   const stacked =
     terms.length > 0
@@ -163,29 +168,29 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         )
   const stackedKey = [...stacked].join('\n')
 
-  /** The pages of the board, in reading order: a page inside a stack too. */
-  const shown = board.flatMap((vault) => vault.islands.flatMap((island) => island.pages.map((page) => page.path)))
-  // The highlight is a path. When its page goes — closed, or filtered out — the page that took its place has it.
+  /** The pages of the board (tab ids), in reading order: a page inside a stack too. */
+  const shown = board.flatMap((vault) => vault.islands.flatMap((island) => island.pages.map((page) => page.id)))
+  // The highlight is a tab id. When its page goes — closed, or filtered out — the page that took its place has it.
   const at = cursor === null ? -1 : shown.indexOf(cursor)
   const lastAt = useRef(0)
   if (at !== -1) lastAt.current = at
   const current = at !== -1 ? cursor : (shown[Math.min(lastAt.current, shown.length - 1)] ?? null)
   /** The id of every stop, a page (`p:`) or a stack (`s:`): the filter box names the highlighted one to a reader. */
   const stopIds = new Map<string, string>()
-  shown.forEach((path, i) => stopIds.set(`p:${path}`, `${listId}-p${i}`))
+  shown.forEach((id, i) => stopIds.set(`p:${id}`, `${listId}-p${i}`))
   ;[...islands.keys()].forEach((dir, i) => stopIds.set(`s:${dir}`, `${listId}-s${i}`))
-  const currentStop = current === null ? undefined : stopIds.get(stacked.has(dirname(current)) ? `s:${dirname(current)}` : `p:${current}`)
+  const currentStop = current === null ? undefined : stopIds.get(stacked.has(dirOf(current)) ? `s:${dirOf(current)}` : `p:${current}`)
 
   /** What the arrows walk: the pages on show and the stacks, as elements in reading order. */
-  const stops = (): HTMLElement[] => Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('[data-path], [data-stack]') ?? [])
-  /** The stop that shows `path`: its page, or the stack its island is. */
-  const stopOf = (els: readonly HTMLElement[], path: string): number => els.findIndex((el) => el.dataset.path === path || el.dataset.stack === dirname(path))
+  const stops = (): HTMLElement[] => Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('[data-tab], [data-stack]') ?? [])
+  /** The stop that shows the tab `id`: its page, or the stack its island is. */
+  const stopOf = (els: readonly HTMLElement[], id: string): number => els.findIndex((el) => el.dataset.tab === id || el.dataset.stack === dirOf(id))
   const spreadIsland = (dir: string): void => setSpread((now) => (now.has(dir) ? now : new Set([...now, dir])))
   // A picked page that was closed, from here or from anywhere, leaves the pick.
-  const pick = tabs.filter((path) => picked.has(path))
-  const togglePick = (path: string): void => setPicked((now) => new Set(now.has(path) ? [...now].filter((one) => one !== path) : [...now, path]))
+  const pick = tabs.filter((t) => picked.has(t.id)).map((t) => t.id)
+  const togglePick = (id: string): void => setPicked((now) => new Set(now.has(id) ? [...now].filter((one) => one !== id) : [...now, id]))
   const closePick = (others: boolean): void => {
-    onCloseTabs(others ? tabs.filter((path) => !picked.has(path)) : pick)
+    onCloseTabs(others ? tabs.filter((t) => !picked.has(t.id)).map((t) => t.id) : pick)
     setPicked(NONE)
   }
   const anyMenu = pageMenu !== null || islandMenu !== null || pickMenu !== null
@@ -196,7 +201,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   useEffect(() => () => setBoardHighlight(null), [])
   // What the peek shows: the highlighted page while Space is down, and the same page while it shrinks away.
   if (peeking && current !== null) lastPeek.current = current
-  const peekPath = lastPeek.current !== null && tabs.includes(lastPeek.current) ? lastPeek.current : null
+  const peekPath = lastPeek.current === null ? null : (paths.get(lastPeek.current) ?? null)
 
   // The board's area, read when the board mounts and when its box changes — never on a keystroke
   // or a hover. The box is the scroller's, which the window sizes and the pages do not, so what
@@ -284,7 +289,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       setDragging(null)
       setDropOver(false)
     }
-    if (!tabs.includes(dragging)) return end()
+    if (!paths.has(dragging)) return end()
     window.addEventListener('dragend', end)
     window.addEventListener('drop', end)
     return () => {
@@ -348,7 +353,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     // The arrows never rest on a stack: walking onto one spreads it.
     const dir = to.dataset.stack
     if (dir !== undefined) spreadIsland(dir)
-    setCursor(dir !== undefined ? (islands.get(dir)?.pages[0].path ?? current) : (to.dataset.path ?? current))
+    setCursor(dir !== undefined ? (islands.get(dir)?.pages[0].id ?? current) : (to.dataset.tab ?? current))
   }
 
   const menuOn = (e: MouseEvent, open: () => void): void => {
@@ -426,7 +431,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                 const isStack = stacked.has(island.dir)
                 const cut = island.label.lastIndexOf(' / ')
                 // A stack shows the page the user came from when it holds it, else its first.
-                const top = island.pages.find((page) => page.path === active) ?? island.pages[0]
+                const top = island.pages.find((page) => page.id === active) ?? island.pages[0]
                 return (
                   <div key={island.dir} className="taboverview__island" role="group" aria-label={island.label}>
                     <div
@@ -439,7 +444,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                         <span className="taboverview__island-leaf">{island.label.slice(cut === -1 ? 0 : cut + 3)}</span>
                       </span>
                       <span className="taboverview__island-count">{count}</span>
-                      <button type="button" className="taboverview__island-close" aria-label={`Close ${tabCount(count)}: ${island.label}`} title={`Close ${tabCount(count)}`} onClick={() => onCloseTabs(island.pages.map((page) => page.path))}>
+                      <button type="button" className="taboverview__island-close" aria-label={`Close ${tabCount(count)}: ${island.label}`} title={`Close ${tabCount(count)}`} onClick={() => onCloseTabs(island.pages.map((page) => page.id))}>
                         ✕
                       </button>
                     </div>
@@ -449,58 +454,60 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                         className="taboverview__stack"
                         id={stopIds.get(`s:${island.dir}`)}
                         role="option"
-                        aria-selected={current !== null && dirname(current) === island.dir}
+                        aria-selected={current !== null && dirOf(current) === island.dir}
                         data-stack={island.dir}
                         aria-label={`Spread ${island.label}: ${tabCount(count)}`}
                         title={`Show the ${tabCount(count)}`}
                         onClick={() => spreadIsland(island.dir)}
                         // The pointer on a stack highlights the page it shows, and spreads nothing: Space peeks that page (D13).
                         onMouseMove={() => {
-                          if (top.path === current) return
+                          if (top.id === current) return
                           typed.current = false
-                          setCursor(top.path)
+                          setCursor(top.id)
                         }}
                       >
                         {count > 2 && <span className="taboverview__sheet taboverview__sheet--far" />}
                         <span className="taboverview__sheet" />
-                        <span className={`taboverview__page${top.path === active ? ' taboverview__page--active' : ''}${top.path === preview ? ' taboverview__page--preview' : ''}${current !== null && dirname(current) === island.dir ? ' taboverview__page--current' : ''}`}>
+                        <span className={`taboverview__page${top.id === active ? ' taboverview__page--active' : ''}${top.id === preview ? ' taboverview__page--preview' : ''}${current !== null && dirOf(current) === island.dir ? ' taboverview__page--current' : ''}`}>
                           <PageFace label={top.label} lines={withoutTitle(linesOf(top.path), top.label)} />
                         </span>
                       </button>
                     ) : (
                       <div className="taboverview__pages" style={{ gridTemplateColumns: `repeat(${islandCols(count, area?.w ?? Infinity)}, var(--tab-page-w))` }}>
-                        {island.pages.map(({ path, label }) => {
+                        {island.pages.map(({ id, path, label }) => {
                           const cls = ['taboverview__page']
-                          if (path === active) cls.push('taboverview__page--active')
-                          if (path === preview) cls.push('taboverview__page--preview')
-                          if (path === current) cls.push('taboverview__page--current')
-                          if (picked.has(path)) cls.push('taboverview__page--picked')
-                          if (path === dragging) cls.push('taboverview__page--dragging')
+                          if (id === active) cls.push('taboverview__page--active')
+                          if (id === preview) cls.push('taboverview__page--preview')
+                          if (id === current) cls.push('taboverview__page--current')
+                          if (picked.has(id)) cls.push('taboverview__page--picked')
+                          if (id === dragging) cls.push('taboverview__page--dragging')
                           return (
                             <div
-                              key={path}
+                              key={id}
                               className={cls.join(' ')}
-                              id={stopIds.get(`p:${path}`)}
+                              id={stopIds.get(`p:${id}`)}
                               role="option"
-                              aria-selected={path === current}
-                              aria-current={path === active ? 'page' : undefined}
+                              aria-selected={id === current}
+                              aria-current={id === active ? 'page' : undefined}
+                              // The stops are found by tab id; the page's file stays readable for the e2e specs.
+                              data-tab={id}
                               data-path={path}
                               title={path}
                               // Shift is the selection gesture and nothing else, as on a sidebar row: it picks, and never opens.
-                              onClick={(e) => (e.shiftKey ? togglePick(path) : onOpen(path))}
+                              onClick={(e) => (e.shiftKey ? togglePick(id) : onOpen(id))}
                               // On one of two or more picked pages the menu is the pick's; on any other page, the tab's.
-                              onContextMenu={(e) => menuOn(e, () => (picked.has(path) && pick.length > 1 ? setPickMenu({ x: e.clientX, y: e.clientY }) : setPageMenu({ x: e.clientX, y: e.clientY, path, review: reviewState?.(path) ?? null })))}
+                              onContextMenu={(e) => menuOn(e, () => (picked.has(id) && pick.length > 1 ? setPickMenu({ x: e.clientX, y: e.clientY }) : setPageMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null })))}
                               // A move of the pointer, never a page that scrolled under it.
                               onMouseMove={() => {
-                                if (path === current) return
+                                if (id === current) return
                                 typed.current = false
-                                setCursor(path)
+                                setCursor(id)
                               }}
                               // The strip's own payload (`pageDrag`), so the right panel takes a page as it takes a tab.
                               draggable
                               onDragStart={(e) => {
                                 if (e.dataTransfer) writePageDrag(e.dataTransfer, { path, owner: 'main' })
-                                setDragging(path)
+                                setDragging(id)
                               }}
                             >
                               <PageFace label={label} lines={withoutTitle(linesOf(path), label)} />
@@ -511,7 +518,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                                 title={`Close ${label}`}
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  onCloseTabs([path])
+                                  onCloseTabs([id])
                                 }}
                               >
                                 ✕
@@ -544,16 +551,16 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           e.preventDefault()
           // The drag's own payload says which page; a drag with none (jsdom) is the one that started here.
           const page = e.dataTransfer ? readPageDrag(e.dataTransfer) : null
-          const path = page?.owner === 'main' ? page.path : dragging
+          const path = page?.owner === 'main' ? page.path : paths.get(dragging)
           setDragging(null)
           setDropOver(false)
-          onMoveToRight?.(path)
+          if (path !== undefined) onMoveToRight?.(path)
         }}
       >
         Drop here to open it beside your page
       </div>
       {/* The peek: the highlighted page at a size to read, while Space is held. It is not a page of the board: nothing in it is clicked. */}
-      <div className={`taboverview__peek${peeking && current !== null ? ' taboverview__peek--on' : ''}${peekPath !== null && peekPath === preview ? ' taboverview__page--preview' : ''}`} aria-hidden={!peeking}>
+      <div className={`taboverview__peek${peeking && current !== null ? ' taboverview__peek--on' : ''}${peekPath !== null && lastPeek.current === preview ? ' taboverview__page--preview' : ''}`} aria-hidden={!peeking}>
         {peekPath !== null && <PageFace label={labelOf(peekPath)} lines={withoutTitle(linesOf(peekPath), labelOf(peekPath))} />}
       </div>
       {/* The pick's bar: only while pages are picked. Both closes drop the pick and leave the board open. */}
@@ -632,7 +639,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
             className="ctx-menu__item"
             role="menuitem"
             onClick={() => {
-              onCloseTabs(menuIsland.pages.map((page) => page.path))
+              onCloseTabs(menuIsland.pages.map((page) => page.id))
               setIslandMenu(null)
             }}
           >

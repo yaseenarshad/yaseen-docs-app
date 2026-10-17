@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileHead } from '@shared/types'
-import { TabOverview, ZOOM_MS, type TabOverviewProps } from './TabOverview'
+import { TabOverview as IdTabOverview, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
 import { withoutTitle } from './board'
 import { boardHighlight } from './boardHighlight'
 import { _resetTabHeads, plainLines } from './useTabHeads'
@@ -21,6 +21,12 @@ import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** These tests name each page by its path: with no copies, a tab's id here is its path (YAZ-2940 D1). */
+type TabOverviewProps = Omit<IdTabOverviewProps, 'tabs'> & { tabs: readonly string[] }
+function TabOverview({ tabs, ...props }: TabOverviewProps) {
+  return <IdTabOverview tabs={tabs.map((path) => ({ id: path, path }))} {...props} />
+}
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -45,7 +51,7 @@ async function mount(over: Partial<TabOverviewProps> = {}) {
 const texts = (el: ParentNode, selector: string) => [...el.querySelectorAll(selector)].map((node) => node.textContent)
 const current = (el: HTMLElement) => el.querySelector('.taboverview__page--current .taboverview__title')?.textContent
 const filter = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.taboverview__filter')!
-const page = (el: HTMLElement, path: string) => [...el.querySelectorAll<HTMLElement>('[data-path]')].find((node) => node.dataset.path === path)
+const page = (el: HTMLElement, path: string) => [...el.querySelectorAll<HTMLElement>('[data-tab]')].find((node) => node.dataset.tab === path)
 const island = (el: HTMLElement, label: string) => el.querySelector<HTMLElement>(`[role="group"][aria-label="${label}"]`)!
 const key = (el: HTMLElement, k: string) => act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })))
 /** A key pressed in the filter box; answers whether the board took it (so the box does not type it). */
@@ -170,7 +176,7 @@ describe('TabOverview', () => {
       expect(stacks()).toEqual(['/v/Projects'])
       // The stack shows its count on the label and one page's face; its pages are not on the board.
       expect(island(el, 'Projects').querySelector('.taboverview__island-count')?.textContent).toBe('4')
-      expect(texts(el, '[data-path] .taboverview__title')).toEqual(['a', '2026-10-08'])
+      expect(texts(el, '[data-tab] .taboverview__title')).toEqual(['a', '2026-10-08'])
       // → from the active page walks onto the stack: it spreads, and the highlight is its first page.
       key(el, 'ArrowRight')
       expect(stacks()).toEqual([])
