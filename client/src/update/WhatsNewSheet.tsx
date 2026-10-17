@@ -58,6 +58,17 @@ function shortDate(iso: string, withYear = true): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { ...(withYear ? { year: 'numeric' } : {}), month: 'short', day: 'numeric' })
 }
 
+/**
+ * D17: a row's short title. The releases name several features with " / " ("Tab Names / Copies Keep
+ * Your Place / Table of Contents Stays Off"), so a row shows the first one and how many more:
+ * "Tab Names +2 more". One feature shows as it is; the row cuts a long one with an ellipsis.
+ */
+export function shortTitle(title: string): string {
+  const parts = title.split(' / ').map((p) => p.trim()).filter((p) => p !== '')
+  if (parts.length <= 1) return title.trim()
+  return `${parts[0]} +${parts.length - 1} more`
+}
+
 /** A release's year, the list's group heading (D15); '' for an unreadable date. */
 function yearOf(iso: string): string {
   const date = new Date(iso)
@@ -195,9 +206,9 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
           <div className="whats-new__columns">
             <div className="whats-new__list" role="listbox" aria-label="Releases" tabIndex={0} aria-activedescendant={optionId(index)} onKeyDown={onListKeyDown}>
               {/*
-                D15 (Yasin: "remove the version numbers but maybe keep the date on the right but maybe remove
-                the year"): a row is the release's title, wrapped, with "Oct 17" on the right; the years are
-                the group headings, each once. The version stays in the notes' meta line.
+                D15, D17 (Yasin: "maybe we should put the version numbers and then ... instead of having it wrap,
+                we just put like a little bit of the title"): a row is the version and "Oct 17" on one line, and
+                the short title on one line under it; the years are the group headings, each once.
               */}
               {groupByYear(releases).map(([year, group]) => (
                 <div key={year} role="group" aria-label={year === '' ? 'Releases' : year}>
@@ -212,9 +223,14 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
                     return (
                       <div key={note.version} id={optionId(i)} role="option" aria-selected={i === index} data-version={note.version} className={`whats-new__row${isCurrent ? ' whats-new__row--current' : ''}`} onClick={() => setPicked(note.version)}>
                         <span className="whats-new__row-head">
-                          <span className="whats-new__row-title">{bareTitle(note) || note.version}</span>
+                          <span className="whats-new__row-version">{note.version}</span>
                           <span className="whats-new__row-date">{shortDate(note.date, false)}</span>
                         </span>
+                        {bareTitle(note) !== '' && (
+                          <span className="whats-new__row-title" title={bareTitle(note)}>
+                            {shortTitle(bareTitle(note))}
+                          </span>
+                        )}
                         {(isLatest || isCurrent) && (
                           <span className="whats-new__tags">
                             {isLatest && <span className="whats-new__tag whats-new__tag--latest">Latest</span>}

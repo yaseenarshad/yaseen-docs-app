@@ -82,7 +82,7 @@
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-/* D10, D15: the title on the row, wrapped, with a short date on the right; the year is the group's heading. */
+/* D10, D15, D17: the version and a short date on one line, the short title on one line under it; the year is the group's heading. */
 .whats-new__year {
   margin: 10px 16px 4px;
   font-size: 11px;
@@ -153,12 +153,10 @@
   min-width: 0;
 }
 
-.whats-new__row-title {
+.whats-new__row-version {
   flex: 1 1 auto;
-  min-width: 0;
   font-size: 13px;
-  line-height: 1.35;
-  color: var(--fg);
+  font-weight: 600;
 }
 
 .whats-new__row-date {
@@ -168,8 +166,16 @@
   white-space: nowrap;
 }
 
+.whats-new__row-title {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .whats-new__row[aria-selected='true'] .whats-new__row-title {
-  font-weight: 600;
+  color: var(--fg);
 }
 
 .whats-new__tags {

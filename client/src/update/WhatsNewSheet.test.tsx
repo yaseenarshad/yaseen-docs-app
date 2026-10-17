@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ReleaseNote, ReleaseNotes, UpdateState } from '@shared/types'
-import WhatsNewSheet from './WhatsNewSheet'
+import WhatsNewSheet, { shortTitle } from './WhatsNewSheet'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -57,6 +57,14 @@ const key = (target: Element, k: string) => {
   return e
 }
 
+describe('shortTitle (D17)', () => {
+  it('keeps one feature as it is, and turns several into the first one and a count', () => {
+    expect(shortTitle('Scroll Without the Pop-Up')).toBe('Scroll Without the Pop-Up')
+    expect(shortTitle('Tab Names / Copies Keep Your Place / Table of Contents Stays Off')).toBe('Tab Names +2 more')
+    expect(shortTitle('A / B')).toBe('A +1 more')
+  })
+})
+
 describe('WhatsNewSheet: the ✕ at the top right (D16)', () => {
   it('closes the sheet, like Esc and Later', async () => {
     const { onClose } = await render({ kind: 'ready', version: '1.0.14' })
@@ -68,12 +76,12 @@ describe('WhatsNewSheet: the ✕ at the top right (D16)', () => {
 })
 
 describe('WhatsNewSheet: the list of releases (D10)', () => {
-  it('lists every release newest first: the title without its version (or the version when there is none), a date with no year, and the year once (D15)', async () => {
+  it('lists every release newest first: the version, a date with no year, the short title, and the year once (D15, D17)', async () => {
     const { rows } = await render({ kind: 'idle' })
     expect(rows().map((r) => r.getAttribute('data-version'))).toEqual(['1.0.14', '1.0.13', '1.0.12'])
-    expect(rows().map((r) => r.querySelector('.whats-new__row-title')?.textContent)).toEqual(['Faster tabs', '1.0.13', 'Tab names'])
-    // D15: no version on a row that has a title, a short date with no year, and the year once as the heading
-    expect(rows()[0].textContent).not.toContain('1.0.14')
+    expect(rows().map((r) => r.querySelector('.whats-new__row-title')?.textContent ?? null)).toEqual(['Faster tabs', null, 'Tab names'])
+    // D17: the version leads each row; D15: a short date with no year, and the year once as the heading
+    expect(rows().map((r) => r.querySelector('.whats-new__row-version')?.textContent)).toEqual(['1.0.14', '1.0.13', '1.0.12'])
     expect(rows()[0].querySelector('.whats-new__row-date')?.textContent).not.toMatch(/2026/)
     expect([...document.querySelectorAll('.whats-new__year')].map((y) => y.textContent)).toEqual(['2026'])
     expect(rows()[0].getAttribute('role')).toBe('option')
