@@ -205,6 +205,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
    * download goes first, the `.dmg` goes after staging, and a failed one leaves nothing behind.
    */
   const download = async (version: string, asset: { url: string; sha256: string }, requirement: string): Promise<void> => {
+    await swept
     await rm(updates, { recursive: true, force: true })
     await mkdir(updates, { recursive: true })
     const part = join(updates, `${version}.dmg.part`)
@@ -289,6 +290,9 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     return state
   }
 
+  /** `start()`'s delete of what an earlier launch left; a download waits for it. */
+  let swept: Promise<unknown> = Promise.resolve()
+
   let running: Promise<UpdateState> | null = null
   const check = (): Promise<UpdateState> => {
     if (state.kind === 'downloading' || state.kind === 'ready') return Promise.resolve(state)
@@ -317,6 +321,9 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
         // nothing refused
       }
       if (!host.isPackaged && host.feed === undefined) return // S7
+      // S11 across launches: no launch starts `ready`, so a `.part` of a quit download (S12) and a
+      // `<bundle>.update` that a crash or a failed swap (S23) left are waste. In the background.
+      if (host.platform === 'darwin' && host.isPackaged) swept = Promise.all([rm(updates, { recursive: true, force: true }), rm(staged, { recursive: true, force: true })]).catch(() => undefined)
       // S3: a failed timer check is silent to the user; the log is for us.
       const quiet = (): void => void check().catch((err: unknown) => console.error(`[update] check failed: ${String(err)}`))
       setTimeout(() => {

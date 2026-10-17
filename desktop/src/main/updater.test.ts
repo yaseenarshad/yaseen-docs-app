@@ -4,7 +4,7 @@
  * `updater.codesign.test.ts` run the real shell and the real tools on temp folders.
  */
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -356,6 +356,33 @@ describe('update-refused at start (YAZ-2986)', () => {
       expect(updater.state()).toEqual({ kind: 'idle' })
       expect(existsSync(join(userData, 'update-refused'))).toBe(false)
     }
+  })
+})
+
+describe('start deletes what an earlier launch left (S11, S12, S23)', () => {
+  beforeEach(() => void vi.useFakeTimers())
+
+  const leftovers = async () => {
+    await mkdir(join(userData, 'updates'), { recursive: true })
+    await writeFile(join(userData, 'updates', '1.0.13.dmg.part'), 'a download that a quit stopped')
+    await mkdir(`${bundle}.update/Contents`, { recursive: true })
+  }
+
+  it('a packaged Mac copy deletes <userData>/updates and <bundle>.update in the background', async () => {
+    await leftovers()
+    fake().updater.start()
+    await vi.waitFor(() => expect([existsSync(join(userData, 'updates')), existsSync(`${bundle}.update`)]).toEqual([false, false]))
+    expect(existsSync(bundle)).toBe(true)
+  })
+
+  it.each([
+    ['Windows', { platform: 'win32' as const }],
+    ['an e2e run (unpackaged, with a feed)', { isPackaged: false }],
+  ])('%s touches nothing', async (_case, overrides) => {
+    await leftovers()
+    fake({ overrides }).updater.start()
+    for (let i = 0; i < 50; i++) await readdir(dir) // real file I/O: far more round trips than a delete of the two would need
+    expect([existsSync(join(userData, 'updates')), existsSync(`${bundle}.update`)]).toEqual([true, true])
   })
 })
 
