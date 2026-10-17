@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
 import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
@@ -43,6 +43,7 @@ import { type SidebarClipboard, type SidebarMenuRequest, Sidebar } from './sideb
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { TabOverview } from './tabs/TabOverview'
+import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
 import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
@@ -50,6 +51,9 @@ import type { PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
+
+/** The "What's new" window (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
+const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
 function syncHash(path: string | null): void {
@@ -570,6 +574,14 @@ export function App() {
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
+  // The updater (YAZ-2976): the sidebar's pill (D4) and Help › What's New… (D8) open the ONE
+  // "What's new" window, App's for the same reason as the settings dialog. Closing it leaves the
+  // pill (S19): the pill follows the state, never the window.
+  const update = useUpdate()
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false)
+  const openWhatsNew = useCallback(() => setWhatsNewOpen(true), [])
+  const closeWhatsNew = useCallback(() => setWhatsNewOpen(false), [])
+
   // Upkeep review (YAZ-2322): each vault counts what is due and can hold a session, and the window
   // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
   // because the sidebar that shows the count unmounts while collapsed.
@@ -804,7 +816,7 @@ export function App() {
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
   // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322). ⌘W on the blank tab
   // closes it alone (YAZ-2655 S75): that is `closeActive`'s own rule.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onNewWindow: newWindow, onZoom: requestZoom })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onNewWindow: newWindow, onZoom: requestZoom, onWhatsNew: openWhatsNew })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the row of the new tab page that the keyboard is on
@@ -1290,6 +1302,11 @@ export function App() {
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined }} onClose={closeSettings} />}
+      {whatsNewOpen && (
+        <Suspense fallback={null}>
+          <WhatsNewSheet update={update} onClose={closeWhatsNew} />
+        </Suspense>
+      )}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -1358,6 +1375,8 @@ export function App() {
           settings={settings}
           onChangeSettings={changeSettings}
           onOpenSettings={openSettings}
+          update={update}
+          onOpenWhatsNew={openWhatsNew}
           onRootMissing={dropVault}
           onFileMissing={onFileMissing}
           onRenameFile={requestPathRename}

@@ -232,6 +232,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
     onOpenSettings: vi.fn(),
+    // No update (YAZ-2976 D4): the footer shows only the cog.
+    update: { kind: 'idle' },
+    onOpenWhatsNew: vi.fn(),
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
@@ -6027,6 +6030,21 @@ describe('settings cog (YAZ-1679)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.settings-button')?.click())
     expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
     expect(props.onChangeSettings).not.toHaveBeenCalled()
+  })
+})
+
+describe('update pill (YAZ-2976 D4)', () => {
+  it('sits after the cog in the footer, and its click asks App for the "What\'s new" window', async () => {
+    const { el, props } = await mount({ update: { kind: 'ready', version: '1.0.13' } })
+    const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
+    expect(footer).toEqual(['settings-button', 'update-pill'])
+    act(() => el.querySelector<HTMLButtonElement>('.update-pill')?.click())
+    expect(props.onOpenWhatsNew).toHaveBeenCalledTimes(1)
+  })
+
+  it('no update, no pill: the footer has the cog alone', async () => {
+    const { el } = await mount()
+    expect(el.querySelector('.update-pill')).toBeNull()
   })
 })
 

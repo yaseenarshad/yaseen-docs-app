@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import { SIDEBAR_TABS, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode } from '@shared/types'
+import { SIDEBAR_TABS, stripSlash, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type TreeNode, type UpdateState } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { ChevronsIcon, EyeIcon, HeartIcon, SearchIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -18,6 +18,7 @@ import { ContextMenu } from './ContextMenu'
 import { folderShortcuts } from './folderShortcuts'
 import { datedSeed, targetDirFor, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
+import { UpdatePill } from '../update/UpdatePill'
 import { buildMenuSections } from './menuSections'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind } from '../lib/notice'
@@ -137,6 +138,10 @@ interface SidebarProps {
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
+  /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
+  update: UpdateState
+  /** The pill's click: App mounts the "What's new" window (D5), as it does the settings dialog. */
+  onOpenWhatsNew: () => void
   /** A vault's folder could not be read (e.g. deleted): which one; parent decides what to do. */
   onRootMissing: (root: string) => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -430,6 +435,8 @@ export function Sidebar({
   settings,
   onChangeSettings,
   onOpenSettings,
+  update,
+  onOpenWhatsNew,
   onRootMissing,
   onFileMissing,
   onRenameFile,
@@ -1312,6 +1319,7 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} />
+        <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       {menu !== null && (
         <ContextMenu
