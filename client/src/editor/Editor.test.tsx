@@ -12,7 +12,7 @@ import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
-import type { FileResponse, IndexRecord, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
+import type { FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
@@ -20,6 +20,7 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
 import { announceTwinSave } from '../lib/twinEditors'
+import { readPageView } from '../lib/pageView'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -69,6 +70,8 @@ vi.mock('./createCrepe', () => {
     focusEditor: vi.fn(),
     // The fake's "plain text" is its markdown: enough to see WHICH editor the page settings menu counts.
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
+    // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
+    getZoomKeyOf: vi.fn((): string | null => null),
   }
 })
 
@@ -94,7 +97,7 @@ vi.mock('./external/applyExternalMarkdown', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, focusEditor, getPlainText, setMarkdown, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
@@ -142,14 +145,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startScrollTop={extra.startScrollTop} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
   await settle()
   await settle()
   return container
@@ -719,18 +722,62 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
   })
 })
 
-describe('a duplicated tab starts at its source\'s scroll spot (YAZ-2940 D7)', () => {
+/**
+ * A page starts from a page view (YAZ-2951 D1, D4): a duplicated tab, or the active tab of a new
+ * window, opens with its source's drill-in, live folds, scroll spot and text size. And each editor
+ * answers `readPageView` for its tab with its own page view now.
+ */
+describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
+  const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   /** The caret grab moves the scroller to 5, as a real focus can. */
   const grabScrolls = () =>
     vi.mocked(focusEditor).mockImplementation(() => {
       const host = container?.querySelector<HTMLElement>('.editor-host')
       if (host) host.scrollTop = 5
     })
-  afterEach(() => vi.mocked(focusEditor).mockReset())
+  const crepeOptions = (): CreateCrepeOptions => createCrepeMock.mock.calls.at(-1)![0] as unknown as CreateCrepeOptions
+  beforeEach(() => {
+    vi.spyOn(storage, 'getFolds').mockReturnValue(['stored:0'])
+    vi.spyOn(storage, 'setFolds').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    vi.mocked(focusEditor).mockReset()
+    vi.mocked(getZoomKeyOf).mockReset()
+    vi.mocked(storage.getFolds).mockRestore()
+    vi.mocked(storage.setFolds).mockRestore()
+  })
 
-  it('sets the scroller\'s scrollTop once the content lands, after the caret grab that may scroll; a later prop is never applied', async () => {
+  it('starts with the view\'s folds (not the stored ones), drill-in and text size; the seed is not written until a fold changes (S2, S5, S10)', async () => {
+    const el = await mount(FM + BODY, 1, { startView: VIEW })
+    const opts = crepeOptions()
+    expect([...(opts.folding?.seedCollapsedKeys?.() ?? [])]).toEqual(['abc:0'])
+    expect([...(opts.headingFolding?.seedCollapsedKeys?.() ?? [])]).toEqual(['h:def:0'])
+    expect(storage.getFolds).not.toHaveBeenCalled()
+    expect(opts.zoom?.startKey).toBe('l2 a:1')
+    expect(el.querySelector<HTMLElement>('.editor-host')!.style.getPropertyValue('--document-zoom')).toBe('1.25')
+    expect(el.querySelector('.document-zoom__value')!.textContent).toBe('125%')
+    // Each plugin reports its keys once as the editor opens: that is the seed, not a change.
+    opts.folding?.onCollapsedKeysChange?.(['abc:0'])
+    opts.headingFolding?.onCollapsedKeysChange?.(['h:def:0'])
+    expect(storage.setFolds).not.toHaveBeenCalled()
+    // A fold in the copy writes, as before: the last writer wins.
+    opts.folding?.onCollapsedKeysChange?.(['abc:0', 'new:0'])
+    expect(storage.setFolds).toHaveBeenLastCalledWith('/vault', PATH, ['abc:0', 'new:0', 'h:def:0'])
+  })
+
+  it('a mount with no view reads the stored folds, starts not drilled in at 100%, and writes the mount report as before', async () => {
+    const el = await mount(FM + BODY)
+    const opts = crepeOptions()
+    expect([...(opts.folding?.seedCollapsedKeys?.() ?? [])]).toEqual(['stored:0'])
+    expect(opts.zoom?.startKey ?? null).toBeNull()
+    expect(el.querySelector('.document-zoom__value')!.textContent).toBe('100%')
+    opts.folding?.onCollapsedKeysChange?.(['stored:0'])
+    expect(storage.setFolds).toHaveBeenLastCalledWith('/vault', PATH, ['stored:0'])
+  })
+
+  it('sets the scroller\'s scrollTop once the content lands, after the caret grab that may scroll; a later prop is never applied (S6)', async () => {
     grabScrolls() // it runs before the start is applied
-    const el = await mount(FM + BODY, 1, { startScrollTop: 420 })
+    const el = await mount(FM + BODY, 1, { startView: VIEW })
     const host = el.querySelector<HTMLElement>('.editor-host')!
     expect(focusEditor).toHaveBeenCalled()
     expect(host.scrollTop).toBe(420)
@@ -738,16 +785,33 @@ describe('a duplicated tab starts at its source\'s scroll spot (YAZ-2940 D7)', (
     vi.mocked(focusEditor).mockReset()
     host.scrollTop = 0
     const built = createCrepeMock.mock.calls.length
-    await act(async () => root?.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} onRetitle={noop} startScrollTop={999} />))
+    await act(async () => root?.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} onRetitle={noop} startView={{ ...VIEW, scrollTop: 999, zoomKey: 'other:0' }} />))
     await settle()
     expect(createCrepeMock.mock.calls.length).toBe(built + 1)
     expect(host.scrollTop).toBe(0)
+    expect(crepeOptions().zoom?.startKey ?? null).toBeNull()
   })
 
   it('a mount with no start leaves the scroller where the caret grab put it', async () => {
     grabScrolls()
     const el = await mount(FM + BODY)
     expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(5)
+  })
+
+  it('answers readPageView for its tab with the LIVE view: folds, drill-in, scroll and text size now (D4)', async () => {
+    const el = await mount(FM + BODY)
+    el.dataset.tab = 't1'
+    const opts = crepeOptions()
+    opts.folding?.onCollapsedKeysChange?.(['b:0'])
+    opts.headingFolding?.onCollapsedKeysChange?.(['h:c:0'])
+    vi.mocked(getZoomKeyOf).mockReturnValue('l1 a:0')
+    el.querySelector<HTMLElement>('.editor-host')!.scrollTop = 77
+    act(() => { el.querySelector('.editor-mount')!.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 1, bubbles: true, cancelable: true })) })
+    expect(readPageView('t1')).toEqual({ scrollTop: 77, zoomKey: 'l1 a:0', folds: ['b:0', 'h:c:0'], magnification: 125 })
+    // Unmounted: the tab has no editor to ask.
+    act(() => root?.unmount())
+    root = null
+    expect(readPageView('t1')).toBeUndefined()
   })
 })
 

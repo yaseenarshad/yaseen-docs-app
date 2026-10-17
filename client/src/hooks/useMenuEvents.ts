@@ -25,15 +25,17 @@ interface UseMenuEventsOptions {
   onTabOverview: () => void
   /** File › New Tab (⌘T): show the blank tab and put the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
   onNewTab: () => void
+  /** File › New Window (⌘⇧N): save the page on show, then open the copy with its page view (YAZ-2951 D5). */
+  onNewWindow: () => void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused note, else the whole app (YAZ-1710). */
   onZoom: (step: ZoomStep) => void
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onZoom }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onZoom }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = api.menu
-    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSwitchVault(onSwitchVault), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab), menu.onTabOverview(onTabOverview), menu.onNewTab(onNewTab), menu.onZoom(onZoom)]
+    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSwitchVault(onSwitchVault), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab), menu.onTabOverview(onTabOverview), menu.onNewTab(onNewTab), menu.onNewWindow(onNewWindow), menu.onZoom(onZoom)]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onZoom])
+  }, [onOpenFolder, onOpenRoot, onSearch, onSwitchVault, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab, onTabOverview, onNewTab, onNewWindow, onZoom])
 }

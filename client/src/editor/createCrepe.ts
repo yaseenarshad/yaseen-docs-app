@@ -197,7 +197,7 @@ import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
-import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { createOutlineZoom, getZoomKey, zoomKeymap, type ZoomOptions } from './outline/zoom'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
@@ -492,6 +492,11 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {
   crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus())
+}
+
+/** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */
+export function getZoomKeyOf(crepe: Crepe): string | null {
+  return crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))
 }
 
 /**

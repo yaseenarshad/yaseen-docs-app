@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stripSlash, type CommentsOrder, type PageView, type SettingsState, type SidebarTab, type TableOfContents, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -23,6 +23,7 @@ import { dirname, relTo } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
+import { readPageView } from './lib/pageView'
 import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { buildSetupPrompt } from './lib/syncAttention'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
@@ -75,6 +76,15 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 }) {
   const openFile = useCallback((to: string) => navigate(path, to), [navigate, path])
   return <RetainedEditor {...props} path={path} onOpenFile={openFile} />
+}
+
+/**
+ * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
+ * the view's file: a link or a pasted URL that opened another page wins, and gets none.
+ */
+function bootStartView(tab: string | null, file: string | null): Map<string, PageView> {
+  const start = storage.getStartView()
+  return new Map(tab !== null && start !== undefined && start.path === file ? [[tab, start.view]] : [])
 }
 
 export function App() {
@@ -732,28 +742,45 @@ export function App() {
    * A refusal leaves the tab where it is. Only this tab leaves: a copy's twins stay (YAZ-2940 S16).
    */
   const movePageToNewWindow = useCallback((path: string, id: string) => {
+    // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
+    const view = readPageView(id)
     flushRenamedPath(path)
-      .then(() => api.window.popOut(path))
+      .then(() => api.window.popOut(path, { view }))
       .then(() => (now.current.phase === 'open' ? closeUnderOverview([id]) : closeTab(id)))
       .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])
   /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
    * opens right after it and shows — under the board it shows on the board beside its source, and the
-   * board stays (S5: a menu action is no trip to a page, R30). The copy starts at its source's scroll
-   * spot: read here, before its layer mounts, and handed to its editor once (`startScroll`).
+   * board stays (S5: a menu action is no trip to a page, R30). The copy starts with its source's page view
+   * (YAZ-2951 D1: drill-in, live folds, scroll spot, text size): read here, before its layer mounts, and
+   * handed to its editor once (`startView`). A source with no open editor gives none (S8, S9).
    */
-  const startScroll = useRef(new Map<string, number>())
+  const startView = useRef(bootStartView(activeTab, file))
   const duplicateTab = useCallback((id: string) => {
-    const top = document.querySelector(`[data-tab="${id}"] .editor-host`)?.scrollTop
+    const view = readPageView(id)
     ownChange.current = now.current.phase === 'open'
     const copy = duplicate(id)
-    if (copy !== null && top !== undefined) startScroll.current.set(copy, top)
+    if (copy !== null && view !== undefined) startView.current.set(copy, view)
   }, [duplicate])
   // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
   useEffect(() => {
-    for (const id of startScroll.current.keys()) if (mounted.includes(id)) startScroll.current.delete(id)
+    for (const id of startView.current.keys()) if (mounted.includes(id)) startView.current.delete(id)
   }, [mounted])
+  /**
+   * ⌘⇧N (YAZ-2951 D5): the window goes first. It reads the page view of the page on show, saves that
+   * page, then asks main for the copy, so the new window reads what was typed and starts as this
+   * page looks (S11). No page on show (Welcome, the blank tab, an empty window) asks with no view
+   * (S13). A failed save opens nothing (S15).
+   */
+  const newWindow = useCallback(() => {
+    const { active, file: open } = now.current
+    const onShow = blank ? null : open
+    const view = onShow !== null && active !== null ? readPageView(active) : undefined
+    ;(onShow === null ? Promise.resolve() : flushRenamedPath(onShow))
+      .then(() => api.window.duplicate(view))
+      .catch((err: unknown) => notify(`Can't open a new window: ${err instanceof Error ? err.message : String(err)}`))
+  }, [blank, notify])
   /** A rename or a move of the page on show, or of a folder above it, changes `file` and is no trip to a page: an open board stays. */
   const renamedUnderOverview = useCallback((oldPath: string, newPath: string, dir: boolean) => {
     const { file: open, phase } = now.current
@@ -774,7 +801,7 @@ export function App() {
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model — except that
   // with a review open ⌘W closes IT, never the tab hidden under it (YAZ-2322). ⌘W on the blank tab
   // closes it alone (YAZ-2655 S75): that is `closeActive`'s own rule.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onZoom: requestZoom })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openVault, onSearch: openSearch, onSwitchVault: openVaultSwitcher, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: reviewer === null ? closeTabOrWindow : closeReview, onNextTab: toNextTab, onPrevTab: toPrevTab, onTabOverview: toggleOverview, onNewTab: newTab, onNewWindow: newWindow, onZoom: requestZoom })
 
   /**
    * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the row of the new tab page that the keyboard is on
@@ -1439,7 +1466,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startScrollTop={startScroll.current.get(id)} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.current.get(id)} />
                 </div>
               )
             })}

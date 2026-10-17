@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, setMarkdown, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
-import { getZoomedItemPos, HIDDEN_TAB_LAYER_CLASS, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
+import { getZoomedItemPos, getZoomKey, HIDDEN_TAB_LAYER_CLASS, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
 
 const OUTLINE = `Intro paragraph
 
@@ -462,5 +462,57 @@ describe('Mod-z reverts the latest zoom; folds and zooms share one latest-view-a
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     expect(press(crepe, 'Mod-z')).toBe(true)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L3 a') - 2)
+  })
+})
+
+describe('a page starts drilled in from a page view (YAZ-2951 D1, S1, S7, S21, S22)', () => {
+  /** The zoom key of the item `text`, read from a plain mount of the same outline. */
+  const keyOf = async (text: string): Promise<string> => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, text)
+    const key = crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))
+    if (key === null) throw new Error(`no key for "${text}"`)
+    return key
+  }
+  const startAt = (startKey: string | null) => mount(OUTLINE, { zoom: { fileName: 'notes.md', title: () => 'Notes', startKey } })
+
+  it('starts drilled into the start key: crumbs drawn, caret inside, getZoomKey says it back', async () => {
+    const key = await keyOf('L2 a')
+    const { crepe, root } = await startAt(key)
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a', 'L2 a'])
+    expect(isHidden(root, 'L1 b')).toBe(true)
+    // The caret is not left in a hidden block (the intro paragraph).
+    const item = posOf(crepe, 'L2 a') - 2
+    expect(caretPos(crepe)).toBeGreaterThan(item)
+    expect(caretPos(crepe)).toBeLessThan(posOf(crepe, 'L2 b'))
+    expect(crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))).toBe(key)
+  })
+
+  it('a start key that is not found (S7), or none, starts not drilled in; getZoomKey is null', async () => {
+    for (const startKey of ['no such bullet', null]) {
+      const { crepe, root } = await startAt(startKey)
+      expect(zoomedPos(crepe)).toBeNull()
+      expect(hiddenCount(root)).toBe(0)
+      expect(crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))).toBeNull()
+    }
+  })
+
+  it('the start drill-in pushes no history entry (S21), and Mod-z does not undo it (S22)', async () => {
+    const key = await keyOf('L2 a')
+    const length = history.length
+    const { crepe } = await startAt(key)
+    expect(history.length).toBe(length)
+    press(crepe, 'Mod-z') // nothing for the zoom to revert: history's undo, which has nothing either
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    expect(history.length).toBe(length)
+  })
+
+  it('the start key is used once: a rebuild of the editor state (a whole-page reload) starts zoomed out, as before', async () => {
+    const key = await keyOf('L2 a')
+    const { crepe } = await startAt(key)
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    setMarkdown(crepe, OUTLINE)
+    expect(zoomedPos(crepe)).toBeNull()
   })
 })

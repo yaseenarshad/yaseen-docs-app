@@ -9,13 +9,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type SidebarTab, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type IndexResponse, type PageView, type SidebarTab, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import { registerPageView } from './lib/pageView'
 import { fetchTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
@@ -115,12 +116,12 @@ const captured = vi.hoisted(() => ({
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startScrollTop }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startScrollTop })
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -181,6 +182,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuPrevTab = new Set<() => void>()
   const menuTabOverview = new Set<() => void>()
   const menuNewTab = new Set<() => void>()
+  const menuNewWindow = new Set<() => void>()
   const menuZoom = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
@@ -243,9 +245,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
-      duplicate: vi.fn(),
+      // ⌘⇧N (YAZ-2951 D5): the window saves its page, then asks main for the copy with its page view.
+      duplicate: vi.fn(async (_view?: PageView) => undefined),
       // A tab's "Move to new window" (YAZ-2933): main opens the window; the tab leaves this one after.
-      popOut: vi.fn(async (_path: string) => undefined),
+      popOut: vi.fn(async (_path: string, _carry?: { view?: PageView }) => undefined),
       closeSelf: vi.fn(async () => undefined),
       // Main's one open-recent door (YAZ-1767 D1): a vault window's picks and Open Recent land here (YAZ-1914 D1).
       openRecent: vi.fn(async (_path: string) => true),
@@ -268,6 +271,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onPrevTab: menuSub(menuPrevTab),
       onTabOverview: menuSub(menuTabOverview),
       onNewTab: menuSub(menuNewTab),
+      onNewWindow: menuSub(menuNewWindow),
       onZoom: menuSub(menuZoom),
     },
     link: {
@@ -340,6 +344,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
     emitTabOverview: () => menuTabOverview.forEach((l) => l()),
     emitNewTab: () => menuNewTab.forEach((l) => l()),
+    emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
@@ -1066,7 +1071,7 @@ describe('App Move to new window (YAZ-2933)', () => {
       tabsWhenAsked = tabNames(el)
     })
     await act(async () => items(el)[0]!.click())
-    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md')
+    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md', { view: undefined }) // a tab whose editor is not open has no page view
     expect(tabsWhenAsked).toEqual(['a', 'b']) // the tab is still here while main opens the window
     expect(tabNames(el)).toEqual(['a'])
     expect(el.querySelector('.ctx-menu__item')).toBeNull()
@@ -1082,6 +1087,70 @@ describe('App Move to new window (YAZ-2933)', () => {
   })
 })
 
+describe('App new windows carry the page view (YAZ-2951 D2, D5)', () => {
+  const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
+  const rightClick = (target: Element) =>
+    act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  /** The scroller of tab `index` in the strip, as the real editor draws it, answering for its page view. */
+  const answerFor = (el: HTMLElement, index: number, view: PageView): (() => void) => {
+    const tab = el.querySelectorAll<HTMLElement>('.tabbar__tab')[index]!.dataset.tab!
+    const scroller = document.createElement('div')
+    scroller.className = 'editor-host'
+    el.querySelector(`.tabstack__layer[data-tab="${tab}"]`)!.appendChild(scroller)
+    return registerPageView(scroller, () => view)
+  }
+
+  it('⌘⇧N saves the page on show, THEN asks main for the copy with that page\'s view (S11)', async () => {
+    const { bridge, el, emitNewWindow } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const off = answerFor(el, 0, VIEW)
+    const order: string[] = []
+    const flush = vi.spyOn(continuity, 'flushRenamedPath').mockImplementation(async (path) => void order.push(`flush ${path}`))
+    bridge.window.duplicate.mockImplementationOnce(async () => void order.push('duplicate'))
+    await act(async () => emitNewWindow())
+    expect(order).toEqual(['flush /v/a.md', 'duplicate'])
+    expect(bridge.window.duplicate).toHaveBeenCalledExactlyOnceWith(VIEW)
+    expect(flush).toHaveBeenCalledTimes(1)
+    off()
+  })
+
+  it('⌘⇧N with no page on show asks with no view (S13); a failed save opens nothing and says why (S15)', async () => {
+    const { bridge, emitNewWindow, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    await act(async () => emitNewWindow())
+    expect(bridge.window.duplicate).toHaveBeenCalledExactlyOnceWith(undefined)
+    act(() => root?.unmount())
+    container?.remove()
+    history.replaceState(null, '', '/')
+    const second = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    vi.spyOn(continuity, 'flushRenamedPath').mockRejectedValueOnce(new Error('disk full'))
+    await act(async () => second.emitNewWindow())
+    expect(second.bridge.window.duplicate).not.toHaveBeenCalled()
+    expect(second.el.textContent).toContain("Can't open a new window: disk full")
+    expect(el.textContent).toBe('') // the first window's page is gone: the notice is the second's
+  })
+
+  it('"Move to new window" passes the page\'s view to main (D2, S16)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const off = answerFor(el, 0, VIEW)
+    rightClick(el.querySelectorAll('.tabbar__tab')[0]!)
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')][0]!.click())
+    expect(bridge.window.popOut).toHaveBeenCalledExactlyOnceWith('/v/a.md', { view: VIEW })
+    off()
+  })
+
+  it('the boot tab of a new window starts with the view main gave it, when it shows that file; any other tab starts fresh (S12)', async () => {
+    await mount(defaultAppState(), { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], startView: { path: '/v/a.md', view: VIEW } })
+    expect(captured.editors.find((e) => e.path === '/v/a.md')).toMatchObject({ startView: VIEW })
+    expect(captured.editors.filter((e) => e.path !== '/v/a.md' && e.startView !== undefined)).toEqual([])
+    act(() => root?.unmount())
+    root = null
+    captured.editors = []
+    history.replaceState(null, '', '/') // the first window's `#/v/a.md` would win as the active tab
+    // A view for another file than the active one (a link opened the window elsewhere) is not used.
+    await mount(defaultAppState(), { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'], startView: { path: '/v/a.md', view: VIEW } })
+    expect(captured.editors.filter((e) => e.startView !== undefined)).toEqual([])
+  })
+})
+
 describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
   const rightClick = (target: Element | undefined) =>
     act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
@@ -1089,14 +1158,15 @@ describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
   const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
   const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
 
-  it('S1, D7: from the strip, the copy opens right after its source and shows, and its editor starts at the source\'s scroll spot; nothing is stored', async () => {
+  it('S1, D7, YAZ-2951 D1: from the strip, the copy opens right after its source and shows, and its editor starts with the source\'s page view; nothing is stored', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     const source = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
-    // The source's scroller, as the real editor draws it inside its layer.
+    // The source's scroller, as the real editor draws it inside its layer, answering for its page view.
     const scroller = document.createElement('div')
     scroller.className = 'editor-host'
-    scroller.scrollTop = 420
     el.querySelector(`.tabstack__layer[data-tab="${source}"]`)!.appendChild(scroller)
+    const view: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
+    const off = registerPageView(scroller, () => view)
     bridge.window.setIdentity.mockClear()
     rightClick(el.querySelector('.tabbar__tab')!)
     act(() => duplicateItem(el)!.click())
@@ -1106,8 +1176,9 @@ describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
     expect(activeTab(el)).toBe(copy)
     expect(el.querySelector(`.tabstack__layer[data-tab="${copy}"]`)?.classList.contains('tabstack__layer--hidden')).toBe(false)
     expect(el.querySelector(`.tabstack__layer[data-tab="${source}"]`)?.classList.contains('tabstack__layer--hidden')).toBe(true)
-    expect(captured.editors.find((e) => e.startScrollTop !== undefined)).toMatchObject({ path: '/v/a.md', startScrollTop: 420 })
+    expect(captured.editors.find((e) => e.startView !== undefined)).toMatchObject({ path: '/v/a.md', startView: view })
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    off()
   })
 
   it('S5: from a page of the tab board, the copy stands beside its source on the board, and the board stays open', async () => {

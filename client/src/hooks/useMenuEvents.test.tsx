@@ -22,6 +22,7 @@ function installBridge() {
   const prevTabListeners = new Set<() => void>()
   const tabOverviewListeners = new Set<() => void>()
   const newTabListeners = new Set<() => void>()
+  const newWindowListeners = new Set<() => void>()
   const zoomListeners = new Set<(step: -1 | 0 | 1) => void>()
   const sub = <T,>(set: Set<T>) =>
     vi.fn((l: T) => {
@@ -41,6 +42,7 @@ function installBridge() {
       onPrevTab: sub(prevTabListeners),
       onTabOverview: sub(tabOverviewListeners),
       onNewTab: sub(newTabListeners),
+      onNewWindow: sub(newWindowListeners),
       onZoom: sub(zoomListeners),
     },
   }
@@ -57,8 +59,9 @@ function installBridge() {
     emitPrevTab: () => prevTabListeners.forEach((l) => l()),
     emitTabOverview: () => tabOverviewListeners.forEach((l) => l()),
     emitNewTab: () => newTabListeners.forEach((l) => l()),
+    emitNewWindow: () => newWindowListeners.forEach((l) => l()),
     emitZoom: (step: -1 | 0 | 1) => zoomListeners.forEach((l) => l(step)),
-    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + switchVaultListeners.size + settingsListeners.size + toggleSidebarListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size + tabOverviewListeners.size + newTabListeners.size + zoomListeners.size,
+    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + switchVaultListeners.size + settingsListeners.size + toggleSidebarListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size + tabOverviewListeners.size + newTabListeners.size + newWindowListeners.size + zoomListeners.size,
   }
 }
 
@@ -74,6 +77,7 @@ interface ProbeProps {
   onPrevTab: () => void
   onTabOverview: () => void
   onNewTab: () => void
+  onNewWindow: () => void
   onZoom: (step: -1 | 0 | 1) => void
 }
 
@@ -92,7 +96,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onZoom: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onZoom: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -118,6 +122,8 @@ describe('useMenuEvents', () => {
     expect(handlers.onTabOverview).toHaveBeenCalledTimes(1)
     act(() => b.emitNewTab())
     expect(handlers.onNewTab).toHaveBeenCalledTimes(1)
+    act(() => b.emitNewWindow())
+    expect(handlers.onNewWindow).toHaveBeenCalledTimes(1)
     act(() => b.emitZoom(-1))
     expect(handlers.onZoom).toHaveBeenCalledExactlyOnceWith(-1)
 

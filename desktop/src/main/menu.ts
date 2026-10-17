@@ -280,15 +280,9 @@ export interface MenuHost {
   openExternal(url: string): void
 }
 
-type MenuWindows = Pick<WindowManager, 'idFor' | 'duplicateWindow' | 'openRecentBeside' | 'linkNotice'>
+type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice'>
 
-export function createMenuHandlers(store: Store, windows: MenuWindows, host: MenuHost): MenuHandlers {
-  /** The focused window's `AppState.windows` entry (lookup: `webContents.id` → entry id). */
-  const focusedEntry = () => {
-    const wc = host.focusedWebContents()
-    const id = wc === undefined ? undefined : windows.idFor(wc)
-    return id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
-  }
+export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHandlers {
   return {
     copyAs(mode) {
       host.focusedWebContents()?.send(SPECIAL.menuCopyAs, mode)
@@ -298,8 +292,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
       if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)
     },
     newWindow() {
-      const entry = focusedEntry()
-      if (entry !== undefined) windows.duplicateWindow(entry)
+      // Through the window first (YAZ-2951 D5): it saves its page, reads its page view, then calls
+      // `window:duplicate`. A window whose page does not answer opens nothing (S14).
+      host.focusedWebContents()?.send(CONTRACT.menu.onNewWindow.channel)
     },
     switchVault() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSwitchVault.channel)
