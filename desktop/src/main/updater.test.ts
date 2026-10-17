@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -194,6 +194,61 @@ describe('check', () => {
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d', '/usr/bin/hdiutil attach', '/usr/bin/codesign --verify', '/usr/bin/hdiutil detach'])
     expect(existsSync(`${bundle}.update`)).toBe(false)
     expect(existsSync(join(userData, 'updates'))).toBe(false) // a failed download leaves nothing (S11)
+  })
+
+  it('a stalled check stops after 30 s, so the next check can run (the JSON requests carry the timeout signal)', async () => {
+    const timeout = new AbortController()
+    const spy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+    const signals: Array<AbortSignal | undefined> = []
+    const { updater } = fake({
+      overrides: {
+        fetch: (url, init) => (signals.push(init?.signal), url.endsWith('/latest') && signals.length === 1 ? new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))) : Promise.resolve(Response.json(release('v1.0.12')))),
+      },
+    })
+    const stalled = updater.check()
+    expect(spy).toHaveBeenCalledWith(30_000)
+    timeout.abort(new Error('timed out'))
+    await expect(stalled).rejects.toThrow('timed out')
+    await expect(updater.check()).resolves.toEqual({ kind: 'idle' })
+    expect(signals).toEqual([timeout.signal, timeout.signal])
+    spy.mockRestore()
+  })
+
+  it('a download with no data for 60 s stops, however long it ran: back to idle, nothing left on disk', async () => {
+    vi.useFakeTimers()
+    let signal: AbortSignal | undefined
+    const { updater, states } = fake({
+      overrides: {
+        async fetch(url, init) {
+          if (url.endsWith('/latest')) return Response.json(release('v1.0.13'))
+          signal = init?.signal
+          // A body that sends a chunk now and one 50 s later, then nothing; the real `net.fetch` errors it on abort, as here.
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(c) {
+                c.enqueue(DMG.slice(0, 4))
+                setTimeout(() => c.enqueue(DMG.slice(4, 8)), 50_000)
+                init?.signal?.addEventListener('abort', () => c.error(init.signal?.reason))
+              },
+            }),
+          )
+        },
+      },
+    })
+    const check = updater.check()
+    const failed = expect(check).rejects.toThrow('stalled')
+    // The writes are real file I/O, so wait for each chunk on disk before the clock moves.
+    const written = (n: number) => vi.waitFor(() => expect(statSync(join(userData, 'updates', '1.0.13.dmg.part')).size).toBe(n))
+    await written(4)
+    await vi.advanceTimersByTimeAsync(50_000)
+    await written(8)
+    await vi.advanceTimersByTimeAsync(59_000) // 109 s in: 60 s after the LAST chunk is the limit, not 60 s after the start
+    expect(signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(signal?.aborted).toBe(true)
+    await failed
+    expect(states.at(-1)).toEqual({ kind: 'idle' })
+    expect(existsSync(join(userData, 'updates'))).toBe(false)
   })
 
   it('S6: a check during the download answers downloading and fetches nothing; two checks at once share one request; ready answers ready', async () => {

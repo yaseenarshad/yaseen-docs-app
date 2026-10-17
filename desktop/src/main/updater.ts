@@ -22,13 +22,16 @@ import type { ReleaseNote, UpdateState } from '@shared/types'
  * mark and Gatekeeper does not stop the swapped app (S26). Electron-free: `index.ts` passes the host.
  */
 
-export const UPDATE_FEED = 'https://api.github.com/repos/yaseenarshad/yaseen-docs-app/releases'
+const UPDATE_FEED = 'https://api.github.com/repos/yaseenarshad/yaseen-docs-app/releases'
 /** The `manual` button (S13, D3) and Windows' only way to update. */
 export const RELEASES_PAGE = 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest'
 /** The bundle name inside the `.dmg` (electron-builder's `productName`). */
 const APP_IN_DMG = 'Yaseen Docs.app'
 const FIRST_CHECK_MS = 10_000
 const CHECK_EVERY_MS = 12 * 60 * 60 * 1000
+/** `net.fetch` has no total timeout: a stalled request would hold `running`, or `downloading`, for the whole session. */
+const JSON_TIMEOUT_MS = 30_000
+const STALL_MS = 60_000
 const GITHUB_JSON = { Accept: 'application/vnd.github+json' }
 
 export interface Run {
@@ -38,7 +41,7 @@ export interface Run {
 
 /** The Electron and process half (`index.ts`), faked by the tests. */
 export interface UpdaterHost {
-  fetch(url: string, init?: { headers: Record<string, string> }): Promise<Response>
+  fetch(url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<Response>
   run: Run
   /** Starts `file args` detached from this process, stdio ignored: it outlives the app (the swap). */
   spawnDetached(file: string, args: readonly string[]): void
@@ -156,7 +159,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
   }
 
   const getJson = async <T>(url: string): Promise<T> => {
-    const res = await host.fetch(url, { headers: GITHUB_JSON })
+    const res = await host.fetch(url, { headers: GITHUB_JSON, signal: AbortSignal.timeout(JSON_TIMEOUT_MS) })
     if (!res.ok) throw new Error(`GitHub answered ${res.status} for ${url}`)
     return (await res.json()) as T
   }
@@ -188,17 +191,22 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
     await mkdir(updates, { recursive: true })
     const part = join(updates, `${version}.dmg.part`)
     const dmg = join(updates, `${version}.dmg`)
+    // A sleep or a network change can stop the body mid-file: 60 s with no data, headers included, aborts it.
+    const stalled = new AbortController()
+    const watchdog = setTimeout(() => stalled.abort(new Error(`the download of ${version}.dmg stalled`)), STALL_MS)
     try {
-      const res = await host.fetch(asset.url)
+      const res = await host.fetch(asset.url, { signal: stalled.signal })
       if (!res.ok || res.body === null) throw new Error(`the download answered ${res.status}`)
       const hash = createHash('sha256')
       const file = await open(part, 'w')
       try {
         for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+          watchdog.refresh()
           hash.update(chunk)
           await file.write(chunk)
         }
       } finally {
+        clearTimeout(watchdog)
         await file.close()
       }
       if (hash.digest('hex') !== asset.sha256) throw new Error(`the sha256 of ${version}.dmg does not match the release (S9)`)
@@ -221,6 +229,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       await rm(staged, { recursive: true, force: true })
       throw err
     } finally {
+      clearTimeout(watchdog) // the request itself may have failed
       await rm(updates, { recursive: true, force: true })
     }
   }
