@@ -38,7 +38,7 @@ import { ZOOM_EVENT } from './zoomRequest'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
-import { useSectionIndent } from './outline/useSectionIndent'
+import { usePageSwitch } from './usePageSwitch'
 import type { ZoomStep } from '@shared/types'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
@@ -275,11 +275,12 @@ function CrepeHost({
   // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
   // Per page and saved with the note in the app state, on and off (YAZ-2709 D2): the page cog's "Section indent".
-  const [sectionIndentOn, toggleSectionIndent] = useSectionIndent(root, file.path)
+  const [sectionIndentOn, toggleSectionIndent] = usePageSwitch(root, file.path, storage.getSectionIndent, storage.setSectionIndent)
   // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
   const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
   // And the other way round: the table of contents is ON for every page, and this page can turn its own off.
-  const [tableOfContentsOn, setTableOfContentsOn] = useState(true)
+  // Saved with the note, as "Section indent" is (YAZ-2950, which replaces YAZ-2700 D15).
+  const [tableOfContentsOn, toggleTableOfContents] = usePageSwitch(root, file.path, storage.getTocSwitch, storage.setTocSwitch)
   // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
   // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
@@ -640,7 +641,7 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : () => setTableOfContentsOn((on) => !on)} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={tableOfContents === 'off' ? undefined : toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContents === 'off' || !tableOfContentsOn ? undefined : changeTocSource} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />

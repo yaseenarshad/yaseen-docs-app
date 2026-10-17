@@ -79,6 +79,7 @@ state.setSectionIndent/3: invoke state:set-section-indent ["a0","a1","a2"]; => "
 state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setTocSwitch/3: invoke state:set-toc-switch ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
