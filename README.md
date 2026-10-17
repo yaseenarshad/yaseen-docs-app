@@ -212,7 +212,7 @@ No. It is free, with the [MIT license](LICENSE).
 The app is not signed with a paid certificate from Apple or Microsoft. You allow it one time, and then it starts like each other app.
 
 **What is not there yet?**<br>
-A phone app, a Linux build, a build for Intel Macs, automatic updates, and live editing with other people. The command for agents is for the Mac only.
+A phone app, a Linux build, a build for Intel Macs, automatic installs on Windows, and live editing with other people. The command for agents is for the Mac only.
 
 ## The download
 
@@ -224,11 +224,15 @@ On a Mac:
 2. Open the app. macOS blocks it one time. Go to **System Settings › Privacy & Security** and click **Open Anyway**.
 3. Click **Open folder…** and select the folder with your notes.
 
+After that, the app updates itself. When a new version is ready, a small **Update ready** pill shows next to the settings cog. Click it to see what is new, then click **Restart to update**. Or just quit as usual, and the next launch is the new version. macOS keeps the permissions that you gave the app.
+
 On Windows:
 
 1. Run the `setup.exe`. SmartScreen shows a warning one time. Click **More info**, then **Run anyway**.
 2. Click **Open folder…** and select the folder with your notes.
 3. Where this page says `⌘`, press `Ctrl`. A small number of keys, such as `⌘J`, are for the Mac only.
+
+When a new version is out, an **Update available** pill shows next to the settings cog. Click it to see what is new, then click **Download** to get the new installer.
 
 The first three things to try:
 

@@ -38,6 +38,12 @@ Every packaged version is downloadable from the repo's [Releases page](https://g
 
 The Mac app is signed with a free self-signed certificate, not notarized, so on someone else's Mac (macOS 15) the first open is blocked with "Apple could not verify…". Once: open **System Settings › Privacy & Security**, scroll to the blocked-app notice, click **Open Anyway**, and confirm. After that it opens normally. Every version carries the same signature, so macOS keeps the permissions you gave it when the app updates (YAZ-2976 D1). The Windows installer is unsigned, so SmartScreen shows "Windows protected your PC" the first time: click **More info › Run anyway**, once.
 
+### Updates
+
+The app updates itself from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-docs-app/releases) (YAZ-2976). It checks 10 seconds after launch, then every 12 hours; **Yaseen Docs › Check for Updates…** checks at once and says so when you already have the newest version. On a Mac it downloads the new `.dmg` in the background, checks the sha256 that GitHub publishes for it, and checks that the app inside carries the same signature as the running app — a build signed by anyone else is refused. Then a small **Update ready** pill shows beside the settings cog. It opens **What's new**: the release notes of every version newer than yours, newest first, with their GIFs and pictures. **Restart to update** saves every window, quits, swaps the app in place and opens it again; if you click **Later**, the next normal quit installs it. The first launch of the new version shows the pill as **What's new** once. **Help › What's New…** opens the same window at any time.
+
+A copy that cannot replace itself — Windows, a copy run from the `.dmg` or not yet moved to Applications, a folder you cannot write, or a build without the signature (1.0.12 and older) — shows **Update available** instead, and its button opens the Releases page. Versions 1.0.12 and older have no updater: install the first signed version by hand once, and the updates after it install themselves.
+
 GitHub sync uses the computer's own git, found at a fixed set of locations rather than on `PATH` (`desktop/src/main/git/exec.ts`): on a Mac the Command Line Tools or Homebrew git, on Windows [Git for Windows](https://git-scm.com/download/win) (its installer bundles the Git Credential Manager, so a one-time GitHub sign-in sticks). Without one, the sync banner says so and offers a setup prompt to paste into an LLM.
 
 ## Editing
@@ -150,6 +156,6 @@ A folder's settings — its views, columns, labels and formulas, with the folder
 
 ## Out of scope
 
-Tags stay plain text (not resolved into links); `[[wikilinks]]`, by contrast, are live — they resolve, they are clickable, they autocomplete as you type `[[`, and they are rewritten when a note is renamed. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no auto-update, no Intel or universal Mac builds, no Linux — all Future issues.
+Tags stay plain text (not resolved into links); `[[wikilinks]]`, by contrast, are live — they resolve, they are clickable, they autocomplete as you type `[[`, and they are rewritten when a note is renamed. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no automatic install on Windows (it shows the update and links to the download), no Intel or universal Mac builds, no Linux — all Future issues.
 
 Retired in YAZ-844: Obsidian's `.base` file format. There is no "New base", no `.base` file type, no `![[X.base]]` embed and no ` ```base ` code block — a folder's own page is the only place these views are mounted now.
