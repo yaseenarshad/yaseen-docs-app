@@ -498,7 +498,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
                               // Shift is the selection gesture and nothing else, as on a sidebar row: it picks, and never opens.
                               onClick={(e) => (e.shiftKey ? togglePick(id) : onOpen(id))}
                               // On one of two or more picked pages the menu is the pick's; on any other page, the tab's.
-                              onContextMenu={(e) => menuOn(e, () => (picked.has(id) && pick.length > 1 ? setPickMenu({ x: e.clientX, y: e.clientY }) : setPageMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null })))}
+                              onContextMenu={(e) => menuOn(e, () => (picked.has(id) && pick.length > 1 ? setPickMenu({ x: e.clientX, y: e.clientY }) : setPageMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: label !== labelOf(path) })))}
                               // A move of the pointer, never a page that scrolled under it.
                               onMouseMove={() => {
                                 if (id === current) return

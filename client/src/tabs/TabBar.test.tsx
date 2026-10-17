@@ -550,10 +550,10 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).toBeNull()
   })
 
-  it('a press OUTSIDE dismisses the menu', () => {
+  it('a press OUTSIDE dismisses the menu: it lands on the overlay that covers the window (the sidebar\'s `ContextMenu`, YAZ-2949 D6)', () => {
     const el = mount(props)
     rightClick(tabAt(el, 0))
-    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     expect(menuOf(el)).toBeNull()
   })
 
@@ -573,9 +573,10 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const remove = vi.spyOn(window, 'removeEventListener')
     try {
       rightClick(tabAt(el, 0))
-      expect(add.mock.calls.map((c) => c[0]).sort()).toEqual(['keydown', 'mousedown'])
+      expect(add.mock.calls.map((c) => c[0])).toEqual(['keydown'])
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-      expect(remove.mock.calls.map((c) => c[0]).sort()).toEqual(['keydown', 'mousedown'])
+      expect(menuOf(el)).toBeNull()
+      expect(remove.mock.calls.map((c) => c[0])).toEqual(['keydown'])
     } finally {
       add.mockRestore()
       remove.mockRestore()

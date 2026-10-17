@@ -313,7 +313,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         {...endSlot}
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
-        {tabs.flatMap(({ id, path }, i) => {
+        {tabs.flatMap(({ id, path, name }, i) => {
           // Under the blank tab no tab of the strip is the active one (YAZ-2655).
           const isActive = !blank && id === active
           const label = labelOf(path)
@@ -368,7 +368,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null })
+                setMenu({ x: e.clientX, y: e.clientY, id, path, review: reviewState?.(path) ?? null, named: name !== undefined })
               }}
             >
               <button
