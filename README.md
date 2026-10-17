@@ -224,7 +224,7 @@ On a Mac:
 2. Open the app. macOS blocks it one time. Go to **System Settings › Privacy & Security** and click **Open Anyway**.
 3. Click **Open folder…** and select the folder with your notes.
 
-After that, the app updates itself. When a new version is ready, a blue **✨ New update for you** pill shows next to the settings cog. Click it to see what is new, then click **Restart to update**. Or just quit as usual, and the next launch is the new version. macOS keeps the permissions that you gave the app.
+After that, the app updates itself. When a new version is ready, a blue **🎉 New update ready** pill shows next to the settings cog. Click it to see what is new, then click **Restart to update**. Or just quit as usual, and the next launch is the new version. macOS keeps the permissions that you gave the app.
 
 On Windows:
 
@@ -232,7 +232,7 @@ On Windows:
 2. Click **Open folder…** and select the folder with your notes.
 3. Where this page says `⌘`, press `Ctrl`. A small number of keys, such as `⌘J`, are for the Mac only.
 
-When a new version is out, a blue **✨ New update for you** pill shows next to the settings cog. Click it to see what is new, then click **Download** to get the new installer.
+When a new version is out, a blue **🎉 New update ready** pill shows next to the settings cog. Click it to see what is new, then click **Download** to get the new installer.
 
 The first three things to try:
 

@@ -25,8 +25,10 @@
   background: color-mix(in srgb, var(--accent) 85%, #000);
 }
 
-.update-pill__sparkle {
+.update-pill__emoji {
   flex: none;
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* The white dot: it breathes until the sheet was opened for this version, then it rests. */

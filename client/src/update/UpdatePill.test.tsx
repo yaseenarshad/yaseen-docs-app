@@ -31,16 +31,16 @@ describe('UpdatePill', () => {
   })
 
   it.each([
-    ['ready', 'New update for you'],
-    ['manual', 'New update for you'],
+    ['ready', 'New update ready'],
+    ['manual', 'New update ready'],
     ['updated', "See what's new"],
-  ] as const)('%s says "%s" with a sparkle; no version number (D14)', (kind, label) => {
+  ] as const)('%s says "%s" after a 🎉; no version number (D14)', (kind, label) => {
     const button = render({ kind, version: '1.0.13' }).querySelector('button')!
-    expect(button.textContent).toBe(label)
+    expect(button.textContent).toBe(`🎉${label}`)
     expect(button.textContent).not.toContain('1.0.13')
     expect(button.title).toBe("Click to see what's new")
     expect(button.type).toBe('button')
-    expect(button.querySelector('svg.update-pill__sparkle')).not.toBeNull()
+    expect(button.querySelector('.update-pill__emoji')?.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('the dot breathes until the sheet is opened for this version, then rests; a newer version breathes again (D14)', () => {
