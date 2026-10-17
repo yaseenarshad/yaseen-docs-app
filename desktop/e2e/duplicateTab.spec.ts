@@ -11,7 +11,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, CHILD_BULLET, copyVault, editorOf, launchApp, layer, menuItem, SEED_FILE, seededState, shoot, tabsOf, typeMarkerAtLastBullet } from './helpers'
+import { appWindow, buildFixtureVault, CHILD_BULLET, copyVault, editorOf, launchApp, layer, SEED_FILE, seededState, shoot, tabsOf, typeMarkerAtLastBullet } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -47,7 +47,7 @@ test('right-click a tab › Duplicate tab: a copy with its own folds, and text t
   await expect(items.nth(0)).toHaveText('Move to new window')
   await expect(items.nth(1)).toHaveText('Duplicate tab')
   await shoot(win, 'duplicate-1-menu')
-  await menuItem(win, 'Duplicate tab').click()
+  await items.nth(1).click()
 
   // D6: two tabs of one name, and the copy (the second) shows.
   await expect(tabsOf(win)).toHaveText([NAME, NAME])
