@@ -197,7 +197,7 @@ import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
-import { createOutlineZoom, getZoomKey, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { caretIntoZoom, createOutlineZoom, getZoomKey, zoomKeymap, type ZoomOptions } from './outline/zoom'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
@@ -492,6 +492,17 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
 export function focusEditor(crepe: Crepe): void {
   crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus())
+}
+
+/**
+ * A page that starts drilled in (YAZ-2951 D1) has its caret in a hidden block: move it into the
+ * bullet. Run once the editor is made; true when the caret moved.
+ */
+export function moveCaretIntoZoom(crepe: Crepe): boolean {
+  return crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    return caretIntoZoom(view.state, view.dispatch)
+  })
 }
 
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */

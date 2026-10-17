@@ -12,7 +12,8 @@
  *    zooms to that ancestor; the first crumb, the page's title, zooms out fully.
  * Zooming dispatches a metadata-only transaction (`tr.docChanged === false`), so the listener never
  * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. Zoom is not
- * persisted: switching files remounts the editor and therefore clears it.
+ * persisted: switching files remounts the editor and therefore clears it. A copy of the page only
+ * STARTS at its source's level (see "Start level" below).
  *
  * Browser history (GRO-2091 A): every zoom change pushes one in-memory history entry
  * (`{ [ZOOM_HISTORY_KEY]: { file, key } }`, URL untouched — the 2-arg `pushState`, since an empty
@@ -28,6 +29,8 @@
  * Start level (YAZ-2951 D1): a copy of a tab, or a page in a new window, starts drilled into its
  * source's bullet (`startKey`, a zoom key). `init` resolves it against the parsed page; a key that
  * is not found starts zoomed out (S7). It pushes no history entry (S21) and sets no ⌘Z level (S22).
+ * The host then moves the caret into that bullet (`caretIntoZoom`), once the editor is made: never
+ * from the plugin view, which ProseMirror builds inside the EditorView constructor.
  *
  * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead),
  * `Mod-.` = zoom into the item at the caret, `Mod-Shift-.` = zoom out one level. While zoomed,
@@ -158,6 +161,13 @@ const itemLabel = (item: ProseNode): string => {
 /** Position of the innermost list_item containing the selection head, or null outside lists. */
 const itemAtSelection = (state: EditorState): number | null => innermostItemPos(state.selection.$from)
 
+/** Whether the whole selection is inside the list_item at `itemPos`. */
+const selectionInItem = (state: EditorState, itemPos: number): boolean => {
+  const item = state.doc.nodeAt(itemPos)
+  const { from, to } = state.selection
+  return item !== null && from >= itemPos && to <= itemPos + item.nodeSize
+}
+
 /**
  * Zoom into the list_item at `itemPos` (null = zoom out fully); moves the caret into it if the
  * selection was outside. Every user-driven zoom change pushes a history entry; `fromHistory`
@@ -170,12 +180,7 @@ const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}
   if (dispatch) {
     const tr = state.tr.setMeta(pluginKey, itemPos).setMeta(VIEW_ACTION_META, 'zoom' satisfies ViewAction)
     if (isUndo) tr.setMeta(UNDO_META, true)
-    if (itemPos !== null) {
-      const item = state.doc.nodeAt(itemPos)
-      const { from, to } = state.selection
-      const inside = item !== null && from >= itemPos && to <= itemPos + item.nodeSize
-      if (!inside) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
-    }
+    if (itemPos !== null && !selectionInItem(state, itemPos)) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
     if (!fromHistory) {
       const entry: ZoomHistoryEntry = { file: zoom.fileName, key: itemPos === null ? null : zoomKeyAt(state.doc, itemPos) }
       // No URL argument: an empty string would resolve against the document and drop `#/path.md`.
@@ -183,6 +188,19 @@ const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}
     }
     dispatch(tr.scrollIntoView())
   }
+  return true
+}
+
+/**
+ * Put the caret in the drilled-in bullet when it is outside it (YAZ-2951 D1): a page that STARTS
+ * drilled in has its caret at the page start, in a hidden block. A selection-only transaction: no
+ * zoom meta, so no history entry (S21) and no ⌘Z level (S22). Declines when not drilled in or
+ * when the caret is inside already. The host runs it once the editor is made (`moveCaretIntoZoom`).
+ */
+export const caretIntoZoom: Command = (state, dispatch) => {
+  const itemPos = getZoomedItemPos(state)
+  if (itemPos === null || selectionInItem(state, itemPos)) return false
+  dispatch?.(state.tr.setSelection(Selection.near(state.doc.resolve(itemPos + 1), 1)))
   return true
 }
 
@@ -343,16 +361,6 @@ export const createOutlineZoom = ({ fileName, title, startKey = null }: ZoomOpti
           },
         },
         view: (view) => {
-          // A new editor's caret is at the page's start, which a start drill-in hides: move it into
-          // the bullet, as a user drill-in does. A selection-only transaction: no zoom meta, no history entry.
-          const startPos = getZoomedItemPos(view.state)
-          if (startPos !== null) {
-            const item = view.state.doc.nodeAt(startPos)
-            const { from, to } = view.state.selection
-            if (item !== null && !(from >= startPos && to <= startPos + item.nodeSize)) {
-              view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(startPos + 1), 1)))
-            }
-          }
           // Back / Forward: restore the entry's level. Entries of another file (left behind by a
           // file switch) are ignored; the original page entry (no zoom state) means zoomed out.
           // Only the SHOWN editor answers: a duplicated tab (YAZ-2940 S24) keeps a hidden copy of

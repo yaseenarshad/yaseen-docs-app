@@ -10,7 +10,7 @@ import { createDrawingFeed } from '../drawings/drawingFeed'
 import { ImageModal } from './image/ImageModal'
 import type { GalleryImage } from './image/imageOptions'
 import { FolderView } from '../views/FolderView'
-import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, setMarkdown } from './createCrepe'
+import { createCrepe, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
@@ -545,6 +545,9 @@ function CrepeHost({
         setMarkdown(crepe, buf.body)
         controller.update(getMarkdownForSave(crepe))
       }
+      // A copy that starts drilled in (YAZ-2951 D1) has its caret in a hidden block: into the bullet
+      // first, here, where every plugin view and `editorViewCtx` are ready, then the caret grab.
+      if (start?.zoomKey) moveCaretIntoZoom(crepe)
       // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
       // arrows mid-walk. Every other door (tabs, wikilinks, boot) still lands in the text.

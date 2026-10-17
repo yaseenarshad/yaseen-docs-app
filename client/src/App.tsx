@@ -756,17 +756,18 @@ export function App() {
    * (YAZ-2951 D1: drill-in, live folds, scroll spot, text size): read here, before its layer mounts, and
    * handed to its editor once (`startView`). A source with no open editor gives none (S8, S9).
    */
-  const startView = useRef(bootStartView(activeTab, file))
+  // Built once, at mount (a lazy start: `bootStartView` reads storage and makes a Map). Changed in place: never a render trigger.
+  const [startView] = useState(() => bootStartView(activeTab, file))
   const duplicateTab = useCallback((id: string) => {
     const view = readPageView(id)
     ownChange.current = now.current.phase === 'open'
     const copy = duplicate(id)
-    if (copy !== null && view !== undefined) startView.current.set(copy, view)
-  }, [duplicate])
+    if (copy !== null && view !== undefined) startView.set(copy, view)
+  }, [duplicate, startView])
   // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
   useEffect(() => {
-    for (const id of startView.current.keys()) if (mounted.includes(id)) startView.current.delete(id)
-  }, [mounted])
+    for (const id of startView.keys()) if (mounted.includes(id)) startView.delete(id)
+  }, [mounted, startView])
   /**
    * ⌘⇧N (YAZ-2951 D5): the window goes first. It reads the page view of the page on show, saves that
    * page, then asks main for the copy, so the new window reads what was typed and starts as this
@@ -1466,7 +1467,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.current.get(id)} />
+                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} />
                 </div>
               )
             })}

@@ -72,6 +72,7 @@ vi.mock('./createCrepe', () => {
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
     // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
     getZoomKeyOf: vi.fn((): string | null => null),
+    moveCaretIntoZoom: vi.fn(() => false),
   }
 })
 
@@ -97,7 +98,7 @@ vi.mock('./external/applyExternalMarkdown', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, setMarkdown, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
@@ -743,6 +744,7 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
   afterEach(() => {
     vi.mocked(focusEditor).mockReset()
     vi.mocked(getZoomKeyOf).mockReset()
+    vi.mocked(moveCaretIntoZoom).mockReset()
     vi.mocked(storage.getFolds).mockRestore()
     vi.mocked(storage.setFolds).mockRestore()
   })
@@ -790,6 +792,25 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
     expect(createCrepeMock.mock.calls.length).toBe(built + 1)
     expect(host.scrollTop).toBe(0)
     expect(crepeOptions().zoom?.startKey ?? null).toBeNull()
+  })
+
+  it('puts the caret in the start drill-in once the editor is made, before the caret grab', async () => {
+    const order: string[] = []
+    vi.mocked(moveCaretIntoZoom).mockImplementation(() => {
+      order.push('caret')
+      return true
+    })
+    vi.mocked(focusEditor).mockImplementation(() => {
+      order.push('focus')
+    })
+    await mount(FM + BODY, 1, { startView: VIEW })
+    expect(order).toEqual(['caret', 'focus'])
+  })
+
+  it('a page view that is not drilled in does not ask to move the caret', async () => {
+    await mount(FM + BODY, 1, { startView: { ...VIEW, zoomKey: null } })
+    expect(focusEditor).toHaveBeenCalled()
+    expect(moveCaretIntoZoom).not.toHaveBeenCalled()
   })
 
   it('a mount with no start leaves the scroller where the caret grab put it', async () => {

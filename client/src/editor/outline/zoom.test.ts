@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { createCrepe, getMarkdownForSave, setMarkdown, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
-import { getZoomedItemPos, getZoomKey, HIDDEN_TAB_LAYER_CLASS, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
+import { getZoomedItemPos, HIDDEN_TAB_LAYER_CLASS, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
 
 const OUTLINE = `Intro paragraph
 
@@ -470,38 +470,55 @@ describe('a page starts drilled in from a page view (YAZ-2951 D1, S1, S7, S21, S
   const keyOf = async (text: string): Promise<string> => {
     const { crepe, root } = await mount()
     clickGlyph(root, text)
-    const key = crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))
+    const key = getZoomKeyOf(crepe)
     if (key === null) throw new Error(`no key for "${text}"`)
     return key
   }
   const startAt = (startKey: string | null) => mount(OUTLINE, { zoom: { fileName: 'notes.md', title: () => 'Notes', startKey } })
 
-  it('starts drilled into the start key: crumbs drawn, caret inside, getZoomKey says it back', async () => {
+  it('starts drilled into the start key: crumbs drawn, getZoomKeyOf says it back', async () => {
     const key = await keyOf('L2 a')
     const { crepe, root } = await startAt(key)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     expect(crumbLabels(root)).toEqual(['Notes', 'L1 a', 'L2 a'])
     expect(isHidden(root, 'L1 b')).toBe(true)
-    // The caret is not left in a hidden block (the intro paragraph).
-    const item = posOf(crepe, 'L2 a') - 2
-    expect(caretPos(crepe)).toBeGreaterThan(item)
-    expect(caretPos(crepe)).toBeLessThan(posOf(crepe, 'L2 b'))
-    expect(crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))).toBe(key)
+    expect(getZoomKeyOf(crepe)).toBe(key)
   })
 
-  it('a start key that is not found (S7), or none, starts not drilled in; getZoomKey is null', async () => {
+  it('the plugin does not move the caret while the view is built; moveCaretIntoZoom then puts it in the bullet, once', async () => {
+    const key = await keyOf('L2 a')
+    const { crepe } = await startAt(key)
+    const item = posOf(crepe, 'L2 a') - 2
+    // No dispatch during the EditorView constructor: the caret is still at the page start, in the hidden intro.
+    expect(caretPos(crepe)).toBeLessThan(item)
+    expect(moveCaretIntoZoom(crepe)).toBe(true)
+    expect(caretPos(crepe)).toBeGreaterThan(item)
+    expect(caretPos(crepe)).toBeLessThan(posOf(crepe, 'L2 b'))
+    // The caret is inside now: nothing more to do.
+    expect(moveCaretIntoZoom(crepe)).toBe(false)
+  })
+
+  it('moveCaretIntoZoom does nothing on a page that is not drilled in', async () => {
+    const { crepe } = await startAt(null)
+    const before = caretPos(crepe)
+    expect(moveCaretIntoZoom(crepe)).toBe(false)
+    expect(caretPos(crepe)).toBe(before)
+  })
+
+  it('a start key that is not found (S7), or none, starts not drilled in; getZoomKeyOf is null', async () => {
     for (const startKey of ['no such bullet', null]) {
       const { crepe, root } = await startAt(startKey)
       expect(zoomedPos(crepe)).toBeNull()
       expect(hiddenCount(root)).toBe(0)
-      expect(crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))).toBeNull()
+      expect(getZoomKeyOf(crepe)).toBeNull()
     }
   })
 
-  it('the start drill-in pushes no history entry (S21), and Mod-z does not undo it (S22)', async () => {
+  it('the start drill-in and its caret move push no history entry (S21), and Mod-z does not undo them (S22)', async () => {
     const key = await keyOf('L2 a')
     const length = history.length
     const { crepe } = await startAt(key)
+    moveCaretIntoZoom(crepe)
     expect(history.length).toBe(length)
     press(crepe, 'Mod-z') // nothing for the zoom to revert: history's undo, which has nothing either
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)

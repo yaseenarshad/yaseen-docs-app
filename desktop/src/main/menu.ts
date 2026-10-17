@@ -19,7 +19,7 @@ export interface MenuHandlers {
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New Tab (⌘T, YAZ-2655 D10): the focused window's renderer shows its blank tab and puts the caret in its search bar. */
   newTab(): void
-  /** File › New Window (⌘⇧N, D6): duplicate the focused window — same folder, same file. */
+  /** File › New Window (⌘⇧N, D6): ask the focused window for its copy (YAZ-2951 D5) — it saves its page, then calls `window:duplicate` with its page view. */
   newWindow(): void
   /** File › Switch Vault… (⌘O, YAZ-1767 D8): the focused window's renderer opens its sidebar vault switcher. */
   switchVault(): void

@@ -1149,6 +1149,18 @@ describe('App new windows carry the page view (YAZ-2951 D2, D5)', () => {
     await mount(defaultAppState(), { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'], startView: { path: '/v/a.md', view: VIEW } })
     expect(captured.editors.filter((e) => e.startView !== undefined)).toEqual([])
   })
+
+  it('the boot page view is read when the window mounts, not on each render of App', async () => {
+    const read = vi.spyOn(storage, 'getStartView')
+    const { el, emitNextTab } = await mount(defaultAppState(), { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], startView: { path: '/v/a.md', view: VIEW } })
+    const atMount = read.mock.calls.length
+    expect(atMount).toBeGreaterThan(0)
+    // ⌃Tab to the other tab renders App again.
+    await act(async () => emitNextTab())
+    expect(el.querySelector('.tabbar__tab--active')?.textContent).toContain('b')
+    expect(read.mock.calls.length).toBe(atMount)
+    read.mockRestore()
+  })
 })
 
 describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
