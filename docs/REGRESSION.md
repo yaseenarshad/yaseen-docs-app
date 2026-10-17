@@ -2,7 +2,7 @@
 
 The one list of everything Yaseen Docs does that a change must not lose (YAZ-2171, seeded from the YAZ-2131 scope inventory). Every row has a stable ID. A PR cites the IDs it touches, and each one is proved by the automated test named here, or by walking its hand steps.
 
-- **A** = a Playwright-Electron spec in `desktop/e2e/` (60 specs; run with `npm run e2e`).
+- **A** = a Playwright-Electron spec in `desktop/e2e/` (65 specs; run with `npm run e2e`).
 - **U** = a unit or jsdom suite (run with `npm test`).
 - **M** = hand steps, listed under [Hand scenarios](#hand-scenarios). Only what automation cannot drive lives there.
 
@@ -211,6 +211,7 @@ A vault uses IDs only when its own `.yaseendocs/ids.json` says `{"enabled":true}
 | P5 | Windows installer builds | the `v*` tag release workflow (`.github/workflows/release.yml`) |
 | P6 | Finder double-click, LaunchServices, DMG install | M [P6](#p6-finder-launchservices-dmg) |
 | P7 | An e2e run never claims the machine's `yaseendocs://` handler | U `desktop/src/main/deepLinkScheme.test.ts` · M: after `npm run e2e`, the check under [P6](#p6-finder-launchservices-dmg) still names `/Applications/Yaseen Docs.app` |
+| P8 | Updates (YAZ-2976 D1–D8, S1–S27). A packaged Mac copy checks GitHub Releases 10 s after launch, then every 12 h, and at once from **Yaseen Docs › Check for Updates…** (a notice when nothing is newer, or when the check fails). A newer release with its `-arm64.dmg` and a `sha256` digest downloads in the background, is checked against the digest and against the running app's own signature (`codesign --verify -R`), and is staged beside the app; the pill beside the cog says **Update ready**. The pill and **Help › What's New…** open one window: the release notes newer than this app, newest first (else the last 5), with lazy images and links that open in the browser. **Restart to update** quits through the quit sequence, swaps the app and opens it again; a plain quit swaps and stays closed; a failed swap puts the old app back. The first launch after a swap shows the pill as **What's new** once. A copy that cannot replace itself (Windows, unpackaged, `/Volumes/`, App Translocation, a folder you cannot write, an ad-hoc build) says **Update available**, and its button opens the release page. Every Mac build is signed with the one certificate, so the permissions survive an update | A `update` (written for YAZ-2976 without being run, so not evidence until it has been run once) · U `desktop/src/main/updater.test.ts`, `desktop/src/main/updater.swap.test.ts` (the real swap shell), `desktop/src/main/updater.codesign.test.ts` (the real `hdiutil`, `codesign` and `ditto`), `desktop/src/main/ipc/update` (in `contract.test.ts`), `desktop/src/main/menu.test.ts`, `update/UpdatePill.test.tsx`, `update/WhatsNewSheet.test.tsx`, `update/useUpdate.test.tsx`, `tools/afterPack.test.mjs` (`signIdentity`) · M: after the next release, a second Mac on version N updates to N+1 and keeps its permissions |
 | P8 | Open/Save panels keep the OS language; Chromium's paks trimmed to `en*` (🔒 YAZ-2131 D1) | U `tools/afterPack.test.mjs` · gate `npm run perf:budget` rows `chromiumLocaleCount`, `chromiumLocaleBytes`, `lprojCount` |
 
 ## Hand scenarios
