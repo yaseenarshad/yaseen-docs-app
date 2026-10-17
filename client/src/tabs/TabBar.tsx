@@ -105,8 +105,8 @@ const Chevron = ({ d }: { d: string }) => (
 )
 
 /**
- * The window tab strip (Tabs I2/I3, GRO-2234/2235): one tab per open tab — two may show one file
- * (YAZ-2940 D1), each keyed by its own id — ViewTabs' tablist
+ * The window tab strip (Tabs I2/I3, GRO-2234/2235): each tab keyed by its own id, since two tabs
+ * may show one file (YAZ-2940 D1) — ViewTabs' tablist
  * semantics (role=tab, aria-selected). The tabs are pills (YAZ-2656 R40, R41): each has a fill of
  * its own, the active one the brightest, and none joins the page. Labels hide only Markdown's vault
  * extension; view-only labels keep their extension, a folder's is its whole name (YAZ-2290) and

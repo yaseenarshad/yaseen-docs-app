@@ -3224,6 +3224,23 @@ describe('App upkeep review (YAZ-2322)', () => {
     ])
   })
 
+  it('S9 (YAZ-2940): a note that has copies shows through ONE copy\'s layer — the active copy when it shows the note, else the first from the left — and no other editor mounts', async () => {
+    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
+    act(() => void el.querySelector('.tabbar__tab')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Duplicate tab')!.click())
+    const [first, copy] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)
+    act(() => captured.sidebar?.onOpenFile('/v/b.md')) // a · a′ · b, b active
+    const shown = () => [...el.querySelectorAll<HTMLElement>('.tabstack__layer:not(.tabstack__layer--hidden)')].map((layer) => layer.dataset.tab)
+    openInbox()
+    expect(shown()).toEqual([first])
+    expect(editorsOn(el, '/v/a.md')).toBe(2)
+    act(() => button(el, 'Close review')?.click())
+    act(() => el.querySelectorAll<HTMLElement>('.tabbar [role="tab"]')[1].click()) // the copy a′
+    openInbox()
+    expect(shown()).toEqual([copy])
+    expect(editorsOn(el, '/v/a.md')).toBe(2)
+  })
+
   it('a note open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
     const { el } = await mount(

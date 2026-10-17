@@ -1095,7 +1095,7 @@ describe('duplicate (YAZ-2940 D6): "Duplicate tab" makes a copy', () => {
   })
 })
 
-describe('copies in the hook (YAZ-2940): the duplicate mirror and the switch save (D4, S22)', () => {
+describe('copies in the hook (YAZ-2940): the mirror stores each file once, and the switch save (D2, D4, S22, S25)', () => {
   let reactRoot: Root | null = null
   let latest: UseWorkspace
   let bridge: ReturnType<typeof installBridge>
@@ -1155,33 +1155,8 @@ describe('copies in the hook (YAZ-2940): the duplicate mirror and the switch sav
     offA()
     offB()
   })
-})
 
-describe('copies: the mirror stores each file once (YAZ-2940 D2, S25)', () => {
-  let reactRoot: Root | null = null
-  let latest: UseWorkspace
-  let bridge: ReturnType<typeof installBridge>
-
-  function Probe() {
-    latest = useWorkspace('/v')
-    return null
-  }
-
-  beforeEach(async () => {
-    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
-    await storage.init()
-    reactRoot = createRoot(document.createElement('div'))
-    act(() => reactRoot?.render(<Probe />))
-  })
-
-  afterEach(() => {
-    act(() => reactRoot?.unmount())
-    reactRoot = null
-  })
-
-  it('two tabs of one file (an outside rename onto an open file) write that file once, at its first tab — and an active copy writes its file', () => {
-    act(() => latest.openKept('/v/a.md'))
-    act(() => latest.openKept('/v/b.md'))
+  it('D2, S25: two tabs of one file (an outside rename onto an open file) write that file once, at its first tab — and an active copy writes its file', () => {
     act(() => latest.openKept('/v/c.md'))
     act(() => latest.renamePath('/v/c.md', '/v/a.md'))
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/a.md'])
@@ -1197,3 +1172,4 @@ describe('copies: the mirror stores each file once (YAZ-2940 D2, S25)', () => {
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md'])
   })
 })
+

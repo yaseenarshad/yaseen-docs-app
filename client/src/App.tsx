@@ -47,7 +47,7 @@ import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import type { PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
-import { tabOf, useWorkspace } from './workspace/useWorkspace'
+import { tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
@@ -584,14 +584,6 @@ export function App() {
   const reviewing = useRef(false)
   reviewing.current = reviewer !== null
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
-  // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
-  // `keep` takes the tab's id (YAZ-2940 D1). Ref-backed for the same reason as above.
-  const keepRef = useRef({ tabs, preview })
-  keepRef.current = { tabs, preview }
-  const keepEdited = useCallback((path: string) => {
-    const { tabs: all, preview: id } = keepRef.current
-    if (id !== null && all.some((t) => t.id === id && t.path === path)) keep(id)
-  }, [keep])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
@@ -610,8 +602,14 @@ export function App() {
   const [overview, setOverview] = useState<{ phase: 'closed' | 'open' | 'leaving'; from: string | null }>(OVERVIEW_CLOSED)
   const overviewOpen = overview.phase === 'open'
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
-  const now = useRef({ file, active: activeTab, tabs, phase: overview.phase, right: rightPanel.items.length })
-  now.current = { file, active: activeTab, tabs, phase: overview.phase, right: rightPanel.items.length }
+  const now = useRef({ file, active: activeTab, tabs, preview, phase: overview.phase, right: rightPanel.items.length })
+  now.current = { file, active: activeTab, tabs, preview, phase: overview.phase, right: rightPanel.items.length }
+  // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
+  // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
+  const keepEdited = useCallback((path: string) => {
+    const id = now.current.preview
+    if (id !== null && tabById(now.current, id)?.path === path) keep(id)
+  }, [keep])
   // Going to a page — a sidebar click, ⌃Tab, a deep link — closes the board at once, by the review's
   // rule above: the page asked for must not open unseen under it. A change of the active tab the
   // board made ITSELF is no such trip, and says so here first: the page it zooms into, and the
@@ -1228,8 +1226,9 @@ export function App() {
   const pathOf = new Map(tabs.map((t) => [t.id, t.path]))
   // The tab whose layer a review's note shows through (S9): the tab a trip to the note goes to,
   // else another of its copies that is mounted; null when no mounted tab shows it.
-  const reviewed = session === null || session.path === null ? null : tabOf({ tabs, active: activeTab }, session.path)
-  const reviewLayer = session === null || session.path === null ? null : reviewed !== null && mounted.includes(reviewed.id) ? reviewed.id : (mounted.find((id) => pathOf.get(id) === session.path) ?? null)
+  const reviewPath = session?.path ?? null
+  const reviewed = reviewPath === null ? null : tabOf({ tabs, active: activeTab }, reviewPath)
+  const reviewLayer = reviewed !== null && mounted.includes(reviewed.id) ? reviewed.id : (mounted.find((id) => pathOf.get(id) === reviewPath) ?? null)
   /** The tab whose layer shows: the active one, none under the blank tab, and the reviewed note's during a review. */
   const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
 

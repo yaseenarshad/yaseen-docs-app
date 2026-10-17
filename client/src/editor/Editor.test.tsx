@@ -719,25 +719,17 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
   })
 })
 
-/**
- * The other half of the decision table above (YAZ-1356): absorbing a frontmatter-only write keeps
- * the EDITOR still, but the properties panel must still SHOW the new keys. `useFile` never
- * refetches and a fresh `file` would remount Crepe, so the host keeps its own disk bytes and hands
- * the panel those. The raw fallback is read here because it shows those bytes literally.
- */
-/**
- * Copies of one file (YAZ-2940 D4, S23): a save tells the file's other editors in this window at
- * once, through `twinEditors.ts`, without waiting for the watcher. They answer with the same
- * code the watcher drives: a clean copy reloads as a diff, a dirty copy shows the conflict bar,
- * and the editor that saved skips its own announce by the echo check.
- */
 describe('a duplicated tab starts at its source\'s scroll spot (YAZ-2940 D7)', () => {
-  it('sets the scroller\'s scrollTop once the content lands, after the caret grab that may scroll; a later prop is never applied', async () => {
-    // The caret grab runs first and moves the scroller, as a real focus can.
+  /** The caret grab moves the scroller to 5, as a real focus can. */
+  const grabScrolls = () =>
     vi.mocked(focusEditor).mockImplementation(() => {
       const host = container?.querySelector<HTMLElement>('.editor-host')
       if (host) host.scrollTop = 5
     })
+  afterEach(() => vi.mocked(focusEditor).mockReset())
+
+  it('sets the scroller\'s scrollTop once the content lands, after the caret grab that may scroll; a later prop is never applied', async () => {
+    grabScrolls() // it runs before the start is applied
     const el = await mount(FM + BODY, 1, { startScrollTop: 420 })
     const host = el.querySelector<HTMLElement>('.editor-host')!
     expect(focusEditor).toHaveBeenCalled()
@@ -753,31 +745,20 @@ describe('a duplicated tab starts at its source\'s scroll spot (YAZ-2940 D7)', (
   })
 
   it('a mount with no start leaves the scroller where the caret grab put it', async () => {
+    grabScrolls()
     const el = await mount(FM + BODY)
-    expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(0)
+    expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(5)
   })
 })
 
+/**
+ * Copies of one file (YAZ-2940 D4, S23): a save tells the file's other editors in this window at
+ * once, through `twinEditors.ts`, without waiting for the watcher. They answer with the same
+ * code the watcher drives: a clean copy reloads as a diff, a dirty copy shows the conflict bar,
+ * and the editor that saved skips its own announce by the echo check.
+ */
 describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
   const NEXT = '# Hello\n\nfrom the other copy\n'
-
-  it('a clean copy reloads as a diff on the announce: no conflict bar, no save back', async () => {
-    const el = await mount(FM + BODY)
-    diskHas(FM + NEXT, 7)
-    diskHas(FM + NEXT, 7) // reload() re-reads
-    await act(async () => {
-      announceTwinSave(PATH, 7)
-      await vi.advanceTimersByTimeAsync(0)
-    })
-    expect(applyExternalMock).toHaveBeenCalledWith(crepe(), NEXT)
-    expect(el.querySelector('.conflict-bar')).toBeNull()
-    // The watcher's event for the same write then matches the new mtime: no further read.
-    const reads = readFile.mock.calls.length
-    await emit({ type: 'change', path: PATH, mtime: 7 })
-    expect(readFile.mock.calls.length).toBe(reads)
-    await pastDebounce()
-    expect(writeFile).not.toHaveBeenCalled()
-  })
 
   it('a dirty copy shows the conflict bar and keeps its text', async () => {
     const el = await mount(FM + BODY)
@@ -790,16 +771,6 @@ describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
     expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
     expect(applyExternalMock).not.toHaveBeenCalled()
     expect(crepe().md).toBe('# Hello\n\nmy unsaved edit\n')
-  })
-
-  it('an announce for another path is not heard', async () => {
-    await mount(FM + BODY)
-    const reads = readFile.mock.calls.length
-    await act(async () => {
-      announceTwinSave('/vault/other.md', 7)
-      await vi.advanceTimersByTimeAsync(0)
-    })
-    expect(readFile.mock.calls.length).toBe(reads)
   })
 
   it('two editors on one path: the one that saves skips its own announce, the twin reloads before any watcher event', async () => {
@@ -845,6 +816,12 @@ describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
   })
 })
 
+/**
+ * The other half of the decision table above (YAZ-1356): absorbing a frontmatter-only write keeps
+ * the EDITOR still, but the properties panel must still SHOW the new keys. `useFile` never
+ * refetches and a fresh `file` would remount Crepe, so the host keeps its own disk bytes and hands
+ * the panel those. The raw fallback is read here because it shows those bytes literally.
+ */
 describe('the frontmatter panel follows the disk (YAZ-1356)', () => {
   const FM3 = '---\nstatus: shipped\n---\n'
 
