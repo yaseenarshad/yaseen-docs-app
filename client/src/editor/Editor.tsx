@@ -48,6 +48,7 @@ import { ReviewsSection } from '../review/ReviewsSection'
 import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
+import { onTwinSave } from '../lib/twinEditors'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { TextViewer } from '../viewers/TextViewer'
@@ -537,15 +538,17 @@ function CrepeHost({
     }
     reloadRef.current = () => void reload()
 
-    const unsubscribe = watch.subscribe((ev) => {
-      if (ev.type !== 'change' || ev.path !== file.path || controller === null) return
+    // A change of this file on disk: from the watcher, or at once from a copy of this tab that
+    // saved (YAZ-2940 D4, S23 — `twinEditors.ts`). The echo check skips this editor's own save.
+    const onDiskChange = (mtime: number) => {
+      if (controller === null) return
       const c = controller
       // On slow filesystems (e.g. NFS vaults) the watcher event for our own write can arrive
       // before the `writeFile` response carries the new mtime; settle the in-flight save first
       // so echo suppression compares against the mtime of the write that caused the event.
       void c.settled().then(async () => {
         if (cancelled) return
-        if (ev.mtime === c.mtime) return // echo of our own write
+        if (mtime === c.mtime) return // echo of our own write
         // A base's property write (GRO-2141) rewrites only the frontmatter block; absorb it
         // silently so unsaved body edits and the caret survive (GRO-2186).
         const fresh = await api.readFile(file.path)
@@ -558,15 +561,20 @@ function CrepeHost({
         // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
         // before deciding whether in-progress typing would be lost by a silent reload.
         c.update(getMarkdownForSave(crepe))
-        if (c.dirty) reportConflict(ev.mtime)
+        if (c.dirty) reportConflict(mtime)
         else void reload()
       })
+    }
+    const unsubscribe = watch.subscribe((ev) => {
+      if (ev.type === 'change' && ev.path === file.path) onDiskChange(ev.mtime)
     })
+    const offTwin = onTwinSave(file.path, onDiskChange)
 
     return () => {
       cancelled = true
       crepeRef.current = null
       unsubscribe()
+      offTwin()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel])

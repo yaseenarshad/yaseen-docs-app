@@ -50,8 +50,8 @@ describe('renameContinuity (Links E1, GRO-2194)', () => {
     const first = handle()
     const off = registerRenameContinuity('/v/a.md', first)
     const second = handle()
-    registerRenameContinuity('/v/a.md', second) // remount replaced the handle
-    off() // stale unregister must not drop the replacement
+    registerRenameContinuity('/v/a.md', second) // a remount (or a copy, YAZ-2940) adds a second handle
+    off() // the first editor's unregister must not drop the second
     carryEditorAcrossRename('/v/a.md', '/v/b.md')
     expect(second.retire).toHaveBeenCalledTimes(1)
     expect(first.retire).not.toHaveBeenCalled()
@@ -162,5 +162,92 @@ describe('retireDeletedPath / retireDeletedDir (GRO-2272)', () => {
     retireDeletedDir('/v/Docs')
     expect(takeRenameBuffer('/v/Docs/moved.md')).toBeNull()
     expect(takeRenameBuffer('/v/Keep/moved.md')).not.toBeNull()
+  })
+})
+
+/**
+ * Two editors on one path (YAZ-2940 D3): a duplicated tab mounts a second editor of the same
+ * file in the same window. Every step acts on EVERY handle of the path — one missed copy could
+ * write the old path again after a rename or a delete.
+ */
+describe('renameContinuity with copies of one file (YAZ-2940 D3)', () => {
+  it('flushRenamedPath flushes both copies, and flushRenamedDir reaches both too', async () => {
+    const a = handle()
+    const b = handle()
+    registerRenameContinuity('/v/Docs/a.md', a)
+    registerRenameContinuity('/v/Docs/a.md', b)
+    await flushRenamedPath('/v/Docs/a.md')
+    expect(a.flush).toHaveBeenCalledTimes(1)
+    expect(b.flush).toHaveBeenCalledTimes(1)
+    await flushRenamedDir('/v/Docs')
+    expect(a.flush).toHaveBeenCalledTimes(2)
+    expect(b.flush).toHaveBeenCalledTimes(2)
+  })
+
+  it('a rename captures and retires both copies; the last dirty capture is the one stashed', () => {
+    const clean = handle()
+    const dirty = handle({ capture: vi.fn(() => ({ frontmatter: '', body: 'copy b' })) })
+    registerRenameContinuity('/v/old.md', clean)
+    registerRenameContinuity('/v/old.md', dirty)
+    carryEditorAcrossRename('/v/old.md', '/v/new.md')
+    expect(clean.capture).toHaveBeenCalledTimes(1)
+    expect(dirty.capture).toHaveBeenCalledTimes(1)
+    expect(clean.retire).toHaveBeenCalledTimes(1)
+    expect(dirty.retire).toHaveBeenCalledTimes(1)
+    expect(takeRenameBuffer('/v/new.md')).toEqual({ frontmatter: '', body: 'copy b' })
+  })
+
+  it('a folder rename and a pane move retire every copy as well', () => {
+    const a = handle()
+    const b = handle()
+    registerRenameContinuity('/v/Old/a.md', a)
+    registerRenameContinuity('/v/Old/a.md', b)
+    carryEditorsAcrossDirRename('/v/Old', '/v/New')
+    expect(a.retire).toHaveBeenCalledTimes(1)
+    expect(b.retire).toHaveBeenCalledTimes(1)
+    const c = handle()
+    const d = handle()
+    registerRenameContinuity('/v/p.md', c)
+    registerRenameContinuity('/v/p.md', d)
+    carryEditorAcrossPane('/v/p.md')
+    expect(c.retire).toHaveBeenCalledTimes(1)
+    expect(d.retire).toHaveBeenCalledTimes(1)
+  })
+
+  it('a delete retires both copies, of the file and under a deleted folder, and captures neither', () => {
+    const a = handle()
+    const b = handle()
+    registerRenameContinuity('/v/a.md', a)
+    registerRenameContinuity('/v/a.md', b)
+    retireDeletedPath('/v/a.md')
+    expect(a.retire).toHaveBeenCalledTimes(1)
+    expect(b.retire).toHaveBeenCalledTimes(1)
+    expect(a.capture).not.toHaveBeenCalled()
+    expect(b.capture).not.toHaveBeenCalled()
+    const c = handle()
+    const d = handle()
+    registerRenameContinuity('/v/Docs/c.md', c)
+    registerRenameContinuity('/v/Docs/c.md', d)
+    retireDeletedDir('/v/Docs')
+    expect(c.retire).toHaveBeenCalledTimes(1)
+    expect(d.retire).toHaveBeenCalledTimes(1)
+  })
+
+  it('closing one copy (its unregister) keeps the other registered; the last unregister empties the path', async () => {
+    const a = handle()
+    const b = handle()
+    const offA = registerRenameContinuity('/v/a.md', a)
+    const offB = registerRenameContinuity('/v/a.md', b)
+    offA()
+    offA() // a second call is harmless
+    await flushRenamedPath('/v/a.md')
+    expect(a.flush).not.toHaveBeenCalled()
+    expect(b.flush).toHaveBeenCalledTimes(1)
+    retireDeletedPath('/v/a.md')
+    expect(b.retire).toHaveBeenCalledTimes(1)
+    expect(a.retire).not.toHaveBeenCalled()
+    offB()
+    await flushRenamedPath('/v/a.md')
+    expect(b.flush).toHaveBeenCalledTimes(1) // gone: nothing left at the path
   })
 })

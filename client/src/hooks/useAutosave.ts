@@ -3,6 +3,7 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import { api, BridgeRequestError } from '../api'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import { registerRenameContinuity } from '../lib/renameContinuity'
+import { announceTwinSave } from '../lib/twinEditors'
 
 export interface AutosaveHandle {
   status: SaveStatus
@@ -61,6 +62,9 @@ export function useAutosave(path: string): AutosaveHandle {
             try {
               const res = await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime: expected })
               diskBodyRef.current = content
+              // Copies of this file in this window hear the save at once (YAZ-2940 D4, S23). It runs
+              // before `save` returns, so this editor's own echo check sees the new mtime (twinEditors.ts).
+              announceTwinSave(path, res.mtime)
               return res
             } catch (err) {
               if (!(err instanceof BridgeRequestError) || err.mtime === undefined) throw err
