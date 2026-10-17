@@ -412,11 +412,16 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     saved = null
     vi.spyOn(storage, 'getTocSource').mockImplementation(() => saved)
     vi.spyOn(storage, 'setTocSource').mockImplementation(() => undefined)
+    // The page switch is saved too (YAZ-2950): kept out of the real store, which this file does not set up.
+    vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => true)
+    vi.spyOn(storage, 'setTocSwitch').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
     vi.mocked(storage.getTocSource).mockRestore()
     vi.mocked(storage.setTocSource).mockRestore()
+    vi.mocked(storage.getTocSwitch).mockRestore()
+    vi.mocked(storage.setTocSwitch).mockRestore()
   })
 
   const choices = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__choices button')]
@@ -490,19 +495,20 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
 
 /**
  * The two page switches of YAZ-2700 in the cog: "Heading levels" (D12) and "Table of contents"
- * (D15). Both are "Line numbers" again — this page's, kept by CrepeHost for as long as its editor
- * lives, and stored nowhere.
+ * (D15). "Heading levels" is "Line numbers" again — this page's, kept by CrepeHost for as long as
+ * its editor lives, and stored nowhere. "Table of contents" is saved with the note since YAZ-2950,
+ * as "Section indent" is.
  */
-describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, D15)', () => {
+describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, YAZ-2950)', () => {
   const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
   const row = (el: HTMLElement, name: string): HTMLButtonElement => {
     const found = rows(el).find((button) => button.textContent?.startsWith(name))
     if (found === undefined) throw new Error(`no "${name}" row`)
     return found
   }
-  /** Every `set…` door of the app state and the browser's own store, as the line-numbers case spies them. */
-  const watchStores = () => {
-    const spies = [...(Object.keys(storage) as Array<keyof typeof storage>).filter((key) => key.startsWith('set')).map((key) => vi.spyOn(storage, key)), vi.spyOn(Storage.prototype, 'setItem')]
+  /** Every `set…` door of the app state and the browser's own store, as the line-numbers case spies them — but `except`, a door the test spies itself. */
+  const watchStores = (except: ReadonlyArray<keyof typeof storage> = []) => {
+    const spies = [...(Object.keys(storage) as Array<keyof typeof storage>).filter((key) => key.startsWith('set') && !except.includes(key)).map((key) => vi.spyOn(storage, key)), vi.spyOn(Storage.prototype, 'setItem')]
     return {
       untouched: () => {
         for (const spy of spies) expect(spy, spy.getMockName()).not.toHaveBeenCalled()
@@ -549,28 +555,53 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(el.querySelector('.editor-host')!.hasAttribute('data-heading-levels')).toBe(false)
   })
 
-  it('"Table of contents" is on for a page until the reader turns THIS page’s off: then no lines, no names and no ⌘J; nothing is stored, and the note opened again shows it again (D15)', async () => {
-    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
-    act(() => tocOf().publish(TWO))
-    expect(el.querySelector('nav.toc')).not.toBeNull()
-    expect(pressCmdJ().defaultPrevented).toBe(true)
-    const stores = watchStores()
-    clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
-    act(() => row(el, 'Table of contents').click())
-    expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
-    expect(el.querySelector('nav.toc')).toBeNull()
-    expect(pressCmdJ().defaultPrevented).toBe(false)
-    // On again: the same list, from the same channel — the editor was never told.
-    act(() => row(el, 'Table of contents').click())
-    expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
-    act(() => row(el, 'Table of contents').click())
-    expect(el.querySelector('nav.toc')).toBeNull()
-    stores.untouched()
-    stores.restore()
-    await reopen({ tableOfContents: 'auto' })
-    act(() => tocOf().publish(TWO))
-    expect(el.querySelector('nav.toc')).not.toBeNull()
+  it('"Table of contents" is on for a page until the reader turns THIS page’s off: then no lines, no names and no ⌘J; the switch is saved with the note, on and off, and the next editor of the page starts with it (YAZ-2950 D1, D2)', async () => {
+    const saved: Record<string, boolean> = {}
+    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file] !== false)
+    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
+    try {
+      const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+      expect(read).toHaveBeenCalledWith('/vault', PATH)
+      act(() => tocOf().publish(TWO))
+      expect(el.querySelector('nav.toc')).not.toBeNull()
+      expect(pressCmdJ().defaultPrevented).toBe(true)
+      // A mount writes nothing; the one door a click may use is the switch's own.
+      const stores = watchStores(['setTocSwitch'])
+      clickCog(el)
+      expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
+      act(() => row(el, 'Table of contents').click())
+      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+      expect(el.querySelector('nav.toc')).toBeNull()
+      expect(pressCmdJ().defaultPrevented).toBe(false)
+      // On again: the same list, from the same channel — the editor was never told.
+      act(() => row(el, 'Table of contents').click())
+      expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
+      act(() => row(el, 'Table of contents').click())
+      expect(el.querySelector('nav.toc')).toBeNull()
+      // D1: on AND off are stored for THIS page; a turn back on writes `true`, it does not drop the entry.
+      expect(write.mock.calls).toEqual([['/vault', PATH, false], ['/vault', PATH, true], ['/vault', PATH, false]])
+      write.mockClear()
+      stores.untouched()
+      stores.restore()
+      await pastDebounce()
+      expect(writeFile).not.toHaveBeenCalled()
+      // A new editor on the same page — a duplicated tab, a new window, the app after a restart — starts off.
+      act(() => root?.unmount())
+      el.remove()
+      const again = await mount(BODY, 1, { tableOfContents: 'auto' })
+      act(() => tocOf().publish(TWO))
+      expect(again.querySelector('nav.toc')).toBeNull()
+      clickCog(again)
+      expect(row(again, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+      // A page with no entry is on, and reading wrote nothing.
+      await reopen({ tableOfContents: 'auto' })
+      act(() => tocOf().publish(TWO))
+      expect(again.querySelector('nav.toc')).not.toBeNull()
+      expect(write).not.toHaveBeenCalled()
+    } finally {
+      read.mockRestore()
+      write.mockRestore()
+    }
   })
 
   it('with the app-wide setting Off the cog has no "Table of contents" row — there is nothing to turn off — and "Heading levels" is still there', async () => {
@@ -578,6 +609,27 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     clickCog(el)
     expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
     expect(el.querySelector('.page-settings__choices')).toBeNull()
+  })
+
+  it('a page saved as off stays off through the app-wide setting Off: the row hides, the saved value is not touched, and it is used again when the setting comes back (YAZ-2950 D1)', async () => {
+    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => false)
+    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation(() => undefined)
+    try {
+      const el = await mount(BODY, 1, { tableOfContents: 'off' })
+      clickCog(el)
+      expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
+      clickCog(el)
+      // The setting comes back in the same editor (Settings in this or another window): the page is still off.
+      act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} tableOfContents="auto" />))
+      act(() => tocOf().publish(TWO))
+      expect(el.querySelector('nav.toc')).toBeNull()
+      clickCog(el)
+      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+      expect(write).not.toHaveBeenCalled()
+    } finally {
+      read.mockRestore()
+      write.mockRestore()
+    }
   })
 })
 

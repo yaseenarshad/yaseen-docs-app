@@ -20,7 +20,9 @@
  *    cog's "TOC made from:" selects the source for one note, and the app saves that choice in
  *    `folders[root].tocSources`: it is there after the note is closed and after a restart.
  *  - THE PAGE SWITCHES (D12, D15): "Table of contents" hides it on this page, and "Heading
- *    levels" shows each heading's level tag. Neither is stored.
+ *    levels" shows each heading's level tag. "Heading levels" is not stored. "Table of contents"
+ *    is, since YAZ-2950 (decisions D1–D3 on YAZ-2953): `folders[root].tocSwitches`, so a page
+ *    that is off stays off after a reopen, in a new window (⌘⇧N) and after a restart.
  *
  * The widths: the names need a note area of 1240px at content width "Narrow" (1040 + 200). The
  * window starts 1480px wide with the sidebar at its minimum, 180px, so the note area is 1300px.
@@ -31,13 +33,14 @@
  */
 // Written for YAZ-2700. Not yet run: Playwright was off limits when this was written, so every
 // selector here was read from the source, not observed. Run it once and fix what it finds.
-// Step 5c (YAZ-2762) is the same: written and type-checked, and not run.
+// Step 5c (YAZ-2762) is the same: written and type-checked, and not run. So are step 8's store
+// checks and step 8b (YAZ-2950).
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W } from '../../shared/types'
-import { activeTab, appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
+import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, fileRow, launchApp, layer, quitApp, readState, seededState, shoot, winParam } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(60_000)
@@ -601,7 +604,7 @@ test('step 7 — "TOC made from:" selects the source of one note, and the choice
   expect((await readState(userData)).settings.tableOfContentsWidth).toBe(TOC_MIN_W)
 })
 
-test('step 8 — the page switches: "Table of contents" hides it on this page, "Heading levels" shows each level tag; neither is stored', async () => {
+test('step 8 — the page switches: "Table of contents" hides it on this page and is stored, "Heading levels" shows each level tag and is not', async () => {
   /** The level tag of the heading that reads `text`: the text and the opacity of its `::after`. */
   const tagOf = (text: string): Promise<{ content: string; opacity: string }> =>
     editorOf(win)
@@ -620,6 +623,8 @@ test('step 8 — the page switches: "Table of contents" hides it on this page, "
   await expect(menu(win).locator('.page-settings__label')).toHaveCount(0)
   await win.keyboard.press('Escape')
   await shoot(win, 'toc-08-off-for-this-page')
+  // Saved for this note in the state file (YAZ-2950 D1), and never in the note.
+  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(false)
   // ⌘J does nothing on this page.
   await editorOf(win).locator('h1').click()
   await win.keyboard.press('Meta+j')
@@ -630,6 +635,8 @@ test('step 8 — the page switches: "Table of contents" hides it on this page, "
   await pageSwitch(win, 'Table of contents').click()
   await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
   await expect(sourceChoice(win, 'Bullets')).toHaveAttribute('aria-pressed', 'true')
+  // On is stored too: `true`, not the removal of the entry.
+  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(true)
 
   // "Heading levels": a heading that has neither the caret nor the mouse shows its tag only with the switch on.
   await expect(pageSwitch(win, 'Heading levels')).toHaveAttribute('aria-pressed', 'false')
@@ -641,9 +648,60 @@ test('step 8 — the page switches: "Table of contents" hides it on this page, "
   await win.keyboard.press('Escape')
   await shoot(win, 'toc-09-heading-levels')
 
-  // Neither switch reaches the state file: the app-wide setting is what it was, and no key names a page switch.
+  // "Heading levels" does not reach the state file: the app-wide setting is what it was, and no key names it.
   const state = await readState(userData)
   expect(state.settings.tableOfContents).toBe('auto')
   expect(JSON.stringify(state).replaceAll(vault, '')).not.toMatch(/heading.?levels|page.?settings/i)
   expect(await readFile(chaptersPath, 'utf8')).toBe(CHAPTERS)
+})
+
+test('step 8b — a page turned off stays off: after a reopen, in a new window (⌘⇧N) and after a restart (YAZ-2950)', async () => {
+  await cog(win).click()
+  await pageSwitch(win, 'Table of contents').click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await win.keyboard.press('Escape')
+  await expect(toc(win)).toHaveCount(0)
+  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(false)
+
+  // The note closed and opened again: still off. Another note, with no entry, is on.
+  await clickMenuItem(app, 'menu.file.close-tab', 'w1')
+  await expect(activeTab(win)).toContainText('Bullets')
+  await expect(lines(win)).not.toHaveCount(0)
+  await fileRow(win, 'Chapters').click()
+  await expect(activeTab(win)).toContainText('Chapters')
+  await expect(toc(win)).toHaveCount(0)
+  await cog(win).click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await win.keyboard.press('Escape')
+
+  // ⌘⇧N duplicates the window on the same note: a new editor, which reads the saved switch.
+  await clickMenuItem(app, 'menu.file.new-window', 'w1')
+  const dup = await extraWindow(app, ['w1'])
+  await expect(activeTab(dup)).toContainText('Chapters')
+  // Wait for the note itself: a check for "no table of contents" passes before the editor exists.
+  await expect(editorOf(dup).locator('h1')).toBeVisible()
+  await cog(dup).click()
+  await expect(pageSwitch(dup, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await dup.keyboard.press('Escape')
+  await expect(toc(dup)).toHaveCount(0)
+  await closeWindow(app, winParam(dup)!)
+
+  // The app quit and started again: still off. The note itself was never written.
+  await quitApp(app)
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(activeTab(win)).toContainText('Chapters')
+  await expect(editorOf(win).locator('h1')).toBeVisible()
+  await cog(win).click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await win.keyboard.press('Escape')
+  await expect(toc(win)).toHaveCount(0)
+  expect((await readState(userData)).folders[vault]?.tocSwitches[chaptersPath]).toBe(false)
+  expect(await readFile(chaptersPath, 'utf8')).toBe(CHAPTERS)
+
+  // On again, so that the suite ends with the page as it started.
+  await cog(win).click()
+  await pageSwitch(win, 'Table of contents').click()
+  await win.keyboard.press('Escape')
+  await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
 })
