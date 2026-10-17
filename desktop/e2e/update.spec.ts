@@ -109,7 +109,8 @@ test('step 1 — Check for Updates… finds v99: the sheet opens at once, and th
 test('step 2 — the pill opens "What\'s new": every release in the list, the tags, the latest selected, a lazy picture (S14, S16, D5, YAZ-2988 D9–D11)', async () => {
   await pill(win).click()
   await expect(whatsNew(win)).toBeVisible()
-  await expect(rows(win).locator('.whats-new__row-version')).toHaveText(['99.0.0', '98.0.0', running])
+  await expect(rows(win)).toHaveCount(3)
+  expect(await rows(win).evaluateAll((r) => r.map((e) => e.getAttribute('data-version')))).toEqual(['99.0.0', '98.0.0', running])
   await expect(rows(win).nth(0).locator('.whats-new__tag')).toHaveText(['Latest'])
   await expect(rows(win).nth(2).locator('.whats-new__tag')).toHaveText(['Your current version'])
   await expect(rows(win).nth(0)).toHaveAttribute('aria-selected', 'true') // `manual`: the update waiting

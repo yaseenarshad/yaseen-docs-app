@@ -46,7 +46,7 @@ async function render(update: UpdateState, notes: () => Promise<ReleaseNotes> = 
   const el = host
   const buttons = () => [...el.querySelectorAll<HTMLButtonElement>('.whats-new__actions button')]
   const rows = () => [...el.querySelectorAll<HTMLElement>('.whats-new__row')]
-  const selected = () => el.querySelector('.whats-new__row[aria-selected="true"] .whats-new__row-version')?.textContent
+  const selected = () => el.querySelector('.whats-new__row[aria-selected="true"]')?.getAttribute('data-version')
   return { el, bridge, onClose, buttons, rows, selected, labels: () => buttons().map((b) => b.textContent) }
 }
 
@@ -58,10 +58,14 @@ const key = (target: Element, k: string) => {
 }
 
 describe('WhatsNewSheet: the list of releases (D10)', () => {
-  it('lists every release newest first: the version, and the title without the version it starts with', async () => {
+  it('lists every release newest first: the title without its version (or the version when there is none), a date with no year, and the year once (D15)', async () => {
     const { rows } = await render({ kind: 'idle' })
-    expect(rows().map((r) => r.querySelector('.whats-new__row-version')?.textContent)).toEqual(['1.0.14', '1.0.13', '1.0.12'])
-    expect(rows().map((r) => r.querySelector('.whats-new__row-title')?.textContent ?? null)).toEqual(['Faster tabs', null, 'Tab names'])
+    expect(rows().map((r) => r.getAttribute('data-version'))).toEqual(['1.0.14', '1.0.13', '1.0.12'])
+    expect(rows().map((r) => r.querySelector('.whats-new__row-title')?.textContent)).toEqual(['Faster tabs', '1.0.13', 'Tab names'])
+    // D15: no version on a row that has a title, a short date with no year, and the year once as the heading
+    expect(rows()[0].textContent).not.toContain('1.0.14')
+    expect(rows()[0].querySelector('.whats-new__row-date')?.textContent).not.toMatch(/2026/)
+    expect([...document.querySelectorAll('.whats-new__year')].map((y) => y.textContent)).toEqual(['2026'])
     expect(rows()[0].getAttribute('role')).toBe('option')
   })
 

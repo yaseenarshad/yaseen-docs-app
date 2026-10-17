@@ -52,10 +52,28 @@ function noteHtml(body: string): string {
   return template.innerHTML
 }
 
-/** "Oct 17, 2026"; an unreadable date shows nothing. */
-function shortDate(iso: string): string {
+/** "Oct 17, 2026" (`withYear`) or "Oct 17"; an unreadable date shows nothing. */
+function shortDate(iso: string, withYear = true): string {
   const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { ...(withYear ? { year: 'numeric' } : {}), month: 'short', day: 'numeric' })
+}
+
+/** A release's year, the list's group heading (D15); '' for an unreadable date. */
+function yearOf(iso: string): string {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? '' : String(date.getFullYear())
+}
+
+/** The releases (newest first) in runs of one year, each row keeping its index in the whole list. */
+function groupByYear(releases: readonly ReleaseNote[]): [string, { note: ReleaseNote; i: number }[]][] {
+  const groups: [string, { note: ReleaseNote; i: number }[]][] = []
+  releases.forEach((note, i) => {
+    const year = yearOf(note.date)
+    const last = groups[groups.length - 1]
+    if (last !== undefined && last[0] === year) last[1].push({ note, i })
+    else groups.push([year, [{ note, i }]])
+  })
+  return groups
 }
 
 /** The title without the version it starts with: the releases are named "v1.0.12 — Tab Names", and the row already says 1.0.12. */
@@ -168,25 +186,38 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
         ) : (
           <div className="whats-new__columns">
             <div className="whats-new__list" role="listbox" aria-label="Releases" tabIndex={0} aria-activedescendant={optionId(index)} onKeyDown={onListKeyDown}>
-              {releases.map((note, i) => {
-                const isLatest = i === 0
-                const isCurrent = note.version === current
-                return (
-                  <div key={note.version} id={optionId(i)} role="option" aria-selected={i === index} className={`whats-new__row${isCurrent ? ' whats-new__row--current' : ''}`} onClick={() => setPicked(note.version)}>
-                    <span className="whats-new__row-head">
-                      <span className="whats-new__row-version">{note.version}</span>
-                      <span className="whats-new__row-date">{shortDate(note.date)}</span>
-                    </span>
-                    {bareTitle(note) !== '' && <span className="whats-new__row-title">{bareTitle(note)}</span>}
-                    {(isLatest || isCurrent) && (
-                      <span className="whats-new__tags">
-                        {isLatest && <span className="whats-new__tag whats-new__tag--latest">Latest</span>}
-                        {isCurrent && <span className="whats-new__tag whats-new__tag--current">Your current version</span>}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
+              {/*
+                D15 (Yasin: "remove the version numbers but maybe keep the date on the right but maybe remove
+                the year"): a row is the release's title, wrapped, with "Oct 17" on the right; the years are
+                the group headings, each once. The version stays in the notes' meta line.
+              */}
+              {groupByYear(releases).map(([year, group]) => (
+                <div key={year} role="group" aria-label={year === '' ? 'Releases' : year}>
+                  {year !== '' && (
+                    <div className="whats-new__year" aria-hidden="true">
+                      {year}
+                    </div>
+                  )}
+                  {group.map(({ note, i }) => {
+                    const isLatest = i === 0
+                    const isCurrent = note.version === current
+                    return (
+                      <div key={note.version} id={optionId(i)} role="option" aria-selected={i === index} data-version={note.version} className={`whats-new__row${isCurrent ? ' whats-new__row--current' : ''}`} onClick={() => setPicked(note.version)}>
+                        <span className="whats-new__row-head">
+                          <span className="whats-new__row-title">{bareTitle(note) || note.version}</span>
+                          <span className="whats-new__row-date">{shortDate(note.date, false)}</span>
+                        </span>
+                        {(isLatest || isCurrent) && (
+                          <span className="whats-new__tags">
+                            {isLatest && <span className="whats-new__tag whats-new__tag--latest">Latest</span>}
+                            {isCurrent && <span className="whats-new__tag whats-new__tag--current">Your current version</span>}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
             </div>
             <div ref={pane} className="whats-new__notes" onClick={onNotesClick}>
               <section key={selected.version} className="whats-new__release">
