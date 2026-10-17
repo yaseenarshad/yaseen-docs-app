@@ -1287,14 +1287,45 @@ export interface WindowIdentity {
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
   /**
+   * The page view the active tab starts with (YAZ-2951 D5): set by ⌘⇧N or "Move to new window",
+   * given out by the FIRST `window:identity` of the new window only (S17). Never stored.
+   */
+  startView?: StartView
+  /**
    * Display names a tab brought with "Move to new window" (YAZ-2949 D7), by path. Answered ONCE, to the
    * new window's first identity read; never in `WindowEntry`, never stored.
    */
   tabNames?: Record<string, string>
 }
 
-/** What a tab takes along on "Move to new window" (YAZ-2949 D7): its display name, if it has one. */
+/**
+ * How a page looks now (YAZ-2951 D1): what "Duplicate tab", ⌘⇧N and "Move to new window" give the
+ * copy. Read once, on the action (`client/src/lib/pageView.ts`). Never stored (CONTRACTS rule 12).
+ */
+export interface PageView {
+  /** The editor scroller's `scrollTop`, px. */
+  scrollTop: number
+  /** The drilled-in bullet's zoom key (`zoom.ts` `zoomKeyAt`), or null when not drilled in. */
+  zoomKey: string | null
+  /** The live fold keys: bullet keys and `h:` heading keys, as `setFolds` takes them. */
+  folds: string[]
+  /** The text size (⌘+ / ⌘−), percent; 100 = normal. */
+  magnification: number
+}
+
+/** A page view for one file: what a new window starts its active tab with (YAZ-2951 D5). Never stored. */
+export interface StartView {
+  path: string
+  view: PageView
+}
+
+/**
+ * What "Move to new window" carries along with the page, one options object (YAZ-2951 D2, YAZ-2949 D7):
+ * its page view and its display name. Each side reads its own field.
+ */
 export interface PopOutCarry {
+  view?: PageView
+  /** The tab's display name (YAZ-2949 D7), if it has one. */
   name?: string
 }
 

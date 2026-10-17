@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
@@ -42,6 +42,7 @@ let manager: {
   handleFlushed: ReturnType<typeof vi.fn>
   handleLinkReady: ReturnType<typeof vi.fn>
   vaultNotice: ReturnType<typeof vi.fn>
+  takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
 }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
@@ -53,7 +54,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), takeTabNames: vi.fn(() => undefined), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeTabNames: vi.fn(() => undefined), takeStartView: vi.fn(() => undefined) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -408,7 +409,7 @@ describe('registerWindowIpc', () => {
 
   it('window:duplicate hands the caller entry to the manager; unknown callers are rejected', async () => {
     expect(await registered(CONTRACT.window.duplicate.channel)({ sender })).toEqual(ok(undefined))
-    expect(manager.duplicateWindow).toHaveBeenCalledWith(entry)
+    expect(manager.duplicateWindow).toHaveBeenCalledWith(entry, undefined)
     expect(await registered(CONTRACT.window.duplicate.channel)({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
     expect(manager.duplicateWindow).toHaveBeenCalledTimes(1)
   })
@@ -424,16 +425,18 @@ describe('registerWindowIpc', () => {
     expect(manager.popOut).toHaveBeenCalledTimes(1)
   })
 
-  it('window:pop-out passes the tab\'s display name, trimmed and cut like a vault name; a carry that is not an object, or a blank or non-string name, is no name (YAZ-2949 D7)', async () => {
+  it('window:pop-out passes the tab\'s display name, trimmed and cut like a vault name; a blank or non-string name is no name, never an error; a carry that is not an object is BAD_REQUEST (YAZ-2949 D7, joined with YAZ-2951 D2)', async () => {
     const popOut = registered(CONTRACT.window.popOut.channel)
     await popOut({ sender }, '/v/a.md', { name: '  Outline  ' })
     expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', { name: 'Outline' })
     await popOut({ sender }, '/v/a.md', { name: 'x'.repeat(100) })
     expect(manager.popOut.mock.lastCall?.[2].name).toHaveLength(80)
-    for (const carry of [undefined, null, 'Outline', { name: '   ' }, { name: 7 }]) {
+    for (const carry of [undefined, { name: '   ' }, { name: 7 }, {}]) {
       await popOut({ sender }, '/v/a.md', carry)
       expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', {})
     }
+    expect(await popOut({ sender }, '/v/a.md', null)).toEqual(bad('BAD_REQUEST'))
+    expect(await popOut({ sender }, '/v/a.md', 'Outline')).toEqual(bad('BAD_REQUEST'))
   })
 
   it('window:identity answers the names a moved tab brought, from the manager, and nothing when it holds none (YAZ-2949 D7)', async () => {
@@ -441,6 +444,40 @@ describe('registerWindowIpc', () => {
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', tabNames: { '/v/a.md': 'Outline' } }))
     expect(manager.takeTabNames).toHaveBeenLastCalledWith('w1')
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
+  })
+
+  describe('the page view a new window starts with (YAZ-2951 D5, S17, S19)', () => {
+    const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
+
+    it('window:duplicate and window:pop-out pass a good view on; a bad one is dropped and the window still opens; folds are cut at MAX_FOLD_KEYS_PER_FILE', async () => {
+      const duplicate = registered(CONTRACT.window.duplicate.channel)
+      const popOut = registered(CONTRACT.window.popOut.channel)
+      expect(await duplicate({ sender }, VIEW)).toEqual(ok(undefined))
+      expect(manager.duplicateWindow).toHaveBeenLastCalledWith(entry, VIEW)
+      expect(await popOut({ sender }, '/v/a.md', { view: VIEW })).toEqual(ok(undefined))
+      expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', { view: VIEW })
+      for (const wrong of [null, 'view', { ...VIEW, scrollTop: 'x' }, { ...VIEW, zoomKey: 3 }, { ...VIEW, folds: [1] }, { ...VIEW, folds: 'a' }, { ...VIEW, magnification: Number.NaN }, { scrollTop: 0 }]) {
+        expect(await duplicate({ sender }, wrong)).toEqual(ok(undefined))
+        expect(manager.duplicateWindow).toHaveBeenLastCalledWith(entry, undefined)
+        expect(await popOut({ sender }, '/v/a.md', { view: wrong })).toEqual(ok(undefined))
+        expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', {})
+      }
+      const many = Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 20 }, (_, i) => `k${i}:0`)
+      await duplicate({ sender }, { ...VIEW, folds: many })
+      expect(manager.duplicateWindow.mock.lastCall?.[1]).toEqual({ ...VIEW, folds: many.slice(0, MAX_FOLD_KEYS_PER_FILE) })
+      // The options themselves must be an object.
+      expect(await popOut({ sender }, '/v/a.md', 'view')).toEqual(bad('BAD_REQUEST'))
+    })
+
+    it('window:identity gives the start view out one time (S17)', async () => {
+      const start: StartView = { path: '/v/a.md', view: VIEW }
+      manager.takeStartView.mockReturnValueOnce(start)
+      const identity = registered(CONTRACT.window.identity.channel)
+      expect(await identity({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', startView: start }))
+      expect(manager.takeStartView).toHaveBeenCalledWith('w1')
+      const again = (await identity({ sender })) as { value: WindowIdentity }
+      expect(again.value).not.toHaveProperty('startView')
+    })
   })
 
   it('app:flushed routes the renderer ack to the manager by sender', () => {

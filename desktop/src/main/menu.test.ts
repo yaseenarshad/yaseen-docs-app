@@ -427,13 +427,13 @@ const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', roots: ['/vaults/n
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
-  const windows = { idFor: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn() }
+  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
     openExternal: vi.fn(),
   }
-  const handlers = createMenuHandlers(store, { ...windows, idFor: (wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined) }, host)
+  const handlers = createMenuHandlers(windows, host)
   return { handlers, windows, host }
 }
 
@@ -462,17 +462,17 @@ describe('createMenuHandlers', () => {
     expect(absent.host.readClipboardText).not.toHaveBeenCalled()
   })
 
-  it('newWindow duplicates the focused window entry', () => {
-    store.upsertWindow(ENTRY)
+  it('newWindow (⌘⇧N) asks the focused window: it saves its page and reads its page view first (YAZ-2951 D5)', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers, windows } = makeHandlers(wc)
     handlers.newWindow()
-    expect(windows.duplicateWindow).toHaveBeenCalledWith(ENTRY)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onNewWindow.channel)
+    expect(windows.duplicateWindow).not.toHaveBeenCalled() // main no longer copies the window by itself
   })
 
-  it('newWindow with no focused window is a no-op', () => {
+  it('newWindow with no window at all is a no-op', () => {
     const { handlers, windows } = makeHandlers(undefined)
-    handlers.newWindow()
+    expect(() => handlers.newWindow()).not.toThrow()
     expect(windows.duplicateWindow).not.toHaveBeenCalled()
   })
 

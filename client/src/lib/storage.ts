@@ -21,6 +21,7 @@ import {
   type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
+  type StartView,
   type TocSource,
   type VaultEntry,
   type VaultSet,
@@ -281,6 +282,11 @@ export const storage = {
    * keeps it (`setRoot` leaves it alone).
    */
   getSidebarLens: (): SidebarLens => identity.sidebarLens,
+  /**
+   * The page view this window's boot tab starts with (YAZ-2951 D5), from main's first identity: only
+   * a window that ⌘⇧N or "Move to new window" opened has one. Memory only: it is never sent back.
+   */
+  getStartView: (): StartView | undefined => identity.startView,
   setSidebarLens(lens: SidebarLens): void {
     identity = { ...identity, sidebarLens: lens }
     send('window.setIdentity', () => api.window.setIdentity({ sidebarLens: lens }))

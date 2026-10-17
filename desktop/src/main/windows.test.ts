@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { defaultRightPanelIdentity, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
+import { defaultRightPanelIdentity, type PageView, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
 import {
@@ -1229,6 +1229,20 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(manager.takeTabNames(two)).toBeUndefined()
   })
 
+  it('popOut carries the page view and the display name together: each is taken once, under the same new window (YAZ-2951 D2, YAZ-2949 D7)', () => {
+    const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a'], file: '/a/x.md', tabs: ['/a/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    const view = { scrollTop: 10, zoomKey: null, folds: [], magnification: 100 }
+    manager.popOut(from, '/a/x.md', { view, name: 'Outline' })
+    const id = created[0].entry.id
+    expect(manager.takeStartView(id)).toEqual({ path: '/a/x.md', view })
+    expect(manager.takeTabNames(id)).toEqual({ '/a/x.md': 'Outline' })
+    expect(manager.takeStartView(id)).toBeUndefined()
+    expect(manager.takeTabNames(id)).toBeUndefined()
+  })
+
   it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {
     // Bottom-right corner of the 1440×900 area: the +24/+24 cascade would hang off the display.
     const from: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 640, y: 300, width: 800, height: 600 } }
@@ -1236,6 +1250,53 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
     expect(created[0].entry.bounds).toEqual({ x: 640, y: 300, width: 800, height: 600 })
+  })
+})
+
+describe('createWindowManager: a new window gets its page view once (YAZ-2951 D5, S17, S20)', () => {
+  const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
+  const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
+
+  it('duplicateWindow keeps the view for the active file, popOut for its path; takeStartView gives each one time', () => {
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.duplicateWindow(from, VIEW)
+    manager.popOut(from, '/b/y.md', { view: VIEW })
+    const [dup, popped] = created.map((c) => c.entry.id)
+    expect(manager.takeStartView(dup)).toEqual({ path: '/a/x.md', view: VIEW })
+    expect(manager.takeStartView(dup)).toBeUndefined() // a reload of the new window starts fresh (S17)
+    expect(manager.takeStartView(popped)).toEqual({ path: '/b/y.md', view: VIEW })
+    expect(manager.takeStartView(popped)).toBeUndefined()
+    expect(manager.takeStartView('w1')).toBeUndefined()
+    // Never stored (S18): the entries hold no page view.
+    expect(JSON.stringify(store.get().windows)).not.toContain('l2 a:1')
+  })
+
+  it('no view, or a window with no page on show (S13), keeps nothing', () => {
+    const welcome: WindowEntry = { ...from, id: 'w0', root: null, roots: [], file: null, tabs: [] }
+    store.upsertWindow(from)
+    store.upsertWindow(welcome)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.duplicateWindow(from)
+    manager.duplicateWindow(welcome, VIEW)
+    manager.popOut(from, '/b/y.md')
+    manager.popOut(from, '/b/y.md', {})
+    expect(created.map((c) => manager.takeStartView(c.entry.id))).toEqual([undefined, undefined, undefined, undefined])
+  })
+
+  it('a new window that closes before it reads its view forgets it (S20)', async () => {
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.duplicateWindow(from, VIEW)
+    const { win, entry } = created[0]
+    win.close()
+    manager.handleFlushed(win.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(win.isDestroyed()).toBe(true)
+    expect(manager.takeStartView(entry.id)).toBeUndefined()
   })
 })
 

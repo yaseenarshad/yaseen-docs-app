@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type PopOutCarry, type RecentRoots, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type StartView, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -89,13 +89,22 @@ export interface WindowManager extends WindowLookup {
   rootFor(path: string, rootOverride?: string | null): string | null
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
-  /** D6 plumbing: every vault + the file of `from` (YAZ-2602 S34), cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
-  duplicateWindow(from: WindowEntry): void
+  /**
+   * D6 plumbing: every vault + the file of `from` (YAZ-2602 S34), cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167).
+   * `view` is the active tab's page view (YAZ-2951 D5): kept in memory for the new window's first `window:identity`.
+   */
+  duplicateWindow(from: WindowEntry, view?: PageView): void
   /**
    * A tab's "Move to new window" (YAZ-2933 D1, D3, D5): `from`'s vaults (by value) and lens, ONE tab `path`, the
    * sidebar hidden, the right panel closed and empty, cascaded bounds, fresh id. No MRU bump, as `duplicateWindow`.
+   * `carry.view` is the page's view (YAZ-2951 D2), kept as `duplicateWindow` keeps it.
    */
   popOut(from: WindowEntry, path: string, carry?: PopOutCarry): void
+  /**
+   * The page view a new window starts with (YAZ-2951 D5), handed out ONE time: its first `window:identity`
+   * takes it, so a reload starts fresh (S17). A window that closes before it asks drops it (S20). Never stored.
+   */
+  takeStartView(id: string): StartView | undefined
   /** The display names a moved tab brought (YAZ-2949 D7), handed out ONE time: the new window's first identity read takes them. */
   takeTabNames(id: string): Record<string, string> | undefined
   /**
@@ -152,7 +161,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'takeTabNames' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'takeStartView' | 'takeTabNames' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -247,6 +256,8 @@ export function resolveLinkTarget(
 export function createWindowManager(store: Store, host: WindowHost): WindowManager {
   /** Live windows by state entry id (dropped again in `closed`). */
   const live = new Map<string, ManagedWindow>()
+  /** Page views for new windows that have not read their identity yet (YAZ-2951 D5), by window id. Memory only. */
+  const startViews = new Map<string, StartView>()
   /** Display names a "Move to new window" carries (YAZ-2949 D7), by the NEW window's id: gone at its first identity read, or when it closes. Never stored. */
   const heldTabNames = new Map<string, Record<string, string>>()
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
@@ -367,6 +378,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       cancelBoundsTimer()
       unregister()
       live.delete(id)
+      startViews.delete(id) // closed before it asked (YAZ-2951 S20)
       heldLinks.delete(wcId)
       heldTabNames.delete(id)
       const at = focusOrder.indexOf(id)
@@ -517,13 +529,16 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     openWindow,
 
-      duplicateWindow(from) {
+      duplicateWindow(from, view) {
         const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
+        const id = randomUUID()
+        // Only the tab on show carries its view (YAZ-2951 D3); a window with no page on show has none (S13).
+        if (view !== undefined && from.file !== null) startViews.set(id, { path: from.file, view })
         // Clone every ordered path list so the new window's durable identity cannot alias the source;
         // sidebar visibility and the lens (YAZ-1628) are copied by value and then persist independently. The focus
         // list is not the window's to copy (YAZ-2702 Decision 1): the new window reads it from the vault, as each window does (S10).
         open({
-          id: randomUUID(),
+          id,
           root: from.root,
           roots: [...from.roots],
           file: from.file,
@@ -537,10 +552,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     popOut(from, path, carry) {
       const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
-      // The id first, and the name under it before the window exists: its first identity read cannot miss it (YAZ-2949 D7).
+      // The id first, and what the tab carries under it before the window exists: its first identity read cannot miss it (YAZ-2951 D5, YAZ-2949 D7).
       const id = randomUUID()
+      if (carry?.view !== undefined) startViews.set(id, { path, view: carry.view })
       if (carry?.name !== undefined) heldTabNames.set(id, { [path]: carry.name })
       open({ ...from, id, roots: [...from.roots], file: path, tabs: [path], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
+    },
+
+    takeStartView(id) {
+      const start = startViews.get(id)
+      startViews.delete(id)
+      return start
     },
 
     takeTabNames(id) {
