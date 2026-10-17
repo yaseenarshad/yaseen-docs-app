@@ -12,8 +12,8 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
- * all but section indent (YAZ-2709) and "TOC made from" (YAZ-2700 D14), which the host saves with
- * the note.
+ * all but section indent (YAZ-2709), "Table of contents" (YAZ-2950) and "TOC made from" (YAZ-2700
+ * D14), which the host saves with the note. "Line numbers" and "Heading levels" are never saved.
  */
 export function PageSettings({ lineNumbers, onToggleLineNumbers, sectionIndent, onToggleSectionIndent, headingLevels, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, readText }: {
   lineNumbers: boolean

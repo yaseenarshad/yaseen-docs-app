@@ -90,6 +90,8 @@ export interface Store {
   setTocSource(root: string, file: string, source: TocSource | null): void
   /** One note's "Section indent" switch (YAZ-2709 D2). `true` and `false` are both stored; nothing here removes an entry. */
   setSectionIndent(root: string, file: string, on: boolean): void
+  /** One note's "Table of contents" switch (YAZ-2950). The same terms as `setSectionIndent`. */
+  setTocSwitch(root: string, file: string, on: boolean): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /**
    * `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`).
@@ -104,7 +106,7 @@ export interface Store {
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
-   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8)/table of contents sources (YAZ-2700 D14)/section indent switches (YAZ-2709 D2), the vaults of each saved set (YAZ-2602 S71), and the
+   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8)/table of contents sources (YAZ-2700 D14)/section indent switches (YAZ-2709 D2)/table of contents switches (YAZ-2950), the vaults of each saved set (YAZ-2602 S71), and the
    * Favorites order and the focus order across vaults (YAZ-2631 R6; YAZ-2702 Decision 3). The focus
    * LIST is not here: it is in the vault, and `focus.ts` repairs it (YAZ-2702 R10).
    * A dir remaps by prefix — everything at or under it follows,
@@ -119,7 +121,7 @@ export interface Store {
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
    * deleted tabs are dropped, `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
-   * (`<basePath>::<view>`) / open history entries (YAZ-2663 S8) / table of contents sources / section indent switches go too. A saved set loses the vault, and a set with fewer than two
+   * (`<basePath>::<view>`) / open history entries (YAZ-2663 S8) / table of contents sources / section indent switches / table of contents switches go too. A saved set loses the vault, and a set with fewer than two
    * vaults left is removed (YAZ-2602 S71). The Favorites order and the focus order across vaults lose the entry (YAZ-2631 R6; YAZ-2702 Decision 3).
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
@@ -290,8 +292,8 @@ function sanitizeTocSources(raw: unknown): Record<string, TocSource> {
   return out
 }
 
-/** The "Section indent" switches (YAZ-2709 D2): page → `true` or `false`. A wrong entry drops alone — a path that is not absolute, or a value that is not a boolean (`1`, `"true"`, `null`) — and the note then reads as off, as a note with no entry does. */
-function sanitizeSectionIndents(raw: unknown): Record<string, boolean> {
+/** A page switch of the cog — "Section indent" (YAZ-2709 D2) and "Table of contents" (YAZ-2950): page → `true` or `false`. A wrong entry drops alone — a path that is not absolute, or a value that is not a boolean (`1`, `"true"`, `null`) — and the note then reads as a note with no entry. */
+function sanitizeSwitches(raw: unknown): Record<string, boolean> {
   if (!isRecord(raw)) return {}
   const out: Record<string, boolean> = {}
   for (const [file, on] of Object.entries(raw)) {
@@ -311,7 +313,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     opens: sanitizeOpens(raw.opens),
     tocSources: sanitizeTocSources(raw.tocSources),
-    sectionIndents: sanitizeSectionIndents(raw.sectionIndents),
+    sectionIndents: sanitizeSwitches(raw.sectionIndents),
+    tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
   }
@@ -537,6 +540,12 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, sectionIndents: { ...cur.sectionIndents, [file]: on } } } })
     },
 
+    setTocSwitch(root, file, on) {
+      const cur = folderOf(root)
+      if (cur.tocSwitches[file] === on) return
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocSwitches: { ...cur.tocSwitches, [file]: on } } } })
+    },
+
     setBaseGroups(root, key, collapsed) {
       const cur = folderOf(root)
       const baseGroups = { ...cur.baseGroups }
@@ -617,6 +626,8 @@ export function createStore(filePath: string): Store {
             tocSources: remapKeys(folder.tocSources, remap),
             // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
             sectionIndents: remapKeys(folder.sectionIndents, remap),
+            // And the "Table of contents" switch (YAZ-2950).
+            tocSwitches: remapKeys(folder.tocSwitches, remap),
           },
         ]),
       )
@@ -700,6 +711,7 @@ export function createStore(filePath: string): Store {
               opens: dropKeys(folder.opens, gone),
               tocSources: dropKeys(folder.tocSources, gone),
               sectionIndents: dropKeys(folder.sectionIndents, gone),
+              tocSwitches: dropKeys(folder.tocSwitches, gone),
             },
           ]),
       )
