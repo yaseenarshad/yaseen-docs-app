@@ -33,6 +33,7 @@ let manager: {
   idFor: typeof windows.idFor
   openWindow: ReturnType<typeof vi.fn>
   duplicateWindow: ReturnType<typeof vi.fn>
+  popOut: ReturnType<typeof vi.fn>
   openRecentBeside: ReturnType<typeof vi.fn>
   openAlone: ReturnType<typeof vi.fn>
   openVaultSet: ReturnType<typeof vi.fn>
@@ -51,7 +52,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -73,7 +74,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.zoom.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -409,6 +410,17 @@ describe('registerWindowIpc', () => {
     expect(manager.duplicateWindow).toHaveBeenCalledWith(entry)
     expect(await registered(CONTRACT.window.duplicate.channel)({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
     expect(manager.duplicateWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it('window:pop-out hands the caller entry and the tab to the manager; a stranger, a relative path and a path in no vault of the window are rejected (YAZ-2933 D1)', async () => {
+    const popOut = registered(CONTRACT.window.popOut.channel)
+    expect(await popOut({ sender }, '/v/a.md')).toEqual(ok(undefined))
+    expect(manager.popOut).toHaveBeenCalledWith(entry, '/v/a.md')
+    expect(await popOut({ sender: stranger }, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
+    expect(await popOut({ sender }, 'a.md')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await popOut({ sender }, '/other/a.md')).toEqual(bad('BAD_REQUEST'))
+    expect(await popOut({ sender }, '/vault/a.md')).toEqual(bad('BAD_REQUEST')) // a sibling folder whose name starts with the vault's is no part of it
+    expect(manager.popOut).toHaveBeenCalledTimes(1)
   })
 
   it('app:flushed routes the renderer ack to the manager by sender', () => {

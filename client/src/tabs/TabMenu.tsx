@@ -17,6 +17,8 @@ export interface TabMenuProps {
   onClose: () => void
   /** Context-menu equivalent of dragging this tab into the right panel. */
   onMoveToRight?: (path: string) => void
+  /** "Move to new window" (YAZ-2933): the tab leaves for a window of its own. */
+  onMoveToNewWindow?: (path: string) => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
   onSetReview?: (path: string, on: boolean) => void
@@ -27,10 +29,10 @@ export interface TabMenuProps {
 /**
  * A tab's right-click menu, in ONE place (YAZ-2648): the strip's tabs and the board's pages are
  * the same open files, so they offer the same items — the sidebar row's Copy path (YAZ-922) and
- * its OS actions (YAZ-963: Reveal in Finder, Open in VS Code), Show in sidebar, the move to the
- * right panel, and the review toggle (YAZ-2322).
+ * its OS actions (YAZ-963: Reveal in Finder, Open in VS Code), Show in sidebar, the move to a
+ * new window (YAZ-2933) and to the right panel, and the review toggle (YAZ-2322).
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, onMoveToNewWindow, onShowInSidebar, onSetReview, onNotice }: TabMenuProps) {
   /**
    * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so the
    * menu closes at once and there is nothing to confirm or repair — but a STALE tab (deleted or
@@ -47,6 +49,19 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, onShowInSidebar, 
 
   return (
     <ContextMenuSurface x={menu.x} y={menu.y} onClose={onClose}>
+      {onMoveToNewWindow !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onMoveToNewWindow(menu.path)
+            onClose()
+          }}
+        >
+          Move to new window
+        </button>
+      )}
       {onMoveToRight !== undefined && (
         <button
           type="button"

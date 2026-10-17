@@ -716,6 +716,18 @@ export function App() {
     ownChange.current = path === now.current.file
     transferMainToRight(path, now.current.right)
   }, [transferMainToRight])
+  /**
+   * "Move to new window" (YAZ-2933 D2), on a page of the board and on a tab of the strip: the page saves
+   * first, so the new window reads what was typed; main opens it; only then does the tab leave, as ⌘W
+   * closes it — an open board stays until its last tab goes (R18), and a last tab leaves this window empty.
+   * A refusal leaves the tab where it is.
+   */
+  const movePageToNewWindow = useCallback((path: string) => {
+    flushRenamedPath(path)
+      .then(() => api.window.popOut(path))
+      .then(() => (now.current.phase === 'open' ? closeUnderOverview([path]) : closeTab(path)))
+      .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
+  }, [closeUnderOverview, closeTab, notify])
   /** A rename or a move of the page on show, or of a folder above it, changes `file` and is no trip to a page: an open board stays. */
   const renamedUnderOverview = useCallback((oldPath: string, newPath: string, dir: boolean) => {
     const { file: open, phase } = now.current
@@ -1346,6 +1358,7 @@ export function App() {
               onMove={moveTab}
               onDropPage={dropOnMain}
               onMoveToRight={movePageToRight}
+              onMoveToNewWindow={movePageToNewWindow}
               canBack={canBack}
               canForward={canForward}
               onBack={back}
@@ -1418,6 +1431,7 @@ export function App() {
                 onKillAll={askKillAll}
                 // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
                 onMoveToRight={movePageToRight}
+                onMoveToNewWindow={movePageToNewWindow}
                 onShowInSidebar={showInSidebar}
                 onNotice={notify}
                 reviewState={reviewState}

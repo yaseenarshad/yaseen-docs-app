@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_WINDOW_ROOTS, isSidebarLens, type OpenSetResult, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_WINDOW_ROOTS, isSidebarLens, rootOfPath, type OpenSetResult, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -147,6 +147,15 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
 
   handleWithEvent(CONTRACT.window.duplicate, async (e) => {
     windows.duplicateWindow(entryFor(e))
+  })
+
+  // `window:pop-out` (YAZ-2933 D1): a tab's "Move to new window". Main copies the CALLER's window, so the
+  // renderer never names a list of vaults; a path in no vault of that window is no tab of it.
+  handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown) => {
+    const from = entryFor(e)
+    const target = requireAbsPath(path, 'path')
+    if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
+    windows.popOut(from, target)
   })
 
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the

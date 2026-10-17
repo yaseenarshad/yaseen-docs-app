@@ -92,6 +92,11 @@ export interface WindowManager extends WindowLookup {
   /** D6 plumbing: every vault + the file of `from` (YAZ-2602 S34), cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
   /**
+   * A tab's "Move to new window" (YAZ-2933 D1, D3, D5): `from`'s vaults (by value) and lens, ONE tab `path`, the
+   * sidebar hidden, the right panel closed and empty, cascaded bounds, fresh id. No MRU bump, as `duplicateWindow`.
+   */
+  popOut(from: WindowEntry, path: string): void
+  /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
    * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main, and so does
    * `routeToFile` for a FOLDER that comes from outside the app (YAZ-2556 D1). Probes
@@ -145,7 +150,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -523,6 +528,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           sidebarLens: from.sidebarLens,
           bounds: clampBounds(cascaded, host.workAreas()),
         })
+    },
+
+    popOut(from, path) {
+      const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
+      open({ ...from, id: randomUUID(), roots: [...from.roots], file: path, tabs: [path], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
     },
 
     openRecentBeside,

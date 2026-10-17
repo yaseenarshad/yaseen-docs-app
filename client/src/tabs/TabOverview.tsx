@@ -37,6 +37,7 @@ export interface TabOverviewProps {
   onKillAll?: () => void
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. A page dropped on the board's right edge takes the first. */
   onMoveToRight?: (path: string) => void
+  onMoveToNewWindow?: (path: string) => void
   onShowInSidebar?: (path: string) => void
   onNotice?: (message: string) => void
   reviewState?: (path: string) => boolean | null
@@ -111,7 +112,7 @@ function PageFace({ label, lines }: { label: string; lines: string }) {
  * "Kill all tabs" (YAZ-2739), at the end of the top row, is about every tab of the window, whatever
  * the filter shows. The board only asks: App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveToNewWindow, onShowInSidebar, onNotice, reviewState, onSetReview }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   /** The islands the user spread by hand: they stay spread until the board closes. */
@@ -598,7 +599,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         </ContextMenuSurface>
       )}
       {/* A page is an open tab, so its menu is the tab's (`TabMenu`). */}
-      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {pageMenu !== null && <TabMenu menu={pageMenu} label={labelOf(pageMenu.path)} onClose={() => setPageMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* An island is a folder: its row in the sidebar, its path, and its tabs as one. */}
       {islandMenu !== null && menuIsland !== undefined && (
         <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} onClose={() => setIslandMenu(null)}>
