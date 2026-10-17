@@ -46,9 +46,9 @@ export interface MenuHandlers {
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note or the app (YAZ-1710). */
   zoom(step: ZoomStep): void
   openHelp(): void
-  /** Yaseen Docs › Check for Updates… (YAZ-2976 D7): one check now; main answers with a notice or the pill (S4–S6). */
+  /** Yaseen Docs › Check for Updates… (YAZ-2976 D7): one check now; main answers in the window in front with a notice or the "What's new" sheet (S4–S6). */
   checkForUpdates(): void
-  /** Help › What's New… (YAZ-2976 D8): the focused window's renderer opens its "What's new" window. */
+  /** Help › What's New… (YAZ-2976 D8): the focused window's renderer opens its "What's new" sheet. */
   whatsNew(): void
 }
 
@@ -290,7 +290,7 @@ export interface MenuHost {
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
   readClipboardText(): string
   openExternal(url: string): void
-  /** Check for Updates… (YAZ-2976): `index.ts` runs the check and says "newest version" or "can't check" (S4, S5). */
+  /** Check for Updates… (YAZ-2976): `index.ts` runs the check and answers for each state (S4–S6). */
   checkForUpdates(): void
 }
 

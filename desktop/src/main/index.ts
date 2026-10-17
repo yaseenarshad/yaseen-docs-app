@@ -213,11 +213,13 @@ app.whenReady().then(() => {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
     openExternal: (url) => void shell.openExternal(url),
-    // S4, S5: the answer is a notice in a window; a staged or manual update shows as the pill instead (S6).
+    // S4–S6: the answer shows in the window in front, with or without a sidebar (the Welcome screen,
+    // a collapsed one): a notice, or for a staged or manual update the "What's new" sheet and its button.
     checkForUpdates: () =>
       void updater.check().then(
         (s) => {
-          if (s.kind === 'idle' || s.kind === 'updated') manager.linkNotice(`Yaseen Docs ${app.getVersion()} is the newest version`)
+          if (s.kind === 'ready' || s.kind === 'manual') handlers.whatsNew()
+          else manager.linkNotice(s.kind === 'downloading' ? `Downloading Yaseen Docs ${s.version}…` : `Yaseen Docs ${app.getVersion()} is the newest version`)
         },
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),

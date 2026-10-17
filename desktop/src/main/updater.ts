@@ -59,7 +59,7 @@ export interface UpdaterHost {
 export interface Updater {
   /** On `ready`, before the first window: reads the `updated-to` marker (S24), then the first check 10 s from now and every 12 h after (D7); no check in a dev run with no feed (S7). */
   start(): void
-  /** One check now: the state it ends in. Never two at once; while `downloading` or `ready` it answers the state and fetches nothing (S6). */
+  /** One check now: the state it finds, `downloading` as soon as a download starts. Never two at once; while `downloading` or `ready` it answers the state and fetches nothing (S6). */
   check(): Promise<UpdateState>
   state(): UpdateState
   notes(): Promise<ReleaseNote[]>
@@ -246,15 +246,17 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       set({ kind: 'manual', version })
       return state
     }
+    // The answer is `downloading` at once (S6): the ~98.5 MB go on in the background (D6), and the
+    // pushes say how they end.
     const before = state
     set({ kind: 'downloading', version })
-    try {
-      await download(version, asset, requirement)
-    } catch (err) {
-      set(before) // S9, S10: the next check tries again
-      throw err
-    }
-    set({ kind: 'ready', version })
+    download(version, asset, requirement).then(
+      () => set({ kind: 'ready', version }),
+      (err: unknown) => {
+        console.error(`[update] the download of ${version} failed: ${String(err)}`)
+        set(before) // S9, S10: the next check tries again
+      },
+    )
     return state
   }
 

@@ -10,7 +10,8 @@ import { existsSync } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { UpdateState } from '@shared/types'
 import { createUpdater, ownRequirement, parseRequirement, runFile, type UpdaterHost } from './updater'
 
 const DR = 'identifier "com.test.yaseendocs"'
@@ -93,12 +94,16 @@ describe.skipIf(process.platform !== 'darwin')('a download end to end (real hdiu
       feed: 'https://feed.test/releases',
       pid: process.pid,
     }
-    return { updater: createUpdater(host, () => undefined), app, userData }
+    // `check()` answers `downloading` (S6); the push after it is how the download ended.
+    let end!: (state: UpdateState) => void
+    const ended = new Promise<UpdateState>((resolve) => (end = resolve))
+    return { updater: createUpdater(host, (state) => state.kind !== 'downloading' && end(state)), ended, app, userData }
   }
 
   it('S8: a build that meets our requirement is staged beside the app, and the .dmg is detached and deleted', async () => {
-    const { updater, app, userData } = await updaterFor('good', await dmgWith('good', 'com.test.yaseendocs'))
-    await expect(updater.check()).resolves.toEqual({ kind: 'ready', version: '1.0.13' })
+    const { updater, ended, app, userData } = await updaterFor('good', await dmgWith('good', 'com.test.yaseendocs'))
+    await expect(updater.check()).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
+    await expect(ended).resolves.toEqual({ kind: 'ready', version: '1.0.13' })
     await expect(verify(DR, `${app}.update`)).resolves.toBeDefined()
     expect(await readFile(join(`${app}.update`, 'Contents', 'Info.plist'), 'utf8')).toContain('com.test.yaseendocs')
     expect(existsSync(join(userData, 'updates', '1.0.13.dmg'))).toBe(false)
@@ -107,9 +112,12 @@ describe.skipIf(process.platform !== 'darwin')('a download end to end (real hdiu
   }, SLOW)
 
   it('S10: a build that does not meet it (another identity) is refused: idle, nothing staged, nothing left mounted', async () => {
-    const { updater, app, userData } = await updaterFor('bad', await dmgWith('bad', 'com.test.other'))
-    await expect(updater.check()).rejects.toThrow(/requirement/)
-    expect(updater.state()).toEqual({ kind: 'idle' })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { updater, ended, app, userData } = await updaterFor('bad', await dmgWith('bad', 'com.test.other'))
+    await updater.check()
+    await expect(ended).resolves.toEqual({ kind: 'idle' })
+    expect(String(error.mock.calls[0][0])).toMatch(/requirement/)
+    error.mockRestore()
     expect(existsSync(`${app}.update`)).toBe(false)
     const { stdout } = await runFile('/usr/bin/hdiutil', ['info'])
     expect(stdout).not.toContain(userData) // `hdiutil info` names each attached image by its path

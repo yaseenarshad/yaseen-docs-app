@@ -79,6 +79,9 @@ function fake(opts: { latest?: unknown; list?: unknown; requirement?: string | E
   return { updater, host, calls, fetched, states }
 }
 
+/** The download runs after `check()` answers `downloading` (S6): wait for the state it ends in. */
+const until = (updater: { state(): UpdateState }, kind: UpdateState['kind']) => vi.waitFor(() => expect(updater.state().kind).toBe(kind))
+
 describe('newer / compareVersions', () => {
   it('compares x.y.z as numbers, ignores a leading v, and equal is not newer', () => {
     expect(newer('1.0.13', '1.0.12')).toBe(true)
@@ -168,7 +171,8 @@ describe('check', () => {
     await writeFile(join(updates, '1.0.11.dmg.part'), 'the last, broken download') // S12: deleted by the next one
     await mkdir(`${bundle}.update/Contents`, { recursive: true }) // a staged copy from a failed swap (S23)
     const { updater, calls, fetched, states } = fake()
-    await expect(updater.check()).resolves.toEqual({ kind: 'ready', version: '1.0.13' })
+    await expect(updater.check()).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
+    await until(updater, 'ready')
     expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'ready', version: '1.0.13' }])
     expect(fetched).toEqual([`${FEED}/latest`, 'https://dl.test/Yaseen.Docs-1.0.13-arm64.dmg'])
     const mount = calls[1][1][5]
@@ -185,21 +189,29 @@ describe('check', () => {
     expect(existsSync(mount)).toBe(false)
   })
 
-  it('S9: a wrong sha256 → rejects, back to idle, the file is gone, and nothing is mounted', async () => {
+  it('S9: a wrong sha256 → back to idle, the file is gone, and nothing is mounted', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater, calls, states } = fake({ body: () => new TextEncoder().encode('tampered bytes') })
-    await expect(updater.check()).rejects.toThrow('sha256')
+    await updater.check()
+    await until(updater, 'idle')
+    expect(String(error.mock.calls[0][0])).toContain('sha256')
     expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'idle' }])
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d']) // no hdiutil, no ditto
     expect(existsSync(join(userData, 'updates'))).toBe(false)
+    error.mockRestore()
   })
 
-  it('S10: a build that does not meet our requirement → rejects, back to idle, detached, nothing staged', async () => {
+  it('S10: a build that does not meet our requirement → back to idle, detached, nothing staged', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater, calls, states } = fake({ verify: new Error('test-requirement: code failed to satisfy specified code requirement(s)') })
-    await expect(updater.check()).rejects.toThrow('requirement')
+    await updater.check()
+    await until(updater, 'idle')
+    expect(String(error.mock.calls[0][0])).toContain('requirement')
     expect(states.at(-1)).toEqual({ kind: 'idle' })
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d', '/usr/bin/hdiutil attach', '/usr/bin/codesign --verify', '/usr/bin/hdiutil detach'])
     expect(existsSync(`${bundle}.update`)).toBe(false)
     expect(existsSync(join(userData, 'updates'))).toBe(false) // a failed download leaves nothing (S11)
+    error.mockRestore()
   })
 
   it('a stalled check stops after 30 s, so the next check can run (the JSON requests carry the timeout signal)', async () => {
@@ -222,6 +234,7 @@ describe('check', () => {
 
   it('a download with no data for 60 s stops, however long it ran: back to idle, nothing left on disk', async () => {
     vi.useFakeTimers()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     let signal: AbortSignal | undefined
     const { updater, states } = fake({
       overrides: {
@@ -241,8 +254,7 @@ describe('check', () => {
         },
       },
     })
-    const check = updater.check()
-    const failed = expect(check).rejects.toThrow('stalled')
+    await expect(updater.check()).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
     // The writes are real file I/O, so wait for each chunk on disk before the clock moves.
     const written = (n: number) => vi.waitFor(() => expect(statSync(join(userData, 'updates', '1.0.13.dmg.part')).size).toBe(n))
     await written(4)
@@ -252,12 +264,14 @@ describe('check', () => {
     expect(signal?.aborted).toBe(false)
     await vi.advanceTimersByTimeAsync(1_000)
     expect(signal?.aborted).toBe(true)
-    await failed
+    await until(updater, 'idle')
+    expect(String(error.mock.calls[0][0])).toContain('stalled')
     expect(states.at(-1)).toEqual({ kind: 'idle' })
     expect(existsSync(join(userData, 'updates'))).toBe(false)
+    error.mockRestore()
   })
 
-  it('S6: a check during the download answers downloading and fetches nothing; two checks at once share one request; ready answers ready', async () => {
+  it('S6: a check answers downloading as soon as the download starts; two checks at once share one request; a check during the download fetches nothing; ready answers ready', async () => {
     let release_!: () => void
     const held = new Promise<void>((r) => (release_ = r))
     const body = () =>
@@ -271,11 +285,11 @@ describe('check', () => {
     const { updater, fetched } = fake({ body })
     const first = updater.check()
     const twin = updater.check()
-    await vi.waitFor(() => expect(updater.state()).toEqual({ kind: 'downloading', version: '1.0.13' }))
+    await expect(first).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
+    await expect(twin).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
     await expect(updater.check()).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
     release_()
-    await expect(first).resolves.toEqual({ kind: 'ready', version: '1.0.13' })
-    await expect(twin).resolves.toEqual({ kind: 'ready', version: '1.0.13' })
+    await until(updater, 'ready')
     await expect(updater.check()).resolves.toEqual({ kind: 'ready', version: '1.0.13' })
     expect(fetched).toEqual([`${FEED}/latest`, 'https://dl.test/Yaseen.Docs-1.0.13-arm64.dmg'])
   })
@@ -370,9 +384,24 @@ describe('installOnExit (S21, S22)', () => {
     expect(host.spawnDetached).not.toHaveBeenCalled()
   })
 
+  it('S12: a quit during the download installs nothing', async () => {
+    let release_!: () => void
+    const held = new Promise<void>((r) => (release_ = r))
+    const { updater, host } = fake({ body: () => new ReadableStream<Uint8Array>({ start: (c) => held.then(() => c.close()) }) })
+    await expect(updater.check()).resolves.toEqual({ kind: 'downloading', version: '1.0.13' })
+    updater.installOnExit(true)
+    updater.installOnExit(false)
+    expect(host.spawnDetached).not.toHaveBeenCalled()
+    vi.spyOn(console, 'error').mockImplementation(() => undefined) // the empty body then fails its sha256
+    release_()
+    await until(updater, 'idle')
+    vi.mocked(console.error).mockRestore()
+  })
+
   it('with an update staged starts the detached swap with this PID, the bundle, the marker, the version and the reopen flag', async () => {
     const { updater, host } = fake()
     await updater.check()
+    await until(updater, 'ready')
     updater.installOnExit(true)
     updater.installOnExit(false)
     expect(vi.mocked(host.spawnDetached).mock.calls).toEqual([
@@ -385,6 +414,7 @@ describe('installOnExit (S21, S22)', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater } = fake({ overrides: { spawnDetached: () => { throw new Error('EAGAIN') } } })
     await updater.check()
+    await until(updater, 'ready')
     expect(() => updater.installOnExit(false)).not.toThrow()
     expect(error).toHaveBeenCalledOnce()
     error.mockRestore()

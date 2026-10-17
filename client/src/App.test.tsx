@@ -1354,6 +1354,16 @@ describe('App "What\'s new" window (YAZ-2976 D4, D5, D8)', () => {
     await settle(el)
     expect(el.querySelector('.whats-new')).not.toBeNull()
   })
+
+  it('the Welcome window has no sidebar and no pill, but menu:whats-new (Help › What\'s New…, or Check for Updates… with an update) opens the sheet with its button (S6)', async () => {
+    const manual = { kind: 'manual' as const, version: '1.0.13' }
+    const { el, emitWhatsNew } = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] }, {}, (b) => b.bridge.update.state.mockResolvedValue(manual))
+    await act(async () => {})
+    expect([el.querySelector('.welcome'), el.querySelector('.update-pill')]).toEqual([expect.anything(), null])
+    act(() => emitWhatsNew())
+    await settle(el)
+    expect([...el.querySelectorAll('.whats-new__actions button')].map((b) => b.textContent)).toEqual(['Later', 'Download'])
+  })
 })
 
 describe('App ⌘K search (D4, YAZ-804)', () => {
