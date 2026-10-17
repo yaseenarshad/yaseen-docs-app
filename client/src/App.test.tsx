@@ -115,12 +115,12 @@ const captured = vi.hoisted(() => ({
   /** The door of the new tab page stub (YAZ-2663 S33): whether its first row took the keyboard focus. */
   startPageFocus: vi.fn(() => true),
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number }[],
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth })
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startScrollTop }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startScrollTop })
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
@@ -1079,6 +1079,50 @@ describe('App Move to new window (YAZ-2933)', () => {
     await act(async () => items(el)[0]!.click())
     expect(tabNames(el)).toEqual(['a', 'b'])
     expect(el.textContent).toContain("Can't move to a new window: path is in no vault of this window")
+  })
+})
+
+describe('App Duplicate tab (YAZ-2940 D5–D7)', () => {
+  const rightClick = (target: Element | undefined) =>
+    act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  const duplicateItem = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Duplicate tab')
+  const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeTab = (el: HTMLElement) => el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')?.dataset.tab
+
+  it('S1, D7: from the strip, the copy opens right after its source and shows, and its editor starts at the source\'s scroll spot; nothing is stored', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const source = el.querySelector<HTMLElement>('.tabbar__tab')!.dataset.tab!
+    // The source's scroller, as the real editor draws it inside its layer.
+    const scroller = document.createElement('div')
+    scroller.className = 'editor-host'
+    scroller.scrollTop = 420
+    el.querySelector(`.tabstack__layer[data-tab="${source}"]`)!.appendChild(scroller)
+    bridge.window.setIdentity.mockClear()
+    rightClick(el.querySelector('.tabbar__tab')!)
+    act(() => duplicateItem(el)!.click())
+    expect(stripLabels(el)).toEqual(['a', 'a', 'b'])
+    const copy = el.querySelectorAll<HTMLElement>('.tabbar__tab')[1].dataset.tab!
+    expect(copy).not.toBe(source)
+    expect(activeTab(el)).toBe(copy)
+    expect(el.querySelector(`.tabstack__layer[data-tab="${copy}"]`)?.classList.contains('tabstack__layer--hidden')).toBe(false)
+    expect(el.querySelector(`.tabstack__layer[data-tab="${source}"]`)?.classList.contains('tabstack__layer--hidden')).toBe(true)
+    expect(captured.editors.find((e) => e.startScrollTop !== undefined)).toMatchObject({ path: '/v/a.md', startScrollTop: 420 })
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+
+  it('S5: from a page of the tab board, the copy stands beside its source on the board, and the board stays open', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!.click())
+    const pages = () => [...el.querySelectorAll<HTMLElement>('.taboverview__page')]
+    rightClick(pages().find((p) => p.querySelector('.taboverview__title')?.textContent === 'b'))
+    await act(async () => duplicateItem(el)!.click())
+    expect(el.querySelector('.taboverview')).not.toBeNull()
+    expect(pages().map((p) => p.querySelector('.taboverview__title')?.textContent)).toEqual(['a', 'b', 'b'])
+    expect(stripLabels(el)).toEqual(['a', 'b', 'b'])
+    expect(activeTab(el)).toBe(pages()[2].dataset.tab)
+    // The next trip to a page still closes it.
+    await act(async () => pages()[0].click())
+    expect(el.querySelector('.taboverview')).toBeNull()
   })
 })
 
@@ -3178,6 +3222,23 @@ describe('App upkeep review (YAZ-2322)', () => {
       ['/v/a.md', true],
       ['/v/b.md', false],
     ])
+  })
+
+  it('S9 (YAZ-2940): a note that has copies shows through ONE copy\'s layer — the active copy when it shows the note, else the first from the left — and no other editor mounts', async () => {
+    const { el } = await mount(defaultAppState(), { ...TABS, file: '/v/a.md' }, {}, upkeepOn(due('a')))
+    act(() => void el.querySelector('.tabbar__tab')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Duplicate tab')!.click())
+    const [first, copy] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)
+    act(() => captured.sidebar?.onOpenFile('/v/b.md')) // a · a′ · b, b active
+    const shown = () => [...el.querySelectorAll<HTMLElement>('.tabstack__layer:not(.tabstack__layer--hidden)')].map((layer) => layer.dataset.tab)
+    openInbox()
+    expect(shown()).toEqual([first])
+    expect(editorsOn(el, '/v/a.md')).toBe(2)
+    act(() => button(el, 'Close review')?.click())
+    act(() => el.querySelectorAll<HTMLElement>('.tabbar [role="tab"]')[1].click()) // the copy a′
+    openInbox()
+    expect(shown()).toEqual([copy])
+    expect(editorsOn(el, '/v/a.md')).toBe(2)
   })
 
   it('a note open in the side panel is reviewed there: the main pane says so and mounts no second editor', async () => {

@@ -13,7 +13,7 @@
  * has no `.wikilink` decoration span, so this handler ignores it (normal caret placement).
  *
  * Gestures: plain click → open in the CURRENT tab (`nav.openCurrent` — an already-open path
- * activates its tab, tabs dedupe); ⌘(meta)-click → NEW BACKGROUND tab (`nav.openBackground`
+ * goes to its tab, never a new one — of a file with copies, the active copy, else the first); ⌘(meta)-click → NEW BACKGROUND tab (`nav.openBackground`
  * — appended, never activated, never focused; an already-open path is a no-op). An
  * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`,
  * the Files & Links "default location for new notes" setting read at CLICK time; C2-,
@@ -53,7 +53,7 @@ export interface WikilinkNav {
    * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
    */
   createFolder: () => string
-  /** Plain click: open in the CURRENT tab (already-open → activates its tab). */
+  /** Plain click: open in the CURRENT tab (already-open → goes to its tab). */
   openCurrent: (path: string) => void
   /** ⌘-click: append a background tab (already-open → no-op; focus never moves). */
   openBackground: (path: string) => void

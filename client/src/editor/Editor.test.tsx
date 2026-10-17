@@ -19,6 +19,7 @@ import { Editor } from './Editor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
+import { announceTwinSave } from '../lib/twinEditors'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -141,14 +142,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string) => void; tableOfContents?: TableOfContents; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startScrollTop?: number } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startScrollTop={extra.startScrollTop} />))
   await settle()
   await settle()
   return container
@@ -715,6 +716,103 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     type('edited\r\n')
     await pastDebounce()
     expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${fm2Crlf}edited\r\n`, expectedMtime: 2 })
+  })
+})
+
+describe('a duplicated tab starts at its source\'s scroll spot (YAZ-2940 D7)', () => {
+  /** The caret grab moves the scroller to 5, as a real focus can. */
+  const grabScrolls = () =>
+    vi.mocked(focusEditor).mockImplementation(() => {
+      const host = container?.querySelector<HTMLElement>('.editor-host')
+      if (host) host.scrollTop = 5
+    })
+  afterEach(() => vi.mocked(focusEditor).mockReset())
+
+  it('sets the scroller\'s scrollTop once the content lands, after the caret grab that may scroll; a later prop is never applied', async () => {
+    grabScrolls() // it runs before the start is applied
+    const el = await mount(FM + BODY, 1, { startScrollTop: 420 })
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    expect(focusEditor).toHaveBeenCalled()
+    expect(host.scrollTop).toBe(420)
+    // A new index source builds the editor again: the start is spent, and a new prop is not read.
+    vi.mocked(focusEditor).mockReset()
+    host.scrollTop = 0
+    const built = createCrepeMock.mock.calls.length
+    await act(async () => root?.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} onRetitle={noop} startScrollTop={999} />))
+    await settle()
+    expect(createCrepeMock.mock.calls.length).toBe(built + 1)
+    expect(host.scrollTop).toBe(0)
+  })
+
+  it('a mount with no start leaves the scroller where the caret grab put it', async () => {
+    grabScrolls()
+    const el = await mount(FM + BODY)
+    expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(5)
+  })
+})
+
+/**
+ * Copies of one file (YAZ-2940 D4, S23): a save tells the file's other editors in this window at
+ * once, through `twinEditors.ts`, without waiting for the watcher. They answer with the same
+ * code the watcher drives: a clean copy reloads as a diff, a dirty copy shows the conflict bar,
+ * and the editor that saved skips its own announce by the echo check.
+ */
+describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
+  const NEXT = '# Hello\n\nfrom the other copy\n'
+
+  it('a dirty copy shows the conflict bar and keeps its text', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nmy unsaved edit\n')
+    diskHas(FM + NEXT, 7)
+    await act(async () => {
+      announceTwinSave(PATH, 7)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
+    expect(applyExternalMock).not.toHaveBeenCalled()
+    expect(crepe().md).toBe('# Hello\n\nmy unsaved edit\n')
+  })
+
+  it('two editors on one path: the one that saves skips its own announce, the twin reloads before any watcher event', async () => {
+    const file: FileResponse = { path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length }
+    readFile.mockResolvedValueOnce(file)
+    readFile.mockResolvedValueOnce(file)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    act(() =>
+      root?.render(
+        <>
+          <Editor {...props} />
+          <Editor {...props} />
+        </>,
+      ),
+    )
+    await settle()
+    await settle()
+    const [a, b] = createCrepeMock.mock.results.map((r) => r.value as FakeCrepe)
+    expect(createCrepeMock).toHaveBeenCalledTimes(2)
+    const reads = readFile.mock.calls.length
+    // Type in copy A; its save lands with mtime 99 (beforeEach's writeFile).
+    act(() => {
+      a.md = NEXT
+      a.onMarkdownUpdated?.(NEXT)
+    })
+    diskHas(FM + NEXT, 99) // B's read of the change
+    diskHas(FM + NEXT, 99) // B's reload() re-reads
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    // Only B read the disk (twice: the change check and the reload); A took its announce as an echo.
+    expect(readFile.mock.calls.length).toBe(reads + 2)
+    expect(applyExternalMock).toHaveBeenCalledExactlyOnceWith(b, NEXT)
+    expect(b.md).toBe(NEXT)
+    expect(container.querySelector('.conflict-bar')).toBeNull()
+    // The watcher's event for that write is an echo for both copies now.
+    await emit({ type: 'change', path: PATH, mtime: 99 })
+    expect(readFile.mock.calls.length).toBe(reads + 2)
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1) // B's reloaded text is its baseline: no save back
   })
 })
 

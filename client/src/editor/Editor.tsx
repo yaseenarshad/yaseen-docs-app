@@ -48,6 +48,7 @@ import { ReviewsSection } from '../review/ReviewsSection'
 import { pageLabel, usePathTitles, useTreeKind, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
+import { onTwinSave } from '../lib/twinEditors'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { TextViewer } from '../viewers/TextViewer'
@@ -137,10 +138,14 @@ interface EditorProps {
    * gets it; the right panel has no preview tab.
    */
   onUserEdit?: (path: string) => void
+  /** A duplicated tab's start (YAZ-2940 D7): its source's `scrollTop`, applied once, when the first content lands. Read at mount only. */
+  startScrollTop?: number
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startScrollTop }: EditorProps) {
   const inTree = useTreeKind(root, path)
+  // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
+  const startScrollTopRef = useRef(startScrollTop)
   // The folder itself is a tab (YAZ-2290 D3), and only the Files tree can say which path is one:
   // a folder may be named `Notes.md`. Until the tree for an in-root path is known, nothing is guessed.
   const inRoot = path.startsWith(`${root.replace(/\/+$/, '')}/`)
@@ -185,11 +190,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startScrollTop={startScrollTopRef.current} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startScrollTop }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -198,7 +203,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startScrollTop={startScrollTop} />
       )}
     </section>
   )
@@ -234,6 +239,7 @@ function CrepeHost({
   onChangeTableOfContentsWidth = noTableOfContentsChange,
   reviewSettings,
   onUserEdit,
+  startScrollTop,
 }: {
   root: string
   file: FileResponse
@@ -260,6 +266,7 @@ function CrepeHost({
   onChangeTableOfContentsWidth?: (width: number) => void
   reviewSettings?: ReviewSettings
   onUserEdit?: (path: string) => void
+  startScrollTop?: number
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
@@ -277,6 +284,8 @@ function CrepeHost({
   // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
   const hostRef = useRef<HTMLDivElement>(null)
+  // A duplicated tab's start (YAZ-2940 D7): a ref, so the create effect does not depend on it, and used once.
+  const startScrollRef = useRef(startScrollTop)
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
   useEffect(() => {
@@ -520,6 +529,10 @@ function CrepeHost({
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
       // arrows mid-walk. Every other door (tabs, wikilinks, boot) still lands in the text.
       if (!(document.activeElement instanceof HTMLElement && document.activeElement.closest('.tree') !== null)) focusEditor(crepe)
+      // A copy starts where its source stood (YAZ-2940 D7) — after the caret grab, which may scroll.
+      const scroller = hostRef.current?.closest('.editor-host')
+      if (startScrollRef.current !== undefined && scroller) scroller.scrollTop = startScrollRef.current
+      startScrollRef.current = undefined
     })
 
     // An external/AI edit lands as a DIFF over the live state (YAZ-1347), so folds, caret and
@@ -537,15 +550,17 @@ function CrepeHost({
     }
     reloadRef.current = () => void reload()
 
-    const unsubscribe = watch.subscribe((ev) => {
-      if (ev.type !== 'change' || ev.path !== file.path || controller === null) return
+    // A change of this file on disk: from the watcher, or at once from a copy of this tab that
+    // saved (YAZ-2940 D4, S23 — `twinEditors.ts`). The echo check skips this editor's own save.
+    const onDiskChange = (mtime: number) => {
+      if (controller === null) return
       const c = controller
       // On slow filesystems (e.g. NFS vaults) the watcher event for our own write can arrive
       // before the `writeFile` response carries the new mtime; settle the in-flight save first
       // so echo suppression compares against the mtime of the write that caused the event.
       void c.settled().then(async () => {
         if (cancelled) return
-        if (ev.mtime === c.mtime) return // echo of our own write
+        if (mtime === c.mtime) return // echo of our own write
         // A base's property write (GRO-2141) rewrites only the frontmatter block; absorb it
         // silently so unsaved body edits and the caret survive (GRO-2186).
         const fresh = await api.readFile(file.path)
@@ -558,15 +573,20 @@ function CrepeHost({
         // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
         // before deciding whether in-progress typing would be lost by a silent reload.
         c.update(getMarkdownForSave(crepe))
-        if (c.dirty) reportConflict(ev.mtime)
+        if (c.dirty) reportConflict(mtime)
         else void reload()
       })
+    }
+    const unsubscribe = watch.subscribe((ev) => {
+      if (ev.type === 'change' && ev.path === file.path) onDiskChange(ev.mtime)
     })
+    const offTwin = onTwinSave(file.path, onDiskChange)
 
     return () => {
       cancelled = true
       crepeRef.current = null
       unsubscribe()
+      offTwin()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel, tocChannel])
