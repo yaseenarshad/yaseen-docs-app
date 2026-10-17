@@ -1,7 +1,7 @@
 /**
  * THE UPDATE FLOW (YAZ-2976 D3–D8): the pill, the "What's new" sheet and its buttons, against a fake
  * GitHub feed. `YASEEN_DOCS_UPDATE_FEED` turns the updater on in this unpackaged run (S7); an
- * unpackaged copy cannot replace itself, so a newer release is `manual` (S13): "Update available" and
+ * unpackaged copy cannot replace itself, so a newer release is `manual` (S13): "New update for you" and
  * "Download". The download, the checks and the swap of a `ready` update are proved out of sight by
  * `desktop/src/main/updater.codesign.test.ts` and `updater.swap.test.ts`, with the real `hdiutil`,
  * `codesign` and `/bin/sh`.
@@ -93,17 +93,17 @@ test.afterAll(async () => {
 })
 
 // No "no pill at launch" check: the timer's check 10 s after `ready` can win the race on a slow launch.
-test('step 1 — Check for Updates… finds v99: the sheet opens at once, and the pill says "Update available" (S6, S7, S13, D4)', async () => {
+test('step 1 — Check for Updates… finds v99: the sheet opens at once, and the pill says "New update for you" (S6, S7, S13, D4)', async () => {
   await expect(win.locator('.sidebar__footer .settings-button')).toBeVisible()
   await clickMenuItem(app, 'menu.app.check-updates', 'w1')
   await expect(whatsNew(win)).toBeVisible()
   await expect(actions(win)).toHaveText(['Later', 'Download'])
-  await expect(pill(win)).toHaveText('Update available')
+  await expect(pill(win)).toHaveText('New update for you')
   await expect(pill(win)).toHaveAttribute('title', 'Yaseen Docs 99.0.0')
   await shoot(win, 'update-01-pill')
   await whatsNew(win).getByRole('button', { name: 'Later' }).click()
   await expect(whatsNew(win)).toHaveCount(0)
-  await expect(pill(win)).toHaveText('Update available') // S19
+  await expect(pill(win)).toHaveText('New update for you') // S19
 })
 
 test('step 2 — the pill opens "What\'s new": every release in the list, the tags, the latest selected, a lazy picture (S14, S16, D5, YAZ-2988 D9–D11)', async () => {
@@ -148,7 +148,7 @@ test('step 4 — "Download" opens the release page and closes the sheet; the pil
   await whatsNew(win).getByRole('button', { name: 'Download' }).click()
   await expect(whatsNew(win)).toHaveCount(0)
   await expect.poll(opened).toContain('https://github.com/yaseenarshad/yaseen-docs-app/releases/latest')
-  await expect(pill(win)).toHaveText('Update available')
+  await expect(pill(win)).toHaveText('New update for you')
 })
 
 test('step 5 — Help › What\'s New… opens the same sheet; Esc closes it (D8, S19)', async () => {
@@ -164,7 +164,7 @@ test('step 6 — the first launch after a swap: the pill says "What\'s new" once
   latest = `v${version}` // nothing newer: only the marker makes the pill, and the feed lists this release alone
   await writeFile(path.join(userData, 'updated-to'), version)
   await launch()
-  await expect(pill(win)).toHaveText("What's new")
+  await expect(pill(win)).toHaveText("See what's new")
   await expect(stat(path.join(userData, 'updated-to'))).rejects.toThrow()
   await pill(win).click()
   await expect(whatsNew(win).locator('.whats-new__release-title')).toHaveText(['This Release'])
