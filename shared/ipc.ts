@@ -96,6 +96,8 @@ export const CONTRACT = {
     open: invoke<[opts: OpenWindowOptions], void>('window:open', 1),
     /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
     duplicate: invoke<[], void>('window:duplicate', 0),
+    /** A tab's "Move to new window" (YAZ-2933): a new window on the caller's vaults with only `path` in it, sidebar hidden. */
+    popOut: invoke<[path: string], void>('window:pop-out', 1),
     /** The vault switcher's one door (YAZ-1767 🔒 D1, D9): raise that vault's windows or open a new one on its last file; `false` = the folder is gone and was pruned from the MRU. */
     openRecent: invoke<[path: string], boolean>('window:open-recent', 1),
     /** "Open by itself" (YAZ-2858 D1): raise the window that shows ONLY this vault, else open a new one on its last file; a workspace window that shows it does not count and does not change. `false` = the folder is gone and was pruned from the MRU. */

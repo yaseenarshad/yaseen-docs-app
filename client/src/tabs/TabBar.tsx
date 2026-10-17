@@ -38,6 +38,8 @@ export interface TabBarProps {
   onDropPage?: (page: PageDrag, at: number) => void
   /** Context-menu equivalent of dragging this tab into the right panel. */
   onMoveToRight?: (path: string) => void
+  /** The menu's "Move to new window" (YAZ-2933): this tab, alone in a window of its own. */
+  onMoveToNewWindow?: (path: string) => void
   /** History (YAZ-721): the active tab's own back/forward stack has somewhere to go. */
   canBack: boolean
   canForward: boolean
@@ -114,7 +116,7 @@ const Chevron = ({ d }: { d: string }) => (
  * (YAZ-2655): it stands outside the scroller, so it is on show however far the strip scrolled.
  * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
+export function TabBar({ roots, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, onMoveToRight, onMoveToNewWindow, canBack, canForward, onBack, onForward, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onNotice, titles, reviewState, onSetReview }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -409,7 +411,7 @@ export function TabBar({ roots, tabs, active, preview = null, blank = false, onN
         </button>
       )}
       <div className="tabbar-tail" {...endSlot} />
-      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
+      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} onShowInSidebar={onShowInSidebar} onSetReview={onSetReview} onNotice={onNotice} />}
       {/* The grid button's menu: one item. With no tab it has nothing to close, and is grey like any item that cannot be used. */}
       {gridMenu !== null && (
         <ContextMenuSurface x={gridMenu.x} y={gridMenu.y} onClose={() => setGridMenu(null)}>

@@ -244,6 +244,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
       duplicate: vi.fn(),
+      // A tab's "Move to new window" (YAZ-2933): main opens the window; the tab leaves this one after.
+      popOut: vi.fn(async (_path: string) => undefined),
       closeSelf: vi.fn(async () => undefined),
       // Main's one open-recent door (YAZ-1767 D1): a vault window's picks and Open Recent land here (YAZ-1914 D1).
       openRecent: vi.fn(async (_path: string) => true),
@@ -1046,6 +1048,37 @@ describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.tabbar-nav__btn[aria-label="Show sidebar"]')?.click())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('files')
+  })
+})
+
+describe('App Move to new window (YAZ-2933)', () => {
+  const rightClick = (target: Element) =>
+    act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)
+
+  it('is the first item of a tab menu; a click asks main for the window, THEN the tab leaves this one (D2, D4)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
+    expect(items(el)[0]?.textContent).toBe('Move to new window')
+    let tabsWhenAsked: (string | null)[] = []
+    bridge.window.popOut.mockImplementationOnce(async () => {
+      tabsWhenAsked = tabNames(el)
+    })
+    await act(async () => items(el)[0]!.click())
+    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md')
+    expect(tabsWhenAsked).toEqual(['a', 'b']) // the tab is still here while main opens the window
+    expect(tabNames(el)).toEqual(['a'])
+    expect(el.querySelector('.ctx-menu__item')).toBeNull()
+  })
+
+  it('a refusal leaves the tab where it is and says why (D2)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    bridge.window.popOut.mockRejectedValueOnce(new Error('path is in no vault of this window'))
+    rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
+    await act(async () => items(el)[0]!.click())
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    expect(el.textContent).toContain("Can't move to a new window: path is in no vault of this window")
   })
 })
 

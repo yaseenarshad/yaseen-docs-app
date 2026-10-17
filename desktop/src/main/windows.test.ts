@@ -1196,6 +1196,21 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(store.get().windows.map((w) => w.id)).toEqual(['w1', created[0].entry.id])
   })
 
+  it('popOut opens ONE tab of the window in its own window: every vault, the lens, the sidebar hidden, the right panel shut (YAZ-2933 D3, D5)', () => {
+    const rightPanel = { open: true, width: 560, items: ['/b/right.md'], expanded: '/b/right.md' }
+    const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel, sidebarCollapsed: false, sidebarLens: 'focus', bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    createWindowManager(store, host).popOut(from, '/b/y.md')
+    expect(created).toHaveLength(1)
+    const entry = created[0].entry
+    expect(entry).toEqual({ id: entry.id, root: '/a', roots: ['/a', '/b'], file: '/b/y.md', tabs: ['/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX, width: 800, height: 600 } })
+    expect(entry.id).not.toBe('w1')
+    expect(entry.roots).not.toBe(from.roots) // by value, as ⌘⇧N (YAZ-2602 S34)
+    // The source is untouched here: the renderer closes its own tab once the new window is there (D2).
+    expect(store.get().windows).toEqual([from, entry])
+  })
+
   it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {
     // Bottom-right corner of the 1440×900 area: the +24/+24 cascade would hang off the display.
     const from: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 640, y: 300, width: 800, height: 600 } }
