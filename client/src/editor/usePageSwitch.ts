@@ -16,7 +16,7 @@ import { useCallback, useState } from 'react'
  */
 export function usePageSwitch(root: string, path: string, read: (root: string, path: string) => boolean, write: (root: string, path: string, on: boolean) => void): [on: boolean, toggle: () => void] {
   const [held, setHeld] = useState(() => ({ root, path, on: read(root, path) }))
-  // Another page in the same mount: read its own switch during this render, not one render late.
+  // Another page in the same mount (in the app, another vault: `CrepeHost` is keyed by the path): read its own switch during this render, not one render late.
   const current = held.root === root && held.path === path ? held : { root, path, on: read(root, path) }
   if (current !== held) setHeld(current)
   const toggle = useCallback(() => {

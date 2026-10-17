@@ -678,6 +678,11 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   await expect(activeTab(dup)).toContainText('Chapters')
+  // Wait for the note itself: a check for "no table of contents" passes before the editor exists.
+  await expect(editorOf(dup).locator('h1')).toBeVisible()
+  await cog(dup).click()
+  await expect(pageSwitch(dup, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await dup.keyboard.press('Escape')
   await expect(toc(dup)).toHaveCount(0)
   await closeWindow(app, winParam(dup)!)
 
@@ -686,11 +691,15 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
   await expect(activeTab(win)).toContainText('Chapters')
+  await expect(editorOf(win).locator('h1')).toBeVisible()
+  await cog(win).click()
+  await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
+  await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(0)
   expect((await readState(userData)).folders[vault]?.tocSwitches[chaptersPath]).toBe(false)
   expect(await readFile(chaptersPath, 'utf8')).toBe(CHAPTERS)
 
-  // On again, for the steps below.
+  // On again, so that the suite ends with the page as it started.
   await cog(win).click()
   await pageSwitch(win, 'Table of contents').click()
   await win.keyboard.press('Escape')

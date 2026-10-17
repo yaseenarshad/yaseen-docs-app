@@ -106,7 +106,7 @@ export interface Store {
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
    * folder-state key and its `expanded`/`lastFile`/fold keys/
-   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8)/table of contents sources (YAZ-2700 D14)/section indent switches (YAZ-2709 D2), the vaults of each saved set (YAZ-2602 S71), and the
+   * baseGroups keys (`<basePath>::<view>`)/open history (YAZ-2663 S8)/table of contents sources (YAZ-2700 D14)/section indent switches (YAZ-2709 D2)/table of contents switches (YAZ-2950), the vaults of each saved set (YAZ-2602 S71), and the
    * Favorites order and the focus order across vaults (YAZ-2631 R6; YAZ-2702 Decision 3). The focus
    * LIST is not here: it is in the vault, and `focus.ts` repairs it (YAZ-2702 R10).
    * A dir remaps by prefix — everything at or under it follows,
@@ -121,7 +121,7 @@ export interface Store {
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
    * deleted tabs are dropped, `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / fold keys / `baseGroups` keys
-   * (`<basePath>::<view>`) / open history entries (YAZ-2663 S8) / table of contents sources / section indent switches go too. A saved set loses the vault, and a set with fewer than two
+   * (`<basePath>::<view>`) / open history entries (YAZ-2663 S8) / table of contents sources / section indent switches / table of contents switches go too. A saved set loses the vault, and a set with fewer than two
    * vaults left is removed (YAZ-2602 S71). The Favorites order and the focus order across vaults lose the entry (YAZ-2631 R6; YAZ-2702 Decision 3).
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would

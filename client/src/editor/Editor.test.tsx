@@ -412,11 +412,16 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     saved = null
     vi.spyOn(storage, 'getTocSource').mockImplementation(() => saved)
     vi.spyOn(storage, 'setTocSource').mockImplementation(() => undefined)
+    // The page switch is saved too (YAZ-2950): kept out of the real store, which this file does not set up.
+    vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => true)
+    vi.spyOn(storage, 'setTocSwitch').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
     vi.mocked(storage.getTocSource).mockRestore()
     vi.mocked(storage.setTocSource).mockRestore()
+    vi.mocked(storage.getTocSwitch).mockRestore()
+    vi.mocked(storage.setTocSwitch).mockRestore()
   })
 
   const choices = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__choices button')]
@@ -604,6 +609,27 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     clickCog(el)
     expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
     expect(el.querySelector('.page-settings__choices')).toBeNull()
+  })
+
+  it('a page saved as off stays off through the app-wide setting Off: the row hides, the saved value is not touched, and it is used again when the setting comes back (YAZ-2950 D1)', async () => {
+    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation(() => false)
+    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation(() => undefined)
+    try {
+      const el = await mount(BODY, 1, { tableOfContents: 'off' })
+      clickCog(el)
+      expect(rows(el).map((button) => button.textContent)).toEqual(['Line numbers', 'Section indent', 'Heading levels'])
+      clickCog(el)
+      // The setting comes back in the same editor (Settings in this or another window): the page is still off.
+      act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} tableOfContents="auto" />))
+      act(() => tocOf().publish(TWO))
+      expect(el.querySelector('nav.toc')).toBeNull()
+      clickCog(el)
+      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+      expect(write).not.toHaveBeenCalled()
+    } finally {
+      read.mockRestore()
+      write.mockRestore()
+    }
   })
 })
 
