@@ -732,8 +732,10 @@ export function App() {
    * A refusal leaves the tab where it is. Only this tab leaves: a copy's twins stay (YAZ-2940 S16).
    */
   const movePageToNewWindow = useCallback((path: string, id: string) => {
+    // The tab's display name goes with it (YAZ-2949 D7, S19): main hands it to the new window once.
+    const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
-      .then(() => api.window.popOut(path))
+      .then(() => api.window.popOut(path, name === undefined ? {} : { name }))
       .then(() => (now.current.phase === 'open' ? closeUnderOverview([id]) : closeTab(id)))
       .catch((err: unknown) => notify(`Can't move to a new window: ${err instanceof Error ? err.message : String(err)}`))
   }, [closeUnderOverview, closeTab, notify])

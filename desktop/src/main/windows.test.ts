@@ -1211,6 +1211,24 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(store.get().windows).toEqual([from, entry])
   })
 
+  it('popOut holds the tab\'s display name under the NEW window\'s id, for ONE read; a close forgets it; no name holds nothing; nothing is stored (YAZ-2949 D7)', () => {
+    const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a'], file: '/a/x.md', tabs: ['/a/x.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.popOut(from, '/a/x.md', { name: 'Outline' })
+    manager.popOut(from, '/a/x.md', { name: 'Draft' })
+    manager.popOut(from, '/a/x.md', {})
+    const [one, two, three] = created.map((c) => c.entry.id)
+    expect(store.get().windows.every((w) => !('tabNames' in w))).toBe(true)
+    expect(manager.takeTabNames('w1')).toBeUndefined()
+    expect(manager.takeTabNames(one)).toEqual({ '/a/x.md': 'Outline' })
+    expect(manager.takeTabNames(one)).toBeUndefined() // a reload gets no name (S24)
+    expect(manager.takeTabNames(three)).toBeUndefined()
+    created[1].win.destroy() // `closed`: the window that never read its name forgets it
+    expect(manager.takeTabNames(two)).toBeUndefined()
+  })
+
   it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {
     // Bottom-right corner of the 1440×900 area: the +24/+24 cascade would hang off the display.
     const from: WindowEntry = { id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 640, y: 300, width: 800, height: 600 } }

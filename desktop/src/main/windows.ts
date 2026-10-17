@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type RecentRoots, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, defaultRightPanelIdentity, normalizeRoots, rootOfPath, sameVaults, stripSlash, type OpenSetResult, type OpenWindowOptions, type PopOutCarry, type RecentRoots, type StartupWindows, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 
@@ -95,7 +95,9 @@ export interface WindowManager extends WindowLookup {
    * A tab's "Move to new window" (YAZ-2933 D1, D3, D5): `from`'s vaults (by value) and lens, ONE tab `path`, the
    * sidebar hidden, the right panel closed and empty, cascaded bounds, fresh id. No MRU bump, as `duplicateWindow`.
    */
-  popOut(from: WindowEntry, path: string): void
+  popOut(from: WindowEntry, path: string, carry?: PopOutCarry): void
+  /** The display names a moved tab brought (YAZ-2949 D7), handed out ONE time: the new window's first identity read takes them. */
+  takeTabNames(id: string): Record<string, string> | undefined
   /**
    * The ONE back-end door for "open a recent vault" (YAZ-1767 🔒 D1): the sidebar's vault
    * switcher and App's `openVault` (a vault window's Open Folder… / Open Recent, YAZ-1914) land here via `window:open-recent`, the Window menu's vault rows (⌘1–⌘9, YAZ-2555 D3) call it in main, and so does
@@ -150,7 +152,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'takeTabNames' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -245,6 +247,8 @@ export function resolveLinkTarget(
 export function createWindowManager(store: Store, host: WindowHost): WindowManager {
   /** Live windows by state entry id (dropped again in `closed`). */
   const live = new Map<string, ManagedWindow>()
+  /** Display names a "Move to new window" carries (YAZ-2949 D7), by the NEW window's id: gone at its first identity read, or when it closes. Never stored. */
+  const heldTabNames = new Map<string, Record<string, string>>()
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
   const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
   /** Windows closing as part of the quit keep their state entry: the next launch can bring them back. */
@@ -364,6 +368,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       unregister()
       live.delete(id)
       heldLinks.delete(wcId)
+      heldTabNames.delete(id)
       const at = focusOrder.indexOf(id)
       if (at !== -1) focusOrder.splice(at, 1)
       if (quitting) return
@@ -530,9 +535,18 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         })
     },
 
-    popOut(from, path) {
+    popOut(from, path, carry) {
       const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
-      open({ ...from, id: randomUUID(), roots: [...from.roots], file: path, tabs: [path], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
+      // The id first, and the name under it before the window exists: its first identity read cannot miss it (YAZ-2949 D7).
+      const id = randomUUID()
+      if (carry?.name !== undefined) heldTabNames.set(id, { [path]: carry.name })
+      open({ ...from, id, roots: [...from.roots], file: path, tabs: [path], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: clampBounds(cascaded, host.workAreas()) })
+    },
+
+    takeTabNames(id) {
+      const names = heldTabNames.get(id)
+      heldTabNames.delete(id)
+      return names
     },
 
     openRecentBeside,

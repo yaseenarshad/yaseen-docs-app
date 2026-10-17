@@ -204,6 +204,8 @@ export const storage = {
 
   /** Valid AT BOOT only (like `getFile`): the renderer owns tab state after boot (Tabs I2, GRO-2234). */
   getTabs: (): string[] => identity.tabs,
+  /** The display names a moved tab brought (YAZ-2949 D7), by path: boot only, like `getTabs`. */
+  getTabNames: (): Readonly<Record<string, string>> => identity.tabNames ?? {},
 
   /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */
   getRightPanel: (): RightPanelIdentity => ({ ...identity.rightPanel, items: [...identity.rightPanel.items] }),

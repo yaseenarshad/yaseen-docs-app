@@ -460,6 +460,12 @@ describe('bootTabs (rules 12/15)', () => {
     expect(byPath(bootTabs('/v'))).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
   })
 
+  it('a tab moved here from another window wears the display name main handed over (YAZ-2949 D7, S19)', async () => {
+    installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, tabNames: { '/v/a.md': 'Outline' } })
+    await storage.init()
+    expect(bootTabs('/v').tabs.map((t) => t.name)).toEqual(['Outline'])
+  })
+
   it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
     installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()

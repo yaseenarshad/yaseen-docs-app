@@ -1284,6 +1284,16 @@ export interface WindowIdentity {
   sidebarCollapsed: boolean
   /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
   sidebarLens: SidebarLens
+  /**
+   * Display names a tab brought with "Move to new window" (YAZ-2949 D7), by path. Answered ONCE, to the
+   * new window's first identity read; never in `WindowEntry`, never stored.
+   */
+  tabNames?: Record<string, string>
+}
+
+/** What a tab takes along on "Move to new window" (YAZ-2949 D7): its display name, if it has one. */
+export interface PopOutCarry {
+  name?: string
 }
 
 export interface OpenWindowOptions {

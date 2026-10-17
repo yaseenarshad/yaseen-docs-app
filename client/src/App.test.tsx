@@ -1066,7 +1066,7 @@ describe('App Move to new window (YAZ-2933)', () => {
       tabsWhenAsked = tabNames(el)
     })
     await act(async () => items(el)[0]!.click())
-    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md')
+    expect(bridge.window.popOut).toHaveBeenCalledWith('/v/b.md', {})
     expect(tabsWhenAsked).toEqual(['a', 'b']) // the tab is still here while main opens the window
     expect(tabNames(el)).toEqual(['a'])
     expect(el.querySelector('.ctx-menu__item')).toBeNull()

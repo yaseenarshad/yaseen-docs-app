@@ -1,11 +1,20 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_WINDOW_ROOTS, isSidebarLens, rootOfPath, type OpenSetResult, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, rootOfPath, type OpenSetResult, type PopOutCarry, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { normalizeRightPanel, normalizeTabs, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
+
+/**
+ * What a tab takes to its new window (YAZ-2949 D7). Lenient, as a name is only a label: anything that is
+ * not an object, or a name that is not a string or is blank, is no name — cut and trimmed like a vault's.
+ */
+function popOutCarry(raw: unknown): PopOutCarry {
+  const name = isRecord(raw) ? cleanVaultName(raw.name) : null
+  return name === null ? {} : { name }
+}
 
 /** `root` / `file` in the patch: absent (untouched), null, or an absolute path. */
 function optionalPath(raw: Record<string, unknown>, key: 'root' | 'file'): string | null | undefined {
@@ -88,7 +97,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
     const { id, root, roots, file, tabs, rightPanel, sidebarCollapsed, sidebarLens } = entryFor(e)
-    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens }
+    // A tab that came with "Move to new window" brings its display name, ONE time (YAZ-2949 D7).
+    const tabNames = windows.takeTabNames(id)
+    return { id, root, roots: [...roots], file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(tabNames === undefined ? {} : { tabNames }) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -151,11 +162,11 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
 
   // `window:pop-out` (YAZ-2933 D1): a tab's "Move to new window". Main copies the CALLER's window, so the
   // renderer never names a list of vaults; a path in no vault of that window is no tab of it.
-  handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown) => {
+  handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown, carry: unknown) => {
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
     if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
-    windows.popOut(from, target)
+    windows.popOut(from, target, popOutCarry(carry))
   })
 
   // `window:open-recent` (YAZ-1767 D1): the vault switcher's door — an absolute path in, and the

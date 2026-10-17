@@ -34,6 +34,7 @@ let manager: {
   openWindow: ReturnType<typeof vi.fn>
   duplicateWindow: ReturnType<typeof vi.fn>
   popOut: ReturnType<typeof vi.fn>
+  takeTabNames: ReturnType<typeof vi.fn>
   openRecentBeside: ReturnType<typeof vi.fn>
   openAlone: ReturnType<typeof vi.fn>
   openVaultSet: ReturnType<typeof vi.fn>
@@ -52,7 +53,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), takeTabNames: vi.fn(() => undefined), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -415,12 +416,31 @@ describe('registerWindowIpc', () => {
   it('window:pop-out hands the caller entry and the tab to the manager; a stranger, a relative path and a path in no vault of the window are rejected (YAZ-2933 D1)', async () => {
     const popOut = registered(CONTRACT.window.popOut.channel)
     expect(await popOut({ sender }, '/v/a.md')).toEqual(ok(undefined))
-    expect(manager.popOut).toHaveBeenCalledWith(entry, '/v/a.md')
+    expect(manager.popOut).toHaveBeenCalledWith(entry, '/v/a.md', {})
     expect(await popOut({ sender: stranger }, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
     expect(await popOut({ sender }, 'a.md')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await popOut({ sender }, '/other/a.md')).toEqual(bad('BAD_REQUEST'))
     expect(await popOut({ sender }, '/vault/a.md')).toEqual(bad('BAD_REQUEST')) // a sibling folder whose name starts with the vault's is no part of it
     expect(manager.popOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('window:pop-out passes the tab\'s display name, trimmed and cut like a vault name; a carry that is not an object, or a blank or non-string name, is no name (YAZ-2949 D7)', async () => {
+    const popOut = registered(CONTRACT.window.popOut.channel)
+    await popOut({ sender }, '/v/a.md', { name: '  Outline  ' })
+    expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', { name: 'Outline' })
+    await popOut({ sender }, '/v/a.md', { name: 'x'.repeat(100) })
+    expect(manager.popOut.mock.lastCall?.[2].name).toHaveLength(80)
+    for (const carry of [undefined, null, 'Outline', { name: '   ' }, { name: 7 }]) {
+      await popOut({ sender }, '/v/a.md', carry)
+      expect(manager.popOut).toHaveBeenLastCalledWith(entry, '/v/a.md', {})
+    }
+  })
+
+  it('window:identity answers the names a moved tab brought, from the manager, and nothing when it holds none (YAZ-2949 D7)', async () => {
+    manager.takeTabNames.mockReturnValueOnce({ '/v/a.md': 'Outline' })
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', tabNames: { '/v/a.md': 'Outline' } }))
+    expect(manager.takeTabNames).toHaveBeenLastCalledWith('w1')
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
   })
 
   it('app:flushed routes the renderer ack to the manager by sender', () => {

@@ -626,7 +626,10 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
 export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
   const active = hashFilePath(location.hash) ?? storage.getFile() ?? storage.getLastFile(root)
-  return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabs(), active })
+  const s = tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabs(), active })
+  // A tab moved here from another window keeps its display name (YAZ-2949 D7, S19).
+  const names = storage.getTabNames()
+  return { ...s, tabs: s.tabs.map((t) => (names[t.path] === undefined ? t : { ...t, name: names[t.path] })) }
 }
 
 export function bootWorkspace(root: string | null): WorkspaceState {
@@ -663,6 +666,8 @@ export interface UseWorkspace extends WorkspaceState {
   duplicate: (id: string) => string | null
   /** The preview tab (by id) becomes a kept tab (YAZ-2648 D2): a double click on it, the first edit of its page. A no-op for any other tab. */
   keep: (id: string) => void
+  /** "Set display name" / "Reset to page name" (YAZ-2949): a name for this tab, or null for its page name. Never stored. */
+  setName: (id: string, name: string | null) => void
   /** ⌘T, the strip's "+" (YAZ-2655 D10): the one blank tab shows; a second call changes nothing. Never mirrored. */
   newTab: () => void
   /** The blank tab's ✕: it goes, and the tab that was active before is active again (S75). Never mirrored. */
