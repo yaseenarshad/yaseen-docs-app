@@ -37,13 +37,22 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Use a version tag such as v1.0.14. Branch names are not accepted."
+          # No pre-release suffix: the updater reads `releases/latest`, and this action publishes each tag as a
+          # normal release, so `v1.0.14-beta.1` would reach every user (YAZ-2986).
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Use a version tag such as v1.0.14. Branch names and pre-release tags are not accepted."
             exit 1
           fi
           COMMIT="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
           if ! git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/main; then
             echo "::error::The release tag must point to code already on main."
+            exit 1
+          fi
+          # The build stamps the root package.json version into the app. A tag that says another version
+          # would make every user download the release again at each check (YAZ-2986).
+          VERSION="$(git show "${COMMIT}:package.json" | jq -r .version)"
+          if [[ "$RELEASE_TAG" != "v${VERSION}" ]]; then
+            echo "::error::The tag ${RELEASE_TAG} does not match the version ${VERSION} in package.json at ${COMMIT}."
             exit 1
           fi
           printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$COMMIT" >> "$GITHUB_OUTPUT"

@@ -237,7 +237,8 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
   const runCheck = async (): Promise<UpdateState> => {
     const release = await getJson<GithubRelease>(`${feed}/latest`)
     const version = release.tag_name.replace(/^v/, '')
-    if (!newer(version, host.version)) return state // S1
+    // S1. A pre-release tag (`1.0.14-beta.1`) is never an update: `compareVersions` would rank it above 1.0.14.
+    if (version.includes('-') || !newer(version, host.version)) return state
     const asset = pickAsset(release)
     if (asset === null) return state // S2: CI still builds it; the next check finds it
     const requirement = await canInstall()

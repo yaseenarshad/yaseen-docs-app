@@ -117,6 +117,12 @@ describe('check', () => {
     expect([calls, states]).toEqual([[], []])
   })
 
+  it('a pre-release tag is never an update: idle, nothing fetched but the check', async () => {
+    const { updater, fetched, states } = fake({ latest: release('v1.0.13-beta.1') })
+    await expect(updater.check()).resolves.toEqual({ kind: 'idle' })
+    expect([fetched, states]).toEqual([[`${FEED}/latest`], []])
+  })
+
   it.each([
     ['no -arm64.dmg', [{ name: 'Yaseen.Docs-1.0.13-win-x64-setup.exe', digest: `sha256:${SHA}` }]],
     ['a null digest', [{ name: 'Yaseen.Docs-1.0.13-arm64.dmg', digest: null }]],
