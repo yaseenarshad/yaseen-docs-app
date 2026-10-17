@@ -321,6 +321,15 @@ export const storage = {
     send('state.setSectionIndent', () => api.state.setSectionIndent(root, file, on))
   },
 
+  /** This note's "Table of contents" switch (YAZ-2950). A note with no entry is on. */
+  getTocSwitch: (root: string, file: string): boolean => folderOf(root).tocSwitches[file] !== false,
+  /** The reader's switch for one note. On and off are both stored; the same value again writes nothing. */
+  setTocSwitch(root: string, file: string, on: boolean): void {
+    if (on === folderOf(root).tocSwitches[file]) return
+    patchFolder(root, { tocSwitches: { ...folderOf(root).tocSwitches, [file]: on } })
+    send('state.setTocSwitch', () => api.state.setTocSwitch(root, file, on))
+  },
+
   /**
    * Collapsed group keys for one view; `key` is `<pagePath>::<viewName>` (4C, GRO-2137).
    *

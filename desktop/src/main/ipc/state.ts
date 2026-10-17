@@ -74,6 +74,12 @@ export function registerStateIpc(store: Store): void {
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     store.setSectionIndent(r, f, on)
   })
+  handle(CONTRACT.state.setTocSwitch, async (root: unknown, file: unknown, on: unknown) => {
+    const r = requireAbsPath(root, 'root')
+    const f = requireAbsPath(file, 'file')
+    if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
+    store.setTocSwitch(r, f, on)
+  })
   handle(CONTRACT.state.setBaseGroups, async (root: unknown, key: unknown, collapsed: unknown) => {
     const r = requireAbsPath(root, 'root')
     if (typeof key !== 'string' || key === '') throw new BridgeFailure('BAD_REQUEST', "'key' must be a non-empty string")

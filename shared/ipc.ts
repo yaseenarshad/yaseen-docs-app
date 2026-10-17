@@ -83,6 +83,8 @@ export const CONTRACT = {
     setTocSource: invoke<[root: string, file: string, source: TocSource | null], void>('state:set-toc-source', 3),
     /** One note's "Section indent" switch (YAZ-2709 D2): `true` or `false`, and each is stored. No call removes the entry: only the delete of the note does. */
     setSectionIndent: invoke<[root: string, file: string, on: boolean], void>('state:set-section-indent', 3),
+    /** One note's "Table of contents" switch (YAZ-2950): `true` or `false`, and each is stored. Only the delete of the note removes the entry. */
+    setTocSwitch: invoke<[root: string, file: string, on: boolean], void>('state:set-toc-switch', 3),
     /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. The preload sends a copy of `collapsed`. */
     setBaseGroups: invoke<[root: string, key: string, collapsed: readonly string[]], void>('state:set-base-groups', 3),
     /** Fired in every window after any change. */
