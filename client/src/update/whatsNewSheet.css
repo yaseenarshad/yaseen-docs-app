@@ -251,15 +251,15 @@
 }
 
 /*
- * D12: a picture is a framed preview, at most 340px tall, so the text around it stays the page; a
- * click opens it full size in the lightbox.
+ * D12: a picture is a framed preview, at most 480px tall (and half the window on a short one), so the
+ * text around it stays the page; a click opens it full size in the lightbox. Yasin: 340px was "a bit too small".
  */
 .whats-new__body img {
   display: block;
   width: auto;
   max-width: 100%;
   height: auto;
-  max-height: 340px;
+  max-height: min(480px, 55vh);
   margin: 10px 0 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
