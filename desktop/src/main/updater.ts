@@ -272,12 +272,12 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       set({ kind: 'manual', version })
       return state
     }
-    // The answer is `downloading` at once (S6): the ~98.5 MB go on in the background (D6), and the
-    // pushes say how they end.
     if (refused !== null) {
       refused = null // a later version than the refused one: try again
       void rm(refusedFile, { force: true }).catch(() => undefined)
     }
+    // The answer is `downloading` at once (S6): the ~98.5 MB go on in the background (D6), and the
+    // pushes say how they end.
     const before = state
     set({ kind: 'downloading', version })
     download(version, asset, requirement).then(
