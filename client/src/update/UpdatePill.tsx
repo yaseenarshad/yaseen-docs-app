@@ -1,6 +1,6 @@
 /**
  * THE UPDATE PILL (YAZ-2976 D4): beside the cog in the sidebar footer, it says there is something
- * to see, and a click opens the "What's new" window (D5) that App mounts. Nothing while there is
+ * to see, and a click opens the "What's new" sheet (D5) that App mounts. Nothing while there is
  * nothing to act on: `idle`, and `downloading` (D6: the download is the app's business until the
  * new version is staged). The title names the version, because the label does not.
  */

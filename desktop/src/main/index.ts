@@ -140,10 +140,7 @@ const manager = createWindowManager(store, {
   },
 })
 
-/**
- * The updater (YAZ-2976 D2): one per app, so every window gets the same state (S20). Creating it
- * touches nothing; `start()` on `ready` reads the `updated-to` marker (S24) and sets the timer (D7).
- */
+/** The updater (YAZ-2976 D2): one per app, so every window gets the same state (S20). `start()` runs on `ready`. */
 const updater = createUpdater(
   {
     fetch: (url, init) => net.fetch(url, init),

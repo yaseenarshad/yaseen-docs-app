@@ -41,7 +41,7 @@ describe('UpdatePill', () => {
     expect(button.type).toBe('button')
   })
 
-  it('a click opens the window', () => {
+  it('a click opens the sheet', () => {
     const onOpen = vi.fn()
     const button = render({ kind: 'ready', version: '1.0.13' }, onOpen).querySelector('button')!
     act(() => button.click())

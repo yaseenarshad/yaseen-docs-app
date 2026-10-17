@@ -1,5 +1,5 @@
 /*
- * The update pill and the "What's new" window (YAZ-2976 D4, D5). Both are themed through app.css's
+ * The update pill and the "What's new" sheet (YAZ-2976 D4, D5). Both are themed through app.css's
  * tokens, so its `[data-theme='dark']` block covers this file without a dark rule of its own. The
  * window's buttons are the confirm sheet's (`.confirm__btn`), and a release's body is the comments'
  * Markdown (`.comments__body`): one look for each, and nothing repeated here.

@@ -140,7 +140,7 @@ interface SidebarProps {
   onOpenSettings: () => void
   /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
   update: UpdateState
-  /** The pill's click: App mounts the "What's new" window (D5), as it does the settings dialog. */
+  /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
   onOpenWhatsNew: () => void
   /** A vault's folder could not be read (e.g. deleted): which one; parent decides what to do. */
   onRootMissing: (root: string) => void

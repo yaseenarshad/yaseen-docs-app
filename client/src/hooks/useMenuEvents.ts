@@ -29,7 +29,7 @@ interface UseMenuEventsOptions {
   onNewWindow: () => void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the focused note, else the whole app (YAZ-1710). */
   onZoom: (step: ZoomStep) => void
-  /** Help › What's New… (YAZ-2976 D8): open the "What's new" window, with or without an update. */
+  /** Help › What's New… (YAZ-2976 D8): open the "What's new" sheet, with or without an update. */
   onWhatsNew: () => void
 }
 

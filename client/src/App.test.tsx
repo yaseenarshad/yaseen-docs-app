@@ -47,7 +47,7 @@ interface SidebarStubProps {
   onFileMissing: () => void
   /** The updater's state (YAZ-2976 D4): App's one read, which the footer's pill shows. */
   update: UpdateState
-  /** The pill's click: App mounts the "What's new" window (D5). */
+  /** The pill's click: App mounts the "What's new" sheet (D5). */
   onOpenWhatsNew: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
   onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
@@ -1329,14 +1329,14 @@ describe('App settings dialog (YAZ-1679)', () => {
   })
 })
 
-describe('App "What\'s new" window (YAZ-2976 D4, D5, D8)', () => {
+describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
   /** The lazy chunk lands on a later tick than the click: settle until the sheet is in (or give up), then let its notes read answer. */
   const settle = async (el: HTMLElement) => {
     for (let i = 0; i < 20 && el.querySelector('.whats-new') === null; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
     await act(async () => {}) // and its notes read answers
   }
 
-  it('Help › What\'s New… and the pill open the ONE lazy window; closing it leaves the pill\'s state (S19)', async () => {
+  it('Help › What\'s New… and the pill open the ONE lazy sheet; closing it leaves the pill\'s state (S19)', async () => {
     const ready = { kind: 'ready' as const, version: '1.0.13' }
     const { el, emitWhatsNew } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, (b) => b.bridge.update.state.mockResolvedValue(ready))
     await act(async () => {})

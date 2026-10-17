@@ -1,5 +1,5 @@
 /**
- * The "What's new" window (YAZ-2976 D5): the notes as sanitised HTML with lazy images (S16), links
+ * The "What's new" sheet (YAZ-2976 D5): the notes as sanitised HTML with lazy images (S16), links
  * through `window.open` (S17), the failure text (S18), the buttons for each state (S13–S15), and
  * the ways to close it (S19).
  */
@@ -95,7 +95,7 @@ describe('WhatsNewSheet: the buttons', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('S13 manual: "Later" and "Download", which asks main for the release page and closes the window', async () => {
+  it('S13 manual: "Later" and "Download", which asks main for the release page and closes the sheet', async () => {
     const { bridge, onClose, buttons, labels } = await render({ kind: 'manual', version: '1.0.14' })
     expect(labels()).toEqual(['Later', 'Download'])
     act(() => buttons()[1].click())

@@ -52,7 +52,7 @@ import { StartPage } from './workspace/StartPage'
 import { tabById, tabOf, useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
-/** The "What's new" window (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
+/** The "What's new" sheet (YAZ-2976 D5) is its own chunk: launch never parses it, and the first open fetches it. */
 const WhatsNewSheet = lazy(() => import('./update/WhatsNewSheet'))
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
@@ -575,8 +575,8 @@ export function App() {
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   // The updater (YAZ-2976): the sidebar's pill (D4) and Help › What's New… (D8) open the ONE
-  // "What's new" window, App's for the same reason as the settings dialog. Closing it leaves the
-  // pill (S19): the pill follows the state, never the window.
+  // "What's new" sheet, App's for the same reason as the settings dialog. Closing it leaves the
+  // pill (S19): the pill follows the state, never the sheet.
   const update = useUpdate()
   const [whatsNewOpen, setWhatsNewOpen] = useState(false)
   const openWhatsNew = useCallback(() => setWhatsNewOpen(true), [])

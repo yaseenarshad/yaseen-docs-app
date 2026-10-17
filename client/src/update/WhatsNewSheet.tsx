@@ -1,5 +1,5 @@
 /**
- * THE "WHAT'S NEW" WINDOW (YAZ-2976 D5): the update pill and Help › What's New… (D8) open this one
+ * THE "WHAT'S NEW" SHEET (YAZ-2976 D5): the update pill and Help › What's New… (D8) open this one
  * sheet. It shows the GitHub release notes that main fetches live — each release newer than the
  * running app with an update (S14), the last few without one (S15) — and the button for the state.
  * A lazy chunk: App imports it with `React.lazy`, so launch never parses it.
