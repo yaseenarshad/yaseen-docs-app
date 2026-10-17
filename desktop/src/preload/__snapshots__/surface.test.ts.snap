@@ -51,6 +51,7 @@ menu.onSettings/1: on menu:settings -> listener[[{"id":"0-0-0-0-0","ev":"ev","ro
 menu.onSwitchVault/1: on menu:switch-vault -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:switch-vault
 menu.onTabOverview/1: on menu:tab-overview -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:tab-overview
 menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar
+menu.onWhatsNew/1: on menu:whats-new -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:whats-new
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
 mintNoteId/1: invoke fs:mint-note-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -82,6 +83,10 @@ state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> 
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSwitch/3: invoke state:set-toc-switch ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+update.notes/0: invoke update:notes []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+update.onState/1: on update:state-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off update:state-changed
+update.restart/0: invoke update:restart []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+update.state/0: invoke update:state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.write/3: invoke vaultConfig:write ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
