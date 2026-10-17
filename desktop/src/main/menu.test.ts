@@ -28,6 +28,8 @@ const noopHandlers = (): MenuHandlers => ({
   tabOverview: vi.fn(),
   toggleSidebar: vi.fn(),
   openHelp: vi.fn(),
+  checkForUpdates: vi.fn(),
+  whatsNew: vi.fn(),
 })
 
 const RECENTS: RecentRoots = [
@@ -57,10 +59,14 @@ describe('buildMenuTemplate', () => {
     expect(build().map((m) => m.label)).toEqual(['Yaseen Docs', 'File', 'Edit', 'View', 'Window', 'Help'])
   })
 
-  it('App menu: About, Settings… ⌘, in its own group (YAZ-1679), the standard Hide roles, and Quit', () => {
+  it('App menu: About, Check for Updates… right after it (YAZ-2976 D7), Settings… ⌘, in its own group (YAZ-1679), the standard Hide roles, and Quit', () => {
     const handlers = noopHandlers()
     const app = menuOf(build(RECENTS, false, handlers), 'Yaseen Docs')
-    expect(app.map((i) => i.role ?? i.type ?? i.id)).toEqual(['about', 'separator', 'menu.app.settings', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
+    expect(app.map((i) => i.role ?? i.type ?? i.id)).toEqual(['about', 'menu.app.check-updates', 'separator', 'menu.app.settings', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
+    const updates = app.find((i) => i.id === 'menu.app.check-updates')
+    expect([updates?.label, updates?.accelerator]).toEqual(['Check for Updates…', undefined])
+    click(updates)
+    expect(handlers.checkForUpdates).toHaveBeenCalledTimes(1)
     const settings = app.find((i) => i.label === 'Settings…')
     expect(settings?.accelerator).toBe('CmdOrCtrl+,')
     click(settings)
@@ -259,14 +265,17 @@ describe('buildMenuTemplate', () => {
     expect([...(menuOf(amp, 'File').find((i) => i.id === 'menu.file.open-recent')?.submenu as MenuItemConstructorOptions[]), ...menuOf(amp, 'Window').filter((i) => i.id === 'menu.window.vault.1')].map((i) => i.label)).toEqual(['/vaults/R&&D', 'R&&D'])
   })
 
-  it('Help menu: role help, GitHub link item', () => {
+  it("Help menu: role help, What's New… (YAZ-2976 D8) before the GitHub link item", () => {
     const handlers = noopHandlers()
     const template = build(RECENTS, false, handlers)
     const top = template.find((m) => m.label === 'Help')
     expect(top?.role).toBe('help')
-    const github = (top?.submenu as MenuItemConstructorOptions[]).find((i) => i.label === 'Yaseen Docs on GitHub')
-    click(github)
+    const items = top?.submenu as MenuItemConstructorOptions[]
+    expect(items.map((i) => [i.id, i.label])).toEqual([['menu.help.whats-new', "What's New…"], ['menu.help.github', 'Yaseen Docs on GitHub']])
+    click(items[1])
     expect(handlers.openHelp).toHaveBeenCalledTimes(1)
+    click(items[0])
+    expect(handlers.whatsNew).toHaveBeenCalledTimes(1)
   })
 
   it('actionable items carry stable ids so a live check can drive them', () => {
@@ -280,7 +289,7 @@ describe('buildMenuTemplate', () => {
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
-    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[])[0].id).toBe('menu.help.github')
+    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[]).map((i) => i.id)).toEqual(['menu.help.whats-new', 'menu.help.github'])
   })
 })
 
@@ -432,6 +441,7 @@ function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, 
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
     openExternal: vi.fn(),
+    checkForUpdates: vi.fn(),
   }
   const handlers = createMenuHandlers(windows, host)
   return { handlers, windows, host }
@@ -583,6 +593,18 @@ describe('createMenuHandlers', () => {
 
     const { handlers: unfocused } = makeHandlers(undefined)
     expect(() => unfocused.zoom(-1)).not.toThrow()
+  })
+
+  it("whatsNew sends menu:whats-new to the focused window only; checkForUpdates goes to the host, which owns the check (YAZ-2976 D7, D8)", () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, host } = makeHandlers(wc)
+    handlers.whatsNew()
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onWhatsNew.channel)
+    expect(CONTRACT.menu.onWhatsNew.channel).toBe('menu:whats-new')
+    handlers.checkForUpdates()
+    expect(host.checkForUpdates).toHaveBeenCalledOnce()
+    expect(wc.send).toHaveBeenCalledOnce()
+    expect(() => makeHandlers(undefined).handlers.whatsNew()).not.toThrow()
   })
 
   it('openHelp opens the repo README', () => {

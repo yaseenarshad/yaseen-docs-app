@@ -31,6 +31,8 @@ const h = vi.hoisted(() => {
     }),
     whenReady: vi.fn(() => new Promise<void>((resolve) => (s.ready = () => (s.order.push('ready'), resolve())))),
     getPath: vi.fn(() => '/profile'),
+    getAppPath: vi.fn(() => '/Applications/Yaseen Docs.app/Contents/Resources/app.asar'),
+    getVersion: vi.fn(() => '1.0.12'),
     quit: vi.fn(),
     exit: vi.fn(log('exit')),
   }
@@ -47,6 +49,15 @@ const h = vi.hoisted(() => {
     get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [] }),
     flush: vi.fn(async () => void s.order.push('store.flush')),
   }
+  /** The updater's face to index.ts (YAZ-2976); `updater.test.ts` tests the updater itself. */
+  const updater = {
+    kind: 'idle' as string,
+    start: vi.fn(log('updater.start')),
+    check: vi.fn(async (): Promise<{ kind: string }> => ({ kind: 'idle' })),
+    state: vi.fn(() => ({ kind: updater.kind })),
+    notes: vi.fn(async () => []),
+    installOnExit: vi.fn((reopen: boolean) => void s.order.push(`installOnExit:${String(reopen)}`)),
+  }
   const gitSync = { notifyFocus: vi.fn(), notifyWake: vi.fn(), flushForQuit: vi.fn(async (): Promise<void> => void s.order.push('gitSync.flushForQuit')) }
   return {
     s,
@@ -54,6 +65,10 @@ const h = vi.hoisted(() => {
     manager,
     store,
     gitSync,
+    updater,
+    createUpdater: vi.fn(() => updater),
+    /** `ipcMain.handle` by channel: the update doors register through the real envelope. */
+    handles: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
     protocol: { registerSchemesAsPrivileged: vi.fn(log('registerSchemesAsPrivileged')), handle: vi.fn() },
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
     registerIpc: vi.fn(() => (s.order.push('registerIpc'), gitSync)),
@@ -63,6 +78,7 @@ const h = vi.hoisted(() => {
 
 vi.mock('electron', () => ({
   app: h.app,
+  ipcMain: { handle: vi.fn((channel: string, fn: (...args: unknown[]) => Promise<unknown>) => h.handles.set(channel, fn)) },
   protocol: h.protocol,
   net: { fetch: vi.fn() },
   BrowserWindow: { getAllWindows: () => h.s.windows, getFocusedWindow: () => null },
@@ -78,6 +94,7 @@ vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
 // The diaries of links (YAZ-2677 R27) are flushed with the index cache, in the same step.
 vi.mock('./vaultIndex', () => ({ initIndexCache: vi.fn(), flushIndexCache: h.flushIndexCache, flushDiaries: vi.fn(async () => undefined) }))
 vi.mock('./ipc', () => ({ registerIpc: h.registerIpc }))
+vi.mock('./updater', () => ({ createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./menu', () => ({
@@ -103,6 +120,8 @@ function gate(): { promise: Promise<void>; open: () => void } {
 beforeEach(async () => {
   vi.clearAllMocks()
   Object.assign(h.s, { order: [], on: new Map(), windows: [], stored: [] })
+  h.handles.clear()
+  h.updater.kind = 'idle'
   vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', '/tmp/isolated-profile')
   vi.stubEnv('YASEEN_DOCS_E2E', '')
   vi.resetModules()
@@ -243,7 +262,8 @@ describe('main quit order: before-quit runs runQuitSequence with the live deps (
     expect(h.s.order).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'gitSync.flushForQuit'])
     git.open()
     await settle()
-    expect(h.s.order).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'gitSync.flushForQuit', 'exit'])
+    // The swap starts last, with no reopen for a plain quit (YAZ-2976 S22), right before the exit.
+    expect(h.s.order).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'gitSync.flushForQuit', 'installOnExit:false', 'exit'])
     expect(h.app.exit).toHaveBeenCalledExactlyOnceWith(0)
   })
 
@@ -255,7 +275,7 @@ describe('main quit order: before-quit runs runQuitSequence with the live deps (
     h.s.order.length = 0
     h.s.on.get('before-quit')!(event())
     await settle()
-    expect(h.s.order).toEqual(['flushIndexCache', 'gitSync.flushForQuit', 'exit'])
+    expect(h.s.order).toEqual(['flushIndexCache', 'gitSync.flushForQuit', 'installOnExit:false', 'exit'])
     expect(h.store.flush).toHaveBeenCalledOnce()
     expect(h.manager.flushAllForQuit).toHaveBeenCalledOnce()
   })
@@ -263,7 +283,66 @@ describe('main quit order: before-quit runs runQuitSequence with the live deps (
   it('a quit before ready (no sync manager yet) still flushes and exits', async () => {
     h.s.on.get('before-quit')!(event())
     await settle()
-    expect(h.s.order.slice(h.s.order.indexOf('flushAllForQuit'))).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'exit'])
+    expect(h.s.order.slice(h.s.order.indexOf('flushAllForQuit'))).toEqual(['flushAllForQuit', 'store.flush', 'flushIndexCache', 'installOnExit:false', 'exit'])
+  })
+})
+
+describe('the updater in index.ts (YAZ-2976)', () => {
+  const invoke = (channel: string) => h.handles.get(channel)!({})
+
+  it('is created once at load with the bundle, the version and the feed, and broadcasts each state to every window (S20)', async () => {
+    expect(h.createUpdater).toHaveBeenCalledOnce()
+    const [host, onState] = h.createUpdater.mock.calls[0] as unknown as [Record<string, unknown>, (s: unknown) => void]
+    expect(host).toMatchObject({ bundle: '/Applications/Yaseen Docs.app', version: '1.0.12', userData: '/profile', isPackaged: true, pid: process.pid })
+    const send = vi.fn()
+    h.s.windows = [{ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }] as never
+    onState({ kind: 'ready', version: '1.0.13' })
+    expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
+  })
+
+  it('on ready registers the three update doors before the windows restore, then starts the timer (D7)', async () => {
+    expect([...h.handles.keys()]).toEqual([])
+    h.s.ready()
+    await settle()
+    expect([...h.handles.keys()].sort()).toEqual(['update:notes', 'update:restart', 'update:state'])
+    expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
+    h.updater.kind = 'manual'
+    await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
+  })
+
+  it('restart: manual opens the release page (S13, D3); ready quits, and the swap then reopens the app (S21); any other state does nothing', async () => {
+    const { shell } = await import('electron')
+    h.s.ready()
+    await settle()
+    h.updater.kind = 'idle'
+    await invoke('update:restart')
+    h.updater.kind = 'manual'
+    await invoke('update:restart')
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://github.com/yaseenarshad/yaseen-docs-app/releases/latest')
+    expect(h.app.quit).not.toHaveBeenCalled()
+    h.updater.kind = 'ready'
+    await invoke('update:restart')
+    expect(h.app.quit).toHaveBeenCalledOnce()
+    h.s.order.length = 0
+    h.s.on.get('before-quit')!(event())
+    await settle()
+    expect(h.s.order.slice(-2)).toEqual(['installOnExit:true', 'exit'])
+  })
+
+  it('Check for Updates…: nothing newer says the version (S4), a failure says so (S5), a found update says nothing — the pill shows it (S6)', async () => {
+    const menu = await import('./menu')
+    h.s.ready()
+    await settle()
+    const host = vi.mocked(menu.createMenuHandlers).mock.calls[0][1]
+    for (const answer of [{ kind: 'idle' }, { kind: 'updated', version: '1.0.12' }, { kind: 'downloading', version: '1.0.13' }, { kind: 'manual', version: '1.0.13' }]) {
+      h.updater.check.mockResolvedValueOnce(answer)
+      host.checkForUpdates()
+      await settle()
+    }
+    h.updater.check.mockRejectedValueOnce(new Error('offline'))
+    host.checkForUpdates()
+    await settle()
+    expect(h.manager.linkNotice.mock.calls).toEqual([['Yaseen Docs 1.0.12 is the newest version'], ['Yaseen Docs 1.0.12 is the newest version'], ["Can't check for updates. Try again later"]])
   })
 })
 

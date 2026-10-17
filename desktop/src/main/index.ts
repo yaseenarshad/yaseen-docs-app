@@ -4,11 +4,13 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
-import { SPECIAL } from '@shared/ipc'
+import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_SCHEME } from './appScheme'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
+import { broadcastAll } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { registerUpdateIpc } from './ipc/update'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
@@ -23,6 +25,7 @@ import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
 import { createWindowOpenHandler } from './windowOpenPolicy'
+import { createUpdater, runFile, spawnDetached } from './updater'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName(APP_NAME)
@@ -138,6 +141,29 @@ const manager = createWindowManager(store, {
 })
 
 /**
+ * The updater (YAZ-2976 D2): one per app, so every window gets the same state (S20). Creating it
+ * touches nothing; `start()` on `ready` reads the `updated-to` marker (S24) and sets the timer (D7).
+ */
+const updater = createUpdater(
+  {
+    fetch: (url, init) => net.fetch(url, init),
+    run: runFile,
+    spawnDetached,
+    userData: app.getPath('userData'),
+    // `<bundle>/Contents/Resources/app.asar` in a packaged app; a dev run is `manual` before it matters.
+    bundle: join(app.getAppPath(), '..', '..', '..'),
+    version: app.getVersion(),
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    feed: process.env.YASEEN_DOCS_UPDATE_FEED,
+    pid: process.pid,
+  },
+  (state) => broadcastAll(CONTRACT.update.onState.channel, state),
+)
+/** "Restart to update" (S21) sets this; a plain quit with an update staged swaps and stays closed (S22). */
+let reopenAfterQuit = false
+
+/**
  * The most recently focused window's `webContents.id` — pickMenuTargetWindow's fallback key
  * (GRO-2197). Never cleared on blur: macOS reporting "no focused window" (app not frontmost)
  * is exactly the state the fallback exists for, so the last id must survive it.
@@ -187,6 +213,14 @@ app.whenReady().then(() => {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
     openExternal: (url) => void shell.openExternal(url),
+    // S4, S5: the answer is a notice in a window; a staged or manual update shows as the pill instead (S6).
+    checkForUpdates: () =>
+      void updater.check().then(
+        (s) => {
+          if (s.kind === 'idle' || s.kind === 'updated') manager.linkNotice(`Yaseen Docs ${app.getVersion()} is the newest version`)
+        },
+        () => manager.linkNotice("Can't check for updates. Try again later"),
+      ),
   })
   const applyMenu = (): void =>
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged }, handlers)))
@@ -194,6 +228,14 @@ app.whenReady().then(() => {
   subscribeMenuRebuild(store, applyMenu)
   const sync = registerIpc(store, manager)
   gitSync = sync
+  registerUpdateIpc(updater, {
+    openExternal: (url) => void shell.openExternal(url),
+    restartToUpdate: () => {
+      reopenAfterQuit = true
+      app.quit()
+    },
+  })
+  updater.start()
   // YAZ-1081 D3: a lid that just opened is the other "the world moved on while you were away"
   // moment, and the machine that edited the vault meanwhile is usually the other one. Wired here
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.
@@ -223,7 +265,11 @@ app.on('before-quit', (event) => {
     // The index cache's pending persist, and each vault's diary of links to the IDs this Mac made (YAZ-2677 R27): neither flush throws.
     flushIndex: () => Promise.all([flushIndexCache(), flushDiaries()]).then(() => undefined),
     flushSync: () => gitSync?.flushForQuit(),
-    exit: () => app.exit(0),
+    // The swap waits for this process to end (S21, S22): start it last, then exit.
+    exit: () => {
+      updater.installOnExit(reopenAfterQuit)
+      app.exit(0)
+    },
   })
 })
 
