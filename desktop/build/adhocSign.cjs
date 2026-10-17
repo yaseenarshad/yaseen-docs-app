@@ -1,4 +1,4 @@
-// electron-builder `afterPack` hook: trim Chromium's locale paks, then ad-hoc sign the packed macOS bundle.
+// electron-builder `afterPack` hook: trim Chromium's locale paks, then sign the packed macOS bundle.
 //
 // `mac.identity: null` makes electron-builder skip signing entirely, which leaves the app with
 // only the linker signature Electron ships on its main binary and NO bundle seal
@@ -6,6 +6,14 @@
 // "damaged and can't be opened" instead of the ordinary unidentified-developer prompt with its
 // "Open Anyway". A deep ad-hoc signature (`codesign --sign -`) seals every nested binary and the
 // resources, needs no certificate, and runs identically on a laptop and on the CI runner.
+//
+// But an ad-hoc identity is the bundle's cdhash, new on every build, and macOS keys each privacy
+// permission to that identity: every update looked like a new app and asked again (YAZ-2976 D1).
+// So the seal uses the free self-signed certificate "Yaseen Local Signing" (made for YAZ-2770)
+// when the keychain has it: every build then has the identity
+// `identifier "com.yasinarshad.yaseendocs" and certificate leaf = H"…"`, the permissions stay, and
+// the updater accepts only a build that meets it. Without the certificate it falls back to ad-hoc
+// with a warning; `REQUIRE_SIGN_IDENTITY=1` (the release workflow) makes that an error instead.
 const { execFileSync } = require('node:child_process')
 const { readdirSync, rmSync } = require('node:fs')
 const path = require('node:path')
@@ -29,10 +37,33 @@ function trimChromiumLocales(appOutDir, platform, productFilename) {
   }
 }
 
+/** Whether the keychain search list holds a code signing identity called `name` (a self-signed one is listed as not trusted, and `codesign` still signs with it). */
+function hasIdentity(name) {
+  try {
+    return execFileSync('security', ['find-identity', '-p', 'codesigning'], { encoding: 'utf8' }).includes(`"${name}"`)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * What `codesign --sign` gets: the certificate's name, or `-` (ad-hoc) when the keychain lacks it.
+ * Throws when `env.REQUIRE_SIGN_IDENTITY` is `1` and the certificate is missing: a release never
+ * ships an ad-hoc build (YAZ-2976 S27).
+ */
+function signIdentity(env, has = hasIdentity) {
+  const name = env.MAC_SIGN_IDENTITY || 'Yaseen Local Signing'
+  if (has(name)) return name
+  if (env.REQUIRE_SIGN_IDENTITY === '1') throw new Error(`No code signing certificate "${name}" in the keychain, and REQUIRE_SIGN_IDENTITY=1.`)
+  console.warn(`warning: no code signing certificate "${name}" in the keychain. This build is ad-hoc: macOS asks for each permission again after an update to it, and the updater refuses it.`)
+  return '-'
+}
+
 module.exports = async function afterPack(context) {
   trimChromiumLocales(context.appOutDir, context.electronPlatformName, context.packager.appInfo.productFilename)
   if (context.electronPlatformName !== 'darwin') return
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
-  execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
+  execFileSync('codesign', ['--force', '--deep', '--sign', signIdentity(process.env), app], { stdio: 'inherit' })
 }
 module.exports.trimChromiumLocales = trimChromiumLocales
+module.exports.signIdentity = signIdentity

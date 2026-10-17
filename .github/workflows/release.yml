@@ -1,6 +1,7 @@
 # Release build: on a `v*` tag push (or manual dispatch with a tag), build the Mac dmg on a
 # macOS runner and the Windows installer on a Windows runner, then attach both to the
-# GitHub release for that tag (creating the release if it does not exist yet).
+# GitHub release for that tag (creating the release if it does not exist yet). The Mac app is signed with
+# the self-signed certificate from the repo secrets (YAZ-2976 D1); without them the Mac job fails.
 name: release
 
 on:
@@ -37,12 +38,45 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The free self-signed certificate "Yaseen Local Signing" (YAZ-2976 D1, made for YAZ-2770), from two
+      # repo secrets, in a temporary keychain. `desktop/build/adhocSign.cjs` signs the Mac app with it.
+      - name: Import the signing certificate
+        if: runner.os == 'macOS'
+        env:
+          SIGN_CERT_P12_BASE64: ${{ secrets.SIGN_CERT_P12_BASE64 }}
+          SIGN_CERT_PASSWORD: ${{ secrets.SIGN_CERT_PASSWORD }}
+        run: |
+          if [ -z "$SIGN_CERT_P12_BASE64" ] || [ -z "$SIGN_CERT_PASSWORD" ]; then
+            echo "::error title=No signing certificate::Set the secrets SIGN_CERT_P12_BASE64 and SIGN_CERT_PASSWORD. A Mac release never ships an ad-hoc build."
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          printf '%s' "$SIGN_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -f pkcs12 -P "$SIGN_CERT_PASSWORD" -k "$KEYCHAIN" -T /usr/bin/codesign
+          # Without this, codesign shows a window that asks for the key, and the job hangs.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          # The temporary keychain goes first in the search list, so codesign finds the certificate.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -p codesigning "$KEYCHAIN"
       - run: npm run ${{ matrix.script }}
         env:
-          # No signing certificates in CI: ad-hoc mac build, unsigned Windows build.
+          # electron-builder signs nothing itself (`mac.identity: null`): `adhocSign.cjs` signs the Mac app. Windows stays unsigned.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # A Mac build without the certificate fails instead of falling back to ad-hoc (YAZ-2976 S27).
+          REQUIRE_SIGN_IDENTITY: ${{ runner.os == 'macOS' && '1' || '0' }}
+      - name: Show the signature
+        if: runner.os == 'macOS'
+        run: codesign -d -r- "desktop/dist-app/mac-arm64/Yaseen Docs.app"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: ${{ matrix.glob }}
           fail_on_unmatched_files: true
+      - name: Delete the temporary keychain
+        if: always() && runner.os == 'macOS'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
