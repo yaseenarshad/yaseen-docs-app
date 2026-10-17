@@ -1,9 +1,10 @@
 /*
- * The "What's new" sheet (YAZ-2976 D5), imported by `WhatsNewSheet.tsx`, so it loads with the sheet's
- * lazy chunk, never at launch. The rest is reused: the overlay is the settings dialog's
- * (`settings.css`, `.whats-new-overlay` is in its selector), the buttons are the confirm sheet's
- * (`.confirm__btn`) with the app's `.btn--primary`, and a release's body is the comments' Markdown
- * (`.comments__body`). Themed through app.css's tokens, like update.css.
+ * The "What's new" sheet (YAZ-2976 D5, YAZ-2988 D9–D12), imported by `WhatsNewSheet.tsx`, so it loads
+ * with the sheet's lazy chunk, never at launch. The rest is reused: the overlay is the settings
+ * dialog's (`settings.css`, `.whats-new-overlay` is in its selector), the buttons are the confirm
+ * sheet's (`.confirm__btn`) with the app's `.btn--primary`, a release's body is the comments' Markdown
+ * (`.comments__body`), and the lightbox is the editor's (`imageModal.css`, already loaded with the
+ * editor). Themed through app.css's tokens, like update.css, so the dark theme needs no rule here.
  */
 
 /* The overlay takes the focus of a click inside the sheet; it is no control, so no ring. */
@@ -11,12 +12,16 @@
   outline: none;
 }
 
-/* `min-height: 0` lets the notes scroll inside the sheet instead of growing it past the window. */
+/*
+ * D9: about 94% of the window, capped so a very wide window keeps a readable sheet. A fixed height,
+ * not a max-height, so the sheet does not jump when the selected release is short or long.
+ * `min-height: 0` lets the columns scroll inside the sheet instead of growing it past the window.
+ */
 .whats-new {
   display: flex;
   flex-direction: column;
-  width: min(560px, calc(100vw - 48px));
-  max-height: min(640px, calc(100vh - 64px));
+  width: min(94vw, 1280px);
+  height: 92vh;
   min-height: 0;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -33,10 +38,150 @@
   border-bottom: 1px solid var(--border);
 }
 
-.whats-new__notes {
+/* Two columns that each scroll on their own: the list and the notes of the selected release. */
+.whats-new__columns {
+  display: flex;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 4px 20px 16px;
+}
+
+.whats-new__list {
+  flex: 0 0 220px;
+  min-height: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  background: var(--bg-side);
+  border-right: 1px solid var(--border);
+  outline: none;
+}
+
+/* The list is one tab stop (a listbox); its ring sits on the selected row, inside the column. */
+.whats-new__list:focus-visible .whats-new__row[aria-selected='true'] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* D10: the version and the title on one row each, the date small and quiet. */
+.whats-new__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 6px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.whats-new__row:hover {
+  background: var(--bg-hover);
+}
+
+.whats-new__row[aria-selected='true'] {
+  background: var(--accent-soft);
+}
+
+/*
+ * D10: where the user is. A thin divider above and below the current version's row: every row above
+ * it is newer. The margins keep the lines off the neighbours' hover and selection tints.
+ */
+.whats-new__row--current {
+  position: relative;
+  margin-top: 7px;
+  margin-bottom: 7px;
+}
+
+.whats-new__row--current::before,
+.whats-new__row--current::after {
+  position: absolute;
+  right: -6px;
+  left: -6px;
+  height: 1px;
+  background: var(--border);
+  content: '';
+}
+
+.whats-new__row--current::before {
+  top: -4px;
+}
+
+.whats-new__row--current::after {
+  bottom: -4px;
+}
+
+/* The list's first row has nothing above it to divide from. */
+.whats-new__row--current:first-child {
+  margin-top: 0;
+}
+
+.whats-new__row--current:first-child::before {
+  content: none;
+}
+
+.whats-new__row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.whats-new__row-version {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.whats-new__row-date {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.whats-new__row-title {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.whats-new__row[aria-selected='true'] .whats-new__row-title {
+  color: var(--fg);
+}
+
+.whats-new__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+/* Small pills with a 1px edge, so they stay readable on the selected row's accent tint. */
+.whats-new__tag {
+  padding: 0 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  border: 1px solid;
+  border-radius: 999px;
+}
+
+.whats-new__tag--latest {
+  color: var(--accent);
+  background: var(--bg);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.whats-new__tag--current {
+  color: var(--fg-muted);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.whats-new__notes {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 28px 16px;
   overflow-y: auto;
 }
 
@@ -46,18 +191,14 @@
   color: var(--fg-muted);
 }
 
-.whats-new__release + .whats-new__release {
-  border-top: 1px solid var(--border);
-}
-
 .whats-new__release-title {
-  margin: 16px 0 2px;
-  font-size: 15px;
+  margin: 18px 0 2px;
+  font-size: 18px;
   font-weight: 600;
 }
 
 .whats-new__meta {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   font-size: 12px;
   color: var(--fg-muted);
 }
@@ -68,9 +209,11 @@
   padding-bottom: 16px;
 }
 
+/* D12: a picture opens big in the lightbox. */
 .whats-new__body img {
   height: auto;
   border-radius: 6px;
+  cursor: zoom-in;
 }
 
 .whats-new__actions {
