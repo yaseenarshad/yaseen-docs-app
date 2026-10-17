@@ -1345,3 +1345,19 @@ export interface ClipboardPasteRequest {
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
 
+/**
+ * The updater's state (YAZ-2976), owned by main and pushed to every window. `downloading` and `ready`
+ * name the new version; `manual` = a newer version exists but this copy cannot replace itself (Windows,
+ * an unpackaged run, a read-only or translocated folder, an ad-hoc build — S13); `updated` = this launch is
+ * the first one of `version`, after the swap (S24).
+ */
+export type UpdateState = { kind: 'idle' } | { kind: 'downloading' | 'ready' | 'manual' | 'updated'; version: string }
+
+/** One GitHub release for the "What's new" window (YAZ-2976 D5): `body` is the release's Markdown as GitHub holds it. */
+export interface ReleaseNote {
+  version: string
+  title: string
+  /** ISO 8601, GitHub's `published_at`. */
+  date: string
+  body: string
+}
